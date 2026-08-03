@@ -23,17 +23,6 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 
 ## Quick start
 
-### Option 1: Download the Windows app
-
-1. Open the [latest release](https://github.com/SnowfallHD/vodforge/releases/latest).
-2. Download `VODForge-Windows.zip`.
-3. Extract the entire ZIP.
-4. Open the extracted `VODForge` folder and run `VODForge.exe`.
-
-> Keep `VODForge.exe` beside the `_internal` folder. Running only the EXE or launching it from inside the ZIP viewer will not work.
-
-### Option 2: Run from source
-
 You need Windows and Python 3.11 or newer.
 
 ```powershell
