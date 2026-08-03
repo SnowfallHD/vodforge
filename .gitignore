@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Build outputs
+build/
+dist/
+*.spec
+*.zip
+
+# Downloaded native dependencies
+vendor/
+
+# Local app output and diagnostics
+.vodforge/
+logs/
+latest.log
+batch-url-failures.txt
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
