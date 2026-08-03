@@ -581,7 +581,7 @@ def test_encoding_summary_metadata_includes_source_and_planned_output():
     assert source["Source audio codec"] == "opus"
     assert source["HDR/SDR status"] == "SDR"
     assert source["Reason selected"] == "true 1080p available; preferred H.264 source"
-    assert output["Output file path"] == "C:/Videos/video [abc123].mp4"
+    assert output["Output file path"] == str(Path("C:/Videos/video [abc123].mp4"))
     assert output["Output rate-control mode"] == "Auto CBR"
     assert output["Target video bitrate"] == "2000 kbps"
     assert output["Validation status"] == "Pending"
@@ -601,7 +601,7 @@ def test_encoding_summary_metadata_includes_final_ffprobe_output_values():
     enriched = build_encoding_summary_metadata(info, plan, output_path=Path("C:/Videos/final.mp4"), ffprobe_data=ffprobe)
     output = enriched["vodforge_encoding_summary"]["output"]
 
-    assert output["Output file path"] == "C:/Videos/final.mp4"
+    assert output["Output file path"] == str(Path("C:/Videos/final.mp4"))
     assert output["Output container"] == "mp4"
     assert output["Output video codec"] == "h264"
     assert output["Output frame rate"] == "29.97 fps"
@@ -915,7 +915,9 @@ def test_cookiefile_option_is_only_added_when_user_enabled_cookies(tmp_path: Pat
     assert "cookiefile" not in disabled
 
 
-def test_browser_cookie_option_uses_selected_browser_without_cookie_file():
+def test_browser_cookie_option_uses_selected_browser_without_cookie_file(monkeypatch):
+    monkeypatch.setattr(app_module.sys, "platform", "linux")
+
     enabled = apply_ytdlp_cookie_options({}, use_cookies=True, cookie_file=None, cookie_browser="chrome")
     disabled = apply_ytdlp_cookie_options({}, use_cookies=False, cookie_file=None, cookie_browser="chrome")
 
