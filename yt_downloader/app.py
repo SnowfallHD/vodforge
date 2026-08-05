@@ -68,11 +68,121 @@ BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
 
 
-def diagnostics_dir() -> Path:
-    base = os.environ.get("LOCALAPPDATA")
-    if base:
-        return Path(base) / APP_NAME / "logs"
-    return Path.home() / ".vodforge" / "logs"
+def diagnostics_dir(
+    *,
+    platform_name: str | None = None,
+    home: Path | None = None,
+    local_app_data: str | None = None,
+) -> Path:
+    """Return the platform's conventional per-user diagnostics directory."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    home = Path.home() if home is None else home
+    if platform_name.startswith("win"):
+        base = local_app_data if local_app_data is not None else os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / APP_NAME / "logs"
+    if platform_name == "darwin":
+        return home / "Library" / "Logs" / APP_NAME
+    return home / ".vodforge" / "logs"
+
+
+def platform_font_families(platform_name: str | None = None) -> tuple[str, str]:
+    platform_name = sys.platform if platform_name is None else platform_name
+    if platform_name == "darwin":
+        return "Helvetica Neue", "Menlo"
+    if platform_name.startswith("win"):
+        return "Segoe UI", "Cascadia Mono"
+    return "TkDefaultFont", "TkFixedFont"
+
+
+def runtime_executable_candidates(
+    tool_name: str,
+    *,
+    platform_name: str | None = None,
+    frozen: bool | None = None,
+    executable: Path | None = None,
+    meipass: Path | None = None,
+    repo_root: Path | None = None,
+) -> list[Path]:
+    """Return deterministic runtime locations, including Finder-safe macOS paths."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    executable = Path(sys.executable) if executable is None else executable
+    raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
+    meipass = Path(raw_meipass) if raw_meipass else None
+    repo_root = Path(__file__).resolve().parents[1] if repo_root is None else repo_root
+    names = [f"{tool_name}.exe", tool_name] if platform_name.startswith("win") else [tool_name, f"{tool_name}.exe"]
+
+    directories: list[Path] = []
+    if frozen:
+        directories.append(executable.resolve().parent)
+        if meipass is not None:
+            directories.append(meipass.resolve())
+    directories.append(repo_root)
+    if tool_name in {"ffmpeg", "ffprobe"}:
+        directories.append(repo_root / "vendor" / "ffmpeg" / "bin")
+    elif tool_name == "deno":
+        directories.append(repo_root / "vendor" / "deno")
+    if platform_name == "darwin":
+        # Finder-launched .apps do not reliably inherit a shell's Homebrew PATH.
+        directories.extend((Path("/opt/homebrew/bin"), Path("/usr/local/bin")))
+
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+    override = os.environ.get(f"VODFORGE_{tool_name.upper()}")
+    if override:
+        override_path = Path(override).expanduser()
+        candidates.append(override_path)
+        seen.add(override_path)
+    for directory in directories:
+        for name in names:
+            candidate = directory / name
+            if candidate not in seen:
+                candidates.append(candidate)
+                seen.add(candidate)
+    return candidates
+
+
+def find_runtime_executable(tool_name: str) -> str | None:
+    for candidate in runtime_executable_candidates(tool_name):
+        if candidate.is_file():
+            return str(candidate)
+    return shutil.which(tool_name)
+
+
+def ytdlp_ffmpeg_location(ffmpeg: str) -> str:
+    """Point yt-dlp at an FFmpeg directory when the executable has a standard name."""
+    ffmpeg_path = Path(ffmpeg)
+    if ffmpeg_path.name.lower() in {"ffmpeg", "ffmpeg.exe"}:
+        return str(ffmpeg_path.parent)
+    return str(ffmpeg_path)
+
+
+def runtime_version_command(tool_name: str, executable: str) -> list[str]:
+    return [executable, "--version"] if tool_name == "deno" else [executable, "-version"]
+
+
+def probe_runtime_version(tool_name: str, executable: str) -> str:
+    """Execute a bundled runtime so smoke tests also catch missing dynamic libraries."""
+    startupinfo = None
+    creationflags = 0
+    if sys.platform.startswith("win"):
+        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    result = subprocess.run(
+        runtime_version_command(tool_name, executable),
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=15,
+        startupinfo=startupinfo,
+        creationflags=creationflags,
+    )
+    return next((line.strip() for line in result.stdout.splitlines() if line.strip()), "version output unavailable")
 
 
 DIAGNOSTICS_LOG_PATH = diagnostics_dir() / "latest.log"
@@ -193,10 +303,13 @@ THEME = {
     "success": "#10b981",
     "border": "#34343a",
 }
-FONT_UI = ("Segoe UI", 10)
-FONT_UI_MEDIUM = ("Segoe UI", 10, "bold")
-FONT_TITLE = ("Segoe UI", 22, "bold")
-FONT_MONO = ("Cascadia Mono", 9)
+FONT_UI_FAMILY, FONT_MONO_FAMILY = platform_font_families()
+FONT_UI = (FONT_UI_FAMILY, 10)
+FONT_UI_SMALL = (FONT_UI_FAMILY, 9)
+FONT_UI_MEDIUM = (FONT_UI_FAMILY, 10, "bold")
+FONT_UI_SMALL_MEDIUM = (FONT_UI_FAMILY, 9, "bold")
+FONT_TITLE = (FONT_UI_FAMILY, 22, "bold")
+FONT_MONO = (FONT_MONO_FAMILY, 9)
 QUALITY_OPTIONS = {
     "Best available up to 4K": _format_selector(2160),
     "2160p / 4K": _format_selector(2160),
@@ -1818,7 +1931,7 @@ class ToolTip:
                 borderwidth=1,
                 padx=8,
                 pady=6,
-                font=("Segoe UI", 9),
+                font=FONT_UI_SMALL,
             )
             label.pack()
         except tk.TclError:
@@ -1923,11 +2036,11 @@ class DownloaderApp(tk.Tk):
         style.configure("Panel.TFrame", background=THEME["panel"])
         style.configure("Card.TFrame", background=THEME["surface"], relief="flat")
         style.configure("TLabel", background=THEME["bg"], foreground=THEME["text"], font=FONT_UI)
-        style.configure("Muted.TLabel", background=THEME["bg"], foreground=THEME["muted"], font=("Segoe UI", 9))
+        style.configure("Muted.TLabel", background=THEME["bg"], foreground=THEME["muted"], font=FONT_UI_SMALL)
         style.configure("Hero.TLabel", background=THEME["bg"], foreground=THEME["text"], font=FONT_TITLE)
-        style.configure("Accent.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=("Segoe UI", 10, "bold"))
+        style.configure("Accent.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=FONT_UI_MEDIUM)
         style.configure("TLabelframe", background=THEME["bg"], foreground=THEME["text"], bordercolor=THEME["border"], relief="solid")
-        style.configure("TLabelframe.Label", background=THEME["bg"], foreground=THEME["accent"], font=("Segoe UI", 10, "bold"))
+        style.configure("TLabelframe.Label", background=THEME["bg"], foreground=THEME["accent"], font=FONT_UI_MEDIUM)
         style.configure("TEntry", fieldbackground=THEME["surface"], foreground=THEME["text"], insertcolor=THEME["text"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], padding=7)
         style.configure("TCombobox", fieldbackground=THEME["surface"], foreground=THEME["text"], background=THEME["surface"], arrowcolor=THEME["accent"], bordercolor=THEME["border"], padding=6)
         style.map("TCombobox", fieldbackground=[("readonly", THEME["surface"]), ("active", THEME["surface_2"])], foreground=[("readonly", THEME["text"])])
@@ -1941,8 +2054,8 @@ class DownloaderApp(tk.Tk):
         style.configure("TNotebook", background=THEME["panel"], borderwidth=0, tabmargins=(8, 6, 8, 0))
         style.configure("TNotebook.Tab", background=THEME["surface"], foreground=THEME["muted"], padding=(18, 9), font=FONT_UI_MEDIUM, bordercolor=THEME["border"])
         style.map("TNotebook.Tab", background=[("selected", THEME["accent_dark"]), ("active", THEME["surface_2"])], foreground=[("selected", "#ffffff"), ("active", THEME["text"])], expand=[("selected", (0, 0, 0, 0))])
-        style.configure("Treeview", background=THEME["surface"], fieldbackground=THEME["surface"], foreground=THEME["text"], bordercolor=THEME["border"], rowheight=30, font=("Segoe UI", 10))
-        style.configure("Treeview.Heading", background=THEME["panel"], foreground=THEME["muted"], relief="flat", font=("Segoe UI", 9, "bold"))
+        style.configure("Treeview", background=THEME["surface"], fieldbackground=THEME["surface"], foreground=THEME["text"], bordercolor=THEME["border"], rowheight=30, font=FONT_UI)
+        style.configure("Treeview.Heading", background=THEME["panel"], foreground=THEME["muted"], relief="flat", font=FONT_UI_SMALL_MEDIUM)
         style.map("Treeview", background=[("selected", THEME["accent_dark"])], foreground=[("selected", "#ffffff")])
         self.option_add("*TCombobox*Listbox.background", THEME["surface"])
         self.option_add("*TCombobox*Listbox.foreground", THEME["text"])
@@ -2033,7 +2146,14 @@ class DownloaderApp(tk.Tk):
         ttk.Checkbutton(options, text="Embed metadata", variable=self.embed_metadata_var).grid(row=4, column=0, sticky="w", padx=10, pady=4)
         ttk.Checkbutton(options, text="Save compact JSON", variable=self.write_info_json_var).grid(row=4, column=1, sticky="w", padx=10, pady=4)
         ttk.Checkbutton(options, text="Single video only (ignore playlist)", variable=self.single_video_only_var).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(options, text="Use NVIDIA NVENC GPU encoding", variable=self.use_nvenc_var).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=4)
+        nvenc_label = "Use NVIDIA NVENC GPU encoding"
+        if sys.platform == "darwin":
+            nvenc_label += " (not available on macOS)"
+        nvenc_checkbox = ttk.Checkbutton(options, text=nvenc_label, variable=self.use_nvenc_var)
+        nvenc_checkbox.grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=4)
+        if sys.platform == "darwin":
+            self.use_nvenc_var.set(False)
+            nvenc_checkbox.state(["disabled"])
         ttk.Checkbutton(options, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=4)
 
         self.manual_settings_frame = ttk.LabelFrame(options, text="Manual Override Settings")
@@ -2180,7 +2300,7 @@ class DownloaderApp(tk.Tk):
         write_diagnostic(f"runtime path: ffmpeg={ffmpeg}")
         write_diagnostic(f"runtime path: deno={deno}")
         if not ffmpeg:
-            self._append_log("FFmpeg not found. Install FFmpeg on PATH or put ffmpeg.exe beside the packaged app.")
+            self._append_log("FFmpeg not found. Install FFmpeg or place its executable beside the packaged app.")
         else:
             self._append_log(f"FFmpeg found: {ffmpeg}")
         self._append_log(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
@@ -2319,8 +2439,7 @@ class DownloaderApp(tk.Tk):
             )
             ffmpeg = self._find_ffmpeg()
             if ffmpeg:
-                ffmpeg_path = Path(ffmpeg)
-                opts["ffmpeg_location"] = str(ffmpeg_path.parent if ffmpeg_path.name.lower() == "ffmpeg.exe" else ffmpeg_path)
+                opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
             deno = self._find_deno()
             if deno:
                 opts["js_runtimes"] = {"deno": {"path": deno}}
@@ -2700,8 +2819,7 @@ class DownloaderApp(tk.Tk):
                     apply_youtube_extractor_args(preflight_opts)
                     ffmpeg_for_preflight = self._find_ffmpeg()
                     if ffmpeg_for_preflight:
-                        ffmpeg_path = Path(ffmpeg_for_preflight)
-                        preflight_opts["ffmpeg_location"] = str(ffmpeg_path.parent if ffmpeg_path.name.lower() == "ffmpeg.exe" else ffmpeg_path)
+                        preflight_opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg_for_preflight)
                     deno = self._find_deno()
                     write_diagnostic(f"{label} preflight runtime path: ffmpeg={ffmpeg_for_preflight}")
                     write_diagnostic(f"{label} preflight runtime path: deno={deno}")
@@ -2920,8 +3038,7 @@ class DownloaderApp(tk.Tk):
         }
         ffmpeg = self._find_ffmpeg()
         if ffmpeg:
-            ffmpeg_path = Path(ffmpeg)
-            opts["ffmpeg_location"] = str(ffmpeg_path.parent if ffmpeg_path.name.lower() == "ffmpeg.exe" else ffmpeg_path)
+            opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
         deno = self._find_deno()
         if deno:
             opts["js_runtimes"] = {"deno": {"path": deno}}
@@ -2932,18 +3049,9 @@ class DownloaderApp(tk.Tk):
 
     @staticmethod
     def _find_ffmpeg() -> str | None:
-        candidates: list[Path] = []
-        if getattr(sys, "frozen", False):
-            candidates.append(Path(sys.executable).resolve().parent / "ffmpeg.exe")
-            candidates.append(Path(getattr(sys, "_MEIPASS", "")).resolve() / "ffmpeg.exe")
-        candidates.append(Path(__file__).resolve().parents[1] / "ffmpeg.exe")
-        candidates.append(Path(__file__).resolve().parents[1] / "vendor" / "ffmpeg" / "bin" / "ffmpeg.exe")
-        for candidate in candidates:
-            if candidate.exists():
-                return str(candidate)
-        path_ffmpeg = shutil.which("ffmpeg")
-        if path_ffmpeg:
-            return path_ffmpeg
+        runtime_ffmpeg = find_runtime_executable("ffmpeg")
+        if runtime_ffmpeg:
+            return runtime_ffmpeg
         try:
             import imageio_ffmpeg
 
@@ -2956,35 +3064,11 @@ class DownloaderApp(tk.Tk):
 
     @staticmethod
     def _find_ffprobe() -> str | None:
-        candidates: list[Path] = []
-        if getattr(sys, "frozen", False):
-            candidates.append(Path(sys.executable).resolve().parent / "ffprobe.exe")
-            candidates.append(Path(getattr(sys, "_MEIPASS", "")).resolve() / "ffprobe.exe")
-        candidates.append(Path(__file__).resolve().parents[1] / "ffprobe.exe")
-        candidates.append(Path(__file__).resolve().parents[1] / "vendor" / "ffmpeg" / "bin" / "ffprobe.exe")
-        for candidate in candidates:
-            if candidate.exists():
-                return str(candidate)
-        path_ffprobe = shutil.which("ffprobe")
-        if path_ffprobe:
-            return path_ffprobe
-        return None
+        return find_runtime_executable("ffprobe")
 
     @staticmethod
     def _find_deno() -> str | None:
-        candidates: list[Path] = []
-        if getattr(sys, "frozen", False):
-            candidates.append(Path(sys.executable).resolve().parent / "deno.exe")
-            candidates.append(Path(getattr(sys, "_MEIPASS", "")).resolve() / "deno.exe")
-        candidates.append(Path(__file__).resolve().parents[1] / "deno.exe")
-        candidates.append(Path(__file__).resolve().parents[1] / "vendor" / "deno" / "deno.exe")
-        for candidate in candidates:
-            if candidate.exists():
-                return str(candidate)
-        path_deno = shutil.which("deno")
-        if path_deno:
-            return path_deno
-        return None
+        return find_runtime_executable("deno")
 
     def _metadata_args(self, tags: list[str]) -> dict[str, list[str]]:
         if not tags:
@@ -3138,8 +3222,7 @@ def debug_preflight(url: str) -> int:
     }
     ffmpeg = DownloaderApp._find_ffmpeg()
     if ffmpeg:
-        ffmpeg_path = Path(ffmpeg)
-        opts["ffmpeg_location"] = str(ffmpeg_path.parent if ffmpeg_path.name.lower() == "ffmpeg.exe" else ffmpeg_path)
+        opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
     deno = DownloaderApp._find_deno()
     write_diagnostic(f"debug-preflight runtime path: ffmpeg={ffmpeg}")
     write_diagnostic(f"debug-preflight runtime path: deno={deno}")
@@ -3181,7 +3264,38 @@ def debug_preflight(url: str) -> int:
     return 0
 
 
+def runtime_smoke() -> int:
+    """Verify packaged dependencies without opening the GUI or fetching media."""
+    runtimes = {
+        "ffmpeg": DownloaderApp._find_ffmpeg(),
+        "ffprobe": DownloaderApp._find_ffprobe(),
+        "deno": DownloaderApp._find_deno(),
+    }
+    print(f"VODFORGE_RUNTIME_SMOKE platform={sys.platform} frozen={bool(getattr(sys, 'frozen', False))}")
+    failures: list[str] = []
+    for name, path in runtimes.items():
+        if not path:
+            print(f"{name}=missing")
+            failures.append(name)
+            continue
+        try:
+            version = probe_runtime_version(name, path)
+        except Exception as exc:
+            print(f"{name}={path} execution_failed={type(exc).__name__}: {exc}")
+            failures.append(name)
+        else:
+            print(f"{name}={path} version={version}")
+    print(f"diagnostics={DIAGNOSTICS_LOG_PATH}")
+    if failures:
+        print(f"VODFORGE_RUNTIME_SMOKE_FAILED runtimes={','.join(failures)}")
+        return 1
+    print("VODFORGE_RUNTIME_SMOKE_OK")
+    return 0
+
+
 def main() -> None:
+    if len(sys.argv) == 2 and sys.argv[1] == "--runtime-smoke":
+        raise SystemExit(runtime_smoke())
     if len(sys.argv) >= 3 and sys.argv[1] == "--debug-preflight":
         raise SystemExit(debug_preflight(" ".join(sys.argv[2:])))
     app = DownloaderApp()

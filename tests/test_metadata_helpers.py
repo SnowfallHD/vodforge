@@ -41,18 +41,78 @@ from yt_downloader.app import (
     best_thumbnail_for_download,
     format_ytdlp_user_error,
     parse_url_list_text,
+    diagnostics_dir,
+    platform_font_families,
     prepare_batch_item_url,
     playlist_folder_name,
     run_ffprobe_json,
+    runtime_version_command,
     save_thumbnail_image,
     staging_output_template,
     transcode_temp_paths,
     transcode_to_vod_streaming_settings,
+    runtime_executable_candidates,
     video_list_row_values,
     video_file_name,
     video_output_dir,
+    ytdlp_ffmpeg_location,
     write_compact_video_metadata,
 )
+
+
+def test_platform_diagnostics_paths_follow_native_conventions(tmp_path: Path):
+    assert diagnostics_dir(platform_name="darwin", home=tmp_path) == tmp_path / "Library" / "Logs" / "VODForge"
+    assert diagnostics_dir(platform_name="linux", home=tmp_path) == tmp_path / ".vodforge" / "logs"
+    assert diagnostics_dir(platform_name="win32", home=tmp_path, local_app_data="C:/Users/Test/AppData/Local") == (
+        Path("C:/Users/Test/AppData/Local") / "VODForge" / "logs"
+    )
+
+
+def test_platform_fonts_use_macos_and_windows_system_families():
+    assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
+    assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")
+    assert platform_font_families("linux") == ("TkDefaultFont", "TkFixedFont")
+
+
+def test_macos_runtime_candidates_cover_bundle_vendor_and_homebrew_paths():
+    candidates = runtime_executable_candidates(
+        "ffmpeg",
+        platform_name="darwin",
+        frozen=True,
+        executable=Path("/Applications/VODForge.app/Contents/MacOS/VODForge"),
+        meipass=Path("/Applications/VODForge.app/Contents/Frameworks"),
+        repo_root=Path("/source/vodforge"),
+    )
+
+    assert Path("/Applications/VODForge.app/Contents/MacOS/ffmpeg") in candidates
+    assert Path("/Applications/VODForge.app/Contents/Frameworks/ffmpeg") in candidates
+    assert Path("/source/vodforge/vendor/ffmpeg/bin/ffmpeg") in candidates
+    assert Path("/opt/homebrew/bin/ffmpeg") in candidates
+    assert Path("/usr/local/bin/ffmpeg") in candidates
+
+
+def test_windows_runtime_candidates_keep_exe_compatibility():
+    candidates = runtime_executable_candidates(
+        "deno",
+        platform_name="win32",
+        frozen=False,
+        repo_root=Path("C:/source/vodforge"),
+    )
+
+    assert candidates[0] == Path("C:/source/vodforge/deno.exe")
+    assert Path("C:/source/vodforge/vendor/deno/deno.exe") in candidates
+
+
+def test_ytdlp_ffmpeg_location_uses_parent_for_standard_executable_names():
+    assert ytdlp_ffmpeg_location("/opt/homebrew/bin/ffmpeg") == "/opt/homebrew/bin"
+    assert ytdlp_ffmpeg_location("C:/vendor/ffmpeg.exe") == "C:/vendor"
+    assert ytdlp_ffmpeg_location("/bundle/ffmpeg-custom") == "/bundle/ffmpeg-custom"
+
+
+def test_runtime_version_commands_use_each_tool_cli_contract():
+    assert runtime_version_command("ffmpeg", "/bundle/ffmpeg") == ["/bundle/ffmpeg", "-version"]
+    assert runtime_version_command("ffprobe", "/bundle/ffprobe") == ["/bundle/ffprobe", "-version"]
+    assert runtime_version_command("deno", "/bundle/deno") == ["/bundle/deno", "--version"]
 
 
 def test_build_tags_display_text_uses_comma_space_for_copying():

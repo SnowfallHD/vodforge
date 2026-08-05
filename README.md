@@ -2,9 +2,9 @@
 
 [![Tests](https://github.com/SnowfallHD/vodforge/actions/workflows/tests.yml/badge.svg)](https://github.com/SnowfallHD/vodforge/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4)](#quick-start)
+[![Platform: Windows | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-59636e)](#quick-start)
 
-A Windows desktop app that turns YouTube videos and playlists into organized, VOD-ready MP4 files using `yt-dlp` and FFmpeg.
+A Windows and macOS desktop app that turns YouTube videos and playlists into organized, VOD-ready MP4 files using `yt-dlp` and FFmpeg.
 
 VODForge analyzes the available source streams, chooses a practical video/audio pair, and exports predictable H.264/AAC files without pretending a low-quality source has more detail than it does.
 
@@ -23,7 +23,20 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 
 ## Quick start
 
-You need Windows and Python 3.11 or newer.
+You need Python 3.11 or newer with Tk support.
+
+### macOS
+
+Homebrew is used to install a Tk-enabled Python, FFmpeg, and Deno. The application remains a lightweight Python/Tk desktop app; it does not require Electron.
+
+```bash
+git clone https://github.com/SnowfallHD/vodforge.git
+cd vodforge
+./install_macos_dependencies.sh
+.venv/bin/python main.py
+```
+
+### Windows
 
 ```powershell
 git clone https://github.com/SnowfallHD/vodforge.git
@@ -63,7 +76,7 @@ Typical output:
             └── thumbnail.jpeg
 ```
 
-Diagnostics are written to `%LOCALAPPDATA%\VODForge\logs\`.
+Diagnostics are written to `%LOCALAPPDATA%\VODForge\logs\` on Windows and `~/Library/Logs/VODForge/` on macOS.
 
 ## Build the Windows app
 
@@ -88,7 +101,32 @@ To build and package a ZIP:
 .\build_and_package_windows.ps1 -Version "0.1.0"
 ```
 
+## Build the macOS app
+
+Install dependencies, build the `.app`, and run its offline runtime smoke test:
+
+```bash
+./install_macos_dependencies.sh
+./build_macos.sh
+```
+
+The local unsigned application is created at:
+
+```text
+dist/VODForge.app
+```
+
+To package an unsigned ZIP for internal testing:
+
+```bash
+./build_and_package_macos.sh 0.1.0
+```
+
+The build bundles FFmpeg, ffprobe, and Deno so a Finder-launched app does not depend on shell `PATH` configuration. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
+
 ## Development
+
+Windows:
 
 ```powershell
 python -m venv .venv
@@ -96,6 +134,15 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 python -m pytest -q
 python -m compileall -q yt_downloader main.py
+```
+
+macOS:
+
+```bash
+./install_macos_dependencies.sh
+.venv/bin/python -m pytest -q
+.venv/bin/python -m compileall -q yt_downloader main.py macos_smoke_test.py
+.venv/bin/python macos_smoke_test.py
 ```
 
 The test suite focuses on export planning, FFmpeg command construction, metadata, path safety, batch parsing, cookie options, diagnostics, and source-format fallbacks.
