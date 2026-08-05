@@ -39,6 +39,16 @@ fi
 "$python_bin" -m compileall -q yt_downloader main.py macos_smoke_test.py
 "$python_bin" -m pytest -q
 
+build_version="${VODFORGE_BUILD_VERSION:-0.1.0-dev}"
+if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+  echo "VODFORGE_BUILD_VERSION must use semantic versioning, for example 1.2.3."
+  exit 1
+fi
+build_version_dir="build/version"
+mkdir -p "$build_version_dir"
+build_version_file="$build_version_dir/VODFORGE_VERSION"
+printf '%s' "$build_version" > "$build_version_file"
+
 ffmpeg="$(command -v ffmpeg || true)"
 ffprobe="$(command -v ffprobe || true)"
 deno="$(command -v deno || true)"
@@ -55,6 +65,7 @@ fi
   --onedir \
   --name "VODForge" \
   --osx-bundle-identifier "com.snowfallhd.vodforge" \
+  --add-data "$build_version_file:." \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
   --add-binary "$deno:." \
@@ -67,5 +78,5 @@ if [[ ! -x "$app_binary" ]]; then
 fi
 
 "$app_binary" --runtime-smoke
-echo "Built unsigned local application: dist/VODForge.app"
+echo "Built unsigned local VODForge v${build_version}: dist/VODForge.app"
 echo "Developer ID signing and notarization are still required before public distribution."

@@ -12,6 +12,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 import uuid
+import webbrowser
 from datetime import datetime
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -20,6 +21,25 @@ from typing import Any
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+
+from .history import (
+    HistoryError,
+    application_data_dir,
+    history_file_path,
+    history_identity,
+    history_output_dir,
+    load_history,
+    save_history,
+    upsert_history,
+)
+from .updates import (
+    ReleaseInfo,
+    download_verified_update,
+    fetch_latest_release,
+    is_newer_release,
+    release_asset_for_platform,
+)
+from .version import __version__
 
 try:
     from PIL import Image, ImageTk
@@ -1985,6 +2005,7 @@ class DownloaderApp(tk.Tk):
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
+        self.update_worker: threading.Thread | None = None
         self.cancel_requested = False
         self.skip_video_requested = False
         self.skip_url_requested = False
@@ -2016,12 +2037,15 @@ class DownloaderApp(tk.Tk):
         self.thumbnail_image: Any | None = None
         self.last_thumbnail_url: str | None = None
         self.metadata_items: list[dict[str, Any]] = []
+        self.download_history: list[dict[str, Any]] = []
+        self.history_path = history_file_path()
         self.last_output_dirs: list[Path] = []
         self.video_output_dirs_by_id: dict[str, Path] = {}
         self._active_progress_context: tuple[int, int, float, float] | None = None
 
         self._apply_theme()
         self._build_ui()
+        self._load_download_history()
         self._check_runtime()
         self.after(100, self._pump_events)
 
@@ -2069,13 +2093,17 @@ class DownloaderApp(tk.Tk):
 
         hero = ttk.Frame(shell, style="Panel.TFrame")
         hero.pack(fill="x", padx=16, pady=(12, 4))
-        ttk.Label(hero, text="⬇ VODForge", style="Hero.TLabel").pack(anchor="w")
+        hero_header = ttk.Frame(hero, style="Panel.TFrame")
+        hero_header.pack(fill="x")
+        ttk.Label(hero_header, text="⬇ VODForge", style="Hero.TLabel").pack(side="left", anchor="w")
+        self.update_button = ttk.Button(hero_header, text="Check for updates", command=self._check_for_updates)
+        self.update_button.pack(side="right", anchor="e")
         ttk.Label(
             hero,
             text="VOD-ready MP4 downloads with H.264 CBR video, AAC audio, thumbnails, compact metadata, tags, and playlist packaging.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(3, 0))
-        ttk.Label(hero, text="Midnight Violet build", style="Accent.TLabel").pack(anchor="w", pady=(6, 0))
+        ttk.Label(hero, text=f"Midnight Violet build · v{__version__}", style="Accent.TLabel").pack(anchor="w", pady=(6, 0))
 
         self.main_notebook = ttk.Notebook(shell)
         self.main_notebook.pack(fill="both", expand=True, padx=4, pady=(8, 4))
@@ -2231,6 +2259,7 @@ class DownloaderApp(tk.Tk):
         ttk.Button(meta_buttons, text="Copy Tags", command=self._copy_tags).pack(side="left", padx=5)
         ttk.Button(meta_buttons, text="Copy Description", command=self._copy_description).pack(side="left", padx=5)
         ttk.Button(meta_buttons, text="Copy Thumbnail URL", command=self._copy_thumbnail_url).pack(side="left", padx=5)
+        ttk.Button(meta_buttons, text="Open Saved Location", command=self._open_selected_saved_location).pack(side="left", padx=5)
         ttk.Button(meta_buttons, text="Back to Download", command=lambda: self.main_notebook.select(download_tab)).pack(side="right", padx=5)
 
         ttk.Label(metadata_tab, text="Playlist / Video Queue", style="Accent.TLabel").grid(row=1, column=0, sticky="w", padx=12, pady=(0, 5))
@@ -2240,7 +2269,7 @@ class DownloaderApp(tk.Tk):
         tree_wrap.rowconfigure(0, weight=1)
         self.video_tree = ttk.Treeview(
             tree_wrap,
-            columns=("index", "title", "duration", "creator", "id"),
+            columns=("index", "title", "duration", "creator", "id", "location"),
             show="headings",
             selectmode="browse",
             height=16,
@@ -2250,11 +2279,13 @@ class DownloaderApp(tk.Tk):
         self.video_tree.heading("duration", text="Length")
         self.video_tree.heading("creator", text="Creator")
         self.video_tree.heading("id", text="ID")
+        self.video_tree.heading("location", text="Saved Location")
         self.video_tree.column("index", width=56, minwidth=48, stretch=False, anchor="center")
         self.video_tree.column("title", width=620, minwidth=420, stretch=True, anchor="w")
         self.video_tree.column("duration", width=82, minwidth=70, stretch=False, anchor="center")
         self.video_tree.column("creator", width=170, minwidth=110, stretch=False, anchor="w")
         self.video_tree.column("id", width=120, minwidth=90, stretch=False, anchor="w")
+        self.video_tree.column("location", width=170, minwidth=120, stretch=False, anchor="w")
         y_scroll = ttk.Scrollbar(tree_wrap, orient="vertical", command=self.video_tree.yview)
         x_scroll = ttk.Scrollbar(tree_wrap, orient="horizontal", command=self.video_tree.xview)
         self.video_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
@@ -2305,6 +2336,111 @@ class DownloaderApp(tk.Tk):
             self._append_log(f"FFmpeg found: {ffmpeg}")
         self._append_log(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
 
+    def _check_for_updates(self) -> None:
+        if self.update_worker and self.update_worker.is_alive():
+            return
+        self.update_button.config(state="disabled")
+        self.status_var.set("Checking GitHub Releases for a VODForge update…")
+        self.update_worker = threading.Thread(target=self._update_check_worker, daemon=True)
+        self.update_worker.start()
+
+    def _update_check_worker(self) -> None:
+        try:
+            self.events.put(("update_check_result", fetch_latest_release()))
+        except Exception as exc:
+            self.events.put(("update_check_error", str(exc)))
+
+    def _show_update_result(self, release: ReleaseInfo) -> None:
+        self.update_button.config(state="normal")
+        if not is_newer_release(__version__, release.version):
+            self.status_var.set(f"VODForge v{__version__} is up to date.")
+            messagebox.showinfo(APP_NAME, f"You are using the latest VODForge release (v{__version__}).")
+            return
+        self.status_var.set(f"VODForge {release.tag_name} is available.")
+        if sys.platform.startswith("win") and release_asset_for_platform(release) is not None:
+            if messagebox.askyesno(
+                APP_NAME,
+                f"VODForge {release.tag_name} is available.\n\nDownload the release artifact, verify its SHA-256 checksum, and start the updater?",
+            ):
+                self._start_update_download(release)
+            return
+        if messagebox.askyesno(
+            APP_NAME,
+            f"VODForge {release.tag_name} is available.\n\nOpen the verified GitHub Release page to download it?",
+        ):
+            webbrowser.open(release.html_url)
+
+    def _start_update_download(self, release: ReleaseInfo) -> None:
+        self.update_button.config(state="disabled")
+        self.status_var.set(f"Downloading and verifying VODForge {release.tag_name}…")
+        self.update_worker = threading.Thread(target=self._update_download_worker, args=(release,), daemon=True)
+        self.update_worker.start()
+
+    def _update_download_worker(self, release: ReleaseInfo) -> None:
+        try:
+            destination = application_data_dir() / "updates" / release.tag_name
+            path = download_verified_update(release, destination)
+            self.events.put(("update_ready", path))
+        except Exception as exc:
+            self.events.put(("update_check_error", str(exc)))
+
+    def _install_downloaded_update(self, path: Path) -> None:
+        self.update_button.config(state="normal")
+        if not sys.platform.startswith("win") or path.suffix.lower() != ".exe":
+            self.status_var.set(f"Verified update downloaded: {path.name}")
+            self._open_path(path.parent)
+            return
+        try:
+            subprocess.Popen(
+                [str(path), "/SP-", "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"],
+                close_fds=True,
+            )
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, f"The verified updater could not be started:\n\n{exc}")
+            return
+        self.status_var.set("Verified updater started. VODForge will close and reopen when installation completes.")
+
+    def _load_download_history(self) -> None:
+        try:
+            self.download_history = load_history(self.history_path)
+        except HistoryError as exc:
+            self.download_history = []
+            self._append_log(f"WARNING: {exc}")
+            self.status_var.set("Download history could not be loaded; the existing history file was left untouched.")
+            return
+        self.metadata_items = [dict(item) for item in self.download_history]
+        self._rebuild_output_dir_index()
+        self._render_metadata_tree()
+        if self.download_history:
+            self.status_var.set(f"Loaded {len(self.download_history)} downloaded video(s) from history.")
+            self._append_log(f"Loaded download history: {self.history_path}")
+
+    def _record_download_history(self, info: dict[str, Any], output_dir: Path) -> None:
+        try:
+            self.download_history = upsert_history(self.download_history, info, output_dir)
+            save_history(self.history_path, self.download_history)
+        except HistoryError as exc:
+            self._append_log(f"WARNING: {exc}")
+            self.status_var.set("The video finished, but VODForge could not save it to local history.")
+            return
+
+        saved_record = self.download_history[0]
+        saved_id = str(saved_record.get("id") or "")
+        merged = dict(saved_record)
+        retained: list[dict[str, Any]] = []
+        for item in self.metadata_items:
+            if history_identity(item) == history_identity(saved_record):
+                merged = {**item, **saved_record}
+                continue
+            if saved_id and str(item.get("id") or "") == saved_id and history_output_dir(item) is None:
+                merged = {**item, **saved_record}
+                continue
+            retained.append(item)
+        self.metadata_items = [merged, *retained]
+        self._rebuild_output_dir_index()
+        self._render_metadata_tree(selected_index=0)
+        self._append_log(f"Saved download history entry: {output_dir}")
+
     def _manual_help_icon(self, row: int, text: str) -> None:
         icon = ttk.Label(self.manual_settings_frame, text="?", style="Accent.TLabel", cursor="question_arrow")
         icon.grid(row=row, column=2, sticky="w", padx=(2, 8), pady=6)
@@ -2345,7 +2481,26 @@ class DownloaderApp(tk.Tk):
             self.output_var.set(folder)
 
     def _open_folder(self) -> None:
-        path = self._folder_to_open()
+        saved = self._selected_saved_folder()
+        if saved is not None:
+            self._open_existing_saved_folder(saved)
+            return
+        self._open_path(self._folder_to_open())
+
+    def _open_selected_saved_location(self) -> None:
+        saved = self._selected_saved_folder()
+        if saved is None:
+            messagebox.showinfo(APP_NAME, "This preview does not have a saved download location yet.")
+            return
+        self._open_existing_saved_folder(saved)
+
+    def _open_existing_saved_folder(self, path: Path) -> None:
+        if not path.is_dir():
+            messagebox.showwarning(
+                APP_NAME,
+                f"The saved folder is no longer available:\n\n{path}\n\nThe history entry was kept so you can still review its metadata.",
+            )
+            return
         self._open_path(path)
 
     def _open_log_folder(self) -> None:
@@ -2363,18 +2518,22 @@ class DownloaderApp(tk.Tk):
             subprocess.Popen(["xdg-open", str(path)])
 
     def _folder_to_open(self) -> Path:
+        saved = self._selected_saved_folder()
+        if saved is not None:
+            return saved
+        if self.last_output_dirs:
+            return self.last_output_dirs[-1]
+        return Path(self.output_var.get()).expanduser()
+
+    def _selected_saved_folder(self) -> Path | None:
         selection = getattr(self, "video_tree", None).selection() if hasattr(self, "video_tree") else ()
         if selection:
             try:
                 info = self.metadata_items[int(selection[0])]
-                video_id = str(info.get("id") or "")
-                if video_id and video_id in self.video_output_dirs_by_id:
-                    return self.video_output_dirs_by_id[video_id]
+                return history_output_dir(info)
             except (IndexError, TypeError, ValueError):
                 pass
-        if self.last_output_dirs:
-            return self.last_output_dirs[-1]
-        return Path(self.output_var.get()).expanduser()
+        return None
 
     def _load_url_list_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -2474,28 +2633,46 @@ class DownloaderApp(tk.Tk):
 
     def _display_metadata(self, info: dict[str, Any]) -> None:
         incoming_items = iter_video_infos(info)
-        if not (isinstance(info.get("entries"), list)) and incoming_items and self.metadata_items:
-            existing_by_id = {str(item.get("id") or ""): item for item in self.metadata_items}
-            for incoming in incoming_items:
-                video_id = str(incoming.get("id") or "")
-                if video_id and video_id in existing_by_id:
-                    existing_by_id[video_id].update(incoming)
-                else:
-                    self.metadata_items.append(incoming)
-        else:
-            self.metadata_items = incoming_items
+        new_items: list[dict[str, Any]] = []
+        for incoming in incoming_items:
+            video_id = str(incoming.get("id") or "")
+            matching = next(
+                (item for item in [*new_items, *self.metadata_items] if video_id and str(item.get("id") or "") == video_id),
+                None,
+            )
+            if matching is not None:
+                matching.update(incoming)
+            else:
+                new_items.append(incoming)
+        if new_items:
+            self.metadata_items = [*new_items, *self.metadata_items]
+        self._rebuild_output_dir_index()
+        self._render_metadata_tree()
+        self.status_var.set(f"Showing metadata for {len(incoming_items)} fetched video(s); saved history remains available.")
+
+    def _rebuild_output_dir_index(self) -> None:
+        self.video_output_dirs_by_id = {}
+        for item in self.metadata_items:
+            video_id = str(item.get("id") or "")
+            output_dir = history_output_dir(item)
+            if video_id and output_dir is not None:
+                self.video_output_dirs_by_id.setdefault(video_id, output_dir)
+
+    def _render_metadata_tree(self, *, selected_index: int | None = None) -> None:
         selected_iid = self.video_tree.selection()[0] if self.video_tree.selection() else None
         for item in self.video_tree.get_children():
             self.video_tree.delete(item)
         for idx, item in enumerate(self.metadata_items, start=1):
-            values = video_list_row_values(item, fallback_index=idx)
+            output_dir = history_output_dir(item)
+            location = output_dir.name if output_dir is not None else "Preview only"
+            values = (*video_list_row_values(item, fallback_index=idx), location)
             self.video_tree.insert("", "end", iid=str(idx - 1), values=values)
         if self.metadata_items:
-            target = selected_iid if selected_iid in self.video_tree.get_children() else self.video_tree.get_children()[0]
+            preferred = str(selected_index) if selected_index is not None else selected_iid
+            target = preferred if preferred in self.video_tree.get_children() else self.video_tree.get_children()[0]
             self.video_tree.selection_set(target)
             self.video_tree.focus(target)
             self._display_selected_metadata(int(target))
-        self.status_var.set(f"Fetched metadata for {len(self.metadata_items)} video(s).")
 
     def _on_video_selected(self, _event: Any = None) -> None:
         selection = self.video_tree.selection()
@@ -2519,7 +2696,11 @@ class DownloaderApp(tk.Tk):
         info = self.metadata_items[index]
         title = str(info.get("title") or info.get("id") or "selected video")
         creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
-        self.selected_title_var.set(f"{title}\n{creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}")
+        saved = history_output_dir(info)
+        location_text = f"Saved in {saved}" if saved is not None else "Not downloaded in this history"
+        self.selected_title_var.set(
+            f"{title}\n{creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}\n{location_text}"
+        )
         tags_text = build_tags_display_text(info)
         description = build_description_display_text(info)
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
@@ -2529,11 +2710,27 @@ class DownloaderApp(tk.Tk):
         self._set_text(self.output_summary_text, output_summary, disabled=True)
         thumb = best_thumbnail(info)
         self.last_thumbnail_url = str((thumb or {}).get("url") or "") or None
-        if self.last_thumbnail_url:
+        local_thumbnail = saved / "thumbnail.jpeg" if saved is not None else None
+        if local_thumbnail is not None and local_thumbnail.is_file():
+            self._load_thumbnail_file(local_thumbnail)
+        elif self.last_thumbnail_url:
             self._load_thumbnail_preview(self.last_thumbnail_url)
         else:
             self.thumbnail_label.config(image="", text="No thumbnail loaded")
         self.status_var.set(f"Showing metadata for: {info.get('title') or info.get('id') or 'selected video'}")
+
+    def _load_thumbnail_file(self, path: Path) -> None:
+        if Image is None or ImageTk is None:
+            self.thumbnail_label.config(text=f"Saved thumbnail:\n{path}")
+            return
+        try:
+            with Image.open(path) as source:
+                image = source.copy()
+            image.thumbnail((260, 150))
+            self.thumbnail_image = ImageTk.PhotoImage(image)
+            self.thumbnail_label.config(image=self.thumbnail_image, text="")
+        except Exception as exc:
+            self.thumbnail_label.config(text=f"Saved thumbnail preview failed:\n{exc}\n\n{path}")
 
     def _load_thumbnail_preview(self, url: str) -> None:
         if Image is None or ImageTk is None:
@@ -2946,6 +3143,13 @@ class DownloaderApp(tk.Tk):
                         )
                         current_video_info = info
                         self.events.put(("metadata", info))
+                        if primary_output is not None:
+                            self.events.put(
+                                (
+                                    "history_record",
+                                    {"info": info, "output_dir": str(primary_output.parent)},
+                                )
+                            )
                         if job.write_info_json:
                             metadata_path = write_compact_video_metadata(resolved_video_output_dir(job.output_dir, info), info, job.tags)
                             self.events.put(("log", f"{label}: saved compact video metadata {metadata_path}"))
@@ -3145,18 +3349,27 @@ class DownloaderApp(tk.Tk):
                 elif kind == "metadata":
                     if isinstance(payload, dict):
                         self._display_metadata(payload)
+                elif kind == "history_record":
+                    if isinstance(payload, dict) and isinstance(payload.get("info"), dict):
+                        output_dir = str(payload.get("output_dir") or "").strip()
+                        if output_dir:
+                            self._record_download_history(payload["info"], Path(output_dir))
                 elif kind == "metadata_fetch_done":
                     if hasattr(self, "preview_metadata_button"):
                         self.preview_metadata_button.config(state="normal")
                 elif kind == "download_folders":
                     if isinstance(payload, list):
                         self.last_output_dirs = [Path(path) for path in payload]
-                        self.video_output_dirs_by_id = {}
-                        for info in self.metadata_items:
-                            video_id = str(info.get("id") or "")
-                            folder = video_output_dir(Path(self.output_var.get()).expanduser(), info)
-                            if video_id and folder in self.last_output_dirs:
-                                self.video_output_dirs_by_id[video_id] = folder
+                elif kind == "update_check_result":
+                    if isinstance(payload, ReleaseInfo):
+                        self._show_update_result(payload)
+                elif kind == "update_ready":
+                    if isinstance(payload, Path):
+                        self._install_downloaded_update(payload)
+                elif kind == "update_check_error":
+                    self.update_button.config(state="normal")
+                    self.status_var.set("Could not check for updates.")
+                    messagebox.showinfo(APP_NAME, str(payload))
                 elif kind == "done":
                     self.progress_var.set(100)
                     self.status_var.set(str(payload))
@@ -3271,7 +3484,10 @@ def runtime_smoke() -> int:
         "ffprobe": DownloaderApp._find_ffprobe(),
         "deno": DownloaderApp._find_deno(),
     }
-    print(f"VODFORGE_RUNTIME_SMOKE platform={sys.platform} frozen={bool(getattr(sys, 'frozen', False))}")
+    print(
+        f"VODFORGE_RUNTIME_SMOKE version={__version__} "
+        f"platform={sys.platform} frozen={bool(getattr(sys, 'frozen', False))}"
+    )
     failures: list[str] = []
     for name, path in runtimes.items():
         if not path:

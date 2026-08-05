@@ -1,0 +1,85 @@
+name: Build Release Draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version without the v prefix, for example 1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Install bundled runtimes
+        shell: pwsh
+        run: |
+          .\install_ffmpeg_windows.ps1
+          .\install_deno_windows.ps1
+      - name: Build Windows installer and portable archive
+        shell: pwsh
+        run: .\build_and_package_windows.ps1 -Version "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vodforge-windows
+          path: dist/release/*
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            architecture: arm64
+          - os: macos-15-intel
+            architecture: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: brew install python@3.13 python-tk@3.13 ffmpeg deno
+      - name: Build unsigned macOS application
+        run: ./build_and_package_macos.sh "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vodforge-macos-${{ matrix.architecture }}-unsigned
+          path: dist/release/*
+          if-no-files-found: error
+
+  draft:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: vodforge-*
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: release
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | while read -r file; do
+            sha256sum "$file"
+          done > SHA256SUMS.txt
+      - name: Create review-only draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" release/* \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "VODForge v${{ inputs.version }}" \
+            --notes "Windows installer and portable archive, plus unsigned macOS review builds. Do not publish the draft until macOS Developer ID signing and notarization are complete." \
+            --draft

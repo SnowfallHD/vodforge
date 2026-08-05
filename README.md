@@ -20,6 +20,14 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Keeps playlist and non-playlist downloads organized in collision-safe folders.
 - Includes browser-cookie and `cookies.txt` options for videos you are authorized to access.
 - Shows progress, speed, ETA, diagnostics, and per-item batch failures.
+- Keeps a private, local Metadata Browser history of completed downloads and their saved folders across app restarts.
+- Checks versioned, stable GitHub Releases for updates; it never installs code directly from the repository's `main` branch.
+
+## Install a packaged release
+
+GitHub Releases are the intended public download channel. On Windows, use the per-user `VODForge-Windows-Setup` installer. It installs under `%LOCALAPPDATA%\Programs\VODForge`, keeps the packaged `_internal` runtime beside the app automatically, adds normal shortcuts, and provides an uninstaller. The portable ZIP remains available for users who specifically want it.
+
+The macOS release is a normal `VODForge.app`; its bundled runtime is inside the application package. Public macOS releases must be Developer ID signed and notarized before publication. Unsigned workflow artifacts are review builds, not public-ready downloads.
 
 ## Quick start
 
@@ -78,6 +86,8 @@ Typical output:
 
 Diagnostics are written to `%LOCALAPPDATA%\VODForge\logs\` on Windows and `~/Library/Logs/VODForge/` on macOS.
 
+Completed-download history is written to `%LOCALAPPDATA%\VODForge\download-history.json` on Windows and `~/Library/Application Support/VODForge/download-history.json` on macOS. It contains an allow-listed copy of display metadata and the saved output folder. It never stores cookie files, cookie contents, tokens, passwords, or browser-session data. A missing external drive or moved folder is reported without deleting the history entry.
+
 ## Build the Windows app
 
 Install the portable dependencies, then build and smoke-test:
@@ -95,11 +105,13 @@ The runnable folder is created at:
 dist\VODForge\
 ```
 
-To build and package a ZIP:
+To build the primary per-user installer and the optional portable ZIP, install Inno Setup 6 and run:
 
 ```powershell
 .\build_and_package_windows.ps1 -Version "0.1.0"
 ```
+
+Use `-PortableOnly` only when you intentionally do not want an installer.
 
 ## Build the macOS app
 
@@ -123,6 +135,17 @@ To package an unsigned ZIP for internal testing:
 ```
 
 The build bundles FFmpeg, ffprobe, and Deno so a Finder-launched app does not depend on shell `PATH` configuration. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
+
+## Release workflow
+
+The manually dispatched **Build Release Draft** GitHub Actions workflow builds:
+
+- a Windows per-user installer;
+- an optional Windows portable ZIP;
+- separate Apple Silicon and Intel macOS review archives; and
+- `SHA256SUMS.txt` for every artifact.
+
+It creates a GitHub **draft** release only. That keeps review separate from publication and prevents unsigned macOS builds from being presented as public-ready. The app's update check reads only the latest public, stable GitHub Release. On Windows it downloads the matching installer, verifies its exact size and SHA-256 checksum from the same release, and starts the per-user updater; other platforms open the verified release page until their signed installation path is ready.
 
 ## Development
 
