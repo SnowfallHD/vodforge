@@ -26,6 +26,14 @@ def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
     assert "Do not publish the draft until both macOS architectures" in workflow
 
 
+def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+    assert "if ! brew install python@3.13 python-tk@3.13 ffmpeg deno; then" in workflow
+    assert 'brew list --versions "$formula"' in workflow
+    assert 'brew --prefix python@3.13' in workflow
+
+
 def test_macos_release_script_requires_accepted_notarization_and_stapling():
     script = (ROOT / "sign_and_notarize_macos.sh").read_text()
 

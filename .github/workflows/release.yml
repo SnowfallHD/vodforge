@@ -95,7 +95,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
-        run: brew install python@3.13 python-tk@3.13 ffmpeg deno
+        run: |
+          if ! brew install python@3.13 python-tk@3.13 ffmpeg deno; then
+            for formula in python@3.13 python-tk@3.13 ffmpeg deno; do
+              brew list --versions "$formula" >/dev/null
+            done
+          fi
+          echo "$(brew --prefix python@3.13)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix ffmpeg)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix deno)/bin" >> "$GITHUB_PATH"
       - name: Build unsigned macOS review application
         env:
           VODFORGE_UNSIGNED_REVIEW: "1"
