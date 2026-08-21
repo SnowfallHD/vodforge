@@ -135,9 +135,11 @@ def runtime_executable_candidates(
 
     directories: list[Path] = []
     if frozen:
-        directories.append(executable.resolve().parent)
+        # Keep the caller's path semantics intact. Resolving a simulated macOS
+        # bundle path on a Windows test host incorrectly prefixes its drive.
+        directories.append(executable.parent)
         if meipass is not None:
-            directories.append(meipass.resolve())
+            directories.append(meipass)
     directories.append(repo_root)
     if tool_name in {"ffmpeg", "ffprobe"}:
         directories.append(repo_root / "vendor" / "ffmpeg" / "bin")
@@ -172,10 +174,14 @@ def find_runtime_executable(tool_name: str) -> str | None:
 
 def ytdlp_ffmpeg_location(ffmpeg: str) -> str:
     """Point yt-dlp at an FFmpeg directory when the executable has a standard name."""
-    ffmpeg_path = Path(ffmpeg)
-    if ffmpeg_path.name.lower() in {"ffmpeg", "ffmpeg.exe"}:
-        return str(ffmpeg_path.parent)
-    return str(ffmpeg_path)
+    normalized = ffmpeg.replace("\\", "/")
+    name = normalized.rsplit("/", 1)[-1]
+    if name.lower() not in {"ffmpeg", "ffmpeg.exe"}:
+        return ffmpeg
+    parent = normalized.rsplit("/", 1)[0] if "/" in normalized else "."
+    if "\\" in ffmpeg and "/" not in ffmpeg:
+        return parent.replace("/", "\\")
+    return parent
 
 
 def runtime_version_command(tool_name: str, executable: str) -> list[str]:

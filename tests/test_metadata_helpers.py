@@ -106,6 +106,7 @@ def test_windows_runtime_candidates_keep_exe_compatibility():
 def test_ytdlp_ffmpeg_location_uses_parent_for_standard_executable_names():
     assert ytdlp_ffmpeg_location("/opt/homebrew/bin/ffmpeg") == "/opt/homebrew/bin"
     assert ytdlp_ffmpeg_location("C:/vendor/ffmpeg.exe") == "C:/vendor"
+    assert ytdlp_ffmpeg_location(r"C:\vendor\ffmpeg.exe") == r"C:\vendor"
     assert ytdlp_ffmpeg_location("/bundle/ffmpeg-custom") == "/bundle/ffmpeg-custom"
 
 
