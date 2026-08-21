@@ -14,6 +14,16 @@ python -m venv .venv
 python -m pip install --upgrade pip
 python -m pip install -r requirements-dev.txt
 
+$buildVersion = if ($env:VODFORGE_BUILD_VERSION) { $env:VODFORGE_BUILD_VERSION } else { "0.1.0-dev" }
+if ($buildVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+  throw "VODFORGE_BUILD_VERSION must use semantic versioning, for example 1.2.3."
+}
+$buildMetadataDir = Join-Path $PSScriptRoot "build\version"
+New-Item -ItemType Directory -Force -Path $buildMetadataDir | Out-Null
+$buildVersionFile = Join-Path $buildMetadataDir "VODFORGE_VERSION"
+Set-Content -Path $buildVersionFile -Value $buildVersion -NoNewline
+$addData = @("--add-data", "$buildVersionFile;.")
+
 # Bundle FFmpeg. Prefer explicit vendor copies because embedding thumbnails also
 # needs ffprobe.exe. imageio-ffmpeg is only a fallback for non-thumbnail flows.
 $addBinary = @()
@@ -53,7 +63,8 @@ python -m PyInstaller `
   --clean `
   --windowed `
   --name "VODForge" `
+  @addData `
   @addBinary `
   main.py
 
-Write-Host "Built: dist\VODForge\VODForge.exe"
+Write-Host "Built VODForge v$buildVersion`: dist\VODForge\VODForge.exe"

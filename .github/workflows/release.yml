@@ -1,0 +1,133 @@
+name: Build Release Draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version without the v prefix, for example 1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Install bundled runtimes
+        shell: pwsh
+        run: |
+          .\install_ffmpeg_windows.ps1
+          .\install_deno_windows.ps1
+      - name: Build Windows application
+        shell: pwsh
+        env:
+          VODFORGE_BUILD_VERSION: ${{ inputs.version }}
+        run: .\build_windows.ps1
+      - name: Sign in to Azure with GitHub OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign packaged Windows application
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files: ${{ github.workspace }}\dist\VODForge\VODForge.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: VODForge
+          description-url: https://github.com/SnowfallHD/vodforge
+      - name: Verify packaged Windows application signatures
+        shell: pwsh
+        run: .\verify_windows_signatures.ps1 -Files @("${{ github.workspace }}\dist\VODForge\VODForge.exe")
+      - name: Build Windows installer
+        shell: pwsh
+        run: .\build_windows_installer.ps1 -Version "${{ inputs.version }}"
+      - name: Sign Windows installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files: ${{ github.workspace }}\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: VODForge Installer
+          description-url: https://github.com/SnowfallHD/vodforge
+      - name: Verify installer and package signed portable application
+        shell: pwsh
+        run: |
+          $installer = "${{ github.workspace }}\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe"
+          .\verify_windows_signatures.ps1 -Files @($installer)
+          Compress-Archive -Path .\dist\VODForge -DestinationPath ".\dist\release\VODForge-Windows-Portable-v${{ inputs.version }}.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vodforge-windows
+          path: dist/release/*
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            architecture: arm64
+          - os: macos-15-intel
+            architecture: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: brew install python@3.13 python-tk@3.13 ffmpeg deno
+      - name: Build unsigned macOS review application
+        env:
+          VODFORGE_UNSIGNED_REVIEW: "1"
+        run: ./build_and_package_macos.sh "${{ inputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vodforge-macos-${{ matrix.architecture }}-unsigned
+          path: dist/release/*
+          if-no-files-found: error
+
+  draft:
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: vodforge-*
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: release
+        run: |
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' | sort | while read -r file; do
+            sha256sum "$file"
+          done > SHA256SUMS.txt
+      - name: Create review-only draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" release/* \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "VODForge v${{ inputs.version }}" \
+            --notes "Signed Windows installer and portable archive, plus unsigned macOS review builds. Do not publish the draft until both macOS architectures are Developer ID signed, notarized, stapled, and the checksums are regenerated." \
+            --draft
