@@ -15,7 +15,11 @@ else
   release_arch="$machine_arch"
 fi
 if [[ -n "$version" ]]; then
-  archive="dist/release/VODForge-macOS-${release_arch}-v${version}.zip"
+  if [[ "${VODFORGE_UNSIGNED_REVIEW:-0}" == "1" ]]; then
+    archive="dist/release/VODForge-macOS-${release_arch}-v${version}-unsigned-review.zip"
+  else
+    archive="dist/release/VODForge-macOS-${release_arch}-v${version}.zip"
+  fi
 else
   archive="dist/release/VODForge-macOS-${release_arch}.zip"
 fi

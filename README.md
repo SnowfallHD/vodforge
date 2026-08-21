@@ -27,7 +27,7 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 
 GitHub Releases are the intended public download channel. On Windows, use the per-user `VODForge-Windows-Setup` installer. It installs under `%LOCALAPPDATA%\Programs\VODForge`, keeps the packaged `_internal` runtime beside the app automatically, adds normal shortcuts, and provides an uninstaller. The portable ZIP remains available for users who specifically want it.
 
-The macOS release is a normal `VODForge.app`; its bundled runtime is inside the application package. Public macOS releases must be Developer ID signed and notarized before publication. Unsigned workflow artifacts are review builds, not public-ready downloads.
+The macOS release is a normal `VODForge.app`; its bundled runtime is inside the application package. Public macOS releases are Developer ID signed, notarized, stapled, and Gatekeeper-checked before publication. Unsigned workflow artifacts are explicitly named `unsigned-review` and are never public-ready downloads.
 
 ## Quick start
 
@@ -145,7 +145,9 @@ The manually dispatched **Build Release Draft** GitHub Actions workflow builds:
 - separate Apple Silicon and Intel macOS review archives; and
 - `SHA256SUMS.txt` for every artifact.
 
-It creates a GitHub **draft** release only. That keeps review separate from publication and prevents unsigned macOS builds from being presented as public-ready. The app's update check reads only the latest public, stable GitHub Release. On Windows it downloads the matching installer, verifies its exact size and SHA-256 checksum from the same release, and starts the per-user updater; other platforms open the verified release page until their signed installation path is ready.
+It creates a GitHub **draft** release only. Windows application and installer signing uses Azure Artifact Signing through a repository-specific OIDC identity; no long-lived Azure password is stored in GitHub. The macOS jobs produce explicit unsigned review archives for both architectures. On the signing Mac, `./finalize_macos_release.sh <version>` downloads those review builds, Developer ID signs them, submits each to Apple notarization, staples and Gatekeeper-checks them, runs the packaged-runtime smoke tests, uploads the final archives, removes the unsigned review assets, and regenerates `SHA256SUMS.txt`.
+
+After the draft assets and checksums are reviewed, publishing the draft makes it the update source. The app's update check reads only the latest public, stable GitHub Release. On Windows it downloads the matching signed installer, verifies its exact size and SHA-256 checksum from the same release, and starts the updater. macOS opens the verified release page until an in-app signed replacement path is implemented.
 
 ## Development
 
