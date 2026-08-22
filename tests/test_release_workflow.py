@@ -1,7 +1,18 @@
 from pathlib import Path
 
+from importlib.util import module_from_spec, spec_from_file_location
+
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _release_notes_module():
+    path = ROOT / ".github" / "scripts" / "render_release_notes.py"
+    spec = spec_from_file_location("render_release_notes", path)
+    assert spec and spec.loader
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_release_workflow_signs_before_packaging_windows_portable_archive():
@@ -23,7 +34,8 @@ def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
 
     assert "vodforge-macos-${{ matrix.architecture }}-unsigned" in workflow
     assert 'VODFORGE_UNSIGNED_REVIEW: "1"' in workflow
-    assert "Do not publish the draft until both macOS architectures" in workflow
+    assert "render_release_notes.py" in workflow
+    assert "--draft" in workflow
 
 
 def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
@@ -51,3 +63,27 @@ def test_release_finalizer_replaces_unsigned_reviews_and_regenerates_checksums()
     assert "sign_and_notarize_macos.sh" in script
     assert "SHA256SUMS.txt" in script
     assert "release delete-asset" in script
+    assert 'release edit "$tag"' in script
+
+
+def test_release_notes_lead_with_clear_user_facing_platform_choices():
+    notes = _release_notes_module().render_release_notes("1.2.3")
+
+    newer = notes.index("### Newer Macs — Apple silicon")
+    older = notes.index("### Older Macs — Intel-based")
+    windows = notes.index("### Windows")
+    assert newer < older < windows
+    assert "late 2020 and newer" in notes
+    assert "2020 and earlier" in notes
+    assert "About This Mac" in notes
+    assert "VODForge-macOS-arm64-v1.2.3.zip" in notes
+    assert "VODForge-macOS-x64-v1.2.3.zip" in notes
+    assert "VODForge-Windows-Setup-v1.2.3.exe" in notes
+
+
+def test_draft_release_notes_keep_the_release_team_safety_gate():
+    notes = _release_notes_module().render_release_notes("1.2.3", draft=True)
+
+    assert "Release-team draft" in notes
+    assert "Do not publish" in notes
+    assert "notarized" in notes

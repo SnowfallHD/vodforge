@@ -86,6 +86,8 @@ gh release upload "$tag" --repo "$repo" --clobber \
   "$finalize_dir/SHA256SUMS.txt"
 gh release delete-asset "$tag" "$arm_unsigned" --repo "$repo" --yes
 gh release delete-asset "$tag" "$x64_unsigned" --repo "$repo" --yes
+python3 .github/scripts/render_release_notes.py "$version" > "$finalize_dir/release-notes.md"
+gh release edit "$tag" --repo "$repo" --notes-file "$finalize_dir/release-notes.md"
 
 echo "Final signed artifacts and checksums uploaded to draft release $tag."
 echo "Review the release assets and checksums before publishing."

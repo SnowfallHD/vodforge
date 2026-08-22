@@ -118,6 +118,7 @@ jobs:
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release
@@ -133,9 +134,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python3 .github/scripts/render_release_notes.py "${{ inputs.version }}" --draft > release-notes.md
           gh release create "v${{ inputs.version }}" release/* \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "VODForge v${{ inputs.version }}" \
-            --notes "Signed Windows installer and portable archive, plus unsigned macOS review builds. Do not publish the draft until both macOS architectures are Developer ID signed, notarized, stapled, and the checksums are regenerated." \
+            --notes-file release-notes.md \
             --draft
