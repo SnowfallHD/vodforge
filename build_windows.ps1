@@ -24,6 +24,50 @@ $buildVersionFile = Join-Path $buildMetadataDir "VODFORGE_VERSION"
 Set-Content -Path $buildVersionFile -Value $buildVersion -NoNewline
 $addData = @("--add-data", "$buildVersionFile;.")
 
+$versionParts = $buildVersion.Split("-")[0].Split(".")
+$numericVersion = "$($versionParts[0]), $($versionParts[1]), $($versionParts[2]), 0"
+$displayVersion = $buildVersion.Replace("'", "''")
+$versionResourceFile = Join-Path $buildMetadataDir "VODForge_version_info.txt"
+$versionResource = @"
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=($numericVersion),
+    prodvers=($numericVersion),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '040904B0',
+        [StringStruct('CompanyName', 'Kryden Ventures, LLC'),
+         StringStruct('FileDescription', 'VODForge'),
+         StringStruct('FileVersion', '$displayVersion'),
+         StringStruct('InternalName', 'VODForge'),
+         StringStruct('LegalCopyright', 'Copyright (c) Kryden Ventures, LLC'),
+         StringStruct('OriginalFilename', 'VODForge.exe'),
+         StringStruct('ProductName', 'VODForge'),
+         StringStruct('ProductVersion', '$displayVersion')]
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+"@
+Set-Content -Path $versionResourceFile -Value $versionResource -Encoding UTF8
+$versionFile = @("--version-file", $versionResourceFile)
+$iconFile = Join-Path $PSScriptRoot "assets\VODForge.ico"
+$iconPng = Join-Path $PSScriptRoot "assets\VODForge.png"
+if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng)) {
+  throw "VODForge icon assets are missing."
+}
+$iconArgs = @("--icon", $iconFile)
+$addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets")
+
 # Bundle FFmpeg. Prefer explicit vendor copies because embedding thumbnails also
 # needs ffprobe.exe. imageio-ffmpeg is only a fallback for non-thumbnail flows.
 $addBinary = @()
@@ -63,6 +107,8 @@ python -m PyInstaller `
   --clean `
   --windowed `
   --name "VODForge" `
+  @iconArgs `
+  @versionFile `
   @addData `
   @addBinary `
   main.py
