@@ -33,11 +33,17 @@ from .history import (
     upsert_history,
 )
 from .updates import (
+    MacUpdatePlan,
     ReleaseInfo,
+    cleanup_stale_macos_updates,
     download_verified_update,
     fetch_latest_release,
     is_newer_release,
+    launch_macos_update,
+    prepare_macos_update,
     release_asset_for_platform,
+    running_macos_app,
+    verify_windows_authenticode,
 )
 from .version import __version__
 
@@ -86,6 +92,9 @@ VIDEO_CAPS_KBPS = {(480, 30): 2500, (720, 30): 5000, (1080, 30): 10000, (1080, 6
 EXPORT_MODES = ["Auto CBR", "Strict Compliance", "Manual Override"]
 BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
+AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
+AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
+AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
 
 
 def diagnostics_dir(
@@ -2012,6 +2021,8 @@ class DownloaderApp(tk.Tk):
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.update_worker: threading.Thread | None = None
+        self.update_check_silent = False
+        self.update_check_after_id: str | None = None
         self.cancel_requested = False
         self.skip_video_requested = False
         self.skip_url_requested = False
@@ -2054,6 +2065,8 @@ class DownloaderApp(tk.Tk):
         self._load_download_history()
         self._check_runtime()
         self.after(100, self._pump_events)
+        if bool(getattr(sys, "frozen", False)):
+            self._schedule_auto_update_check(AUTO_UPDATE_INITIAL_DELAY_MS)
 
     def _apply_theme(self) -> None:
         style = ttk.Style(self)
@@ -2342,11 +2355,30 @@ class DownloaderApp(tk.Tk):
             self._append_log(f"FFmpeg found: {ffmpeg}")
         self._append_log(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
 
-    def _check_for_updates(self) -> None:
+    def _schedule_auto_update_check(self, delay_ms: int = AUTO_UPDATE_INTERVAL_MS) -> None:
+        if not bool(getattr(sys, "frozen", False)):
+            return
+        if self.update_check_after_id is not None:
+            try:
+                self.after_cancel(self.update_check_after_id)
+            except tk.TclError:
+                pass
+        self.update_check_after_id = self.after(delay_ms, self._run_auto_update_check)
+
+    def _run_auto_update_check(self) -> None:
+        self.update_check_after_id = None
+        if (self.worker and self.worker.is_alive()) or (self.update_worker and self.update_worker.is_alive()):
+            self._schedule_auto_update_check(AUTO_UPDATE_BUSY_RETRY_MS)
+            return
+        self._check_for_updates(silent=True)
+
+    def _check_for_updates(self, *, silent: bool = False) -> None:
         if self.update_worker and self.update_worker.is_alive():
             return
+        self.update_check_silent = silent
         self.update_button.config(state="disabled")
-        self.status_var.set("Checking GitHub Releases for a VODForge update…")
+        if not silent:
+            self.status_var.set("Checking GitHub Releases for a VODForge update…")
         self.update_worker = threading.Thread(target=self._update_check_worker, daemon=True)
         self.update_worker.start()
 
@@ -2357,24 +2389,31 @@ class DownloaderApp(tk.Tk):
             self.events.put(("update_check_error", str(exc)))
 
     def _show_update_result(self, release: ReleaseInfo) -> None:
+        silent = self.update_check_silent
+        self.update_check_silent = False
+        self._schedule_auto_update_check()
         self.update_button.config(state="normal")
         if not is_newer_release(__version__, release.version):
-            self.status_var.set(f"VODForge v{__version__} is up to date.")
-            messagebox.showinfo(APP_NAME, f"You are using the latest VODForge release (v{__version__}).")
+            self.update_button.config(text="Check for updates")
+            if not silent:
+                self.status_var.set(f"VODForge v{__version__} is up to date.")
+                messagebox.showinfo(APP_NAME, f"You are using the latest VODForge release (v{__version__}).")
             return
         self.status_var.set(f"VODForge {release.tag_name} is available.")
-        if sys.platform.startswith("win") and release_asset_for_platform(release) is not None:
+        self.update_button.config(text=f"Update to {release.tag_name}")
+        asset = release_asset_for_platform(release)
+        if asset is None:
             if messagebox.askyesno(
                 APP_NAME,
-                f"VODForge {release.tag_name} is available.\n\nDownload the release artifact, verify its SHA-256 checksum, and start the updater?",
+                f"VODForge {release.tag_name} is available, but there is no automatic update for this computer.\n\nOpen the verified GitHub Release page?",
             ):
-                self._start_update_download(release)
+                webbrowser.open(release.html_url)
             return
         if messagebox.askyesno(
             APP_NAME,
-            f"VODForge {release.tag_name} is available.\n\nOpen the verified GitHub Release page to download it?",
+            f"VODForge {release.tag_name} is available.\n\nDownload the signed update, verify it, and restart VODForge?",
         ):
-            webbrowser.open(release.html_url)
+            self._start_update_download(release)
 
     def _start_update_download(self, release: ReleaseInfo) -> None:
         self.update_button.config(state="disabled")
@@ -2386,12 +2425,33 @@ class DownloaderApp(tk.Tk):
         try:
             destination = application_data_dir() / "updates" / release.tag_name
             path = download_verified_update(release, destination)
-            self.events.put(("update_ready", path))
+            payload: Path | MacUpdatePlan = path
+            if sys.platform == "darwin":
+                target_app = running_macos_app()
+                if target_app is None:
+                    raise RuntimeError("VODForge must be running from the packaged app to update itself.")
+                cleanup_stale_macos_updates(destination)
+                payload = prepare_macos_update(path, target_app)
+            elif sys.platform.startswith("win"):
+                verify_windows_authenticode(path)
+            self.events.put(("update_ready", payload))
         except Exception as exc:
             self.events.put(("update_check_error", str(exc)))
 
-    def _install_downloaded_update(self, path: Path) -> None:
+    def _install_downloaded_update(self, update: Path | MacUpdatePlan) -> None:
         self.update_button.config(state="normal")
+        if isinstance(update, MacUpdatePlan):
+            try:
+                launch_macos_update(update)
+            except Exception as exc:
+                messagebox.showerror(APP_NAME, f"The verified macOS update could not be started:\n\n{exc}")
+                self.status_var.set("The macOS update could not be started.")
+                return
+            self.update_button.config(state="disabled", text="Installing update…")
+            self.status_var.set("Verified update ready. VODForge is restarting to install it…")
+            self.after(250, self.destroy)
+            return
+        path = update
         if not sys.platform.startswith("win") or path.suffix.lower() != ".exe":
             self.status_var.set(f"Verified update downloaded: {path.name}")
             self._open_path(path.parent)
@@ -3370,12 +3430,18 @@ class DownloaderApp(tk.Tk):
                     if isinstance(payload, ReleaseInfo):
                         self._show_update_result(payload)
                 elif kind == "update_ready":
-                    if isinstance(payload, Path):
+                    if isinstance(payload, (Path, MacUpdatePlan)):
                         self._install_downloaded_update(payload)
                 elif kind == "update_check_error":
+                    silent = self.update_check_silent
+                    self.update_check_silent = False
+                    self._schedule_auto_update_check()
                     self.update_button.config(state="normal")
-                    self.status_var.set("Could not check for updates.")
-                    messagebox.showinfo(APP_NAME, str(payload))
+                    if silent:
+                        write_diagnostic(f"automatic update check failed: {payload}")
+                    else:
+                        self.status_var.set("Could not check for updates.")
+                        messagebox.showinfo(APP_NAME, str(payload))
                 elif kind == "done":
                     self.progress_var.set(100)
                     self.status_var.set(str(payload))

@@ -21,7 +21,7 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Includes browser-cookie and `cookies.txt` options for videos you are authorized to access.
 - Shows progress, speed, ETA, diagnostics, and per-item batch failures.
 - Keeps a private, local Metadata Browser history of completed downloads and their saved folders across app restarts.
-- Checks versioned, stable GitHub Releases for updates; it never installs code directly from the repository's `main` branch.
+- Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
 
 ## Install a packaged release
 
@@ -147,7 +147,7 @@ The manually dispatched **Build Release Draft** GitHub Actions workflow builds:
 
 It creates a GitHub **draft** release only. Windows application and installer signing uses Azure Artifact Signing through a repository-specific OIDC identity; no long-lived Azure password is stored in GitHub. The macOS jobs produce explicit unsigned review archives for both architectures. On the signing Mac, `./finalize_macos_release.sh <version>` downloads those review builds, Developer ID signs them, submits each to Apple notarization, staples and Gatekeeper-checks them, runs the packaged-runtime smoke tests, uploads the final archives, removes the unsigned review assets, and regenerates `SHA256SUMS.txt`.
 
-After the draft assets and checksums are reviewed, publishing the draft makes it the update source. The app's update check reads only the latest public, stable GitHub Release. On Windows it downloads the matching signed installer, verifies its exact size and SHA-256 checksum from the same release, and starts the updater. macOS opens the verified release page until an in-app signed replacement path is implemented.
+After the draft assets and checksums are reviewed, publishing the draft makes it the update source. Packaged apps check only the latest public, stable GitHub Release after startup and every six hours, while retaining the manual **Check for updates** control. When a newer version is approved by the user, Windows downloads the matching installer, verifies its exact size, SHA-256 checksum, Kryden Ventures Authenticode publisher, and trusted timestamp, then starts the silent installer. macOS downloads the matching architecture, verifies its size and checksum, exact VODForge bundle and Apple team identities, strict Developer ID signature, stapled notarization ticket, and Gatekeeper acceptance, then uses a detached rollback-capable swapper to replace and relaunch the app.
 
 ## Development
 

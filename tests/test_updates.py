@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
+import plistlib
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,12 +12,19 @@ import pytest
 from yt_downloader.updates import (
     ReleaseAsset,
     ReleaseInfo,
+    MacUpdatePlan,
     download_verified_update,
     is_newer_release,
+    launch_macos_update,
     parse_release_payload,
     parse_sha256sums,
+    prepare_macos_update,
     release_asset_for_platform,
+    running_macos_app,
     semantic_version_key,
+    verify_macos_app,
+    verify_windows_authenticode,
+    write_macos_swap_script,
 )
 from yt_downloader.version import DEFAULT_VERSION, read_app_version
 
@@ -157,3 +167,136 @@ def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.Monke
 
     assert not (tmp_path / asset_name).exists()
     assert not (tmp_path / f"{asset_name}.part").exists()
+
+
+def _write_mac_app(app_path: Path, *, bundle_id: str = "com.snowfallhd.vodforge") -> None:
+    contents = app_path / "Contents"
+    contents.mkdir(parents=True, exist_ok=True)
+    with (contents / "Info.plist").open("wb") as handle:
+        plistlib.dump({"CFBundleIdentifier": bundle_id}, handle)
+
+
+def _mac_verification_runner(*, team_id: str = "76G5W4954G"):
+    def run(command, **_kwargs):
+        stderr = ""
+        if command[:3] == ["/usr/bin/codesign", "-d", "--verbose=4"]:
+            stderr = f"Identifier=com.snowfallhd.vodforge\nTeamIdentifier={team_id}\n"
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr=stderr)
+
+    return run
+
+
+def test_running_macos_app_finds_only_enclosing_bundle():
+    executable = Path("/Applications/VODForge.app/Contents/MacOS/VODForge")
+    assert running_macos_app(executable) == Path("/Applications/VODForge.app")
+    assert running_macos_app(Path("/usr/local/bin/vodforge")) is None
+
+
+def test_macos_update_requires_exact_bundle_and_team_identity(tmp_path: Path):
+    app_path = tmp_path / "VODForge.app"
+    _write_mac_app(app_path)
+    verify_macos_app(app_path, runner=_mac_verification_runner())
+
+    with pytest.raises(RuntimeError, match="Kryden Ventures"):
+        verify_macos_app(app_path, runner=_mac_verification_runner(team_id="WRONGTEAM"))
+
+    _write_mac_app(app_path, bundle_id="com.example.impostor")
+    with pytest.raises(RuntimeError, match="wrong application identifier"):
+        verify_macos_app(app_path, runner=_mac_verification_runner())
+
+
+def test_prepare_macos_update_extracts_direct_bundle_and_verifies_it(tmp_path: Path):
+    archive = tmp_path / "VODForge-macOS-arm64-v1.2.3.zip"
+    archive.write_bytes(b"release archive")
+    target = tmp_path / "Applications" / "VODForge.app"
+    _write_mac_app(target)
+
+    def runner(command, **kwargs):
+        if command[:4] == ["/usr/bin/ditto", "-x", "-k", str(archive)]:
+            _write_mac_app(Path(command[-1]) / "VODForge.app")
+        return _mac_verification_runner()(command, **kwargs)
+
+    plan = prepare_macos_update(archive, target, runner=runner)
+    assert plan.source_app == plan.staging_root / "VODForge.app"
+    assert plan.target_app == target
+    assert plan.staging_root.name.startswith("staged-")
+
+
+def test_macos_swap_script_reverifies_and_rolls_back(tmp_path: Path):
+    staging = tmp_path / "updates" / "v1.2.3" / "staged-test"
+    source = staging / "VODForge.app"
+    target = tmp_path / "Applications" / "VODForge.app"
+    _write_mac_app(source)
+    _write_mac_app(target)
+    script = write_macos_swap_script(MacUpdatePlan(source, target, staging)).read_text()
+
+    assert "codesign --verify --deep --strict" in script
+    assert "TeamIdentifier=76G5W4954G" in script
+    assert "stapler validate" in script
+    assert "spctl --assess" in script
+    assert 'mv "$old_app" "$target_app"' in script
+
+
+def test_launch_macos_update_uses_detached_argument_safe_handoff(tmp_path: Path):
+    staging = tmp_path / "updates" / "v1.2.3" / "staged-test"
+    source = staging / "VODForge.app"
+    target = tmp_path / "Applications" / "VODForge.app"
+    _write_mac_app(source)
+    _write_mac_app(target)
+    plan = MacUpdatePlan(source, target, staging)
+    calls = []
+
+    class Process:
+        returncode = None
+
+        def poll(self):
+            return None
+
+    def popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return Process()
+
+    launch_macos_update(plan, parent_pid=123, runner=_mac_verification_runner(), popen=popen)
+    command, kwargs = calls[0]
+    assert command[0] == "/bin/bash"
+    assert command[2:] == ["123", str(source), str(target), str(staging)]
+    assert kwargs["start_new_session"] is True
+    assert kwargs["close_fds"] is True
+
+
+def test_windows_update_requires_valid_owned_timestamped_signature(tmp_path: Path):
+    installer = tmp_path / "VODForge-Windows-Setup-v1.2.3.exe"
+    installer.write_bytes(b"signed installer")
+
+    def valid_runner(command, **_kwargs):
+        payload = (
+            '{"Status":"Valid","Subject":"CN=\\"Kryden Ventures, LLC\\", '
+            'O=\\"Kryden Ventures, LLC\\", C=US","Timestamp":"CN=Microsoft Time Stamp"}'
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=payload, stderr="")
+
+    verify_windows_authenticode(installer, runner=valid_runner)
+
+    def unsigned_runner(command, **_kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"Status":"NotSigned","Subject":"","Timestamp":""}',
+            stderr="",
+        )
+
+    with pytest.raises(RuntimeError, match="Authenticode"):
+        verify_windows_authenticode(installer, runner=unsigned_runner)
+
+    def wrong_publisher_runner(command, **_kwargs):
+        payload = json.dumps(
+            {
+                "Status": "Valid",
+                "Subject": 'CN="Example Corp", O="Example Corp", C=US',
+                "Timestamp": "CN=Microsoft Time Stamp",
+            }
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=payload, stderr="")
+
+    with pytest.raises(RuntimeError, match="Kryden Ventures"):
+        verify_windows_authenticode(installer, runner=wrong_publisher_runner)
