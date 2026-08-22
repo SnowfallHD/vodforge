@@ -125,6 +125,33 @@ def platform_font_families(platform_name: str | None = None) -> tuple[str, str]:
     return "TkDefaultFont", "TkFixedFont"
 
 
+def bounded_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
+    """Choose an initial size that stays clear of common taskbar and dock areas."""
+    width_margin = 80 if screen_width > 800 else 24
+    height_margin = 120 if screen_height > 640 else 48
+    return (
+        max(1, min(1180, screen_width - width_margin)),
+        max(1, min(900, screen_height - height_margin)),
+    )
+
+
+def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
+    raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
+    base = Path(raw_meipass) if raw_meipass else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
+    return base / "assets" / name
+
+
+def configure_windows_app_identity(platform_name: str | None = None) -> bool:
+    """Give Windows a stable taskbar identity instead of a Python/Tk fallback."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    if not platform_name.startswith("win"):
+        return False
+    import ctypes
+
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SnowfallHD.VODForge")  # type: ignore[attr-defined]
+    return True
+
+
 def runtime_executable_candidates(
     tool_name: str,
     *,
@@ -192,6 +219,53 @@ def ytdlp_ffmpeg_location(ffmpeg: str) -> str:
     if "\\" in ffmpeg and "/" not in ffmpeg:
         return parent.replace("/", "\\")
     return parent
+
+
+def choose_windows_output_directory(
+    initial_dir: str,
+    *,
+    runner: Any = subprocess.run,
+) -> str | None:
+    """Run the Windows shell folder picker out of process so shell failures cannot close VODForge."""
+    command = (
+        "$utf8=New-Object System.Text.UTF8Encoding($false);"
+        "[Console]::OutputEncoding=$utf8;$OutputEncoding=$utf8;"
+        "Add-Type -AssemblyName System.Windows.Forms;"
+        "$dialog=New-Object System.Windows.Forms.FolderBrowserDialog;"
+        "$dialog.Description='Choose where VODForge should save downloads.';"
+        "$dialog.ShowNewFolderButton=$true;"
+        "$initial=$env:VODFORGE_INITIAL_OUTPUT_DIR;"
+        "if($initial -and (Test-Path -LiteralPath $initial -PathType Container)){$dialog.SelectedPath=$initial};"
+        "if($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){"
+        "@{path=$dialog.SelectedPath} | ConvertTo-Json -Compress}"
+    )
+    environment = os.environ.copy()
+    environment["VODFORGE_INITIAL_OUTPUT_DIR"] = initial_dir
+    startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
+    result = runner(
+        ["powershell.exe", "-NoProfile", "-STA", "-Command", command],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=environment,
+        startupinfo=startupinfo,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode:
+        detail = str(result.stderr or "").strip()
+        raise RuntimeError(detail or "Windows could not open the folder browser.")
+    output = str(result.stdout or "").strip()
+    if not output:
+        return None
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Windows returned an unreadable folder selection.") from exc
+    selected = payload.get("path") if isinstance(payload, dict) else None
+    return str(selected) if selected else None
 
 
 def runtime_version_command(tool_name: str, executable: str) -> list[str]:
@@ -2015,10 +2089,24 @@ class DownloaderApp(tk.Tk):
             write_diagnostic(f"yt-dlp version: {getattr(yt_dlp.version, '__version__', 'unknown')}")
         else:
             write_diagnostic(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
+        try:
+            configure_windows_app_identity()
+        except (AttributeError, OSError) as exc:
+            write_diagnostic(f"Windows taskbar identity could not be set: {exc}")
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("1180x900")
-        self.minsize(980, 760)
+        self._app_icon_image: tk.PhotoImage | None = None
+        try:
+            if sys.platform.startswith("win"):
+                self.iconbitmap(default=str(bundled_asset_path("VODForge.ico")))
+            else:
+                self._app_icon_image = tk.PhotoImage(file=str(bundled_asset_path("VODForge.png")))
+                self.iconphoto(True, self._app_icon_image)
+        except tk.TclError as exc:
+            write_diagnostic(f"app icon could not be loaded: {exc}")
+        window_width, window_height = bounded_window_size(self.winfo_screenwidth(), self.winfo_screenheight())
+        self.geometry(f"{window_width}x{window_height}")
+        self.minsize(min(820, window_width), min(560, window_height))
         self.configure(bg=THEME["bg"])
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
@@ -2048,9 +2136,9 @@ class DownloaderApp(tk.Tk):
         self.cookie_file_path: Path | None = None
         self.cookie_file_var = tk.StringVar(value="No cookies loaded")
         self.cookie_browser_var = tk.StringVar(value="None")
-        self.embed_thumbnail_var = tk.BooleanVar(value=True)
+        self.embed_thumbnail_var = tk.BooleanVar(value=False)
         self.write_thumbnail_var = tk.BooleanVar(value=True)
-        self.embed_metadata_var = tk.BooleanVar(value=True)
+        self.embed_metadata_var = tk.BooleanVar(value=False)
         self.write_info_json_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="Ready")
         self.progress_var = tk.DoubleVar(value=0.0)
@@ -2120,94 +2208,134 @@ class DownloaderApp(tk.Tk):
         ttk.Label(hero_header, text="⬇ VODForge", style="Hero.TLabel").pack(side="left", anchor="w")
         self.update_button = ttk.Button(hero_header, text="Check for updates", command=self._check_for_updates)
         self.update_button.pack(side="right", anchor="e")
-        ttk.Label(
+        hero_description = ttk.Label(
             hero,
             text="VOD-ready MP4 downloads with H.264 CBR video, AAC audio, thumbnails, compact metadata, tags, and playlist packaging.",
             style="Muted.TLabel",
-        ).pack(anchor="w", pady=(3, 0))
-        ttk.Label(hero, text=f"Midnight Violet build · v{__version__}", style="Accent.TLabel").pack(anchor="w", pady=(6, 0))
+        )
+        hero_description.pack(anchor="w", pady=(3, 0))
+        hero_version = ttk.Label(hero, text=f"Midnight Violet build · v{__version__}", style="Accent.TLabel")
+        hero_version.pack(anchor="w", pady=(6, 0))
+
+        def adapt_hero(event: tk.Event[Any]) -> None:
+            if event.widget is not self:
+                return
+            if event.height < 720 and hero_description.winfo_manager():
+                hero_description.pack_forget()
+            elif event.height >= 720 and not hero_description.winfo_manager():
+                hero_description.pack(anchor="w", pady=(3, 0), before=hero_version)
+
+        self.bind("<Configure>", adapt_hero, add="+")
 
         self.main_notebook = ttk.Notebook(shell)
         self.main_notebook.pack(fill="both", expand=True, padx=4, pady=(8, 4))
         download_tab = ttk.Frame(self.main_notebook, style="Panel.TFrame")
         metadata_tab = ttk.Frame(self.main_notebook, style="Panel.TFrame")
+        log_tab = ttk.Frame(self.main_notebook, style="Panel.TFrame")
         self.download_tab = download_tab
         self.metadata_tab = metadata_tab
         self.main_notebook.add(download_tab, text="Download")
         self.main_notebook.add(metadata_tab, text="Metadata Browser")
+        self.main_notebook.add(log_tab, text="Log")
 
         download_tab.columnconfigure(0, weight=1)
-        download_tab.columnconfigure(1, weight=1)
-        download_tab.rowconfigure(5, weight=1)
+        download_tab.rowconfigure(0, weight=1)
 
-        url_frame = ttk.LabelFrame(download_tab, text="Source")
-        url_frame.grid(row=0, column=0, columnspan=2, sticky="ew", **pad)
+        settings = ttk.Frame(download_tab, style="Panel.TFrame")
+        settings.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
+        settings.columnconfigure(0, weight=1)
+        settings.columnconfigure(1, weight=1)
+        settings.columnconfigure(2, weight=1)
+
+        url_frame = ttk.LabelFrame(settings, text="Source")
+        url_frame.grid(row=0, column=0, sticky="nsew", **pad)
         ttk.Label(url_frame, text="YouTube URL").grid(row=0, column=0, sticky="w", padx=10, pady=10)
-        ttk.Entry(url_frame, textvariable=self.url_var).grid(row=0, column=1, sticky="ew", padx=10, pady=10)
-        self.preview_metadata_button = ttk.Button(url_frame, text="Preview Metadata", command=self._fetch_metadata)
+        ttk.Entry(url_frame, textvariable=self.url_var, width=12).grid(row=0, column=1, sticky="ew", padx=10, pady=10)
+        self.preview_metadata_button = ttk.Button(url_frame, text="Preview", command=self._fetch_metadata)
         self.preview_metadata_button.grid(row=0, column=2, sticky="e", padx=10, pady=10)
-        ttk.Label(url_frame, text="Batch URL text file").grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
-        ttk.Label(url_frame, textvariable=self.url_list_file_var, style="Muted.TLabel").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 10))
-        ttk.Button(url_frame, text="Load URL List…", command=self._load_url_list_file).grid(row=1, column=2, sticky="e", padx=10, pady=(0, 10))
-        ttk.Label(url_frame, text="YouTube cookies.txt").grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
-        ttk.Label(url_frame, textvariable=self.cookie_file_var, style="Muted.TLabel").grid(row=2, column=1, sticky="w", padx=10, pady=(0, 10))
-        ttk.Button(url_frame, text="Load Cookies…", command=self._load_cookie_file).grid(row=2, column=2, sticky="e", padx=10, pady=(0, 10))
-        ttk.Label(url_frame, text="Browser cookies").grid(row=3, column=0, sticky="w", padx=10, pady=(0, 10))
+
+        optional_source = ttk.Frame(url_frame)
+        ttk.Label(optional_source, text="Batch URL text file").grid(row=0, column=0, sticky="w", padx=10, pady=(4, 8))
+        ttk.Label(optional_source, textvariable=self.url_list_file_var, style="Muted.TLabel").grid(row=0, column=1, sticky="w", padx=10, pady=(4, 8))
+        ttk.Button(optional_source, text="Load URL List…", command=self._load_url_list_file).grid(row=0, column=2, sticky="e", padx=10, pady=(4, 8))
+        ttk.Label(optional_source, text="YouTube cookies.txt").grid(row=1, column=0, sticky="w", padx=10, pady=(0, 8))
+        ttk.Label(optional_source, textvariable=self.cookie_file_var, style="Muted.TLabel").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 8))
+        ttk.Button(optional_source, text="Load Cookies…", command=self._load_cookie_file).grid(row=1, column=2, sticky="e", padx=10, pady=(0, 8))
+        ttk.Label(optional_source, text="Browser cookies").grid(row=2, column=0, sticky="w", padx=10, pady=(0, 8))
         ttk.Combobox(
-            url_frame,
+            optional_source,
             textvariable=self.cookie_browser_var,
             values=COOKIE_BROWSER_OPTIONS,
             state="readonly",
             width=18,
-        ).grid(row=3, column=1, sticky="w", padx=10, pady=(0, 10))
+        ).grid(row=2, column=1, sticky="w", padx=10, pady=(0, 8))
+        optional_source.columnconfigure(1, weight=1)
+
+        def toggle_optional_source() -> None:
+            if optional_source.winfo_manager():
+                optional_source.grid_remove()
+                optional_source_button.configure(text="Batch / cookies ▸")
+            else:
+                content_row = 2 if int(optional_source_button.grid_info()["row"]) == 1 else 1
+                optional_source.grid(row=content_row, column=0, columnspan=4, sticky="ew")
+                optional_source_button.configure(text="Batch / cookies ▾")
+
+        optional_source_button = ttk.Button(
+            url_frame,
+            text="Batch / cookies ▸",
+            command=toggle_optional_source,
+        )
+        optional_source_button.grid(row=0, column=3, sticky="e", padx=10, pady=10)
         url_frame.columnconfigure(1, weight=1)
 
-        out_frame = ttk.LabelFrame(download_tab, text="Destination")
-        out_frame.grid(row=1, column=0, sticky="ew", **pad)
+        out_frame = ttk.LabelFrame(settings, text="Destination")
+        out_frame.grid(row=0, column=1, sticky="nsew", **pad)
         ttk.Label(out_frame, text="Output folder").grid(row=0, column=0, sticky="w", padx=10, pady=10)
-        ttk.Entry(out_frame, textvariable=self.output_var).grid(row=0, column=1, sticky="ew", padx=10, pady=10)
+        ttk.Entry(out_frame, textvariable=self.output_var, width=8).grid(row=0, column=1, sticky="ew", padx=10, pady=10)
         ttk.Button(out_frame, text="Browse…", command=self._browse_output).grid(row=0, column=2, sticky="e", padx=10, pady=10)
         out_frame.columnconfigure(1, weight=1)
 
-        options = ttk.LabelFrame(download_tab, text="Download Options")
-        options.grid(row=1, column=1, rowspan=2, sticky="nsew", **pad)
-        ttk.Label(options, text="Quality ceiling").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+        options = ttk.LabelFrame(settings, text="Download Options")
+        options.grid(row=0, column=2, sticky="nsew", **pad)
+        ttk.Label(options, text="Quality ceiling").grid(row=0, column=0, sticky="w", padx=10, pady=4)
         ttk.Combobox(
             options,
             textvariable=self.quality_var,
             values=list(QUALITY_OPTIONS.keys()),
             state="readonly",
-            width=26,
-        ).grid(row=0, column=1, sticky="ew", padx=10, pady=8)
-        ttk.Label(options, text="Output mode").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+            width=16,
+        ).grid(row=0, column=1, sticky="ew", padx=10, pady=4)
+        ttk.Label(options, text="Output mode").grid(row=1, column=0, sticky="w", padx=10, pady=4)
         export_mode_combo = ttk.Combobox(
             options,
             textvariable=self.export_mode_var,
             values=EXPORT_MODES,
             state="readonly",
-            width=26,
+            width=16,
         )
-        export_mode_combo.grid(row=1, column=1, sticky="ew", padx=10, pady=8)
+        export_mode_combo.grid(row=1, column=1, sticky="ew", padx=10, pady=4)
         export_mode_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
-        ttk.Label(options, text="Extra tags").grid(row=2, column=0, sticky="w", padx=10, pady=8)
-        ttk.Entry(options, textvariable=self.tags_var).grid(row=2, column=1, sticky="ew", padx=10, pady=8)
-        ttk.Checkbutton(options, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=3, column=0, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(options, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=3, column=1, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(options, text="Embed metadata", variable=self.embed_metadata_var).grid(row=4, column=0, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(options, text="Save compact JSON", variable=self.write_info_json_var).grid(row=4, column=1, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(options, text="Single video only (ignore playlist)", variable=self.single_video_only_var).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=4)
+
+        advanced_options = ttk.Frame(options)
+        ttk.Label(advanced_options, text="Extra tags").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+        ttk.Entry(advanced_options, textvariable=self.tags_var).grid(row=0, column=1, sticky="ew", padx=10, pady=8)
+        ttk.Checkbutton(advanced_options, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=1, column=0, sticky="w", padx=10, pady=4)
+        ttk.Checkbutton(advanced_options, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=1, column=1, sticky="w", padx=10, pady=4)
+        ttk.Checkbutton(advanced_options, text="Embed metadata", variable=self.embed_metadata_var).grid(row=2, column=0, sticky="w", padx=10, pady=4)
+        ttk.Checkbutton(advanced_options, text="Save compact JSON", variable=self.write_info_json_var).grid(row=2, column=1, sticky="w", padx=10, pady=4)
+        ttk.Checkbutton(advanced_options, text="Single video only (ignore playlist)", variable=self.single_video_only_var).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=4)
         nvenc_label = "Use NVIDIA NVENC GPU encoding"
         if sys.platform == "darwin":
             nvenc_label += " (not available on macOS)"
-        nvenc_checkbox = ttk.Checkbutton(options, text=nvenc_label, variable=self.use_nvenc_var)
-        nvenc_checkbox.grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=4)
+        nvenc_checkbox = ttk.Checkbutton(advanced_options, text=nvenc_label, variable=self.use_nvenc_var)
+        nvenc_checkbox.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=4)
         if sys.platform == "darwin":
             self.use_nvenc_var.set(False)
             nvenc_checkbox.state(["disabled"])
-        ttk.Checkbutton(options, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=4)
+        ttk.Checkbutton(advanced_options, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=4)
 
-        self.manual_settings_frame = ttk.LabelFrame(options, text="Manual Override Settings")
-        self.manual_settings_frame.grid(row=8, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 8))
+        self.manual_settings_frame = ttk.LabelFrame(advanced_options, text="Manual Override Settings")
+        self.manual_settings_frame.grid(row=6, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 8))
         ttk.Label(self.manual_settings_frame, text="Video bitrate (kbps)").grid(row=0, column=0, sticky="w", padx=8, pady=6)
         ttk.Entry(self.manual_settings_frame, textvariable=self.manual_video_bitrate_var, width=12).grid(row=0, column=1, sticky="ew", padx=8, pady=6)
         self._manual_help_icon(0, "Target video bitrate for the H.264 encode. Higher = larger file and more CPU time; it cannot add detail beyond the source.")
@@ -2232,27 +2360,68 @@ class DownloaderApp(tk.Tk):
         ).grid(row=5, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
         self.manual_settings_frame.columnconfigure(1, weight=1)
         self._refresh_manual_settings_visibility()
+        advanced_options.columnconfigure(1, weight=1)
+
+        def toggle_advanced_options() -> None:
+            if advanced_options.winfo_manager():
+                advanced_options.grid_remove()
+                advanced_options_button.configure(text="More options ▸")
+            else:
+                advanced_options.grid(row=3, column=0, columnspan=2, sticky="ew")
+                advanced_options_button.configure(text="More options ▾")
+
+        advanced_options_button = ttk.Button(options, text="More options ▸", command=toggle_advanced_options)
+        advanced_options_button.grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 2))
         options.columnconfigure(1, weight=1)
 
-        quick_meta = ttk.LabelFrame(download_tab, text="Metadata Preview")
-        quick_meta.grid(row=2, column=0, sticky="nsew", **pad)
-        ttk.Label(
-            quick_meta,
-            text="Use the Metadata Browser tab for the full playlist table, long titles, tags, descriptions, and thumbnails.",
-            style="Muted.TLabel",
-            wraplength=620,
-            justify="left",
-        ).pack(anchor="w", padx=10, pady=(10, 4))
-        ttk.Button(quick_meta, text="Open Metadata Browser", command=lambda: self.main_notebook.select(metadata_tab), style="Accent.TButton").pack(anchor="w", padx=10, pady=(4, 10))
+        def adapt_settings(event: tk.Event[Any]) -> None:
+            if event.widget is not download_tab:
+                return
+            if event.width >= 1050:
+                settings.columnconfigure(0, weight=4)
+                settings.columnconfigure(1, weight=3)
+                settings.columnconfigure(2, weight=3)
+                url_frame.grid_configure(row=0, column=0, columnspan=1)
+                out_frame.grid_configure(row=0, column=1, columnspan=1)
+                options.grid_configure(row=0, column=2, columnspan=1)
+                optional_source_button.grid_configure(row=1, column=0, columnspan=3, sticky="w")
+                if optional_source.winfo_manager():
+                    optional_source.grid_configure(row=2)
+            else:
+                settings.columnconfigure(0, weight=2)
+                settings.columnconfigure(1, weight=3)
+                settings.columnconfigure(2, weight=0)
+                url_frame.grid_configure(row=0, column=0, columnspan=3)
+                out_frame.grid_configure(row=1, column=0, columnspan=1)
+                options.grid_configure(row=1, column=1, columnspan=2)
+                optional_source_button.grid_configure(row=0, column=3, columnspan=1, sticky="e")
+                if optional_source.winfo_manager():
+                    optional_source.grid_configure(row=1)
+
+        download_tab.bind("<Configure>", adapt_settings, add="+")
+
+        log_tab.columnconfigure(0, weight=1)
+        log_tab.rowconfigure(1, weight=1)
+        log_actions = ttk.Frame(log_tab, style="Panel.TFrame")
+        log_actions.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 0))
+        ttk.Label(log_actions, text="Download and processing activity", style="Accent.TLabel").pack(side="left")
+        ttk.Button(log_actions, text="Open Log Folder", command=self._open_log_folder).pack(side="right")
+        log_frame = ttk.LabelFrame(log_tab, text="Activity Log")
+        log_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+        self.log = tk.Text(log_frame, height=5, wrap="word", state="disabled", bg="#050607", fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
+        log_scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
+        self.log.configure(yscrollcommand=log_scrollbar.set)
+        self.log.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        log_scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
 
         progress = ttk.LabelFrame(download_tab, text="Progress")
-        progress.grid(row=3, column=0, columnspan=2, sticky="ew", **pad)
+        progress.grid(row=1, column=0, sticky="ew", **pad)
         self.progress_bar = ttk.Progressbar(progress, variable=self.progress_var, maximum=100, mode="determinate")
-        self.progress_bar.pack(fill="x", padx=10, pady=(10, 5))
-        ttk.Label(progress, textvariable=self.status_var, style="Muted.TLabel").pack(anchor="w", padx=10, pady=(0, 10))
+        self.progress_bar.pack(fill="x", padx=10, pady=(6, 3))
+        ttk.Label(progress, textvariable=self.status_var, style="Muted.TLabel").pack(anchor="w", padx=10, pady=(0, 6))
 
         buttons = ttk.Frame(download_tab, style="Panel.TFrame")
-        buttons.grid(row=4, column=0, columnspan=2, sticky="ew", **pad)
+        buttons.grid(row=2, column=0, sticky="ew", **pad)
         self.download_button = ttk.Button(buttons, text="Download MP4", command=self._start_download, style="Accent.TButton")
         self.download_button.pack(side="left", padx=4)
         self.cancel_button = ttk.Button(buttons, text="Cancel", command=self._cancel, state="disabled")
@@ -2262,12 +2431,7 @@ class DownloaderApp(tk.Tk):
         self.skip_url_button = ttk.Button(buttons, text="Skip URL", command=self._skip_url, state="disabled")
         self.skip_url_button.pack(side="left", padx=4)
         ttk.Button(buttons, text="Open Folder", command=self._open_folder).pack(side="right", padx=4)
-        ttk.Button(buttons, text="Open Log Folder", command=self._open_log_folder).pack(side="right", padx=4)
-
-        log_frame = ttk.LabelFrame(download_tab, text="Log")
-        log_frame.grid(row=5, column=0, columnspan=2, sticky="nsew", **pad)
-        self.log = tk.Text(log_frame, height=10, wrap="word", state="disabled", bg="#050607", fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
-        self.log.pack(fill="both", expand=True, padx=10, pady=10)
+        ttk.Button(buttons, text="View Log", command=lambda: self.main_notebook.select(log_tab)).pack(side="right", padx=4)
 
         metadata_tab.columnconfigure(0, weight=3)
         metadata_tab.columnconfigure(1, weight=2)
@@ -2545,7 +2709,25 @@ class DownloaderApp(tk.Tk):
         )
 
     def _browse_output(self) -> None:
-        folder = filedialog.askdirectory(initialdir=self.output_var.get() or str(Path.home()))
+        initial_dir = self.output_var.get() or str(Path.home())
+        try:
+            if sys.platform.startswith("win"):
+                folder = choose_windows_output_directory(initial_dir)
+            else:
+                folder = filedialog.askdirectory(initialdir=initial_dir, mustexist=True)
+        except (OSError, RuntimeError, tk.TclError) as exc:
+            self._append_log(f"Output folder browser failed: {exc}")
+            guidance = (
+                "Windows could not browse that location. VODForge stayed open.\n\n"
+                "You can paste a mapped-drive or \\\\server\\share path directly into Output folder."
+                if sys.platform.startswith("win")
+                else "VODForge could not browse that location. You can type or paste the folder path directly."
+            )
+            messagebox.showerror(
+                APP_NAME,
+                f"{guidance}\n\nDetails: {exc}",
+            )
+            return
         if folder:
             self.output_var.set(folder)
 

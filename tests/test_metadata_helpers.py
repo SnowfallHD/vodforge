@@ -31,6 +31,7 @@ from yt_downloader.app import (
     choose_audio_bitrate_kbps,
     choose_best_audio_format,
     choose_best_video_format,
+    choose_windows_output_directory,
     cleanup_legacy_encode_sidecars,
     compact_video_metadata,
     run_cancellable_blocking_step,
@@ -43,6 +44,9 @@ from yt_downloader.app import (
     format_ytdlp_user_error,
     parse_url_list_text,
     diagnostics_dir,
+    bounded_window_size,
+    bundled_asset_path,
+    configure_windows_app_identity,
     platform_font_families,
     prepare_batch_item_url,
     playlist_folder_name,
@@ -73,6 +77,55 @@ def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")
     assert platform_font_families("linux") == ("TkDefaultFont", "TkFixedFont")
+
+
+def test_initial_window_size_leaves_room_for_screen_chrome():
+    assert bounded_window_size(1920, 1080) == (1180, 900)
+    assert bounded_window_size(1366, 768) == (1180, 648)
+    assert bounded_window_size(1280, 720) == (1180, 600)
+    assert bounded_window_size(800, 600) == (776, 552)
+
+
+def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):
+    assert bundled_asset_path("VODForge.ico", meipass=tmp_path) == tmp_path / "assets" / "VODForge.ico"
+    assert bundled_asset_path("VODForge.png", meipass=None, repo_root=tmp_path) == tmp_path / "assets" / "VODForge.png"
+
+
+def test_windows_app_identity_is_a_noop_on_other_platforms():
+    assert configure_windows_app_identity("darwin") is False
+    assert configure_windows_app_identity("linux") is False
+
+
+def test_windows_output_picker_isolated_process_returns_network_path(monkeypatch: pytest.MonkeyPatch):
+    class StartupInfo:
+        dwFlags = 0
+
+    monkeypatch.setattr(app_module.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(app_module.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+    observed = {}
+
+    def runner(command, **kwargs):
+        observed["command"] = command
+        observed["environment"] = kwargs["env"]
+        return app_module.subprocess.CompletedProcess(command, 0, '{"path":"\\\\\\\\nas\\\\vods"}', "")
+
+    assert choose_windows_output_directory(r"Z:\\VODs", runner=runner) == r"\\nas\vods"
+    assert observed["command"][:3] == ["powershell.exe", "-NoProfile", "-STA"]
+    assert observed["environment"]["VODFORGE_INITIAL_OUTPUT_DIR"] == r"Z:\\VODs"
+
+
+def test_windows_output_picker_failure_is_reported_without_closing_app(monkeypatch: pytest.MonkeyPatch):
+    class StartupInfo:
+        dwFlags = 0
+
+    monkeypatch.setattr(app_module.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(app_module.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+
+    def runner(command, **_kwargs):
+        return app_module.subprocess.CompletedProcess(command, 1, "", "network provider failed")
+
+    with pytest.raises(RuntimeError, match="network provider failed"):
+        choose_windows_output_directory(r"Z:\\VODs", runner=runner)
 
 
 def test_macos_runtime_candidates_cover_bundle_vendor_and_homebrew_paths():

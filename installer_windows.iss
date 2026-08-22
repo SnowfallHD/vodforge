@@ -30,6 +30,7 @@ CloseApplications=yes
 RestartApplications=yes
 CloseApplicationsFilter={#MyAppExeName}
 WizardStyle=modern
+SetupIconFile=assets\VODForge.ico
 
 [Files]
 Source: "dist\VODForge\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

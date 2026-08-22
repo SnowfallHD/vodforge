@@ -48,6 +48,12 @@ build_version_dir="build/version"
 mkdir -p "$build_version_dir"
 build_version_file="$build_version_dir/VODFORGE_VERSION"
 printf '%s' "$build_version" > "$build_version_file"
+icon_file="assets/VODForge.icns"
+icon_png="assets/VODForge.png"
+if [[ ! -f "$icon_file" || ! -f "$icon_png" ]]; then
+  echo "VODForge icon assets are missing."
+  exit 1
+fi
 
 ffmpeg="$(command -v ffmpeg || true)"
 ffprobe="$(command -v ffprobe || true)"
@@ -65,7 +71,9 @@ fi
   --onedir \
   --name "VODForge" \
   --osx-bundle-identifier "com.snowfallhd.vodforge" \
+  --icon "$icon_file" \
   --add-data "$build_version_file:." \
+  --add-data "$icon_png:assets" \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
   --add-binary "$deno:." \
@@ -74,6 +82,22 @@ fi
 app_binary="dist/VODForge.app/Contents/MacOS/VODForge"
 if [[ ! -x "$app_binary" ]]; then
   echo "Expected application executable was not created: $app_binary"
+  exit 1
+fi
+
+app_plist="dist/VODForge.app/Contents/Info.plist"
+bundle_version="${build_version%%-*}"
+for version_key in CFBundleShortVersionString CFBundleVersion; do
+  if /usr/libexec/PlistBuddy -c "Print :$version_key" "$app_plist" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :$version_key $bundle_version" "$app_plist"
+  else
+    /usr/libexec/PlistBuddy -c "Add :$version_key string $bundle_version" "$app_plist"
+  fi
+done
+
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_plist")" != "$bundle_version" ]] || \
+   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_plist")" != "$bundle_version" ]]; then
+  echo "Packaged macOS version metadata does not match $bundle_version."
   exit 1
 fi
 
