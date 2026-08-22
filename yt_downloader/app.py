@@ -95,6 +95,7 @@ BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
 AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
 AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
+RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS = 60
 
 
 def diagnostics_dir(
@@ -213,7 +214,9 @@ def probe_runtime_version(tool_name: str, executable: str) -> str:
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=15,
+        # Rosetta's first translation of the Intel Deno binary can take around
+        # 30 seconds on Apple silicon; keep the release gate bounded above it.
+        timeout=RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
         startupinfo=startupinfo,
         creationflags=creationflags,
     )

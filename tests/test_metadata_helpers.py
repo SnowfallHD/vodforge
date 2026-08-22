@@ -9,6 +9,7 @@ import pytest
 
 import yt_downloader.app as app_module
 from yt_downloader.app import (
+    RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
     AUDIO_BITRATE,
     AUDIO_SAMPLE_RATE,
     DownloadJob,
@@ -114,6 +115,10 @@ def test_runtime_version_commands_use_each_tool_cli_contract():
     assert runtime_version_command("ffmpeg", "/bundle/ffmpeg") == ["/bundle/ffmpeg", "-version"]
     assert runtime_version_command("ffprobe", "/bundle/ffprobe") == ["/bundle/ffprobe", "-version"]
     assert runtime_version_command("deno", "/bundle/deno") == ["/bundle/deno", "--version"]
+
+
+def test_runtime_smoke_timeout_allows_bounded_rosetta_cold_translation():
+    assert RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS == 60
 
 
 def test_build_tags_display_text_uses_comma_space_for_copying():
