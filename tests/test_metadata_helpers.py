@@ -52,6 +52,7 @@ from yt_downloader.app import (
     configure_windows_app_identity,
     flatten_alpha_image,
     focus_icon_color_variant,
+    focus_library_layout_mode,
     focus_layout_mode,
     render_monochrome_icon,
     rounded_contain_image,
@@ -138,6 +139,14 @@ def test_focus_layout_collapses_before_live_details_are_clipped():
     assert focus_layout_mode(1000, 720) == "balanced"
     assert focus_layout_mode(920, 650) == "compact"
     assert focus_layout_mode(820, 560) == "compact"
+
+
+def test_focus_library_layout_protects_selected_item_at_medium_widths():
+    assert focus_library_layout_mode(1180) == "wide"
+    assert focus_library_layout_mode(1080) == "wide"
+    assert focus_library_layout_mode(1079) == "balanced"
+    assert focus_library_layout_mode(920) == "balanced"
+    assert focus_library_layout_mode(919) == "compact"
 
 
 def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):

@@ -163,6 +163,15 @@ def focus_layout_mode(width: int, height: int) -> str:
     return "wide"
 
 
+def focus_library_layout_mode(width: int) -> str:
+    """Protect the selected item before the media table consumes medium widths."""
+    if width < 920:
+        return "compact"
+    if width < 1080:
+        return "balanced"
+    return "wide"
+
+
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
     raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
     base = Path(raw_meipass) if raw_meipass else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
@@ -3825,8 +3834,9 @@ class DownloaderApp(tk.Tk):
 
     def _build_focus_library_view(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=3)
-        parent.rowconfigure(2, weight=2)
+        parent.rowconfigure(1, weight=2, minsize=125)
+        parent.rowconfigure(2, weight=3, minsize=180)
+        self.focus_library_view = parent
 
         actions = ttk.Frame(parent, style="FocusShell.TFrame")
         actions.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 10))
@@ -3924,10 +3934,10 @@ class DownloaderApp(tk.Tk):
             add="+",
         )
         ttk.Label(details, text="TAGS", style="FocusEyebrow.TLabel").grid(row=3, column=0, sticky="nw", pady=(0, 4))
-        self.pulled_tags_text = tk.Text(details, height=2, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
+        self.pulled_tags_text = tk.Text(details, height=1, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
         self.pulled_tags_text.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
         ttk.Label(details, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=5, column=0, sticky="nw", pady=(0, 4))
-        self.description_text = tk.Text(details, height=3, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
+        self.description_text = tk.Text(details, height=2, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
         self.description_text.grid(row=6, column=0, sticky="nsew")
         details.rowconfigure(4, weight=2)
         details.rowconfigure(6, weight=3)
@@ -3940,8 +3950,8 @@ class DownloaderApp(tk.Tk):
         summary.rowconfigure(1, weight=1)
         ttk.Label(summary, text="SOURCE SELECTED FROM YOUTUBE", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
         ttk.Label(summary, text="FINAL OUTPUT FILE", style="FocusEyebrow.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 6))
-        self.source_summary_text = tk.Text(summary, height=4, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
-        self.output_summary_text = tk.Text(summary, height=4, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
+        self.source_summary_text = tk.Text(summary, height=8, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
+        self.output_summary_text = tk.Text(summary, height=8, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
         self.source_summary_text.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         self.output_summary_text.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
         self.focus_library_summary = summary
@@ -4496,6 +4506,7 @@ class DownloaderApp(tk.Tk):
         self._focus_layout = mode
         compact = mode == "compact"
         balanced = mode == "balanced"
+        library_mode = "compact" if compact else focus_library_layout_mode(width)
         horizontal_pad = 20 if compact else 42 if balanced else 100
         self.focus_shell.pack_configure(padx=12 if compact else 20, pady=(10 if compact else 16, 10 if compact else 14))
         self.focus_command_area.grid_configure(padx=horizontal_pad, pady=(18 if compact else 26 if balanced else 42, 8 if compact else 14))
@@ -4556,23 +4567,38 @@ class DownloaderApp(tk.Tk):
                 if not button.winfo_manager():
                     button.pack(side="left", padx=(6, 0))
 
-        if compact:
+        if library_mode == "compact":
+            self.focus_library_view.rowconfigure(1, weight=2, minsize=125)
+            self.focus_library_view.rowconfigure(2, weight=3, minsize=180)
             self.focus_library_details.grid_remove()
             self.focus_queue_panel.grid_configure(column=0, columnspan=2, padx=0)
             self.focus_metadata_content.columnconfigure(0, weight=1)
-            self.focus_metadata_content.columnconfigure(1, weight=0)
+            self.focus_metadata_content.columnconfigure(1, weight=0, minsize=0)
             for column in ("creator", "id", "location"):
                 self.video_tree.column(column, width=0, minwidth=0, stretch=False)
             self.video_tree.column("title", minwidth=150)
         else:
+            if library_mode == "balanced":
+                self.focus_library_view.rowconfigure(1, weight=2, minsize=190)
+                self.focus_library_view.rowconfigure(2, weight=3, minsize=210)
+            else:
+                self.focus_library_view.rowconfigure(1, weight=2, minsize=220)
+                self.focus_library_view.rowconfigure(2, weight=3, minsize=230)
             self.focus_queue_panel.grid_configure(column=0, columnspan=1, padx=(0, 18))
             self.focus_library_details.grid(row=0, column=1, sticky="nsew")
-            self.focus_metadata_content.columnconfigure(0, weight=3)
-            self.focus_metadata_content.columnconfigure(1, weight=2)
-            self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
-            self.video_tree.column("id", width=90, minwidth=72, stretch=False)
-            self.video_tree.column("location", width=120, minwidth=90, stretch=False)
-            self.video_tree.column("title", minwidth=220)
+            if library_mode == "balanced":
+                self.focus_metadata_content.columnconfigure(0, weight=5)
+                self.focus_metadata_content.columnconfigure(1, weight=4, minsize=300)
+                for column in ("creator", "id", "location"):
+                    self.video_tree.column(column, width=0, minwidth=0, stretch=False)
+                self.video_tree.column("title", minwidth=170)
+            else:
+                self.focus_metadata_content.columnconfigure(0, weight=3)
+                self.focus_metadata_content.columnconfigure(1, weight=2, minsize=320)
+                self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
+                self.video_tree.column("id", width=90, minwidth=72, stretch=False)
+                self.video_tree.column("location", width=120, minwidth=90, stretch=False)
+                self.video_tree.column("title", minwidth=220)
         self._sync_focus_destination()
         self._refresh_focus_run_deck()
 
