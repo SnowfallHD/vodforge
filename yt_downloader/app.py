@@ -48,9 +48,11 @@ from .updates import (
 from .version import __version__
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageDraw, ImageOps, ImageTk
 except Exception:  # pragma: no cover - thumbnail preview becomes unavailable
     Image = None
+    ImageDraw = None
+    ImageOps = None
     ImageTk = None
 
 try:
@@ -152,10 +154,31 @@ def metadata_layout_mode(width: int) -> str:
     return "three-column" if width >= 700 else "two-column"
 
 
+def focus_layout_mode(width: int, height: int) -> str:
+    """Choose the Focus Deck density without introducing a page scrollbar."""
+    if width < 920 or height < 690:
+        return "compact"
+    if width < 1080 or height < 760:
+        return "balanced"
+    return "wide"
+
+
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
     raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
     base = Path(raw_meipass) if raw_meipass else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
     return base / "assets" / name
+
+
+def rounded_cover_image(source: Any, size: tuple[int, int], radius: int) -> Any:
+    """Return a cover-cropped RGBA image with clean transparent corners."""
+    if Image is None or ImageDraw is None or ImageOps is None:
+        raise RuntimeError("Pillow is required for thumbnail rendering")
+    resampling = getattr(Image, "Resampling", Image)
+    cover = ImageOps.fit(source.convert("RGBA"), size, method=resampling.LANCZOS, centering=(0.5, 0.5))
+    mask = Image.new("L", size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=max(0, radius), fill=255)
+    cover.putalpha(mask)
+    return cover
 
 
 def configure_windows_app_identity(platform_name: str | None = None) -> bool:
@@ -421,16 +444,16 @@ def run_cancellable_blocking_step(
 
 THEME = {
     "bg": "#08090a",
-    "panel": "#0f1011",
-    "surface": "#191a1b",
-    "surface_2": "#23252a",
+    "panel": "#0d0f12",
+    "surface": "#121419",
+    "surface_2": "#1a1d24",
     "text": "#f7f8f8",
-    "muted": "#8a8f98",
-    "subtle": "#62666d",
+    "muted": "#9297a3",
+    "subtle": "#636874",
     "accent": "#7170ff",
     "accent_dark": "#5e6ad2",
-    "success": "#10b981",
-    "border": "#34343a",
+    "success": "#35d07f",
+    "border": "#2b2e37",
 }
 FONT_UI_FAMILY, FONT_MONO_FAMILY = platform_font_families()
 FONT_UI = (FONT_UI_FAMILY, 10)
@@ -2037,8 +2060,8 @@ class ToolTip:
         self.widget = widget
         self.text = text
         self.tip: tk.Toplevel | None = None
-        widget.bind("<Enter>", self.show)
-        widget.bind("<Leave>", self.hide)
+        widget.bind("<Enter>", self.show, add="+")
+        widget.bind("<Leave>", self.hide, add="+")
 
     def show(self, _event: Any = None) -> None:
         if self.tip is not None or not self.text:
@@ -2073,6 +2096,166 @@ class ToolTip:
             except tk.TclError:
                 pass
             self.tip = None
+
+
+class SleekProgressbar(tk.Canvas):
+    """A thin, borderless progress track with ttk-compatible controls."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        variable: tk.Variable | None = None,
+        maximum: float = 100.0,
+        value: float = 0.0,
+        mode: str = "determinate",
+        height: int = 5,
+        track_color: str = THEME["surface_2"],
+        bar_color: str = THEME["accent"],
+        **kwargs: Any,
+    ) -> None:
+        kwargs.pop("style", None)
+        super().__init__(parent, height=height, bg=THEME["bg"], bd=0, highlightthickness=0, **kwargs)
+        self._maximum = max(1.0, float(maximum))
+        self._mode = mode
+        self._track_color = track_color
+        self._bar_color = bar_color
+        self._phase = 0.0
+        self._after_id: str | None = None
+        self._variable = variable if variable is not None else tk.DoubleVar(master=self, value=value)
+        if variable is not None and value:
+            self._variable.set(value)
+        self._variable.trace_add("write", lambda *_args: self._redraw())
+        self.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self.after_idle(self._redraw)
+
+    def configure(self, cnf: Any | None = None, **kwargs: Any) -> Any:
+        if cnf:
+            kwargs.update(cnf)
+        if "mode" in kwargs:
+            self._mode = str(kwargs.pop("mode"))
+        if "maximum" in kwargs:
+            self._maximum = max(1.0, float(kwargs.pop("maximum")))
+        if "value" in kwargs:
+            self._variable.set(float(kwargs.pop("value")))
+        result = super().configure(**kwargs) if kwargs else None
+        self._redraw()
+        return result
+
+    config = configure
+
+    def start(self, interval: int = 50) -> None:
+        self.stop()
+        self._mode = "indeterminate"
+
+        def tick() -> None:
+            self._phase = (self._phase + 0.035) % 1.0
+            self._redraw()
+            self._after_id = self.after(interval, tick)
+
+        tick()
+
+    def stop(self) -> None:
+        if self._after_id is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+
+    def _redraw(self) -> None:
+        try:
+            width = max(1, self.winfo_width())
+            height = max(3, self.winfo_height())
+        except tk.TclError:
+            return
+        self.delete("all")
+        y1 = max(0, (height - 3) // 2)
+        y2 = min(height, y1 + 3)
+        self.create_rectangle(0, y1, width, y2, fill=self._track_color, outline="")
+        if self._mode == "indeterminate":
+            segment = max(24, int(width * 0.24))
+            start = max(0, int((width + segment) * self._phase) - segment)
+            end = min(width, start + segment)
+        else:
+            try:
+                fraction = max(0.0, min(1.0, float(self._variable.get()) / self._maximum))
+            except (TypeError, ValueError, tk.TclError):
+                fraction = 0.0
+            start, end = 0, int(width * fraction)
+        if end > start:
+            self.create_rectangle(start, y1, end, y2, fill=self._bar_color, outline="")
+            if y1 > 0:
+                self.create_line(start, y1, end, y1, fill="#9a96ff")
+
+
+class PillAction(tk.Canvas):
+    """A compact rounded action surface for header utilities."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        textvariable: tk.StringVar,
+        command: Callable[[], None],
+        image: Any | None = None,
+        width: int = 240,
+        height: int = 34,
+    ) -> None:
+        super().__init__(parent, width=width, height=height, bg=THEME["bg"], bd=0, highlightthickness=0, cursor="hand2", takefocus=1)
+        self._textvariable = textvariable
+        self._command = command
+        self._icon = image
+        self._hovered = False
+        self._background_image: Any | None = None
+        self._background_item = self.create_image(0, 0, anchor="nw")
+        self._icon_item = self.create_image(15, height // 2, image=image, anchor="w") if image is not None else None
+        self._text_item = self.create_text(18 if image is None else 38, height // 2, text=textvariable.get(), fill=THEME["muted"], font=FONT_UI_SMALL, anchor="w")
+        textvariable.trace_add("write", lambda *_args: self._sync_text())
+        self.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self.bind("<Enter>", lambda _event: self._set_hover(True), add="+")
+        self.bind("<Leave>", lambda _event: self._set_hover(False), add="+")
+        self.bind("<Button-1>", lambda _event: self._command(), add="+")
+        self.bind("<Return>", lambda _event: self._command(), add="+")
+        self.bind("<space>", lambda _event: self._command(), add="+")
+        self.after_idle(self._redraw)
+
+    def _sync_text(self) -> None:
+        try:
+            self.itemconfigure(self._text_item, text=self._textvariable.get())
+        except tk.TclError:
+            pass
+
+    def _set_hover(self, hovered: bool) -> None:
+        self._hovered = hovered
+        try:
+            self.itemconfigure(self._text_item, fill=THEME["text"] if hovered else THEME["muted"])
+            self._redraw()
+        except tk.TclError:
+            pass
+
+    def _redraw(self) -> None:
+        try:
+            width = max(1, self.winfo_width())
+            height = max(1, self.winfo_height())
+        except tk.TclError:
+            return
+        if Image is not None and ImageDraw is not None and ImageTk is not None:
+            surface = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+            ImageDraw.Draw(surface).rounded_rectangle(
+                (0, 0, width - 1, height - 1),
+                radius=min(17, height // 2),
+                fill=THEME["surface_2"] if self._hovered else THEME["surface"],
+                outline=THEME["border"],
+                width=1,
+            )
+            self._background_image = ImageTk.PhotoImage(surface)
+            self.itemconfigure(self._background_item, image=self._background_image)
+            self.coords(self._background_item, 0, 0)
+            self.tag_lower(self._background_item)
+        if self._icon_item is not None:
+            self.coords(self._icon_item, 15, height // 2)
+        self.coords(self._text_item, 18 if self._icon is None else 38, height // 2)
 
 
 class QueueLogger:
@@ -2128,6 +2311,8 @@ class DownloaderApp(tk.Tk):
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
+        self.active_job: DownloadJob | None = None
+        self.pending_jobs: list[DownloadJob] = []
         self.update_worker: threading.Thread | None = None
         self.update_check_silent = False
         self.update_check_after_id: str | None = None
@@ -2210,11 +2395,48 @@ class DownloaderApp(tk.Tk):
         style.configure("Treeview", background=THEME["surface"], fieldbackground=THEME["surface"], foreground=THEME["text"], bordercolor=THEME["border"], rowheight=30, font=FONT_UI)
         style.configure("Treeview.Heading", background=THEME["panel"], foreground=THEME["muted"], relief="flat", font=FONT_UI_SMALL_MEDIUM)
         style.map("Treeview", background=[("selected", THEME["accent_dark"])], foreground=[("selected", "#ffffff")])
+        style.configure("FocusShell.TFrame", background=THEME["bg"])
+        style.configure("FocusSurface.TFrame", background=THEME["surface"])
+        style.configure("FocusBrand.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 18, "bold"))
+        style.configure("FocusTitle.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 15, "bold"))
+        style.configure("FocusActiveTitle.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 13, "bold"))
+        style.configure("FocusProfile.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=FONT_UI_SMALL)
+        style.configure("FocusPercent.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=(FONT_UI_FAMILY, 25, "bold"))
+        style.configure("FocusEyebrow.TLabel", background=THEME["bg"], foreground=THEME["muted"], font=FONT_UI_SMALL_MEDIUM)
+        style.configure("FocusSurface.TLabel", background=THEME["surface"], foreground=THEME["text"], font=FONT_UI)
+        style.configure("FocusSurfaceMuted.TLabel", background=THEME["surface"], foreground=THEME["muted"], font=FONT_UI_SMALL)
+        style.configure("FocusNav.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
+        style.configure("FocusNavActive.TButton", background=THEME["bg"], foreground=THEME["accent"], bordercolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
+        style.layout("FocusNav.TButton", [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})])
+        style.layout("FocusNavActive.TButton", [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})])
+        style.map("FocusNav.TButton", background=[("active", THEME["surface"])], foreground=[("active", THEME["text"])])
+        style.map("FocusNavActive.TButton", background=[("active", THEME["surface"])], foreground=[("active", THEME["accent"])])
+        style.configure("FocusQuiet.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["surface_2"], lightcolor=THEME["surface_2"], darkcolor=THEME["surface_2"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
+        style.map("FocusQuiet.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])], foreground=[("active", THEME["text"])])
+        style.configure("FocusIcon.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], lightcolor=THEME["bg"], darkcolor=THEME["bg"], relief="flat", padding=(9, 8))
+        style.map("FocusIcon.TButton", background=[("active", THEME["surface"]), ("pressed", THEME["panel"])])
+        style.configure("FocusCommandIcon.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], relief="flat", padding=(15, 13))
+        style.map("FocusCommandIcon.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])])
+        style.configure("FocusPrimaryIcon.TButton", background=THEME["accent"], foreground="#ffffff", bordercolor=THEME["accent"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], relief="flat", padding=(17, 13))
+        style.map("FocusPrimaryIcon.TButton", background=[("active", "#8584ff"), ("pressed", THEME["accent_dark"]), ("disabled", THEME["panel"])])
+        style.configure("FocusDestination.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], relief="flat", padding=(12, 7), font=FONT_UI_SMALL)
+        style.map("FocusDestination.TButton", background=[("active", THEME["surface_2"])], foreground=[("active", THEME["text"])])
+        style.configure("FocusCommand.TEntry", fieldbackground=THEME["surface"], foreground=THEME["text"], insertcolor=THEME["text"], bordercolor=THEME["surface"], lightcolor=THEME["surface"], darkcolor=THEME["surface"], padding=(4, 13), font=(FONT_UI_FAMILY, 12))
+        style.configure("FocusProgress.Horizontal.TProgressbar", background=THEME["accent"], troughcolor=THEME["surface_2"], bordercolor=THEME["bg"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], thickness=4, borderwidth=0)
+        style.configure("FocusDeck.Horizontal.TProgressbar", background=THEME["accent"], troughcolor=THEME["border"], bordercolor=THEME["surface"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], thickness=3, borderwidth=0)
+        style.configure("Focus.TPanedwindow", background=THEME["bg"], sashwidth=1, sashrelief="flat", handlesize=0, handlepad=0)
         self.option_add("*TCombobox*Listbox.background", THEME["surface"])
         self.option_add("*TCombobox*Listbox.foreground", THEME["text"])
         self.option_add("*TCombobox*Listbox.selectBackground", THEME["accent_dark"])
 
     def _build_ui(self) -> None:
+        # Keep the former layout available only while the Focus Deck is under
+        # review. The new experience is the default and Git remains the durable
+        # rollback path once the direction is approved.
+        if os.environ.get("VODFORGE_LEGACY_UI") != "1":
+            self._build_focus_ui()
+            return
+
         pad = {"padx": 12, "pady": 6}
 
         shell = ttk.Frame(self, style="Panel.TFrame")
@@ -2727,6 +2949,1309 @@ class DownloaderApp(tk.Tk):
         metadata_content.bind("<Configure>", lambda _event: apply_metadata_layout(), add="+")
         meta_buttons.bind("<Configure>", lambda _event: apply_metadata_layout(), add="+")
 
+    def _load_focus_icon(self, name: str, size: int, color: str) -> Any | None:
+        if Image is None or ImageTk is None:
+            return None
+        cache = getattr(self, "_focus_icon_images", None)
+        if cache is None:
+            cache = {}
+            self._focus_icon_images = cache
+        key = (name, size, color)
+        if key in cache:
+            return cache[key]
+        try:
+            with Image.open(bundled_asset_path(f"icons/lucide/{name}.png")) as source:
+                icon = source.convert("RGBA")
+            alpha = icon.getchannel("A")
+            tinted = Image.new("RGBA", icon.size, color)
+            tinted.putalpha(alpha)
+            resampling = getattr(Image, "Resampling", Image)
+            rendered = ImageTk.PhotoImage(tinted.resize((size, size), resampling.LANCZOS))
+        except Exception as exc:
+            write_diagnostic(f"in-app icon could not be loaded ({name}): {exc}")
+            return None
+        cache[key] = rendered
+        return rendered
+
+    def _focus_button_image(
+        self,
+        icon_name: str,
+        size: tuple[int, int],
+        *,
+        fill: str,
+        border: str,
+        icon_color: str,
+        icon_size: int,
+        radius: int = 10,
+    ) -> Any | None:
+        if Image is None or ImageDraw is None or ImageTk is None:
+            return None
+        cache = getattr(self, "_focus_button_images", None)
+        if cache is None:
+            cache = {}
+            self._focus_button_images = cache
+        key = (icon_name, size, fill, border, icon_color, icon_size, radius)
+        if key in cache:
+            return cache[key]
+        try:
+            canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+            ImageDraw.Draw(canvas).rounded_rectangle(
+                (0, 0, size[0] - 1, size[1] - 1),
+                radius=radius,
+                fill=fill,
+                outline=border,
+                width=1,
+            )
+            with Image.open(bundled_asset_path(f"icons/lucide/{icon_name}.png")) as source:
+                icon = source.convert("RGBA")
+            alpha = icon.getchannel("A")
+            tinted = Image.new("RGBA", icon.size, icon_color)
+            tinted.putalpha(alpha)
+            resampling = getattr(Image, "Resampling", Image)
+            tinted = tinted.resize((icon_size, icon_size), resampling.LANCZOS)
+            canvas.alpha_composite(tinted, ((size[0] - icon_size) // 2, (size[1] - icon_size) // 2))
+            rendered = ImageTk.PhotoImage(canvas)
+        except Exception as exc:
+            write_diagnostic(f"in-app button image could not be loaded ({icon_name}): {exc}")
+            return None
+        cache[key] = rendered
+        return rendered
+
+    def _build_focus_ui(self) -> None:
+        """Build the flat, command-first VODForge workspace."""
+        self._compact_popup = None
+        self.manual_settings_frames = []
+        self._focus_layout: str | None = None
+        self._focus_settings_window: tk.Toplevel | None = None
+        self._focus_active_override = False
+        self._queued_ui_urls: list[str] = []
+        self._focus_icon_images: dict[tuple[str, int, str], Any] = {}
+        self._focus_button_images: dict[tuple[Any, ...], Any] = {}
+
+        self.focus_active_title_var = tk.StringVar(value="Ready for a new run")
+        self.focus_active_detail_var = tk.StringVar(value="Paste a YouTube URL above, then press Return to begin.")
+        self.focus_active_profile_var = tk.StringVar(value=f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
+        self.focus_active_duration_var = tk.StringVar(value="")
+        self.focus_percent_var = tk.StringVar(value="0%")
+        self.focus_run_status_var = tk.StringVar(value="Ready")
+        self.focus_transfer_var = tk.StringVar(value="VOD-ready MP4 / H.264 video / AAC audio")
+        self.focus_run_count_var = tk.StringVar(value="No runs yet")
+        self.focus_engine_var = tk.StringVar(value="Sequential queue  /  Auto start on")
+        self.focus_output_display_var = tk.StringVar()
+        self.focus_update_state_var = tk.StringVar(value="Check updates")
+        self._focus_update_full_text = "Check updates"
+
+        shell = ttk.Frame(self, style="FocusShell.TFrame")
+        shell.pack(fill="both", expand=True, padx=20, pady=(16, 14))
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(3, weight=1)
+        self.focus_shell = shell
+
+        header = ttk.Frame(shell, style="FocusShell.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        self.focus_header = header
+
+        brand = ttk.Frame(header, style="FocusShell.TFrame")
+        brand.grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self._focus_brand_image = None
+        self._focus_brand_nav_image = None
+        self._focus_brand_tile_image = None
+        self._focus_brand_source_image = None
+        self._focus_thumbnail_source_image = None
+        if Image is not None and ImageOps is not None and ImageTk is not None:
+            try:
+                with Image.open(bundled_asset_path("VODForge.png")) as source:
+                    icon = source.convert("RGBA")
+                resampling = getattr(Image, "Resampling", Image)
+                self._focus_brand_source_image = icon.copy()
+                self._focus_thumbnail_source_image = icon.copy()
+                self._focus_brand_image = ImageTk.PhotoImage(icon.resize((34, 34), resampling.LANCZOS))
+                self._focus_brand_nav_image = ImageTk.PhotoImage(icon.resize((16, 16), resampling.LANCZOS))
+                tile_icon = rounded_cover_image(icon, (152, 86), 10)
+                self._focus_brand_tile_image = ImageTk.PhotoImage(tile_icon)
+            except Exception as exc:
+                write_diagnostic(f"in-app brand mark could not be loaded: {exc}")
+        if self._focus_brand_image is not None:
+            ttk.Label(brand, image=self._focus_brand_image, style="TLabel").pack(side="left", padx=(0, 10))
+        ttk.Label(brand, text="VODForge", style="FocusBrand.TLabel").pack(side="left")
+
+        utilities = ttk.Frame(header, style="FocusShell.TFrame")
+        utilities.grid(row=0, column=2, sticky="e", pady=(0, 8))
+        self.focus_update_dot = tk.Canvas(utilities, width=10, height=10, bg=THEME["bg"], bd=0, highlightthickness=0)
+        self.focus_update_dot.create_oval(2, 2, 8, 8, fill=THEME["subtle"], outline="", tags="dot")
+        self.focus_update_dot.pack(side="left", padx=(0, 4))
+        self.update_button = tk.Label(
+            utilities,
+            text="Check updates",
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            bd=0,
+            highlightthickness=0,
+            padx=2,
+            pady=2,
+            font=FONT_UI_SMALL,
+            cursor="hand2",
+        )
+        self.update_button.bind(
+            "<Button-1>",
+            lambda _event: self._check_for_updates() if str(self.update_button.cget("state")) != "disabled" else None,
+        )
+        self.update_button.pack(side="left", padx=(0, 8))
+        settings_icon = self._load_focus_icon("settings", 18, THEME["muted"])
+        self.focus_settings_button = ttk.Button(
+            utilities,
+            image=settings_icon if settings_icon is not None else "",
+            text="Settings" if settings_icon is None else "",
+            command=self._show_focus_settings,
+            style="FocusIcon.TButton",
+        )
+        self.focus_settings_button.pack(side="left")
+
+        nav_row = ttk.Frame(header, style="FocusShell.TFrame")
+        nav_row.grid(row=1, column=0, columnspan=3, sticky="ew")
+        nav_row.columnconfigure(1, weight=1)
+        nav = ttk.Frame(nav_row, style="FocusShell.TFrame")
+        nav.grid(row=0, column=0, sticky="w")
+        self._focus_nav_buttons: dict[str, ttk.Button] = {}
+        self._focus_nav_underlines: dict[str, tk.Frame] = {}
+        self._focus_nav_icons: dict[str, tuple[Any | None, Any | None]] = {
+            "forge": (self._focus_brand_nav_image, self._focus_brand_nav_image),
+            "library": (
+                self._load_focus_icon("library", 15, THEME["muted"]),
+                self._load_focus_icon("library", 15, THEME["accent"]),
+            ),
+            "activity": (
+                self._load_focus_icon("activity", 15, THEME["muted"]),
+                self._load_focus_icon("activity", 15, THEME["accent"]),
+            ),
+        }
+        for view_name, label in (("forge", "Forge"), ("library", "Library"), ("activity", "Activity")):
+            item = ttk.Frame(nav, style="FocusShell.TFrame")
+            item.pack(side="left", padx=(0, 8))
+            inactive_icon, _active_icon = self._focus_nav_icons[view_name]
+            button = ttk.Button(
+                item,
+                text=label,
+                image=inactive_icon if inactive_icon is not None else "",
+                compound="left",
+                style="FocusNav.TButton",
+                command=lambda name=view_name: self._select_focus_view(name),
+            )
+            button.pack(fill="x")
+            underline = tk.Frame(item, height=2, bg=THEME["bg"], bd=0, highlightthickness=0)
+            underline.pack(fill="x")
+            self._focus_nav_buttons[view_name] = button
+            self._focus_nav_underlines[view_name] = underline
+
+        folder_icon = self._load_focus_icon("folder", 15, THEME["muted"])
+        self.focus_destination_button = PillAction(
+            nav_row,
+            textvariable=self.focus_output_display_var,
+            image=folder_icon,
+            command=self._browse_output,
+            width=240,
+        )
+        self.focus_destination_button.grid(row=0, column=2, sticky="e")
+
+        separator = tk.Frame(shell, bg=THEME["border"], height=1, bd=0, highlightthickness=0)
+        separator.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+        view_stack = ttk.Frame(shell, style="FocusShell.TFrame")
+        view_stack.grid(row=3, column=0, sticky="nsew")
+        view_stack.columnconfigure(0, weight=1)
+        view_stack.rowconfigure(0, weight=1)
+        self.focus_view_stack = view_stack
+
+        forge_view = ttk.Frame(view_stack, style="FocusShell.TFrame")
+        library_view = ttk.Frame(view_stack, style="FocusShell.TFrame")
+        activity_view = ttk.Frame(view_stack, style="FocusShell.TFrame")
+        for frame in (forge_view, library_view, activity_view):
+            frame.grid(row=0, column=0, sticky="nsew")
+        self._focus_views = {"forge": forge_view, "library": library_view, "activity": activity_view}
+        self.download_tab = forge_view
+        self.metadata_tab = library_view
+
+        self._build_focus_forge_view(forge_view)
+        self._build_focus_library_view(library_view)
+        self._build_focus_activity_view(activity_view)
+
+        self.progress_var.trace_add("write", lambda *_args: self._sync_focus_progress())
+        self.output_var.trace_add("write", lambda *_args: self._sync_focus_destination())
+        self.quality_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.export_mode_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self._sync_focus_destination()
+        self._sync_focus_settings_summary()
+        self._sync_focus_progress()
+        self._select_focus_view("forge")
+        self._refresh_focus_run_deck()
+        self.bind("<Configure>", self._apply_focus_layout, add="+")
+        self.after_idle(self.focus_url_entry.focus_set)
+
+    def _build_focus_forge_view(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
+
+        command_area = ttk.Frame(parent, style="FocusShell.TFrame")
+        command_area.grid(row=0, column=0, sticky="ew", padx=70, pady=(34, 12))
+        command_area.columnconfigure(0, weight=1)
+        self.focus_command_area = command_area
+
+        command_row = ttk.Frame(command_area, style="FocusShell.TFrame")
+        command_row.grid(row=0, column=0, sticky="ew")
+        command_row.columnconfigure(0, weight=1)
+        command_box = tk.Canvas(
+            command_row,
+            height=54,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        command_box.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        command_inner = tk.Frame(command_box, bg=THEME["surface"], bd=0, highlightthickness=0)
+        command_inner.columnconfigure(1, weight=1)
+        command_window = command_box.create_window(12, 2, anchor="nw", window=command_inner)
+        command_background = command_box.create_image(0, 0, anchor="nw")
+        command_box.tag_lower(command_background)
+        command_state = {"focused": False, "image": None}
+
+        def redraw_command_box(_event: Any = None, *, focused: bool | None = None) -> None:
+            width = max(1, command_box.winfo_width())
+            height = max(1, command_box.winfo_height())
+            if focused is not None:
+                command_state["focused"] = focused
+            if Image is not None and ImageDraw is not None and ImageTk is not None:
+                surface = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+                ImageDraw.Draw(surface).rounded_rectangle(
+                    (0, 0, width - 1, height - 1),
+                    radius=min(12, height // 2),
+                    fill=THEME["surface"],
+                    outline=THEME["accent_dark"] if command_state["focused"] else THEME["border"],
+                    width=1,
+                )
+                command_state["image"] = ImageTk.PhotoImage(surface)
+                command_box.itemconfigure(command_background, image=command_state["image"])
+                command_box.coords(command_background, 0, 0)
+                command_box.tag_lower(command_background)
+            command_box.coords(command_window, 12, 2)
+            command_box.itemconfigure(command_window, width=max(1, width - 24), height=max(1, height - 4))
+
+        command_box.bind("<Configure>", redraw_command_box, add="+")
+        link_icon = self._load_focus_icon("link-2", 18, THEME["muted"])
+        self.focus_command_link_label = tk.Label(
+            command_inner,
+            image=link_icon if link_icon is not None else "",
+            text="URL" if link_icon is None else "",
+            bg=THEME["surface"],
+            fg=THEME["muted"],
+            bd=0,
+            padx=16,
+            pady=0,
+            font=FONT_UI_SMALL,
+        )
+        self.focus_command_link_label.grid(row=0, column=0, sticky="w")
+        self.focus_url_entry = tk.Entry(
+            command_inner,
+            textvariable=self.url_var,
+            bg=THEME["surface"],
+            fg=THEME["text"],
+            insertbackground=THEME["text"],
+            selectbackground=THEME["accent_dark"],
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            font=(FONT_UI_FAMILY, 12),
+        )
+        self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=14)
+        self.focus_url_entry.bind("<Return>", lambda _event: self._start_download())
+        self.focus_url_entry.bind("<FocusIn>", lambda _event: redraw_command_box(focused=True), add="+")
+        self.focus_url_entry.bind("<FocusOut>", lambda _event: redraw_command_box(focused=False), add="+")
+        self.focus_return_button = ttk.Button(command_inner, text="Return", command=self._start_download, style="FocusQuiet.TButton")
+        self.focus_return_button.grid(row=0, column=2, sticky="e", padx=(10, 8), pady=8)
+        sliders_icon = self._focus_button_image(
+            "sliders-horizontal",
+            (56, 54),
+            fill=THEME["surface"],
+            border=THEME["border"],
+            icon_color=THEME["muted"],
+            icon_size=20,
+        )
+        sliders_active_icon = self._focus_button_image(
+            "sliders-horizontal",
+            (56, 54),
+            fill=THEME["surface_2"],
+            border=THEME["border"],
+            icon_color=THEME["text"],
+            icon_size=20,
+        )
+        self.focus_options_button = tk.Label(
+            command_row,
+            image=sliders_icon if sliders_icon is not None else "",
+            text="Options" if sliders_icon is None else "",
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            bd=0,
+            highlightthickness=0,
+            padx=0,
+            pady=0,
+            cursor="hand2",
+            takefocus=1,
+        )
+        self.focus_options_button.grid(row=0, column=1, padx=(0, 12))
+        arrow_icon = self._focus_button_image(
+            "arrow-right",
+            (60, 54),
+            fill=THEME["accent"],
+            border=THEME["accent"],
+            icon_color="#ffffff",
+            icon_size=22,
+        )
+        arrow_active_icon = self._focus_button_image(
+            "arrow-right",
+            (60, 54),
+            fill="#8584ff",
+            border="#8584ff",
+            icon_color="#ffffff",
+            icon_size=22,
+        )
+        self.download_button = tk.Label(
+            command_row,
+            image=arrow_icon if arrow_icon is not None else "",
+            text="Forge" if arrow_icon is None else "",
+            bg=THEME["bg"],
+            fg="#ffffff",
+            bd=0,
+            highlightthickness=0,
+            padx=0,
+            pady=0,
+            cursor="hand2",
+            takefocus=1,
+        )
+        self.download_button.grid(row=0, column=2)
+        self.focus_options_button.bind("<Button-1>", lambda _event: self._show_focus_settings(), add="+")
+        self.focus_options_button.bind("<Return>", lambda _event: self._show_focus_settings(), add="+")
+        self.focus_options_button.bind("<space>", lambda _event: self._show_focus_settings(), add="+")
+        self.download_button.bind(
+            "<Button-1>",
+            lambda _event: self._start_download() if str(self.download_button.cget("state")) != "disabled" else None,
+            add="+",
+        )
+        self.download_button.bind(
+            "<Return>",
+            lambda _event: self._start_download() if str(self.download_button.cget("state")) != "disabled" else None,
+            add="+",
+        )
+        self.download_button.bind(
+            "<space>",
+            lambda _event: self._start_download() if str(self.download_button.cget("state")) != "disabled" else None,
+            add="+",
+        )
+        if sliders_icon is not None and sliders_active_icon is not None:
+            self.focus_options_button.bind("<Enter>", lambda _event: self.focus_options_button.configure(image=sliders_active_icon), add="+")
+            self.focus_options_button.bind("<Leave>", lambda _event: self.focus_options_button.configure(image=sliders_icon), add="+")
+        if arrow_icon is not None and arrow_active_icon is not None:
+            self.download_button.bind("<Enter>", lambda _event: self.download_button.configure(image=arrow_active_icon), add="+")
+            self.download_button.bind("<Leave>", lambda _event: self.download_button.configure(image=arrow_icon), add="+")
+        ToolTip(self.focus_options_button, "Download options and settings")
+        ToolTip(self.download_button, "Start or queue this run")
+        self.preview_metadata_button = ttk.Button(command_row, text="Preview metadata", command=self._fetch_metadata, style="FocusQuiet.TButton")
+        self.focus_command_hint_var = tk.StringVar()
+        self.focus_command_box = command_box
+
+        active = ttk.Frame(parent, style="FocusShell.TFrame")
+        active.grid(row=1, column=0, sticky="ew", padx=70, pady=(10, 14))
+        active.columnconfigure(1, weight=1)
+        self.focus_active_frame = active
+
+        thumb_wrap = tk.Frame(active, bg=THEME["bg"], width=152, height=86, bd=0, highlightthickness=0)
+        thumb_wrap.grid(row=0, column=0, rowspan=3, sticky="w", padx=(0, 18))
+        thumb_wrap.grid_propagate(False)
+        self.focus_active_thumbnail_label = tk.Label(
+            thumb_wrap,
+            image=self._focus_brand_tile_image if self._focus_brand_tile_image is not None else "",
+            text="" if self._focus_brand_tile_image is not None else APP_NAME,
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            font=FONT_UI_SMALL_MEDIUM,
+            bd=0,
+            highlightthickness=0,
+        )
+        self.focus_active_thumbnail_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.focus_active_duration_label = tk.Label(
+            thumb_wrap,
+            textvariable=self.focus_active_duration_var,
+            bg="#08090a",
+            fg="#ffffff",
+            font=(FONT_UI_FAMILY, 8, "bold"),
+            bd=0,
+            padx=4,
+            pady=1,
+        )
+        self.focus_active_duration_label.place(relx=0.96, rely=0.91, anchor="se")
+        self.focus_active_duration_var.trace_add("write", lambda *_args: self._sync_focus_duration_badge())
+        self._sync_focus_duration_badge()
+        self.focus_active_thumb_wrap = thumb_wrap
+
+        title_block = ttk.Frame(active, style="FocusShell.TFrame")
+        title_block.grid(row=0, column=1, sticky="ew")
+        title_block.columnconfigure(0, weight=1)
+        self.focus_active_title_label = ttk.Label(
+            title_block,
+            textvariable=self.focus_active_title_var,
+            style="FocusActiveTitle.TLabel",
+            justify="left",
+        )
+        self.focus_active_title_label.grid(row=0, column=0, sticky="w")
+        ttk.Label(title_block, textvariable=self.focus_active_detail_var, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(title_block, textvariable=self.focus_active_profile_var, style="FocusProfile.TLabel").grid(row=2, column=0, sticky="w", pady=(5, 0))
+        ttk.Label(active, textvariable=self.focus_percent_var, style="FocusPercent.TLabel").grid(row=0, column=2, rowspan=3, sticky="e", padx=(18, 0))
+
+        progress_row = ttk.Frame(active, style="FocusShell.TFrame")
+        progress_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(14, 0))
+        progress_row.columnconfigure(0, weight=1)
+        self.progress_bar = SleekProgressbar(
+            progress_row,
+            variable=self.progress_var,
+            maximum=100,
+            mode="determinate",
+            style="FocusProgress.Horizontal.TProgressbar",
+        )
+        self.progress_bar.grid(row=0, column=0, columnspan=5, sticky="ew", ipady=0)
+        ttk.Label(progress_row, textvariable=self.status_var, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(7, 0))
+        self.focus_transfer_label = ttk.Label(progress_row, textvariable=self.focus_transfer_var, style="Muted.TLabel")
+        self.focus_transfer_label.grid(row=1, column=1, sticky="e", pady=(7, 0), padx=(12, 0))
+        self.cancel_button = ttk.Button(progress_row, text="Cancel", command=self._cancel, state="disabled", style="FocusQuiet.TButton")
+        self.cancel_button.grid(row=1, column=2, padx=(14, 6), pady=(5, 0))
+        self.skip_video_button = ttk.Button(progress_row, text="Skip video", command=self._skip_video, state="disabled", style="FocusQuiet.TButton")
+        self.skip_video_button.grid(row=1, column=3, pady=(5, 0))
+        self.skip_url_button = ttk.Button(progress_row, text="Skip URL", command=self._skip_url, state="disabled", style="FocusQuiet.TButton")
+        self.skip_url_button.grid(row=1, column=4, padx=(6, 0), pady=(5, 0))
+        self.focus_compact_run_actions_button = ttk.Button(
+            progress_row,
+            text="Run actions",
+            command=self._show_active_focus_run_actions,
+            style="FocusQuiet.TButton",
+        )
+        self.focus_compact_run_actions_button.grid(row=1, column=2, padx=(14, 0), pady=(5, 0))
+        self.focus_compact_run_actions_button.grid_remove()
+        self.focus_run_controls = (self.cancel_button, self.skip_video_button, self.skip_url_button)
+        self._set_focus_run_controls_visible(False)
+
+        detail_wrap = ttk.Frame(parent, style="FocusShell.TFrame")
+        detail_wrap.grid(row=2, column=0, sticky="nsew", padx=70, pady=(0, 12))
+        detail_wrap.columnconfigure(0, weight=1)
+        detail_wrap.rowconfigure(1, weight=1)
+        self.focus_detail_wrap = detail_wrap
+        detail_header = ttk.Frame(detail_wrap, style="FocusShell.TFrame")
+        detail_header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        detail_header.columnconfigure(0, weight=1)
+        ttk.Label(detail_header, text="LIVE ACTIVITY", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w")
+        self.focus_details_button = ttk.Button(detail_header, text="Output details", command=self._show_focus_output_details, style="FocusQuiet.TButton")
+        self.focus_detail_header = detail_header
+
+        detail_pane = ttk.Frame(detail_wrap, style="FocusShell.TFrame")
+        detail_pane.grid(row=1, column=0, sticky="nsew")
+        detail_pane.columnconfigure(0, weight=3)
+        detail_pane.columnconfigure(1, weight=2)
+        detail_pane.rowconfigure(0, weight=1)
+        self.focus_detail_pane = detail_pane
+        live_frame = ttk.Frame(detail_pane, style="FocusShell.TFrame")
+        summary_frame = ttk.Frame(detail_pane, style="FocusShell.TFrame")
+        live_frame.grid(row=0, column=0, sticky="nsew")
+        summary_frame.grid(row=0, column=1, sticky="nsew")
+        self.focus_live_frame = live_frame
+        self.focus_summary_frame = summary_frame
+        live_frame.columnconfigure(0, weight=1)
+        live_frame.rowconfigure(0, weight=1)
+        summary_frame.columnconfigure(0, weight=1)
+        summary_frame.rowconfigure(0, weight=1)
+        self.focus_log = tk.Text(
+            live_frame,
+            height=4,
+            width=1,
+            wrap="word",
+            state="disabled",
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            insertbackground=THEME["bg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            padx=0,
+            pady=4,
+            font=FONT_MONO,
+            takefocus=0,
+            insertwidth=0,
+        )
+        self.focus_log.grid(row=0, column=0, sticky="nsew", padx=(0, 22))
+        self.focus_summary_text = tk.Text(
+            summary_frame,
+            height=4,
+            width=1,
+            wrap="word",
+            state="disabled",
+            bg=THEME["bg"],
+            fg=THEME["text"],
+            insertbackground=THEME["bg"],
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            padx=0,
+            pady=7,
+            font=FONT_MONO,
+            takefocus=0,
+            insertwidth=0,
+        )
+        self.focus_summary_text.grid(row=0, column=0, sticky="nsew")
+        self._set_text(
+            self.focus_summary_text,
+            "Format        MP4\nVideo         H.264\nAudio         AAC\nOutput mode   Auto CBR\nSave to       " + self.output_var.get(),
+            disabled=True,
+        )
+
+        deck_area = ttk.Frame(parent, style="FocusShell.TFrame")
+        deck_area.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 4))
+        deck_area.columnconfigure(0, weight=1)
+        deck_header = ttk.Frame(deck_area, style="FocusShell.TFrame")
+        deck_header.grid(row=0, column=0, sticky="ew", padx=6, pady=(0, 6))
+        deck_header.columnconfigure(0, weight=1)
+        ttk.Label(deck_header, text="RUN DECK", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w")
+        self.focus_run_overflow_button = ttk.Button(deck_header, text="All runs", command=self._show_focus_run_menu, style="FocusQuiet.TButton")
+        self.focus_run_overflow_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.focus_new_run_button = ttk.Button(deck_header, text="New run", command=self._focus_new_run, style="FocusQuiet.TButton")
+        self.focus_new_run_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self.focus_deck_header = deck_header
+
+        deck_border = tk.Frame(deck_area, bg=THEME["border"], bd=0, highlightthickness=0)
+        deck_border.grid(row=1, column=0, sticky="ew")
+        deck = ttk.Frame(deck_border, style="FocusSurface.TFrame")
+        deck.pack(fill="both", expand=True, padx=1, pady=1)
+        self.focus_run_deck = deck
+
+        footer = ttk.Frame(parent, style="FocusShell.TFrame")
+        footer.grid(row=4, column=0, sticky="ew", padx=26, pady=(4, 0))
+        footer.columnconfigure(1, weight=1)
+        ttk.Label(footer, textvariable=self.focus_run_count_var, style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(footer, textvariable=self.focus_engine_var, style="Muted.TLabel").grid(row=0, column=2, sticky="e")
+
+    def _build_focus_library_view(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=3)
+        parent.rowconfigure(2, weight=2)
+
+        actions = ttk.Frame(parent, style="FocusShell.TFrame")
+        actions.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 10))
+        actions.columnconfigure(0, weight=1)
+        heading = ttk.Frame(actions, style="FocusShell.TFrame")
+        heading.grid(row=0, column=0, sticky="w")
+        ttk.Label(heading, text="Library", style="FocusTitle.TLabel").pack(anchor="w")
+        ttk.Label(heading, text="Saved downloads and metadata previews", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
+        action_row = ttk.Frame(actions, style="FocusShell.TFrame")
+        action_row.grid(row=0, column=1, sticky="e")
+        self.focus_library_action_buttons = [
+            ttk.Button(action_row, text="Copy tags", command=self._copy_tags, style="FocusQuiet.TButton"),
+            ttk.Button(action_row, text="Copy description", command=self._copy_description, style="FocusQuiet.TButton"),
+            ttk.Button(action_row, text="Copy thumbnail URL", command=self._copy_thumbnail_url, style="FocusQuiet.TButton"),
+            ttk.Button(action_row, text="Open saved location", command=self._open_selected_saved_location, style="FocusQuiet.TButton"),
+        ]
+        for button in self.focus_library_action_buttons:
+            button.pack(side="left", padx=(6, 0))
+        self.focus_library_details_button = ttk.Button(action_row, text="Selected details", command=self._show_selected_metadata_details, style="FocusQuiet.TButton")
+        self.focus_library_menu_button = ttk.Button(action_row, text="Actions", command=self._show_library_actions_menu, style="FocusQuiet.TButton")
+
+        metadata_content = ttk.Frame(parent, style="FocusShell.TFrame")
+        metadata_content.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 14))
+        metadata_content.columnconfigure(0, weight=3)
+        metadata_content.columnconfigure(1, weight=2)
+        metadata_content.rowconfigure(0, weight=1)
+        self.focus_metadata_content = metadata_content
+
+        queue_panel = ttk.Frame(metadata_content, style="FocusShell.TFrame")
+        queue_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
+        queue_panel.columnconfigure(0, weight=1)
+        queue_panel.rowconfigure(1, weight=1)
+        ttk.Label(queue_panel, text="MEDIA", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.video_tree = ttk.Treeview(
+            queue_panel,
+            columns=("index", "title", "duration", "creator", "id", "location"),
+            show="headings",
+            selectmode="browse",
+            height=1,
+        )
+        for column, label in (("index", "#"), ("title", "Title"), ("duration", "Length"), ("creator", "Creator"), ("id", "ID"), ("location", "Saved location")):
+            self.video_tree.heading(column, text=label)
+        self.video_tree.column("index", width=44, minwidth=38, stretch=False, anchor="center")
+        self.video_tree.column("title", width=420, minwidth=220, stretch=True, anchor="w")
+        self.video_tree.column("duration", width=72, minwidth=62, stretch=False, anchor="center")
+        self.video_tree.column("creator", width=140, minwidth=90, stretch=False, anchor="w")
+        self.video_tree.column("id", width=100, minwidth=72, stretch=False, anchor="w")
+        self.video_tree.column("location", width=140, minwidth=90, stretch=False, anchor="w")
+        tree_scroll = ttk.Scrollbar(queue_panel, orient="vertical", command=self.video_tree.yview)
+        self.video_tree.configure(yscrollcommand=tree_scroll.set)
+        self.video_tree.grid(row=1, column=0, sticky="nsew")
+        tree_scroll.grid(row=1, column=1, sticky="ns")
+        self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
+        self.focus_queue_panel = queue_panel
+
+        details = ttk.Frame(metadata_content, style="FocusShell.TFrame")
+        details.grid(row=0, column=1, sticky="nsew")
+        details.columnconfigure(0, weight=1)
+        self.selected_title_var = tk.StringVar(value="Choose a saved item or preview a URL to inspect its metadata.")
+        ttk.Label(details, text="SELECTED ITEM", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.focus_selected_title_label = ttk.Label(details, textvariable=self.selected_title_var, wraplength=380, justify="left", style="Muted.TLabel")
+        self.focus_selected_title_label.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        details.bind(
+            "<Configure>",
+            lambda event: self.focus_selected_title_label.configure(wraplength=max(180, event.width - 8)),
+            add="+",
+        )
+        thumbnail_wrap = tk.Frame(details, bg=THEME["bg"], height=92, bd=0, highlightthickness=0)
+        thumbnail_wrap.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        thumbnail_wrap.grid_propagate(False)
+        self.focus_thumbnail_wrap = thumbnail_wrap
+        self.thumbnail_label = tk.Label(
+            thumbnail_wrap,
+            text="No thumbnail loaded",
+            anchor="center",
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            relief="flat",
+            font=FONT_UI,
+        )
+        self.thumbnail_label.pack(fill="both", expand=True)
+        thumbnail_wrap.bind(
+            "<Configure>",
+            lambda event: self._render_focus_thumbnail_surfaces(library_width=event.width),
+            add="+",
+        )
+        ttk.Label(details, text="TAGS", style="FocusEyebrow.TLabel").grid(row=3, column=0, sticky="nw", pady=(0, 4))
+        self.pulled_tags_text = tk.Text(details, height=2, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
+        self.pulled_tags_text.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
+        ttk.Label(details, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=5, column=0, sticky="nw", pady=(0, 4))
+        self.description_text = tk.Text(details, height=3, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
+        self.description_text.grid(row=6, column=0, sticky="nsew")
+        details.rowconfigure(4, weight=2)
+        details.rowconfigure(6, weight=3)
+        self.focus_library_details = details
+
+        summary = ttk.Frame(parent, style="FocusShell.TFrame")
+        summary.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 10))
+        summary.columnconfigure(0, weight=1)
+        summary.columnconfigure(1, weight=1)
+        summary.rowconfigure(1, weight=1)
+        ttk.Label(summary, text="SOURCE SELECTED FROM YOUTUBE", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
+        ttk.Label(summary, text="FINAL OUTPUT FILE", style="FocusEyebrow.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 6))
+        self.source_summary_text = tk.Text(summary, height=4, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
+        self.output_summary_text = tk.Text(summary, height=4, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
+        self.source_summary_text.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        self.output_summary_text.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        self.focus_library_summary = summary
+
+    def _build_focus_activity_view(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+        header = ttk.Frame(parent, style="FocusShell.TFrame")
+        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 12))
+        header.columnconfigure(0, weight=1)
+        title = ttk.Frame(header, style="FocusShell.TFrame")
+        title.grid(row=0, column=0, sticky="w")
+        ttk.Label(title, text="Activity", style="FocusTitle.TLabel").pack(anchor="w")
+        ttk.Label(title, textvariable=self.status_var, style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
+        ttk.Button(header, text="Open log folder", command=self._open_log_folder, style="FocusQuiet.TButton").grid(row=0, column=1, sticky="e")
+        log_wrap = ttk.Frame(parent, style="FocusShell.TFrame")
+        log_wrap.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
+        log_wrap.columnconfigure(0, weight=1)
+        log_wrap.rowconfigure(1, weight=1)
+        ttk.Label(log_wrap, text="DOWNLOAD AND PROCESSING LOG", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.log = tk.Text(log_wrap, height=1, width=1, wrap="word", state="disabled", bg=THEME["bg"], fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=6, font=FONT_MONO)
+        log_scrollbar = ttk.Scrollbar(log_wrap, orient="vertical", command=self.log.yview)
+        self.log.configure(yscrollcommand=log_scrollbar.set)
+        self.log.grid(row=1, column=0, sticky="nsew")
+        log_scrollbar.grid(row=1, column=1, sticky="ns")
+
+    def _set_focus_run_controls_visible(self, visible: bool) -> None:
+        controls = getattr(self, "focus_run_controls", ())
+        for control in controls:
+            control.grid_remove()
+
+    def _select_focus_view(self, name: str) -> None:
+        frame = self._focus_views.get(name)
+        if frame is None:
+            return
+        frame.tkraise()
+        for view_name, button in self._focus_nav_buttons.items():
+            active = view_name == name
+            inactive_icon, active_icon = self._focus_nav_icons.get(view_name, (None, None))
+            icon = active_icon if active else inactive_icon
+            button.configure(
+                style="FocusNavActive.TButton" if active else "FocusNav.TButton",
+                image=icon if icon is not None else "",
+            )
+            underline = self._focus_nav_underlines.get(view_name)
+            if underline is not None:
+                underline.configure(bg=THEME["accent"] if active else THEME["bg"])
+        self._focus_selected_view = name
+
+    def _sync_focus_destination(self) -> None:
+        path = self.output_var.get().strip() or "Choose destination"
+        max_chars = 34 if self._focus_layout == "compact" else 52
+        if len(path) > max_chars:
+            path = "..." + path[-(max_chars - 3) :]
+        self.focus_output_display_var.set(path)
+        if hasattr(self, "focus_summary_text"):
+            current = self.focus_summary_text.get("1.0", "end").strip().splitlines()
+            retained = [line for line in current if not line.startswith("Save to")]
+            retained.append(f"Save to       {self.output_var.get()}")
+            self._set_text(self.focus_summary_text, "\n".join(retained), disabled=True)
+
+    def _sync_focus_settings_summary(self) -> None:
+        summary = f"Press Return to start  /  {self.quality_var.get()}  /  {self.export_mode_var.get()}"
+        if self.batch_urls:
+            summary += f"  /  {len(self.batch_urls)} URLs loaded"
+        self.focus_command_hint_var.set(summary)
+        self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
+        if not bool(self.worker and self.worker.is_alive()):
+            if not self.focus_active_detail_var.get().strip():
+                self.focus_active_detail_var.set("Ready")
+
+    def _sync_focus_duration_badge(self) -> None:
+        label = self.__dict__.get("focus_active_duration_label")
+        if label is None:
+            return
+        if self.focus_active_duration_var.get().strip():
+            label.place(relx=0.96, rely=0.91, anchor="se")
+        else:
+            label.place_forget()
+
+    def _sync_focus_progress(self) -> None:
+        try:
+            value = max(0.0, min(100.0, float(self.progress_var.get())))
+        except (TypeError, ValueError, tk.TclError):
+            value = 0.0
+        self.focus_percent_var.set(f"{value:.0f}%")
+        if bool(self._focus_active_override or (self.worker and self.worker.is_alive())):
+            self.focus_run_status_var.set(f"{value:.0f}%  /  Active")
+
+    def _focus_new_run(self) -> None:
+        self._select_focus_view("forge")
+        self.batch_urls = []
+        self.url_list_file_var.set("No URL list loaded")
+        self.url_var.set("")
+        self.focus_url_entry.focus_set()
+
+    def _show_focus_settings(self) -> None:
+        existing = self._focus_settings_window
+        if existing is not None:
+            try:
+                if existing.winfo_exists():
+                    existing.lift()
+                    existing.focus_force()
+                    return
+            except tk.TclError:
+                pass
+
+        popup = tk.Toplevel(self)
+        self._focus_settings_window = popup
+        popup.title(f"{APP_NAME} Settings")
+        popup.transient(self)
+        popup.configure(bg=THEME["bg"])
+        popup.resizable(True, True)
+        popup.minsize(700, 540)
+
+        root = ttk.Frame(popup, style="FocusShell.TFrame")
+        root.pack(fill="both", expand=True, padx=22, pady=20)
+        root.columnconfigure(0, weight=1)
+        root.columnconfigure(1, weight=1)
+        root.rowconfigure(2, weight=1)
+
+        heading = ttk.Frame(root, style="FocusShell.TFrame")
+        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 16))
+        heading.columnconfigure(0, weight=1)
+        ttk.Label(heading, text="Forge settings", style="FocusTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(heading, text="Every option is available here; the main workspace stays focused.", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(3, 0))
+
+        source = ttk.Frame(root, style="FocusShell.TFrame")
+        source.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
+        source.columnconfigure(0, weight=1)
+        ttk.Label(source, text="SOURCE AND DESTINATION", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(source, text="Output folder", style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w")
+        ttk.Entry(source, textvariable=self.output_var).grid(row=2, column=0, sticky="ew", pady=(4, 8), padx=(0, 6))
+        ttk.Button(source, text="Browse", command=self._browse_output, style="FocusQuiet.TButton").grid(row=2, column=1, sticky="e", pady=(4, 8))
+        ttk.Button(source, text="Load URL list", command=self._load_url_list_file, style="FocusQuiet.TButton").grid(row=3, column=0, sticky="w", pady=(4, 3))
+        ttk.Label(source, textvariable=self.url_list_file_var, style="Muted.TLabel", wraplength=250).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Button(source, text="Load cookies.txt", command=self._load_cookie_file, style="FocusQuiet.TButton").grid(row=5, column=0, sticky="w", pady=(4, 3))
+        ttk.Label(source, textvariable=self.cookie_file_var, style="Muted.TLabel", wraplength=250).grid(row=6, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(source, text="Browser cookies", style="Muted.TLabel").grid(row=7, column=0, sticky="w", pady=(4, 3))
+        ttk.Combobox(source, textvariable=self.cookie_browser_var, values=COOKIE_BROWSER_OPTIONS, state="readonly", width=18).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        ttk.Checkbutton(source, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=9, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
+        output = ttk.Frame(root, style="FocusShell.TFrame")
+        output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        output.columnconfigure(1, weight=1)
+        ttk.Label(output, text="QUALITY AND OUTPUT", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(output, text="Quality ceiling", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Combobox(output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20).grid(row=1, column=1, sticky="ew", pady=4)
+        ttk.Label(output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
+        export_combo = ttk.Combobox(output, textvariable=self.export_mode_var, values=EXPORT_MODES, state="readonly", width=20)
+        export_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        export_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
+        ttk.Label(output, text="Extra tags", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Entry(output, textvariable=self.tags_var).grid(row=3, column=1, sticky="ew", pady=4)
+        ttk.Checkbutton(output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=4, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=5, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=5, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(output, text="Single video only", variable=self.single_video_only_var).grid(row=6, column=0, columnspan=2, sticky="w", pady=2)
+        nvenc_label = "Use NVIDIA NVENC GPU encoding"
+        if sys.platform == "darwin":
+            nvenc_label = "NVIDIA NVENC (Windows only)"
+            self.use_nvenc_var.set(False)
+        nvenc = ttk.Checkbutton(output, text=nvenc_label, variable=self.use_nvenc_var)
+        nvenc.grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
+        if sys.platform == "darwin":
+            nvenc.state(["disabled"])
+
+        manual = ttk.Frame(root, style="FocusShell.TFrame")
+        manual.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(18, 0))
+        manual.columnconfigure(1, weight=1)
+        manual.columnconfigure(3, weight=1)
+        ttk.Label(manual, text="MANUAL OVERRIDE", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 7))
+        manual_fields = (
+            ("Video bitrate (kbps)", self.manual_video_bitrate_var, None),
+            ("Audio bitrate (kbps)", self.manual_audio_bitrate_var, None),
+            ("Sample rate", self.manual_sample_rate_var, ["44100", "48000"]),
+            ("Channels", self.manual_channels_var, ["Mono", "Stereo"]),
+            ("x264 preset", self.manual_preset_var, ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"]),
+        )
+        for index, (label, variable, values) in enumerate(manual_fields):
+            row = 1 + index // 2
+            column = (index % 2) * 2
+            ttk.Label(manual, text=label, style="Muted.TLabel").grid(row=row, column=column, sticky="w", padx=(0, 8), pady=4)
+            if values is None:
+                widget: ttk.Entry | ttk.Combobox = ttk.Entry(manual, textvariable=variable)
+            else:
+                widget = ttk.Combobox(manual, textvariable=variable, values=values, state="readonly")
+            widget.grid(row=row, column=column + 1, sticky="ew", padx=(0, 20), pady=4)
+        self.manual_settings_frames = [manual]
+        self.manual_settings_frame = manual
+        self._refresh_manual_settings_visibility()
+
+        footer = ttk.Frame(root, style="FocusShell.TFrame")
+        footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        footer.columnconfigure(0, weight=1)
+        preview_button = ttk.Button(footer, text="Preview metadata", command=self._fetch_metadata, style="FocusQuiet.TButton")
+        preview_button.grid(row=0, column=0, sticky="w")
+
+        def close_popup() -> None:
+            self._focus_settings_window = None
+            popup.destroy()
+
+        ttk.Button(footer, text="Done", command=close_popup, style="Accent.TButton").grid(row=0, column=1, sticky="e")
+        popup.protocol("WM_DELETE_WINDOW", close_popup)
+        popup.bind("<Escape>", lambda _event: close_popup())
+        popup.update_idletasks()
+        width = min(820, max(700, popup.winfo_reqwidth()))
+        height = min(720, max(560, popup.winfo_reqheight()))
+        x = max(20, self.winfo_rootx() + (self.winfo_width() - width) // 2)
+        y = max(40, self.winfo_rooty() + (self.winfo_height() - height) // 2)
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _show_focus_output_details(self) -> None:
+        popup = tk.Toplevel(self)
+        popup.title(f"{APP_NAME} Output Details")
+        popup.transient(self)
+        popup.configure(bg=THEME["bg"])
+        frame = ttk.Frame(popup, style="FocusShell.TFrame")
+        frame.pack(fill="both", expand=True, padx=18, pady=18)
+        ttk.Label(frame, text="Output details", style="FocusTitle.TLabel").pack(anchor="w")
+        text = tk.Text(frame, height=10, width=52, wrap="word", state="normal", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
+        text.pack(fill="both", expand=True, pady=(12, 12))
+        text.insert("1.0", self.focus_summary_text.get("1.0", "end").strip())
+        text.configure(state="disabled")
+        ttk.Button(frame, text="Done", command=popup.destroy, style="Accent.TButton").pack(anchor="e")
+        popup.geometry("560x360")
+
+    def _show_focus_run_menu(self) -> None:
+        records = self._focus_run_records()
+        menu = tk.Menu(self, tearoff=False, bg=THEME["surface"], fg=THEME["text"], activebackground=THEME["accent_dark"], activeforeground="#ffffff")
+        if not records:
+            menu.add_command(label="No runs yet", state="disabled")
+        else:
+            for record in records:
+                title = str(record.get("title") or "Untitled run")
+                status = str(record.get("status") or "Ready")
+                menu.add_command(label=f"{title[:42]}  —  {status}", command=lambda item=record: self._focus_select_run_record(item))
+        try:
+            menu.tk_popup(self.focus_run_overflow_button.winfo_rootx(), self.focus_run_overflow_button.winfo_rooty() + self.focus_run_overflow_button.winfo_height())
+        finally:
+            menu.grab_release()
+
+    def _focus_select_run_record(self, record: dict[str, Any]) -> None:
+        self.focus_active_title_var.set(str(record.get("title") or "Untitled run"))
+        self.focus_active_detail_var.set(str(record.get("detail") or record.get("status") or "Ready"))
+        if record.get("metadata_index") is not None:
+            index = int(record["metadata_index"])
+            children = self.video_tree.get_children()
+            if 0 <= index < len(children):
+                self.video_tree.selection_set(children[index])
+                self.video_tree.focus(children[index])
+                self._display_selected_metadata(index)
+
+    def _show_library_actions_menu(self) -> None:
+        menu = tk.Menu(self, tearoff=False, bg=THEME["surface"], fg=THEME["text"], activebackground=THEME["accent_dark"], activeforeground="#ffffff")
+        menu.add_command(label="Copy tags", command=self._copy_tags)
+        menu.add_command(label="Copy description", command=self._copy_description)
+        menu.add_command(label="Copy thumbnail URL", command=self._copy_thumbnail_url)
+        menu.add_separator()
+        menu.add_command(label="Open saved location", command=self._open_selected_saved_location)
+        try:
+            menu.tk_popup(self.focus_library_menu_button.winfo_rootx(), self.focus_library_menu_button.winfo_rooty() + self.focus_library_menu_button.winfo_height())
+        finally:
+            menu.grab_release()
+
+    def _show_selected_metadata_details(self) -> None:
+        selection = self.video_tree.selection()
+        if not selection:
+            messagebox.showinfo(APP_NAME, "Choose an item in Library first.")
+            return
+        try:
+            info = self.metadata_items[int(selection[0])]
+        except (IndexError, TypeError, ValueError):
+            return
+        popup = tk.Toplevel(self)
+        popup.title(f"{APP_NAME} Selected Item")
+        popup.transient(self)
+        popup.configure(bg=THEME["bg"])
+        popup.resizable(True, True)
+        root = ttk.Frame(popup, style="FocusShell.TFrame")
+        root.pack(fill="both", expand=True, padx=20, pady=18)
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(4, weight=2)
+        root.rowconfigure(6, weight=3)
+        title = str(info.get("title") or info.get("id") or "Selected item")
+        creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
+        ttk.Label(root, text=title, style="FocusTitle.TLabel", wraplength=600, justify="left").grid(row=0, column=0, sticky="ew")
+        ttk.Label(root, text=f"{creator}  /  {format_duration(info.get('duration'))}  /  {info.get('id') or 'no ID'}", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(5, 12))
+        preview = tk.Label(root, bg=THEME["surface"], fg=THEME["muted"], text="No thumbnail loaded", height=6, bd=0)
+        preview.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        image = getattr(self, "thumbnail_image", None) or self._focus_brand_tile_image
+        if image is not None:
+            preview.configure(image=image, text="")
+            preview.image = image
+        ttk.Label(root, text="TAGS", style="FocusEyebrow.TLabel").grid(row=3, column=0, sticky="w", pady=(0, 4))
+        tags = tk.Text(root, height=3, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=10, pady=8, font=FONT_UI)
+        tags.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
+        tags.insert("1.0", build_tags_display_text(info) or "No tags found for this video.")
+        tags.configure(state="disabled")
+        ttk.Label(root, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=5, column=0, sticky="w", pady=(0, 4))
+        description = tk.Text(root, height=5, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=10, pady=8, font=FONT_UI)
+        description.grid(row=6, column=0, sticky="nsew")
+        description.insert("1.0", build_description_display_text(info) or "No description found for this video.")
+        description.configure(state="disabled")
+        ttk.Button(root, text="Done", command=popup.destroy, style="Accent.TButton").grid(row=7, column=0, sticky="e", pady=(14, 0))
+        popup.geometry("680x620")
+
+    def _focus_run_records(self) -> list[dict[str, Any]]:
+        preview = getattr(self, "_focus_preview_runs", None)
+        if isinstance(preview, list):
+            return [dict(record) for record in preview]
+
+        records: list[dict[str, Any]] = []
+        active = bool(self._focus_active_override or (self.worker and self.worker.is_alive()))
+        current_url = self.url_var.get().strip()
+        if active and current_url:
+            records.append(
+                {
+                    "title": self.focus_active_title_var.get() or current_url,
+                    "detail": self.focus_active_detail_var.get(),
+                    "status": self.status_var.get() or "Active",
+                    "progress": float(self.progress_var.get()),
+                    "kind": "active",
+                }
+            )
+        for url in self._queued_ui_urls:
+            records.append({"title": url, "detail": "Queued", "status": "Queued", "progress": 0, "kind": "queued"})
+        for index, item in enumerate(self.metadata_items):
+            saved = history_output_dir(item)
+            records.append(
+                {
+                    "title": str(item.get("title") or item.get("id") or "Untitled video"),
+                    "detail": str(item.get("uploader") or item.get("channel") or format_duration(item.get("duration"))),
+                    "status": "Completed" if saved is not None else "Previewed",
+                    "progress": 100 if saved is not None else 0,
+                    "kind": "completed" if saved is not None else "preview",
+                    "metadata_index": index,
+                }
+            )
+        return records
+
+    def _refresh_focus_run_deck(self) -> None:
+        if not hasattr(self, "focus_run_deck"):
+            return
+        for child in self.focus_run_deck.winfo_children():
+            child.destroy()
+        self._focus_run_thumbnail_images: list[Any] = []
+        records = self._focus_run_records()
+        limit = 4 if self._focus_layout in {"wide", "balanced"} else 1
+        visible = records[:limit]
+        if not visible:
+            empty = ttk.Frame(self.focus_run_deck, style="FocusSurface.TFrame")
+            empty.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
+            ttk.Label(empty, text="Your runs will collect here", style="FocusSurface.TLabel").pack(anchor="w")
+            ttk.Label(empty, text="Start with a URL above. Completed downloads stay available in Library.", style="FocusSurfaceMuted.TLabel").pack(anchor="w", pady=(4, 0))
+            self.focus_run_deck.columnconfigure(0, weight=1)
+            self.focus_run_count_var.set("No runs yet")
+            self.focus_run_overflow_button.grid_remove()
+            return
+
+        for column in range(limit + 1):
+            self.focus_run_deck.columnconfigure(column, weight=1 if column < limit else 0, uniform="focus-run" if column < limit else "")
+        for column, record in enumerate(visible):
+            tile_bg = THEME["surface_2"]
+            tile = tk.Frame(self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2")
+            left_pad = 9 if column == 0 else 5
+            right_pad = 5 if column < len(visible) - 1 else 9
+            tile.grid(row=0, column=column, sticky="nsew", padx=(left_pad, right_pad), pady=6 if self._focus_layout == "compact" else 9)
+            tile.columnconfigure(1, weight=1)
+            source = self._focus_thumbnail_source_for_record(record)
+            thumbnail = self._focus_photo_from_source(source, (64, 38), 6) if self._focus_layout == "compact" else self._focus_photo_from_source(source, (82, 50), 7)
+            if thumbnail is not None:
+                self._focus_run_thumbnail_images.append(thumbnail)
+                image_label = tk.Label(tile, image=thumbnail, bg=tile_bg, bd=0, highlightthickness=0)
+                image_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 9))
+            title = str(record.get("title") or "Untitled run")
+            status = str(record.get("status") or "Ready")
+            title_label = tk.Label(
+                tile,
+                text=title[:27] + ("..." if len(title) > 27 else ""),
+                bg=tile_bg,
+                fg=THEME["text"],
+                anchor="w",
+                font=FONT_UI_SMALL_MEDIUM,
+                bd=0,
+            )
+            title_label.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+            status_color = THEME["success"] if str(record.get("kind")) == "completed" else THEME["accent"] if str(record.get("kind")) == "active" else THEME["muted"]
+            status_label = tk.Label(tile, text=status, bg=tile_bg, fg=status_color, font=FONT_UI_SMALL, bd=0, anchor="w")
+            is_primary_active = column == 0 and str(record.get("kind")) == "active"
+            if is_primary_active:
+                status_label.configure(textvariable=self.focus_run_status_var)
+            status_label.grid(row=1, column=1, sticky="w", pady=(3, 0))
+            value = max(0.0, min(100.0, float(record.get("progress") or 0)))
+            if is_primary_active or 0 < value < 100:
+                if is_primary_active:
+                    bar = SleekProgressbar(tile, maximum=100, variable=self.progress_var, mode="determinate", height=4, track_color=THEME["border"])
+                else:
+                    bar = SleekProgressbar(tile, maximum=100, value=value, mode="determinate", height=4, track_color=THEME["border"])
+                bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(7, 0))
+            widgets = [tile, title_label, status_label]
+            if thumbnail is not None:
+                widgets.append(image_label)
+            for widget in widgets:
+                widget.bind("<Button-1>", lambda event, item=record: self._focus_activate_run_record(item, event))
+                widget.bind("<Button-2>", lambda event, item=record: self._show_focus_run_actions_menu(item, event))
+                widget.bind("<Button-3>", lambda event, item=record: self._show_focus_run_actions_menu(item, event))
+
+        if self._focus_layout != "compact":
+            plus_icon = self._load_focus_icon("plus", 18, THEME["muted"])
+            add_button = ttk.Button(
+                self.focus_run_deck,
+                image=plus_icon if plus_icon is not None else "",
+                text="New" if plus_icon is None else "",
+                command=self._focus_new_run,
+                style="FocusQuiet.TButton",
+            )
+            add_button.grid(row=0, column=len(visible), sticky="ns", padx=(5, 9), pady=15)
+        completed = sum(1 for record in records if record.get("kind") == "completed")
+        queued = sum(1 for record in records if record.get("kind") == "queued")
+        active = sum(1 for record in records if record.get("kind") == "active")
+        parts = [f"{len(records)} run{'s' if len(records) != 1 else ''}"]
+        if active:
+            parts.append(f"{active} active")
+        if queued:
+            parts.append(f"{queued} queued")
+        if completed:
+            parts.append(f"{completed} completed")
+        self.focus_run_count_var.set("  •  ".join(parts))
+        if len(records) > limit:
+            self.focus_run_overflow_button.grid()
+            self.focus_run_overflow_button.configure(text=f"All {len(records)} runs")
+        else:
+            self.focus_run_overflow_button.grid_remove()
+
+    def _focus_thumbnail_source_for_record(self, record: dict[str, Any]) -> Any | None:
+        if Image is None:
+            return None
+        candidates: list[Path] = []
+        direct = str(record.get("preview_thumbnail_path") or "").strip()
+        if direct:
+            candidates.append(Path(direct))
+        metadata_index = record.get("metadata_index")
+        if metadata_index is not None:
+            try:
+                item = self.metadata_items[int(metadata_index)]
+            except (IndexError, TypeError, ValueError):
+                item = None
+            if item is not None:
+                preview_path = str(item.get("preview_thumbnail_path") or "").strip()
+                if preview_path:
+                    candidates.append(Path(preview_path))
+                saved = history_output_dir(item)
+                if saved is not None:
+                    candidates.extend((saved / "thumbnail.jpg", saved / "thumbnail.jpeg", saved / "thumbnail.png", saved / "thumbnail.webp"))
+        for path in candidates:
+            try:
+                if path.is_file():
+                    with Image.open(path) as source:
+                        return source.convert("RGBA").copy()
+            except Exception as exc:
+                write_diagnostic(f"run thumbnail could not be loaded ({path}): {exc}")
+        if str(record.get("kind")) == "active" and self._focus_thumbnail_source_image is not None:
+            return self._focus_thumbnail_source_image
+        return self._focus_brand_source_image
+
+    def _focus_photo_from_source(self, source: Any | None, size: tuple[int, int], radius: int) -> Any | None:
+        if source is None or ImageTk is None:
+            return None
+        try:
+            return ImageTk.PhotoImage(rounded_cover_image(source, size, radius))
+        except Exception as exc:
+            write_diagnostic(f"thumbnail surface could not be rendered: {exc}")
+            return None
+
+    def _focus_activate_run_record(self, record: dict[str, Any], event: tk.Event[Any] | None = None) -> None:
+        if str(record.get("kind")) == "active":
+            self._show_focus_run_actions_menu(record, event)
+            return
+        self._focus_select_run_record(record)
+
+    def _show_focus_run_actions_menu(self, record: dict[str, Any], event: tk.Event[Any] | None = None) -> None:
+        menu = tk.Menu(self, tearoff=False, bg=THEME["surface"], fg=THEME["text"], activebackground=THEME["accent_dark"], activeforeground="#ffffff")
+        if str(record.get("kind")) == "active":
+            menu.add_command(label="Cancel run", command=self._cancel)
+            menu.add_command(label="Skip current video", command=self._skip_video)
+            menu.add_command(label="Skip current URL", command=self._skip_url)
+            menu.add_separator()
+        metadata_index = record.get("metadata_index")
+        if metadata_index is not None:
+            menu.add_command(label="View in Library", command=lambda: (self._focus_select_run_record(record), self._select_focus_view("library")))
+            try:
+                saved = history_output_dir(self.metadata_items[int(metadata_index)])
+            except (IndexError, TypeError, ValueError):
+                saved = None
+            if saved is not None:
+                menu.add_command(
+                    label="Open saved location",
+                    command=lambda item=record: (
+                        self._focus_select_run_record(item),
+                        self._open_selected_saved_location(),
+                    ),
+                )
+        menu.add_command(label="View Activity", command=lambda: self._select_focus_view("activity"))
+        x = event.x_root if event is not None else self.winfo_pointerx()
+        y = event.y_root if event is not None else self.winfo_pointery()
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _show_active_focus_run_actions(self) -> None:
+        records = self._focus_run_records()
+        record = next((item for item in records if str(item.get("kind")) == "active"), records[0] if records else None)
+        if record is not None:
+            self._show_focus_run_actions_menu(record)
+
+    def _apply_focus_layout(self, event: tk.Event[Any] | None = None, *, force: bool = False) -> None:
+        if event is not None and event.widget is not self:
+            return
+        width = max(1, self.winfo_width())
+        height = max(1, self.winfo_height())
+        mode = focus_layout_mode(width, height)
+        if mode == self._focus_layout and not force:
+            return
+        self._focus_layout = mode
+        compact = mode == "compact"
+        balanced = mode == "balanced"
+        horizontal_pad = 20 if compact else 42 if balanced else 100
+        self.focus_shell.pack_configure(padx=12 if compact else 20, pady=(10 if compact else 16, 10 if compact else 14))
+        self.focus_command_area.grid_configure(padx=horizontal_pad, pady=(18 if compact else 26 if balanced else 42, 8 if compact else 14))
+        self.focus_active_frame.grid_configure(padx=horizontal_pad, pady=(6 if compact else 10 if balanced else 16, 9 if compact else 14))
+        self.focus_detail_wrap.grid_configure(padx=horizontal_pad, pady=(0, 7 if compact else 12))
+        self.focus_destination_button.configure(width=170 if compact else 210 if balanced else 240)
+        active_title_width = max(260, width - (2 * horizontal_pad) - (0 if compact else 180) - 150)
+        self.focus_active_title_label.configure(wraplength=active_title_width)
+        self.focus_summary_text.configure(font=(FONT_MONO_FAMILY, 8) if balanced else FONT_MONO)
+        self.focus_log.configure(font=(FONT_MONO_FAMILY, 8) if compact else FONT_MONO, pady=0 if compact else 4)
+
+        active = bool(self._focus_active_override or (self.worker and self.worker.is_alive()))
+        if compact:
+            self.focus_update_dot.pack_forget()
+            self.update_button.configure(text="Updates")
+            self.focus_active_thumb_wrap.grid_remove()
+            self.focus_transfer_label.grid_remove()
+            if active:
+                self.focus_compact_run_actions_button.grid()
+            else:
+                self.focus_compact_run_actions_button.grid_remove()
+            self.cancel_button.grid_remove()
+            self.skip_video_button.grid_remove()
+            self.skip_url_button.grid_remove()
+            self.focus_summary_frame.grid_remove()
+            self.focus_live_frame.grid_configure(column=0, columnspan=2)
+            self.focus_details_button.grid(row=0, column=1, sticky="e")
+            if not self.focus_detail_header.winfo_manager():
+                self.focus_detail_header.grid()
+            self.focus_log.after_idle(lambda: self.focus_log.see("end"))
+            if not self.focus_deck_header.winfo_manager():
+                self.focus_deck_header.grid()
+        else:
+            if not self.focus_update_dot.winfo_manager():
+                self.focus_update_dot.pack(side="left", padx=(0, 4), before=self.update_button)
+            self.update_button.configure(text=self._focus_update_full_text)
+            self.focus_active_thumb_wrap.grid()
+            self.focus_transfer_label.grid()
+            self.focus_compact_run_actions_button.grid_remove()
+            self._set_focus_run_controls_visible(active)
+            self.focus_live_frame.grid_configure(column=0, columnspan=1)
+            self.focus_summary_frame.grid(row=0, column=1, sticky="nsew")
+            self.focus_details_button.grid_remove()
+            self.focus_detail_header.grid_remove()
+            self.focus_deck_header.grid_remove()
+
+        if compact or width < 1060:
+            for button in self.focus_library_action_buttons:
+                button.pack_forget()
+            if not self.focus_library_menu_button.winfo_manager():
+                self.focus_library_menu_button.pack(side="left")
+            if not self.focus_library_details_button.winfo_manager():
+                self.focus_library_details_button.pack(side="left", padx=(6, 0), before=self.focus_library_menu_button)
+        else:
+            self.focus_library_menu_button.pack_forget()
+            self.focus_library_details_button.pack_forget()
+            for button in self.focus_library_action_buttons:
+                if not button.winfo_manager():
+                    button.pack(side="left", padx=(6, 0))
+
+        if compact:
+            self.focus_library_details.grid_remove()
+            self.focus_queue_panel.grid_configure(column=0, columnspan=2, padx=0)
+            self.focus_metadata_content.columnconfigure(0, weight=1)
+            self.focus_metadata_content.columnconfigure(1, weight=0)
+            for column in ("creator", "id", "location"):
+                self.video_tree.column(column, width=0, minwidth=0, stretch=False)
+            self.video_tree.column("title", minwidth=150)
+        else:
+            self.focus_queue_panel.grid_configure(column=0, columnspan=1, padx=(0, 18))
+            self.focus_library_details.grid(row=0, column=1, sticky="nsew")
+            self.focus_metadata_content.columnconfigure(0, weight=3)
+            self.focus_metadata_content.columnconfigure(1, weight=2)
+            self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
+            self.video_tree.column("id", width=90, minwidth=72, stretch=False)
+            self.video_tree.column("location", width=120, minwidth=90, stretch=False)
+            self.video_tree.column("title", minwidth=220)
+        self._sync_focus_destination()
+        self._refresh_focus_run_deck()
+
     def _check_runtime(self) -> None:
         if YTDLP_IMPORT_ERROR is not None:
             self._append_log(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
@@ -2751,6 +4276,20 @@ class DownloaderApp(tk.Tk):
                 pass
         self.update_check_after_id = self.after(delay_ms, self._run_auto_update_check)
 
+    def _set_focus_update_state(self, text: str, color: str) -> None:
+        self._focus_update_full_text = text
+        state = self.__dict__
+        button = state.get("update_button")
+        if button is not None:
+            display = "Updates" if state.get("_focus_layout") == "compact" else text
+            button.config(text=display)
+        dot = state.get("focus_update_dot")
+        if dot is not None:
+            try:
+                dot.itemconfigure("dot", fill=color)
+            except tk.TclError:
+                pass
+
     def _run_auto_update_check(self) -> None:
         self.update_check_after_id = None
         if (self.worker and self.worker.is_alive()) or (self.update_worker and self.update_worker.is_alive()):
@@ -2763,6 +4302,7 @@ class DownloaderApp(tk.Tk):
             return
         self.update_check_silent = silent
         self.update_button.config(state="disabled")
+        self._set_focus_update_state("Checking…", THEME["accent"])
         if not silent:
             self.status_var.set("Checking GitHub Releases for a VODForge update…")
         self.update_worker = threading.Thread(target=self._update_check_worker, daemon=True)
@@ -2780,13 +4320,13 @@ class DownloaderApp(tk.Tk):
         self._schedule_auto_update_check()
         self.update_button.config(state="normal")
         if not is_newer_release(__version__, release.version):
-            self.update_button.config(text="Check for updates")
+            self._set_focus_update_state("Up to date", THEME["success"])
             if not silent:
                 self.status_var.set(f"VODForge v{__version__} is up to date.")
                 messagebox.showinfo(APP_NAME, f"You are using the latest VODForge release (v{__version__}).")
             return
         self.status_var.set(f"VODForge {release.tag_name} is available.")
-        self.update_button.config(text=f"Update to {release.tag_name}")
+        self._set_focus_update_state(f"Update {release.tag_name}", THEME["accent"])
         asset = release_asset_for_platform(release)
         if asset is None:
             if messagebox.askyesno(
@@ -2803,6 +4343,7 @@ class DownloaderApp(tk.Tk):
 
     def _start_update_download(self, release: ReleaseInfo) -> None:
         self.update_button.config(state="disabled")
+        self._set_focus_update_state("Downloading update…", THEME["accent"])
         self.status_var.set(f"Downloading and verifying VODForge {release.tag_name}…")
         self.update_worker = threading.Thread(target=self._update_download_worker, args=(release,), daemon=True)
         self.update_worker.start()
@@ -2834,6 +4375,7 @@ class DownloaderApp(tk.Tk):
                 self.status_var.set("The macOS update could not be started.")
                 return
             self.update_button.config(state="disabled", text="Installing update…")
+            self._focus_update_full_text = "Installing update…"
             self.status_var.set("Verified update ready. VODForge is restarting to install it…")
             self.after(250, self.destroy)
             return
@@ -3089,7 +4631,7 @@ class DownloaderApp(tk.Tk):
                 info = ydl.extract_info(url, download=False)
             self.events.put(("metadata", info))
         except Exception as exc:
-            self.events.put(("error", f"Metadata fetch failed: {format_ytdlp_user_error(exc)}"))
+            self.events.put(("metadata_error", f"Metadata fetch failed: {format_ytdlp_user_error(exc)}"))
         finally:
             self.events.put(("metadata_fetch_done", None))
 
@@ -3155,6 +4697,8 @@ class DownloaderApp(tk.Tk):
             self.video_tree.selection_set(target)
             self.video_tree.focus(target)
             self._display_selected_metadata(int(target))
+        if hasattr(self, "focus_run_deck"):
+            self._refresh_focus_run_deck()
 
     def _on_video_selected(self, _event: Any = None) -> None:
         selection = self.video_tree.selection()
@@ -3183,6 +4727,12 @@ class DownloaderApp(tk.Tk):
         self.selected_title_var.set(
             f"{title}\n{creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}\n{location_text}"
         )
+        if hasattr(self, "focus_active_title_var") and not bool(self._focus_active_override or (self.worker and self.worker.is_alive())):
+            self.focus_active_title_var.set(title)
+            self.focus_active_detail_var.set(creator)
+            duration = format_duration(info.get("duration"))
+            self.focus_active_duration_var.set("" if duration == "—" else duration)
+            self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
         tags_text = build_tags_display_text(info)
         description = build_description_display_text(info)
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
@@ -3190,16 +4740,43 @@ class DownloaderApp(tk.Tk):
         source_summary, output_summary = build_encoding_summary_display(info)
         self._set_text(self.source_summary_text, source_summary, disabled=True)
         self._set_text(self.output_summary_text, output_summary, disabled=True)
+        if hasattr(self, "focus_summary_text"):
+            self._set_text(self.focus_summary_text, output_summary, disabled=True)
         thumb = best_thumbnail(info)
         self.last_thumbnail_url = str((thumb or {}).get("url") or "") or None
+        preview_thumbnail = str(info.get("preview_thumbnail_path") or "").strip()
+        preview_thumbnail_path = Path(preview_thumbnail) if preview_thumbnail else None
         local_thumbnail = saved / "thumbnail.jpeg" if saved is not None else None
-        if local_thumbnail is not None and local_thumbnail.is_file():
+        if preview_thumbnail_path is not None and preview_thumbnail_path.is_file():
+            self._load_thumbnail_file(preview_thumbnail_path)
+        elif local_thumbnail is not None and local_thumbnail.is_file():
             self._load_thumbnail_file(local_thumbnail)
         elif self.last_thumbnail_url:
             self._load_thumbnail_preview(self.last_thumbnail_url)
         else:
-            self.thumbnail_label.config(image="", text="No thumbnail loaded")
+            if hasattr(self, "focus_run_deck") and self._focus_brand_source_image is not None:
+                self._render_focus_thumbnail_surfaces(self._focus_brand_source_image)
+            else:
+                self.thumbnail_label.config(image="", text="No thumbnail loaded")
         self.status_var.set(f"Showing metadata for: {info.get('title') or info.get('id') or 'selected video'}")
+
+    def _render_focus_thumbnail_surfaces(self, source: Any | None = None, *, library_width: int | None = None) -> None:
+        if Image is None or ImageOps is None or ImageTk is None or not hasattr(self, "focus_thumbnail_wrap"):
+            return
+        if source is not None:
+            self._focus_thumbnail_source_image = source.convert("RGBA").copy()
+        image = self._focus_thumbnail_source_image if self._focus_thumbnail_source_image is not None else self._focus_brand_source_image
+        if image is None:
+            return
+        width = library_width or max(1, self.focus_thumbnail_wrap.winfo_width())
+        if width <= 1:
+            width = max(180, self.focus_thumbnail_wrap.winfo_reqwidth())
+        active_cover = rounded_cover_image(image, (152, 86), 10)
+        library_cover = rounded_cover_image(image, (max(1, width), 92), 10)
+        self.focus_active_thumbnail_image = ImageTk.PhotoImage(active_cover)
+        self.thumbnail_image = ImageTk.PhotoImage(library_cover)
+        self.focus_active_thumbnail_label.config(image=self.focus_active_thumbnail_image, text="")
+        self.thumbnail_label.config(image=self.thumbnail_image, text="")
 
     def _load_thumbnail_file(self, path: Path) -> None:
         if Image is None or ImageTk is None:
@@ -3208,6 +4785,9 @@ class DownloaderApp(tk.Tk):
         try:
             with Image.open(path) as source:
                 image = source.copy()
+            if hasattr(self, "focus_run_deck"):
+                self._render_focus_thumbnail_surfaces(image)
+                return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
             self.thumbnail_label.config(image=self.thumbnail_image, text="")
@@ -3224,6 +4804,9 @@ class DownloaderApp(tk.Tk):
             from io import BytesIO
 
             image = Image.open(BytesIO(data))
+            if hasattr(self, "focus_run_deck"):
+                self._render_focus_thumbnail_surfaces(image)
+                return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
             self.thumbnail_label.config(image=self.thumbnail_image, text="")
@@ -3290,18 +4873,62 @@ class DownloaderApp(tk.Tk):
             batch_mode=bool(self.batch_urls),
         )
 
+        if self.worker is not None and self.worker.is_alive():
+            self.pending_jobs.append(job)
+            if hasattr(self, "_queued_ui_urls"):
+                self._queued_ui_urls.append(job.url)
+                self.focus_engine_var.set(f"1 active  /  {len(self.pending_jobs)} queued  /  runs process one at a time")
+                self._append_log(f"Queued run: {job.url}")
+                self._refresh_focus_run_deck()
+                self.url_var.set("")
+                self.focus_url_entry.focus_set()
+                self.download_button.configure(text="Queue run", state="normal")
+            return
+
+        self._launch_download_job(job)
+
+    def _launch_download_job(self, job: DownloadJob) -> None:
+        self.active_job = job
+        self.url_var.set(job.url)
+
         self.cancel_requested = False
         self.skip_video_requested = False
         self.skip_url_requested = False
         self.progress_var.set(0)
         self.status_var.set("Starting…")
+        if hasattr(self, "focus_active_title_var"):
+            self.focus_active_title_var.set(url)
+            self.focus_active_detail_var.set("Preparing source")
+            self.focus_active_duration_var.set("")
+            self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
+            self.focus_transfer_var.set("Preparing source and output plan")
+            self._refresh_focus_run_deck()
         self.events.put(("progress_determinate", 0))
-        self.download_button.config(state="disabled")
+        if hasattr(self, "focus_run_deck"):
+            self.download_button.config(text="Queue run", state="normal")
+        else:
+            self.download_button.config(state="disabled")
         self.cancel_button.config(state="normal")
         self.skip_video_button.config(state="normal")
         self.skip_url_button.config(state="normal")
         self.worker = threading.Thread(target=self._download_worker, args=(job,), daemon=True)
         self.worker.start()
+        if hasattr(self, "focus_run_controls"):
+            self._set_focus_run_controls_visible(True)
+            self._apply_focus_layout(force=True)
+
+    def _launch_next_pending_job(self) -> bool:
+        if not self.pending_jobs:
+            self.active_job = None
+            if hasattr(self, "focus_run_deck"):
+                self.download_button.configure(text="Forge", state="normal")
+                self.focus_engine_var.set("Runs process one at a time")
+            return False
+        job = self.pending_jobs.pop(0)
+        if hasattr(self, "_queued_ui_urls") and self._queued_ui_urls:
+            self._queued_ui_urls.pop(0)
+        self._launch_download_job(job)
+        return True
 
     def _cancel(self) -> None:
         self.cancel_requested = True
@@ -3828,6 +5455,11 @@ class DownloaderApp(tk.Tk):
                     self.progress_var.set(float(payload))
                 elif kind == "status":
                     self.status_var.set(str(payload))
+                    if hasattr(self, "focus_run_status_var"):
+                        status_text = str(payload)
+                        eta = status_text.partition(" ETA ")[2]
+                        if eta:
+                            self.focus_run_status_var.set(f"{self.progress_var.get():.0f}%  /  ETA {eta}")
                 elif kind == "metadata":
                     if isinstance(payload, dict):
                         self._display_metadata(payload)
@@ -3839,6 +5471,10 @@ class DownloaderApp(tk.Tk):
                 elif kind == "metadata_fetch_done":
                     if hasattr(self, "preview_metadata_button"):
                         self.preview_metadata_button.config(state="normal")
+                elif kind == "metadata_error":
+                    self.status_var.set("Metadata preview failed")
+                    self._append_log(f"ERROR: {payload}")
+                    messagebox.showerror(APP_NAME, str(payload))
                 elif kind == "download_folders":
                     if isinstance(payload, list):
                         self.last_output_dirs = [Path(path) for path in payload]
@@ -3853,6 +5489,7 @@ class DownloaderApp(tk.Tk):
                     self.update_check_silent = False
                     self._schedule_auto_update_check()
                     self.update_button.config(state="normal")
+                    self._set_focus_update_state("Check updates", THEME["subtle"])
                     if silent:
                         write_diagnostic(f"automatic update check failed: {payload}")
                     else:
@@ -3866,6 +5503,13 @@ class DownloaderApp(tk.Tk):
                     self.cancel_button.config(state="disabled")
                     self.skip_video_button.config(state="disabled")
                     self.skip_url_button.config(state="disabled")
+                    if hasattr(self, "focus_transfer_var"):
+                        self.focus_transfer_var.set("Complete  /  Ready to open in Library")
+                        self.focus_run_status_var.set("Completed")
+                        self._refresh_focus_run_deck()
+                    if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
+                        self._set_focus_run_controls_visible(False)
+                        self._refresh_focus_run_deck()
                 elif kind == "error":
                     self.status_var.set("Failed")
                     self._append_log(f"ERROR: {payload}")
@@ -3874,15 +5518,25 @@ class DownloaderApp(tk.Tk):
                     self.cancel_button.config(state="disabled")
                     self.skip_video_button.config(state="disabled")
                     self.skip_url_button.config(state="disabled")
+                    if hasattr(self, "focus_transfer_var"):
+                        self.focus_transfer_var.set("Run failed  /  Review Activity for details")
+                        self.focus_run_status_var.set("Failed")
+                        self._refresh_focus_run_deck()
+                    if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
+                        self._set_focus_run_controls_visible(False)
+                        self._refresh_focus_run_deck()
         except queue.Empty:
             pass
         self.after(100, self._pump_events)
 
     def _append_log(self, line: str) -> None:
-        self.log.config(state="normal")
-        self.log.insert("end", line.rstrip() + "\n")
-        self.log.see("end")
-        self.log.config(state="disabled")
+        for widget in (self.log, getattr(self, "focus_log", None)):
+            if widget is None:
+                continue
+            widget.config(state="normal")
+            widget.insert("end", line.rstrip() + "\n")
+            widget.see("end")
+            widget.config(state="disabled")
 
     @staticmethod
     def _fmt_bytes(value: Any) -> str:

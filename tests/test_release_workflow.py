@@ -74,10 +74,14 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
 
     assert '--icon "$icon_file"' in macos_build
     assert '"--icon", $iconFile' in windows_build
+    assert 'assets/icons/lucide' in macos_build
+    assert 'assets/icons/lucide' in windows_build
     assert "SetupIconFile=assets\\VODForge.ico" in installer
     assert (ROOT / "assets" / "VODForge.png").is_file()
     assert (ROOT / "assets" / "VODForge.ico").is_file()
     assert (ROOT / "assets" / "VODForge.icns").is_file()
+    assert (ROOT / "assets" / "icons" / "lucide" / "settings.png").is_file()
+    assert (ROOT / "assets" / "icons" / "lucide" / "LICENSE").is_file()
 
 
 def test_release_finalizer_replaces_unsigned_reviews_and_regenerates_checksums():

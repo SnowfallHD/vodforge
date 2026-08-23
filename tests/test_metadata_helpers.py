@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 import yt_downloader.app as app_module
 from yt_downloader.app import (
@@ -48,6 +49,8 @@ from yt_downloader.app import (
     download_layout_mode,
     bundled_asset_path,
     configure_windows_app_identity,
+    focus_layout_mode,
+    rounded_cover_image,
     metadata_layout_mode,
     platform_font_families,
     prepare_batch_item_url,
@@ -109,9 +112,27 @@ def test_metadata_layout_keeps_all_surfaces_visible_at_each_width():
     assert metadata_layout_mode(699) == "two-column"
 
 
+def test_focus_layout_collapses_before_live_details_are_clipped():
+    assert focus_layout_mode(1180, 780) == "wide"
+    assert focus_layout_mode(1000, 720) == "balanced"
+    assert focus_layout_mode(920, 650) == "compact"
+    assert focus_layout_mode(820, 560) == "compact"
+
+
 def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):
     assert bundled_asset_path("VODForge.ico", meipass=tmp_path) == tmp_path / "assets" / "VODForge.ico"
     assert bundled_asset_path("VODForge.png", meipass=None, repo_root=tmp_path) == tmp_path / "assets" / "VODForge.png"
+
+
+def test_rounded_cover_image_fills_slot_and_keeps_only_rounded_corners_transparent():
+    source = Image.new("RGB", (640, 360), "#336699")
+
+    rendered = rounded_cover_image(source, (160, 90), 10)
+
+    assert rendered.size == (160, 90)
+    assert rendered.mode == "RGBA"
+    assert rendered.getpixel((0, 0))[3] == 0
+    assert rendered.getpixel((80, 45)) == (51, 102, 153, 255)
 
 
 def test_windows_app_identity_is_a_noop_on_other_platforms():

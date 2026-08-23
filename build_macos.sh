@@ -50,7 +50,8 @@ build_version_file="$build_version_dir/VODFORGE_VERSION"
 printf '%s' "$build_version" > "$build_version_file"
 icon_file="assets/VODForge.icns"
 icon_png="assets/VODForge.png"
-if [[ ! -f "$icon_file" || ! -f "$icon_png" ]]; then
+icon_asset_dir="assets/icons/lucide"
+if [[ ! -f "$icon_file" || ! -f "$icon_png" || ! -d "$icon_asset_dir" ]]; then
   echo "VODForge icon assets are missing."
   exit 1
 fi
@@ -74,6 +75,7 @@ fi
   --icon "$icon_file" \
   --add-data "$build_version_file:." \
   --add-data "$icon_png:assets" \
+  --add-data "$icon_asset_dir:assets/icons/lucide" \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
   --add-binary "$deno:." \

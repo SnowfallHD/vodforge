@@ -59,7 +59,7 @@ def test_silent_current_version_check_does_not_interrupt_user(monkeypatch):
 
     assert shown == []
     assert app.status_var.value == "Ready"
-    assert app.update_button.values["text"] == "Check for updates"
+    assert app.update_button.values["text"] == "Up to date"
 
 
 def test_automatic_check_prompts_for_new_signed_platform_asset(monkeypatch):
@@ -74,7 +74,7 @@ def test_automatic_check_prompts_for_new_signed_platform_asset(monkeypatch):
     app._show_update_result(_release("1.2.4"))
 
     assert started == ["v1.2.4"]
-    assert app.update_button.values["text"] == "Update to v1.2.4"
+    assert app.update_button.values["text"] == "Update v1.2.4"
 
 
 def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path: Path):

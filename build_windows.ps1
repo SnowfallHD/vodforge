@@ -62,11 +62,12 @@ Set-Content -Path $versionResourceFile -Value $versionResource -Encoding UTF8
 $versionFile = @("--version-file", $versionResourceFile)
 $iconFile = Join-Path $PSScriptRoot "assets\VODForge.ico"
 $iconPng = Join-Path $PSScriptRoot "assets\VODForge.png"
-if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng)) {
+$iconAssetDir = Join-Path $PSScriptRoot "assets\icons\lucide"
+if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng) -or -not (Test-Path $iconAssetDir)) {
   throw "VODForge icon assets are missing."
 }
 $iconArgs = @("--icon", $iconFile)
-$addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets")
+$addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets", "--add-data", "$iconAssetDir;assets/icons/lucide")
 
 # Bundle FFmpeg. Prefer explicit vendor copies because embedding thumbnails also
 # needs ffprobe.exe. imageio-ffmpeg is only a fallback for non-thumbnail flows.
