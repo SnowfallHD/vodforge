@@ -26,6 +26,7 @@ from yt_downloader.app import (
     build_failed_encoding_summary_metadata,
     build_description_display_text,
     clean_single_video_url,
+    center_alpha_content,
     single_video_url_requires_video_id_error,
     build_tags_display_text,
     build_vod_ffmpeg_command,
@@ -49,8 +50,13 @@ from yt_downloader.app import (
     download_layout_mode,
     bundled_asset_path,
     configure_windows_app_identity,
+    flatten_alpha_image,
+    focus_icon_color_variant,
     focus_layout_mode,
+    render_monochrome_icon,
+    rounded_contain_image,
     rounded_cover_image,
+    runtime_window_icon_asset,
     metadata_layout_mode,
     platform_font_families,
     prepare_batch_item_url,
@@ -65,6 +71,7 @@ from yt_downloader.app import (
     video_list_row_values,
     video_file_name,
     video_output_dir,
+    youtube_thumbnail_size,
     ytdlp_ffmpeg_location,
     write_compact_video_metadata,
 )
@@ -82,6 +89,20 @@ def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")
     assert platform_font_families("linux") == ("TkDefaultFont", "TkFixedFont")
+
+
+def test_macos_uses_bundle_icns_without_a_runtime_png_override():
+    assert runtime_window_icon_asset("darwin") is None
+    assert runtime_window_icon_asset("win32") == "VODForge.ico"
+    assert runtime_window_icon_asset("linux") == "VODForge.png"
+
+
+def test_focus_icon_colors_select_exact_vector_variants():
+    assert focus_icon_color_variant(app_module.THEME["muted"]) == "muted"
+    assert focus_icon_color_variant(app_module.THEME["accent"]) == "accent"
+    assert focus_icon_color_variant(app_module.THEME["text"]) == "text"
+    assert focus_icon_color_variant("#FFFFFF") == "white"
+    assert focus_icon_color_variant("#123456") is None
 
 
 def test_initial_window_size_leaves_room_for_screen_chrome():
@@ -132,7 +153,127 @@ def test_rounded_cover_image_fills_slot_and_keeps_only_rounded_corners_transpare
     assert rendered.size == (160, 90)
     assert rendered.mode == "RGBA"
     assert rendered.getpixel((0, 0))[3] == 0
+    assert any(0 < rendered.getpixel((x, y))[3] < 255 for x in range(10) for y in range(10))
     assert rendered.getpixel((80, 45)) == (51, 102, 153, 255)
+
+
+def test_youtube_thumbnail_slots_use_standard_16_by_9_geometry():
+    assert youtube_thumbnail_size(152) == (152, 86)
+    assert youtube_thumbnail_size(80) == (80, 45)
+    assert youtube_thumbnail_size(64) == (64, 36)
+
+
+def test_rounded_contain_image_preserves_placeholder_artwork_without_cropping():
+    source = Image.new("RGB", (100, 100), "#ff0000")
+
+    rendered = rounded_contain_image(source, (160, 90), 10, "#121419")
+
+    assert rendered.size == (160, 90)
+    assert rendered.getpixel((0, 0))[3] == 0
+    assert rendered.getpixel((8, 45)) == (18, 20, 25, 255)
+    assert rendered.getpixel((80, 45)) == (255, 0, 0, 255)
+
+
+def test_thumbnail_flattening_bakes_antialiased_edges_against_the_ui_background():
+    source = Image.new("RGB", (640, 360), "#336699")
+    rounded = rounded_cover_image(source, (160, 90), 10)
+
+    rendered = flatten_alpha_image(rounded, "#08090a")
+
+    assert rendered.size == (160, 90)
+    assert rendered.getpixel((0, 0)) == (8, 9, 10, 255)
+    assert rendered.getextrema()[3] == (255, 255)
+    assert any(rendered.getpixel((x, y))[:3] not in {(8, 9, 10), (51, 102, 153)} for x in range(10) for y in range(10))
+
+
+def test_center_alpha_content_moves_visible_bounds_to_the_canvas_center():
+    source = Image.new("RGBA", (24, 24), (0, 0, 0, 0))
+    for x in range(1, 10):
+        for y in range(3, 15):
+            source.putpixel((x, y), (255, 255, 255, 255))
+
+    rendered = center_alpha_content(source)
+    left, top, right, bottom = rendered.getchannel("A").getbbox() or (0, 0, 0, 0)
+
+    assert abs((left + right) - 24) <= 1
+    assert abs((top + bottom) - 24) <= 1
+
+
+def test_monochrome_icon_renderer_preserves_hard_centers_and_antialiased_edges():
+    source = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    for x in range(12, 52):
+        for y in range(20, 44):
+            source.putpixel((x, y), (0, 0, 0, 255))
+
+    rendered = render_monochrome_icon(source, 16, "#ffffff")
+
+    assert rendered.size == (16, 16)
+    assert rendered.getpixel((8, 8)) == (255, 255, 255, 255)
+    assert rendered.getpixel((0, 0))[3] == 0
+
+
+def test_accepted_run_resets_source_field_and_batch_state_for_the_next_send():
+    class Variable:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+        def set(self, value):
+            self.value = value
+
+    class Entry:
+        focused = False
+
+        def focus_set(self):
+            self.focused = True
+
+    app = object.__new__(DownloaderApp)
+    app.batch_urls = ["https://example.test/one", "https://example.test/two"]
+    app.url_list_file_var = Variable("two URLs loaded")
+    app.url_var = Variable("https://example.test/one")
+    app.focus_url_entry = Entry()
+
+    DownloaderApp._reset_source_input_after_send(app)
+
+    assert app.batch_urls == []
+    assert app.url_list_file_var.get() == "No URL list loaded"
+    assert app.url_var.get() == ""
+    assert app.focus_url_entry.focused is True
+
+
+def test_copy_feedback_temporarily_confirms_then_restores_the_button():
+    class FakeButton:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, str]] = []
+
+        def configure(self, **kwargs: str) -> None:
+            self.calls.append(kwargs)
+
+    button = FakeButton()
+    app = object.__new__(DownloaderApp)
+    app.focus_library_copy_buttons = {"tags": (button, "Copy tags")}
+    app._focus_copy_feedback_after_ids = {}
+    scheduled: dict[str, object] = {}
+
+    def schedule(delay: int, callback: object) -> str:
+        scheduled["delay"] = delay
+        scheduled["callback"] = callback
+        return "after-1"
+
+    app.after = schedule
+    app.after_cancel = lambda _after_id: None
+
+    DownloaderApp._show_copy_feedback(app, "tags")
+
+    assert button.calls[-1] == {"text": "Copied", "style": "FocusCopySuccess.TButton"}
+    assert scheduled["delay"] == 900
+    assert app._focus_copy_feedback_after_ids == {"tags": "after-1"}
+
+    scheduled["callback"]()
+    assert button.calls[-1] == {"text": "Copy tags", "style": "FocusQuiet.TButton"}
+    assert app._focus_copy_feedback_after_ids == {}
 
 
 def test_windows_app_identity_is_a_noop_on_other_platforms():

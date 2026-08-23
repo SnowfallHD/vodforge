@@ -2,6 +2,8 @@ from pathlib import Path
 
 from importlib.util import module_from_spec, spec_from_file_location
 
+from PIL import Image
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,6 +75,8 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
     installer = (ROOT / "installer_windows.iss").read_text()
 
     assert '--icon "$icon_file"' in macos_build
+    assert "Print :CFBundleIconFile" in macos_build
+    assert 'cmp -s "$icon_file" "$bundle_icon"' in macos_build
     assert '"--icon", $iconFile' in windows_build
     assert 'assets/icons/lucide' in macos_build
     assert 'assets/icons/lucide' in windows_build
@@ -80,8 +84,40 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
     assert (ROOT / "assets" / "VODForge.png").is_file()
     assert (ROOT / "assets" / "VODForge.ico").is_file()
     assert (ROOT / "assets" / "VODForge.icns").is_file()
+    macos_icon_source = ROOT / "assets" / "VODForge-macos.png"
+    assert macos_icon_source.is_file()
+    with Image.open(macos_icon_source) as icon:
+        assert icon.size == (1024, 1024)
+        bounds = icon.getchannel("A").getbbox()
+    assert bounds is not None
+    left, top, right, bottom = bounds
+    assert min(left, top) >= 48
+    assert max(right, bottom) <= 976
     assert (ROOT / "assets" / "icons" / "lucide" / "settings.png").is_file()
+    assert (ROOT / "assets" / "icons" / "lucide" / "send-filled.png").is_file()
+    assert (ROOT / "assets" / "icons" / "lucide" / "MATERIAL_LICENSE").is_file()
     assert (ROOT / "assets" / "icons" / "lucide" / "LICENSE").is_file()
+    for icon_name in ("activity", "folder", "library", "link-2", "settings", "sliders-horizontal", "send-filled"):
+        with Image.open(ROOT / "assets" / "icons" / "lucide" / f"{icon_name}.png") as icon:
+            assert icon.size == (512, 512)
+            assert "A" in icon.getbands()
+        assert (ROOT / "assets" / "icons" / "lucide" / f"{icon_name}-20.svg").is_file()
+        with Image.open(ROOT / "assets" / "icons" / "lucide" / f"{icon_name}-20.png") as icon:
+            assert icon.size == (20, 20)
+            assert "A" in icon.getbands()
+    for vector_variant in (
+        "activity-20-accent.svg",
+        "activity-20-muted.svg",
+        "folder-20-muted.svg",
+        "library-20-accent.svg",
+        "library-20-muted.svg",
+        "link-2-20-muted.svg",
+        "send-filled-20-white.svg",
+        "settings-20-muted.svg",
+        "settings-20-text.svg",
+        "sliders-horizontal-20-muted.svg",
+    ):
+        assert (ROOT / "assets" / "icons" / "lucide" / vector_variant).is_file()
 
 
 def test_release_finalizer_replaces_unsigned_reviews_and_regenerates_checksums():
@@ -108,9 +144,10 @@ def test_release_notes_lead_with_clear_user_facing_platform_choices():
     assert "VODForge-macOS-arm64-v1.2.3.zip" in notes
     assert "VODForge-macOS-x64-v1.2.3.zip" in notes
     assert "VODForge-Windows-Setup-v1.2.3.exe" in notes
-    assert "keeps **Download MP4** visible" in notes
-    assert "failing NAS or shell provider cannot close VODForge" in notes
-    assert "real release version instead of `0.0.0`" in notes
+    assert "cleaner **Forge** workspace" in notes
+    assert "original YouTube source and final VODForge output details" in notes
+    assert "render sharply on Retina Macs" in notes
+    assert "URL field resets after a run is accepted" in notes
 
 
 def test_draft_release_notes_keep_the_release_team_safety_gate():

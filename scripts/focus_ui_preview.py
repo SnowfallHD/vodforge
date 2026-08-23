@@ -69,6 +69,8 @@ def main() -> None:
     parser.add_argument("--size", default="1180x780")
     parser.add_argument("--settings", action="store_true")
     parser.add_argument("--run-actions", action="store_true")
+    parser.add_argument("--overflow", action="store_true")
+    parser.add_argument("--copy-feedback", choices=("tags", "description", "thumbnail"))
     args = parser.parse_args()
 
     app = DownloaderApp()
@@ -76,6 +78,13 @@ def main() -> None:
     app.geometry(args.size)
     app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     app.metadata_items = preview_metadata()
+    if args.overflow:
+        seed_items = list(app.metadata_items)
+        for index in range(4, 32):
+            seed = dict(seed_items[index % len(seed_items)])
+            seed["id"] = f"visual-qa-{index + 1:03d}"
+            seed["title"] = f"{seed['title']} — Visual QA {index + 1:02d}"
+            app.metadata_items.append(seed)
     app._render_metadata_tree(selected_index=0)
 
     app._focus_active_override = True
@@ -107,6 +116,8 @@ def main() -> None:
             "14:28:25   [info]      Processing…",
         )
     )
+    if args.overflow:
+        log_lines = "\n".join(f"{line}  /  pass {pass_index + 1}" for pass_index in range(8) for line in log_lines.splitlines())
     output_lines = "\n".join(
         (
             "Format        MP4",
@@ -119,6 +130,7 @@ def main() -> None:
         )
     )
     def apply_preview_state() -> None:
+        app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         app.focus_active_title_var.set("Good Desires vs. Bad Desires (How Do We Know the Difference?)")
         app.focus_active_detail_var.set("BibleProject")
         app.focus_active_profile_var.set("1080p Full HD  •  Auto CBR")
@@ -155,6 +167,8 @@ def main() -> None:
                 SimpleNamespace(x_root=840, y_root=560),
             ),
         )
+    if args.copy_feedback:
+        app.after(1200, lambda: app._show_copy_feedback(args.copy_feedback))
     app.mainloop()
 
 

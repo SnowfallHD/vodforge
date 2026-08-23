@@ -57,13 +57,13 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
-- The Download screen now adapts to shorter and narrower displays, keeps **Download MP4** visible, and moves activity into a full-size **Log** tab.
-- Windows network-folder browsing now runs in an isolated picker so a failing NAS or shell provider cannot close VODForge; mapped drives and `\\\\server\\share` paths can also be pasted directly.
-- VODForge now has one consistent app icon across the installer, executable, taskbar, Finder, and Dock.
-- Windows file properties and macOS Finder now show the real release version instead of `0.0.0`.
-- Embedded thumbnails and embedded metadata now default off; separate thumbnail and compact JSON files remain enabled by default.
-- VODForge checks stable GitHub Releases automatically after startup and every six hours.
-- Updates are downloaded only after approval and are verified before installation.
+- VODForge now opens into a cleaner **Forge** workspace built around one URL field, the active download, live progress, and the run queue.
+- **Forge**, **Library**, and **Activity** use the available window space and adapt at smaller sizes without hiding the primary download controls.
+- The run deck clearly distinguishes the active, queued, and completed items while preserving VODForge's reliable sequential download behavior.
+- **Library** keeps the original YouTube source and final VODForge output details together, including video and audio bitrate information.
+- Interface icons and thumbnails now render sharply on Retina Macs, with a consistent app icon across Finder, Dock, Windows installer, executable, and taskbar.
+- Copy actions provide visible confirmation, and the URL field resets after a run is accepted so the next link is ready to paste.
+- VODForge continues to check stable GitHub Releases automatically and verifies approved updates before installation.
 - Windows downloads are signed by Kryden Ventures, LLC.
 - Mac downloads are Developer ID signed, notarized, and provided separately for Apple silicon and Intel-based Macs.
 

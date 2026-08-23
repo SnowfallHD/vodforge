@@ -50,8 +50,9 @@ build_version_file="$build_version_dir/VODFORGE_VERSION"
 printf '%s' "$build_version" > "$build_version_file"
 icon_file="assets/VODForge.icns"
 icon_png="assets/VODForge.png"
+macos_icon_source="assets/VODForge-macos.png"
 icon_asset_dir="assets/icons/lucide"
-if [[ ! -f "$icon_file" || ! -f "$icon_png" || ! -d "$icon_asset_dir" ]]; then
+if [[ ! -f "$icon_file" || ! -f "$icon_png" || ! -f "$macos_icon_source" || ! -d "$icon_asset_dir" ]]; then
   echo "VODForge icon assets are missing."
   exit 1
 fi
@@ -100,6 +101,13 @@ done
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_plist")" != "$bundle_version" ]] || \
    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app_plist")" != "$bundle_version" ]]; then
   echo "Packaged macOS version metadata does not match $bundle_version."
+  exit 1
+fi
+
+bundle_icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app_plist")"
+bundle_icon="dist/VODForge.app/Contents/Resources/$bundle_icon_name"
+if [[ "$bundle_icon_name" != "VODForge.icns" ]] || [[ ! -f "$bundle_icon" ]] || ! cmp -s "$icon_file" "$bundle_icon"; then
+  echo "Packaged macOS Finder and Dock icon must both use the exact VODForge.icns asset."
   exit 1
 fi
 

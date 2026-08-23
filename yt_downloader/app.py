@@ -175,10 +175,111 @@ def rounded_cover_image(source: Any, size: tuple[int, int], radius: int) -> Any:
         raise RuntimeError("Pillow is required for thumbnail rendering")
     resampling = getattr(Image, "Resampling", Image)
     cover = ImageOps.fit(source.convert("RGBA"), size, method=resampling.LANCZOS, centering=(0.5, 0.5))
-    mask = Image.new("L", size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), radius=max(0, radius), fill=255)
+    mask = rounded_alpha_mask(size, radius)
     cover.putalpha(mask)
     return cover
+
+
+def youtube_thumbnail_size(width: int) -> tuple[int, int]:
+    """Return the standard 16:9 thumbnail slot for a given display width."""
+    safe_width = max(1, int(width))
+    return safe_width, max(1, round(safe_width * 9 / 16))
+
+
+def rounded_contain_image(source: Any, size: tuple[int, int], radius: int, background: str) -> Any:
+    """Fit placeholder artwork inside a 16:9 slot without cropping its edges."""
+    if Image is None or ImageDraw is None or ImageOps is None:
+        raise RuntimeError("Pillow is required for thumbnail rendering")
+    resampling = getattr(Image, "Resampling", Image)
+    padding = max(3, round(min(size) * 0.07))
+    bounds = (max(1, size[0] - 2 * padding), max(1, size[1] - 2 * padding))
+    contained = ImageOps.contain(source.convert("RGBA"), bounds, method=resampling.LANCZOS)
+    canvas = Image.new("RGBA", size, background)
+    canvas.alpha_composite(contained, ((size[0] - contained.width) // 2, (size[1] - contained.height) // 2))
+    mask = rounded_alpha_mask(size, radius)
+    canvas.putalpha(mask)
+    return canvas
+
+
+def rounded_alpha_mask(size: tuple[int, int], radius: int, *, scale: int = 4) -> Any:
+    """Return a supersampled rounded mask with smooth corners at display size."""
+    if Image is None or ImageDraw is None:
+        raise RuntimeError("Pillow is required for rounded image rendering")
+    safe_scale = max(1, int(scale))
+    render_size = (max(1, size[0] * safe_scale), max(1, size[1] * safe_scale))
+    mask = Image.new("L", render_size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, render_size[0] - 1, render_size[1] - 1),
+        radius=max(0, radius) * safe_scale,
+        fill=255,
+    )
+    if safe_scale == 1:
+        return mask
+    resampling = getattr(Image, "Resampling", Image)
+    return mask.resize(size, resampling.LANCZOS)
+
+
+def flatten_alpha_image(source: Any, background: str) -> Any:
+    """Precompose an RGBA surface so Tk never quantizes its antialiased edge."""
+    if Image is None:
+        raise RuntimeError("Pillow is required for image compositing")
+    image = source.convert("RGBA")
+    backdrop = Image.new("RGBA", image.size, background)
+    return Image.alpha_composite(backdrop, image)
+
+
+def center_alpha_content(source: Any) -> Any:
+    """Center visible RGBA content while preserving the source canvas and scale."""
+    if Image is None:
+        raise RuntimeError("Pillow is required for icon rendering")
+    image = source.convert("RGBA")
+    bounds = image.getchannel("A").getbbox()
+    if bounds is None:
+        return image.copy()
+    left, top, right, bottom = bounds
+    offset_x = round((image.width - (left + right)) / 2)
+    offset_y = round((image.height - (top + bottom)) / 2)
+    if offset_x == 0 and offset_y == 0:
+        return image.copy()
+    centered = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    centered.alpha_composite(image, (offset_x, offset_y))
+    return centered
+
+
+def render_monochrome_icon(source: Any, size: int, color: str) -> Any:
+    """Render a centered monochrome icon with crisp, contrast-preserving alpha."""
+    if Image is None:
+        raise RuntimeError("Pillow is required for icon rendering")
+    raw = source.convert("RGBA")
+    icon = raw if raw.size == (size, size) else center_alpha_content(raw)
+    resampling = getattr(Image, "Resampling", Image)
+    alpha = icon.getchannel("A")
+    if alpha.size != (size, size):
+        alpha = alpha.resize((size, size), resampling.LANCZOS)
+    alpha = alpha.point(lambda value: max(0, min(255, round((value - 128) * 1.24 + 128))))
+    rendered = Image.new("RGBA", (size, size), color)
+    rendered.putalpha(alpha)
+    return rendered
+
+
+def focus_icon_color_variant(color: str) -> str | None:
+    """Map fixed Focus Deck colors to their bundled vector variants."""
+    return {
+        THEME["muted"].lower(): "muted",
+        THEME["accent"].lower(): "accent",
+        THEME["text"].lower(): "text",
+        "#ffffff": "white",
+    }.get(str(color).lower())
+
+
+def runtime_window_icon_asset(platform_name: str | None = None) -> str | None:
+    """Return the runtime window icon, leaving macOS to the bundle ICNS."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    if platform_name.startswith("win"):
+        return "VODForge.ico"
+    if platform_name == "darwin":
+        return None
+    return "VODForge.png"
 
 
 def configure_windows_app_identity(platform_name: str | None = None) -> bool:
@@ -2189,6 +2290,112 @@ class SleekProgressbar(tk.Canvas):
                 self.create_line(start, y1, end, y1, fill="#9a96ff")
 
 
+class SleekScrollbar(tk.Canvas):
+    """A narrow auto-hiding scrollbar without platform arrow chrome."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        command: Callable[..., Any],
+        width: int = 8,
+        thumb_color: str = THEME["border"],
+        hover_color: str = THEME["subtle"],
+    ) -> None:
+        super().__init__(
+            parent,
+            width=width,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+            takefocus=0,
+            cursor="arrow",
+        )
+        self._command = command
+        self._thumb_color = thumb_color
+        self._hover_color = hover_color
+        self._first = 0.0
+        self._last = 1.0
+        self._hovered = False
+        self._drag_offset: float | None = None
+        self.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self.bind("<Enter>", self._set_hovered, add="+")
+        self.bind("<Leave>", self._set_unhovered, add="+")
+        self.bind("<Button-1>", self._begin_drag, add="+")
+        self.bind("<B1-Motion>", self._drag, add="+")
+        self.bind("<ButtonRelease-1>", self._end_drag, add="+")
+
+    def set(self, first: str | float, last: str | float) -> None:
+        try:
+            self._first = max(0.0, min(1.0, float(first)))
+            self._last = max(self._first, min(1.0, float(last)))
+        except (TypeError, ValueError):
+            self._first, self._last = 0.0, 1.0
+        self._redraw()
+
+    def _thumb_bounds(self) -> tuple[float, float] | None:
+        length = max(1, self.winfo_height())
+        visible = max(0.0, min(1.0, self._last - self._first))
+        if visible >= 0.999:
+            return None
+        thumb_length = min(float(length), max(28.0, length * visible))
+        travel = max(1.0, length - thumb_length)
+        scrollable = max(0.001, 1.0 - visible)
+        start = travel * min(1.0, self._first / scrollable)
+        return start, start + thumb_length
+
+    def _redraw(self) -> None:
+        try:
+            self.delete("all")
+            bounds = self._thumb_bounds()
+            if bounds is None:
+                return
+            x = max(2, self.winfo_width() // 2)
+            start, end = bounds
+            color = self._hover_color if self._hovered else self._thumb_color
+            self.create_line(x, start + 3, x, max(start + 3, end - 3), fill=color, width=4, capstyle=tk.ROUND)
+        except tk.TclError:
+            return
+
+    def _set_hovered(self, _event: tk.Event[Any]) -> None:
+        self._hovered = True
+        self._redraw()
+
+    def _set_unhovered(self, _event: tk.Event[Any]) -> None:
+        self._hovered = False
+        self._drag_offset = None
+        self._redraw()
+
+    def _begin_drag(self, event: tk.Event[Any]) -> None:
+        bounds = self._thumb_bounds()
+        if bounds is None:
+            return
+        start, end = bounds
+        if start <= event.y <= end:
+            self._drag_offset = event.y - start
+            return
+        self._drag_offset = (end - start) / 2
+        self._move_thumb(event.y - self._drag_offset)
+
+    def _drag(self, event: tk.Event[Any]) -> None:
+        if self._drag_offset is not None:
+            self._move_thumb(event.y - self._drag_offset)
+
+    def _end_drag(self, _event: tk.Event[Any]) -> None:
+        self._drag_offset = None
+
+    def _move_thumb(self, top: float) -> None:
+        bounds = self._thumb_bounds()
+        if bounds is None:
+            return
+        length = max(1.0, float(self.winfo_height()))
+        thumb_length = bounds[1] - bounds[0]
+        travel = max(1.0, length - thumb_length)
+        visible = max(0.0, min(1.0, self._last - self._first))
+        first = max(0.0, min(1.0 - visible, (max(0.0, min(travel, top)) / travel) * (1.0 - visible)))
+        self._command("moveto", first)
+
+
 class PillAction(tk.Canvas):
     """A compact rounded action surface for header utilities."""
 
@@ -2258,6 +2465,160 @@ class PillAction(tk.Canvas):
         self.coords(self._text_item, 18 if self._icon is None else 38, height // 2)
 
 
+class RoundedIconButton(tk.Canvas):
+    """A Retina-friendly rounded icon control drawn with native canvas shapes."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        image: Any | None,
+        text: str,
+        command: Callable[[], None],
+        primary: bool = False,
+        width: int = 40,
+        height: int = 40,
+        radius: int = 8,
+    ) -> None:
+        resolved_width = width if image is not None else max(width, 76)
+        super().__init__(
+            parent,
+            width=resolved_width,
+            height=height,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+            takefocus=1,
+            cursor="hand2",
+        )
+        self._button_image = image
+        self._button_text = text
+        self._command = command
+        self._primary = primary
+        self._radius = radius
+        self._state = "normal"
+        self._hovered = False
+        self._pressed = False
+        self._background_image: Any | None = None
+        self._background_item = self.create_image(0, 0, anchor="nw")
+        if image is not None:
+            self._content_item = self.create_image(resolved_width // 2, height // 2, image=image, anchor="center")
+        else:
+            self._content_item = self.create_text(
+                resolved_width // 2,
+                height // 2,
+                text=text,
+                fill="#ffffff" if primary else THEME["muted"],
+                font=FONT_UI_SMALL_MEDIUM,
+                anchor="center",
+            )
+        self.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self.bind("<Enter>", lambda _event: self._set_hovered(True), add="+")
+        self.bind("<Leave>", lambda _event: self._set_hovered(False), add="+")
+        self.bind("<ButtonPress-1>", self._press, add="+")
+        self.bind("<ButtonRelease-1>", self._release, add="+")
+        self.bind("<Return>", lambda _event: self._invoke(), add="+")
+        self.bind("<space>", lambda _event: self._invoke(), add="+")
+        self.after_idle(self._redraw)
+
+    def configure(self, cnf: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+        options = dict(cnf or {})
+        options.update(kwargs)
+        if not options:
+            return super().configure()
+        state = options.pop("state", None)
+        if state is not None:
+            self._state = str(state)
+            super().configure(cursor="arrow" if self._state == "disabled" else "hand2")
+        text = options.pop("text", None)
+        if text is not None:
+            self._button_text = str(text)
+            if self._button_image is None:
+                self.itemconfigure(self._content_item, text=self._button_text)
+        result = super().configure(**options) if options else None
+        self._redraw()
+        return result
+
+    config = configure
+
+    def _set_hovered(self, hovered: bool) -> None:
+        self._hovered = hovered and self._state != "disabled"
+        if not hovered:
+            self._pressed = False
+        self._redraw()
+
+    def _press(self, _event: tk.Event[Any]) -> None:
+        if self._state != "disabled":
+            self._pressed = True
+            self._redraw()
+
+    def _release(self, event: tk.Event[Any]) -> None:
+        should_invoke = (
+            self._state != "disabled"
+            and self._pressed
+            and 0 <= event.x < self.winfo_width()
+            and 0 <= event.y < self.winfo_height()
+        )
+        self._pressed = False
+        self._redraw()
+        if should_invoke:
+            self._command()
+
+    def _invoke(self) -> None:
+        if self._state != "disabled":
+            self._command()
+
+    def _redraw(self) -> None:
+        try:
+            disabled = self._state == "disabled"
+            if self._primary:
+                border = THEME["panel"] if disabled else THEME["accent"]
+                if disabled:
+                    fill = THEME["panel"]
+                elif self._pressed:
+                    fill = THEME["accent_dark"]
+                elif self._hovered:
+                    fill = "#8584ff"
+                else:
+                    fill = THEME["accent"]
+            else:
+                border = THEME["border"]
+                fill = THEME["panel"] if self._pressed else THEME["surface_2"] if self._hovered else THEME["surface"]
+            width = max(1, self.winfo_width())
+            height = max(1, self.winfo_height())
+            if width <= 2 or height <= 2:
+                return
+            if Image is not None and ImageDraw is not None and ImageTk is not None:
+                scale = 4
+                surface = Image.new("RGBA", (width * scale, height * scale), THEME["bg"])
+                draw = ImageDraw.Draw(surface)
+                radius = min(self._radius, height // 2) * scale
+                draw.rounded_rectangle(
+                    (0, 0, width * scale - 1, height * scale - 1),
+                    radius=radius,
+                    fill=border,
+                )
+                draw.rounded_rectangle(
+                    (scale, scale, width * scale - scale - 1, height * scale - scale - 1),
+                    radius=max(0, radius - scale),
+                    fill=fill,
+                )
+                resampling = getattr(Image, "Resampling", Image)
+                surface = surface.resize((width, height), resampling.LANCZOS)
+                self._background_image = ImageTk.PhotoImage(surface)
+                self.itemconfigure(self._background_item, image=self._background_image)
+                self.coords(self._background_item, 0, 0)
+            else:
+                self.itemconfigure(self._background_item, image="")
+                self.delete("button-fallback")
+                self.create_rectangle(0, 0, width - 1, height - 1, fill=fill, outline=border, tags="button-fallback")
+                self.tag_lower("button-fallback")
+            self.tag_lower(self._background_item)
+            self.coords(self._content_item, width // 2, height // 2)
+        except tk.TclError:
+            return
+
+
 class QueueLogger:
     def __init__(self, events: queue.Queue[tuple[str, Any]] | None = None, *, diagnostic_prefix: str = "yt-dlp"):
         self.events = events
@@ -2297,10 +2658,13 @@ class DownloaderApp(tk.Tk):
         self.title(APP_NAME)
         self._app_icon_image: tk.PhotoImage | None = None
         try:
-            if sys.platform.startswith("win"):
-                self.iconbitmap(default=str(bundled_asset_path("VODForge.ico")))
+            runtime_icon_asset = runtime_window_icon_asset()
+            if runtime_icon_asset is None:
+                write_diagnostic("macOS application icon uses the bundle CFBundleIconFile ICNS")
+            elif runtime_icon_asset.endswith(".ico"):
+                self.iconbitmap(default=str(bundled_asset_path(runtime_icon_asset)))
             else:
-                self._app_icon_image = tk.PhotoImage(file=str(bundled_asset_path("VODForge.png")))
+                self._app_icon_image = tk.PhotoImage(file=str(bundled_asset_path(runtime_icon_asset)))
                 self.iconphoto(True, self._app_icon_image)
         except tk.TclError as exc:
             write_diagnostic(f"app icon could not be loaded: {exc}")
@@ -2380,8 +2744,8 @@ class DownloaderApp(tk.Tk):
         style.configure("TEntry", fieldbackground=THEME["surface"], foreground=THEME["text"], insertcolor=THEME["text"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], padding=7)
         style.configure("TCombobox", fieldbackground=THEME["surface"], foreground=THEME["text"], background=THEME["surface"], arrowcolor=THEME["accent"], bordercolor=THEME["border"], padding=6)
         style.map("TCombobox", fieldbackground=[("readonly", THEME["surface"]), ("active", THEME["surface_2"])], foreground=[("readonly", THEME["text"])])
-        style.configure("TButton", background=THEME["surface_2"], foreground=THEME["text"], bordercolor=THEME["border"], focusthickness=1, focuscolor=THEME["accent"], padding=(12, 7), font=FONT_UI_MEDIUM)
-        style.configure("Compact.TButton", background=THEME["surface_2"], foreground=THEME["text"], bordercolor=THEME["border"], focusthickness=1, focuscolor=THEME["accent"], padding=(10, 4), font=FONT_UI_MEDIUM)
+        style.configure("TButton", background=THEME["surface_2"], foreground=THEME["text"], bordercolor=THEME["border"], focusthickness=0, focuscolor=THEME["surface_2"], padding=(12, 7), font=FONT_UI_MEDIUM)
+        style.configure("Compact.TButton", background=THEME["surface_2"], foreground=THEME["text"], bordercolor=THEME["border"], focusthickness=0, focuscolor=THEME["surface_2"], padding=(10, 4), font=FONT_UI_MEDIUM)
         style.map("Compact.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"]), ("disabled", THEME["panel"])])
         style.map("TButton", background=[("active", THEME["border"]), ("pressed", THEME["accent_dark"]), ("disabled", THEME["panel"])], foreground=[("disabled", THEME["subtle"])])
         style.configure("Accent.TButton", background=THEME["accent_dark"], foreground="#ffffff", bordercolor=THEME["accent"])
@@ -2401,25 +2765,23 @@ class DownloaderApp(tk.Tk):
         style.configure("FocusTitle.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 15, "bold"))
         style.configure("FocusActiveTitle.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 13, "bold"))
         style.configure("FocusProfile.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=FONT_UI_SMALL)
-        style.configure("FocusPercent.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=(FONT_UI_FAMILY, 25, "bold"))
+        style.configure("FocusPercent.TLabel", background=THEME["bg"], foreground=THEME["accent"], font=(FONT_UI_FAMILY, 24))
         style.configure("FocusEyebrow.TLabel", background=THEME["bg"], foreground=THEME["muted"], font=FONT_UI_SMALL_MEDIUM)
         style.configure("FocusSurface.TLabel", background=THEME["surface"], foreground=THEME["text"], font=FONT_UI)
         style.configure("FocusSurfaceMuted.TLabel", background=THEME["surface"], foreground=THEME["muted"], font=FONT_UI_SMALL)
-        style.configure("FocusNav.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
-        style.configure("FocusNavActive.TButton", background=THEME["bg"], foreground=THEME["accent"], bordercolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
+        style.configure("FocusNav.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
+        style.configure("FocusNavActive.TButton", background=THEME["bg"], foreground=THEME["accent"], bordercolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
         style.layout("FocusNav.TButton", [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})])
         style.layout("FocusNavActive.TButton", [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})])
         style.map("FocusNav.TButton", background=[("active", THEME["surface"])], foreground=[("active", THEME["text"])])
         style.map("FocusNavActive.TButton", background=[("active", THEME["surface"])], foreground=[("active", THEME["accent"])])
-        style.configure("FocusQuiet.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["surface_2"], lightcolor=THEME["surface_2"], darkcolor=THEME["surface_2"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
+        style.configure("FocusQuiet.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["surface_2"], lightcolor=THEME["surface_2"], darkcolor=THEME["surface_2"], focusthickness=0, focuscolor=THEME["surface"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
         style.map("FocusQuiet.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])], foreground=[("active", THEME["text"])])
-        style.configure("FocusIcon.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], lightcolor=THEME["bg"], darkcolor=THEME["bg"], relief="flat", padding=(9, 8))
+        style.configure("FocusCopySuccess.TButton", background=THEME["accent_dark"], foreground="#ffffff", bordercolor=THEME["accent"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], focusthickness=0, focuscolor=THEME["accent_dark"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
+        style.map("FocusCopySuccess.TButton", background=[("active", THEME["accent"]), ("pressed", THEME["accent_dark"])], foreground=[("active", "#ffffff")])
+        style.configure("FocusIcon.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], lightcolor=THEME["bg"], darkcolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], relief="flat", padding=(9, 8))
         style.map("FocusIcon.TButton", background=[("active", THEME["surface"]), ("pressed", THEME["panel"])])
-        style.configure("FocusCommandIcon.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], relief="flat", padding=(15, 13))
-        style.map("FocusCommandIcon.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])])
-        style.configure("FocusPrimaryIcon.TButton", background=THEME["accent"], foreground="#ffffff", bordercolor=THEME["accent"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], relief="flat", padding=(17, 13))
-        style.map("FocusPrimaryIcon.TButton", background=[("active", "#8584ff"), ("pressed", THEME["accent_dark"]), ("disabled", THEME["panel"])])
-        style.configure("FocusDestination.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], relief="flat", padding=(12, 7), font=FONT_UI_SMALL)
+        style.configure("FocusDestination.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], focusthickness=0, focuscolor=THEME["surface"], relief="flat", padding=(12, 7), font=FONT_UI_SMALL)
         style.map("FocusDestination.TButton", background=[("active", THEME["surface_2"])], foreground=[("active", THEME["text"])])
         style.configure("FocusCommand.TEntry", fieldbackground=THEME["surface"], foreground=THEME["text"], insertcolor=THEME["text"], bordercolor=THEME["surface"], lightcolor=THEME["surface"], darkcolor=THEME["surface"], padding=(4, 13), font=(FONT_UI_FAMILY, 12))
         style.configure("FocusProgress.Horizontal.TProgressbar", background=THEME["accent"], troughcolor=THEME["surface_2"], bordercolor=THEME["bg"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], thickness=4, borderwidth=0)
@@ -2959,60 +3321,37 @@ class DownloaderApp(tk.Tk):
         key = (name, size, color)
         if key in cache:
             return cache[key]
+        color_variant = focus_icon_color_variant(color)
+        vector_asset = bundled_asset_path(f"icons/lucide/{name}-{size}-{color_variant}.svg") if color_variant else None
+        if sys.platform == "darwin" and vector_asset is not None and vector_asset.is_file():
+            try:
+                image_types = self.tk.splitlist(self.tk.call("image", "types"))
+                if "nsimage" in image_types:
+                    rendered = self.tk.call(
+                        "image",
+                        "create",
+                        "nsimage",
+                        "-source",
+                        str(vector_asset),
+                        "-as",
+                        "file",
+                        "-width",
+                        size,
+                        "-height",
+                        size,
+                    )
+                    cache[key] = rendered
+                    return rendered
+            except tk.TclError as exc:
+                write_diagnostic(f"native vector icon could not be loaded ({name}): {exc}")
         try:
-            with Image.open(bundled_asset_path(f"icons/lucide/{name}.png")) as source:
-                icon = source.convert("RGBA")
-            alpha = icon.getchannel("A")
-            tinted = Image.new("RGBA", icon.size, color)
-            tinted.putalpha(alpha)
-            resampling = getattr(Image, "Resampling", Image)
-            rendered = ImageTk.PhotoImage(tinted.resize((size, size), resampling.LANCZOS))
+            exact_asset = bundled_asset_path(f"icons/lucide/{name}-{size}.png")
+            icon_asset = exact_asset if exact_asset.is_file() else bundled_asset_path(f"icons/lucide/{name}.png")
+            with Image.open(icon_asset) as source:
+                icon = render_monochrome_icon(source, size, color)
+            rendered = ImageTk.PhotoImage(icon)
         except Exception as exc:
             write_diagnostic(f"in-app icon could not be loaded ({name}): {exc}")
-            return None
-        cache[key] = rendered
-        return rendered
-
-    def _focus_button_image(
-        self,
-        icon_name: str,
-        size: tuple[int, int],
-        *,
-        fill: str,
-        border: str,
-        icon_color: str,
-        icon_size: int,
-        radius: int = 10,
-    ) -> Any | None:
-        if Image is None or ImageDraw is None or ImageTk is None:
-            return None
-        cache = getattr(self, "_focus_button_images", None)
-        if cache is None:
-            cache = {}
-            self._focus_button_images = cache
-        key = (icon_name, size, fill, border, icon_color, icon_size, radius)
-        if key in cache:
-            return cache[key]
-        try:
-            canvas = Image.new("RGBA", size, (0, 0, 0, 0))
-            ImageDraw.Draw(canvas).rounded_rectangle(
-                (0, 0, size[0] - 1, size[1] - 1),
-                radius=radius,
-                fill=fill,
-                outline=border,
-                width=1,
-            )
-            with Image.open(bundled_asset_path(f"icons/lucide/{icon_name}.png")) as source:
-                icon = source.convert("RGBA")
-            alpha = icon.getchannel("A")
-            tinted = Image.new("RGBA", icon.size, icon_color)
-            tinted.putalpha(alpha)
-            resampling = getattr(Image, "Resampling", Image)
-            tinted = tinted.resize((icon_size, icon_size), resampling.LANCZOS)
-            canvas.alpha_composite(tinted, ((size[0] - icon_size) // 2, (size[1] - icon_size) // 2))
-            rendered = ImageTk.PhotoImage(canvas)
-        except Exception as exc:
-            write_diagnostic(f"in-app button image could not be loaded ({icon_name}): {exc}")
             return None
         cache[key] = rendered
         return rendered
@@ -3026,7 +3365,6 @@ class DownloaderApp(tk.Tk):
         self._focus_active_override = False
         self._queued_ui_urls: list[str] = []
         self._focus_icon_images: dict[tuple[str, int, str], Any] = {}
-        self._focus_button_images: dict[tuple[Any, ...], Any] = {}
 
         self.focus_active_title_var = tk.StringVar(value="Ready for a new run")
         self.focus_active_detail_var = tk.StringVar(value="Paste a YouTube URL above, then press Return to begin.")
@@ -3059,6 +3397,8 @@ class DownloaderApp(tk.Tk):
         self._focus_brand_tile_image = None
         self._focus_brand_source_image = None
         self._focus_thumbnail_source_image = None
+        self._focus_thumbnail_source_path: Path | None = None
+        self._focus_thumbnail_is_placeholder = True
         if Image is not None and ImageOps is not None and ImageTk is not None:
             try:
                 with Image.open(bundled_asset_path("VODForge.png")) as source:
@@ -3067,8 +3407,8 @@ class DownloaderApp(tk.Tk):
                 self._focus_brand_source_image = icon.copy()
                 self._focus_thumbnail_source_image = icon.copy()
                 self._focus_brand_image = ImageTk.PhotoImage(icon.resize((34, 34), resampling.LANCZOS))
-                self._focus_brand_nav_image = ImageTk.PhotoImage(icon.resize((16, 16), resampling.LANCZOS))
-                tile_icon = rounded_cover_image(icon, (152, 86), 10)
+                self._focus_brand_nav_image = ImageTk.PhotoImage(icon.resize((20, 20), resampling.LANCZOS))
+                tile_icon = rounded_contain_image(icon, youtube_thumbnail_size(152), 10, THEME["surface"])
                 self._focus_brand_tile_image = ImageTk.PhotoImage(tile_icon)
             except Exception as exc:
                 write_diagnostic(f"in-app brand mark could not be loaded: {exc}")
@@ -3098,15 +3438,28 @@ class DownloaderApp(tk.Tk):
             lambda _event: self._check_for_updates() if str(self.update_button.cget("state")) != "disabled" else None,
         )
         self.update_button.pack(side="left", padx=(0, 8))
-        settings_icon = self._load_focus_icon("settings", 18, THEME["muted"])
-        self.focus_settings_button = ttk.Button(
+        settings_icon = self._load_focus_icon("settings", 20, THEME["muted"])
+        settings_hover_icon = self._load_focus_icon("settings", 20, THEME["text"])
+        self.focus_settings_button = tk.Label(
             utilities,
             image=settings_icon if settings_icon is not None else "",
             text="Settings" if settings_icon is None else "",
-            command=self._show_focus_settings,
-            style="FocusIcon.TButton",
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            bd=0,
+            highlightthickness=0,
+            padx=3,
+            pady=3,
+            cursor="hand2",
+            takefocus=1,
         )
         self.focus_settings_button.pack(side="left")
+        self.focus_settings_button.bind("<Button-1>", lambda _event: self._show_focus_settings(), add="+")
+        self.focus_settings_button.bind("<Return>", lambda _event: self._show_focus_settings(), add="+")
+        self.focus_settings_button.bind("<space>", lambda _event: self._show_focus_settings(), add="+")
+        if settings_icon is not None and settings_hover_icon is not None:
+            self.focus_settings_button.bind("<Enter>", lambda _event: self.focus_settings_button.configure(image=settings_hover_icon), add="+")
+            self.focus_settings_button.bind("<Leave>", lambda _event: self.focus_settings_button.configure(image=settings_icon), add="+")
 
         nav_row = ttk.Frame(header, style="FocusShell.TFrame")
         nav_row.grid(row=1, column=0, columnspan=3, sticky="ew")
@@ -3118,12 +3471,12 @@ class DownloaderApp(tk.Tk):
         self._focus_nav_icons: dict[str, tuple[Any | None, Any | None]] = {
             "forge": (self._focus_brand_nav_image, self._focus_brand_nav_image),
             "library": (
-                self._load_focus_icon("library", 15, THEME["muted"]),
-                self._load_focus_icon("library", 15, THEME["accent"]),
+                self._load_focus_icon("library", 20, THEME["muted"]),
+                self._load_focus_icon("library", 20, THEME["accent"]),
             ),
             "activity": (
-                self._load_focus_icon("activity", 15, THEME["muted"]),
-                self._load_focus_icon("activity", 15, THEME["accent"]),
+                self._load_focus_icon("activity", 20, THEME["muted"]),
+                self._load_focus_icon("activity", 20, THEME["accent"]),
             ),
         }
         for view_name, label in (("forge", "Forge"), ("library", "Library"), ("activity", "Activity")):
@@ -3144,7 +3497,7 @@ class DownloaderApp(tk.Tk):
             self._focus_nav_buttons[view_name] = button
             self._focus_nav_underlines[view_name] = underline
 
-        folder_icon = self._load_focus_icon("folder", 15, THEME["muted"])
+        folder_icon = self._load_focus_icon("folder", 20, THEME["muted"])
         self.focus_destination_button = PillAction(
             nav_row,
             textvariable=self.focus_output_display_var,
@@ -3202,7 +3555,7 @@ class DownloaderApp(tk.Tk):
         command_row.columnconfigure(0, weight=1)
         command_box = tk.Canvas(
             command_row,
-            height=54,
+            height=40,
             bg=THEME["bg"],
             bd=0,
             highlightthickness=0,
@@ -3213,31 +3566,32 @@ class DownloaderApp(tk.Tk):
         command_window = command_box.create_window(12, 2, anchor="nw", window=command_inner)
         command_background = command_box.create_image(0, 0, anchor="nw")
         command_box.tag_lower(command_background)
-        command_state = {"focused": False, "image": None}
+        command_state = {"image": None}
 
-        def redraw_command_box(_event: Any = None, *, focused: bool | None = None) -> None:
+        def redraw_command_box(_event: Any = None) -> None:
             width = max(1, command_box.winfo_width())
             height = max(1, command_box.winfo_height())
-            if focused is not None:
-                command_state["focused"] = focused
             if Image is not None and ImageDraw is not None and ImageTk is not None:
-                surface = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+                scale = 4
+                surface = Image.new("RGBA", (width * scale, height * scale), (0, 0, 0, 0))
                 ImageDraw.Draw(surface).rounded_rectangle(
-                    (0, 0, width - 1, height - 1),
-                    radius=min(12, height // 2),
+                    (0, 0, width * scale - 1, height * scale - 1),
+                    radius=min(8, height // 2) * scale,
                     fill=THEME["surface"],
-                    outline=THEME["accent_dark"] if command_state["focused"] else THEME["border"],
-                    width=1,
+                    outline=THEME["border"],
+                    width=scale,
                 )
+                resampling = getattr(Image, "Resampling", Image)
+                surface = surface.resize((width, height), resampling.LANCZOS)
                 command_state["image"] = ImageTk.PhotoImage(surface)
                 command_box.itemconfigure(command_background, image=command_state["image"])
                 command_box.coords(command_background, 0, 0)
                 command_box.tag_lower(command_background)
-            command_box.coords(command_window, 12, 2)
-            command_box.itemconfigure(command_window, width=max(1, width - 24), height=max(1, height - 4))
+            command_box.coords(command_window, 10, 2)
+            command_box.itemconfigure(command_window, width=max(1, width - 20), height=max(1, height - 4))
 
         command_box.bind("<Configure>", redraw_command_box, add="+")
-        link_icon = self._load_focus_icon("link-2", 18, THEME["muted"])
+        link_icon = self._load_focus_icon("link-2", 20, THEME["muted"])
         self.focus_command_link_label = tk.Label(
             command_inner,
             image=link_icon if link_icon is not None else "",
@@ -3245,11 +3599,11 @@ class DownloaderApp(tk.Tk):
             bg=THEME["surface"],
             fg=THEME["muted"],
             bd=0,
-            padx=16,
+            padx=0,
             pady=0,
             font=FONT_UI_SMALL,
         )
-        self.focus_command_link_label.grid(row=0, column=0, sticky="w")
+        self.focus_command_link_label.grid(row=0, column=0, sticky="w", padx=(3, 13))
         self.focus_url_entry = tk.Entry(
             command_inner,
             textvariable=self.url_var,
@@ -3262,96 +3616,25 @@ class DownloaderApp(tk.Tk):
             highlightthickness=0,
             font=(FONT_UI_FAMILY, 12),
         )
-        self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=14)
+        self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=7)
         self.focus_url_entry.bind("<Return>", lambda _event: self._start_download())
-        self.focus_url_entry.bind("<FocusIn>", lambda _event: redraw_command_box(focused=True), add="+")
-        self.focus_url_entry.bind("<FocusOut>", lambda _event: redraw_command_box(focused=False), add="+")
-        self.focus_return_button = ttk.Button(command_inner, text="Return", command=self._start_download, style="FocusQuiet.TButton")
-        self.focus_return_button.grid(row=0, column=2, sticky="e", padx=(10, 8), pady=8)
-        sliders_icon = self._focus_button_image(
-            "sliders-horizontal",
-            (56, 54),
-            fill=THEME["surface"],
-            border=THEME["border"],
-            icon_color=THEME["muted"],
-            icon_size=20,
-        )
-        sliders_active_icon = self._focus_button_image(
-            "sliders-horizontal",
-            (56, 54),
-            fill=THEME["surface_2"],
-            border=THEME["border"],
-            icon_color=THEME["text"],
-            icon_size=20,
-        )
-        self.focus_options_button = tk.Label(
+        sliders_icon = self._load_focus_icon("sliders-horizontal", 20, THEME["muted"])
+        self.focus_options_button = RoundedIconButton(
             command_row,
-            image=sliders_icon if sliders_icon is not None else "",
+            image=sliders_icon,
             text="Options" if sliders_icon is None else "",
-            bg=THEME["bg"],
-            fg=THEME["muted"],
-            bd=0,
-            highlightthickness=0,
-            padx=0,
-            pady=0,
-            cursor="hand2",
-            takefocus=1,
+            command=self._show_focus_settings,
         )
-        self.focus_options_button.grid(row=0, column=1, padx=(0, 12))
-        arrow_icon = self._focus_button_image(
-            "arrow-right",
-            (60, 54),
-            fill=THEME["accent"],
-            border=THEME["accent"],
-            icon_color="#ffffff",
-            icon_size=22,
-        )
-        arrow_active_icon = self._focus_button_image(
-            "arrow-right",
-            (60, 54),
-            fill="#8584ff",
-            border="#8584ff",
-            icon_color="#ffffff",
-            icon_size=22,
-        )
-        self.download_button = tk.Label(
+        self.focus_options_button.grid(row=0, column=1, padx=(0, 8))
+        send_icon = self._load_focus_icon("send-filled", 20, "#ffffff")
+        self.download_button = RoundedIconButton(
             command_row,
-            image=arrow_icon if arrow_icon is not None else "",
-            text="Forge" if arrow_icon is None else "",
-            bg=THEME["bg"],
-            fg="#ffffff",
-            bd=0,
-            highlightthickness=0,
-            padx=0,
-            pady=0,
-            cursor="hand2",
-            takefocus=1,
+            image=send_icon,
+            text="Forge" if send_icon is None else "",
+            command=self._start_download,
+            primary=True,
         )
         self.download_button.grid(row=0, column=2)
-        self.focus_options_button.bind("<Button-1>", lambda _event: self._show_focus_settings(), add="+")
-        self.focus_options_button.bind("<Return>", lambda _event: self._show_focus_settings(), add="+")
-        self.focus_options_button.bind("<space>", lambda _event: self._show_focus_settings(), add="+")
-        self.download_button.bind(
-            "<Button-1>",
-            lambda _event: self._start_download() if str(self.download_button.cget("state")) != "disabled" else None,
-            add="+",
-        )
-        self.download_button.bind(
-            "<Return>",
-            lambda _event: self._start_download() if str(self.download_button.cget("state")) != "disabled" else None,
-            add="+",
-        )
-        self.download_button.bind(
-            "<space>",
-            lambda _event: self._start_download() if str(self.download_button.cget("state")) != "disabled" else None,
-            add="+",
-        )
-        if sliders_icon is not None and sliders_active_icon is not None:
-            self.focus_options_button.bind("<Enter>", lambda _event: self.focus_options_button.configure(image=sliders_active_icon), add="+")
-            self.focus_options_button.bind("<Leave>", lambda _event: self.focus_options_button.configure(image=sliders_icon), add="+")
-        if arrow_icon is not None and arrow_active_icon is not None:
-            self.download_button.bind("<Enter>", lambda _event: self.download_button.configure(image=arrow_active_icon), add="+")
-            self.download_button.bind("<Leave>", lambda _event: self.download_button.configure(image=arrow_icon), add="+")
         ToolTip(self.focus_options_button, "Download options and settings")
         ToolTip(self.download_button, "Start or queue this run")
         self.preview_metadata_button = ttk.Button(command_row, text="Preview metadata", command=self._fetch_metadata, style="FocusQuiet.TButton")
@@ -3363,7 +3646,15 @@ class DownloaderApp(tk.Tk):
         active.columnconfigure(1, weight=1)
         self.focus_active_frame = active
 
-        thumb_wrap = tk.Frame(active, bg=THEME["bg"], width=152, height=86, bd=0, highlightthickness=0)
+        active_thumbnail_size = youtube_thumbnail_size(152)
+        thumb_wrap = tk.Frame(
+            active,
+            bg=THEME["bg"],
+            width=active_thumbnail_size[0],
+            height=active_thumbnail_size[1],
+            bd=0,
+            highlightthickness=0,
+        )
         thumb_wrap.grid(row=0, column=0, rowspan=3, sticky="w", padx=(0, 18))
         thumb_wrap.grid_propagate(False)
         self.focus_active_thumbnail_label = tk.Label(
@@ -3518,13 +3809,11 @@ class DownloaderApp(tk.Tk):
         ttk.Label(deck_header, text="RUN DECK", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w")
         self.focus_run_overflow_button = ttk.Button(deck_header, text="All runs", command=self._show_focus_run_menu, style="FocusQuiet.TButton")
         self.focus_run_overflow_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
-        self.focus_new_run_button = ttk.Button(deck_header, text="New run", command=self._focus_new_run, style="FocusQuiet.TButton")
-        self.focus_new_run_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
         self.focus_deck_header = deck_header
 
         deck_border = tk.Frame(deck_area, bg=THEME["border"], bd=0, highlightthickness=0)
         deck_border.grid(row=1, column=0, sticky="ew")
-        deck = ttk.Frame(deck_border, style="FocusSurface.TFrame")
+        deck = ttk.Frame(deck_border, style="FocusShell.TFrame")
         deck.pack(fill="both", expand=True, padx=1, pady=1)
         self.focus_run_deck = deck
 
@@ -3548,10 +3837,20 @@ class DownloaderApp(tk.Tk):
         ttk.Label(heading, text="Saved downloads and metadata previews", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
         action_row = ttk.Frame(actions, style="FocusShell.TFrame")
         action_row.grid(row=0, column=1, sticky="e")
+        self.focus_library_copy_buttons = {
+            "tags": (ttk.Button(action_row, text="Copy tags", command=self._copy_tags, style="FocusQuiet.TButton"), "Copy tags"),
+            "description": (
+                ttk.Button(action_row, text="Copy description", command=self._copy_description, style="FocusQuiet.TButton"),
+                "Copy description",
+            ),
+            "thumbnail": (
+                ttk.Button(action_row, text="Copy thumbnail URL", command=self._copy_thumbnail_url, style="FocusQuiet.TButton"),
+                "Copy thumbnail URL",
+            ),
+        }
+        self._focus_copy_feedback_after_ids: dict[str, str] = {}
         self.focus_library_action_buttons = [
-            ttk.Button(action_row, text="Copy tags", command=self._copy_tags, style="FocusQuiet.TButton"),
-            ttk.Button(action_row, text="Copy description", command=self._copy_description, style="FocusQuiet.TButton"),
-            ttk.Button(action_row, text="Copy thumbnail URL", command=self._copy_thumbnail_url, style="FocusQuiet.TButton"),
+            *(button for button, _label in self.focus_library_copy_buttons.values()),
             ttk.Button(action_row, text="Open saved location", command=self._open_selected_saved_location, style="FocusQuiet.TButton"),
         ]
         for button in self.focus_library_action_buttons:
@@ -3586,10 +3885,10 @@ class DownloaderApp(tk.Tk):
         self.video_tree.column("creator", width=140, minwidth=90, stretch=False, anchor="w")
         self.video_tree.column("id", width=100, minwidth=72, stretch=False, anchor="w")
         self.video_tree.column("location", width=140, minwidth=90, stretch=False, anchor="w")
-        tree_scroll = ttk.Scrollbar(queue_panel, orient="vertical", command=self.video_tree.yview)
+        tree_scroll = SleekScrollbar(queue_panel, command=self.video_tree.yview)
         self.video_tree.configure(yscrollcommand=tree_scroll.set)
         self.video_tree.grid(row=1, column=0, sticky="nsew")
-        tree_scroll.grid(row=1, column=1, sticky="ns")
+        tree_scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
         self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
         self.focus_queue_panel = queue_panel
 
@@ -3605,7 +3904,7 @@ class DownloaderApp(tk.Tk):
             lambda event: self.focus_selected_title_label.configure(wraplength=max(180, event.width - 8)),
             add="+",
         )
-        thumbnail_wrap = tk.Frame(details, bg=THEME["bg"], height=92, bd=0, highlightthickness=0)
+        thumbnail_wrap = tk.Frame(details, bg=THEME["bg"], height=youtube_thumbnail_size(196)[1], bd=0, highlightthickness=0)
         thumbnail_wrap.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         thumbnail_wrap.grid_propagate(False)
         self.focus_thumbnail_wrap = thumbnail_wrap
@@ -3664,10 +3963,10 @@ class DownloaderApp(tk.Tk):
         log_wrap.rowconfigure(1, weight=1)
         ttk.Label(log_wrap, text="DOWNLOAD AND PROCESSING LOG", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.log = tk.Text(log_wrap, height=1, width=1, wrap="word", state="disabled", bg=THEME["bg"], fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=6, font=FONT_MONO)
-        log_scrollbar = ttk.Scrollbar(log_wrap, orient="vertical", command=self.log.yview)
+        log_scrollbar = SleekScrollbar(log_wrap, command=self.log.yview)
         self.log.configure(yscrollcommand=log_scrollbar.set)
         self.log.grid(row=1, column=0, sticky="nsew")
-        log_scrollbar.grid(row=1, column=1, sticky="ns")
+        log_scrollbar.grid(row=1, column=1, sticky="ns", padx=(6, 0))
 
     def _set_focus_run_controls_visible(self, visible: bool) -> None:
         controls = getattr(self, "focus_run_controls", ())
@@ -3732,12 +4031,14 @@ class DownloaderApp(tk.Tk):
         if bool(self._focus_active_override or (self.worker and self.worker.is_alive())):
             self.focus_run_status_var.set(f"{value:.0f}%  /  Active")
 
-    def _focus_new_run(self) -> None:
-        self._select_focus_view("forge")
+    def _reset_source_input_after_send(self) -> None:
+        """Prepare the source field for the next run after a job is accepted."""
         self.batch_urls = []
         self.url_list_file_var.set("No URL list loaded")
         self.url_var.set("")
-        self.focus_url_entry.focus_set()
+        source_entry = self.__dict__.get("focus_url_entry") or self.__dict__.get("url_entry")
+        if source_entry is not None:
+            source_entry.focus_set()
 
     def _show_focus_settings(self) -> None:
         existing = self._focus_settings_window
@@ -3957,8 +4258,8 @@ class DownloaderApp(tk.Tk):
             return [dict(record) for record in preview]
 
         records: list[dict[str, Any]] = []
-        active = bool(self._focus_active_override or (self.worker and self.worker.is_alive()))
-        current_url = self.url_var.get().strip()
+        active = bool(self._focus_active_override or self.active_job is not None or (self.worker and self.worker.is_alive()))
+        current_url = self.active_job.url if self.active_job is not None else self.url_var.get().strip()
         if active and current_url:
             records.append(
                 {
@@ -3995,26 +4296,27 @@ class DownloaderApp(tk.Tk):
         limit = 4 if self._focus_layout in {"wide", "balanced"} else 1
         visible = records[:limit]
         if not visible:
-            empty = ttk.Frame(self.focus_run_deck, style="FocusSurface.TFrame")
+            empty = ttk.Frame(self.focus_run_deck, style="FocusShell.TFrame")
             empty.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
-            ttk.Label(empty, text="Your runs will collect here", style="FocusSurface.TLabel").pack(anchor="w")
-            ttk.Label(empty, text="Start with a URL above. Completed downloads stay available in Library.", style="FocusSurfaceMuted.TLabel").pack(anchor="w", pady=(4, 0))
+            ttk.Label(empty, text="Your runs will collect here", style="TLabel").pack(anchor="w")
+            ttk.Label(empty, text="Start with a URL above. Completed downloads stay available in Library.", style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
             self.focus_run_deck.columnconfigure(0, weight=1)
             self.focus_run_count_var.set("No runs yet")
             self.focus_run_overflow_button.grid_remove()
             return
 
-        for column in range(limit + 1):
-            self.focus_run_deck.columnconfigure(column, weight=1 if column < limit else 0, uniform="focus-run" if column < limit else "")
+        for column in range(limit):
+            self.focus_run_deck.columnconfigure(column, weight=1, uniform="focus-run")
         for column, record in enumerate(visible):
-            tile_bg = THEME["surface_2"]
+            tile_bg = THEME["bg"]
             tile = tk.Frame(self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2")
             left_pad = 9 if column == 0 else 5
             right_pad = 5 if column < len(visible) - 1 else 9
             tile.grid(row=0, column=column, sticky="nsew", padx=(left_pad, right_pad), pady=6 if self._focus_layout == "compact" else 9)
             tile.columnconfigure(1, weight=1)
             source = self._focus_thumbnail_source_for_record(record)
-            thumbnail = self._focus_photo_from_source(source, (64, 38), 6) if self._focus_layout == "compact" else self._focus_photo_from_source(source, (82, 50), 7)
+            thumbnail_size = youtube_thumbnail_size(64 if self._focus_layout == "compact" else 80)
+            thumbnail = self._focus_photo_from_source(source, thumbnail_size, 6 if self._focus_layout == "compact" else 7)
             if thumbnail is not None:
                 self._focus_run_thumbnail_images.append(thumbnail)
                 image_label = tk.Label(tile, image=thumbnail, bg=tile_bg, bd=0, highlightthickness=0)
@@ -4038,6 +4340,7 @@ class DownloaderApp(tk.Tk):
                 status_label.configure(textvariable=self.focus_run_status_var)
             status_label.grid(row=1, column=1, sticky="w", pady=(3, 0))
             value = max(0.0, min(100.0, float(record.get("progress") or 0)))
+            bar: SleekProgressbar | None = None
             if is_primary_active or 0 < value < 100:
                 if is_primary_active:
                     bar = SleekProgressbar(tile, maximum=100, variable=self.progress_var, mode="determinate", height=4, track_color=THEME["border"])
@@ -4047,21 +4350,34 @@ class DownloaderApp(tk.Tk):
             widgets = [tile, title_label, status_label]
             if thumbnail is not None:
                 widgets.append(image_label)
+            if bar is not None:
+                widgets.append(bar)
+
+            def sync_tile_hover(
+                *,
+                card: tk.Frame = tile,
+                card_widgets: tuple[tk.Widget, ...] = tuple(widgets),
+            ) -> None:
+                try:
+                    pointer_x = self.winfo_pointerx()
+                    pointer_y = self.winfo_pointery()
+                    inside = (
+                        card.winfo_rootx() <= pointer_x < card.winfo_rootx() + card.winfo_width()
+                        and card.winfo_rooty() <= pointer_y < card.winfo_rooty() + card.winfo_height()
+                    )
+                    background = THEME["surface"] if inside else THEME["bg"]
+                    for card_widget in card_widgets:
+                        card_widget.configure(bg=background)
+                except tk.TclError:
+                    return
+
             for widget in widgets:
                 widget.bind("<Button-1>", lambda event, item=record: self._focus_activate_run_record(item, event))
                 widget.bind("<Button-2>", lambda event, item=record: self._show_focus_run_actions_menu(item, event))
                 widget.bind("<Button-3>", lambda event, item=record: self._show_focus_run_actions_menu(item, event))
+                widget.bind("<Enter>", lambda _event, card=tile, sync=sync_tile_hover: card.after_idle(sync), add="+")
+                widget.bind("<Leave>", lambda _event, card=tile, sync=sync_tile_hover: card.after_idle(sync), add="+")
 
-        if self._focus_layout != "compact":
-            plus_icon = self._load_focus_icon("plus", 18, THEME["muted"])
-            add_button = ttk.Button(
-                self.focus_run_deck,
-                image=plus_icon if plus_icon is not None else "",
-                text="New" if plus_icon is None else "",
-                command=self._focus_new_run,
-                style="FocusQuiet.TButton",
-            )
-            add_button.grid(row=0, column=len(visible), sticky="ns", padx=(5, 9), pady=15)
         completed = sum(1 for record in records if record.get("kind") == "completed")
         queued = sum(1 for record in records if record.get("kind") == "queued")
         active = sum(1 for record in records if record.get("kind") == "active")
@@ -4114,7 +4430,15 @@ class DownloaderApp(tk.Tk):
         if source is None or ImageTk is None:
             return None
         try:
-            return ImageTk.PhotoImage(rounded_cover_image(source, size, radius))
+            is_placeholder = source is self._focus_brand_source_image or (
+                source is self._focus_thumbnail_source_image and self._focus_thumbnail_is_placeholder
+            )
+            rendered = (
+                rounded_contain_image(source, size, radius, THEME["surface"])
+                if is_placeholder
+                else rounded_cover_image(source, size, radius)
+            )
+            return ImageTk.PhotoImage(rendered)
         except Exception as exc:
             write_diagnostic(f"thumbnail surface could not be rendered: {exc}")
             return None
@@ -4641,12 +4965,14 @@ class DownloaderApp(tk.Tk):
             self.clipboard_clear()
             self.clipboard_append(text)
             self.status_var.set("Copied tags to clipboard.")
+            self._show_copy_feedback("tags")
 
     def _copy_thumbnail_url(self) -> None:
         if self.last_thumbnail_url:
             self.clipboard_clear()
             self.clipboard_append(self.last_thumbnail_url)
             self.status_var.set("Copied thumbnail URL to clipboard.")
+            self._show_copy_feedback("thumbnail")
 
     def _copy_description(self) -> None:
         text = self.description_text.get("1.0", "end").strip()
@@ -4654,6 +4980,32 @@ class DownloaderApp(tk.Tk):
             self.clipboard_clear()
             self.clipboard_append(text)
             self.status_var.set("Copied description to clipboard.")
+            self._show_copy_feedback("description")
+
+    def _show_copy_feedback(self, key: str) -> None:
+        """Briefly confirm a successful copy without adding persistent UI."""
+        entry = getattr(self, "focus_library_copy_buttons", {}).get(key)
+        if entry is None:
+            return
+        button, original_label = entry
+        pending = getattr(self, "_focus_copy_feedback_after_ids", {})
+        previous_after_id = pending.pop(key, None)
+        if previous_after_id is not None:
+            try:
+                self.after_cancel(previous_after_id)
+            except tk.TclError:
+                pass
+        button.configure(text="Copied", style="FocusCopySuccess.TButton")
+
+        def restore() -> None:
+            try:
+                button.configure(text=original_label, style="FocusQuiet.TButton")
+            except tk.TclError:
+                pass
+            pending.pop(key, None)
+
+        pending[key] = self.after(900, restore)
+        self._focus_copy_feedback_after_ids = pending
 
     def _display_metadata(self, info: dict[str, Any]) -> None:
         incoming_items = iter_video_infos(info)
@@ -4755,28 +5107,100 @@ class DownloaderApp(tk.Tk):
             self._load_thumbnail_preview(self.last_thumbnail_url)
         else:
             if hasattr(self, "focus_run_deck") and self._focus_brand_source_image is not None:
-                self._render_focus_thumbnail_surfaces(self._focus_brand_source_image)
+                self._render_focus_thumbnail_surfaces(self._focus_brand_source_image, placeholder=True)
             else:
                 self.thumbnail_label.config(image="", text="No thumbnail loaded")
         self.status_var.set(f"Showing metadata for: {info.get('title') or info.get('id') or 'selected video'}")
 
-    def _render_focus_thumbnail_surfaces(self, source: Any | None = None, *, library_width: int | None = None) -> None:
+    def _render_focus_thumbnail_surfaces(
+        self,
+        source: Any | None = None,
+        *,
+        library_width: int | None = None,
+        placeholder: bool | None = None,
+        source_path: Path | None = None,
+    ) -> None:
         if Image is None or ImageOps is None or ImageTk is None or not hasattr(self, "focus_thumbnail_wrap"):
             return
         if source is not None:
             self._focus_thumbnail_source_image = source.convert("RGBA").copy()
+            self._focus_thumbnail_source_path = source_path
+            if placeholder is not None:
+                self._focus_thumbnail_is_placeholder = placeholder
         image = self._focus_thumbnail_source_image if self._focus_thumbnail_source_image is not None else self._focus_brand_source_image
         if image is None:
             return
         width = library_width or max(1, self.focus_thumbnail_wrap.winfo_width())
         if width <= 1:
             width = max(180, self.focus_thumbnail_wrap.winfo_reqwidth())
-        active_cover = rounded_cover_image(image, (152, 86), 10)
-        library_cover = rounded_cover_image(image, (max(1, width), 92), 10)
-        self.focus_active_thumbnail_image = ImageTk.PhotoImage(active_cover)
-        self.thumbnail_image = ImageTk.PhotoImage(library_cover)
-        self.focus_active_thumbnail_label.config(image=self.focus_active_thumbnail_image, text="")
-        self.thumbnail_label.config(image=self.thumbnail_image, text="")
+        active_size = youtube_thumbnail_size(152)
+        library_size = youtube_thumbnail_size(max(1, width))
+        if not self._focus_thumbnail_is_placeholder and self._focus_thumbnail_source_path is not None:
+            active_native = self._create_focus_native_image(self._focus_thumbnail_source_path, active_size, radius=10)
+            library_native = self._create_focus_native_image(self._focus_thumbnail_source_path, library_size, radius=10)
+            if active_native is not None and library_native is not None:
+                if int(self.focus_thumbnail_wrap.cget("height")) != library_size[1]:
+                    self.focus_thumbnail_wrap.configure(height=library_size[1])
+                self._set_focus_thumbnail_images(active_native, library_native, native=True)
+                return
+            self._delete_focus_native_images(active_native, library_native)
+        if self._focus_thumbnail_is_placeholder:
+            active_cover = rounded_contain_image(image, active_size, 10, THEME["surface"])
+            library_cover = rounded_contain_image(image, library_size, 10, THEME["surface"])
+        else:
+            active_cover = rounded_cover_image(image, active_size, 10)
+            library_cover = rounded_cover_image(image, library_size, 10)
+        active_cover = flatten_alpha_image(active_cover, THEME["bg"])
+        library_cover = flatten_alpha_image(library_cover, THEME["bg"])
+        if int(self.focus_thumbnail_wrap.cget("height")) != library_size[1]:
+            self.focus_thumbnail_wrap.configure(height=library_size[1])
+        self._set_focus_thumbnail_images(ImageTk.PhotoImage(active_cover), ImageTk.PhotoImage(library_cover), native=False)
+
+    def _create_focus_native_image(self, path: Path, size: tuple[int, int], *, radius: int = 0) -> str | None:
+        """Use AppKit-backed NSImage drawing when Tk exposes it on macOS."""
+        if sys.platform != "darwin" or not path.is_file():
+            return None
+        try:
+            image_types = self.tk.splitlist(self.tk.call("image", "types"))
+            if "nsimage" not in image_types:
+                return None
+            options: list[Any] = [
+                "image",
+                "create",
+                "nsimage",
+                "-source",
+                str(path),
+                "-as",
+                "file",
+                "-width",
+                size[0],
+                "-height",
+                size[1],
+            ]
+            if radius > 0:
+                options.extend(("-radius", radius))
+            return str(self.tk.call(*options))
+        except tk.TclError as exc:
+            write_diagnostic(f"native thumbnail image could not be loaded ({path}): {exc}")
+            return None
+
+    def _delete_focus_native_images(self, *images: Any) -> None:
+        for image in images:
+            if not isinstance(image, str) or not image:
+                continue
+            try:
+                self.tk.call("image", "delete", image)
+            except tk.TclError:
+                pass
+
+    def _set_focus_thumbnail_images(self, active: Any, library: Any, *, native: bool) -> None:
+        old_native = getattr(self, "_focus_native_thumbnail_images", ())
+        self.focus_active_thumbnail_image = active
+        self.thumbnail_image = library
+        self.focus_active_thumbnail_label.config(image=active, text="")
+        self.thumbnail_label.config(image=library, text="")
+        self._focus_native_thumbnail_images = (active, library) if native else ()
+        self._delete_focus_native_images(*old_native)
 
     def _load_thumbnail_file(self, path: Path) -> None:
         if Image is None or ImageTk is None:
@@ -4786,7 +5210,7 @@ class DownloaderApp(tk.Tk):
             with Image.open(path) as source:
                 image = source.copy()
             if hasattr(self, "focus_run_deck"):
-                self._render_focus_thumbnail_surfaces(image)
+                self._render_focus_thumbnail_surfaces(image, placeholder=False, source_path=path)
                 return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
@@ -4805,7 +5229,7 @@ class DownloaderApp(tk.Tk):
 
             image = Image.open(BytesIO(data))
             if hasattr(self, "focus_run_deck"):
-                self._render_focus_thumbnail_surfaces(image)
+                self._render_focus_thumbnail_surfaces(image, placeholder=False)
                 return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
@@ -4880,16 +5304,15 @@ class DownloaderApp(tk.Tk):
                 self.focus_engine_var.set(f"1 active  /  {len(self.pending_jobs)} queued  /  runs process one at a time")
                 self._append_log(f"Queued run: {job.url}")
                 self._refresh_focus_run_deck()
-                self.url_var.set("")
-                self.focus_url_entry.focus_set()
                 self.download_button.configure(text="Queue run", state="normal")
+            self._reset_source_input_after_send()
             return
 
         self._launch_download_job(job)
+        self._reset_source_input_after_send()
 
     def _launch_download_job(self, job: DownloadJob) -> None:
         self.active_job = job
-        self.url_var.set(job.url)
 
         self.cancel_requested = False
         self.skip_video_requested = False
@@ -4897,7 +5320,7 @@ class DownloaderApp(tk.Tk):
         self.progress_var.set(0)
         self.status_var.set("Starting…")
         if hasattr(self, "focus_active_title_var"):
-            self.focus_active_title_var.set(url)
+            self.focus_active_title_var.set(job.url)
             self.focus_active_detail_var.set("Preparing source")
             self.focus_active_duration_var.set("")
             self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
