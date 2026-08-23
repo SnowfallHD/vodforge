@@ -23,6 +23,7 @@ vendor/
 logs/
 latest.log
 batch-url-failures.txt
+design-qa.md
 
 # OS and editor files
 .DS_Store

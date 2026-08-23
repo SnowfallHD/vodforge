@@ -45,8 +45,10 @@ from yt_downloader.app import (
     parse_url_list_text,
     diagnostics_dir,
     bounded_window_size,
+    download_layout_mode,
     bundled_asset_path,
     configure_windows_app_identity,
+    metadata_layout_mode,
     platform_font_families,
     prepare_batch_item_url,
     playlist_folder_name,
@@ -84,6 +86,27 @@ def test_initial_window_size_leaves_room_for_screen_chrome():
     assert bounded_window_size(1366, 768) == (1180, 648)
     assert bounded_window_size(1280, 720) == (1180, 600)
     assert bounded_window_size(800, 600) == (776, 552)
+
+
+def test_download_layout_uses_inline_details_whenever_they_fit():
+    assert download_layout_mode(1120, 480) == "wide-expanded"
+    assert download_layout_mode(1120, 430) == "wide-expanded"
+    assert download_layout_mode(1120, 380) == "wide-compact"
+    assert download_layout_mode(900, 700) == "stacked-expanded"
+    assert download_layout_mode(900, 560) == "stacked-compact"
+
+
+def test_manual_override_requires_room_for_all_inline_fields():
+    assert download_layout_mode(1120, 560, manual_override=True) == "wide-compact"
+    assert download_layout_mode(1120, 600, manual_override=True) == "wide-expanded"
+    assert download_layout_mode(900, 760, manual_override=True) == "stacked-compact"
+    assert download_layout_mode(900, 840, manual_override=True) == "stacked-expanded"
+
+
+def test_metadata_layout_keeps_all_surfaces_visible_at_each_width():
+    assert metadata_layout_mode(1120) == "three-column"
+    assert metadata_layout_mode(700) == "three-column"
+    assert metadata_layout_mode(699) == "two-column"
 
 
 def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):

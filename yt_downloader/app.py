@@ -17,7 +17,7 @@ from datetime import datetime
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -133,6 +133,23 @@ def bounded_window_size(screen_width: int, screen_height: int) -> tuple[int, int
         max(1, min(1180, screen_width - width_margin)),
         max(1, min(900, screen_height - height_margin)),
     )
+
+
+def download_layout_mode(width: int, height: int, *, manual_override: bool = False) -> str:
+    """Choose the most expanded Download layout that fits without scrolling."""
+    if width >= 1000:
+        required_height = 570 if manual_override else 390
+        density = "wide"
+    else:
+        required_height = 820 if manual_override else 650
+        density = "stacked"
+    disclosure = "expanded" if height >= required_height else "compact"
+    return f"{density}-{disclosure}"
+
+
+def metadata_layout_mode(width: int) -> str:
+    """Keep all metadata surfaces visible while protecting useful reading widths."""
+    return "three-column" if width >= 700 else "two-column"
 
 
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
@@ -2179,6 +2196,8 @@ class DownloaderApp(tk.Tk):
         style.configure("TCombobox", fieldbackground=THEME["surface"], foreground=THEME["text"], background=THEME["surface"], arrowcolor=THEME["accent"], bordercolor=THEME["border"], padding=6)
         style.map("TCombobox", fieldbackground=[("readonly", THEME["surface"]), ("active", THEME["surface_2"])], foreground=[("readonly", THEME["text"])])
         style.configure("TButton", background=THEME["surface_2"], foreground=THEME["text"], bordercolor=THEME["border"], focusthickness=1, focuscolor=THEME["accent"], padding=(12, 7), font=FONT_UI_MEDIUM)
+        style.configure("Compact.TButton", background=THEME["surface_2"], foreground=THEME["text"], bordercolor=THEME["border"], focusthickness=1, focuscolor=THEME["accent"], padding=(10, 4), font=FONT_UI_MEDIUM)
+        style.map("Compact.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"]), ("disabled", THEME["panel"])])
         style.map("TButton", background=[("active", THEME["border"]), ("pressed", THEME["accent_dark"]), ("disabled", THEME["panel"])], foreground=[("disabled", THEME["subtle"])])
         style.configure("Accent.TButton", background=THEME["accent_dark"], foreground="#ffffff", bordercolor=THEME["accent"])
         style.map("Accent.TButton", background=[("active", THEME["accent"]), ("pressed", THEME["accent_dark"]), ("disabled", THEME["panel"])])
@@ -2243,60 +2262,140 @@ class DownloaderApp(tk.Tk):
 
         settings = ttk.Frame(download_tab, style="Panel.TFrame")
         settings.grid(row=0, column=0, sticky="nsew", padx=12, pady=(6, 0))
-        settings.columnconfigure(0, weight=1)
-        settings.columnconfigure(1, weight=1)
-        settings.columnconfigure(2, weight=1)
+        self._compact_popup: tk.Toplevel | None = None
+
+        def dismiss_compact_popup() -> None:
+            popup = self._compact_popup
+            self._compact_popup = None
+            if popup is not None and popup.winfo_exists():
+                popup.destroy()
+
+        def show_compact_popup(
+            title: str,
+            anchor: ttk.Button,
+            builder: Callable[[ttk.LabelFrame], None],
+            *,
+            minimum_width: int,
+        ) -> None:
+            dismiss_compact_popup()
+            popup = tk.Toplevel(self)
+            self._compact_popup = popup
+            popup.title(f"{APP_NAME} · {title}")
+            popup.transient(self)
+            popup.configure(bg=THEME["bg"])
+            popup.resizable(True, True)
+
+            content = ttk.LabelFrame(popup, text=title)
+            content.pack(fill="both", expand=True, padx=12, pady=(12, 6))
+            builder(content)
+            ttk.Button(popup, text="Done", command=dismiss_compact_popup).pack(anchor="e", padx=12, pady=(0, 12))
+
+            popup.update_idletasks()
+            screen_width = popup.winfo_screenwidth()
+            screen_height = popup.winfo_screenheight()
+            popup_width = min(max(minimum_width, popup.winfo_reqwidth()), max(360, screen_width - 40))
+            popup_height = min(popup.winfo_reqheight(), max(320, screen_height - 80))
+            popup_x = min(anchor.winfo_rootx(), max(20, screen_width - popup_width - 20))
+            popup_y = anchor.winfo_rooty() + anchor.winfo_height() + 6
+            if popup_y + popup_height > screen_height - 40:
+                popup_y = max(20, anchor.winfo_rooty() - popup_height - 6)
+            popup.geometry(f"{popup_width}x{popup_height}+{popup_x}+{popup_y}")
+            popup.bind("<Escape>", lambda _event: dismiss_compact_popup())
+            popup.protocol("WM_DELETE_WINDOW", dismiss_compact_popup)
+
+        def build_source_details(parent: ttk.LabelFrame | ttk.Frame) -> None:
+            ttk.Label(parent, text="Batch URL text file").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 6))
+            ttk.Label(parent, textvariable=self.url_list_file_var, style="Muted.TLabel").grid(row=0, column=1, sticky="ew", padx=10, pady=(8, 6))
+            ttk.Button(parent, text="Load URL List…", command=self._load_url_list_file).grid(row=0, column=2, sticky="e", padx=10, pady=(8, 6))
+            ttk.Label(parent, text="YouTube cookies.txt").grid(row=1, column=0, sticky="w", padx=10, pady=6)
+            ttk.Label(parent, textvariable=self.cookie_file_var, style="Muted.TLabel").grid(row=1, column=1, sticky="ew", padx=10, pady=6)
+            ttk.Button(parent, text="Load Cookies…", command=self._load_cookie_file).grid(row=1, column=2, sticky="e", padx=10, pady=6)
+            ttk.Label(parent, text="Browser cookies").grid(row=2, column=0, sticky="w", padx=10, pady=(6, 8))
+            ttk.Combobox(
+                parent,
+                textvariable=self.cookie_browser_var,
+                values=COOKIE_BROWSER_OPTIONS,
+                state="readonly",
+                width=18,
+            ).grid(row=2, column=1, sticky="w", padx=10, pady=(6, 8))
+            parent.columnconfigure(1, weight=1)
+
+        self.manual_settings_frames: list[ttk.LabelFrame] = []
+
+        def build_manual_settings(parent: ttk.Frame) -> ttk.LabelFrame:
+            frame = ttk.LabelFrame(parent, text="Manual Override Settings")
+            ttk.Label(frame, text="Video bitrate (kbps)").grid(row=0, column=0, sticky="w", padx=8, pady=6)
+            ttk.Entry(frame, textvariable=self.manual_video_bitrate_var, width=12).grid(row=0, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 0, "Target video bitrate for the H.264 encode. Higher = larger file and more CPU time; it cannot add detail beyond the source.")
+            ttk.Label(frame, text="Audio bitrate (kbps)").grid(row=1, column=0, sticky="w", padx=8, pady=6)
+            ttk.Entry(frame, textvariable=self.manual_audio_bitrate_var, width=12).grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 1, "Target AAC audio bitrate. 192 kbps is usually enough; 320 kbps matches the VOD preset but may exceed source quality.")
+            ttk.Label(frame, text="Sample rate").grid(row=2, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_sample_rate_var, values=["44100", "48000"], state="readonly", width=10).grid(row=2, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 2, "Audio samples per second. Use 48000 for video/streaming; use 44100 only when matching music/audio sources.")
+            ttk.Label(frame, text="Channels").grid(row=3, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_channels_var, values=["Mono", "Stereo"], state="readonly", width=10).grid(row=3, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 3, "Output audio layout. Stereo is normal for YouTube/VOD; Mono is only for speech-first files or smaller audio.")
+            ttk.Label(frame, text="x264 preset").grid(row=4, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_preset_var, values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"], state="readonly", width=10).grid(row=4, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 4, "Encoder speed/efficiency tradeoff. Ultrafast = quickest but bigger/lower quality; slower = better compression but heavier CPU. Medium is safest.")
+            ttk.Label(
+                frame,
+                text="Codec stays H.264 + AAC; these fields control the encode profile used when Manual Override is selected. x264 preset applies only when NVENC is off.",
+                style="Muted.TLabel",
+                wraplength=420,
+                justify="left",
+            ).grid(row=5, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
+            frame.columnconfigure(1, weight=1)
+            self.manual_settings_frames.append(frame)
+            if not hasattr(self, "manual_settings_frame"):
+                self.manual_settings_frame = frame
+            return frame
+
+        def build_advanced_options(parent: ttk.LabelFrame | ttk.Frame) -> None:
+            ttk.Label(parent, text="Extra tags").grid(row=0, column=0, sticky="w", padx=10, pady=4)
+            ttk.Entry(parent, textvariable=self.tags_var).grid(row=0, column=1, sticky="ew", padx=10, pady=4)
+            ttk.Checkbutton(parent, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=1, column=0, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=1, column=1, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Embed metadata", variable=self.embed_metadata_var).grid(row=2, column=0, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Save compact JSON", variable=self.write_info_json_var).grid(row=2, column=1, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Single video only (ignore playlist)", variable=self.single_video_only_var).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=1)
+            nvenc_label = "Use NVIDIA NVENC GPU encoding"
+            if sys.platform == "darwin":
+                nvenc_label = "NVIDIA NVENC (Windows only)"
+            nvenc_checkbox = ttk.Checkbutton(parent, text=nvenc_label, variable=self.use_nvenc_var)
+            nvenc_checkbox.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=1)
+            if sys.platform == "darwin":
+                self.use_nvenc_var.set(False)
+                nvenc_checkbox.state(["disabled"])
+            ttk.Checkbutton(parent, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=1)
+            manual_frame = build_manual_settings(parent)
+            manual_frame.grid(row=6, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 8))
+            parent.columnconfigure(1, weight=1)
+            self._refresh_manual_settings_visibility()
 
         url_frame = ttk.LabelFrame(settings, text="Source")
-        url_frame.grid(row=0, column=0, sticky="nsew", **pad)
-        ttk.Label(url_frame, text="YouTube URL").grid(row=0, column=0, sticky="w", padx=10, pady=10)
-        ttk.Entry(url_frame, textvariable=self.url_var, width=12).grid(row=0, column=1, sticky="ew", padx=10, pady=10)
+        ttk.Label(url_frame, text="YouTube URL").grid(row=0, column=0, sticky="w", padx=10, pady=6)
+        ttk.Entry(url_frame, textvariable=self.url_var, width=12).grid(row=0, column=1, sticky="ew", padx=10, pady=6)
         self.preview_metadata_button = ttk.Button(url_frame, text="Preview", command=self._fetch_metadata)
-        self.preview_metadata_button.grid(row=0, column=2, sticky="e", padx=10, pady=10)
-
+        self.preview_metadata_button.grid(row=0, column=2, sticky="e", padx=10, pady=6)
         optional_source = ttk.Frame(url_frame)
-        ttk.Label(optional_source, text="Batch URL text file").grid(row=0, column=0, sticky="w", padx=10, pady=(4, 8))
-        ttk.Label(optional_source, textvariable=self.url_list_file_var, style="Muted.TLabel").grid(row=0, column=1, sticky="w", padx=10, pady=(4, 8))
-        ttk.Button(optional_source, text="Load URL List…", command=self._load_url_list_file).grid(row=0, column=2, sticky="e", padx=10, pady=(4, 8))
-        ttk.Label(optional_source, text="YouTube cookies.txt").grid(row=1, column=0, sticky="w", padx=10, pady=(0, 8))
-        ttk.Label(optional_source, textvariable=self.cookie_file_var, style="Muted.TLabel").grid(row=1, column=1, sticky="w", padx=10, pady=(0, 8))
-        ttk.Button(optional_source, text="Load Cookies…", command=self._load_cookie_file).grid(row=1, column=2, sticky="e", padx=10, pady=(0, 8))
-        ttk.Label(optional_source, text="Browser cookies").grid(row=2, column=0, sticky="w", padx=10, pady=(0, 8))
-        ttk.Combobox(
-            optional_source,
-            textvariable=self.cookie_browser_var,
-            values=COOKIE_BROWSER_OPTIONS,
-            state="readonly",
-            width=18,
-        ).grid(row=2, column=1, sticky="w", padx=10, pady=(0, 8))
-        optional_source.columnconfigure(1, weight=1)
-
-        def toggle_optional_source() -> None:
-            if optional_source.winfo_manager():
-                optional_source.grid_remove()
-                optional_source_button.configure(text="Batch / cookies ▸")
-            else:
-                content_row = 2 if int(optional_source_button.grid_info()["row"]) == 1 else 1
-                optional_source.grid(row=content_row, column=0, columnspan=4, sticky="ew")
-                optional_source_button.configure(text="Batch / cookies ▾")
-
+        build_source_details(optional_source)
         optional_source_button = ttk.Button(
             url_frame,
-            text="Batch / cookies ▸",
-            command=toggle_optional_source,
+            text="Batch & cookies…",
+            style="Compact.TButton",
+            command=lambda: show_compact_popup("Batch & cookies", optional_source_button, build_source_details, minimum_width=640),
         )
-        optional_source_button.grid(row=0, column=3, sticky="e", padx=10, pady=10)
         url_frame.columnconfigure(1, weight=1)
 
         out_frame = ttk.LabelFrame(settings, text="Destination")
-        out_frame.grid(row=0, column=1, sticky="nsew", **pad)
-        ttk.Label(out_frame, text="Output folder").grid(row=0, column=0, sticky="w", padx=10, pady=10)
-        ttk.Entry(out_frame, textvariable=self.output_var, width=8).grid(row=0, column=1, sticky="ew", padx=10, pady=10)
-        ttk.Button(out_frame, text="Browse…", command=self._browse_output).grid(row=0, column=2, sticky="e", padx=10, pady=10)
-        out_frame.columnconfigure(1, weight=1)
+        output_folder_label = ttk.Label(out_frame, text="Output folder")
+        output_folder_entry = ttk.Entry(out_frame, textvariable=self.output_var, width=8)
+        output_browse_button = ttk.Button(out_frame, text="Browse…", command=self._browse_output)
+        out_frame.columnconfigure(0, weight=1)
 
         options = ttk.LabelFrame(settings, text="Download Options")
-        options.grid(row=0, column=2, sticky="nsew", **pad)
         ttk.Label(options, text="Quality ceiling").grid(row=0, column=0, sticky="w", padx=10, pady=4)
         ttk.Combobox(
             options,
@@ -2304,7 +2403,7 @@ class DownloaderApp(tk.Tk):
             values=list(QUALITY_OPTIONS.keys()),
             state="readonly",
             width=16,
-        ).grid(row=0, column=1, sticky="ew", padx=10, pady=4)
+        ).grid(row=0, column=1, sticky="ew", padx=10, pady=2)
         ttk.Label(options, text="Output mode").grid(row=1, column=0, sticky="w", padx=10, pady=4)
         export_mode_combo = ttk.Combobox(
             options,
@@ -2313,92 +2412,84 @@ class DownloaderApp(tk.Tk):
             state="readonly",
             width=16,
         )
-        export_mode_combo.grid(row=1, column=1, sticky="ew", padx=10, pady=4)
-        export_mode_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
-
+        export_mode_combo.grid(row=1, column=1, sticky="ew", padx=10, pady=2)
         advanced_options = ttk.Frame(options)
-        ttk.Label(advanced_options, text="Extra tags").grid(row=0, column=0, sticky="w", padx=10, pady=8)
-        ttk.Entry(advanced_options, textvariable=self.tags_var).grid(row=0, column=1, sticky="ew", padx=10, pady=8)
-        ttk.Checkbutton(advanced_options, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=1, column=0, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(advanced_options, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=1, column=1, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(advanced_options, text="Embed metadata", variable=self.embed_metadata_var).grid(row=2, column=0, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(advanced_options, text="Save compact JSON", variable=self.write_info_json_var).grid(row=2, column=1, sticky="w", padx=10, pady=4)
-        ttk.Checkbutton(advanced_options, text="Single video only (ignore playlist)", variable=self.single_video_only_var).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=4)
-        nvenc_label = "Use NVIDIA NVENC GPU encoding"
-        if sys.platform == "darwin":
-            nvenc_label += " (not available on macOS)"
-        nvenc_checkbox = ttk.Checkbutton(advanced_options, text=nvenc_label, variable=self.use_nvenc_var)
-        nvenc_checkbox.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=4)
-        if sys.platform == "darwin":
-            self.use_nvenc_var.set(False)
-            nvenc_checkbox.state(["disabled"])
-        ttk.Checkbutton(advanced_options, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=4)
-
-        self.manual_settings_frame = ttk.LabelFrame(advanced_options, text="Manual Override Settings")
-        self.manual_settings_frame.grid(row=6, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 8))
-        ttk.Label(self.manual_settings_frame, text="Video bitrate (kbps)").grid(row=0, column=0, sticky="w", padx=8, pady=6)
-        ttk.Entry(self.manual_settings_frame, textvariable=self.manual_video_bitrate_var, width=12).grid(row=0, column=1, sticky="ew", padx=8, pady=6)
-        self._manual_help_icon(0, "Target video bitrate for the H.264 encode. Higher = larger file and more CPU time; it cannot add detail beyond the source.")
-        ttk.Label(self.manual_settings_frame, text="Audio bitrate (kbps)").grid(row=1, column=0, sticky="w", padx=8, pady=6)
-        ttk.Entry(self.manual_settings_frame, textvariable=self.manual_audio_bitrate_var, width=12).grid(row=1, column=1, sticky="ew", padx=8, pady=6)
-        self._manual_help_icon(1, "Target AAC audio bitrate. 192 kbps is usually enough; 320 kbps matches the VOD preset but may exceed source quality.")
-        ttk.Label(self.manual_settings_frame, text="Sample rate").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-        ttk.Combobox(self.manual_settings_frame, textvariable=self.manual_sample_rate_var, values=["44100", "48000"], state="readonly", width=10).grid(row=2, column=1, sticky="ew", padx=8, pady=6)
-        self._manual_help_icon(2, "Audio samples per second. Use 48000 for video/streaming; use 44100 only when matching music/audio sources.")
-        ttk.Label(self.manual_settings_frame, text="Channels").grid(row=3, column=0, sticky="w", padx=8, pady=6)
-        ttk.Combobox(self.manual_settings_frame, textvariable=self.manual_channels_var, values=["Mono", "Stereo"], state="readonly", width=10).grid(row=3, column=1, sticky="ew", padx=8, pady=6)
-        self._manual_help_icon(3, "Output audio layout. Stereo is normal for YouTube/VOD; Mono is only for speech-first files or smaller audio.")
-        ttk.Label(self.manual_settings_frame, text="x264 preset").grid(row=4, column=0, sticky="w", padx=8, pady=6)
-        ttk.Combobox(self.manual_settings_frame, textvariable=self.manual_preset_var, values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"], state="readonly", width=10).grid(row=4, column=1, sticky="ew", padx=8, pady=6)
-        self._manual_help_icon(4, "Encoder speed/efficiency tradeoff. Ultrafast = quickest but bigger/lower quality; slower = better compression but heavier CPU. Medium is safest.")
-        ttk.Label(
-            self.manual_settings_frame,
-            text="Codec stays H.264 + AAC; these fields control the encode profile used when Manual Override is selected. x264 preset applies only when NVENC is off.",
-            style="Muted.TLabel",
-            wraplength=360,
-            justify="left",
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
-        self.manual_settings_frame.columnconfigure(1, weight=1)
-        self._refresh_manual_settings_visibility()
-        advanced_options.columnconfigure(1, weight=1)
-
-        def toggle_advanced_options() -> None:
-            if advanced_options.winfo_manager():
-                advanced_options.grid_remove()
-                advanced_options_button.configure(text="More options ▸")
-            else:
-                advanced_options.grid(row=3, column=0, columnspan=2, sticky="ew")
-                advanced_options_button.configure(text="More options ▾")
-
-        advanced_options_button = ttk.Button(options, text="More options ▸", command=toggle_advanced_options)
-        advanced_options_button.grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 2))
+        build_advanced_options(advanced_options)
+        advanced_options_button = ttk.Button(
+            options,
+            text="More options…",
+            style="Compact.TButton",
+            command=lambda: show_compact_popup("More options", advanced_options_button, build_advanced_options, minimum_width=560),
+        )
         options.columnconfigure(1, weight=1)
 
-        def adapt_settings(event: tk.Event[Any]) -> None:
-            if event.widget is not download_tab:
-                return
-            if event.width >= 1050:
-                settings.columnconfigure(0, weight=4)
-                settings.columnconfigure(1, weight=3)
-                settings.columnconfigure(2, weight=3)
-                url_frame.grid_configure(row=0, column=0, columnspan=1)
-                out_frame.grid_configure(row=0, column=1, columnspan=1)
-                options.grid_configure(row=0, column=2, columnspan=1)
-                optional_source_button.grid_configure(row=1, column=0, columnspan=3, sticky="w")
-                if optional_source.winfo_manager():
-                    optional_source.grid_configure(row=2)
+        def apply_download_layout() -> None:
+            width = max(1, download_tab.winfo_width())
+            height = max(1, download_tab.winfo_height())
+            layout = download_layout_mode(
+                width,
+                height,
+                manual_override=self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value,
+            )
+            very_compact = height < 430
+            output_folder_label.grid_forget()
+            output_folder_entry.grid_forget()
+            output_browse_button.grid_forget()
+            if very_compact:
+                output_folder_label.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 2))
+                output_folder_entry.grid(row=1, column=0, sticky="ew", padx=(10, 5), pady=(2, 6))
+                output_browse_button.grid(row=1, column=1, sticky="e", padx=(5, 10), pady=(2, 6))
             else:
-                settings.columnconfigure(0, weight=2)
-                settings.columnconfigure(1, weight=3)
-                settings.columnconfigure(2, weight=0)
-                url_frame.grid_configure(row=0, column=0, columnspan=3)
-                out_frame.grid_configure(row=1, column=0, columnspan=1)
-                options.grid_configure(row=1, column=1, columnspan=2)
-                optional_source_button.grid_configure(row=0, column=3, columnspan=1, sticky="e")
-                if optional_source.winfo_manager():
-                    optional_source.grid_configure(row=1)
+                output_folder_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 4))
+                output_folder_entry.grid(row=1, column=0, sticky="ew", padx=10, pady=4)
+                output_browse_button.grid(row=2, column=0, sticky="e", padx=10, pady=(4, 10))
+            for column in range(3):
+                settings.columnconfigure(column, weight=0, minsize=0)
+            for row in range(3):
+                settings.rowconfigure(row, weight=0)
 
-        download_tab.bind("<Configure>", adapt_settings, add="+")
+            if layout.startswith("wide"):
+                settings.columnconfigure(0, weight=4)
+                settings.columnconfigure(1, weight=3, minsize=220)
+                settings.columnconfigure(2, weight=3)
+                settings.rowconfigure(0, weight=1)
+                url_frame.grid(row=0, column=0, columnspan=1, sticky="nsew", **pad)
+                out_frame.grid(row=0, column=1, columnspan=1, sticky="nsew", **pad)
+                options.grid(row=0, column=2, columnspan=1, sticky="nsew", **pad)
+            elif layout.endswith("expanded"):
+                settings.columnconfigure(0, weight=1)
+                settings.rowconfigure(2, weight=1)
+                url_frame.grid(row=0, column=0, columnspan=3, sticky="ew", **pad)
+                out_frame.grid(row=1, column=0, columnspan=3, sticky="ew", **pad)
+                options.grid(row=2, column=0, columnspan=3, sticky="nsew", **pad)
+            else:
+                settings.columnconfigure(0, weight=5)
+                settings.columnconfigure(1, weight=6)
+                settings.rowconfigure(0, weight=1)
+                settings.rowconfigure(1, weight=1)
+                url_frame.grid(row=0, column=0, columnspan=3, sticky="nsew", **pad)
+                out_frame.grid(row=1, column=0, columnspan=1, sticky="nsew", **pad)
+                options.grid(row=1, column=1, columnspan=2, sticky="nsew", **pad)
+
+            if layout.endswith("expanded"):
+                optional_source_button.grid_remove()
+                advanced_options_button.grid_remove()
+                optional_source.grid(row=1, column=0, columnspan=4, sticky="ew")
+                advanced_options.grid(row=2, column=0, columnspan=2, sticky="ew")
+                dismiss_compact_popup()
+            else:
+                optional_source.grid_remove()
+                advanced_options.grid_remove()
+                optional_source_button.grid(row=1, column=0, columnspan=3, sticky="w", padx=10, pady=(0, 4))
+                advanced_options_button.grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+
+        def export_mode_changed(_event: tk.Event[Any]) -> None:
+            self._refresh_manual_settings_visibility()
+            apply_download_layout()
+
+        export_mode_combo.bind("<<ComboboxSelected>>", export_mode_changed)
+        self._apply_download_layout = apply_download_layout
+        download_tab.bind("<Configure>", lambda _event: apply_download_layout(), add="+")
 
         log_tab.columnconfigure(0, weight=1)
         log_tab.rowconfigure(1, weight=1)
@@ -2408,20 +2499,22 @@ class DownloaderApp(tk.Tk):
         ttk.Button(log_actions, text="Open Log Folder", command=self._open_log_folder).pack(side="right")
         log_frame = ttk.LabelFrame(log_tab, text="Activity Log")
         log_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
-        self.log = tk.Text(log_frame, height=5, wrap="word", state="disabled", bg="#050607", fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        self.log = tk.Text(log_frame, height=1, width=1, wrap="word", state="disabled", bg="#050607", fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
         log_scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=log_scrollbar.set)
-        self.log.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
-        log_scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+        self.log.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=10)
+        log_scrollbar.grid(row=0, column=1, sticky="ns", padx=(0, 10), pady=10)
 
         progress = ttk.LabelFrame(download_tab, text="Progress")
-        progress.grid(row=1, column=0, sticky="ew", **pad)
+        progress.grid(row=1, column=0, sticky="ew", padx=12, pady=(4, 2))
         self.progress_bar = ttk.Progressbar(progress, variable=self.progress_var, maximum=100, mode="determinate")
-        self.progress_bar.pack(fill="x", padx=10, pady=(6, 3))
-        ttk.Label(progress, textvariable=self.status_var, style="Muted.TLabel").pack(anchor="w", padx=10, pady=(0, 6))
+        self.progress_bar.pack(fill="x", padx=10, pady=(4, 2))
+        ttk.Label(progress, textvariable=self.status_var, style="Muted.TLabel").pack(anchor="w", padx=10, pady=(0, 4))
 
         buttons = ttk.Frame(download_tab, style="Panel.TFrame")
-        buttons.grid(row=2, column=0, sticky="ew", **pad)
+        buttons.grid(row=2, column=0, sticky="ew", padx=12, pady=(2, 6))
         self.download_button = ttk.Button(buttons, text="Download MP4", command=self._start_download, style="Accent.TButton")
         self.download_button.pack(side="left", padx=4)
         self.cancel_button = ttk.Button(buttons, text="Cancel", command=self._cancel, state="disabled")
@@ -2430,27 +2523,42 @@ class DownloaderApp(tk.Tk):
         self.skip_video_button.pack(side="left", padx=4)
         self.skip_url_button = ttk.Button(buttons, text="Skip URL", command=self._skip_url, state="disabled")
         self.skip_url_button.pack(side="left", padx=4)
-        ttk.Button(buttons, text="Open Folder", command=self._open_folder).pack(side="right", padx=4)
-        ttk.Button(buttons, text="View Log", command=lambda: self.main_notebook.select(log_tab)).pack(side="right", padx=4)
+        open_folder_button = ttk.Button(buttons, text="Open Folder", command=self._open_folder)
+        open_folder_button.pack(side="right", padx=4)
+        view_log_button = ttk.Button(buttons, text="View Log", command=lambda: self.main_notebook.select(log_tab))
+        view_log_button.pack(side="right", padx=4)
 
-        metadata_tab.columnconfigure(0, weight=3)
-        metadata_tab.columnconfigure(1, weight=2)
-        metadata_tab.columnconfigure(2, weight=0, minsize=320)
-        metadata_tab.rowconfigure(2, weight=3)
-        metadata_tab.rowconfigure(4, weight=2)
-        metadata_tab.rowconfigure(5, weight=3)
+        def adapt_download_actions(_event: tk.Event[Any] | None = None) -> None:
+            compact = buttons.winfo_width() < 900
+            view_log_button.configure(text="Log" if compact else "View Log")
+            open_folder_button.configure(text="Folder" if compact else "Open Folder")
+
+        buttons.bind("<Configure>", adapt_download_actions, add="+")
+
+        metadata_tab.columnconfigure(0, weight=1)
+        metadata_tab.rowconfigure(1, weight=6, minsize=160)
+        metadata_tab.rowconfigure(2, weight=5, minsize=160)
 
         meta_buttons = ttk.Frame(metadata_tab, style="Panel.TFrame")
-        meta_buttons.grid(row=0, column=0, columnspan=3, sticky="ew", padx=12, pady=(12, 8))
-        ttk.Button(meta_buttons, text="Copy Tags", command=self._copy_tags).pack(side="left", padx=5)
-        ttk.Button(meta_buttons, text="Copy Description", command=self._copy_description).pack(side="left", padx=5)
-        ttk.Button(meta_buttons, text="Copy Thumbnail URL", command=self._copy_thumbnail_url).pack(side="left", padx=5)
-        ttk.Button(meta_buttons, text="Open Saved Location", command=self._open_selected_saved_location).pack(side="left", padx=5)
-        ttk.Button(meta_buttons, text="Back to Download", command=lambda: self.main_notebook.select(download_tab)).pack(side="right", padx=5)
+        meta_buttons.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+        metadata_action_buttons = [
+            ttk.Button(meta_buttons, text="Copy Tags", command=self._copy_tags),
+            ttk.Button(meta_buttons, text="Copy Description", command=self._copy_description),
+            ttk.Button(meta_buttons, text="Copy Thumbnail URL", command=self._copy_thumbnail_url),
+            ttk.Button(meta_buttons, text="Open Saved Location", command=self._open_selected_saved_location),
+            ttk.Button(meta_buttons, text="Back to Download", command=lambda: self.main_notebook.select(download_tab)),
+        ]
 
-        ttk.Label(metadata_tab, text="Playlist / Video Queue", style="Accent.TLabel").grid(row=1, column=0, sticky="w", padx=12, pady=(0, 5))
-        tree_wrap = ttk.Frame(metadata_tab, style="Card.TFrame")
-        tree_wrap.grid(row=2, column=0, rowspan=3, sticky="nsew", padx=12, pady=(0, 12))
+        metadata_content = ttk.Frame(metadata_tab, style="Panel.TFrame")
+        metadata_content.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 10))
+
+        queue_panel = ttk.Frame(metadata_content, style="Panel.TFrame")
+        queue_panel.grid_propagate(False)
+        queue_panel.columnconfigure(0, weight=1)
+        queue_panel.rowconfigure(1, weight=1)
+        ttk.Label(queue_panel, text="Playlist / Video Queue", style="Accent.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 5))
+        tree_wrap = ttk.Frame(queue_panel, style="Card.TFrame")
+        tree_wrap.grid(row=1, column=0, sticky="nsew")
         tree_wrap.columnconfigure(0, weight=1)
         tree_wrap.rowconfigure(0, weight=1)
         self.video_tree = ttk.Treeview(
@@ -2458,7 +2566,7 @@ class DownloaderApp(tk.Tk):
             columns=("index", "title", "duration", "creator", "id", "location"),
             show="headings",
             selectmode="browse",
-            height=16,
+            height=1,
         )
         self.video_tree.heading("index", text="#")
         self.video_tree.heading("title", text="Title")
@@ -2480,33 +2588,144 @@ class DownloaderApp(tk.Tk):
         x_scroll.grid(row=1, column=0, sticky="ew", padx=(10, 0), pady=(0, 10))
         self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
 
+        details_panel = ttk.Frame(metadata_content, style="Panel.TFrame")
+        details_panel.grid_propagate(False)
+        details_panel.columnconfigure(0, weight=1)
+        details_panel.rowconfigure(2, weight=2)
+        details_panel.rowconfigure(4, weight=3)
         self.selected_title_var = tk.StringVar(value="Fetch metadata to preview long titles, tags, description, and thumbnails.")
-        ttk.Label(metadata_tab, textvariable=self.selected_title_var, wraplength=520, justify="left", style="Muted.TLabel").grid(row=1, column=1, sticky="ew", padx=12, pady=(0, 5))
-        ttk.Label(metadata_tab, text="Tags", style="Accent.TLabel").grid(row=2, column=1, sticky="nw", padx=12, pady=(0, 5))
-        self.pulled_tags_text = tk.Text(metadata_tab, height=5, wrap="word", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_UI)
-        self.pulled_tags_text.grid(row=2, column=1, sticky="nsew", padx=12, pady=(24, 12))
-        ttk.Label(metadata_tab, text="Description", style="Accent.TLabel").grid(row=3, column=1, sticky="w", padx=12, pady=(0, 5))
-        self.description_text = tk.Text(metadata_tab, height=10, wrap="word", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_UI)
-        self.description_text.grid(row=4, column=1, sticky="nsew", padx=12, pady=(0, 12))
+        selected_title_label = ttk.Label(details_panel, textvariable=self.selected_title_var, wraplength=360, justify="left", style="Muted.TLabel")
+        selected_title_label.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        tags_label = ttk.Label(details_panel, text="Tags", style="Accent.TLabel")
+        tags_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
+        self.pulled_tags_text = tk.Text(details_panel, height=1, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_UI)
+        self.pulled_tags_text.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
+        description_label = ttk.Label(details_panel, text="Description", style="Accent.TLabel")
+        description_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+        self.description_text = tk.Text(details_panel, height=1, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_UI)
+        self.description_text.grid(row=4, column=0, sticky="nsew")
+        details_panel.bind(
+            "<Configure>",
+            lambda event: selected_title_label.configure(wraplength=max(180, event.width - 12)),
+            add="+",
+        )
+
+        thumb_box = ttk.Frame(metadata_content, style="Card.TFrame")
+        thumb_box.grid_propagate(False)
+        thumb_box.pack_propagate(False)
+        ttk.Label(thumb_box, text="Thumbnail", style="Accent.TLabel").pack(anchor="w", padx=10, pady=(10, 6))
+        self.thumbnail_label = tk.Label(thumb_box, text="No thumbnail loaded", anchor="center", bg=THEME["surface"], fg=THEME["muted"], relief="flat", font=FONT_UI)
+        self.thumbnail_label.pack(fill="both", expand=True, padx=10, pady=(0, 10), ipadx=8, ipady=8)
 
         summary_frame = ttk.LabelFrame(metadata_tab, text="Encoding Summary")
-        summary_frame.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=12, pady=(0, 12))
+        summary_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
         summary_frame.columnconfigure(0, weight=1)
         summary_frame.columnconfigure(1, weight=1)
         summary_frame.rowconfigure(1, weight=1)
         ttk.Label(summary_frame, text="Source Selected from YouTube", style="Accent.TLabel").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
         ttk.Label(summary_frame, text="Final Output File", style="Accent.TLabel").grid(row=0, column=1, sticky="w", padx=10, pady=(8, 4))
-        self.source_summary_text = tk.Text(summary_frame, height=12, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
-        self.output_summary_text = tk.Text(summary_frame, height=12, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
+        self.source_summary_text = tk.Text(summary_frame, height=1, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
+        self.output_summary_text = tk.Text(summary_frame, height=1, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", padx=10, pady=8, font=FONT_MONO)
         self.source_summary_text.grid(row=1, column=0, sticky="nsew", padx=(10, 6), pady=(0, 10))
         self.output_summary_text.grid(row=1, column=1, sticky="nsew", padx=(6, 10), pady=(0, 10))
 
-        thumb_box = ttk.Frame(metadata_tab, style="Card.TFrame", width=320)
-        thumb_box.grid(row=1, column=2, rowspan=4, sticky="nsew", padx=12, pady=(0, 12))
-        thumb_box.grid_propagate(False)
-        ttk.Label(thumb_box, text="Thumbnail", style="Accent.TLabel").pack(anchor="w", padx=10, pady=(10, 6))
-        self.thumbnail_label = tk.Label(thumb_box, text="No thumbnail loaded", anchor="center", bg=THEME["surface"], fg=THEME["muted"], relief="flat", font=FONT_UI)
-        self.thumbnail_label.pack(fill="both", expand=True, padx=10, pady=(0, 10), ipadx=8, ipady=8)
+        def apply_metadata_layout() -> None:
+            width = max(1, metadata_content.winfo_width())
+            height = max(1, metadata_tab.winfo_height())
+            action_width = max(1, meta_buttons.winfo_width())
+            for button in metadata_action_buttons:
+                button.grid_forget()
+                button.configure(style="TButton")
+            for column in range(6):
+                meta_buttons.columnconfigure(column, weight=0)
+            if action_width >= 790:
+                for button, label in zip(
+                    metadata_action_buttons,
+                    ["Copy Tags", "Copy Description", "Copy Thumbnail URL", "Open Saved Location", "Back to Download"],
+                ):
+                    button.configure(text=label)
+                for column, button in enumerate(metadata_action_buttons[:4]):
+                    button.grid(row=0, column=column, sticky="w", padx=5)
+                meta_buttons.columnconfigure(4, weight=1)
+                metadata_action_buttons[4].grid(row=0, column=5, sticky="e", padx=5)
+            elif action_width >= 700:
+                for button, label in zip(
+                    metadata_action_buttons,
+                    ["Copy Tags", "Copy Description", "Copy Thumbnail", "Open Folder", "Download"],
+                ):
+                    button.configure(text=label, style="Compact.TButton")
+                for column, button in enumerate(metadata_action_buttons[:4]):
+                    button.grid(row=0, column=column, sticky="w", padx=4)
+                meta_buttons.columnconfigure(4, weight=1)
+                metadata_action_buttons[4].grid(row=0, column=5, sticky="e", padx=4)
+            else:
+                for button, label in zip(
+                    metadata_action_buttons,
+                    ["Copy Tags", "Copy Description", "Copy Thumbnail", "Open Folder", "Download"],
+                ):
+                    button.configure(text=label, style="Compact.TButton")
+                for column, button in enumerate(metadata_action_buttons[:3]):
+                    button.grid(row=0, column=column, sticky="w", padx=5, pady=(0, 5))
+                metadata_action_buttons[3].grid(row=1, column=0, columnspan=2, sticky="w", padx=5)
+                meta_buttons.columnconfigure(3, weight=1)
+                metadata_action_buttons[4].grid(row=1, column=3, sticky="e", padx=5)
+
+            for column in range(3):
+                metadata_content.columnconfigure(column, weight=0, minsize=0, uniform="")
+            for row in range(2):
+                metadata_content.rowconfigure(row, weight=0, minsize=0)
+
+            if metadata_layout_mode(width) == "three-column":
+                metadata_content.columnconfigure(0, weight=5)
+                metadata_content.columnconfigure(1, weight=3)
+                metadata_content.columnconfigure(2, weight=2)
+                metadata_content.rowconfigure(0, weight=1)
+                queue_panel.grid(row=0, column=0, rowspan=1, sticky="nsew", padx=(0, 10))
+                details_panel.grid(row=0, column=1, rowspan=1, sticky="nsew", padx=(0, 10))
+                thumb_box.grid(row=0, column=2, rowspan=1, sticky="nsew")
+            else:
+                metadata_content.columnconfigure(0, weight=3)
+                metadata_content.columnconfigure(1, weight=2, minsize=230)
+                metadata_content.rowconfigure(0, weight=3)
+                metadata_content.rowconfigure(1, weight=2)
+                queue_panel.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
+                details_panel.grid(row=0, column=1, rowspan=1, sticky="nsew", pady=(0, 8))
+                thumb_box.grid(row=1, column=1, rowspan=1, sticky="nsew")
+
+            compact_height = height < 440
+            selected_title_label.grid_forget()
+            tags_label.grid_forget()
+            self.pulled_tags_text.grid_forget()
+            description_label.grid_forget()
+            self.description_text.grid_forget()
+            for column in range(2):
+                details_panel.columnconfigure(column, weight=0, minsize=0, uniform="")
+            for row in range(5):
+                details_panel.rowconfigure(row, weight=0)
+            if compact_height:
+                details_panel.columnconfigure(0, weight=1)
+                details_panel.rowconfigure(1, weight=1)
+                details_panel.rowconfigure(3, weight=1)
+                tags_label.grid(row=0, column=0, sticky="w", pady=(0, 2))
+                self.pulled_tags_text.grid(row=1, column=0, sticky="nsew", pady=(0, 3))
+                description_label.grid(row=2, column=0, sticky="w", pady=(0, 2))
+                self.description_text.grid(row=3, column=0, sticky="nsew")
+            else:
+                details_panel.columnconfigure(0, weight=1)
+                details_panel.rowconfigure(2, weight=2)
+                details_panel.rowconfigure(4, weight=3)
+                selected_title_label.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+                tags_label.grid(row=1, column=0, sticky="w", pady=(0, 5))
+                self.pulled_tags_text.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
+                description_label.grid(row=3, column=0, sticky="w", pady=(0, 5))
+                self.description_text.grid(row=4, column=0, sticky="nsew")
+            metadata_tab.rowconfigure(1, weight=4 if compact_height else 6, minsize=120 if compact_height else 170)
+            metadata_tab.rowconfigure(2, weight=6 if compact_height else 5, minsize=170 if compact_height else 190)
+
+        self._apply_metadata_layout = apply_metadata_layout
+        metadata_tab.bind("<Configure>", lambda _event: apply_metadata_layout(), add="+")
+        metadata_content.bind("<Configure>", lambda _event: apply_metadata_layout(), add="+")
+        meta_buttons.bind("<Configure>", lambda _event: apply_metadata_layout(), add="+")
 
     def _check_runtime(self) -> None:
         if YTDLP_IMPORT_ERROR is not None:
@@ -2674,19 +2893,31 @@ class DownloaderApp(tk.Tk):
         self._render_metadata_tree(selected_index=0)
         self._append_log(f"Saved download history entry: {output_dir}")
 
-    def _manual_help_icon(self, row: int, text: str) -> None:
-        icon = ttk.Label(self.manual_settings_frame, text="?", style="Accent.TLabel", cursor="question_arrow")
+    def _manual_help_icon(self, frame: ttk.LabelFrame, row: int, text: str) -> None:
+        icon = ttk.Label(frame, text="?", style="Accent.TLabel", cursor="question_arrow")
         icon.grid(row=row, column=2, sticky="w", padx=(2, 8), pady=6)
         ToolTip(icon, text)
 
     def _refresh_manual_settings_visibility(self) -> None:
-        frame = getattr(self, "manual_settings_frame", None)
-        if frame is None:
-            return
-        if self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value:
-            frame.grid()
-        else:
-            frame.grid_remove()
+        frames = list(getattr(self, "manual_settings_frames", []))
+        if not frames:
+            fallback = getattr(self, "manual_settings_frame", None)
+            frames = [fallback] if fallback is not None else []
+        live_frames: list[ttk.LabelFrame] = []
+        manual_override = self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value
+        for frame in frames:
+            try:
+                if not frame.winfo_exists():
+                    continue
+                if manual_override:
+                    frame.grid()
+                else:
+                    frame.grid_remove()
+                live_frames.append(frame)
+            except tk.TclError:
+                continue
+        if hasattr(self, "manual_settings_frames"):
+            self.manual_settings_frames = live_frames
 
     def _manual_export_settings(self) -> ManualExportSettings:
         def positive_int(value: str, label: str, low: int, high: int) -> int:
