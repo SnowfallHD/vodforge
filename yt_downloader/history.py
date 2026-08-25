@@ -31,6 +31,7 @@ HISTORY_METADATA_KEYS = (
     "playlist_title",
     "playlist_id",
     "playlist_index",
+    "vodforge_output_type",
     "vodforge_encoding_summary",
 )
 
@@ -95,13 +96,24 @@ def history_output_dir(record: dict[str, Any]) -> Path | None:
     return Path(value).expanduser() if value else None
 
 
-def history_identity(record: dict[str, Any]) -> tuple[str, str]:
+def history_output_type(record: dict[str, Any]) -> str:
+    raw = str(record.get("vodforge_output_type") or "").strip().upper()
+    if raw in {"MP4", "MP3"}:
+        return raw
+    summary = record.get("vodforge_encoding_summary") if isinstance(record.get("vodforge_encoding_summary"), dict) else {}
+    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+    output_path = str(output.get("Output file path") or "").strip().lower()
+    container = str(output.get("Output container") or "").strip().lower()
+    return "MP3" if output_path.endswith(".mp3") or container == "mp3" else "MP4"
+
+
+def history_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     video_id = str(record.get("id") or "").strip()
     output_dir = history_output_dir(record)
     normalized_dir = os.path.normcase(os.path.abspath(str(output_dir))) if output_dir else ""
     if video_id:
-        return video_id, normalized_dir
-    return str(record.get("title") or "").strip(), normalized_dir
+        return video_id, normalized_dir, history_output_type(record)
+    return str(record.get("title") or "").strip(), normalized_dir, history_output_type(record)
 
 
 def sanitize_history_record(
@@ -129,6 +141,7 @@ def sanitize_history_record(
     except OSError:
         path = Path(os.path.abspath(str(path)))
     record["vodforge_output_dir"] = str(path)
+    record["vodforge_output_type"] = history_output_type(record or info)
     record["vodforge_recorded_at"] = recorded_at or datetime.now(timezone.utc).isoformat()
     return record
 
@@ -182,7 +195,7 @@ def load_history(path: Path) -> list[dict[str, Any]]:
         raise HistoryError("VODForge found an invalid download-history file.")
 
     records: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     for item in raw_items:
         if not isinstance(item, dict):
             continue

@@ -10,23 +10,29 @@ from PIL import Image
 
 import yt_downloader.app as app_module
 from yt_downloader.app import (
+    AudioExportPlan,
     RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
     AUDIO_BITRATE,
     AUDIO_SAMPLE_RATE,
     DownloadJob,
     DownloaderApp,
     ExportMode,
+    Mp3ExportSettings,
+    OutputType,
     QUALITY_OPTIONS,
     VIDEO_TARGET_BITRATE,
     ManualExportSettings,
     apply_manual_export_settings,
     build_auto_export_plan,
+    build_mp3_export_plan,
     build_encoding_summary_display,
     build_encoding_summary_metadata,
     build_failed_encoding_summary_metadata,
     build_description_display_text,
     clean_single_video_url,
     center_alpha_content,
+    cached_thumbnail_path,
+    embed_custom_mp3_cover_art,
     single_video_url_requires_video_id_error,
     build_tags_display_text,
     build_vod_ffmpeg_command,
@@ -60,12 +66,16 @@ from yt_downloader.app import (
     rounded_cover_image,
     runtime_window_icon_asset,
     metadata_layout_mode,
+    metadata_indices_for_output_type,
+    metadata_output_type,
     platform_font_families,
     prepare_batch_item_url,
+    prepare_custom_cover_art,
     playlist_folder_name,
     run_ffprobe_json,
     runtime_version_command,
     save_thumbnail_image,
+    save_custom_cached_thumbnail_image,
     staging_output_template,
     transcode_temp_paths,
     transcode_to_vod_streaming_settings,
@@ -473,6 +483,7 @@ def test_compact_video_metadata_keeps_only_useful_tag_and_thumbnail_fields():
         "categories": ["Education"],
         "thumbnail": "https://i.ytimg.com/example.jpg",
         "best_thumbnail": {"url": "large", "width": 1280},
+        "vodforge_output_type": "MP4",
     }
 
 
@@ -674,6 +685,33 @@ def test_package_downloaded_media_uses_title_only_filename_with_sanitized_youtub
     assert "video [" not in moved[0].name
 
 
+def test_package_downloaded_mp3_moves_only_the_single_audio_result(tmp_path: Path):
+    output_dir = tmp_path / "downloads"
+    staging_dir = tmp_path / "staging"
+    current_stage = staging_dir / "abc123"
+    current_stage.mkdir(parents=True)
+    (current_stage / "video [abc123].mp3").write_bytes(b"mp3 audio")
+    (current_stage / "video [abc123].jpg").write_bytes(b"temporary cover")
+    info = {
+        "title": "Producer Beat",
+        "id": "abc123",
+        "uploader": "Beat Channel",
+        "vodforge_output_type": "MP3",
+    }
+
+    moved = package_downloaded_media_from_staging(
+        staging_dir,
+        output_dir,
+        info,
+        expected_extension=".mp3",
+    )
+
+    expected = output_dir / "Beat Channel" / "videos - no playlist" / "Producer Beat [abc123]" / "Producer Beat.mp3"
+    assert moved == [expected]
+    assert expected.read_bytes() == b"mp3 audio"
+    assert not list(output_dir.rglob("*.jpg"))
+
+
 def test_staging_output_template_never_targets_real_final_folders(tmp_path: Path):
     template = staging_output_template(tmp_path)
 
@@ -707,6 +745,62 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
     assert sorted(p.name for p in tmp_path.iterdir()) == ["thumbnail.jpeg"]
     with Image.open(path) as image:
         assert image.format == "JPEG"
+
+
+def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(tmp_path: Path):
+    source = tmp_path / "artist-cover.png"
+    Image.new("RGB", (2000, 1200), (118, 78, 255)).save(source, format="PNG")
+    staging = tmp_path / "staging"
+    staging.mkdir()
+
+    prepared = prepare_custom_cover_art(source, staging)
+    info = {
+        "id": "beat123",
+        "title": "Producer Beat",
+        "thumbnail": "https://i.ytimg.com/vi/beat123/maxresdefault.jpg",
+    }
+    cached = save_custom_cached_thumbnail_image(info, prepared, data_dir=tmp_path / "data")
+
+    assert prepared == staging / "__vodforge-custom-cover.jpeg"
+    assert prepared.is_file()
+    assert cached == cached_thumbnail_path(info, data_dir=tmp_path / "data")
+    assert cached is not None and cached.is_file()
+    with Image.open(cached) as image:
+        assert image.format == "JPEG"
+        assert max(image.size) <= 1600
+        red, green, blue = image.convert("RGB").getpixel((0, 0))
+        assert red > green and blue > green
+
+
+def test_custom_mp3_cover_embedding_is_atomic_and_marks_front_cover(monkeypatch, tmp_path: Path):
+    mp3 = tmp_path / "beat.mp3"
+    cover = tmp_path / "cover.jpeg"
+    mp3.write_bytes(b"original mp3")
+    cover.write_bytes(b"jpeg")
+    commands: list[list[str]] = []
+
+    class Result:
+        returncode = 0
+        stdout = "embedded"
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"mp3 with custom cover")
+        return Result()
+
+    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+
+    result = embed_custom_mp3_cover_art(mp3, cover, "/bundle/ffmpeg")
+
+    assert result == mp3
+    assert mp3.read_bytes() == b"mp3 with custom cover"
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:6] == ["/bundle/ffmpeg", "-y", "-i", str(mp3), "-i", str(cover)]
+    assert ["-map", "0:a:0"] == command[6:8]
+    assert "attached_pic" in command
+    assert "comment=Cover (front)" in command
+    assert not list(tmp_path.glob(".*.vodforge-cover-*.mp3"))
 
 
 def test_best_thumbnail_for_download_prefers_largest_known_under_300kb():
@@ -926,6 +1020,63 @@ def test_encoding_summary_metadata_includes_final_ffprobe_output_values():
     assert output["Output file size"] == "47.7 MB"
     assert output["Output duration"] == "1:05"
     assert output["Validation status"] == "Validated"
+
+
+def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
+    info = {
+        "id": "beat123",
+        "formats": [
+            {"format_id": "18", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a.40.2", "abr": 96, "protocol": "https"},
+            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 128, "asr": 44100, "audio_channels": 2, "protocol": "https"},
+            {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2, "protocol": "m3u8_native"},
+        ],
+    }
+
+    plan = build_mp3_export_plan(info)
+    enriched = build_encoding_summary_metadata(info, plan, output_path=Path("Producer Beat.mp3"))
+    source_text, output_text = build_encoding_summary_display(enriched)
+
+    assert isinstance(plan, AudioExportPlan)
+    assert plan.output_type == OutputType.MP3
+    assert plan.audio_format_id == "251"
+    assert plan.format_selector == "251"
+    assert plan.audio_bitrate_kbps == 320
+    assert plan.embed_metadata is True
+    assert plan.embed_cover_art is False
+    assert plan.cover_art_source == "None (clean MP3)"
+    assert metadata_output_type(enriched) == OutputType.MP3
+    assert "Audio format ID: 251" in source_text
+    assert "Effective/target audio bitrate: 320 kbps" in output_text
+    assert "Embedded cover art: None (clean MP3)" in output_text
+    assert "Video format ID" not in source_text + output_text
+
+
+def test_mp3_summary_uses_measured_audio_values_without_video_rows():
+    info = {
+        "id": "beat123",
+        "formats": [
+            {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2},
+        ],
+    }
+    plan = build_mp3_export_plan(info, Mp3ExportSettings(sample_rate="44100", channels="2"))
+    ffprobe = {
+        "format": {"filename": "Producer Beat.mp3", "format_name": "mp3", "duration": "60", "size": "2400000"},
+        "streams": [{"codec_type": "audio", "codec_name": "mp3", "bit_rate": "320000", "sample_rate": "44100", "channels": 2}],
+    }
+
+    enriched = build_encoding_summary_metadata(
+        info,
+        plan,
+        output_path=Path("Producer Beat.mp3"),
+        ffprobe_data=ffprobe,
+        validation_status="Validated",
+    )
+    source_text, output_text = build_encoding_summary_display(enriched)
+
+    assert "Audio bitrate: 320 kbps" in output_text
+    assert "Audio sample rate: 44100" in output_text
+    assert "Validation status: Validated" in output_text
+    assert "Video codec" not in source_text + output_text
 
 
 def test_encoding_summary_display_switches_per_selected_video_and_handles_missing_fields():
@@ -1301,6 +1452,36 @@ def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_a
     assert choose_audio_bitrate_kbps(208) == 256
 
 
+def test_library_media_filter_keeps_original_metadata_indices():
+    items = [
+        {"id": "old-defaults-to-mp4"},
+        {"id": "audio", "vodforge_output_type": "MP3"},
+        {"id": "video", "vodforge_output_type": "MP4"},
+        {"id": "inferred-audio", "vodforge_encoding_summary": {"output": {"Output file path": "beat.mp3"}}},
+    ]
+
+    assert metadata_indices_for_output_type(items, OutputType.MP4) == [0, 2]
+    assert metadata_indices_for_output_type(items, OutputType.MP3) == [1, 3]
+
+
+def test_thumbnail_cache_path_is_private_deterministic_and_filename_safe(tmp_path: Path):
+    info = {
+        "id": "../../private/video",
+        "title": "Beat",
+        "thumbnail": "https://i.ytimg.com/vi/example/maxresdefault.jpg?token=value",
+    }
+
+    first = cached_thumbnail_path(info, data_dir=tmp_path)
+    second = cached_thumbnail_path(info, data_dir=tmp_path)
+
+    assert first == second
+    assert first is not None
+    assert first.parent == tmp_path / "thumbnail-cache"
+    assert first.suffix == ".jpeg"
+    assert len(first.stem) == 32
+    assert all(character in "0123456789abcdef" for character in first.stem)
+
+
 def test_sanity_missing_audio_raises_instead_of_video_only_output():
     info = {
         "formats": [
@@ -1456,9 +1637,11 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
         url="https://www.youtube.com/watch?v=ok1",
         urls=["https://www.youtube.com/watch?v=ok1", "https://www.youtube.com/watch?v=bad", "https://www.youtube.com/watch?v=ok2"],
         output_dir=tmp_path,
+        output_type=OutputType.MP4,
         quality_label="1080p Full HD",
         export_mode=ExportMode.AUTO_CBR,
         manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
         single_video_only=False,
         use_nvenc=False,
         embed_thumbnail=False,
@@ -1476,6 +1659,115 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
     assert "bad video unavailable" in report_text
     done_messages = [payload for kind, payload in list(app.events.queue) if kind == "done"]
     assert any("1 failed" in str(message) for message in done_messages)
+
+
+def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings(monkeypatch, tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=beat",
+        output_dir=tmp_path,
+        output_type=OutputType.MP3,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(
+            bitrate_kbps=320,
+            sample_rate="44100",
+            channels="2",
+            embed_metadata=True,
+            embed_cover_art=True,
+        ),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=["beat", "producer"],
+    )
+
+    opts = app._build_ydl_options(job, tmp_path / "staging", format_selector="251")
+
+    assert opts["format"] == "251"
+    assert "merge_output_format" not in opts
+    assert opts["writethumbnail"] is True
+    assert opts["writeinfojson"] is False
+    assert opts["postprocessors"] == [
+        {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"},
+        {"key": "FFmpegMetadata", "add_chapters": True, "add_metadata": True},
+        {"key": "EmbedThumbnail", "already_have_thumbnail": False},
+    ]
+    assert opts["postprocessor_args"]["extractaudio+ffmpeg_o"] == ["-ar", "44100", "-ac", "2"]
+    assert opts["postprocessor_args"]["metadata+ffmpeg_o"] == ["-metadata", "keywords=beat,producer"]
+
+
+def test_mp3_ytdlp_options_leave_no_cover_or_metadata_sidecars_when_disabled(monkeypatch, tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=beat",
+        output_dir=tmp_path,
+        output_type=OutputType.MP3,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(embed_metadata=False, embed_cover_art=False),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=["ignored"],
+    )
+
+    opts = app._build_ydl_options(job, tmp_path / "staging", format_selector="251")
+
+    assert opts["writethumbnail"] is False
+    assert opts["postprocessors"] == [
+        {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"},
+    ]
+    assert opts["postprocessor_args"] == {}
+
+
+def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selected(monkeypatch, tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    custom_cover = tmp_path / "artist-cover.png"
+    Image.new("RGB", (600, 600), "purple").save(custom_cover)
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=beat",
+        output_dir=tmp_path,
+        output_type=OutputType.MP3,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(
+            embed_metadata=True,
+            embed_cover_art=False,
+            custom_cover_art_path=custom_cover,
+        ),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    opts = app._build_ydl_options(job, tmp_path / "staging", format_selector="251")
+
+    assert opts["writethumbnail"] is False
+    assert not any(processor["key"] == "EmbedThumbnail" for processor in opts["postprocessors"])
+    assert opts["postprocessors"][-1]["key"] == "FFmpegMetadata"
 
 
 # ---------------------------------------------------------------------------

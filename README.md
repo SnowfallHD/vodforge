@@ -4,9 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-59636e)](#quick-start)
 
-A Windows and macOS desktop app that turns YouTube videos and playlists into organized, VOD-ready MP4 files using `yt-dlp` and FFmpeg.
+A Windows and macOS desktop app that turns YouTube videos and playlists into organized, VOD-ready MP4 video or high-quality MP3 audio using `yt-dlp` and FFmpeg.
 
-VODForge analyzes the available source streams, chooses a practical video/audio pair, and exports predictable H.264/AAC files without pretending a low-quality source has more detail than it does.
+VODForge analyzes the available source streams, chooses a practical video/audio pair for MP4 or the highest-quality available audio-only stream for MP3, and exports predictable files without pretending a low-quality source has more detail than it does.
 
 ## What it does
 
@@ -16,11 +16,13 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Includes **Strict Compliance** mode for fixed H.264 10 Mbps video and AAC 320 kbps audio.
 - Offers a manual override when you need exact export settings.
 - Embeds useful metadata and thumbnails in the MP4 when supported.
+- Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
+- Embeds standard ID3 title/artist metadata by default. Cover art defaults to a clean MP3, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
 - Writes a compact, readable `metadata.json` beside each video.
 - Keeps playlist and non-playlist downloads organized in collision-safe folders.
 - Includes browser-cookie and `cookies.txt` options for videos you are authorized to access.
 - Shows progress, speed, ETA, diagnostics, and per-item batch failures.
-- Keeps a private, local Metadata Browser history of completed downloads and their saved folders across app restarts.
+- Keeps a private, local Library history of completed downloads and their saved folders across app restarts, with separate MP4 and MP3 views.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
 
 ## Install a packaged release
@@ -64,9 +66,9 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 ## Using VODForge
 
 1. Paste one YouTube URL, choose a playlist URL, or load a text file containing one URL per line.
-2. Pick an output folder and quality cap.
-3. Leave **Auto CBR** selected for normal use, or choose another export mode when a platform has a specific requirement.
-4. Start the download.
+2. Choose **MP4** or **MP3** at the right edge of the URL field.
+3. Pick an output folder. For MP4, choose a quality cap and export mode. For MP3, the default is the maximum 320 kbps profile; producer-oriented sample-rate and channel controls are in Settings.
+4. Start or queue the run.
 
 Typical output:
 
@@ -86,9 +88,17 @@ Typical output:
             └── thumbnail.jpeg
 ```
 
+MP3 uses the same channel, playlist, and item folders, but its default output is intentionally a single file:
+
+```text
+<output>/<channel>/<playlist-or-videos-folder>/<item title> [video-id]/<item title>.mp3
+```
+
+The artwork shown for MP3 items in Forge and Library is kept in VODForge's private per-user thumbnail cache and is not written beside the MP3. A selected custom cover becomes the item's cached VODForge artwork; otherwise VODForge uses the YouTube thumbnail for its UI even when the clean MP3 setting leaves that thumbnail unembedded.
+
 Diagnostics are written to `%LOCALAPPDATA%\VODForge\logs\` on Windows and `~/Library/Logs/VODForge/` on macOS.
 
-Completed-download history is written to `%LOCALAPPDATA%\VODForge\download-history.json` on Windows and `~/Library/Application Support/VODForge/download-history.json` on macOS. It contains an allow-listed copy of display metadata and the saved output folder. It never stores cookie files, cookie contents, tokens, passwords, or browser-session data. A missing external drive or moved folder is reported without deleting the history entry.
+Completed-download history is written to `%LOCALAPPDATA%\VODForge\download-history.json` on Windows and `~/Library/Application Support/VODForge/download-history.json` on macOS. It contains an allow-listed copy of display metadata, media type, and the saved output folder. It never stores cookie files, cookie contents, tokens, passwords, or browser-session data. A missing external drive or moved folder is reported without deleting the history entry.
 
 ## Build the Windows app
 
@@ -180,6 +190,7 @@ The test suite focuses on export planning, FFmpeg command construction, metadata
 
 - Available resolutions and formats depend on the source video and YouTube.
 - A larger output bitrate cannot restore detail that was not present in the source.
+- YouTube audio is already compressed. The 320 kbps MP3 default minimizes additional encoding loss, but it cannot become lossless or restore source detail.
 - Browser-cookie import reads cookies through `yt-dlp`; VODForge does not upload or store cookie contents.
 - Download only content you own or have permission to use, and follow the applicable platform terms and laws.
 

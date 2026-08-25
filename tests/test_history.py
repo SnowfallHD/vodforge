@@ -10,6 +10,7 @@ from yt_downloader.history import (
     application_data_dir,
     history_identity,
     history_output_dir,
+    history_output_type,
     load_history,
     save_history,
     sanitize_history_record,
@@ -46,6 +47,7 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_pa
     assert record["tags"] == ["one", "two"]
     assert history_output_dir(record) == (tmp_path / "downloads" / "Example").resolve()
     assert record["vodforge_recorded_at"] == "2026-08-05T12:00:00+00:00"
+    assert history_output_type(record) == "MP4"
     assert "cookiefile" not in record
     assert "http_headers" not in record
     assert "password" not in record
@@ -75,6 +77,24 @@ def test_history_keeps_same_video_downloaded_to_two_locations(tmp_path: Path):
 
     assert len(second) == 2
     assert history_output_dir(second[0]) != history_output_dir(second[1])
+
+
+def test_history_keeps_mp4_and_mp3_for_same_video_and_location(tmp_path: Path):
+    location = tmp_path / "downloads" / "Example"
+    mp4 = upsert_history(
+        [],
+        {"id": "abc123", "title": "Example", "vodforge_output_type": "MP4"},
+        location,
+    )
+    both = upsert_history(
+        mp4,
+        {"id": "abc123", "title": "Example", "vodforge_output_type": "MP3"},
+        location,
+    )
+
+    assert len(both) == 2
+    assert [history_output_type(item) for item in both] == ["MP3", "MP4"]
+    assert history_identity(both[0]) != history_identity(both[1])
 
 
 def test_invalid_history_is_reported_without_overwriting_source(tmp_path: Path):

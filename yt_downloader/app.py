@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import queue
@@ -92,12 +93,33 @@ CLEAN_BITRATE_STEPS = [1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 800
 VIDEO_MINIMUMS_KBPS = {480: 1000, 720: 1500, 1080: 2000, 1440: 6000, 2160: 12000}
 VIDEO_CAPS_KBPS = {(480, 30): 2500, (720, 30): 5000, (1080, 30): 10000, (1080, 60): 14000, (1440, 30): 24000, (2160, 30): 45000, (2160, 60): 68000}
 EXPORT_MODES = ["Auto CBR", "Strict Compliance", "Manual Override"]
+MP3_QUALITY_OPTIONS = {
+    "Maximum — 320 kbps CBR": 320,
+    "High — 256 kbps CBR": 256,
+    "Standard — 192 kbps CBR": 192,
+    "Compact — 128 kbps CBR": 128,
+}
+MP3_SAMPLE_RATE_OPTIONS = {
+    "Preserve source": None,
+    "48 kHz — video / DAW": "48000",
+    "44.1 kHz — music": "44100",
+}
+MP3_CHANNEL_OPTIONS = {
+    "Preserve source": None,
+    "Stereo": "2",
+    "Mono": "1",
+}
+MP3_COVER_ART_OPTIONS = ("Clean MP3", "YouTube art", "Custom art")
 BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
 AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
 AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
 RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS = 60
+THUMBNAIL_CACHE_MAX_ITEMS = 1000
+CUSTOM_COVER_MAX_INPUT_BYTES = 50 * 1024 * 1024
+CUSTOM_COVER_MAX_PIXELS = 50_000_000
+CUSTOM_COVER_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 
 
 def diagnostics_dir(
@@ -583,6 +605,11 @@ QUALITY_OPTIONS = {
 }
 
 
+class OutputType(str, Enum):
+    MP4 = "MP4"
+    MP3 = "MP3"
+
+
 class ExportMode(str, Enum):
     AUTO_CBR = "Auto CBR"
     STRICT_COMPLIANCE = "Strict Compliance"
@@ -609,6 +636,36 @@ class ExportPlan:
     fps: float | None = None
     video_codec: str = "unknown"
     audio_codec: str = "unknown"
+    warnings: list[str] = field(default_factory=list)
+    summary: str = ""
+
+
+@dataclass(frozen=True)
+class Mp3ExportSettings:
+    bitrate_kbps: int = 320
+    sample_rate: str | None = None
+    channels: str | None = None
+    embed_metadata: bool = True
+    embed_cover_art: bool = False
+    custom_cover_art_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class AudioExportPlan:
+    output_type: OutputType
+    audio_format_id: str
+    format_selector: str
+    source_audio_kbps: float
+    effective_audio_kbps: float
+    audio_bitrate_kbps: int
+    source_sample_rate: str | None
+    output_sample_rate: str | None
+    source_channels: str | None
+    output_channels: str | None
+    audio_codec: str
+    embed_metadata: bool
+    embed_cover_art: bool
+    cover_art_source: str
     warnings: list[str] = field(default_factory=list)
     summary: str = ""
 
@@ -812,7 +869,7 @@ def choose_best_progressive_format(formats: list[dict[str, Any]], max_height: in
     return max(close, key=lambda item: (item[4], item[1], item[2], item[3]))[5]
 
 
-def choose_best_audio_format(formats: list[dict[str, Any]]) -> dict[str, Any] | None:
+def choose_best_audio_format(formats: list[dict[str, Any]], *, prefer_quality: bool = False) -> dict[str, Any] | None:
     def _select(allow_unknown_bitrate: bool = False) -> dict[str, Any] | None:
         candidates = []
         for fmt in formats:
@@ -830,6 +887,8 @@ def choose_best_audio_format(formats: list[dict[str, Any]]) -> dict[str, Any] | 
             candidates.append((effective, channels >= 2, sample_rate >= 48000, fmt.get("ext") in {"m4a", "mp4", "webm"}, is_direct, fmt))
         if not candidates:
             return None
+        if prefer_quality:
+            return max(candidates, key=lambda item: (item[0], item[1], item[2], item[4], item[3]))[5]
         return max(candidates, key=lambda item: (item[4], item[0], item[1], item[2], item[3]))[5]
 
     result = _select()
@@ -848,6 +907,73 @@ def choose_audio_bitrate_kbps(effective_audio_kbps: float) -> int:
     if effective_audio_kbps < 260:
         return 256
     return 320
+
+
+def build_mp3_export_plan(info: dict[str, Any], settings: Mp3ExportSettings | None = None) -> AudioExportPlan:
+    """Select the best audio source and describe a deliberate MP3 encode."""
+    settings = settings or Mp3ExportSettings()
+    formats = [fmt for fmt in info.get("formats") or [] if isinstance(fmt, dict)]
+    audio = choose_best_audio_format(formats, prefer_quality=True)
+    if audio is None:
+        candidates = [fmt for fmt in formats if not _is_none_codec(fmt.get("acodec"))]
+        if candidates:
+            audio = max(
+                candidates,
+                key=lambda fmt: (
+                    _format_audio_kbps(fmt) * audio_codec_multiplier(fmt.get("acodec")),
+                    int(_num(fmt.get("audio_channels") or fmt.get("channels"), 0)),
+                    int(_num(fmt.get("asr"), 0)),
+                    str(fmt.get("protocol") or "").startswith("http"),
+                ),
+            )
+    if audio is None:
+        raise RuntimeError(
+            "No usable audio source was found for this URL. The video may be private, region-restricted, "
+            "or temporarily limited by YouTube. Check the diagnostics log or retry with cookies."
+        )
+    audio_id = str(audio.get("format_id") or "").strip()
+    if not audio_id:
+        raise RuntimeError("VODForge could not identify the selected YouTube audio format.")
+    source_audio_kbps = _format_audio_kbps(audio)
+    effective_audio_kbps = source_audio_kbps * audio_codec_multiplier(audio.get("acodec"))
+    source_sample_rate = str(audio.get("asr") or "").strip() or None
+    source_channels_value = audio.get("audio_channels") or audio.get("channels")
+    source_channels = str(source_channels_value).strip() if source_channels_value not in (None, "") else None
+    quality_note = (
+        "The 320 kbps setting minimizes additional MP3 encoding loss"
+        if settings.bitrate_kbps == 320
+        else f"The {settings.bitrate_kbps} kbps setting trades fidelity for a smaller file"
+    )
+    warnings = [
+        f"YouTube audio is already compressed. {quality_note} but cannot restore detail absent from the source."
+    ]
+    return AudioExportPlan(
+        output_type=OutputType.MP3,
+        audio_format_id=audio_id,
+        format_selector=audio_id,
+        source_audio_kbps=source_audio_kbps,
+        effective_audio_kbps=effective_audio_kbps,
+        audio_bitrate_kbps=settings.bitrate_kbps,
+        source_sample_rate=source_sample_rate,
+        output_sample_rate=settings.sample_rate,
+        source_channels=source_channels,
+        output_channels=settings.channels,
+        audio_codec=str(audio.get("acodec") or "unknown"),
+        embed_metadata=settings.embed_metadata,
+        embed_cover_art=bool(settings.custom_cover_art_path or settings.embed_cover_art),
+        cover_art_source=(
+            "Custom image"
+            if settings.custom_cover_art_path is not None
+            else "YouTube thumbnail"
+            if settings.embed_cover_art
+            else "None (clean MP3)"
+        ),
+        warnings=warnings,
+        summary=(
+            f"Selected the highest-quality available audio source and will create a {settings.bitrate_kbps} kbps CBR MP3"
+            f" at {settings.sample_rate or 'the source sample rate'} with {settings.channels or 'the source channel layout'}."
+        ),
+    )
 
 
 def calculate_auto_video_bitrate_kbps(video_fmt: dict[str, Any]) -> int:
@@ -1043,6 +1169,42 @@ def format_duration(seconds: Any) -> str:
     return f"{minutes}:{secs:02d}"
 
 
+def metadata_output_type(info: dict[str, Any]) -> OutputType:
+    raw = str(info.get("vodforge_output_type") or "").strip().upper()
+    if raw in {item.value for item in OutputType}:
+        return OutputType(raw)
+    summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
+    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+    output_path = str(output.get("Output file path") or "").strip().lower()
+    container = str(output.get("Output container") or "").strip().lower()
+    if output_path.endswith(".mp3") or container == "mp3":
+        return OutputType.MP3
+    return OutputType.MP4
+
+
+def metadata_indices_for_output_type(
+    items: list[dict[str, Any]],
+    output_type: OutputType | str,
+) -> list[int]:
+    """Return stable source-list indices for one Library media type."""
+    selected = OutputType(output_type)
+    return [index for index, item in enumerate(items) if metadata_output_type(item) == selected]
+
+
+def mark_metadata_output_type(info: dict[str, Any], output_type: OutputType | str) -> dict[str, Any]:
+    """Return metadata with a stable output classification on root and entries."""
+    output_type = OutputType(output_type)
+    marked = dict(info)
+    marked["vodforge_output_type"] = output_type.value
+    entries = marked.get("entries")
+    if isinstance(entries, list):
+        marked["entries"] = [
+            {**entry, "vodforge_output_type": output_type.value} if isinstance(entry, dict) else entry
+            for entry in entries
+        ]
+    return marked
+
+
 def _float_or_none(value: Any) -> float | None:
     try:
         number = float(value)
@@ -1164,7 +1326,7 @@ def _source_selection_reason(plan: ExportPlan) -> str:
 
 def build_encoding_summary_metadata(
     info: dict[str, Any],
-    plan: ExportPlan,
+    plan: ExportPlan | AudioExportPlan,
     *,
     output_path: Path | None = None,
     ffprobe_data: dict[str, Any] | None = None,
@@ -1172,6 +1334,30 @@ def build_encoding_summary_metadata(
 ) -> dict[str, Any]:
     """Attach per-video source/final-output encoding summary metadata."""
     enriched = dict(info)
+    if isinstance(plan, AudioExportPlan):
+        audio_fmt = _selected_format(info, plan.audio_format_id)
+        source = {
+            "Source format selector used": _display_value(plan.format_selector, "Not available"),
+            "Audio format ID": _display_value(plan.audio_format_id, "Not available"),
+            "Source container/ext": _display_value(audio_fmt.get("ext"), "Unknown"),
+            "Source audio codec": _display_value(audio_fmt.get("acodec") or plan.audio_codec),
+            "Source audio bitrate": _format_kbps(plan.source_audio_kbps),
+            "Source audio sample rate": _display_value(plan.source_sample_rate, "Not available"),
+            "Source audio channels": _display_value(plan.source_channels, "Not available"),
+            "File size estimate": _format_bytes(audio_fmt.get("filesize") or audio_fmt.get("filesize_approx")),
+            "Effective MP3-equivalent audio bitrate": _format_kbps(plan.effective_audio_kbps),
+            "Reason selected": "highest-quality available audio-only source",
+        }
+        output = _planned_output_summary(plan, output_path)
+        if ffprobe_data:
+            output.update(_ffprobe_output_summary(ffprobe_data, output_path))
+            output["Validation status"] = validation_status or "Validated"
+        elif validation_status:
+            output["Validation status"] = validation_status
+        enriched["vodforge_output_type"] = OutputType.MP3.value
+        enriched["vodforge_encoding_summary"] = {"source": source, "output": output, "warnings": list(plan.warnings)}
+        return enriched
+
     video_fmt = _selected_format(info, plan.video_format_id)
     audio_fmt = video_fmt if plan.video_format_id == plan.audio_format_id else _selected_format(info, plan.audio_format_id)
     source = {
@@ -1199,11 +1385,12 @@ def build_encoding_summary_metadata(
         output["Validation status"] = validation_status or "Validated"
     elif validation_status:
         output["Validation status"] = validation_status
+    enriched["vodforge_output_type"] = OutputType.MP4.value
     enriched["vodforge_encoding_summary"] = {"source": source, "output": output, "warnings": list(plan.warnings)}
     return enriched
 
 
-def build_failed_encoding_summary_metadata(info: dict[str, Any], plan: ExportPlan | None, failure_reason: str) -> dict[str, Any]:
+def build_failed_encoding_summary_metadata(info: dict[str, Any], plan: ExportPlan | AudioExportPlan | None, failure_reason: str) -> dict[str, Any]:
     if plan is not None:
         enriched = build_encoding_summary_metadata(info, plan, validation_status="Failed")
     else:
@@ -1218,7 +1405,24 @@ def build_failed_encoding_summary_metadata(info: dict[str, Any], plan: ExportPla
     return enriched
 
 
-def _planned_output_summary(plan: ExportPlan, output_path: Path | None = None) -> dict[str, str]:
+def _planned_output_summary(plan: ExportPlan | AudioExportPlan, output_path: Path | None = None) -> dict[str, str]:
+    if isinstance(plan, AudioExportPlan):
+        return {
+            "Output status": "Planned Output",
+            "Output file path": str(output_path) if output_path else "Pending",
+            "Output container": "mp3",
+            "Output rate-control mode": "CBR",
+            "Output audio codec": "MP3 (libmp3lame)",
+            "Target audio bitrate": f"{plan.audio_bitrate_kbps} kbps",
+            "Measured audio bitrate": "Pending",
+            "Audio sample rate": plan.output_sample_rate or "Preserve source",
+            "Audio channels": plan.output_channels or "Preserve source",
+            "Embedded ID3 metadata": "Yes" if plan.embed_metadata else "No",
+            "Embedded cover art": plan.cover_art_source,
+            "Output file size": "Pending",
+            "Output duration": "Pending",
+            "Validation status": "Pending",
+        }
     return {
         "Output status": "Planned Output",
         "Output file path": str(output_path) if output_path else "Pending",
@@ -1298,6 +1502,19 @@ SUMMARY_COMPARISON_ROWS = [
     ("Selection/status", "Reason selected", "Validation status"),
 ]
 
+AUDIO_SUMMARY_COMPARISON_ROWS = [
+    ("Format selector", "Source format selector used", None),
+    ("Audio format ID", "Audio format ID", None),
+    ("Container/ext", "Source container/ext", "Output container"),
+    ("Audio codec", "Source audio codec", "Output audio codec"),
+    ("Audio bitrate", "Source audio bitrate", "Measured audio bitrate"),
+    ("Audio sample rate", "Source audio sample rate", "Audio sample rate"),
+    ("Audio channels", "Source audio channels", "Audio channels"),
+    ("File size", "File size estimate", "Output file size"),
+    ("Effective/target audio bitrate", "Effective MP3-equivalent audio bitrate", "Target audio bitrate"),
+    ("Selection/status", "Reason selected", "Validation status"),
+]
+
 
 def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
     summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
@@ -1306,7 +1523,8 @@ def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
     warnings = summary.get("warnings") if isinstance(summary.get("warnings"), list) else []
     source_lines: list[str] = []
     output_lines: list[str] = []
-    for label, source_key, output_key in SUMMARY_COMPARISON_ROWS:
+    rows = AUDIO_SUMMARY_COMPARISON_ROWS if metadata_output_type(info) == OutputType.MP3 else SUMMARY_COMPARISON_ROWS
+    for label, source_key, output_key in rows:
         source_lines.append(f"{label}: {_display_value(source.get(source_key), 'Not available')}")
         output_lines.append(f"{label}: {_display_value(output.get(output_key), 'Not applicable' if output_key is None else 'Not available')}")
     output_lines.extend([
@@ -1314,9 +1532,15 @@ def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
         f"Output file path: {_display_value(output.get('Output file path'), 'Not produced')}",
         f"Output rate-control mode: {_display_value(output.get('Output rate-control mode'), 'Not available')}",
         f"Validation status: {_display_value(output.get('Validation status'), 'Not available')}",
-        f"H.264 profile: {_display_value(output.get('H.264 profile'), 'Not available')}",
         f"Output duration: {_display_value(output.get('Output duration'), 'Not available')}",
     ])
+    if metadata_output_type(info) == OutputType.MP3:
+        output_lines.extend([
+            f"Embedded ID3 metadata: {_display_value(output.get('Embedded ID3 metadata'), 'Not available')}",
+            f"Embedded cover art: {_display_value(output.get('Embedded cover art'), 'Not available')}",
+        ])
+    else:
+        output_lines.append(f"H.264 profile: {_display_value(output.get('H.264 profile'), 'Not available')}")
     if output.get("Failure reason"):
         output_lines.append(f"Failure reason: {_display_value(output.get('Failure reason'), 'Unknown')}")
     output_lines.append(f"Warnings: {', '.join(str(w) for w in warnings) if warnings else 'No warnings'}")
@@ -1585,6 +1809,7 @@ def compact_video_metadata(info: dict[str, Any], extra_tags: list[str]) -> dict[
         "categories": _clean_list(info.get("categories")),
         "thumbnail": info.get("thumbnail") or (thumb or {}).get("url"),
         "best_thumbnail": thumb,
+        "vodforge_output_type": metadata_output_type(info).value,
         "vodforge_encoding_summary": info.get("vodforge_encoding_summary"),
     }
     return {key: value for key, value in compact.items() if value not in (None, "", [], {})}
@@ -1607,14 +1832,18 @@ def write_all_compact_video_metadata(output_dir: Path, info: dict[str, Any], ext
     return paths
 
 
-def _find_staged_media_file(staging_dir: Path, video_id: str) -> Path | None:
+STAGED_MEDIA_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".mp3", ".m4a", ".aac", ".opus", ".ogg"}
+
+
+def _find_staged_media_file(staging_dir: Path, video_id: str, *, expected_extension: str | None = None) -> Path | None:
+    allowed = {expected_extension.lower()} if expected_extension else STAGED_MEDIA_EXTENSIONS
     candidates = [
         path
         for path in staging_dir.rglob(f"*{video_id}*")
-        if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}
+        if path.is_file() and path.suffix.lower() in allowed
     ]
     if not candidates:
-        candidates = [path for path in staging_dir.rglob("*") if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".webm", ".mov"}]
+        candidates = [path for path in staging_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed]
     if not candidates:
         return None
     return max(candidates, key=lambda path: (path.stat().st_mtime, path.stat().st_size))
@@ -1625,16 +1854,26 @@ def video_file_name(info: dict[str, Any], ext: str) -> str:
     return f"{title}{ext}"
 
 
-def package_downloaded_media_from_staging(staging_dir: Path, output_dir: Path, info: dict[str, Any]) -> list[Path]:
+def package_downloaded_media_from_staging(
+    staging_dir: Path,
+    output_dir: Path,
+    info: dict[str, Any],
+    *,
+    expected_extension: str | None = None,
+) -> list[Path]:
     packaged: list[Path] = []
     for video in iter_video_infos(info):
         video_id = str(video.get("id") or "").strip()
         if not video_id:
             continue
-        staged = _find_staged_media_file(staging_dir / video_id, video_id) or _find_staged_media_file(staging_dir, video_id)
+        staged = _find_staged_media_file(
+            staging_dir / video_id,
+            video_id,
+            expected_extension=expected_extension,
+        ) or _find_staged_media_file(staging_dir, video_id, expected_extension=expected_extension)
         if not staged:
             continue
-        ext = ".mp4" if staged.suffix.lower() == ".mp4" else staged.suffix.lower()
+        ext = expected_extension.lower() if expected_extension else staged.suffix.lower()
         target_file_name = video_file_name(video, ext)
         target_dir = resolved_video_output_dir(output_dir, video, target_file_name)
         # If even the shallow fallback + full title filename exceeds the
@@ -1944,13 +2183,13 @@ def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX
     path.write_bytes(best_data)
 
 
-def save_thumbnail_image(output_dir: Path, info: dict[str, Any]) -> Path | None:
+def save_thumbnail_image(output_dir: Path, info: dict[str, Any], *, filename: str = "thumbnail.jpeg") -> Path | None:
     thumb = best_thumbnail_for_download(info)
     url = str((thumb or {}).get("url") or "")
     if not url:
         return None
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / "thumbnail.jpeg"
+    path = output_dir / filename
     with urllib.request.urlopen(url, timeout=30) as response:
         data = response.read()
     if Image is None:
@@ -1963,6 +2202,175 @@ def save_thumbnail_image(output_dir: Path, info: dict[str, Any]) -> Path | None:
     image = Image.open(BytesIO(data)).convert("RGB")
     _save_jpeg_under_size(image, path)
     return path
+
+
+def cached_thumbnail_path(info: dict[str, Any], *, data_dir: Path | None = None) -> Path | None:
+    """Return a private deterministic UI-thumbnail path without trusting source filenames."""
+    thumb = best_thumbnail_for_download(info)
+    url = str((thumb or {}).get("url") or "").strip()
+    identity = str(info.get("id") or "").strip() or url or str(info.get("title") or "").strip()
+    if not identity:
+        return None
+    digest = hashlib.sha256(f"{identity}\0{url}".encode("utf-8", errors="replace")).hexdigest()[:32]
+    root = data_dir if data_dir is not None else application_data_dir()
+    return root / "thumbnail-cache" / f"{digest}.jpeg"
+
+
+def prune_thumbnail_cache(cache_dir: Path, *, max_items: int = THUMBNAIL_CACHE_MAX_ITEMS) -> None:
+    try:
+        files = sorted(
+            (path for path in cache_dir.glob("*.jpeg") if path.is_file()),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        return
+    for stale in files[max(0, max_items) :]:
+        try:
+            stale.unlink()
+        except OSError:
+            continue
+
+
+def save_cached_thumbnail_image(info: dict[str, Any], *, data_dir: Path | None = None) -> Path | None:
+    path = cached_thumbnail_path(info, data_dir=data_dir)
+    if path is None:
+        return None
+    saved = save_thumbnail_image(path.parent, info, filename=path.name)
+    if saved is not None:
+        prune_thumbnail_cache(saved.parent)
+    return saved
+
+
+def save_custom_cached_thumbnail_image(
+    info: dict[str, Any],
+    source_path: Path,
+    *,
+    data_dir: Path | None = None,
+) -> Path | None:
+    """Make a user-selected cover the canonical private artwork for one item."""
+    destination = cached_thumbnail_path(info, data_dir=data_dir)
+    if destination is None:
+        return None
+    source_path = validate_custom_cover_art(source_path)
+    if Image is None or ImageOps is None:
+        raise RuntimeError("Pillow is required to cache custom cover art.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source_path) as source:
+        normalized = ImageOps.exif_transpose(source).convert("RGB")
+        normalized.thumbnail((1600, 1600), getattr(Image, "Resampling", Image).LANCZOS)
+        _save_jpeg_under_size(normalized, destination)
+    prune_thumbnail_cache(destination.parent)
+    return destination
+
+
+def validate_custom_cover_art(path: Path) -> Path:
+    """Validate a user-selected local cover image before it enters FFmpeg."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        raise ValueError("Choose an existing cover image file.")
+    try:
+        if candidate.stat().st_size > CUSTOM_COVER_MAX_INPUT_BYTES:
+            raise ValueError("Custom cover art must be 50 MB or smaller.")
+    except OSError as exc:
+        raise ValueError(f"VODForge could not read that cover image: {exc}") from exc
+    if Image is None:
+        raise ValueError("Pillow is required to validate custom cover art.")
+    try:
+        with Image.open(candidate) as source:
+            width, height = source.size
+            if width <= 0 or height <= 0 or width * height > CUSTOM_COVER_MAX_PIXELS:
+                raise ValueError("Custom cover art dimensions are too large.")
+            source.verify()
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Choose a valid JPEG, PNG, or WebP cover image.") from exc
+    return candidate.resolve(strict=False)
+
+
+def prepare_custom_cover_art(source_path: Path, staging_dir: Path) -> Path:
+    """Normalize custom artwork to a broadly compatible bounded JPEG."""
+    source_path = validate_custom_cover_art(source_path)
+    if Image is None or ImageOps is None:
+        raise RuntimeError("Pillow is required to prepare custom cover art.")
+    destination = staging_dir / "__vodforge-custom-cover.jpeg"
+    try:
+        with Image.open(source_path) as source:
+            normalized = ImageOps.exif_transpose(source).convert("RGB")
+            normalized.thumbnail((1600, 1600), getattr(Image, "Resampling", Image).LANCZOS)
+            _save_jpeg_under_size(normalized, destination, max_bytes=CUSTOM_COVER_MAX_OUTPUT_BYTES)
+    except Exception as exc:
+        raise RuntimeError(f"VODForge could not prepare the custom cover image: {exc}") from exc
+    return destination
+
+
+def embed_custom_mp3_cover_art(mp3_path: Path, cover_path: Path, ffmpeg: str) -> Path:
+    """Atomically attach a normalized custom front cover to one MP3."""
+    mp3_path = Path(mp3_path)
+    cover_path = Path(cover_path)
+    if not mp3_path.is_file():
+        raise RuntimeError("The staged MP3 was not found for custom cover embedding.")
+    if not cover_path.is_file():
+        raise RuntimeError("The prepared custom cover image was not found.")
+    temporary = mp3_path.with_name(f".{mp3_path.stem}.vodforge-cover-{uuid.uuid4().hex}.mp3")
+    command = [
+        ffmpeg,
+        "-y",
+        "-i",
+        str(mp3_path),
+        "-i",
+        str(cover_path),
+        "-map",
+        "0:a:0",
+        "-map",
+        "1:v:0",
+        "-map_metadata",
+        "0",
+        "-c:a",
+        "copy",
+        "-c:v",
+        "copy",
+        "-disposition:v:0",
+        "attached_pic",
+        "-write_id3v1",
+        "1",
+        "-id3v2_version",
+        "3",
+        "-metadata:s:v",
+        "title=Album cover",
+        "-metadata:s:v",
+        "comment=Cover (front)",
+        str(temporary),
+    ]
+    startupinfo = None
+    creationflags = 0
+    if sys.platform.startswith("win"):
+        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+        if result.returncode != 0 or not temporary.is_file() or temporary.stat().st_size <= 0:
+            detail = next((line.strip() for line in reversed(result.stdout.splitlines()) if line.strip()), "FFmpeg did not produce an output file")
+            raise RuntimeError(f"Custom cover art could not be embedded: {detail}")
+        temporary.replace(mp3_path)
+        return mp3_path
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _quality_max_height(label: str) -> int:
@@ -2025,9 +2433,11 @@ WINDOWS_CHROMIUM_COOKIE_MESSAGE = (
 class DownloadJob:
     url: str
     output_dir: Path
+    output_type: OutputType
     quality_label: str
     export_mode: ExportMode
     manual_settings: ManualExportSettings
+    mp3_settings: Mp3ExportSettings
     single_video_only: bool
     use_nvenc: bool
     embed_thumbnail: bool
@@ -2040,6 +2450,7 @@ class DownloadJob:
     cookie_file: Path | None = None
     cookie_browser: str | None = None
     batch_mode: bool = False
+    preview_info: dict[str, Any] | None = None
 
 
 def browser_cookie_value(label_or_value: str | None) -> str | None:
@@ -2612,6 +3023,72 @@ class RoundedIconButton(tk.Canvas):
             return
 
 
+class SegmentedSelector(tk.Frame):
+    """Small two-state selector with consistent rendering across Tk platforms."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        variable: tk.StringVar,
+        values: tuple[str, ...] = (OutputType.MP4.value, OutputType.MP3.value),
+        background: str = THEME["surface"],
+        compact: bool = False,
+    ) -> None:
+        super().__init__(parent, bg=THEME["border"], bd=0, highlightthickness=0, padx=1, pady=1)
+        self._variable = variable
+        self._background = background
+        self._labels: dict[str, tk.Label] = {}
+        horizontal_padding = 7 if compact else 10
+        vertical_padding = 3 if compact else 4
+        for value in values:
+            label = tk.Label(
+                self,
+                text=value,
+                bg=background,
+                fg=THEME["muted"],
+                bd=0,
+                highlightthickness=0,
+                padx=horizontal_padding,
+                pady=vertical_padding,
+                font=FONT_UI_SMALL_MEDIUM,
+                cursor="hand2",
+                takefocus=1,
+            )
+            label.pack(side="left")
+            label.bind("<Button-1>", lambda _event, selected=value: self._variable.set(selected))
+            label.bind("<Return>", lambda _event, selected=value: self._variable.set(selected))
+            label.bind("<space>", lambda _event, selected=value: self._variable.set(selected))
+            label.bind("<Enter>", lambda _event, selected=value: self._set_hover(selected, True), add="+")
+            label.bind("<Leave>", lambda _event, selected=value: self._set_hover(selected, False), add="+")
+            self._labels[value] = label
+        self._trace_id = variable.trace_add("write", lambda *_args: self._sync())
+        self._sync()
+
+    def _set_hover(self, value: str, hovered: bool) -> None:
+        if self._variable.get() == value:
+            return
+        label = self._labels.get(value)
+        if label is not None:
+            label.configure(bg=THEME["surface_2"] if hovered else self._background, fg=THEME["text"] if hovered else THEME["muted"])
+
+    def _sync(self) -> None:
+        selected = self._variable.get()
+        for value, label in self._labels.items():
+            active = value == selected
+            label.configure(
+                bg=THEME["accent_dark"] if active else self._background,
+                fg="#ffffff" if active else THEME["muted"],
+            )
+
+    def destroy(self) -> None:
+        try:
+            self._variable.trace_remove("write", self._trace_id)
+        except (tk.TclError, AttributeError, ValueError):
+            pass
+        super().destroy()
+
+
 class QueueLogger:
     def __init__(self, events: queue.Queue[tuple[str, Any]] | None = None, *, diagnostic_prefix: str = "yt-dlp"):
         self.events = events
@@ -2681,6 +3158,8 @@ class DownloaderApp(tk.Tk):
         self.url_list_file_var = tk.StringVar(value="No URL list loaded")
         self.batch_urls: list[str] = []
         self.output_var = tk.StringVar(value=str(Path.home() / "Downloads"))
+        self.output_type_var = tk.StringVar(value=OutputType.MP4.value)
+        self.library_output_type_var = tk.StringVar(value=OutputType.MP4.value)
         self.quality_var = tk.StringVar(value="1080p Full HD")
         self.export_mode_var = tk.StringVar(value=ExportMode.AUTO_CBR.value)
         self.manual_video_bitrate_var = tk.StringVar(value=str(STRICT_VIDEO_BITRATE_KBPS))
@@ -2688,6 +3167,14 @@ class DownloaderApp(tk.Tk):
         self.manual_sample_rate_var = tk.StringVar(value=AUDIO_SAMPLE_RATE)
         self.manual_channels_var = tk.StringVar(value="Stereo")
         self.manual_preset_var = tk.StringVar(value="medium")
+        self.mp3_quality_var = tk.StringVar(value="Maximum — 320 kbps CBR")
+        self.mp3_sample_rate_var = tk.StringVar(value="Preserve source")
+        self.mp3_channels_var = tk.StringVar(value="Preserve source")
+        self.mp3_embed_metadata_var = tk.BooleanVar(value=True)
+        self.mp3_cover_art_mode_var = tk.StringVar(value=MP3_COVER_ART_OPTIONS[0])
+        self.mp3_custom_cover_art_path: Path | None = None
+        self.mp3_custom_cover_art_var = tk.StringVar(value="Select Custom art to choose an image")
+        self.mp3_cover_art_description_var = tk.StringVar()
         self.tags_var = tk.StringVar()
         self.single_video_only_var = tk.BooleanVar(value=False)
         self.use_nvenc_var = tk.BooleanVar(value=False)
@@ -2754,6 +3241,13 @@ class DownloaderApp(tk.Tk):
         style.map("Treeview", background=[("selected", THEME["accent_dark"])], foreground=[("selected", "#ffffff")])
         style.configure("FocusShell.TFrame", background=THEME["bg"])
         style.configure("FocusSurface.TFrame", background=THEME["surface"])
+        style.configure(
+            "CloudPreview.TFrame",
+            background=THEME["surface"],
+            bordercolor=THEME["border"],
+            borderwidth=1,
+            relief="solid",
+        )
         style.configure("FocusBrand.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 18, "bold"))
         style.configure("FocusTitle.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 15, "bold"))
         style.configure("FocusActiveTitle.TLabel", background=THEME["bg"], foreground=THEME["text"], font=(FONT_UI_FAMILY, 13, "bold"))
@@ -2762,6 +3256,8 @@ class DownloaderApp(tk.Tk):
         style.configure("FocusEyebrow.TLabel", background=THEME["bg"], foreground=THEME["muted"], font=FONT_UI_SMALL_MEDIUM)
         style.configure("FocusSurface.TLabel", background=THEME["surface"], foreground=THEME["text"], font=FONT_UI)
         style.configure("FocusSurfaceMuted.TLabel", background=THEME["surface"], foreground=THEME["muted"], font=FONT_UI_SMALL)
+        style.configure("CloudTitle.TLabel", background=THEME["surface"], foreground=THEME["text"], font=FONT_UI_MEDIUM)
+        style.configure("CloudBadge.TLabel", background=THEME["surface"], foreground=THEME["accent"], font=FONT_UI_SMALL_MEDIUM)
         style.configure("FocusNav.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
         style.configure("FocusNavActive.TButton", background=THEME["bg"], foreground=THEME["accent"], bordercolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], padding=(12, 8), font=FONT_UI)
         style.layout("FocusNav.TButton", [("Button.padding", {"sticky": "nswe", "children": [("Button.label", {"sticky": "nswe"})]})])
@@ -2770,6 +3266,8 @@ class DownloaderApp(tk.Tk):
         style.map("FocusNavActive.TButton", background=[("active", THEME["surface"])], foreground=[("active", THEME["accent"])])
         style.configure("FocusQuiet.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["surface_2"], lightcolor=THEME["surface_2"], darkcolor=THEME["surface_2"], focusthickness=0, focuscolor=THEME["surface"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
         style.map("FocusQuiet.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])], foreground=[("active", THEME["text"])])
+        style.configure("CloudDisabled.TButton", background=THEME["surface_2"], foreground=THEME["subtle"], bordercolor=THEME["surface_2"], lightcolor=THEME["surface_2"], darkcolor=THEME["surface_2"], focusthickness=0, focuscolor=THEME["surface_2"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
+        style.map("CloudDisabled.TButton", background=[("disabled", THEME["surface_2"])], foreground=[("disabled", THEME["subtle"])])
         style.configure("FocusCopySuccess.TButton", background=THEME["accent_dark"], foreground="#ffffff", bordercolor=THEME["accent"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], focusthickness=0, focuscolor=THEME["accent_dark"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
         style.map("FocusCopySuccess.TButton", background=[("active", THEME["accent"]), ("pressed", THEME["accent_dark"])], foreground=[("active", "#ffffff")])
         style.configure("FocusIcon.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], lightcolor=THEME["bg"], darkcolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], relief="flat", padding=(9, 8))
@@ -3356,7 +3854,6 @@ class DownloaderApp(tk.Tk):
         self._focus_layout: str | None = None
         self._focus_settings_window: tk.Toplevel | None = None
         self._focus_active_override = False
-        self._queued_ui_urls: list[str] = []
         self._focus_icon_images: dict[tuple[str, int, str], Any] = {}
 
         self.focus_active_title_var = tk.StringVar(value="Ready for a new run")
@@ -3526,8 +4023,15 @@ class DownloaderApp(tk.Tk):
         self.output_var.trace_add("write", lambda *_args: self._sync_focus_destination())
         self.quality_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
         self.export_mode_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.output_type_var.trace_add("write", lambda *_args: self._on_output_type_changed())
+        self.library_output_type_var.trace_add("write", lambda *_args: self._on_library_output_type_changed())
+        self.mp3_quality_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.mp3_sample_rate_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.mp3_channels_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.mp3_cover_art_mode_var.trace_add("write", lambda *_args: self._on_mp3_cover_mode_changed())
         self._sync_focus_destination()
-        self._sync_focus_settings_summary()
+        self._on_output_type_changed()
+        self._on_library_output_type_changed()
         self._sync_focus_progress()
         self._select_focus_view("forge")
         self._refresh_focus_run_deck()
@@ -3611,6 +4115,14 @@ class DownloaderApp(tk.Tk):
         )
         self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=7)
         self.focus_url_entry.bind("<Return>", lambda _event: self._start_download())
+        self.focus_output_type_selector = SegmentedSelector(
+            command_inner,
+            variable=self.output_type_var,
+            background=THEME["surface"],
+            compact=True,
+        )
+        self.focus_output_type_selector.grid(row=0, column=2, sticky="e", padx=(12, 1))
+        ToolTip(self.focus_output_type_selector, "Choose MP4 video or MP3 audio")
         sliders_icon = self._load_focus_icon("sliders-horizontal", 20, THEME["muted"])
         self.focus_options_button = RoundedIconButton(
             command_row,
@@ -3827,7 +4339,16 @@ class DownloaderApp(tk.Tk):
         actions.columnconfigure(0, weight=1)
         heading = ttk.Frame(actions, style="FocusShell.TFrame")
         heading.grid(row=0, column=0, sticky="w")
-        ttk.Label(heading, text="Library", style="FocusTitle.TLabel").pack(anchor="w")
+        heading_title = ttk.Frame(heading, style="FocusShell.TFrame")
+        heading_title.pack(anchor="w")
+        ttk.Label(heading_title, text="Library", style="FocusTitle.TLabel").pack(side="left")
+        self.focus_library_output_type_selector = SegmentedSelector(
+            heading_title,
+            variable=self.library_output_type_var,
+            background=THEME["bg"],
+            compact=True,
+        )
+        self.focus_library_output_type_selector.pack(side="left", padx=(14, 0))
         ttk.Label(heading, text="Saved downloads and metadata previews", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
         action_row = ttk.Frame(actions, style="FocusShell.TFrame")
         action_row.grid(row=0, column=1, sticky="e")
@@ -3863,7 +4384,8 @@ class DownloaderApp(tk.Tk):
         queue_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
         queue_panel.columnconfigure(0, weight=1)
         queue_panel.rowconfigure(1, weight=1)
-        ttk.Label(queue_panel, text="MEDIA", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.focus_library_media_label_var = tk.StringVar(value="MP4 MEDIA")
+        ttk.Label(queue_panel, textvariable=self.focus_library_media_label_var, style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.video_tree = ttk.Treeview(
             queue_panel,
             columns=("index", "title", "duration", "creator", "id", "location"),
@@ -3917,14 +4439,21 @@ class DownloaderApp(tk.Tk):
             lambda event: self._render_focus_thumbnail_surfaces(library_width=event.width),
             add="+",
         )
-        ttk.Label(details, text="TAGS", style="FocusEyebrow.TLabel").grid(row=3, column=0, sticky="nw", pady=(0, 4))
-        self.pulled_tags_text = tk.Text(details, height=1, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
-        self.pulled_tags_text.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
-        ttk.Label(details, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=5, column=0, sticky="nw", pady=(0, 4))
-        self.description_text = tk.Text(details, height=2, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=2, font=FONT_UI)
-        self.description_text.grid(row=6, column=0, sticky="nsew")
+        tags_line = ttk.Frame(details, style="FocusShell.TFrame")
+        tags_line.grid(row=3, column=0, sticky="nsew", pady=(0, 6))
+        tags_line.columnconfigure(1, weight=1)
+        ttk.Label(tags_line, text="TAGS", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="nw", padx=(0, 10))
+        self.pulled_tags_text = tk.Text(tags_line, height=1, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=1, font=FONT_UI)
+        self.pulled_tags_text.grid(row=0, column=1, sticky="nsew")
+
+        description_line = ttk.Frame(details, style="FocusShell.TFrame")
+        description_line.grid(row=4, column=0, sticky="nsew")
+        description_line.columnconfigure(1, weight=1)
+        ttk.Label(description_line, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="nw", padx=(0, 10))
+        self.description_text = tk.Text(description_line, height=2, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=1, font=FONT_UI)
+        self.description_text.grid(row=0, column=1, sticky="nsew")
+        details.rowconfigure(3, weight=1)
         details.rowconfigure(4, weight=2)
-        details.rowconfigure(6, weight=3)
         self.focus_library_details = details
 
         summary = ttk.Frame(parent, style="FocusShell.TFrame")
@@ -3997,15 +4526,168 @@ class DownloaderApp(tk.Tk):
             retained.append(f"Save to       {self.output_var.get()}")
             self._set_text(self.focus_summary_text, "\n".join(retained), disabled=True)
 
+    def _selected_output_type(self) -> OutputType:
+        try:
+            return OutputType(self.output_type_var.get())
+        except ValueError:
+            self.output_type_var.set(OutputType.MP4.value)
+            return OutputType.MP4
+
+    def _mp3_export_settings(self) -> Mp3ExportSettings:
+        quality_label = self.mp3_quality_var.get()
+        sample_rate_label = self.mp3_sample_rate_var.get()
+        channels_label = self.mp3_channels_var.get()
+        if quality_label not in MP3_QUALITY_OPTIONS:
+            raise ValueError("Choose a valid MP3 quality setting.")
+        if sample_rate_label not in MP3_SAMPLE_RATE_OPTIONS:
+            raise ValueError("Choose a valid MP3 sample-rate setting.")
+        if channels_label not in MP3_CHANNEL_OPTIONS:
+            raise ValueError("Choose a valid MP3 channel setting.")
+        cover_mode = self.mp3_cover_art_mode_var.get()
+        if cover_mode not in MP3_COVER_ART_OPTIONS:
+            raise ValueError("Choose a valid MP3 cover-art setting.")
+        custom_cover = self.mp3_custom_cover_art_path if cover_mode == "Custom art" else None
+        if custom_cover is not None:
+            custom_cover = validate_custom_cover_art(custom_cover)
+        if cover_mode == "Custom art" and custom_cover is None:
+            raise ValueError("Choose a custom cover image or select Clean MP3.")
+        return Mp3ExportSettings(
+            bitrate_kbps=MP3_QUALITY_OPTIONS[quality_label],
+            sample_rate=MP3_SAMPLE_RATE_OPTIONS[sample_rate_label],
+            channels=MP3_CHANNEL_OPTIONS[channels_label],
+            embed_metadata=self.mp3_embed_metadata_var.get(),
+            embed_cover_art=cover_mode == "YouTube art",
+            custom_cover_art_path=custom_cover,
+        )
+
+    def _choose_mp3_custom_cover_art(self) -> bool:
+        selected = filedialog.askopenfilename(
+            title="Choose custom MP3 cover art",
+            filetypes=[
+                ("Image files", "*.jpg *.jpeg *.png *.webp"),
+                ("JPEG", "*.jpg *.jpeg"),
+                ("PNG", "*.png"),
+                ("WebP", "*.webp"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not selected:
+            return False
+        try:
+            cover_path = validate_custom_cover_art(Path(selected))
+        except ValueError as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return False
+        self.mp3_custom_cover_art_path = cover_path
+        self.mp3_custom_cover_art_var.set(cover_path.name)
+        if self.mp3_cover_art_mode_var.get() != "Custom art":
+            self.mp3_cover_art_mode_var.set("Custom art")
+        self._sync_focus_settings_summary()
+        return True
+
+    def _clear_mp3_custom_cover_art(self) -> None:
+        self.mp3_custom_cover_art_path = None
+        self.mp3_custom_cover_art_var.set("Select Custom art to choose an image")
+        if self.mp3_cover_art_mode_var.get() == "Custom art":
+            self.mp3_cover_art_mode_var.set("Clean MP3")
+        self._sync_focus_settings_summary()
+
+    def _on_mp3_cover_mode_changed(self) -> None:
+        mode = self.mp3_cover_art_mode_var.get()
+        if mode not in MP3_COVER_ART_OPTIONS:
+            self.mp3_cover_art_mode_var.set("Clean MP3")
+            return
+        if mode == "Custom art" and self.mp3_custom_cover_art_path is None:
+            if not self._choose_mp3_custom_cover_art():
+                self.mp3_cover_art_mode_var.set("Clean MP3")
+                return
+        descriptions = {
+            "Clean MP3": "No image is written into the MP3. VODForge still keeps the YouTube thumbnail privately for Forge and Library.",
+            "YouTube art": "Embeds the video's YouTube thumbnail in the MP3 and also uses it inside VODForge.",
+            "Custom art": "Embeds your image and uses that same image for this run in Forge and Library.",
+        }
+        self.mp3_cover_art_description_var.set(descriptions[mode])
+        cover_file = getattr(self, "focus_mp3_cover_file_frame", None)
+        try:
+            if cover_file is not None and cover_file.winfo_exists():
+                if mode == "Custom art":
+                    cover_file.grid()
+                else:
+                    cover_file.grid_remove()
+        except tk.TclError:
+            pass
+        self._sync_focus_settings_summary()
+
+    def _focus_profile_text(
+        self,
+        output_type: OutputType | None = None,
+        *,
+        mp3_settings: Mp3ExportSettings | None = None,
+        quality_label: str | None = None,
+        export_mode: ExportMode | None = None,
+    ) -> str:
+        output_type = output_type or self._selected_output_type()
+        if output_type == OutputType.MP3:
+            settings = mp3_settings or self._mp3_export_settings()
+            rate = f"{settings.bitrate_kbps} kbps"
+            sample_rate = f"{int(settings.sample_rate) / 1000:g} kHz" if settings.sample_rate else "Source rate"
+            return f"MP3  •  {rate}  •  {sample_rate}"
+        return f"{quality_label or self.quality_var.get()}  •  {(export_mode or ExportMode(self.export_mode_var.get())).value}"
+
+    def _on_output_type_changed(self) -> None:
+        self._sync_focus_settings_summary()
+        self._refresh_output_specific_settings()
+        if not bool(self.worker and self.worker.is_alive()):
+            output_type = self._selected_output_type()
+            if output_type == OutputType.MP3:
+                self.focus_transfer_var.set("Audio-only MP3  /  best YouTube audio source")
+            else:
+                self.focus_transfer_var.set("VOD-ready MP4 / H.264 video / AAC audio")
+
+    def _on_library_output_type_changed(self) -> None:
+        try:
+            output_type = OutputType(self.library_output_type_var.get())
+        except ValueError:
+            output_type = OutputType.MP4
+            self.library_output_type_var.set(output_type.value)
+        if hasattr(self, "focus_library_media_label_var"):
+            self.focus_library_media_label_var.set("MP4 MEDIA" if output_type == OutputType.MP4 else "MP3 AUDIO")
+        if hasattr(self, "video_tree"):
+            self._render_metadata_tree()
+
     def _sync_focus_settings_summary(self) -> None:
-        summary = f"Press Return to start  /  {self.quality_var.get()}  /  {self.export_mode_var.get()}"
+        output_type = self._selected_output_type()
+        if output_type == OutputType.MP3:
+            cover = self.mp3_cover_art_mode_var.get()
+            summary = f"Press Return to start  /  MP3 audio  /  {self.mp3_quality_var.get()}  /  {self.mp3_sample_rate_var.get()}  /  {cover}"
+        else:
+            summary = f"Press Return to start  /  {self.quality_var.get()}  /  {self.export_mode_var.get()}"
         if self.batch_urls:
             summary += f"  /  {len(self.batch_urls)} URLs loaded"
         self.focus_command_hint_var.set(summary)
-        self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
         if not bool(self.worker and self.worker.is_alive()):
+            self.focus_active_profile_var.set(self._focus_profile_text(output_type))
             if not self.focus_active_detail_var.get().strip():
                 self.focus_active_detail_var.set("Ready")
+
+    def _refresh_output_specific_settings(self) -> None:
+        output_type = self._selected_output_type()
+        mp4_frame = getattr(self, "focus_mp4_settings_frame", None)
+        mp3_frame = getattr(self, "focus_mp3_settings_frame", None)
+        try:
+            if mp4_frame is not None and mp4_frame.winfo_exists():
+                if output_type == OutputType.MP4:
+                    mp4_frame.grid()
+                else:
+                    mp4_frame.grid_remove()
+            if mp3_frame is not None and mp3_frame.winfo_exists():
+                if output_type == OutputType.MP3:
+                    mp3_frame.grid()
+                else:
+                    mp3_frame.grid_remove()
+        except tk.TclError:
+            pass
+        self._refresh_manual_settings_visibility()
 
     def _sync_focus_duration_badge(self) -> None:
         label = self.__dict__.get("focus_active_duration_label")
@@ -4079,32 +4761,77 @@ class DownloaderApp(tk.Tk):
         ttk.Label(source, text="Browser cookies", style="Muted.TLabel").grid(row=7, column=0, sticky="w", pady=(4, 3))
         ttk.Combobox(source, textvariable=self.cookie_browser_var, values=COOKIE_BROWSER_OPTIONS, state="readonly", width=18).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         ttk.Checkbutton(source, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=9, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ttk.Label(source, text="Extra tags", style="Muted.TLabel").grid(row=10, column=0, columnspan=2, sticky="w", pady=(10, 3))
+        ttk.Entry(source, textvariable=self.tags_var).grid(row=11, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ttk.Checkbutton(source, text="Single video only", variable=self.single_video_only_var).grid(row=12, column=0, columnspan=2, sticky="w", pady=2)
 
-        output = ttk.Frame(root, style="FocusShell.TFrame")
-        output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
-        output.columnconfigure(1, weight=1)
-        ttk.Label(output, text="QUALITY AND OUTPUT", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(output, text="Quality ceiling", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Combobox(output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20).grid(row=1, column=1, sticky="ew", pady=4)
-        ttk.Label(output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
-        export_combo = ttk.Combobox(output, textvariable=self.export_mode_var, values=EXPORT_MODES, state="readonly", width=20)
+        mp4_output = ttk.Frame(root, style="FocusShell.TFrame")
+        mp4_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        mp4_output.columnconfigure(1, weight=1)
+        ttk.Label(mp4_output, text="MP4 VIDEO", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(mp4_output, text="Quality ceiling", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Combobox(mp4_output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20).grid(row=1, column=1, sticky="ew", pady=4)
+        ttk.Label(mp4_output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
+        export_combo = ttk.Combobox(mp4_output, textvariable=self.export_mode_var, values=EXPORT_MODES, state="readonly", width=20)
         export_combo.grid(row=2, column=1, sticky="ew", pady=4)
         export_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
-        ttk.Label(output, text="Extra tags", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
-        ttk.Entry(output, textvariable=self.tags_var).grid(row=3, column=1, sticky="ew", pady=4)
-        ttk.Checkbutton(output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=4, column=1, sticky="w", pady=2)
-        ttk.Checkbutton(output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=5, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=5, column=1, sticky="w", pady=2)
-        ttk.Checkbutton(output, text="Single video only", variable=self.single_video_only_var).grid(row=6, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=3, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=3, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=4, column=1, sticky="w", pady=2)
         nvenc_label = "Use NVIDIA NVENC GPU encoding"
         if sys.platform == "darwin":
             nvenc_label = "NVIDIA NVENC (Windows only)"
             self.use_nvenc_var.set(False)
-        nvenc = ttk.Checkbutton(output, text=nvenc_label, variable=self.use_nvenc_var)
-        nvenc.grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
+        nvenc = ttk.Checkbutton(mp4_output, text=nvenc_label, variable=self.use_nvenc_var)
+        nvenc.grid(row=5, column=0, columnspan=2, sticky="w", pady=2)
         if sys.platform == "darwin":
             nvenc.state(["disabled"])
+
+        mp3_output = ttk.Frame(root, style="FocusShell.TFrame")
+        mp3_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        mp3_output.columnconfigure(1, weight=1)
+        ttk.Label(mp3_output, text="MP3 AUDIO", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ttk.Label(mp3_output, text="Encoding quality", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Combobox(mp3_output, textvariable=self.mp3_quality_var, values=list(MP3_QUALITY_OPTIONS.keys()), state="readonly", width=24).grid(row=1, column=1, sticky="ew", pady=4)
+        ttk.Label(mp3_output, text="Sample rate", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Combobox(mp3_output, textvariable=self.mp3_sample_rate_var, values=list(MP3_SAMPLE_RATE_OPTIONS.keys()), state="readonly", width=24).grid(row=2, column=1, sticky="ew", pady=4)
+        ttk.Label(mp3_output, text="Channels", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Combobox(mp3_output, textvariable=self.mp3_channels_var, values=list(MP3_CHANNEL_OPTIONS.keys()), state="readonly", width=24).grid(row=3, column=1, sticky="ew", pady=4)
+        ttk.Checkbutton(mp3_output, text="Embed title, artist, and tags", variable=self.mp3_embed_metadata_var).grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 2))
+        ttk.Label(mp3_output, text="Cover art", style="Muted.TLabel").grid(row=5, column=0, sticky="w", pady=(8, 4))
+        cover_selector = SegmentedSelector(
+            mp3_output,
+            variable=self.mp3_cover_art_mode_var,
+            values=MP3_COVER_ART_OPTIONS,
+            background=THEME["bg"],
+            compact=True,
+        )
+        cover_selector.grid(row=5, column=1, sticky="w", pady=(8, 4))
+        ttk.Label(
+            mp3_output,
+            textvariable=self.mp3_cover_art_description_var,
+            style="Muted.TLabel",
+            wraplength=330,
+            justify="left",
+        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(3, 0))
+        cover_file = ttk.Frame(mp3_output, style="FocusShell.TFrame")
+        cover_file.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        cover_file.columnconfigure(0, weight=1)
+        ttk.Label(cover_file, textvariable=self.mp3_custom_cover_art_var, style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Button(cover_file, text="Replace image", command=self._choose_mp3_custom_cover_art, style="FocusQuiet.TButton").grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(cover_file, text="Clear", command=self._clear_mp3_custom_cover_art, style="FocusQuiet.TButton").grid(row=0, column=2, padx=(6, 0))
+        ttk.Label(
+            mp3_output,
+            text="Maximum 320 kbps minimizes additional encoding loss. Preserve source avoids unnecessary resampling; choose 44.1 or 48 kHz only when your music or DAW workflow requires it.",
+            style="Muted.TLabel",
+            wraplength=330,
+            justify="left",
+        ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        self.focus_mp4_settings_frame = mp4_output
+        self.focus_mp3_settings_frame = mp3_output
+        self.focus_mp3_cover_file_frame = cover_file
+        self._on_mp3_cover_mode_changed()
 
         manual = ttk.Frame(root, style="FocusShell.TFrame")
         manual.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(18, 0))
@@ -4129,16 +4856,39 @@ class DownloaderApp(tk.Tk):
             widget.grid(row=row, column=column + 1, sticky="ew", padx=(0, 20), pady=4)
         self.manual_settings_frames = [manual]
         self.manual_settings_frame = manual
-        self._refresh_manual_settings_visibility()
+        self._refresh_output_specific_settings()
+
+        cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(14, 10))
+        cloud.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        cloud.columnconfigure(0, weight=1)
+        ttk.Label(cloud, text="VODForge Cloud", style="CloudTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            cloud,
+            text="Run downloads even when this computer is offline.",
+            style="FocusSurfaceMuted.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        cloud_action = ttk.Frame(cloud, style="FocusSurface.TFrame")
+        cloud_action.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
+        ttk.Label(cloud_action, text="COMING SOON", style="CloudBadge.TLabel").pack(anchor="e", pady=(0, 4))
+        self.focus_cloud_early_access_button = ttk.Button(
+            cloud_action,
+            text="Join early access",
+            state="disabled",
+            style="CloudDisabled.TButton",
+        )
+        self.focus_cloud_early_access_button.pack(anchor="e")
 
         footer = ttk.Frame(root, style="FocusShell.TFrame")
-        footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         footer.columnconfigure(0, weight=1)
         preview_button = ttk.Button(footer, text="Preview metadata", command=self._fetch_metadata, style="FocusQuiet.TButton")
         preview_button.grid(row=0, column=0, sticky="w")
 
         def close_popup() -> None:
             self._focus_settings_window = None
+            self.focus_mp4_settings_frame = None
+            self.focus_mp3_settings_frame = None
+            self.focus_mp3_cover_file_frame = None
             popup.destroy()
 
         ttk.Button(footer, text="Done", command=close_popup, style="Accent.TButton").grid(row=0, column=1, sticky="e")
@@ -4186,10 +4936,16 @@ class DownloaderApp(tk.Tk):
         self.focus_active_detail_var.set(str(record.get("detail") or record.get("status") or "Ready"))
         if record.get("metadata_index") is not None:
             index = int(record["metadata_index"])
-            children = self.video_tree.get_children()
-            if 0 <= index < len(children):
-                self.video_tree.selection_set(children[index])
-                self.video_tree.focus(children[index])
+            if 0 <= index < len(self.metadata_items):
+                output_type = metadata_output_type(self.metadata_items[index])
+                if self.library_output_type_var.get() != output_type.value:
+                    self.library_output_type_var.set(output_type.value)
+                iid = str(index)
+                if iid not in self.video_tree.get_children():
+                    self._render_metadata_tree(selected_index=index)
+                if iid in self.video_tree.get_children():
+                    self.video_tree.selection_set(iid)
+                    self.video_tree.focus(iid)
                 self._display_selected_metadata(index)
 
     def _show_library_actions_menu(self) -> None:
@@ -4255,27 +5011,48 @@ class DownloaderApp(tk.Tk):
         active = bool(self._focus_active_override or self.active_job is not None or (self.worker and self.worker.is_alive()))
         current_url = self.active_job.url if self.active_job is not None else self.url_var.get().strip()
         if active and current_url:
+            active_type = self.active_job.output_type if self.active_job is not None else self._selected_output_type()
             records.append(
                 {
                     "title": self.focus_active_title_var.get() or current_url,
                     "detail": self.focus_active_detail_var.get(),
-                    "status": self.status_var.get() or "Active",
+                    "status": f"{self.status_var.get() or 'Active'}  •  {active_type.value}",
                     "progress": float(self.progress_var.get()),
                     "kind": "active",
+                    "output_type": active_type.value,
                 }
             )
-        for url in self._queued_ui_urls:
-            records.append({"title": url, "detail": "Queued", "status": "Queued", "progress": 0, "kind": "queued"})
-        for index, item in enumerate(self.metadata_items):
-            saved = history_output_dir(item)
+        for job in self.pending_jobs:
+            preview_info = job.preview_info or {}
+            preview_path = str(preview_info.get("preview_thumbnail_path") or "").strip()
             records.append(
                 {
-                    "title": str(item.get("title") or item.get("id") or "Untitled video"),
+                    "title": str(preview_info.get("title") or job.url),
+                    "detail": str(preview_info.get("uploader") or preview_info.get("channel") or self._focus_profile_text(
+                            job.output_type,
+                            mp3_settings=job.mp3_settings,
+                            quality_label=job.quality_label,
+                            export_mode=job.export_mode,
+                        )),
+                    "status": f"Queued  •  {job.output_type.value}",
+                    "progress": 0,
+                    "kind": "queued",
+                    "output_type": job.output_type.value,
+                    "preview_thumbnail_path": preview_path,
+                }
+            )
+        for index, item in enumerate(self.metadata_items):
+            saved = history_output_dir(item)
+            output_type = metadata_output_type(item)
+            records.append(
+                {
+                    "title": str(item.get("title") or item.get("id") or "Untitled media"),
                     "detail": str(item.get("uploader") or item.get("channel") or format_duration(item.get("duration"))),
-                    "status": "Completed" if saved is not None else "Previewed",
+                    "status": f"{'Completed' if saved is not None else 'Previewed'}  •  {output_type.value}",
                     "progress": 100 if saved is not None else 0,
                     "kind": "completed" if saved is not None else "preview",
                     "metadata_index": index,
+                    "output_type": output_type.value,
                 }
             )
         return records
@@ -4409,6 +5186,9 @@ class DownloaderApp(tk.Tk):
                 saved = history_output_dir(item)
                 if saved is not None:
                     candidates.extend((saved / "thumbnail.jpg", saved / "thumbnail.jpeg", saved / "thumbnail.png", saved / "thumbnail.webp"))
+                cached = cached_thumbnail_path(item)
+                if cached is not None:
+                    candidates.append(cached)
         for path in candidates:
             try:
                 if path.is_file():
@@ -4738,9 +5518,14 @@ class DownloaderApp(tk.Tk):
             return
         self.metadata_items = [dict(item) for item in self.download_history]
         self._rebuild_output_dir_index()
+        if self.metadata_items and not metadata_indices_for_output_type(
+            self.metadata_items,
+            self.library_output_type_var.get(),
+        ):
+            self.library_output_type_var.set(metadata_output_type(self.metadata_items[0]).value)
         self._render_metadata_tree()
         if self.download_history:
-            self.status_var.set(f"Loaded {len(self.download_history)} downloaded video(s) from history.")
+            self.status_var.set(f"Loaded {len(self.download_history)} downloaded media item(s) from history.")
             self._append_log(f"Loaded download history: {self.history_path}")
 
     def _record_download_history(self, info: dict[str, Any], output_dir: Path) -> None:
@@ -4754,18 +5539,26 @@ class DownloaderApp(tk.Tk):
 
         saved_record = self.download_history[0]
         saved_id = str(saved_record.get("id") or "")
+        saved_type = metadata_output_type(saved_record)
         merged = dict(saved_record)
         retained: list[dict[str, Any]] = []
         for item in self.metadata_items:
             if history_identity(item) == history_identity(saved_record):
                 merged = {**item, **saved_record}
                 continue
-            if saved_id and str(item.get("id") or "") == saved_id and history_output_dir(item) is None:
+            if (
+                saved_id
+                and str(item.get("id") or "") == saved_id
+                and metadata_output_type(item) == saved_type
+                and history_output_dir(item) is None
+            ):
                 merged = {**item, **saved_record}
                 continue
             retained.append(item)
         self.metadata_items = [merged, *retained]
         self._rebuild_output_dir_index()
+        if self.library_output_type_var.get() != saved_type.value:
+            self.library_output_type_var.set(saved_type.value)
         self._render_metadata_tree(selected_index=0)
         self._append_log(f"Saved download history entry: {output_dir}")
 
@@ -4780,7 +5573,10 @@ class DownloaderApp(tk.Tk):
             fallback = getattr(self, "manual_settings_frame", None)
             frames = [fallback] if fallback is not None else []
         live_frames: list[ttk.LabelFrame] = []
-        manual_override = self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value
+        manual_override = (
+            self._selected_output_type() == OutputType.MP4
+            and self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value
+        )
         for frame in frames:
             try:
                 if not frame.winfo_exists():
@@ -4941,9 +5737,10 @@ class DownloaderApp(tk.Tk):
         if hasattr(self, "preview_metadata_button"):
             self.preview_metadata_button.config(state="disabled")
         self.status_var.set("Fetching tags and thumbnail…")
-        threading.Thread(target=self._metadata_worker, args=(url,), daemon=True).start()
+        output_type = self._selected_output_type()
+        threading.Thread(target=self._metadata_worker, args=(url, output_type), daemon=True).start()
 
-    def _metadata_worker(self, url: str) -> None:
+    def _metadata_worker(self, url: str, output_type: OutputType) -> None:
         assert yt_dlp is not None
         try:
             opts = {"quiet": True, "skip_download": True, "noplaylist": False, "extract_flat": False, "logger": QueueLogger(self.events)}
@@ -4960,11 +5757,54 @@ class DownloaderApp(tk.Tk):
             apply_youtube_runtime_options(opts, deno_path=deno)
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+            if isinstance(info, dict):
+                info = mark_metadata_output_type(info, output_type)
             self.events.put(("metadata", info))
         except Exception as exc:
             self.events.put(("metadata_error", f"Metadata fetch failed: {format_ytdlp_user_error(exc)}"))
         finally:
             self.events.put(("metadata_fetch_done", None))
+
+    def _queue_preview_worker(self, job: DownloadJob) -> None:
+        """Fetch one queued run's display metadata without downloading its media."""
+        if yt_dlp is None:
+            return
+        try:
+            opts: dict[str, Any] = {
+                "quiet": True,
+                "skip_download": True,
+                "noplaylist": job.single_video_only,
+                "playlistend": 1,
+                "extract_flat": False,
+                "ignore_no_formats_error": True,
+                "logger": QueueLogger(None, diagnostic_prefix="queue preview yt-dlp"),
+            }
+            apply_ytdlp_cookie_options(
+                opts,
+                use_cookies=job.use_cookies,
+                cookie_file=job.cookie_file,
+                cookie_browser=job.cookie_browser,
+            )
+            ffmpeg = self._find_ffmpeg()
+            if ffmpeg:
+                opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
+            apply_youtube_runtime_options(opts, deno_path=self._find_deno())
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                extracted = ydl.extract_info(job.url, download=False)
+            if not isinstance(extracted, dict):
+                return
+            items = iter_video_infos(mark_metadata_output_type(extracted, job.output_type))
+            preview = dict(items[0] if items else extracted)
+            cached = (
+                save_custom_cached_thumbnail_image(preview, job.mp3_settings.custom_cover_art_path)
+                if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None
+                else save_cached_thumbnail_image(preview)
+            )
+            if cached is not None:
+                preview["preview_thumbnail_path"] = str(cached)
+            self.events.put(("queued_preview", {"job": job, "info": preview}))
+        except Exception as exc:
+            write_diagnostic(f"queued run preview unavailable for {job.url}: {type(exc).__name__}: {exc}")
 
     def _copy_tags(self) -> None:
         text = self.pulled_tags_text.get("1.0", "end").strip()
@@ -5019,8 +5859,15 @@ class DownloaderApp(tk.Tk):
         new_items: list[dict[str, Any]] = []
         for incoming in incoming_items:
             video_id = str(incoming.get("id") or "")
+            output_type = metadata_output_type(incoming)
             matching = next(
-                (item for item in [*new_items, *self.metadata_items] if video_id and str(item.get("id") or "") == video_id),
+                (
+                    item
+                    for item in [*new_items, *self.metadata_items]
+                    if video_id
+                    and str(item.get("id") or "") == video_id
+                    and metadata_output_type(item) == output_type
+                ),
                 None,
             )
             if matching is not None:
@@ -5030,8 +5877,12 @@ class DownloaderApp(tk.Tk):
         if new_items:
             self.metadata_items = [*new_items, *self.metadata_items]
         self._rebuild_output_dir_index()
+        if incoming_items:
+            incoming_type = metadata_output_type(incoming_items[0])
+            if self.library_output_type_var.get() != incoming_type.value:
+                self.library_output_type_var.set(incoming_type.value)
         self._render_metadata_tree()
-        self.status_var.set(f"Showing metadata for {len(incoming_items)} fetched video(s); saved history remains available.")
+        self.status_var.set(f"Showing metadata for {len(incoming_items)} fetched item(s); saved history remains available.")
 
     def _rebuild_output_dir_index(self) -> None:
         self.video_output_dirs_by_id = {}
@@ -5045,19 +5896,37 @@ class DownloaderApp(tk.Tk):
         selected_iid = self.video_tree.selection()[0] if self.video_tree.selection() else None
         for item in self.video_tree.get_children():
             self.video_tree.delete(item)
-        for idx, item in enumerate(self.metadata_items, start=1):
+        visible_indices = metadata_indices_for_output_type(self.metadata_items, self.library_output_type_var.get())
+        for visible_position, metadata_index in enumerate(visible_indices, start=1):
+            item = self.metadata_items[metadata_index]
             output_dir = history_output_dir(item)
             location = output_dir.name if output_dir is not None else "Preview only"
-            values = (*video_list_row_values(item, fallback_index=idx), location)
-            self.video_tree.insert("", "end", iid=str(idx - 1), values=values)
-        if self.metadata_items:
+            values = (*video_list_row_values(item, fallback_index=visible_position), location)
+            self.video_tree.insert("", "end", iid=str(metadata_index), values=values)
+        children = self.video_tree.get_children()
+        if children:
             preferred = str(selected_index) if selected_index is not None else selected_iid
-            target = preferred if preferred in self.video_tree.get_children() else self.video_tree.get_children()[0]
+            target = preferred if preferred in children else children[0]
             self.video_tree.selection_set(target)
             self.video_tree.focus(target)
             self._display_selected_metadata(int(target))
+        else:
+            self._clear_library_selection()
         if hasattr(self, "focus_run_deck"):
             self._refresh_focus_run_deck()
+
+    def _clear_library_selection(self) -> None:
+        output_type = self.library_output_type_var.get()
+        self.selected_title_var.set(f"No {output_type} items yet. Preview or forge a URL to add one.")
+        self.last_thumbnail_url = None
+        self._set_text(self.pulled_tags_text, f"No {output_type} item selected.")
+        self._set_text(self.description_text, f"Your {output_type} metadata will appear here.")
+        self._set_text(self.source_summary_text, "No source selected.", disabled=True)
+        self._set_text(self.output_summary_text, "No output selected.", disabled=True)
+        if hasattr(self, "focus_summary_text"):
+            self._set_text(self.focus_summary_text, "No output selected.", disabled=True)
+        if hasattr(self, "focus_run_deck") and self._focus_brand_source_image is not None:
+            self._render_focus_thumbnail_surfaces(self._focus_brand_source_image, placeholder=True)
 
     def _on_video_selected(self, _event: Any = None) -> None:
         selection = self.video_tree.selection()
@@ -5081,17 +5950,26 @@ class DownloaderApp(tk.Tk):
         info = self.metadata_items[index]
         title = str(info.get("title") or info.get("id") or "selected video")
         creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
+        output_type = metadata_output_type(info)
         saved = history_output_dir(info)
         location_text = f"Saved in {saved}" if saved is not None else "Not downloaded in this history"
         self.selected_title_var.set(
-            f"{title}\n{creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}\n{location_text}"
+            f"{title}\n{output_type.value} • {creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}\n{location_text}"
         )
         if hasattr(self, "focus_active_title_var") and not bool(self._focus_active_override or (self.worker and self.worker.is_alive())):
             self.focus_active_title_var.set(title)
             self.focus_active_detail_var.set(creator)
             duration = format_duration(info.get("duration"))
             self.focus_active_duration_var.set("" if duration == "—" else duration)
-            self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
+            summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
+            output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+            if output_type == OutputType.MP3:
+                bitrate = _display_value(output.get("Target audio bitrate"), "320 kbps")
+                sample_rate = _display_value(output.get("Audio sample rate"), "Source rate")
+                self.focus_active_profile_var.set(f"MP3  •  {bitrate}  •  {sample_rate}")
+            else:
+                mode = _display_value(output.get("Output rate-control mode"), self.export_mode_var.get())
+                self.focus_active_profile_var.set(f"MP4  •  {self.quality_var.get()}  •  {mode}")
         tags_text = build_tags_display_text(info)
         description = build_description_display_text(info)
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
@@ -5106,10 +5984,13 @@ class DownloaderApp(tk.Tk):
         preview_thumbnail = str(info.get("preview_thumbnail_path") or "").strip()
         preview_thumbnail_path = Path(preview_thumbnail) if preview_thumbnail else None
         local_thumbnail = saved / "thumbnail.jpeg" if saved is not None else None
+        cached_thumbnail = cached_thumbnail_path(info)
         if preview_thumbnail_path is not None and preview_thumbnail_path.is_file():
             self._load_thumbnail_file(preview_thumbnail_path)
         elif local_thumbnail is not None and local_thumbnail.is_file():
             self._load_thumbnail_file(local_thumbnail)
+        elif cached_thumbnail is not None and cached_thumbnail.is_file():
+            self._load_thumbnail_file(cached_thumbnail)
         elif self.last_thumbnail_url:
             self._load_thumbnail_preview(self.last_thumbnail_url)
         else:
@@ -5279,23 +6160,31 @@ class DownloaderApp(tk.Tk):
             return
 
         tags = [tag.strip() for tag in self.tags_var.get().split(",") if tag.strip()]
+        output_type = self._selected_output_type()
         try:
-            manual_settings = self._manual_export_settings()
+            manual_settings = (
+                self._manual_export_settings()
+                if output_type == OutputType.MP4
+                else ManualExportSettings()
+            )
+            mp3_settings = self._mp3_export_settings() if output_type == OutputType.MP3 else Mp3ExportSettings()
         except ValueError as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return
         job = DownloadJob(
             url=url,
             output_dir=output_dir,
+            output_type=output_type,
             quality_label=self.quality_var.get(),
             export_mode=ExportMode(self.export_mode_var.get()),
             manual_settings=manual_settings,
+            mp3_settings=mp3_settings,
             single_video_only=self.single_video_only_var.get(),
-            use_nvenc=self.use_nvenc_var.get(),
-            embed_thumbnail=self.embed_thumbnail_var.get(),
-            write_thumbnail=self.write_thumbnail_var.get(),
-            embed_metadata=self.embed_metadata_var.get(),
-            write_info_json=self.write_info_json_var.get(),
+            use_nvenc=self.use_nvenc_var.get() if output_type == OutputType.MP4 else False,
+            embed_thumbnail=self.embed_thumbnail_var.get() if output_type == OutputType.MP4 else False,
+            write_thumbnail=self.write_thumbnail_var.get() if output_type == OutputType.MP4 else False,
+            embed_metadata=self.embed_metadata_var.get() if output_type == OutputType.MP4 else False,
+            write_info_json=self.write_info_json_var.get() if output_type == OutputType.MP4 else False,
             tags=tags,
             urls=urls,
             use_cookies=self.use_cookies_var.get(),
@@ -5306,12 +6195,12 @@ class DownloaderApp(tk.Tk):
 
         if self.worker is not None and self.worker.is_alive():
             self.pending_jobs.append(job)
-            if hasattr(self, "_queued_ui_urls"):
-                self._queued_ui_urls.append(job.url)
+            if hasattr(self, "focus_run_deck"):
                 self.focus_engine_var.set(f"1 active  /  {len(self.pending_jobs)} queued  /  runs process one at a time")
-                self._append_log(f"Queued run: {job.url}")
+                self._append_log(f"Queued {job.output_type.value} run: {job.url}")
                 self._refresh_focus_run_deck()
                 self.download_button.configure(text="Queue run", state="normal")
+                threading.Thread(target=self._queue_preview_worker, args=(job,), daemon=True).start()
             self._reset_source_input_after_send()
             return
 
@@ -5330,8 +6219,19 @@ class DownloaderApp(tk.Tk):
             self.focus_active_title_var.set(job.url)
             self.focus_active_detail_var.set("Preparing source")
             self.focus_active_duration_var.set("")
-            self.focus_active_profile_var.set(f"{self.quality_var.get()}  •  {self.export_mode_var.get()}")
-            self.focus_transfer_var.set("Preparing source and output plan")
+            self.focus_active_profile_var.set(
+                self._focus_profile_text(
+                    job.output_type,
+                    mp3_settings=job.mp3_settings,
+                    quality_label=job.quality_label,
+                    export_mode=job.export_mode,
+                )
+            )
+            self.focus_transfer_var.set(
+                "Preparing best audio source and MP3 plan"
+                if job.output_type == OutputType.MP3
+                else "Preparing source and MP4 output plan"
+            )
             self._refresh_focus_run_deck()
         self.events.put(("progress_determinate", 0))
         if hasattr(self, "focus_run_deck"):
@@ -5355,8 +6255,6 @@ class DownloaderApp(tk.Tk):
                 self.focus_engine_var.set("Runs process one at a time")
             return False
         job = self.pending_jobs.pop(0)
-        if hasattr(self, "_queued_ui_urls") and self._queued_ui_urls:
-            self._queued_ui_urls.pop(0)
         self._launch_download_job(job)
         return True
 
@@ -5472,7 +6370,7 @@ class DownloaderApp(tk.Tk):
             return info
 
         current_video_info: dict[str, Any] | None = None
-        current_plan: ExportPlan | None = None
+        current_plan: ExportPlan | AudioExportPlan | None = None
 
         try:
             max_height = _quality_max_height(job.quality_label)
@@ -5533,6 +6431,7 @@ class DownloaderApp(tk.Tk):
                 try:
                     current_video_info = None
                     current_plan = None
+                    custom_cover_for_cache: Path | None = None
                     video_url = video_url_from_entry(entry)
                     label = f"Video {video_index} of {total_videos}"
                     raise_for_control_requests()
@@ -5583,24 +6482,38 @@ class DownloaderApp(tk.Tk):
                     )
                     if not isinstance(preflight_info, dict):
                         raise RuntimeError(f"{label}: YouTube source analysis did not return metadata")
-                    preflight_info = add_playlist_context(preflight_info, entry, playlist_info, video_index)
-                    plan = build_auto_export_plan(preflight_info, mode=job.export_mode, max_height=max_height)
-                    if job.export_mode == ExportMode.MANUAL_OVERRIDE:
-                        plan = apply_manual_export_settings(plan, job.manual_settings)
-                        self.events.put(("log", f"{label}: Manual Override settings {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio, {plan.audio_sample_rate} Hz, {plan.audio_channels} channel(s), x264 preset {plan.x264_preset}."))
+                    preflight_info = mark_metadata_output_type(
+                        add_playlist_context(preflight_info, entry, playlist_info, video_index),
+                        job.output_type,
+                    )
+                    if job.output_type == OutputType.MP3:
+                        plan: ExportPlan | AudioExportPlan = build_mp3_export_plan(preflight_info, job.mp3_settings)
+                    else:
+                        plan = build_auto_export_plan(preflight_info, mode=job.export_mode, max_height=max_height)
+                        if job.export_mode == ExportMode.MANUAL_OVERRIDE:
+                            plan = apply_manual_export_settings(plan, job.manual_settings)
+                            self.events.put(("log", f"{label}: Manual Override settings {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio, {plan.audio_sample_rate} Hz, {plan.audio_channels} channel(s), x264 preset {plan.x264_preset}."))
                     current_plan = plan
                     current_video_info = build_encoding_summary_metadata(preflight_info, plan)
                     self.events.put(("metadata", current_video_info))
                     self.events.put(("log", f"{label}: selected format {plan.format_selector}"))
-                    self.events.put(("log", f"{label}: selected video {plan.output_height}p {plan.video_codec} ~{plan.source_video_kbps:.0f} kbps; selected audio {plan.audio_codec} ~{plan.source_audio_kbps:.0f} kbps."))
-                    target_label = "Manual target" if job.export_mode == ExportMode.MANUAL_OVERRIDE else "Auto CBR target"
-                    self.events.put(("log", f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio."))
+                    if isinstance(plan, AudioExportPlan):
+                        self.events.put(("log", f"{label}: selected highest-quality audio source {plan.audio_codec} ~{plan.source_audio_kbps:.0f} kbps."))
+                        self.events.put(("log", f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art {'embedded' if plan.embed_cover_art else 'not embedded'}."))
+                    else:
+                        self.events.put(("log", f"{label}: selected video {plan.output_height}p {plan.video_codec} ~{plan.source_video_kbps:.0f} kbps; selected audio {plan.audio_codec} ~{plan.source_audio_kbps:.0f} kbps."))
+                        target_label = "Manual target" if job.export_mode == ExportMode.MANUAL_OVERRIDE else "Auto CBR target"
+                        self.events.put(("log", f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio."))
                     for warning in plan.warnings:
                         self.events.put(("log", f"WARNING: {label}: {warning}"))
                     put_stage_progress(video_index, total_videos, 0.0, 0.10, 1.0)
 
                     staging_dir = create_staging_dir(job.output_dir)
                     try:
+                        ffmpeg = self._find_ffmpeg()
+                        if not ffmpeg:
+                            required_output = "MP3 audio" if job.output_type == OutputType.MP3 else "H.264 / AAC MP4 video"
+                            raise RuntimeError(f"FFmpeg is required to create the {required_output} output.")
                         ydl_opts = self._build_ydl_options(job, staging_dir=staging_dir, format_selector=plan.format_selector)
                         ydl_opts["noplaylist"] = True
                         log_options(f"{label} download", ydl_opts)
@@ -5612,52 +6525,86 @@ class DownloaderApp(tk.Tk):
                         self._active_progress_context = None
                         if not isinstance(info, dict):
                             raise RuntimeError(f"{label}: download did not return metadata")
-                        info = add_playlist_context(info, entry, playlist_info, video_index)
+                        info = mark_metadata_output_type(
+                            add_playlist_context(info, entry, playlist_info, video_index),
+                            job.output_type,
+                        )
                         if current_video_info and current_video_info.get("vodforge_encoding_summary"):
                             info["vodforge_encoding_summary"] = current_video_info["vodforge_encoding_summary"]
                         current_video_info = info
                         self.events.put(("metadata", info))
                         put_stage_progress(video_index, total_videos, 0.10, 0.40, 1.0)
 
-                        packaged_paths = package_downloaded_media_from_staging(staging_dir, job.output_dir, info)
+                        if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None:
+                            prepared_cover = prepare_custom_cover_art(job.mp3_settings.custom_cover_art_path, staging_dir)
+                            embedded_count = 0
+                            for staged_info in iter_video_infos(info):
+                                staged_id = str(staged_info.get("id") or "").strip()
+                                if not staged_id:
+                                    continue
+                                staged_mp3 = _find_staged_media_file(
+                                    staging_dir / staged_id,
+                                    staged_id,
+                                    expected_extension=".mp3",
+                                ) or _find_staged_media_file(staging_dir, staged_id, expected_extension=".mp3")
+                                if staged_mp3 is None:
+                                    continue
+                                embed_custom_mp3_cover_art(staged_mp3, prepared_cover, ffmpeg)
+                                embedded_count += 1
+                            if embedded_count == 0:
+                                raise RuntimeError(f"{label}: the staged MP3 could not be found for custom cover embedding.")
+                            custom_cover_for_cache = prepared_cover
+                            self.events.put(("log", f"{label}: embedded custom cover art ({job.mp3_settings.custom_cover_art_path.name})"))
+
+                        expected_extension = ".mp3" if job.output_type == OutputType.MP3 else ".mp4"
+                        packaged_paths = package_downloaded_media_from_staging(
+                            staging_dir,
+                            job.output_dir,
+                            info,
+                            expected_extension=expected_extension,
+                        )
                         output_dirs = sorted({path.parent for path in packaged_paths})
                         all_output_dirs.extend(output_dirs)
                         self.events.put(("download_folders", sorted(set(all_output_dirs))))
                         for packaged_path in packaged_paths:
                             self.events.put(("log", f"{label}: packaged media file {packaged_path}"))
-                        ffmpeg = self._find_ffmpeg()
-                        if not ffmpeg:
-                            raise RuntimeError("FFmpeg is required to create the H.264 CBR / AAC 320k output.")
-
-                        mp4_paths = [path for path in packaged_paths if path.suffix.lower() == ".mp4"]
-                        primary_output = mp4_paths[0] if mp4_paths else None
+                        output_paths = [path for path in packaged_paths if path.suffix.lower() == expected_extension]
+                        primary_output = output_paths[0] if output_paths else None
+                        if primary_output is None:
+                            raise RuntimeError(
+                                f"{label}: yt-dlp completed without producing the expected {expected_extension} file."
+                            )
                         info = build_encoding_summary_metadata(info, plan, output_path=primary_output)
                         current_video_info = info
                         self.events.put(("metadata", info))
-                        total_mp4 = max(len(mp4_paths), 1)
-                        for encode_index, mp4_path in enumerate(mp4_paths, start=1):
-                            raise_for_control_requests()
-                            self.events.put(("status", f"{label} — transcoding"))
-                            encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
-                            self.events.put(("log", f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}"))
-                            write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, mp4_path, transcode_temp_paths(mp4_path)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
-                            put_stage_progress(video_index, total_videos, 0.50, 0.40, (encode_index - 1) / total_mp4)
-                            transcode_to_vod_streaming_settings(
-                                mp4_path,
-                                ffmpeg,
-                                plan=plan,
-                                duration_seconds=_float_or_none(info.get("duration")),
-                                progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: put_stage_progress(
-                                    video_index,
-                                    total_videos,
-                                    0.50,
-                                    0.40,
-                                    ((encode_index - 1) + fraction) / total_mp4,
-                                ),
-                                use_nvenc=job.use_nvenc,
-                                control_check=raise_for_control_requests,
-                            )
-                            self.events.put(("log", f"{label}: transcoded VODForge output {mp4_path}"))
+                        if isinstance(plan, ExportPlan):
+                            total_mp4 = max(len(output_paths), 1)
+                            for encode_index, mp4_path in enumerate(output_paths, start=1):
+                                raise_for_control_requests()
+                                self.events.put(("status", f"{label} — transcoding"))
+                                encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
+                                self.events.put(("log", f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}"))
+                                write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, mp4_path, transcode_temp_paths(mp4_path)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
+                                put_stage_progress(video_index, total_videos, 0.50, 0.40, (encode_index - 1) / total_mp4)
+                                transcode_to_vod_streaming_settings(
+                                    mp4_path,
+                                    ffmpeg,
+                                    plan=plan,
+                                    duration_seconds=_float_or_none(info.get("duration")),
+                                    progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: put_stage_progress(
+                                        video_index,
+                                        total_videos,
+                                        0.50,
+                                        0.40,
+                                        ((encode_index - 1) + fraction) / total_mp4,
+                                    ),
+                                    use_nvenc=job.use_nvenc,
+                                    control_check=raise_for_control_requests,
+                                )
+                                self.events.put(("log", f"{label}: transcoded VODForge output {mp4_path}"))
+                        else:
+                            self.events.put(("status", f"{label} — MP3 encoded"))
+                            self.events.put(("log", f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}"))
                         put_stage_progress(video_index, total_videos, 0.50, 0.40, 1.0)
 
                         self.events.put(("status", f"{label} — validating output"))
@@ -5681,6 +6628,19 @@ class DownloaderApp(tk.Tk):
                         )
                         current_video_info = info
                         self.events.put(("metadata", info))
+                        if job.output_type == OutputType.MP3:
+                            try:
+                                cached_thumbnail = (
+                                    save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
+                                    if custom_cover_for_cache is not None
+                                    else save_cached_thumbnail_image(info)
+                                )
+                                if cached_thumbnail is not None:
+                                    artwork_source = "custom cover" if custom_cover_for_cache is not None else "YouTube thumbnail"
+                                    self.events.put(("log", f"{label}: cached {artwork_source} privately for Forge and Library"))
+                            except Exception as exc:
+                                write_diagnostic(f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}")
+                                self.events.put(("log", f"WARNING: {label}: the MP3 is complete, but its Library artwork could not be cached."))
                         if primary_output is not None:
                             self.events.put(
                                 (
@@ -5696,8 +6656,9 @@ class DownloaderApp(tk.Tk):
                             if thumb_path:
                                 self.events.put(("log", f"{label}: saved thumbnail {thumb_path}"))
                         put_stage_progress(video_index, total_videos, 0.90, 0.10, 1.0)
-                        self.events.put(("status", f"{label} complete"))
-                        self.events.put(("log", f"{label} complete"))
+                        result_label = "MP3 audio" if job.output_type == OutputType.MP3 else "MP4 video"
+                        self.events.put(("status", f"{label} complete — {result_label}"))
+                        self.events.put(("log", f"{label} complete — {result_label}"))
                     finally:
                         self._active_progress_context = None
                         staging_root = staging_dir.parent
@@ -5731,7 +6692,7 @@ class DownloaderApp(tk.Tk):
 
 
             if emit_done:
-                self.events.put(("done", "Download complete."))
+                self.events.put(("done", f"{job.output_type.value} download complete."))
         except Exception as exc:
             self._active_progress_context = None
             if current_video_info is not None:
@@ -5748,29 +6709,58 @@ class DownloaderApp(tk.Tk):
             self.events.put(("error", f"{user_error}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}"))
 
     def _build_ydl_options(self, job: DownloadJob, staging_dir: Path, format_selector: str | None = None) -> dict[str, Any]:
-        postprocessors: list[dict[str, Any]] = [
-            {"key": "FFmpegVideoConvertor", "preferedformat": "mp4"},
-        ]
-        if job.embed_metadata:
-            postprocessors.append({"key": "FFmpegMetadata", "add_chapters": True, "add_metadata": True})
-        if job.embed_thumbnail:
-            postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
+        if job.output_type == OutputType.MP3:
+            use_youtube_cover = (
+                job.mp3_settings.embed_cover_art
+                and job.mp3_settings.custom_cover_art_path is None
+            )
+            postprocessors: list[dict[str, Any]] = [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": str(job.mp3_settings.bitrate_kbps),
+                },
+            ]
+            if job.mp3_settings.embed_metadata:
+                postprocessors.append({"key": "FFmpegMetadata", "add_chapters": True, "add_metadata": True})
+            if use_youtube_cover:
+                postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
+            selected_format = format_selector or "bestaudio/best"
+            write_thumbnail = use_youtube_cover
+            postprocessor_args = self._metadata_args(job.tags) if job.mp3_settings.embed_metadata else {}
+            audio_args: list[str] = []
+            if job.mp3_settings.sample_rate:
+                audio_args.extend(("-ar", job.mp3_settings.sample_rate))
+            if job.mp3_settings.channels:
+                audio_args.extend(("-ac", job.mp3_settings.channels))
+            if audio_args:
+                postprocessor_args["extractaudio+ffmpeg_o"] = audio_args
+        else:
+            postprocessors = [
+                {"key": "FFmpegVideoConvertor", "preferedformat": "mp4"},
+            ]
+            if job.embed_metadata:
+                postprocessors.append({"key": "FFmpegMetadata", "add_chapters": True, "add_metadata": True})
+            if job.embed_thumbnail:
+                postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
+            selected_format = (format_selector or QUALITY_OPTIONS[job.quality_label]) + "/best"
+            write_thumbnail = job.write_thumbnail or job.embed_thumbnail
+            postprocessor_args = self._metadata_args(job.tags)
 
         outtmpl = staging_output_template(staging_dir)
         opts: dict[str, Any] = {
-            "format": (format_selector or QUALITY_OPTIONS[job.quality_label]) + "/best",
-            "merge_output_format": "mp4",
+            "format": selected_format,
             "outtmpl": outtmpl,
             "windowsfilenames": True,
             "restrictfilenames": False,
             "noplaylist": False,
-            "writethumbnail": job.write_thumbnail or job.embed_thumbnail,
+            "writethumbnail": write_thumbnail,
             "writeinfojson": False,
             "postprocessors": postprocessors,
             "progress_hooks": [self._progress_hook],
             "logger": QueueLogger(self.events),
             "embed_infojson": False,
-            "postprocessor_args": self._metadata_args(job.tags),
+            "postprocessor_args": postprocessor_args,
             "concurrent_fragment_downloads": 1,
             "retries": 15,
             "fragment_retries": 15,
@@ -5778,6 +6768,8 @@ class DownloaderApp(tk.Tk):
             "retry_sleep_functions": {"http": lambda n: min(2 * n, 15), "fragment": lambda n: min(2 * n, 15)},
             "ignore_no_formats_error": True,
         }
+        if job.output_type == OutputType.MP4:
+            opts["merge_output_format"] = "mp4"
         ffmpeg = self._find_ffmpeg()
         if ffmpeg:
             opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
@@ -5812,9 +6804,9 @@ class DownloaderApp(tk.Tk):
     def _metadata_args(self, tags: list[str]) -> dict[str, list[str]]:
         if not tags:
             return {}
-        # FFmpegMetadata supports extra ffmpeg args. This writes comma-separated keywords
-        # into the MP4 metadata when supported by the muxer/player.
-        return {"FFmpegMetadata": ["-metadata", f"keywords={','.join(tags)}"]}
+        # Apply extra keywords specifically to FFmpegMetadata's output command.
+        # yt-dlp normalizes postprocessor argument keys to lowercase.
+        return {"metadata+ffmpeg_o": ["-metadata", f"keywords={','.join(tags)}"]}
 
     def _progress_hook(self, data: dict[str, Any]) -> None:
         if self.cancel_requested:
@@ -5849,7 +6841,7 @@ class DownloaderApp(tk.Tk):
                 self.events.put(("progress", global_pct))
             else:
                 self.events.put(("progress", 100))
-            self.events.put(("status", "Download finished; converting/embedding metadata…"))
+            self.events.put(("status", "Download finished; finalizing output…"))
 
     def _pump_events(self) -> None:
         try:
@@ -5889,6 +6881,13 @@ class DownloaderApp(tk.Tk):
                 elif kind == "metadata":
                     if isinstance(payload, dict):
                         self._display_metadata(payload)
+                elif kind == "queued_preview":
+                    if isinstance(payload, dict) and isinstance(payload.get("job"), DownloadJob) and isinstance(payload.get("info"), dict):
+                        queued_job = payload["job"]
+                        if any(item is queued_job for item in self.pending_jobs):
+                            queued_job.preview_info = dict(payload["info"])
+                            if hasattr(self, "focus_run_deck"):
+                                self._refresh_focus_run_deck()
                 elif kind == "history_record":
                     if isinstance(payload, dict) and isinstance(payload.get("info"), dict):
                         output_dir = str(payload.get("output_dir") or "").strip()
@@ -6056,6 +7055,16 @@ def debug_preflight(url: str) -> int:
             f"exposed_max_height={max(exposed_heights) if exposed_heights else 'unknown'} "
             f"selected={plan.format_selector} output={plan.output_width or 'unknown'}x{plan.output_height or 'unknown'}"
         )
+        try:
+            audio_plan = build_mp3_export_plan(video_info)
+        except Exception as exc:
+            print(f"DEBUG_PREFLIGHT_AUDIO_FAILED id={video_info.get('id') or 'unknown'}: {type(exc).__name__}: {exc}")
+        else:
+            print(
+                f"DEBUG_PREFLIGHT_AUDIO id={video_info.get('id') or 'unknown'} "
+                f"selected={audio_plan.format_selector} source_codec={audio_plan.audio_codec} "
+                f"source_kbps={audio_plan.source_audio_kbps:.0f} target_kbps={audio_plan.audio_bitrate_kbps}"
+            )
     print(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
     return 0
 
