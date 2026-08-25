@@ -108,10 +108,17 @@ python -m PyInstaller `
   --clean `
   --windowed `
   --name "VODForge" `
+  --collect-all yt_dlp `
   @iconArgs `
   @versionFile `
   @addData `
   @addBinary `
   main.py
+
+$appBinary = Join-Path $PSScriptRoot "dist\VODForge\VODForge.exe"
+$smokeProcess = Start-Process -FilePath $appBinary -ArgumentList "--runtime-smoke" -Wait -PassThru
+if ($smokeProcess.ExitCode -ne 0) {
+  throw "Packaged VODForge runtime smoke failed with exit code $($smokeProcess.ExitCode)."
+}
 
 Write-Host "Built VODForge v$buildVersion`: dist\VODForge\VODForge.exe"

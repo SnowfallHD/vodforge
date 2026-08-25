@@ -17,6 +17,7 @@ from yt_downloader.app import (
     AUDIO_BITRATE,
     AUDIO_SAMPLE_RATE,
     DownloadJob,
+    DownloadOutcome,
     DownloaderApp,
     ExportMode,
     Mp3ExportSettings,
@@ -48,6 +49,7 @@ from yt_downloader.app import (
     run_cancellable_blocking_step,
     format_duration,
     iter_video_infos,
+    load_yt_dlp,
     package_downloaded_media_from_staging,
     append_batch_failure_report,
     apply_youtube_runtime_options,
@@ -56,6 +58,7 @@ from yt_downloader.app import (
     format_ytdlp_user_error,
     parse_url_list_text,
     diagnostics_dir,
+    download_bounded_url_bytes,
     bounded_window_size,
     download_layout_mode,
     bundled_asset_path,
@@ -75,19 +78,23 @@ from yt_downloader.app import (
     prepare_batch_item_url,
     prepare_custom_cover_art,
     playlist_folder_name,
+    process_download_from_preflight,
     run_ffprobe_json,
     runtime_version_command,
     save_thumbnail_image,
+    save_cached_thumbnail_image,
     save_custom_cached_thumbnail_image,
     staging_output_template,
     transcode_temp_paths,
     transcode_to_vod_streaming_settings,
+    terminate_and_reap_process,
     runtime_executable_candidates,
     video_list_row_values,
     video_file_name,
     video_output_dir,
     youtube_thumbnail_size,
     ytdlp_ffmpeg_location,
+    validate_output_artifact,
     write_compact_video_metadata,
 )
 
@@ -100,10 +107,49 @@ def test_platform_diagnostics_paths_follow_native_conventions(tmp_path: Path):
     )
 
 
+def test_diagnostics_writer_reuses_and_resets_its_line_buffered_sink(monkeypatch, tmp_path: Path):
+    log_path = tmp_path / "latest.log"
+    monkeypatch.setattr(app_module, "DIAGNOSTICS_LOG_PATH", log_path)
+
+    app_module.write_diagnostic("first")
+    first_handle = app_module._DIAGNOSTICS_LOG_HANDLE
+    app_module.write_diagnostic("second")
+
+    assert app_module._DIAGNOSTICS_LOG_HANDLE is first_handle
+    assert "first" in log_path.read_text(encoding="utf-8")
+    assert "second" in log_path.read_text(encoding="utf-8")
+
+    app_module.reset_diagnostics_log()
+    assert log_path.read_text(encoding="utf-8") == ""
+    app_module.write_diagnostic("after reset")
+    assert "after reset" in log_path.read_text(encoding="utf-8")
+    with app_module._DIAGNOSTICS_LOG_LOCK:
+        app_module._DIAGNOSTICS_LOG_HANDLE.close()
+        app_module._DIAGNOSTICS_LOG_HANDLE = None
+        app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
+
+
 def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")
     assert platform_font_families("linux") == ("TkDefaultFont", "TkFixedFont")
+
+
+def test_yt_dlp_loader_imports_once_and_reuses_the_module(monkeypatch):
+    sentinel = object()
+    calls: list[str] = []
+    monkeypatch.setattr(app_module, "yt_dlp", None)
+    monkeypatch.setattr(app_module, "YTDLP_IMPORT_ERROR", None)
+    monkeypatch.setattr(app_module, "_YTDLP_IMPORT_ATTEMPTED", False)
+    monkeypatch.setattr(
+        app_module.importlib,
+        "import_module",
+        lambda name: calls.append(name) or sentinel,
+    )
+
+    assert load_yt_dlp() is sentinel
+    assert load_yt_dlp() is sentinel
+    assert calls == ["yt_dlp"]
 
 
 def test_macos_uses_bundle_icns_without_a_runtime_png_override():
@@ -719,6 +765,51 @@ def test_package_downloaded_mp3_moves_only_the_single_audio_result(tmp_path: Pat
     assert not list(output_dir.rglob("*.jpg"))
 
 
+def test_atomic_package_failure_preserves_existing_valid_output(monkeypatch, tmp_path: Path):
+    output_dir = tmp_path / "downloads"
+    staging_dir = tmp_path / "staging"
+    staged_dir = staging_dir / "abc123"
+    staged_dir.mkdir(parents=True)
+    staged = staged_dir / "video [abc123].mp4"
+    staged.write_bytes(b"new output")
+    info = {"title": "Video", "id": "abc123", "uploader": "Creator"}
+    target = output_dir / "Creator" / "videos - no playlist" / "Video [abc123]" / "Video.mp4"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"known good output")
+
+    monkeypatch.setattr(app_module.os, "replace", lambda _source, _target: (_ for _ in ()).throw(OSError("disk unavailable")))
+
+    with pytest.raises(OSError, match="disk unavailable"):
+        package_downloaded_media_from_staging(staging_dir, output_dir, info)
+
+    assert target.read_bytes() == b"known good output"
+    assert staged.read_bytes() == b"new output"
+
+
+def test_cancel_barrier_prevents_atomic_commit_and_preserves_existing_output(tmp_path: Path):
+    output_dir = tmp_path / "downloads"
+    staging_dir = tmp_path / "staging"
+    staged_dir = staging_dir / "abc123"
+    staged_dir.mkdir(parents=True)
+    staged = staged_dir / "video [abc123].mp4"
+    staged.write_bytes(b"new output")
+    info = {"title": "Video", "id": "abc123", "uploader": "Creator"}
+    target = output_dir / "Creator" / "videos - no playlist" / "Video [abc123]" / "Video.mp4"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"known good output")
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        package_downloaded_media_from_staging(
+            staging_dir,
+            output_dir,
+            info,
+            control_check=lambda: (_ for _ in ()).throw(RuntimeError("cancelled")),
+        )
+
+    assert target.read_bytes() == b"known good output"
+    assert staged.read_bytes() == b"new output"
+
+
 def test_staging_output_template_never_targets_real_final_folders(tmp_path: Path):
     template = staging_output_template(tmp_path)
 
@@ -728,6 +819,45 @@ def test_staging_output_template_never_targets_real_final_folders(tmp_path: Path
     assert "video [%(id)s].%(ext)s" in template
 
 
+def test_download_reuses_preflight_result_without_mutating_it():
+    preflight = {
+        "id": "abc123",
+        "title": "Video",
+        "formats": [{"format_id": "137"}],
+        "requested_downloads": [{"filepath": "old"}],
+        "requested_formats": [{"format_id": "old"}],
+        "filepath": "old.mp4",
+        "__files_to_move": {"old": "new"},
+        "__postprocessors": ["old"],
+    }
+
+    copied_cookies: list[object] = []
+
+    class CookieJar:
+        def set_cookie(self, cookie):
+            copied_cookies.append(cookie)
+
+    class FakeYDL:
+        cookiejar = CookieJar()
+
+        def process_ie_result(self, info, *, download):
+            assert download is True
+            assert info["formats"] == [{"format_id": "137"}]
+            assert not ({"requested_downloads", "requested_formats", "filepath", "__files_to_move", "__postprocessors"} & info.keys())
+            return {**info, "downloaded": True}
+
+    session_cookie = object()
+    result = process_download_from_preflight(
+        FakeYDL(),
+        preflight,
+        session_cookies=(session_cookie,),
+    )
+
+    assert result["downloaded"] is True
+    assert preflight["requested_formats"] == [{"format_id": "old"}]
+    assert copied_cookies == [session_cookie]
+
+
 def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path: Path):
     Image = pytest.importorskip("PIL.Image")
     buf = BytesIO()
@@ -735,14 +865,18 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
     payload = buf.getvalue()
 
     class Response:
+        def __init__(self):
+            self.buffer = BytesIO(payload)
+            self.headers = {}
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
             return False
 
-        def read(self):
-            return payload
+        def read(self, size=-1):
+            return self.buffer.read(size)
 
     monkeypatch.setattr("yt_downloader.app.urllib.request.urlopen", lambda *_args, **_kwargs: Response())
 
@@ -752,6 +886,115 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
     assert sorted(p.name for p in tmp_path.iterdir()) == ["thumbnail.jpeg"]
     with Image.open(path) as image:
         assert image.format == "JPEG"
+
+
+def test_thumbnail_download_rejects_non_http_and_oversized_responses(monkeypatch):
+    with pytest.raises(RuntimeError, match="HTTP or HTTPS"):
+        download_bounded_url_bytes("file:///private/data")
+
+    class Response:
+        headers = {"Content-Length": "1001"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _size=-1):
+            raise AssertionError("an oversized declared response must not be read")
+
+    monkeypatch.setattr(app_module.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+
+    with pytest.raises(RuntimeError, match="safety limit"):
+        download_bounded_url_bytes("https://i.ytimg.com/oversized.jpg", max_bytes=1000)
+
+
+def test_thumbnail_download_enforces_bound_for_chunked_response(monkeypatch):
+    class Response:
+        headers = {}
+
+        def __init__(self):
+            self.buffer = BytesIO(b"x" * 1001)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, size=-1):
+            return self.buffer.read(size)
+
+    monkeypatch.setattr(app_module.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+
+    with pytest.raises(RuntimeError, match="safety limit"):
+        download_bounded_url_bytes("https://i.ytimg.com/chunked.jpg", max_bytes=1000)
+
+
+def test_thumbnail_decoder_rejects_excessive_decoded_dimensions(monkeypatch):
+    class OversizedImage:
+        size = (app_module.THUMBNAIL_MAX_DIMENSION + 1, 1)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def verify(self):
+            return None
+
+    monkeypatch.setattr(app_module.Image, "open", lambda *_args, **_kwargs: OversizedImage())
+
+    with pytest.raises(RuntimeError, match="safe preview limit"):
+        app_module.decode_bounded_thumbnail(b"compressed image")
+
+
+def test_private_thumbnail_cache_is_read_through_without_a_second_network_fetch(monkeypatch, tmp_path: Path):
+    info = {"id": "beat123", "thumbnail": "https://i.ytimg.com/beat123.jpg"}
+    cached = cached_thumbnail_path(info, data_dir=tmp_path)
+    assert cached is not None
+    cached.parent.mkdir(parents=True)
+    Image.new("RGB", (16, 9), "purple").save(cached, format="JPEG")
+    monkeypatch.setattr(
+        app_module,
+        "save_thumbnail_image",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("cache miss unexpectedly fetched the network")),
+    )
+
+    assert save_cached_thumbnail_image(info, data_dir=tmp_path) == cached
+
+
+def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(monkeypatch, tmp_path: Path):
+    info = {"id": "beat123", "thumbnail": "https://i.ytimg.com/beat123.jpg"}
+    destinations: list[Path] = []
+
+    def fake_save(output_dir, _info, *, filename):
+        destination = output_dir / filename
+        destinations.append(destination)
+        time.sleep(0.02)
+        Image.new("RGB", (16, 9), "purple").save(destination, format="JPEG")
+        return destination
+
+    monkeypatch.setattr(app_module, "save_thumbnail_image", fake_save)
+    results: list[Path | None] = []
+    threads = [
+        threading.Thread(target=lambda: results.append(save_cached_thumbnail_image(info, data_dir=tmp_path)))
+        for _ in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+
+    canonical = cached_thumbnail_path(info, data_dir=tmp_path)
+    assert canonical is not None
+    assert len(destinations) == 1
+    assert all(path != canonical and path.name.startswith(".") for path in destinations)
+    assert results == [canonical, canonical]
+    assert app_module.decode_bounded_thumbnail(canonical.read_bytes()).size == (16, 9)
+    assert not list(canonical.parent.glob(".*.tmp"))
 
 
 def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(tmp_path: Path):
@@ -785,17 +1028,19 @@ def test_custom_mp3_cover_embedding_is_atomic_and_marks_front_cover(monkeypatch,
     mp3.write_bytes(b"original mp3")
     cover.write_bytes(b"jpeg")
     commands: list[list[str]] = []
+    run_kwargs: dict[str, object] = {}
 
     class Result:
         returncode = 0
         stdout = "embedded"
 
-    def fake_run(command, **_kwargs):
+    def fake_run(command, **kwargs):
         commands.append(command)
+        run_kwargs.update(kwargs)
         Path(command[-1]).write_bytes(b"mp3 with custom cover")
         return Result()
 
-    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(app_module, "run_cancellable_process_capture", fake_run)
 
     result = embed_custom_mp3_cover_art(mp3, cover, "/bundle/ffmpeg")
 
@@ -803,10 +1048,11 @@ def test_custom_mp3_cover_embedding_is_atomic_and_marks_front_cover(monkeypatch,
     assert mp3.read_bytes() == b"mp3 with custom cover"
     assert len(commands) == 1
     command = commands[0]
-    assert command[:6] == ["/bundle/ffmpeg", "-y", "-i", str(mp3), "-i", str(cover)]
-    assert ["-map", "0:a:0"] == command[6:8]
+    assert command[:6] == ["/bundle/ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
+    assert ["-map", "0:a:0"] in [command[index : index + 2] for index in range(len(command) - 1)]
     assert "attached_pic" in command
     assert "comment=Cover (front)" in command
+    assert run_kwargs["timeout_seconds"] == app_module.FFMPEG_COVER_TIMEOUT_SECONDS
     assert not list(tmp_path.glob(".*.vodforge-cover-*.mp3"))
 
 
@@ -831,14 +1077,18 @@ def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch
     requested_urls: list[str] = []
 
     class Response:
+        def __init__(self):
+            self.buffer = BytesIO(payload)
+            self.headers = {}
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
             return False
 
-        def read(self):
-            return payload
+        def read(self, size=-1):
+            return self.buffer.read(size)
 
     def fake_urlopen(url, **_kwargs):
         requested_urls.append(url)
@@ -956,6 +1206,21 @@ def test_auto_source_selection_prefers_true_1080p_h264_when_effective_quality_wi
 
     assert selected is not None
     assert selected["format_id"] == "137"
+
+
+def test_video_source_prefers_direct_only_inside_existing_quality_window():
+    formats = [
+        {"format_id": "hls-best", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "tbr": 3000, "fps": 30, "protocol": "m3u8_native"},
+        {"format_id": "direct-low", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "tbr": 2400, "fps": 30, "protocol": "https"},
+    ]
+
+    assert choose_best_video_format(formats, max_height=1080)["format_id"] == "hls-best"
+
+    formats[1]["tbr"] = 2700
+    formats.append(
+        {"format_id": "dash-fragments", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "tbr": 2900, "fps": 30, "protocol": "http_dash_segments"}
+    )
+    assert choose_best_video_format(formats, max_height=1080)["format_id"] == "direct-low"
 
 
 def _summary_test_info() -> dict:
@@ -1353,6 +1618,367 @@ def test_transcode_uses_short_backend_temp_names_to_preserve_user_facing_title(m
     assert seen["kwargs"]["errors"] == "replace"
 
 
+def test_transcode_atomic_replace_failure_preserves_downloaded_source(monkeypatch, tmp_path: Path):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+
+    class FakePopen:
+        def __init__(self, command, **_kwargs):
+            Path(command[-1]).write_bytes(b"encoded output")
+            self.stdout = iter(["progress=end\n"])
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(app_module.os, "replace", lambda *_args: (_ for _ in ()).throw(OSError("commit failed")))
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        transcode_to_vod_streaming_settings(source, "ffmpeg")
+
+    assert source.read_bytes() == b"downloaded source"
+    assert not (tmp_path / "__vodforge-tmp.mp4").exists()
+
+
+def test_terminate_and_reap_escalates_from_terminate_to_kill():
+    calls: list[object] = []
+
+    class Process:
+        wait_calls = 0
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            calls.append("terminate")
+
+        def kill(self):
+            calls.append("kill")
+
+        def wait(self, *, timeout):
+            calls.append(("wait", timeout))
+            self.wait_calls += 1
+            if self.wait_calls == 1:
+                raise app_module.subprocess.TimeoutExpired("ffmpeg", timeout)
+            return -9
+
+    terminate_and_reap_process(Process(), timeout_seconds=0.01)
+
+    assert calls == ["terminate", ("wait", 0.01), "kill", ("wait", 0.01)]
+
+
+def test_live_child_stays_registered_when_exit_cannot_be_confirmed():
+    class Process:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            return None
+
+        def kill(self):
+            return None
+
+        def wait(self, *, timeout):
+            raise app_module.subprocess.TimeoutExpired("child", timeout)
+
+    process = Process()
+    app_module.register_active_child_process(process)
+    try:
+        assert app_module.finalize_active_child_process(process) is False
+        with app_module._ACTIVE_CHILD_PROCESS_LOCK:
+            assert process in app_module._ACTIVE_CHILD_PROCESSES
+    finally:
+        app_module.unregister_active_child_process(process)
+
+
+def test_yt_dlp_owned_subprocess_is_registered_and_reaped():
+    import yt_dlp.postprocessor.ffmpeg as ffmpeg_postprocessor
+
+    original_class = ffmpeg_postprocessor.Popen
+    observed: list[bool] = []
+
+    def operation():
+        assert ffmpeg_postprocessor.Popen is not original_class
+        process = ffmpeg_postprocessor.Popen(
+            [app_module.sys.executable, "-c", "import time; time.sleep(10)"],
+            stdout=app_module.subprocess.PIPE,
+            stderr=app_module.subprocess.PIPE,
+        )
+        with app_module._ACTIVE_CHILD_PROCESS_LOCK:
+            observed.append(process in app_module._ACTIVE_CHILD_PROCESSES)
+        app_module.terminate_and_reap_process(process, timeout_seconds=0.2)
+
+    app_module.run_tracked_ytdlp_operation(operation)
+
+    assert observed == [True]
+    assert ffmpeg_postprocessor.Popen is original_class
+    with app_module._ACTIVE_CHILD_PROCESS_LOCK:
+        assert not app_module._ACTIVE_CHILD_PROCESSES
+
+
+def test_cancelled_yt_dlp_operation_cannot_spawn_an_unowned_child():
+    import yt_dlp.postprocessor.ffmpeg as ffmpeg_postprocessor
+
+    checks = 0
+
+    def control_check():
+        nonlocal checks
+        checks += 1
+        if checks >= 2:
+            raise RuntimeError("cancelled")
+
+    def operation():
+        ffmpeg_postprocessor.Popen(
+            [app_module.sys.executable, "-c", "import time; time.sleep(10)"],
+            stdout=app_module.subprocess.PIPE,
+            stderr=app_module.subprocess.PIPE,
+        )
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        app_module.run_tracked_ytdlp_operation(
+            operation,
+            control_check=control_check,
+        )
+
+    assert checks >= 2
+    with app_module._ACTIVE_CHILD_PROCESS_LOCK:
+        assert not app_module._ACTIVE_CHILD_PROCESSES
+
+
+def test_tracked_ytdlp_operation_restores_popen_alias_imported_mid_operation():
+    import sys
+    import types
+    import yt_dlp.utils as ytdlp_utils
+
+    original_class = ytdlp_utils.Popen
+    synthetic_name = "yt_dlp.synthetic_vodforge_test"
+    synthetic = types.ModuleType(synthetic_name)
+
+    def operation():
+        synthetic.Popen = ytdlp_utils.Popen
+        sys.modules[synthetic_name] = synthetic
+        assert synthetic.Popen is not original_class
+
+    try:
+        app_module.run_tracked_ytdlp_operation(operation)
+        assert synthetic.Popen is original_class
+    finally:
+        sys.modules.pop(synthetic_name, None)
+
+
+def test_application_close_cancels_work_reaps_owned_child_then_destroys():
+    class Process:
+        returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+
+        def wait(self, *, timeout):
+            assert timeout == app_module.PROCESS_TERMINATE_TIMEOUT_SECONDS
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    class Value:
+        def __init__(self):
+            self.value = ""
+
+        def set(self, value):
+            self.value = value
+
+    class Button:
+        def config(self, **_kwargs):
+            return None
+
+    process = Process()
+    app_module.register_active_child_process(process)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._closing = False
+    app._close_terminator = None
+    app.cancel_requested = False
+    app.pending_jobs = [object()]
+    app.worker = None
+    app.status_var = Value()
+    app.download_button = Button()
+    app.cancel_button = Button()
+    app.skip_video_button = Button()
+    app.skip_url_button = Button()
+    callbacks: list[object] = []
+    destroyed: list[bool] = []
+    app.after = lambda _delay, callback: callbacks.append(callback)
+    app.destroy = lambda: destroyed.append(True)
+
+    app._request_application_close()
+    app._close_terminator.join(timeout=2)
+    callbacks.pop(0)()
+
+    assert app.cancel_requested is True
+    assert app.pending_jobs == []
+    assert process.poll() == -15
+    assert destroyed == [True]
+    with app_module._ACTIVE_CHILD_PROCESS_LOCK:
+        assert process not in app_module._ACTIVE_CHILD_PROCESSES
+
+
+def test_application_close_deadline_destroys_window_without_claiming_cleanup(monkeypatch):
+    class AliveWorker:
+        def is_alive(self):
+            return True
+
+    messages: list[str] = []
+    destroyed: list[bool] = []
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.worker = AliveWorker()
+    app._close_terminator = None
+    app._close_deadline = 0.0
+    app.destroy = lambda: destroyed.append(True)
+    monkeypatch.setattr(app_module, "write_diagnostic", messages.append)
+    monkeypatch.setattr(app_module, "terminate_all_active_child_processes", lambda **_kwargs: None)
+
+    app._finish_application_close_when_idle()
+
+    assert destroyed == [True]
+    assert any("cleanup could not be confirmed" in message for message in messages)
+
+
+def test_close_time_worker_error_is_logged_without_modal_or_new_queue_work(monkeypatch):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._closing = True
+    app.events = queue.Queue()
+    app.events.put(("error", "Download cancelled by user"))
+    logged: list[str] = []
+    scheduled: list[object] = []
+    app._append_log = logged.append
+    app.after = lambda _delay, callback: scheduled.append(callback)
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda *_args, **_kwargs: pytest.fail("close-time errors must not open a modal"),
+    )
+
+    app._pump_events()
+
+    assert logged == ["ERROR during application close: Download cancelled by user"]
+    assert len(scheduled) == 1
+
+
+def test_close_time_metadata_and_update_errors_do_not_open_modals(monkeypatch):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._closing = True
+    app.events = queue.Queue()
+    app.events.put(("metadata_error", "provider unavailable"))
+    app.events.put(("update_check_error", "release host unavailable"))
+    logged: list[str] = []
+    diagnostics: list[str] = []
+    scheduled: list[object] = []
+    app._append_log = logged.append
+    app.after = lambda _delay, callback: scheduled.append(callback)
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda *_args, **_kwargs: pytest.fail("close-time metadata errors must not open a modal"),
+    )
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showinfo",
+        lambda *_args, **_kwargs: pytest.fail("close-time update errors must not open a modal"),
+    )
+
+    app._pump_events()
+
+    assert logged == ["Metadata preview ended during application close: provider unavailable"]
+    assert diagnostics == ["update check ended during application close: release host unavailable"]
+    assert len(scheduled) == 1
+
+
+def test_transcode_cancellation_is_checked_while_ffmpeg_is_quiet(monkeypatch, tmp_path: Path):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+    terminated = threading.Event()
+    killed = threading.Event()
+
+    class BlockingOutput:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            terminated.wait(timeout=2)
+            raise StopIteration
+
+    class FakePopen:
+        def __init__(self, *_args, **_kwargs):
+            self.stdout = BlockingOutput()
+
+        def poll(self):
+            return None if not terminated.is_set() else -15
+
+        def terminate(self):
+            terminated.set()
+
+        def kill(self):
+            killed.set()
+            terminated.set()
+
+        def wait(self, timeout=None):
+            if timeout is not None and not terminated.wait(timeout=timeout):
+                raise app_module.subprocess.TimeoutExpired("ffmpeg", timeout)
+            return -15
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        transcode_to_vod_streaming_settings(
+            source,
+            "ffmpeg",
+            control_check=lambda: (_ for _ in ()).throw(RuntimeError("cancelled")),
+        )
+
+    assert terminated.is_set()
+    assert not killed.is_set()
+    assert source.read_bytes() == b"downloaded source"
+
+
+def test_transcode_rechecks_cancellation_after_encoder_output_closes(monkeypatch, tmp_path: Path):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+
+    class FakePopen:
+        def __init__(self, *_args, **_kwargs):
+            self.stdout = iter(())
+
+        def poll(self):
+            return -15
+
+        def terminate(self):
+            return None
+
+        def kill(self):
+            return None
+
+        def wait(self, timeout=None):
+            return -15
+
+    checks = 0
+
+    def control_check():
+        nonlocal checks
+        checks += 1
+        if checks >= 2:
+            raise RuntimeError("Download cancelled by user")
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        transcode_to_vod_streaming_settings(source, "ffmpeg", control_check=control_check)
+
+    assert source.read_bytes() == b"downloaded source"
+
+
 def test_ffprobe_json_uses_unicode_safe_decoding(monkeypatch, tmp_path: Path):
     video = tmp_path / "video.mp4"
     video.write_bytes(b"mp4")
@@ -1374,6 +2000,77 @@ def test_ffprobe_json_uses_unicode_safe_decoding(monkeypatch, tmp_path: Path):
     assert data["format"]["format_name"] == "mov,mp4,m4a"
     assert seen["kwargs"]["encoding"] == "utf-8"
     assert seen["kwargs"]["errors"] == "replace"
+    assert seen["kwargs"]["timeout"] == app_module.FFPROBE_TIMEOUT_SECONDS
+    assert "-show_entries" in seen["command"]
+    assert "-show_streams" not in seen["command"]
+
+
+def test_output_validator_accepts_expected_mp4_and_mp3_streams(tmp_path: Path):
+    mp4 = tmp_path / "video.mp4"
+    mp3 = tmp_path / "audio.mp3"
+    mp4.write_bytes(b"mp4 bytes")
+    mp3.write_bytes(b"mp3 bytes")
+    mp4_probe = {
+        "format": {"format_name": "mov,mp4,m4a", "duration": "60.0"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264"},
+            {"codec_type": "audio", "codec_name": "aac"},
+        ],
+    }
+    mp3_probe = {
+        "format": {"format_name": "mp3", "duration": "60.0"},
+        "streams": [{"codec_type": "audio", "codec_name": "mp3"}],
+    }
+
+    assert validate_output_artifact(mp4, OutputType.MP4, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp4_probe) is mp4_probe
+    assert validate_output_artifact(mp3, OutputType.MP3, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp3_probe) is mp3_probe
+
+
+@pytest.mark.parametrize(
+    ("probe", "message"),
+    [
+        (
+            {"format": {"format_name": "mov,mp4", "duration": "60"}, "streams": [{"codec_type": "video", "codec_name": "h264"}]},
+            "AAC audio",
+        ),
+        (
+            {"format": {"format_name": "mov,mp4", "duration": "60"}, "streams": [{"codec_type": "audio", "codec_name": "aac"}]},
+            "H.264 video",
+        ),
+        (
+            {"format": {"format_name": "mov,mp4", "duration": "20"}, "streams": [{"codec_type": "video", "codec_name": "h264"}, {"codec_type": "audio", "codec_name": "aac"}]},
+            "truncated",
+        ),
+    ],
+)
+def test_output_validator_rejects_invalid_or_truncated_mp4(tmp_path: Path, probe, message):
+    output = tmp_path / "video.mp4"
+    output.write_bytes(b"candidate")
+
+    with pytest.raises(RuntimeError, match=message):
+        validate_output_artifact(
+            output,
+            OutputType.MP4,
+            "ffprobe",
+            expected_duration_seconds=60,
+            ffprobe_data=probe,
+        )
+
+
+def test_output_validator_rejects_empty_and_wrong_codec_mp3(tmp_path: Path):
+    empty = tmp_path / "empty.mp3"
+    empty.touch()
+    with pytest.raises(RuntimeError, match="empty"):
+        validate_output_artifact(empty, OutputType.MP3, "ffprobe", ffprobe_data={})
+
+    output = tmp_path / "audio.mp3"
+    output.write_bytes(b"candidate")
+    probe = {
+        "format": {"format_name": "mp3", "duration": "10"},
+        "streams": [{"codec_type": "audio", "codec_name": "aac"}],
+    }
+    with pytest.raises(RuntimeError, match="valid MP3 audio"):
+        validate_output_artifact(output, OutputType.MP3, "ffprobe", ffprobe_data=probe)
 
 
 def test_cookiefile_option_is_only_added_when_user_enabled_cookies(tmp_path: Path):
@@ -1468,6 +2165,18 @@ def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_a
     assert choose_audio_bitrate_kbps(208) == 256
 
 
+def test_mp4_audio_source_does_not_trade_material_quality_for_direct_transport():
+    formats = [
+        {"format_id": "hls-best", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 160, "protocol": "m3u8_native"},
+        {"format_id": "direct-low", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 96, "protocol": "https"},
+    ]
+
+    assert choose_best_audio_format(formats)["format_id"] == "hls-best"
+
+    formats[1]["abr"] = 150
+    assert choose_best_audio_format(formats)["format_id"] == "direct-low"
+
+
 def test_library_media_filter_keeps_original_metadata_indices():
     items = [
         {"id": "old-defaults-to-mp4"},
@@ -1546,7 +2255,7 @@ def test_cleanup_legacy_encode_sidecars_removes_old_passlog_and_temp_files(tmp_p
     assert all(not path.exists() for path in leftovers)
 
 
-def test_transcode_accepts_valid_complete_output_when_ffmpeg_returns_nonzero_near_end(monkeypatch, tmp_path: Path):
+def test_transcode_rejects_nonzero_ffmpeg_exit_even_when_output_reaches_near_end(monkeypatch, tmp_path: Path):
     source = tmp_path / "video.mp4"
     source.write_bytes(b"original")
 
@@ -1563,16 +2272,10 @@ def test_transcode_accepts_valid_complete_output_when_ffmpeg_returns_nonzero_nea
             return 1
 
     monkeypatch.setattr("yt_downloader.app.subprocess.Popen", FakePopen)
-    monkeypatch.setattr("yt_downloader.app._ffprobe_for_ffmpeg", lambda _ffmpeg: "ffprobe")
-    monkeypatch.setattr(
-        "yt_downloader.app.run_ffprobe_json",
-        lambda _ffprobe, _path: {"format": {"duration": "10.0"}, "streams": [{"codec_type": "video"}, {"codec_type": "audio"}]},
-    )
+    with pytest.raises(RuntimeError, match="ffmpeg exited with code 1"):
+        transcode_to_vod_streaming_settings(source, "ffmpeg", duration_seconds=10.0, use_nvenc=True)
 
-    result = transcode_to_vod_streaming_settings(source, "ffmpeg", duration_seconds=10.0, use_nvenc=True)
-
-    assert result == source
-    assert source.read_bytes() == b"complete encoded output"
+    assert source.read_bytes() == b"original"
     assert not (tmp_path / "video.vodforge-cbr-tmp.mp4").exists()
     assert not (tmp_path / "video.pre-vodforge.mp4").exists()
 
@@ -1647,6 +2350,7 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
         processed.append(job.url)
         if "bad" in job.url:
             raise RuntimeError("bad video unavailable")
+        return DownloadOutcome(success_count=1)
 
     app._download_worker_single = fake_single
     job = DownloadJob(
@@ -1673,8 +2377,522 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
     report_text = report.read_text(encoding="utf-8")
     assert "https://www.youtube.com/watch?v=bad" in report_text
     assert "bad video unavailable" in report_text
-    done_messages = [payload for kind, payload in list(app.events.queue) if kind == "done"]
-    assert any("1 failed" in str(message) for message in done_messages)
+    partial_messages = [payload for kind, payload in list(app.events.queue) if kind == "partial"]
+    assert any("2 valid output(s)" in str(message) and "1 failed" in str(message) for message in partial_messages)
+    assert not any(kind == "done" for kind, _payload in list(app.events.queue))
+
+
+def test_batch_worker_never_reports_completion_when_every_url_fails(monkeypatch, tmp_path: Path):
+    report = tmp_path / "batch-url-failures.txt"
+    monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app._active_progress_context = None
+    app._download_worker_single = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("provider failure"))
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=bad1",
+        urls=["https://www.youtube.com/watch?v=bad1", "https://www.youtube.com/watch?v=bad2"],
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    app._download_worker(job)
+
+    events = list(app.events.queue)
+    assert any(kind == "error" and "no valid output" in str(payload).lower() for kind, payload in events)
+    assert not any(kind in {"done", "partial"} for kind, _payload in events)
+
+
+@pytest.mark.parametrize("successes_before_cancel", [0, 1])
+def test_batch_cancellation_reports_stopped_or_partial_truthfully(monkeypatch, tmp_path: Path, successes_before_cancel: int):
+    monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", tmp_path / "batch-url-failures.txt")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app._active_progress_context = None
+    calls = 0
+
+    def fake_single(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > successes_before_cancel:
+            raise RuntimeError("Download cancelled by user")
+        return DownloadOutcome(success_count=1)
+
+    app._download_worker_single = fake_single
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=one",
+        urls=["https://www.youtube.com/watch?v=one", "https://www.youtube.com/watch?v=two"],
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    app._download_worker(job)
+
+    events = list(app.events.queue)
+    expected_kind = "partial" if successes_before_cancel else "stopped"
+    assert any(kind == expected_kind and "cancel" in str(payload).lower() for kind, payload in events)
+    assert not any(kind in {"done", "error"} for kind, _payload in events)
+
+
+def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_path: Path):
+    preflight = {
+        "id": "abc123",
+        "title": "Fast Path",
+        "uploader": "Creator",
+        "webpage_url": "https://www.youtube.com/watch?v=abc123",
+        "duration": 30,
+        "formats": [
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 3000,
+                "fps": 30,
+                "protocol": "https",
+            },
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 128,
+                "asr": 48000,
+                "audio_channels": 2,
+                "protocol": "https",
+            },
+        ],
+    }
+    calls = {"extract": 0, "process": 0}
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, *, download):
+            assert download is False
+            calls["extract"] += 1
+            return dict(preflight)
+
+        def process_ie_result(self, info, *, download):
+            assert download is True
+            calls["process"] += 1
+            staged = Path(
+                self.opts["outtmpl"]
+                .replace("%(id)s", "abc123")
+                .replace("%(ext)s", "mp4")
+            )
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(b"downloaded media")
+            return dict(info)
+
+    class FakeYtDlp:
+        YoutubeDL = FakeYoutubeDL
+
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
+    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", lambda path, *_args, **_kwargs: path)
+    probe = {
+        "format": {"format_name": "mov,mp4,m4a", "duration": "30"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264"},
+            {"codec_type": "audio", "codec_name": "aac"},
+        ],
+    }
+    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    app._find_ffmpeg = lambda: "ffmpeg"
+    app._find_ffprobe = lambda: "ffprobe"
+    app._find_deno = lambda: None
+    job = DownloadJob(
+        url=preflight["webpage_url"],
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    outcome = app._download_worker_single(job)
+
+    expected = tmp_path / "Creator" / "videos - no playlist" / "Fast Path [abc123]" / "Fast Path.mp4"
+    assert calls == {"extract": 1, "process": 1}
+    assert outcome == DownloadOutcome(success_count=1)
+    assert expected.read_bytes() == b"downloaded media"
+    assert any(kind == "done" for kind, _payload in list(app.events.queue))
+
+
+def test_playlist_loads_cookie_source_once_and_reuses_memory_session(monkeypatch, tmp_path: Path):
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    session_cookie = object()
+    option_history: list[dict[str, object]] = []
+
+    def video_info(video_id: str) -> dict[str, object]:
+        return {
+            "id": video_id,
+            "title": f"Video {video_id}",
+            "uploader": "Creator",
+            "webpage_url": f"https://www.youtube.com/watch?v={video_id}",
+            "duration": 30,
+            "formats": [
+                {
+                    "format_id": "137",
+                    "height": 1080,
+                    "width": 1920,
+                    "ext": "mp4",
+                    "vcodec": "avc1.640028",
+                    "acodec": "none",
+                    "tbr": 3000,
+                    "fps": 30,
+                    "protocol": "https",
+                },
+                {
+                    "format_id": "251",
+                    "ext": "webm",
+                    "vcodec": "none",
+                    "acodec": "opus",
+                    "abr": 128,
+                    "asr": 48000,
+                    "audio_channels": 2,
+                    "protocol": "https",
+                },
+            ],
+        }
+
+    class CookieJar(list):
+        def set_cookie(self, cookie):
+            if cookie not in self:
+                self.append(cookie)
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+            option_history.append(dict(opts))
+            self.cookiejar = CookieJar([session_cookie] if "cookiefile" in opts else [])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, *, download):
+            assert download is False
+            assert session_cookie in self.cookiejar
+            if self.opts.get("extract_flat") == "in_playlist":
+                return {
+                    "id": "playlist",
+                    "title": "Playlist",
+                    "entries": [
+                        {"id": "one", "webpage_url": "https://www.youtube.com/watch?v=one"},
+                        {"id": "two", "webpage_url": "https://www.youtube.com/watch?v=two"},
+                    ],
+                }
+            return video_info("two" if "two" in url else "one")
+
+        def process_ie_result(self, info, *, download):
+            assert download is True
+            assert session_cookie in self.cookiejar
+            staged = Path(
+                self.opts["outtmpl"]
+                .replace("%(id)s", str(info["id"]))
+                .replace("%(ext)s", "mp4")
+            )
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(b"downloaded media")
+            return dict(info)
+
+    class FakeYtDlp:
+        YoutubeDL = FakeYoutubeDL
+
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
+    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", lambda path, *_args, **_kwargs: path)
+    monkeypatch.setattr(
+        app_module,
+        "validate_output_artifact",
+        lambda *_args, **_kwargs: {
+            "format": {"format_name": "mov,mp4,m4a", "duration": "30"},
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264"},
+                {"codec_type": "audio", "codec_name": "aac"},
+            ],
+        },
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    app._find_ffmpeg = lambda: "ffmpeg"
+    app._find_ffprobe = lambda: "ffprobe"
+    app._find_deno = lambda: None
+    job = DownloadJob(
+        url="https://www.youtube.com/playlist?list=playlist",
+        output_dir=tmp_path / "output",
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+        use_cookies=True,
+        cookie_file=cookie_file,
+    )
+
+    outcome = app._download_worker_single(job)
+
+    assert outcome == DownloadOutcome(success_count=2)
+    assert len(option_history) == 5
+    assert sum("cookiefile" in opts for opts in option_history) == 1
+    assert all("cookiesfrombrowser" not in opts for opts in option_history)
+
+
+def test_progress_hook_coalesces_high_frequency_updates(monkeypatch):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: 10.0)
+
+    for downloaded in range(1, 1001):
+        app._progress_hook(
+            {
+                "status": "downloading",
+                "downloaded_bytes": downloaded,
+                "total_bytes": 1000,
+                "speed": 1_000_000,
+                "eta": 1,
+                "filename": "sample.mp4",
+            }
+        )
+
+    events = list(app.events.queue)
+    assert len(events) == 6
+    assert sum(kind == "progress" for kind, _payload in events) == 2
+
+
+def test_queued_preview_worker_serializes_preview_fetches(tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.pending_jobs = []
+    app._queued_preview_requests = None
+    app._queued_preview_thread = None
+    active = 0
+    maximum_active = 0
+    completed = 0
+    lock = threading.Lock()
+
+    def fake_preview(_job):
+        nonlocal active, maximum_active, completed
+        with lock:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        time.sleep(0.005)
+        with lock:
+            active -= 1
+            completed += 1
+
+    app._queue_preview_worker = fake_preview
+    for index in range(12):
+        job = DownloadJob(
+            url=f"https://www.youtube.com/watch?v={index}",
+            output_dir=tmp_path,
+            output_type=OutputType.MP4,
+            quality_label="1080p Full HD",
+            export_mode=ExportMode.AUTO_CBR,
+            manual_settings=ManualExportSettings(),
+            mp3_settings=Mp3ExportSettings(),
+            single_video_only=True,
+            use_nvenc=False,
+            embed_thumbnail=False,
+            write_thumbnail=False,
+            embed_metadata=False,
+            write_info_json=False,
+            tags=[],
+        )
+        app.pending_jobs.append(job)
+        app._enqueue_queue_preview(job)
+
+    app._queued_preview_requests.join()
+
+    assert completed == 12
+    assert maximum_active == 1
+
+
+def test_provider_coordinator_defers_preview_for_primary_intent():
+    coordinator = app_module.ProviderNetworkCoordinator()
+    preview_started = threading.Event()
+    preview_finished = threading.Event()
+    coordinator.begin_primary()
+
+    def preview() -> None:
+        coordinator.run_preview(lambda: preview_started.set())
+        preview_finished.set()
+
+    thread = threading.Thread(target=preview)
+    thread.start()
+    assert not preview_started.wait(timeout=0.05)
+
+    coordinator.end_primary()
+    thread.join(timeout=1)
+
+    assert preview_started.is_set()
+    assert preview_finished.is_set()
+
+
+def test_abandoned_primary_operation_keeps_optional_preview_blocked():
+    coordinator = app_module.ProviderNetworkCoordinator()
+    primary_started = threading.Event()
+    release_primary = threading.Event()
+    preview_started = threading.Event()
+    coordinator.begin_primary()
+
+    def primary() -> None:
+        coordinator.run_primary(
+            lambda: (primary_started.set(), release_primary.wait(timeout=1))
+        )
+
+    primary_thread = threading.Thread(target=primary)
+    primary_thread.start()
+    assert primary_started.wait(timeout=1)
+    coordinator.end_primary()
+
+    preview_thread = threading.Thread(
+        target=lambda: coordinator.run_preview(lambda: preview_started.set())
+    )
+    preview_thread.start()
+    assert not preview_started.wait(timeout=0.05)
+
+    release_primary.set()
+    primary_thread.join(timeout=1)
+    preview_thread.join(timeout=1)
+
+    assert preview_started.is_set()
+
+
+def test_delayed_abandoned_primary_runner_waits_for_active_preview():
+    coordinator = app_module.ProviderNetworkCoordinator()
+    release_runner = threading.Event()
+    preview_started = threading.Event()
+    release_preview = threading.Event()
+    primary_started = threading.Event()
+    coordinator.begin_primary()
+
+    primary_thread = threading.Thread(
+        target=lambda: (
+            release_runner.wait(timeout=1),
+            coordinator.run_primary(lambda: primary_started.set()),
+        )
+    )
+    primary_thread.start()
+    coordinator.end_primary()
+
+    preview_thread = threading.Thread(
+        target=lambda: coordinator.run_preview(
+            lambda: (preview_started.set(), release_preview.wait(timeout=1))
+        )
+    )
+    preview_thread.start()
+    assert preview_started.wait(timeout=1)
+
+    release_runner.set()
+    assert not primary_started.wait(timeout=0.05)
+
+    release_preview.set()
+    preview_thread.join(timeout=1)
+    primary_thread.join(timeout=1)
+    assert primary_started.is_set()
+
+
+def test_queued_preview_request_cap_drops_only_optional_preview(tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    requests: queue.Queue[DownloadJob] = queue.Queue(maxsize=1)
+    existing = DownloadJob(
+        url="https://www.youtube.com/watch?v=existing",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+    incoming = app_module.replace(existing, url="https://www.youtube.com/watch?v=incoming")
+    requests.put(existing)
+    app._queued_preview_requests = requests
+
+    class AliveWorker:
+        def is_alive(self):
+            return True
+
+    app._queued_preview_thread = AliveWorker()
+
+    app._enqueue_queue_preview(incoming)
+
+    assert requests.qsize() == 1
+    assert requests.get_nowait() is existing
 
 
 def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings(monkeypatch, tmp_path: Path):

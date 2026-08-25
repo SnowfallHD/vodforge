@@ -72,6 +72,7 @@ fi
   --windowed \
   --onedir \
   --name "VODForge" \
+  --collect-all yt_dlp \
   --osx-bundle-identifier "com.snowfallhd.vodforge" \
   --icon "$icon_file" \
   --add-data "$build_version_file:." \

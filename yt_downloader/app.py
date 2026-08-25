@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import queue
@@ -13,6 +14,7 @@ import unicodedata
 import urllib.parse
 import urllib.request
 import uuid
+import warnings
 import webbrowser
 from datetime import datetime
 from dataclasses import dataclass, field, replace
@@ -56,13 +58,29 @@ except Exception:  # pragma: no cover - thumbnail preview becomes unavailable
     ImageOps = None
     ImageTk = None
 
-try:
-    import yt_dlp
-except Exception as exc:  # pragma: no cover - handled at runtime
-    yt_dlp = None
-    YTDLP_IMPORT_ERROR = exc
-else:
-    YTDLP_IMPORT_ERROR = None
+yt_dlp: Any | None = None
+YTDLP_IMPORT_ERROR: Exception | None = None
+_YTDLP_IMPORT_ATTEMPTED = False
+_YTDLP_IMPORT_LOCK = threading.Lock()
+
+
+def load_yt_dlp() -> Any | None:
+    """Load yt-dlp once, allowing the first window to paint without import latency."""
+    global yt_dlp, YTDLP_IMPORT_ERROR, _YTDLP_IMPORT_ATTEMPTED
+    if yt_dlp is not None or _YTDLP_IMPORT_ATTEMPTED:
+        return yt_dlp
+    with _YTDLP_IMPORT_LOCK:
+        if yt_dlp is not None or _YTDLP_IMPORT_ATTEMPTED:
+            return yt_dlp
+        try:
+            yt_dlp = importlib.import_module("yt_dlp")
+            YTDLP_IMPORT_ERROR = None
+        except Exception as exc:  # pragma: no cover - handled at runtime
+            YTDLP_IMPORT_ERROR = exc
+            yt_dlp = None
+        finally:
+            _YTDLP_IMPORT_ATTEMPTED = True
+    return yt_dlp
 
 
 def _format_selector(max_height: int) -> str:
@@ -77,6 +95,9 @@ def _format_selector(max_height: int) -> str:
 
 
 APP_NAME = "VODForge"
+PINNED_YTDLP_VERSION = "2026.8.19"
+PINNED_YTDLP_EJS_VERSION = "0.8.0"
+YTDLP_EJS_SOLVER_RESOURCES = ("core.min.js", "lib.min.js")
 WINDOWS_SAFE_PATH_LIMIT = 240
 ANALYSIS_TIMEOUT_SECONDS = 1800
 ANALYSIS_POLL_SECONDS = 0.1
@@ -89,6 +110,18 @@ STRICT_VIDEO_BITRATE_KBPS = 10000
 STRICT_AUDIO_BITRATE_KBPS = 320
 DEFAULT_MAX_HEIGHT = 1080
 THUMBNAIL_MAX_BYTES = 300 * 1024
+THUMBNAIL_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024
+THUMBNAIL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+THUMBNAIL_MAX_PIXELS = 16_000_000
+THUMBNAIL_MAX_DIMENSION = 8192
+FFPROBE_TIMEOUT_SECONDS = 30
+FFMPEG_COVER_TIMEOUT_SECONDS = 120
+PROCESS_TERMINATE_TIMEOUT_SECONDS = 5
+APPLICATION_CLOSE_TIMEOUT_SECONDS = 15
+PROGRESS_EVENT_INTERVAL_SECONDS = 0.10
+MAX_CONCURRENT_BLOCKING_ANALYSES = 2
+MAX_QUEUED_PREVIEW_REQUESTS = 64
+_BLOCKING_ANALYSIS_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_BLOCKING_ANALYSES)
 CLEAN_BITRATE_STEPS = [1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000, 12000, 14000, 24000, 45000, 68000]
 VIDEO_MINIMUMS_KBPS = {480: 1000, 720: 1500, 1080: 2000, 1440: 6000, 2160: 12000}
 VIDEO_CAPS_KBPS = {(480, 30): 2500, (720, 30): 5000, (1080, 30): 10000, (1080, 60): 14000, (1440, 30): 24000, (2160, 30): 45000, (2160, 60): 68000}
@@ -472,22 +505,46 @@ def probe_runtime_version(tool_name: str, executable: str) -> str:
 
 DIAGNOSTICS_LOG_PATH = diagnostics_dir() / "latest.log"
 BATCH_FAILURE_REPORT_PATH = diagnostics_dir() / "batch-url-failures.txt"
+_DIAGNOSTICS_LOG_LOCK = threading.RLock()
+_DIAGNOSTICS_LOG_HANDLE: Any | None = None
+_DIAGNOSTICS_LOG_HANDLE_PATH: Path | None = None
+_ACTIVE_CHILD_PROCESSES: set[Any] = set()
+_ACTIVE_CHILD_PROCESS_LOCK = threading.RLock()
+_CHILD_TERMINATION_LOCK = threading.RLock()
+_THUMBNAIL_CACHE_LOCKS = tuple(threading.RLock() for _ in range(64))
+_YTDLP_SUBPROCESS_TRACKING_LOCK = threading.RLock()
 
 
 def write_diagnostic(message: str) -> None:
+    global _DIAGNOSTICS_LOG_HANDLE, _DIAGNOSTICS_LOG_HANDLE_PATH
     try:
-        DIAGNOSTICS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().isoformat(timespec="milliseconds")
-        with DIAGNOSTICS_LOG_PATH.open("a", encoding="utf-8") as log:
-            log.write(f"[{timestamp}] {message}\n")
+        with _DIAGNOSTICS_LOG_LOCK:
+            if _DIAGNOSTICS_LOG_HANDLE is None or _DIAGNOSTICS_LOG_HANDLE_PATH != DIAGNOSTICS_LOG_PATH:
+                if _DIAGNOSTICS_LOG_HANDLE is not None:
+                    _DIAGNOSTICS_LOG_HANDLE.close()
+                DIAGNOSTICS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                _DIAGNOSTICS_LOG_HANDLE = DIAGNOSTICS_LOG_PATH.open(
+                    "a",
+                    encoding="utf-8",
+                    buffering=1,
+                )
+                _DIAGNOSTICS_LOG_HANDLE_PATH = DIAGNOSTICS_LOG_PATH
+            timestamp = datetime.now().isoformat(timespec="milliseconds")
+            _DIAGNOSTICS_LOG_HANDLE.write(f"[{timestamp}] {message}\n")
     except Exception:
         pass
 
 
 def reset_diagnostics_log() -> None:
+    global _DIAGNOSTICS_LOG_HANDLE, _DIAGNOSTICS_LOG_HANDLE_PATH
     try:
-        DIAGNOSTICS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DIAGNOSTICS_LOG_PATH.write_text("", encoding="utf-8")
+        with _DIAGNOSTICS_LOG_LOCK:
+            if _DIAGNOSTICS_LOG_HANDLE is not None:
+                _DIAGNOSTICS_LOG_HANDLE.close()
+            _DIAGNOSTICS_LOG_HANDLE = None
+            _DIAGNOSTICS_LOG_HANDLE_PATH = None
+            DIAGNOSTICS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            DIAGNOSTICS_LOG_PATH.write_text("", encoding="utf-8")
     except Exception:
         pass
 
@@ -544,18 +601,34 @@ def run_cancellable_blocking_step(
     worker can stop promptly and avoid looking hung.
     """
     results: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
+    started_at = time.monotonic()
+    deadline = started_at + timeout_seconds
+    next_wait_notice = started_at + wait_notice_seconds
+
+    while not _BLOCKING_ANALYSIS_SLOTS.acquire(timeout=min(poll_seconds, max(0.001, deadline - time.monotonic()))):
+        now = time.monotonic()
+        if cancel_requested():
+            raise RuntimeError(f"{label} cancelled by user")
+        if on_wait is not None and now >= next_wait_notice:
+            on_wait(now - started_at)
+            next_wait_notice = now + wait_notice_seconds
+        if now >= deadline:
+            raise TimeoutError(f"{label} timed out waiting for an analysis slot after {timeout_seconds:g} seconds")
 
     def runner() -> None:
         try:
             results.put(("ok", step()))
         except Exception as exc:
             results.put(("error", exc))
+        finally:
+            _BLOCKING_ANALYSIS_SLOTS.release()
 
     thread = threading.Thread(target=runner, daemon=True)
-    thread.start()
-    started_at = time.monotonic()
-    deadline = time.monotonic() + timeout_seconds
-    next_wait_notice = started_at + wait_notice_seconds
+    try:
+        thread.start()
+    except Exception:
+        _BLOCKING_ANALYSIS_SLOTS.release()
+        raise
     while True:
         try:
             kind, payload = results.get_nowait()
@@ -573,6 +646,67 @@ def run_cancellable_blocking_step(
         if kind == "error":
             raise payload
         return payload
+
+
+class ProviderNetworkCoordinator:
+    """Give primary downloads priority while bounding optional provider previews."""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._primary_intents = 0
+        self._primary_operations = 0
+        self._preview_active = False
+
+    def begin_primary(self, control_check: Any | None = None) -> None:
+        with self._condition:
+            self._primary_intents += 1
+            try:
+                while self._preview_active:
+                    if control_check is not None:
+                        control_check()
+                    self._condition.wait(timeout=ANALYSIS_POLL_SECONDS)
+            except Exception:
+                self._primary_intents -= 1
+                self._condition.notify_all()
+                raise
+
+    def end_primary(self) -> None:
+        with self._condition:
+            self._primary_intents = max(0, self._primary_intents - 1)
+            self._condition.notify_all()
+
+    def run_primary(self, step: Callable[[], Any]) -> Any:
+        with self._condition:
+            self._primary_operations += 1
+            while self._preview_active:
+                self._condition.wait(timeout=ANALYSIS_POLL_SECONDS)
+        try:
+            return step()
+        finally:
+            with self._condition:
+                self._primary_operations = max(0, self._primary_operations - 1)
+                self._condition.notify_all()
+
+    def run_preview(
+        self,
+        step: Callable[[], Any],
+        *,
+        should_abort: Callable[[], bool] | None = None,
+    ) -> tuple[bool, Any]:
+        with self._condition:
+            while self._primary_intents or self._primary_operations or self._preview_active:
+                if should_abort is not None and should_abort():
+                    return False, None
+                self._condition.wait(timeout=ANALYSIS_POLL_SECONDS)
+            if should_abort is not None and should_abort():
+                return False, None
+            self._preview_active = True
+        try:
+            return True, step()
+        finally:
+            with self._condition:
+                self._preview_active = False
+                self._condition.notify_all()
 
 
 THEME = {
@@ -778,6 +912,10 @@ def _is_hdr_format(fmt: dict[str, Any]) -> bool:
     return dynamic_range not in {"", "SDR"} or "smpte2084" in color_transfer or "arib" in color_transfer
 
 
+def _is_single_file_http_transport(fmt: dict[str, Any]) -> bool:
+    return str(fmt.get("protocol") or "").strip().lower() in {"http", "https"}
+
+
 def choose_best_video_format(formats: list[dict[str, Any]], max_height: int = DEFAULT_MAX_HEIGHT) -> dict[str, Any] | None:
     """Select the best video-only format, with progressively relaxed filters.
 
@@ -809,23 +947,20 @@ def choose_best_video_format(formats: list[dict[str, Any]], max_height: int = DE
             effective = kbps * video_codec_multiplier(fmt.get("vcodec")) if kbps > 0 else 1.0
             # Prefer direct https downloads over HLS/m3u8 streams (which download
             # as hundreds of fragments and are much slower for large videos).
-            is_direct = str(fmt.get("protocol", "")).startswith("http")
+            is_direct = _is_single_file_http_transport(fmt)
             candidates.append((height, effective, kbps or 1.0, fmt.get("ext") == "mp4", str(fmt.get("vcodec") or "").startswith("avc"), is_direct, fmt))
         if not candidates:
             return None
         target_height = 1080 if any(item[0] == 1080 for item in candidates) and max_height >= 1080 else max(item[0] for item in candidates)
         same_res = [item for item in candidates if item[0] == target_height]
-        # Prefer direct https downloads over HLS/m3u8 streams. Direct formats
-        # download as single files; m3u8 streams download as hundreds of
-        # fragments and are much slower. If any direct format exists at the
-        # target resolution, exclude m3u8 formats before the closeness filter
-        # so the direct format isn't rejected for having a slightly lower
-        # reported bitrate.
-        direct_candidates = [item for item in same_res if item[5]]
-        if direct_candidates:
-            same_res = direct_candidates
         best_effective = max(item[1] for item in same_res)
         close = [item for item in same_res if item[1] >= best_effective * 0.85]
+        # Prefer a single-file HTTP source only inside the quality-equivalent
+        # window the selector already permits. Never trade a materially better
+        # HLS source for throughput.
+        direct_close = [item for item in close if item[5]]
+        if direct_close:
+            close = direct_close
         # Sort: avc codec first, then effective bitrate, then raw, then ext
         return max(close, key=lambda item: (item[4], item[1], item[2], item[3]))[6]
 
@@ -890,13 +1025,18 @@ def choose_best_audio_format(formats: list[dict[str, Any]], *, prefer_quality: b
             channels = int(_num(fmt.get("audio_channels") or fmt.get("channels"), 2))
             sample_rate = int(_num(fmt.get("asr"), 0))
             effective = (kbps or 1.0) * audio_codec_multiplier(fmt.get("acodec"))
-            is_direct = str(fmt.get("protocol", "")).startswith("http")
+            is_direct = _is_single_file_http_transport(fmt)
             candidates.append((effective, channels >= 2, sample_rate >= 48000, fmt.get("ext") in {"m4a", "mp4", "webm"}, is_direct, fmt))
         if not candidates:
             return None
         if prefer_quality:
             return max(candidates, key=lambda item: (item[0], item[1], item[2], item[4], item[3]))[5]
-        return max(candidates, key=lambda item: (item[4], item[0], item[1], item[2], item[3]))[5]
+        best_effective = max(item[0] for item in candidates)
+        close = [item for item in candidates if item[0] >= best_effective * 0.85]
+        direct_close = [item for item in close if item[4]]
+        if direct_close:
+            close = direct_close
+        return max(close, key=lambda item: (item[0], item[1], item[2], item[3]))[5]
 
     result = _select()
     if result:
@@ -1799,6 +1939,42 @@ def iter_video_infos(info: dict[str, Any]) -> list[dict[str, Any]]:
     return [info]
 
 
+def process_download_from_preflight(
+    ydl: Any,
+    preflight_info: dict[str, Any],
+    *,
+    session_cookies: tuple[Any, ...] = (),
+    control_check: Any | None = None,
+) -> Any:
+    """Download a freshly extracted result without asking the provider to extract it again."""
+    seed_ytdlp_session_cookies(ydl, session_cookies)
+    reusable = dict(preflight_info)
+    for transient_key in (
+        "requested_downloads",
+        "requested_formats",
+        "filepath",
+        "__files_to_move",
+        "__postprocessors",
+    ):
+        reusable.pop(transient_key, None)
+    return run_tracked_ytdlp_operation(
+        lambda: ydl.process_ie_result(reusable, download=True),
+        control_check=control_check,
+    )
+
+
+def seed_ytdlp_session_cookies(ydl: Any, session_cookies: tuple[Any, ...]) -> None:
+    cookiejar = getattr(ydl, "cookiejar", None)
+    set_cookie = getattr(cookiejar, "set_cookie", None)
+    if callable(set_cookie):
+        for cookie in session_cookies:
+            set_cookie(cookie)
+
+
+def snapshot_ytdlp_session_cookies(ydl: Any) -> tuple[Any, ...]:
+    return tuple(getattr(ydl, "cookiejar", ()) or ())
+
+
 def safe_metadata_filename(info: dict[str, Any]) -> str:
     return "metadata.json"
 
@@ -1847,10 +2023,14 @@ def _find_staged_media_file(staging_dir: Path, video_id: str, *, expected_extens
     candidates = [
         path
         for path in staging_dir.rglob(f"*{video_id}*")
-        if path.is_file() and path.suffix.lower() in allowed
+        if path.is_file() and path.suffix.lower() in allowed and path.stat().st_size > 0
     ]
     if not candidates:
-        candidates = [path for path in staging_dir.rglob("*") if path.is_file() and path.suffix.lower() in allowed]
+        candidates = [
+            path
+            for path in staging_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in allowed and path.stat().st_size > 0
+        ]
     if not candidates:
         return None
     return max(candidates, key=lambda path: (path.stat().st_mtime, path.stat().st_size))
@@ -1861,14 +2041,13 @@ def video_file_name(info: dict[str, Any], ext: str) -> str:
     return f"{title}{ext}"
 
 
-def package_downloaded_media_from_staging(
+def collect_staged_media_files(
     staging_dir: Path,
-    output_dir: Path,
     info: dict[str, Any],
     *,
-    expected_extension: str | None = None,
-) -> list[Path]:
-    packaged: list[Path] = []
+    expected_extension: str,
+) -> list[tuple[dict[str, Any], Path]]:
+    collected: list[tuple[dict[str, Any], Path]] = []
     for video in iter_video_infos(info):
         video_id = str(video.get("id") or "").strip()
         if not video_id:
@@ -1878,8 +2057,29 @@ def package_downloaded_media_from_staging(
             video_id,
             expected_extension=expected_extension,
         ) or _find_staged_media_file(staging_dir, video_id, expected_extension=expected_extension)
-        if not staged:
-            continue
+        if staged is not None:
+            collected.append((video, staged))
+    return collected
+
+
+def package_downloaded_media_from_staging(
+    staging_dir: Path,
+    output_dir: Path,
+    info: dict[str, Any],
+    *,
+    expected_extension: str | None = None,
+    staged_media: list[tuple[dict[str, Any], Path]] | None = None,
+    control_check: Any | None = None,
+) -> list[Path]:
+    packaged: list[Path] = []
+    if staged_media is None:
+        extensions = [expected_extension] if expected_extension else list(STAGED_MEDIA_EXTENSIONS)
+        staged_media = []
+        for extension in extensions:
+            staged_media.extend(collect_staged_media_files(staging_dir, info, expected_extension=extension))
+            if staged_media:
+                break
+    for video, staged in staged_media:
         ext = expected_extension.lower() if expected_extension else staged.suffix.lower()
         target_file_name = video_file_name(video, ext)
         target_dir = resolved_video_output_dir(output_dir, video, target_file_name)
@@ -1903,9 +2103,11 @@ def package_downloaded_media_from_staging(
         target_dir.mkdir(parents=True, exist_ok=True)
         remember_video_output_dir(video, target_dir)
         target = target_dir / target_file_name
-        if target.exists():
-            target.unlink()
-        shutil.move(str(staged), str(target))
+        if control_check is not None:
+            control_check()
+        # Staging lives below output_dir, so this is a same-volume atomic commit.
+        # os.replace preserves an existing valid target if the commit itself fails.
+        os.replace(staged, target)
         packaged.append(target)
     return packaged
 
@@ -1947,7 +2149,7 @@ def build_vod_ffmpeg_command(
         "-x264-params", "nal-hrd=cbr:force-cfr=1",
     ]
     return [
-        ffmpeg, "-y", "-i", str(source),
+        ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "warning", "-i", str(source),
         "-map", "0:v:0",
         "-map", "0:a:0?",
         *video_args,
@@ -1981,25 +2183,53 @@ def cleanup_legacy_encode_sidecars(video_path: Path) -> None:
             sidecar.unlink(missing_ok=True)
 
 
-def run_ffprobe_json(ffprobe: str, path: Path) -> dict[str, Any]:
+def run_ffprobe_json(
+    ffprobe: str,
+    path: Path,
+    *,
+    timeout_seconds: float = FFPROBE_TIMEOUT_SECONDS,
+    control_check: Any | None = None,
+) -> dict[str, Any]:
     startupinfo = None
     creationflags = 0
     if sys.platform.startswith("win"):
         startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    result = subprocess.run(
-        [ffprobe, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        startupinfo=startupinfo,
-        creationflags=creationflags,
-    )
-    return json.loads(result.stdout or "{}")
+    command = [
+        ffprobe,
+        "-v", "error",
+        "-print_format", "json",
+        "-show_entries",
+        "format=format_name,size,duration:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate,pix_fmt,profile,sample_rate,channels",
+        str(path),
+    ]
+    if control_check is None:
+        result = subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+    else:
+        result = run_cancellable_process_capture(
+            command,
+            timeout_seconds=timeout_seconds,
+            control_check=control_check,
+            check=True,
+            startupinfo=startupinfo,
+            creationflags=creationflags,
+        )
+    data = json.loads(result.stdout or "{}")
+    if not isinstance(data, dict):
+        raise RuntimeError("ffprobe returned an invalid top-level result")
+    return data
 
 
 def _ffprobe_for_ffmpeg(ffmpeg: str) -> str | None:
@@ -2012,33 +2242,265 @@ def _ffprobe_for_ffmpeg(ffmpeg: str) -> str | None:
     return shutil.which("ffprobe")
 
 
-def _ffprobe_duration_seconds(ffprobe: str, path: Path) -> float | None:
+def validate_output_artifact(
+    path: Path,
+    output_type: OutputType,
+    ffprobe: str,
+    *,
+    expected_duration_seconds: float | None = None,
+    require_audio: bool = True,
+    ffprobe_data: dict[str, Any] | None = None,
+    control_check: Any | None = None,
+) -> dict[str, Any]:
+    """Fail closed unless a final artifact has the required streams and duration."""
     try:
-        data = run_ffprobe_json(ffprobe, path)
-    except Exception:
-        return None
-    streams = data.get("streams") if isinstance(data, dict) else None
-    if not any(isinstance(stream, dict) and stream.get("codec_type") == "video" for stream in (streams or [])):
-        return None
+        if not path.is_file() or path.stat().st_size <= 0:
+            raise RuntimeError("the output file is missing or empty")
+    except OSError as exc:
+        raise RuntimeError(f"the output file could not be read: {exc}") from exc
+
     try:
-        duration = float(((data.get("format") or {}) if isinstance(data, dict) else {}).get("duration") or 0)
-    except (TypeError, ValueError):
-        return None
-    return duration if duration > 0 else None
+        data = (
+            ffprobe_data
+            if ffprobe_data is not None
+            else run_ffprobe_json(ffprobe, path, control_check=control_check)
+        )
+    except Exception as exc:
+        raise RuntimeError(f"ffprobe could not validate the output: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("ffprobe returned malformed output metadata")
+
+    streams = [stream for stream in data.get("streams") or [] if isinstance(stream, dict)]
+    fmt = data.get("format") if isinstance(data.get("format"), dict) else {}
+    container_tokens = {token.strip().lower() for token in str(fmt.get("format_name") or "").split(",") if token.strip()}
+    try:
+        duration = float(fmt.get("duration") or 0)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("the output duration is missing or invalid") from exc
+    if duration <= 0:
+        raise RuntimeError("the output duration is missing or zero")
+    if expected_duration_seconds and expected_duration_seconds > 0:
+        tolerance = max(2.0, expected_duration_seconds * 0.02)
+        if duration + tolerance < expected_duration_seconds:
+            raise RuntimeError(
+                f"the output is truncated ({duration:.2f}s versus {expected_duration_seconds:.2f}s expected)"
+            )
+
+    audio_streams = [stream for stream in streams if stream.get("codec_type") == "audio"]
+    if output_type == OutputType.MP3:
+        if "mp3" not in container_tokens:
+            raise RuntimeError(f"the output container is not MP3 ({','.join(sorted(container_tokens)) or 'unknown'})")
+        if not any(str(stream.get("codec_name") or "").lower() == "mp3" for stream in audio_streams):
+            raise RuntimeError("the MP3 output does not contain a valid MP3 audio stream")
+        return data
+
+    video_streams = [stream for stream in streams if stream.get("codec_type") == "video"]
+    if not ({"mp4", "mov"} & container_tokens):
+        raise RuntimeError(f"the output container is not MP4 ({','.join(sorted(container_tokens)) or 'unknown'})")
+    if not any(str(stream.get("codec_name") or "").lower() == "h264" for stream in video_streams):
+        raise RuntimeError("the MP4 output does not contain the required H.264 video stream")
+    if require_audio and not any(str(stream.get("codec_name") or "").lower() == "aac" for stream in audio_streams):
+        raise RuntimeError("the MP4 output does not contain the required AAC audio stream")
+    return data
 
 
-def _nonzero_transcode_output_is_usable(temp_output: Path, ffmpeg: str, expected_duration_seconds: float | None) -> bool:
-    if not temp_output.exists() or temp_output.stat().st_size <= 0:
-        return False
-    if not expected_duration_seconds or expected_duration_seconds <= 0:
-        return False
-    ffprobe = _ffprobe_for_ffmpeg(ffmpeg)
-    if not ffprobe:
-        return False
-    output_duration = _ffprobe_duration_seconds(ffprobe, temp_output)
-    if output_duration is None:
-        return False
-    return output_duration >= expected_duration_seconds * 0.98
+def terminate_and_reap_process(process: Any, *, timeout_seconds: float = PROCESS_TERMINATE_TIMEOUT_SECONDS) -> None:
+    """Stop a child process without leaving an encoder writing after cleanup."""
+    with _CHILD_TERMINATION_LOCK:
+        poll = getattr(process, "poll", None)
+        if callable(poll) and poll() is not None:
+            return
+        try:
+            process.terminate()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=timeout_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            process.kill()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Child process did not stop after terminate and kill requests") from exc
+
+
+def register_active_child_process(process: Any) -> None:
+    with _ACTIVE_CHILD_PROCESS_LOCK:
+        _ACTIVE_CHILD_PROCESSES.add(process)
+
+
+def unregister_active_child_process(process: Any) -> None:
+    with _ACTIVE_CHILD_PROCESS_LOCK:
+        _ACTIVE_CHILD_PROCESSES.discard(process)
+
+
+def child_process_has_exited(process: Any, *, confirmed_exited: bool = False) -> bool:
+    if confirmed_exited:
+        return True
+    poll = getattr(process, "poll", None)
+    return bool(callable(poll) and poll() is not None)
+
+
+def finalize_active_child_process(process: Any, *, confirmed_exited: bool = False) -> bool:
+    """Release process ownership only after exit is positively confirmed.
+
+    If an exceptional path leaves a child alive, retain it in the registry so
+    application-close cleanup can retry instead of losing ownership of a writer.
+    """
+    if child_process_has_exited(process, confirmed_exited=confirmed_exited):
+        unregister_active_child_process(process)
+        return True
+    try:
+        terminate_and_reap_process(process)
+    except Exception as exc:
+        write_diagnostic(f"active child process remains live after cleanup attempt: {type(exc).__name__}: {exc}")
+    if child_process_has_exited(process):
+        unregister_active_child_process(process)
+        return True
+    write_diagnostic("active child process remains registered because exit could not be confirmed")
+    return False
+
+
+def terminate_all_active_child_processes(*, deadline_monotonic: float | None = None) -> None:
+    with _ACTIVE_CHILD_PROCESS_LOCK:
+        active = tuple(_ACTIVE_CHILD_PROCESSES)
+    for process in active:
+        timeout_seconds = PROCESS_TERMINATE_TIMEOUT_SECONDS
+        if deadline_monotonic is not None:
+            remaining = deadline_monotonic - time.monotonic()
+            if remaining <= 0:
+                write_diagnostic("active child process cleanup deadline reached before every child was reaped")
+                break
+            timeout_seconds = max(0.01, min(timeout_seconds, remaining / 2))
+        try:
+            terminate_and_reap_process(process, timeout_seconds=timeout_seconds)
+        except Exception as exc:
+            write_diagnostic(f"active child process cleanup failed: {type(exc).__name__}: {exc}")
+        finally:
+            poll = getattr(process, "poll", None)
+            if callable(poll) and poll() is not None:
+                unregister_active_child_process(process)
+
+
+def tracked_ytdlp_popen_class(base_class: type, control_check: Any | None = None) -> type:
+    """Wrap yt-dlp's process class so every provider-owned child remains ours to reap."""
+
+    class VODForgeTrackedPopen(base_class):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            register_active_child_process(self)
+            if control_check is not None:
+                try:
+                    control_check()
+                except Exception:
+                    finalize_active_child_process(self)
+                    raise
+
+        def wait(self, *args: Any, **kwargs: Any) -> Any:
+            result = super().wait(*args, **kwargs)
+            unregister_active_child_process(self)
+            return result
+
+        def communicate(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                return super().communicate(*args, **kwargs)
+            finally:
+                if child_process_has_exited(self):
+                    unregister_active_child_process(self)
+
+        def __exit__(self, *args: Any, **kwargs: Any) -> Any:
+            try:
+                return super().__exit__(*args, **kwargs)
+            finally:
+                finalize_active_child_process(self)
+
+    VODForgeTrackedPopen.__name__ = "VODForgeTrackedYtDlpPopen"
+    return VODForgeTrackedPopen
+
+
+def run_tracked_ytdlp_operation(step: Callable[[], Any], *, control_check: Any | None = None) -> Any:
+    """Run one serialized yt-dlp operation with all of its imported Popen aliases tracked."""
+    with _YTDLP_SUBPROCESS_TRACKING_LOCK:
+        utils_module = importlib.import_module("yt_dlp.utils")
+        original_class = getattr(utils_module, "Popen")
+        tracked_class = tracked_ytdlp_popen_class(original_class, control_check)
+        for module_name, module in tuple(sys.modules.items()):
+            if module is None or not (module_name == "yt_dlp" or module_name.startswith("yt_dlp.")):
+                continue
+            if getattr(module, "Popen", None) is original_class:
+                setattr(module, "Popen", tracked_class)
+        try:
+            if control_check is not None:
+                control_check()
+            return step()
+        finally:
+            # Include modules imported during the operation; they may have
+            # copied the temporarily patched class from yt_dlp.utils.
+            for module_name, module in tuple(sys.modules.items()):
+                if module is None or not (module_name == "yt_dlp" or module_name.startswith("yt_dlp.")):
+                    continue
+                if getattr(module, "Popen", None) is tracked_class:
+                    setattr(module, "Popen", original_class)
+
+
+def run_cancellable_process_capture(
+    command: list[str],
+    *,
+    timeout_seconds: float,
+    control_check: Any | None = None,
+    check: bool = False,
+    stderr_to_stdout: bool = False,
+    startupinfo: Any | None = None,
+    creationflags: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    """Capture a bounded child process while polling app cancellation."""
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        startupinfo=startupinfo,
+        creationflags=creationflags,
+    )
+    register_active_child_process(process)
+    deadline = time.monotonic() + timeout_seconds
+    confirmed_exited = False
+    try:
+        while True:
+            if control_check is not None:
+                try:
+                    control_check()
+                except Exception:
+                    terminate_and_reap_process(process)
+                    raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                terminate_and_reap_process(process)
+                raise subprocess.TimeoutExpired(command, timeout_seconds)
+            try:
+                stdout, stderr = process.communicate(timeout=min(0.10, remaining))
+                confirmed_exited = True
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        result = subprocess.CompletedProcess(command, process.returncode, stdout or "", stderr or "")
+        if check and result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                command,
+                output=result.stdout,
+                stderr=result.stderr,
+            )
+        return result
+    finally:
+        finalize_active_child_process(process, confirmed_exited=confirmed_exited)
 
 
 def transcode_temp_paths(video_path: Path) -> tuple[Path, Path]:
@@ -2078,6 +2540,8 @@ def transcode_to_vod_streaming_settings(
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
+    process: Any | None = None
+    process_confirmed_exited = False
     try:
         command = build_vod_ffmpeg_command(
             ffmpeg,
@@ -2100,18 +2564,34 @@ def transcode_to_vod_streaming_settings(
             startupinfo=startupinfo,
             creationflags=creationflags,
         )
+        register_active_child_process(process)
         output_lines: list[str] = []
         assert process.stdout is not None
-        for line in process.stdout:
+        output_queue: queue.Queue[str | None] = queue.Queue()
+
+        def read_encoder_output() -> None:
+            try:
+                for output_line in process.stdout:
+                    output_queue.put(output_line)
+            finally:
+                output_queue.put(None)
+
+        output_reader = threading.Thread(target=read_encoder_output, daemon=True)
+        output_reader.start()
+        while True:
             if control_check is not None:
                 try:
                     control_check()
                 except Exception:
-                    try:
-                        process.terminate()
-                    except Exception:
-                        pass
+                    terminate_and_reap_process(process)
+                    output_reader.join(timeout=PROCESS_TERMINATE_TIMEOUT_SECONDS)
                     raise
+            try:
+                line = output_queue.get(timeout=0.10)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
             text_line = line.strip()
             if text_line:
                 output_lines.append(text_line)
@@ -2124,28 +2604,34 @@ def transcode_to_vod_streaming_settings(
                         progress_callback(fraction)
                     except (TypeError, ValueError, ZeroDivisionError):
                         pass
+        if control_check is not None:
+            control_check()
         return_code = process.wait()
+        process_confirmed_exited = True
+        output_reader.join(timeout=1)
         if return_code != 0:
             tail = "\n".join(output_lines[-40:])
-            if _nonzero_transcode_output_is_usable(temp_output, ffmpeg, duration_seconds):
-                write_diagnostic(
-                    f"ffmpeg exited with code {return_code} for {path.name}, "
-                    "but the temporary output validated close to source duration; accepting output"
-                )
-            else:
-                raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}; ffmpeg exited with code {return_code}: {tail[-4000:]}")
+            raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}; ffmpeg exited with code {return_code}: {tail[-4000:]}")
+        if not temp_output.is_file() or temp_output.stat().st_size <= 0:
+            raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}; FFmpeg produced no usable output")
         if progress_callback:
             progress_callback(1.0)
-        path.replace(backup)
-        temp_output.replace(path)
+        # The downloaded source and temp live in the per-job staging directory.
+        # Replacing in place is atomic and leaves the source intact if commit fails.
+        os.replace(temp_output, path)
         backup.unlink(missing_ok=True)
         return path
     except Exception as exc:
-        if temp_output.exists():
-            temp_output.unlink()
+        try:
+            temp_output.unlink(missing_ok=True)
+        except OSError as cleanup_exc:
+            write_diagnostic(f"transcode temp cleanup failed for {temp_output}: {cleanup_exc}")
         if isinstance(exc, RuntimeError):
             raise
         raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}: {exc}") from exc
+    finally:
+        if process is not None:
+            finalize_active_child_process(process, confirmed_exited=process_confirmed_exited)
 
 
 def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX_BYTES) -> None:
@@ -2190,6 +2676,66 @@ def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX
     path.write_bytes(best_data)
 
 
+def download_bounded_url_bytes(
+    url: str,
+    *,
+    timeout_seconds: float = 30,
+    max_bytes: int = THUMBNAIL_DOWNLOAD_MAX_BYTES,
+) -> bytes:
+    """Read an HTTP(S) asset with a hard memory bound, including chunked responses."""
+    parsed = urllib.parse.urlparse(str(url))
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise RuntimeError("Thumbnail URLs must use HTTP or HTTPS")
+    with urllib.request.urlopen(url, timeout=timeout_seconds) as response:
+        headers = getattr(response, "headers", None)
+        content_length = headers.get("Content-Length") if headers is not None else None
+        if content_length:
+            try:
+                if int(content_length) > max_bytes:
+                    raise RuntimeError(f"Thumbnail response exceeds the {max_bytes}-byte safety limit")
+            except ValueError:
+                pass
+        payload = bytearray()
+        while True:
+            chunk = response.read(min(THUMBNAIL_DOWNLOAD_CHUNK_BYTES, max_bytes + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
+            if len(payload) > max_bytes:
+                raise RuntimeError(f"Thumbnail response exceeds the {max_bytes}-byte safety limit")
+        return bytes(payload)
+
+
+def decode_bounded_thumbnail(data: bytes) -> Any:
+    """Decode remote thumbnail bytes without allowing compressed pixel bombs."""
+    if Image is None:
+        raise RuntimeError("Pillow is required to validate thumbnail dimensions")
+    from io import BytesIO
+
+    try:
+        with warnings.catch_warnings():
+            decompression_warning = getattr(Image, "DecompressionBombWarning", Warning)
+            warnings.simplefilter("error", decompression_warning)
+            with Image.open(BytesIO(data)) as source:
+                width, height = source.size
+                if (
+                    width <= 0
+                    or height <= 0
+                    or width > THUMBNAIL_MAX_DIMENSION
+                    or height > THUMBNAIL_MAX_DIMENSION
+                    or width * height > THUMBNAIL_MAX_PIXELS
+                ):
+                    raise RuntimeError("Thumbnail dimensions exceed the safe preview limit")
+                source.verify()
+            with Image.open(BytesIO(data)) as source:
+                source.load()
+                return source.copy()
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"Thumbnail image is invalid or unsafe: {exc}") from exc
+
+
 def save_thumbnail_image(output_dir: Path, info: dict[str, Any], *, filename: str = "thumbnail.jpeg") -> Path | None:
     thumb = best_thumbnail_for_download(info)
     url = str((thumb or {}).get("url") or "")
@@ -2197,16 +2743,13 @@ def save_thumbnail_image(output_dir: Path, info: dict[str, Any], *, filename: st
         return None
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / filename
-    with urllib.request.urlopen(url, timeout=30) as response:
-        data = response.read()
+    data = download_bounded_url_bytes(url)
     if Image is None:
         if len(data) > THUMBNAIL_MAX_BYTES:
             raise RuntimeError("Pillow is required to enforce the 300 KB thumbnail limit")
         path.write_bytes(data)
         return path
-    from io import BytesIO
-
-    image = Image.open(BytesIO(data)).convert("RGB")
+    image = decode_bounded_thumbnail(data).convert("RGB")
     _save_jpeg_under_size(image, path)
     return path
 
@@ -2239,14 +2782,45 @@ def prune_thumbnail_cache(cache_dir: Path, *, max_items: int = THUMBNAIL_CACHE_M
             continue
 
 
+def thumbnail_cache_lock(path: Path) -> threading.RLock:
+    slot = int(hashlib.sha256(str(path).encode("utf-8", errors="replace")).hexdigest()[:8], 16)
+    return _THUMBNAIL_CACHE_LOCKS[slot % len(_THUMBNAIL_CACHE_LOCKS)]
+
+
 def save_cached_thumbnail_image(info: dict[str, Any], *, data_dir: Path | None = None) -> Path | None:
     path = cached_thumbnail_path(info, data_dir=data_dir)
     if path is None:
         return None
-    saved = save_thumbnail_image(path.parent, info, filename=path.name)
-    if saved is not None:
-        prune_thumbnail_cache(saved.parent)
-    return saved
+    with thumbnail_cache_lock(path):
+        try:
+            if path.is_file() and 0 < path.stat().st_size <= THUMBNAIL_MAX_BYTES:
+                if Image is not None:
+                    cached_image = decode_bounded_thumbnail(path.read_bytes())
+                    cached_image.close()
+                path.touch(exist_ok=True)
+                return path
+        except Exception:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.tmp")
+        try:
+            saved = save_thumbnail_image(temporary.parent, info, filename=temporary.name)
+            if saved is None:
+                return None
+            if Image is not None:
+                cached_image = decode_bounded_thumbnail(saved.read_bytes())
+                cached_image.close()
+            os.replace(saved, path)
+            prune_thumbnail_cache(path.parent)
+            return path
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def save_custom_cached_thumbnail_image(
@@ -2262,13 +2836,24 @@ def save_custom_cached_thumbnail_image(
     source_path = validate_custom_cover_art(source_path)
     if Image is None or ImageOps is None:
         raise RuntimeError("Pillow is required to cache custom cover art.")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(source_path) as source:
-        normalized = ImageOps.exif_transpose(source).convert("RGB")
-        normalized.thumbnail((1600, 1600), getattr(Image, "Resampling", Image).LANCZOS)
-        _save_jpeg_under_size(normalized, destination)
-    prune_thumbnail_cache(destination.parent)
-    return destination
+    with thumbnail_cache_lock(destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(f".{destination.stem}.{uuid.uuid4().hex}.tmp")
+        try:
+            with Image.open(source_path) as source:
+                normalized = ImageOps.exif_transpose(source).convert("RGB")
+                normalized.thumbnail((1600, 1600), getattr(Image, "Resampling", Image).LANCZOS)
+                _save_jpeg_under_size(normalized, temporary)
+            cached_image = decode_bounded_thumbnail(temporary.read_bytes())
+            cached_image.close()
+            os.replace(temporary, destination)
+            prune_thumbnail_cache(destination.parent)
+            return destination
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def validate_custom_cover_art(path: Path) -> Path:
@@ -2312,7 +2897,13 @@ def prepare_custom_cover_art(source_path: Path, staging_dir: Path) -> Path:
     return destination
 
 
-def embed_custom_mp3_cover_art(mp3_path: Path, cover_path: Path, ffmpeg: str) -> Path:
+def embed_custom_mp3_cover_art(
+    mp3_path: Path,
+    cover_path: Path,
+    ffmpeg: str,
+    *,
+    control_check: Any | None = None,
+) -> Path:
     """Atomically attach a normalized custom front cover to one MP3."""
     mp3_path = Path(mp3_path)
     cover_path = Path(cover_path)
@@ -2324,6 +2915,10 @@ def embed_custom_mp3_cover_art(mp3_path: Path, cover_path: Path, ffmpeg: str) ->
     command = [
         ffmpeg,
         "-y",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
         "-i",
         str(mp3_path),
         "-i",
@@ -2357,22 +2952,22 @@ def embed_custom_mp3_cover_art(mp3_path: Path, cover_path: Path, ffmpeg: str) ->
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        result = subprocess.run(
+        result = run_cancellable_process_capture(
             command,
+            timeout_seconds=FFMPEG_COVER_TIMEOUT_SECONDS,
+            control_check=control_check,
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            stderr_to_stdout=True,
             startupinfo=startupinfo,
             creationflags=creationflags,
         )
         if result.returncode != 0 or not temporary.is_file() or temporary.stat().st_size <= 0:
             detail = next((line.strip() for line in reversed(result.stdout.splitlines()) if line.strip()), "FFmpeg did not produce an output file")
             raise RuntimeError(f"Custom cover art could not be embedded: {detail}")
-        temporary.replace(mp3_path)
+        os.replace(temporary, mp3_path)
         return mp3_path
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Custom cover art embedding timed out before FFmpeg completed") from exc
     finally:
         try:
             temporary.unlink(missing_ok=True)
@@ -2460,6 +3055,22 @@ class DownloadJob:
     cookie_browser: str | None = None
     batch_mode: bool = False
     preview_info: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class DownloadOutcome:
+    success_count: int = 0
+    failure_count: int = 0
+    skipped_count: int = 0
+    sidecar_failure_count: int = 0
+
+    def combined_with(self, other: "DownloadOutcome") -> "DownloadOutcome":
+        return DownloadOutcome(
+            success_count=self.success_count + other.success_count,
+            failure_count=self.failure_count + other.failure_count,
+            skipped_count=self.skipped_count + other.skipped_count,
+            sidecar_failure_count=self.sidecar_failure_count + other.sidecar_failure_count,
+        )
 
 
 def browser_cookie_value(label_or_value: str | None) -> str | None:
@@ -3142,10 +3753,7 @@ class DownloaderApp(tk.Tk):
         reset_diagnostics_log()
         write_diagnostic(f"app start: name={APP_NAME} frozen={getattr(sys, 'frozen', False)} executable={sys.executable} argv={sys.argv}")
         write_diagnostic(f"diagnostics log path: {DIAGNOSTICS_LOG_PATH}")
-        if yt_dlp is not None:
-            write_diagnostic(f"yt-dlp version: {getattr(yt_dlp.version, '__version__', 'unknown')}")
-        else:
-            write_diagnostic(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
+        write_diagnostic("yt-dlp import deferred until after the first window paint")
         try:
             configure_windows_app_identity()
         except (AttributeError, OSError) as exc:
@@ -3179,6 +3787,9 @@ class DownloaderApp(tk.Tk):
         self.cancel_requested = False
         self.skip_video_requested = False
         self.skip_url_requested = False
+        self._closing = False
+        self._close_terminator: threading.Thread | None = None
+        self._close_deadline: float | None = None
 
         self.url_var = tk.StringVar()
         self.url_list_file_var = tk.StringVar(value="No URL list loaded")
@@ -3225,12 +3836,15 @@ class DownloaderApp(tk.Tk):
         self.last_output_dirs: list[Path] = []
         self.video_output_dirs_by_id: dict[str, Path] = {}
         self._active_progress_context: tuple[int, int, float, float] | None = None
+        self._provider_network = ProviderNetworkCoordinator()
 
         self._apply_theme()
         self._build_ui()
         self._load_download_history()
         self._check_runtime()
         self.after(100, self._pump_events)
+        self.after(25, self._start_ytdlp_preload)
+        self.protocol("WM_DELETE_WINDOW", self._request_application_close)
         if bool(getattr(sys, "frozen", False)):
             self._schedule_auto_update_check(AUTO_UPDATE_INITIAL_DELAY_MS)
 
@@ -5544,7 +6158,7 @@ class DownloaderApp(tk.Tk):
         self._refresh_focus_run_deck()
 
     def _check_runtime(self) -> None:
-        if YTDLP_IMPORT_ERROR is not None:
+        if _YTDLP_IMPORT_ATTEMPTED and YTDLP_IMPORT_ERROR is not None:
             self._append_log(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
             self.download_button.config(state="disabled")
         ffmpeg = self._find_ffmpeg()
@@ -5556,6 +6170,17 @@ class DownloaderApp(tk.Tk):
         else:
             self._append_log(f"FFmpeg found: {ffmpeg}")
         self._append_log(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
+
+    def _start_ytdlp_preload(self) -> None:
+        threading.Thread(target=self._preload_ytdlp_worker, daemon=True).start()
+
+    def _preload_ytdlp_worker(self) -> None:
+        module = load_yt_dlp()
+        if module is None:
+            self.events.put(("runtime_error", f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}"))
+            return
+        version = getattr(getattr(module, "version", None), "__version__", "unknown")
+        write_diagnostic(f"yt-dlp version: {version}")
 
     def _schedule_auto_update_check(self, delay_ms: int = AUTO_UPDATE_INTERVAL_MS) -> None:
         if not bool(getattr(sys, "frozen", False)):
@@ -5915,7 +6540,7 @@ class DownloaderApp(tk.Tk):
                 messagebox.showerror(APP_NAME, single_item_error)
                 return
             url = clean_single_video_url(url)
-        if yt_dlp is None:
+        if load_yt_dlp() is None:
             messagebox.showerror(APP_NAME, f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
             return
         if hasattr(self, "preview_metadata_button"):
@@ -5924,10 +6549,30 @@ class DownloaderApp(tk.Tk):
         output_type = self._selected_output_type()
         threading.Thread(target=self._metadata_worker, args=(url, output_type, ignore_playlists), daemon=True).start()
 
+    def _provider_network_coordinator(self) -> ProviderNetworkCoordinator:
+        coordinator = self.__dict__.get("_provider_network")
+        if coordinator is None:
+            coordinator = ProviderNetworkCoordinator()
+            self._provider_network = coordinator
+        return coordinator
+
     def _metadata_worker(self, url: str, output_type: OutputType, ignore_playlists: bool = False) -> None:
-        assert yt_dlp is not None
+        ytdlp_module = load_yt_dlp()
+        if ytdlp_module is None:
+            self.events.put(("metadata_error", f"Metadata fetch failed: yt-dlp import failed: {YTDLP_IMPORT_ERROR}"))
+            self.events.put(("metadata_fetch_done", None))
+            return
         try:
-            opts = {"quiet": True, "skip_download": True, "noplaylist": ignore_playlists, "extract_flat": False, "logger": QueueLogger(self.events)}
+            opts = {
+                "quiet": True,
+                "skip_download": True,
+                "noplaylist": ignore_playlists,
+                "extract_flat": False,
+                "logger": QueueLogger(self.events),
+                "socket_timeout": 15,
+                "retries": 2,
+                "extractor_retries": 2,
+            }
             use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
             apply_ytdlp_cookie_options(
                 opts,
@@ -5940,8 +6585,26 @@ class DownloaderApp(tk.Tk):
                 opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
             deno = self._find_deno()
             apply_youtube_runtime_options(opts, deno_path=deno)
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            def extract_metadata() -> Any:
+                def extract() -> Any:
+                    with ytdlp_module.YoutubeDL(opts) as ydl:
+                        return ydl.extract_info(url, download=False)
+
+                def control_check() -> None:
+                    if self.__dict__.get("_closing", False):
+                        raise RuntimeError("Metadata preview cancelled during application close")
+
+                return run_tracked_ytdlp_operation(
+                    extract,
+                    control_check=control_check,
+                )
+
+            ran, info = self._provider_network_coordinator().run_preview(
+                extract_metadata,
+                should_abort=lambda: bool(self.__dict__.get("_closing", False)),
+            )
+            if not ran:
+                return
             if isinstance(info, dict):
                 info = mark_metadata_output_type(info, output_type)
             self.events.put(("metadata", info))
@@ -5950,9 +6613,38 @@ class DownloaderApp(tk.Tk):
         finally:
             self.events.put(("metadata_fetch_done", None))
 
+    def _enqueue_queue_preview(self, job: DownloadJob) -> None:
+        requests = getattr(self, "_queued_preview_requests", None)
+        worker = getattr(self, "_queued_preview_thread", None)
+        if requests is None:
+            requests = queue.Queue(maxsize=MAX_QUEUED_PREVIEW_REQUESTS)
+            self._queued_preview_requests = requests
+        try:
+            requests.put_nowait(job)
+        except queue.Full:
+            write_diagnostic(
+                f"queued preview skipped: request cap {MAX_QUEUED_PREVIEW_REQUESTS} reached; media run remains queued"
+            )
+            return
+        if worker is None or not worker.is_alive():
+            worker = threading.Thread(target=self._queued_preview_loop, daemon=True)
+            self._queued_preview_thread = worker
+            worker.start()
+
+    def _queued_preview_loop(self) -> None:
+        requests: queue.Queue[DownloadJob] = self._queued_preview_requests
+        while True:
+            job = requests.get()
+            try:
+                if any(item is job for item in self.pending_jobs):
+                    self._queue_preview_worker(job)
+            finally:
+                requests.task_done()
+
     def _queue_preview_worker(self, job: DownloadJob) -> None:
         """Fetch one queued run's display metadata without downloading its media."""
-        if yt_dlp is None:
+        ytdlp_module = load_yt_dlp()
+        if ytdlp_module is None:
             return
         try:
             opts: dict[str, Any] = {
@@ -5963,6 +6655,9 @@ class DownloaderApp(tk.Tk):
                 "extract_flat": False,
                 "ignore_no_formats_error": True,
                 "logger": QueueLogger(None, diagnostic_prefix="queue preview yt-dlp"),
+                "socket_timeout": 15,
+                "retries": 2,
+                "extractor_retries": 2,
             }
             apply_ytdlp_cookie_options(
                 opts,
@@ -5974,19 +6669,38 @@ class DownloaderApp(tk.Tk):
             if ffmpeg:
                 opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
             apply_youtube_runtime_options(opts, deno_path=self._find_deno())
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                extracted = ydl.extract_info(job.url, download=False)
-            if not isinstance(extracted, dict):
-                return
-            items = iter_video_infos(mark_metadata_output_type(extracted, job.output_type))
-            preview = dict(items[0] if items else extracted)
-            cached = (
-                save_custom_cached_thumbnail_image(preview, job.mp3_settings.custom_cover_art_path)
-                if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None
-                else save_cached_thumbnail_image(preview)
+            def fetch_preview() -> dict[str, Any] | None:
+                def extract() -> Any:
+                    with ytdlp_module.YoutubeDL(opts) as ydl:
+                        return ydl.extract_info(job.url, download=False)
+
+                def control_check() -> None:
+                    if self.__dict__.get("_closing", False) or not any(
+                        item is job for item in self.pending_jobs
+                    ):
+                        raise RuntimeError("Queued preview is no longer needed")
+
+                extracted = run_tracked_ytdlp_operation(extract, control_check=control_check)
+                if not isinstance(extracted, dict):
+                    return None
+                items = iter_video_infos(mark_metadata_output_type(extracted, job.output_type))
+                preview = dict(items[0] if items else extracted)
+                cached = (
+                    save_custom_cached_thumbnail_image(preview, job.mp3_settings.custom_cover_art_path)
+                    if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None
+                    else save_cached_thumbnail_image(preview)
+                )
+                if cached is not None:
+                    preview["preview_thumbnail_path"] = str(cached)
+                return preview
+
+            pending = lambda: any(item is job for item in self.pending_jobs)
+            ran, preview = self._provider_network_coordinator().run_preview(
+                fetch_preview,
+                should_abort=lambda: bool(self.__dict__.get("_closing", False)) or not pending(),
             )
-            if cached is not None:
-                preview["preview_thumbnail_path"] = str(cached)
+            if not ran or not isinstance(preview, dict) or not pending():
+                return
             self.events.put(("queued_preview", {"job": job, "info": preview}))
         except Exception as exc:
             write_diagnostic(f"queued run preview unavailable for {job.url}: {type(exc).__name__}: {exc}")
@@ -6276,6 +6990,7 @@ class DownloaderApp(tk.Tk):
         self._delete_focus_native_images(*old_native)
 
     def _load_thumbnail_file(self, path: Path) -> None:
+        self._thumbnail_request_id = getattr(self, "_thumbnail_request_id", 0) + 1
         if Image is None or ImageTk is None:
             self.thumbnail_label.config(text=f"Saved thumbnail:\n{path}")
             return
@@ -6295,12 +7010,59 @@ class DownloaderApp(tk.Tk):
         if Image is None or ImageTk is None:
             self.thumbnail_label.config(text=f"Thumbnail URL:\n{url}")
             return
-        try:
-            with urllib.request.urlopen(url, timeout=15) as response:
-                data = response.read()
-            from io import BytesIO
+        self._thumbnail_request_id = getattr(self, "_thumbnail_request_id", 0) + 1
+        request_id = self._thumbnail_request_id
+        requests = getattr(self, "_thumbnail_preview_requests", None)
+        worker = getattr(self, "_thumbnail_preview_thread", None)
+        if requests is None:
+            requests = queue.Queue(maxsize=1)
+            self._thumbnail_preview_requests = requests
+        while True:
+            try:
+                requests.put_nowait((request_id, url))
+                break
+            except queue.Full:
+                try:
+                    requests.get_nowait()
+                    requests.task_done()
+                except queue.Empty:
+                    continue
+        if worker is None or not worker.is_alive():
+            worker = threading.Thread(target=self._thumbnail_preview_loop, daemon=True)
+            self._thumbnail_preview_thread = worker
+            worker.start()
+        self.thumbnail_label.config(text="Loading thumbnail…")
 
-            image = Image.open(BytesIO(data))
+    def _thumbnail_preview_loop(self) -> None:
+        requests: queue.Queue[tuple[int, str]] = self._thumbnail_preview_requests
+        while True:
+            request_id, url = requests.get()
+            try:
+                ran, data = self._provider_network_coordinator().run_preview(
+                    lambda: download_bounded_url_bytes(url, timeout_seconds=15),
+                    should_abort=lambda: (
+                        bool(self.__dict__.get("_closing", False))
+                        or request_id != getattr(self, "_thumbnail_request_id", 0)
+                    ),
+                )
+                if not ran:
+                    continue
+                self.events.put(("thumbnail_preview_result", {"id": request_id, "url": url, "data": data}))
+            except Exception as exc:
+                self.events.put(("thumbnail_preview_result", {"id": request_id, "url": url, "error": str(exc)}))
+            finally:
+                requests.task_done()
+
+    def _display_thumbnail_preview_result(self, payload: dict[str, Any]) -> None:
+        if int(payload.get("id") or -1) != getattr(self, "_thumbnail_request_id", 0):
+            return
+        error = str(payload.get("error") or "").strip()
+        url = str(payload.get("url") or "")
+        if error:
+            self.thumbnail_label.config(text=f"Thumbnail preview failed:\n{error}\n\nURL:\n{url}")
+            return
+        try:
+            image = decode_bounded_thumbnail(bytes(payload.get("data") or b""))
             if hasattr(self, "focus_run_deck"):
                 self._render_focus_thumbnail_surfaces(image, placeholder=False)
                 return
@@ -6390,7 +7152,7 @@ class DownloaderApp(tk.Tk):
                 self._append_log(f"Queued {job.output_type.value} run: {job.url}")
                 self._refresh_focus_run_deck()
                 self.download_button.configure(text="Queue run", state="normal")
-                threading.Thread(target=self._queue_preview_worker, args=(job,), daemon=True).start()
+                self._enqueue_queue_preview(job)
             self._reset_source_input_after_send()
             return
 
@@ -6403,6 +7165,7 @@ class DownloaderApp(tk.Tk):
         self.cancel_requested = False
         self.skip_video_requested = False
         self.skip_url_requested = False
+        self._last_progress_event_at = 0.0
         self.progress_var.set(0)
         self.status_var.set("Starting…")
         if hasattr(self, "focus_active_title_var"):
@@ -6451,15 +7214,56 @@ class DownloaderApp(tk.Tk):
     def _cancel(self) -> None:
         self.cancel_requested = True
         self.status_var.set("Cancel requested; waiting for current step to stop…")
+        threading.Thread(target=terminate_all_active_child_processes, daemon=True).start()
+
+    def _request_application_close(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        self._close_deadline = time.monotonic() + APPLICATION_CLOSE_TIMEOUT_SECONDS
+        self.cancel_requested = True
+        self.pending_jobs.clear()
+        write_diagnostic("application close requested; cancelling active work before destroying the window")
+        try:
+            self.status_var.set("Closing safely; stopping active media work…")
+            self.download_button.config(state="disabled")
+            self.cancel_button.config(state="disabled")
+            self.skip_video_button.config(state="disabled")
+            self.skip_url_button.config(state="disabled")
+        except (AttributeError, tk.TclError):
+            pass
+        self._close_terminator = threading.Thread(target=terminate_all_active_child_processes, daemon=True)
+        self._close_terminator.start()
+        self.after(50, self._finish_application_close_when_idle)
+
+    def _finish_application_close_when_idle(self) -> None:
+        worker_alive = self.worker is not None and self.worker.is_alive()
+        terminator_alive = self._close_terminator is not None and self._close_terminator.is_alive()
+        if worker_alive or terminator_alive:
+            deadline = self.__dict__.get("_close_deadline")
+            if deadline is None or time.monotonic() < deadline:
+                self.after(100, self._finish_application_close_when_idle)
+                return
+            write_diagnostic(
+                "application close deadline exceeded; destroying the window while daemon work remains active; "
+                "cleanup could not be confirmed"
+            )
+            terminate_all_active_child_processes(deadline_monotonic=time.monotonic() + 0.5)
+            self.destroy()
+            return
+        write_diagnostic("active media work and child cleanup confirmed stopped; destroying application window")
+        self.destroy()
 
     def _skip_video(self) -> None:
         self.skip_video_requested = True
         self.status_var.set("Skip video requested; moving to the next playlist item after current step stops…")
+        threading.Thread(target=terminate_all_active_child_processes, daemon=True).start()
 
     def _skip_url(self) -> None:
         self.skip_url_requested = True
         self.skip_video_requested = True
         self.status_var.set("Skip URL requested; moving to the next batch URL after current step stops…")
+        threading.Thread(target=terminate_all_active_child_processes, daemon=True).start()
 
     def _download_worker(self, job: DownloadJob) -> None:
         urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
@@ -6473,6 +7277,7 @@ class DownloaderApp(tk.Tk):
                     self.events.put(("log", f"Batch URL normalized to single video: {single_url}"))
             self._download_worker_single(replace(job, url=single_url, urls=[single_url], single_video_only=single_video_only))
             return
+        batch_outcome = DownloadOutcome()
         try:
             reset_batch_failure_report()
             failures: list[tuple[str, str]] = []
@@ -6487,7 +7292,12 @@ class DownloaderApp(tk.Tk):
                     self.events.put(("log", f"Batch URL {index}: stripped playlist/mix context; processing the pasted video only."))
                 write_diagnostic(f"batch URL {index} of {len(urls)} start: {item_url} single_video_only={item_single_video_only}")
                 try:
-                    self._download_worker_single(replace(job, url=item_url, urls=[item_url], single_video_only=item_single_video_only), emit_done=False, re_raise=True)
+                    item_outcome = self._download_worker_single(
+                        replace(job, url=item_url, urls=[item_url], single_video_only=item_single_video_only),
+                        emit_done=False,
+                        re_raise=True,
+                    )
+                    batch_outcome = batch_outcome.combined_with(item_outcome)
                 except Exception as exc:
                     issue = format_ytdlp_user_error(exc)
                     if "cancelled" in issue.lower():
@@ -6497,23 +7307,57 @@ class DownloaderApp(tk.Tk):
                         self.skip_video_requested = False
                         write_diagnostic(f"batch URL {index} skipped by user: {item_url}")
                         self.events.put(("log", f"Batch URL {index} skipped by user; continuing."))
+                        batch_outcome = batch_outcome.combined_with(DownloadOutcome(skipped_count=1))
                         continue
                     failures.append((item_url, issue))
+                    batch_outcome = batch_outcome.combined_with(DownloadOutcome(failure_count=1))
                     append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item_url, issue)
                     write_diagnostic(f"batch URL {index} of {len(urls)} failed but batch will continue: {type(exc).__name__}: {exc}")
                     self.events.put(("log", f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}"))
                     continue
-            if failures:
-                self.events.put(("done", f"Batch complete — processed {len(urls)} URL(s), {len(failures)} failed. Failure report: {BATCH_FAILURE_REPORT_PATH}"))
+            if batch_outcome.success_count == 0:
+                if batch_outcome.failure_count:
+                    raise RuntimeError(
+                        f"Batch produced no valid output — {batch_outcome.failure_count} item(s) failed. "
+                        f"Failure report: {BATCH_FAILURE_REPORT_PATH}"
+                    )
+                self.events.put(("stopped", "Batch stopped without producing an output."))
+            elif batch_outcome.failure_count or batch_outcome.skipped_count or batch_outcome.sidecar_failure_count:
+                self.events.put((
+                    "partial",
+                    f"Batch completed with issues — {batch_outcome.success_count} valid output(s), "
+                    f"{batch_outcome.failure_count} failed, {batch_outcome.skipped_count} skipped, "
+                    f"{batch_outcome.sidecar_failure_count} optional sidecar failure(s)."
+                    + (f" Failure report: {BATCH_FAILURE_REPORT_PATH}" if failures else ""),
+                ))
             else:
-                self.events.put(("done", f"Batch complete — processed {len(urls)} URL(s)."))
+                self.events.put(("done", f"Batch complete — {batch_outcome.success_count} valid output(s) from {len(urls)} URL(s)."))
         except Exception as exc:
             self._active_progress_context = None
+            issue = format_ytdlp_user_error(exc)
             write_diagnostic(f"batch download worker error: {type(exc).__name__}: {exc}")
-            self.events.put(("error", f"{exc}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}"))
+            if "cancelled" in issue.lower():
+                if batch_outcome.success_count:
+                    self.events.put((
+                        "partial",
+                        f"Batch cancelled — {batch_outcome.success_count} valid output(s) completed before cancellation. "
+                        "No incomplete output was committed.",
+                    ))
+                else:
+                    self.events.put(("stopped", "Batch cancelled. No incomplete output was committed."))
+            else:
+                self.events.put(("error", f"{exc}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}"))
 
-    def _download_worker_single(self, job: DownloadJob, *, emit_done: bool = True, re_raise: bool = False) -> None:
-        assert yt_dlp is not None
+    def _download_worker_single(
+        self,
+        job: DownloadJob,
+        *,
+        emit_done: bool = True,
+        re_raise: bool = False,
+    ) -> DownloadOutcome:
+        ytdlp_module = load_yt_dlp()
+        if ytdlp_module is None:
+            raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
 
         def video_url_from_entry(entry: dict[str, Any]) -> str:
             url = str(entry.get("webpage_url") or entry.get("url") or "").strip()
@@ -6561,51 +7405,76 @@ class DownloaderApp(tk.Tk):
 
         current_video_info: dict[str, Any] | None = None
         current_plan: ExportPlan | AudioExportPlan | None = None
+        outcome = DownloadOutcome()
+        provider_network = self._provider_network_coordinator()
+        job_session_cookies: tuple[Any, ...] = ()
+        cookie_source_loaded = False
 
         try:
             max_height = _quality_max_height(job.quality_label)
-            self.events.put(("status", "Reading playlist…"))
             self.events.put(("log", f"Normalized URL: {job.url}"))
-            write_diagnostic("playlist detection start")
             self.events.put(("progress", 0))
+            if job.single_video_only:
+                # The source URL was already normalized and playlist expansion is
+                # disabled. Avoid a full extractor pass whose only result would be
+                # confirming the single item that preflight analyzes next.
+                playlist_info: dict[str, Any] = {"webpage_url": job.url}
+                entries = [{"webpage_url": job.url}]
+                write_diagnostic("playlist detection skipped: Ignore playlists is active")
+            else:
+                self.events.put(("status", "Reading playlist…"))
+                write_diagnostic("playlist detection start")
+                playlist_started = time.monotonic()
+                playlist_opts: dict[str, Any] = {
+                    "quiet": True,
+                    "skip_download": True,
+                    "noplaylist": False,
+                    "extract_flat": "in_playlist",
+                    "logger": QueueLogger(None, diagnostic_prefix="playlist yt-dlp"),
+                    "socket_timeout": 30,
+                    "retries": 5,
+                    "fragment_retries": 5,
+                    "extractor_retries": 5,
+                    "ignore_no_formats_error": True,
+                }
+                apply_ytdlp_cookie_options(playlist_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
+                apply_youtube_runtime_options(playlist_opts, deno_path=self._find_deno())
+                log_options("playlist detection", playlist_opts)
 
-            playlist_opts: dict[str, Any] = {
-                "quiet": True,
-                "skip_download": True,
-                "noplaylist": job.single_video_only,
-                "extract_flat": False if job.single_video_only else "in_playlist",
-                "logger": QueueLogger(self.events, diagnostic_prefix="playlist yt-dlp"),
-                "socket_timeout": 30,
-                "retries": 5,
-                "fragment_retries": 5,
-                "extractor_retries": 5,
-                "ignore_no_formats_error": True,
-            }
-            apply_ytdlp_cookie_options(playlist_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
-            playlist_deno = self._find_deno()
-            apply_youtube_runtime_options(playlist_opts, deno_path=playlist_deno)
-            log_options("playlist detection", playlist_opts)
+                def detect_playlist() -> tuple[dict[str, Any] | None, tuple[Any, ...]]:
+                    write_diagnostic("playlist extraction start")
+                    def extract() -> tuple[Any, tuple[Any, ...]]:
+                        with ytdlp_module.YoutubeDL(playlist_opts) as ydl:
+                            extracted = ydl.extract_info(job.url, download=False)
+                            return extracted, snapshot_ytdlp_session_cookies(ydl)
 
-            def detect_playlist() -> dict[str, Any] | None:
-                write_diagnostic("playlist extraction start")
-                with yt_dlp.YoutubeDL(playlist_opts) as ydl:
-                    extracted = ydl.extract_info(job.url, download=False)
-                write_diagnostic("playlist extraction completed")
-                return extracted if isinstance(extracted, dict) else None
+                    extracted, session_cookies = run_tracked_ytdlp_operation(
+                        extract,
+                        control_check=raise_for_control_requests,
+                    )
+                    write_diagnostic("playlist extraction completed")
+                    return (extracted if isinstance(extracted, dict) else None, session_cookies)
 
-            playlist_info = run_cancellable_blocking_step(
-                detect_playlist,
-                playlist_blocking_step_cancelled,
-                timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
-                poll_seconds=ANALYSIS_POLL_SECONDS,
-                label="Playlist detection",
-                on_wait=lambda elapsed: (write_diagnostic(f"playlist detection still running after {elapsed:.0f}s"), self.events.put(("status", f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available."))),
-            ) or {"webpage_url": job.url}
-
-            raw_entries = playlist_info.get("entries") if isinstance(playlist_info, dict) else None
-            entries = [entry for entry in (raw_entries or []) if isinstance(entry, dict)]
-            if not entries:
-                entries = [{"webpage_url": job.url, "id": playlist_info.get("id") if isinstance(playlist_info, dict) else None, "title": playlist_info.get("title") if isinstance(playlist_info, dict) else None}]
+                provider_network.begin_primary(raise_for_control_requests)
+                try:
+                    playlist_result = run_cancellable_blocking_step(
+                        lambda: provider_network.run_primary(detect_playlist),
+                        playlist_blocking_step_cancelled,
+                        timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+                        poll_seconds=ANALYSIS_POLL_SECONDS,
+                        label="Playlist detection",
+                        on_wait=lambda elapsed: (write_diagnostic(f"playlist detection still running after {elapsed:.0f}s"), self.events.put(("status", f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available."))),
+                    )
+                finally:
+                    provider_network.end_primary()
+                playlist_info, job_session_cookies = playlist_result
+                playlist_info = playlist_info or {"webpage_url": job.url}
+                cookie_source_loaded = job.use_cookies
+                write_diagnostic(f"playlist detection elapsed_seconds={time.monotonic() - playlist_started:.3f}")
+                raw_entries = playlist_info.get("entries") if isinstance(playlist_info, dict) else None
+                entries = [entry for entry in (raw_entries or []) if isinstance(entry, dict)]
+                if not entries:
+                    entries = [{"webpage_url": job.url, "id": playlist_info.get("id"), "title": playlist_info.get("title")}]
             total_videos = len(entries)
             if total_videos > 1:
                 self.events.put(("log", f"Playlist detected: {total_videos} videos."))
@@ -6618,6 +7487,7 @@ class DownloaderApp(tk.Tk):
             self.video_output_dirs_by_id = {}
 
             for video_index, entry in enumerate(entries, start=1):
+                primary_intent_active = False
                 try:
                     current_video_info = None
                     current_plan = None
@@ -6628,13 +7498,15 @@ class DownloaderApp(tk.Tk):
                     self.events.put(("status", f"{label} — analyzing source formats"))
                     self.events.put(("log", f"{label}: URL {video_url}"))
                     put_stage_progress(video_index, total_videos, 0.0, 0.10, 0.0)
+                    provider_network.begin_primary(raise_for_control_requests)
+                    primary_intent_active = True
 
                     preflight_opts: dict[str, Any] = {
                         "quiet": True,
                         "skip_download": True,
                         "noplaylist": True,
                         "extract_flat": False,
-                        "logger": QueueLogger(self.events, diagnostic_prefix="preflight yt-dlp"),
+                        "logger": QueueLogger(None, diagnostic_prefix="preflight yt-dlp"),
                         "socket_timeout": 30,
                         "retries": 5,
                         "fragment_retries": 5,
@@ -6642,6 +7514,9 @@ class DownloaderApp(tk.Tk):
                         "ignore_no_formats_error": True,
                     }
                     apply_ytdlp_cookie_options(preflight_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
+                    if cookie_source_loaded:
+                        preflight_opts.pop("cookiefile", None)
+                        preflight_opts.pop("cookiesfrombrowser", None)
                     ffmpeg_for_preflight = self._find_ffmpeg()
                     if ffmpeg_for_preflight:
                         preflight_opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg_for_preflight)
@@ -6655,21 +7530,33 @@ class DownloaderApp(tk.Tk):
                         write_diagnostic(f"{label} preflight Deno/EJS disabled: no deno runtime found")
                     log_options(f"{label} preflight", preflight_opts)
 
-                    def analyze_source_formats() -> dict[str, Any] | None:
+                    def analyze_source_formats() -> tuple[dict[str, Any] | None, tuple[Any, ...]]:
                         write_diagnostic(f"{label} analysis start")
-                        with yt_dlp.YoutubeDL(preflight_opts) as ydl:
-                            extracted = ydl.extract_info(video_url, download=False)
-                        write_diagnostic(f"{label} analysis completed")
-                        return extracted if isinstance(extracted, dict) else None
+                        analysis_started = time.monotonic()
+                        def extract() -> tuple[Any, tuple[Any, ...]]:
+                            with ytdlp_module.YoutubeDL(preflight_opts) as ydl:
+                                seed_ytdlp_session_cookies(ydl, job_session_cookies)
+                                extracted = ydl.extract_info(video_url, download=False)
+                                return extracted, snapshot_ytdlp_session_cookies(ydl)
 
-                    preflight_info = run_cancellable_blocking_step(
-                        analyze_source_formats,
+                        extracted, session_cookies = run_tracked_ytdlp_operation(
+                            extract,
+                            control_check=raise_for_control_requests,
+                        )
+                        write_diagnostic(f"{label} analysis completed elapsed_seconds={time.monotonic() - analysis_started:.3f}")
+                        return (extracted if isinstance(extracted, dict) else None, session_cookies)
+
+                    preflight_result = run_cancellable_blocking_step(
+                        lambda: provider_network.run_primary(analyze_source_formats),
                         video_blocking_step_cancelled,
                         timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
                         poll_seconds=ANALYSIS_POLL_SECONDS,
                         label=f"{label} source analysis",
                         on_wait=lambda elapsed, label=label: (write_diagnostic(f"{label} analysis still running after {elapsed:.0f}s"), self.events.put(("status", f"{label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available."))),
                     )
+                    preflight_info, preflight_session_cookies = preflight_result
+                    job_session_cookies = preflight_session_cookies
+                    cookie_source_loaded = job.use_cookies
                     if not isinstance(preflight_info, dict):
                         raise RuntimeError(f"{label}: YouTube source analysis did not return metadata")
                     preflight_info = mark_metadata_output_type(
@@ -6706,13 +7593,33 @@ class DownloaderApp(tk.Tk):
                             raise RuntimeError(f"FFmpeg is required to create the {required_output} output.")
                         ydl_opts = self._build_ydl_options(job, staging_dir=staging_dir, format_selector=plan.format_selector)
                         ydl_opts["noplaylist"] = True
+                        # Preflight already loaded the selected cookie source. Reuse
+                        # its in-memory session jar instead of reopening a browser
+                        # profile or cookies.txt for the immediately following run.
+                        ydl_opts.pop("cookiefile", None)
+                        ydl_opts.pop("cookiesfrombrowser", None)
                         log_options(f"{label} download", ydl_opts)
                         self._active_progress_context = (video_index, total_videos, 0.10, 0.40)
                         self.events.put(("status", f"{label} — downloading"))
                         self.events.put(("log", f"{label}: downloading"))
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                            info = ydl.extract_info(video_url, download=True)
+                        download_started = time.monotonic()
+
+                        def download_preflight_result() -> tuple[Any, tuple[Any, ...]]:
+                            with ytdlp_module.YoutubeDL(ydl_opts) as ydl:
+                                downloaded_info = process_download_from_preflight(
+                                    ydl,
+                                    preflight_info,
+                                    session_cookies=preflight_session_cookies,
+                                    control_check=raise_for_control_requests,
+                                )
+                                return downloaded_info, snapshot_ytdlp_session_cookies(ydl)
+
+                        info, job_session_cookies = provider_network.run_primary(download_preflight_result)
+                        provider_network.end_primary()
+                        primary_intent_active = False
+                        write_diagnostic(f"{label} download and yt-dlp post-processing elapsed_seconds={time.monotonic() - download_started:.3f}")
                         self._active_progress_context = None
+                        raise_for_control_requests()
                         if not isinstance(info, dict):
                             raise RuntimeError(f"{label}: download did not return metadata")
                         info = mark_metadata_output_type(
@@ -6725,62 +7632,51 @@ class DownloaderApp(tk.Tk):
                         self.events.put(("metadata", info))
                         put_stage_progress(video_index, total_videos, 0.10, 0.40, 1.0)
 
-                        if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None:
-                            prepared_cover = prepare_custom_cover_art(job.mp3_settings.custom_cover_art_path, staging_dir)
-                            embedded_count = 0
-                            for staged_info in iter_video_infos(info):
-                                staged_id = str(staged_info.get("id") or "").strip()
-                                if not staged_id:
-                                    continue
-                                staged_mp3 = _find_staged_media_file(
-                                    staging_dir / staged_id,
-                                    staged_id,
-                                    expected_extension=".mp3",
-                                ) or _find_staged_media_file(staging_dir, staged_id, expected_extension=".mp3")
-                                if staged_mp3 is None:
-                                    continue
-                                embed_custom_mp3_cover_art(staged_mp3, prepared_cover, ffmpeg)
-                                embedded_count += 1
-                            if embedded_count == 0:
-                                raise RuntimeError(f"{label}: the staged MP3 could not be found for custom cover embedding.")
-                            custom_cover_for_cache = prepared_cover
-                            self.events.put(("log", f"{label}: embedded custom cover art ({job.mp3_settings.custom_cover_art_path.name})"))
-
                         expected_extension = ".mp3" if job.output_type == OutputType.MP3 else ".mp4"
-                        packaged_paths = package_downloaded_media_from_staging(
+                        staged_media = collect_staged_media_files(
                             staging_dir,
-                            job.output_dir,
                             info,
                             expected_extension=expected_extension,
                         )
-                        output_dirs = sorted({path.parent for path in packaged_paths})
-                        all_output_dirs.extend(output_dirs)
-                        self.events.put(("download_folders", sorted(set(all_output_dirs))))
-                        for packaged_path in packaged_paths:
-                            self.events.put(("log", f"{label}: packaged media file {packaged_path}"))
-                        output_paths = [path for path in packaged_paths if path.suffix.lower() == expected_extension]
-                        primary_output = output_paths[0] if output_paths else None
-                        if primary_output is None:
+                        if not staged_media:
                             raise RuntimeError(
                                 f"{label}: yt-dlp completed without producing the expected {expected_extension} file."
                             )
-                        info = build_encoding_summary_metadata(info, plan, output_path=primary_output)
-                        current_video_info = info
-                        self.events.put(("metadata", info))
+
+                        if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None:
+                            raise_for_control_requests()
+                            prepared_cover = prepare_custom_cover_art(job.mp3_settings.custom_cover_art_path, staging_dir)
+                            for _staged_info, staged_mp3 in staged_media:
+                                embed_custom_mp3_cover_art(
+                                    staged_mp3,
+                                    prepared_cover,
+                                    ffmpeg,
+                                    control_check=raise_for_control_requests,
+                                )
+                            raise_for_control_requests()
+                            custom_cover_for_cache = prepared_cover
+                            self.events.put(("log", f"{label}: embedded custom cover art ({job.mp3_settings.custom_cover_art_path.name})"))
+
+                        ffprobe = self._find_ffprobe() or _ffprobe_for_ffmpeg(ffmpeg)
+                        if not ffprobe:
+                            raise RuntimeError(f"{label}: FFprobe is required to validate the final output.")
+
+                        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
                         if isinstance(plan, ExportPlan):
-                            total_mp4 = max(len(output_paths), 1)
-                            for encode_index, mp4_path in enumerate(output_paths, start=1):
+                            total_mp4 = len(staged_media)
+                            for encode_index, (staged_info, staged_mp4) in enumerate(staged_media, start=1):
                                 raise_for_control_requests()
                                 self.events.put(("status", f"{label} — transcoding"))
                                 encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
                                 self.events.put(("log", f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}"))
-                                write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, mp4_path, transcode_temp_paths(mp4_path)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
+                                write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
                                 put_stage_progress(video_index, total_videos, 0.50, 0.40, (encode_index - 1) / total_mp4)
+                                transcode_started = time.monotonic()
                                 transcode_to_vod_streaming_settings(
-                                    mp4_path,
+                                    staged_mp4,
                                     ffmpeg,
                                     plan=plan,
-                                    duration_seconds=_float_or_none(info.get("duration")),
+                                    duration_seconds=_float_or_none(staged_info.get("duration") or info.get("duration")),
                                     progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: put_stage_progress(
                                         video_index,
                                         total_videos,
@@ -6791,33 +7687,63 @@ class DownloaderApp(tk.Tk):
                                     use_nvenc=job.use_nvenc,
                                     control_check=raise_for_control_requests,
                                 )
-                                self.events.put(("log", f"{label}: transcoded VODForge output {mp4_path}"))
+                                write_diagnostic(f"{label} transcode elapsed_seconds={time.monotonic() - transcode_started:.3f}")
+                                self.events.put(("log", f"{label}: transcoded staged VODForge output"))
                         else:
                             self.events.put(("status", f"{label} — MP3 encoded"))
-                            self.events.put(("log", f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}"))
-                        put_stage_progress(video_index, total_videos, 0.50, 0.40, 1.0)
 
                         self.events.put(("status", f"{label} — validating output"))
-                        ffprobe_data: dict[str, Any] | None = None
-                        ffprobe = self._find_ffprobe()
-                        if primary_output and ffprobe:
-                            try:
-                                ffprobe_data = run_ffprobe_json(ffprobe, primary_output)
-                                self.events.put(("log", f"{label}: ffprobe validation complete for {primary_output.name}"))
-                            except Exception as exc:
-                                write_diagnostic(f"{label} ffprobe validation failed: {type(exc).__name__}: {exc}")
-                                self.events.put(("log", f"WARNING: {label}: ffprobe validation failed: {exc}"))
-                        elif not ffprobe:
-                            self.events.put(("log", f"WARNING: {label}: ffprobe not found; output summary will keep planned values."))
+                        validation_started = time.monotonic()
+                        for staged_info, staged_path in staged_media:
+                            raise_for_control_requests()
+                            probe_data = validate_output_artifact(
+                                staged_path,
+                                job.output_type,
+                                ffprobe,
+                                expected_duration_seconds=_float_or_none(staged_info.get("duration") or info.get("duration")),
+                                require_audio=True,
+                                control_check=raise_for_control_requests,
+                            )
+                            validated_staged.append((staged_info, staged_path, probe_data))
+                        raise_for_control_requests()
+                        write_diagnostic(f"{label} artifact validation elapsed_seconds={time.monotonic() - validation_started:.3f}")
+
+                        commit_started = time.monotonic()
+                        packaged_paths = package_downloaded_media_from_staging(
+                            staging_dir,
+                            job.output_dir,
+                            info,
+                            expected_extension=expected_extension,
+                            staged_media=[(staged_info, staged_path) for staged_info, staged_path, _probe in validated_staged],
+                            control_check=raise_for_control_requests,
+                        )
+                        write_diagnostic(f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}")
+                        output_dirs = sorted({path.parent for path in packaged_paths})
+                        all_output_dirs.extend(output_dirs)
+                        self.events.put(("download_folders", sorted(set(all_output_dirs))))
+                        for packaged_path in packaged_paths:
+                            self.events.put(("log", f"{label}: packaged media file {packaged_path}"))
+                        output_paths = [path for path in packaged_paths if path.suffix.lower() == expected_extension]
+                        primary_output = output_paths[0] if output_paths else None
+                        if primary_output is None:
+                            raise RuntimeError(
+                                f"{label}: validated output could not be committed to the destination."
+                            )
+                        ffprobe_data = validated_staged[0][2]
+                        if isinstance(plan, AudioExportPlan):
+                            self.events.put(("log", f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}"))
+                        put_stage_progress(video_index, total_videos, 0.50, 0.40, 1.0)
+                        self.events.put(("log", f"{label}: validated {primary_output.name} before atomic commit"))
                         info = build_encoding_summary_metadata(
                             info,
                             plan,
                             output_path=primary_output,
                             ffprobe_data=ffprobe_data,
-                            validation_status="Validated" if ffprobe_data else "Output exists; ffprobe unavailable",
+                            validation_status="Validated",
                         )
                         current_video_info = info
                         self.events.put(("metadata", info))
+                        outcome = outcome.combined_with(DownloadOutcome(success_count=len(output_paths)))
                         if job.output_type == OutputType.MP3:
                             try:
                                 cached_thumbnail = (
@@ -6829,6 +7755,7 @@ class DownloaderApp(tk.Tk):
                                     artwork_source = "custom cover" if custom_cover_for_cache is not None else "YouTube thumbnail"
                                     self.events.put(("log", f"{label}: cached {artwork_source} privately for Forge and Library"))
                             except Exception as exc:
+                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
                                 write_diagnostic(f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}")
                                 self.events.put(("log", f"WARNING: {label}: the MP3 is complete, but its Library artwork could not be cached."))
                         if primary_output is not None:
@@ -6839,12 +7766,22 @@ class DownloaderApp(tk.Tk):
                                 )
                             )
                         if job.write_info_json:
-                            metadata_path = write_compact_video_metadata(resolved_video_output_dir(job.output_dir, info), info, job.tags)
-                            self.events.put(("log", f"{label}: saved compact video metadata {metadata_path}"))
+                            try:
+                                metadata_path = write_compact_video_metadata(resolved_video_output_dir(job.output_dir, info), info, job.tags)
+                                self.events.put(("log", f"{label}: saved compact video metadata {metadata_path}"))
+                            except Exception as exc:
+                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
+                                write_diagnostic(f"{label} compact metadata write failed: {type(exc).__name__}: {exc}")
+                                self.events.put(("log", f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}"))
                         if job.write_thumbnail:
-                            thumb_path = save_thumbnail_image(resolved_video_output_dir(job.output_dir, info), info)
-                            if thumb_path:
-                                self.events.put(("log", f"{label}: saved thumbnail {thumb_path}"))
+                            try:
+                                thumb_path = save_thumbnail_image(resolved_video_output_dir(job.output_dir, info), info)
+                                if thumb_path:
+                                    self.events.put(("log", f"{label}: saved thumbnail {thumb_path}"))
+                            except Exception as exc:
+                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
+                                write_diagnostic(f"{label} thumbnail write failed: {type(exc).__name__}: {exc}")
+                                self.events.put(("log", f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}"))
                         put_stage_progress(video_index, total_videos, 0.90, 0.10, 1.0)
                         result_label = "MP3 audio" if job.output_type == OutputType.MP3 else "MP4 video"
                         self.events.put(("status", f"{label} complete — {result_label}"))
@@ -6859,44 +7796,78 @@ class DownloaderApp(tk.Tk):
                             pass
                 except Exception as exc:
                     self._active_progress_context = None
-                    issue = format_ytdlp_user_error(exc)
+                    if self.cancel_requested:
+                        raise RuntimeError("Download cancelled by user") from exc
+                    if self.skip_url_requested:
+                        issue = "URL skipped by user"
+                    elif self.skip_video_requested:
+                        issue = "Video skipped by user"
+                    else:
+                        issue = format_ytdlp_user_error(exc)
                     if "cancelled" in issue.lower():
                         raise
                     if "url skipped" in issue.lower():
                         self.skip_url_requested = False
                         self.skip_video_requested = False
+                        outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
                         self.events.put(("log", f"{label}: skipped URL by user."))
                         break
                     if total_videos <= 1 and "video skipped" not in issue.lower():
                         raise
-                    append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, video_url, issue)
                     if current_video_info is not None:
                         self.events.put(("metadata", build_failed_encoding_summary_metadata(current_video_info, current_plan, issue)))
                     write_diagnostic(f"{label} failed but playlist will continue: {type(exc).__name__}: {exc}")
                     if "video skipped" in issue.lower():
+                        outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
                         self.events.put(("log", f"{label}: skipped by user; continuing to next video."))
                     else:
+                        outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
+                        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, video_url, issue)
                         self.events.put(("log", f"WARNING: {label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}"))
                     self.skip_video_requested = False
                     continue
+                finally:
+                    if primary_intent_active:
+                        provider_network.end_primary()
 
-
+            if outcome.success_count == 0:
+                if outcome.failure_count:
+                    raise RuntimeError(
+                        f"No valid {job.output_type.value} output was produced; "
+                        f"{outcome.failure_count} item(s) failed. Failure report: {BATCH_FAILURE_REPORT_PATH}"
+                    )
+                if emit_done:
+                    self.events.put(("stopped", f"{job.output_type.value} run stopped without producing an output."))
+                return outcome
             if emit_done:
-                self.events.put(("done", f"{job.output_type.value} download complete."))
+                if outcome.failure_count or outcome.skipped_count or outcome.sidecar_failure_count:
+                    self.events.put((
+                        "partial",
+                        f"{job.output_type.value} completed with issues — {outcome.success_count} valid output(s), "
+                        f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
+                        f"{outcome.sidecar_failure_count} optional sidecar failure(s).",
+                    ))
+                else:
+                    self.events.put(("done", f"{job.output_type.value} download complete — {outcome.success_count} valid output(s)."))
+            return outcome
         except Exception as exc:
             self._active_progress_context = None
             if current_video_info is not None:
                 self.events.put(("metadata", build_failed_encoding_summary_metadata(current_video_info, current_plan, format_ytdlp_user_error(exc))))
             user_error = format_ytdlp_user_error(exc)
             write_diagnostic(f"download worker error: {type(exc).__name__}: {exc}")
+            if "cancelled" in user_error.lower() and not re_raise:
+                self.events.put(("stopped", "Download cancelled. No incomplete output was committed."))
+                return outcome
             if "url skipped" in user_error.lower() and not re_raise:
                 self.skip_url_requested = False
                 self.skip_video_requested = False
-                self.events.put(("done", "URL skipped."))
-                return
+                self.events.put(("stopped", "URL skipped. No incomplete output was committed."))
+                return outcome
             if re_raise:
                 raise
             self.events.put(("error", f"{user_error}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}"))
+            return outcome
 
     def _build_ydl_options(self, job: DownloadJob, staging_dir: Path, format_selector: str | None = None) -> dict[str, Any]:
         if job.output_type == OutputType.MP3:
@@ -7007,9 +7978,14 @@ class DownloaderApp(tk.Tk):
             raise RuntimeError("Video skipped by user")
         status = data.get("status")
         if status == "downloading":
-            self.events.put(("progress_determinate", None))
+            now = time.monotonic()
+            last_event_at = getattr(self, "_last_progress_event_at", 0.0)
             downloaded = data.get("downloaded_bytes") or 0
             total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
+            if now - last_event_at < PROGRESS_EVENT_INTERVAL_SECONDS and not (total and downloaded >= total):
+                return
+            self._last_progress_event_at = now
+            self.events.put(("progress_determinate", None))
             if total:
                 pct = downloaded / total * 100
                 context = self._active_progress_context
@@ -7071,6 +8047,9 @@ class DownloaderApp(tk.Tk):
                 elif kind == "metadata":
                     if isinstance(payload, dict):
                         self._display_metadata(payload)
+                elif kind == "thumbnail_preview_result":
+                    if isinstance(payload, dict):
+                        self._display_thumbnail_preview_result(payload)
                 elif kind == "queued_preview":
                     if isinstance(payload, dict) and isinstance(payload.get("job"), DownloadJob) and isinstance(payload.get("info"), dict):
                         queued_job = payload["job"]
@@ -7087,19 +8066,28 @@ class DownloaderApp(tk.Tk):
                     if hasattr(self, "preview_metadata_button"):
                         self.preview_metadata_button.config(state="normal")
                 elif kind == "metadata_error":
-                    self.status_var.set("Metadata preview failed")
+                    if self.__dict__.get("_closing", False):
+                        self._append_log(f"Metadata preview ended during application close: {payload}")
+                    else:
+                        self.status_var.set("Metadata preview failed")
+                        self._append_log(f"ERROR: {payload}")
+                        messagebox.showerror(APP_NAME, str(payload))
+                elif kind == "runtime_error":
                     self._append_log(f"ERROR: {payload}")
-                    messagebox.showerror(APP_NAME, str(payload))
+                    self.download_button.config(state="disabled")
                 elif kind == "download_folders":
                     if isinstance(payload, list):
                         self.last_output_dirs = [Path(path) for path in payload]
                 elif kind == "update_check_result":
-                    if isinstance(payload, ReleaseInfo):
+                    if not self.__dict__.get("_closing", False) and isinstance(payload, ReleaseInfo):
                         self._show_update_result(payload)
                 elif kind == "update_ready":
-                    if isinstance(payload, (Path, MacUpdatePlan)):
+                    if not self.__dict__.get("_closing", False) and isinstance(payload, (Path, MacUpdatePlan)):
                         self._install_downloaded_update(payload)
                 elif kind == "update_check_error":
+                    if self.__dict__.get("_closing", False):
+                        write_diagnostic(f"update check ended during application close: {payload}")
+                        continue
                     silent = self.update_check_silent
                     self.update_check_silent = False
                     self._schedule_auto_update_check()
@@ -7111,21 +8099,15 @@ class DownloaderApp(tk.Tk):
                         self.status_var.set("Could not check for updates.")
                         messagebox.showinfo(APP_NAME, str(payload))
                 elif kind == "done":
-                    self.progress_var.set(100)
-                    self.status_var.set(str(payload))
-                    self._append_log(str(payload))
-                    self.download_button.config(state="normal")
-                    self.cancel_button.config(state="disabled")
-                    self.skip_video_button.config(state="disabled")
-                    self.skip_url_button.config(state="disabled")
-                    if hasattr(self, "focus_transfer_var"):
-                        self.focus_transfer_var.set("Complete  /  Ready to open in Library")
-                        self.focus_run_status_var.set("Completed")
-                        self._refresh_focus_run_deck()
-                    if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
-                        self._set_focus_run_controls_visible(False)
-                        self._refresh_focus_run_deck()
+                    self._finish_run_ui(str(payload), "Completed", "Complete  /  Ready to open in Library", progress=100)
+                elif kind == "partial":
+                    self._finish_run_ui(str(payload), "Partial", "Completed with issues  /  Valid files are in Library", progress=100)
+                elif kind == "stopped":
+                    self._finish_run_ui(str(payload), "Stopped", "Stopped  /  No incomplete output was committed")
                 elif kind == "error":
+                    if self.__dict__.get("_closing", False):
+                        self._append_log(f"ERROR during application close: {payload}")
+                        continue
                     self.status_var.set("Failed")
                     self._append_log(f"ERROR: {payload}")
                     messagebox.showerror(APP_NAME, str(payload))
@@ -7143,6 +8125,23 @@ class DownloaderApp(tk.Tk):
         except queue.Empty:
             pass
         self.after(100, self._pump_events)
+
+    def _finish_run_ui(self, message: str, run_status: str, transfer_text: str, *, progress: float | None = None) -> None:
+        if progress is not None:
+            self.progress_var.set(progress)
+        self.status_var.set(message)
+        self._append_log(message)
+        self.download_button.config(state="normal")
+        self.cancel_button.config(state="disabled")
+        self.skip_video_button.config(state="disabled")
+        self.skip_url_button.config(state="disabled")
+        if hasattr(self, "focus_transfer_var"):
+            self.focus_transfer_var.set(transfer_text)
+            self.focus_run_status_var.set(run_status)
+            self._refresh_focus_run_deck()
+        if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
+            self._set_focus_run_controls_visible(False)
+            self._refresh_focus_run_deck()
 
     def _append_log(self, line: str) -> None:
         for widget in (self.log, getattr(self, "focus_log", None)):
@@ -7173,12 +8172,13 @@ def debug_preflight(url: str) -> int:
     normalized_url = url.strip()
     write_diagnostic(f"normalized URL: {normalized_url}")
     write_diagnostic(f"playlist query present: {'list=' in normalized_url.lower()} ; noplaylist setting for analysis: False")
-    if yt_dlp is None:
+    ytdlp_module = load_yt_dlp()
+    if ytdlp_module is None:
         write_diagnostic(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
         print(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
         print(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
         return 2
-    write_diagnostic(f"yt-dlp version: {getattr(yt_dlp.version, '__version__', 'unknown')}")
+    write_diagnostic(f"yt-dlp version: {getattr(ytdlp_module.version, '__version__', 'unknown')}")
     opts: dict[str, Any] = {
         "quiet": False,
         "verbose": True,
@@ -7205,8 +8205,11 @@ def debug_preflight(url: str) -> int:
 
     def analyze_source_formats() -> dict[str, Any] | None:
         write_diagnostic("debug-preflight analysis start")
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            extracted = ydl.extract_info(normalized_url, download=False)
+        def extract() -> Any:
+            with ytdlp_module.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(normalized_url, download=False)
+
+        extracted = run_tracked_ytdlp_operation(extract)
         write_diagnostic("debug-preflight analysis completed")
         return extracted if isinstance(extracted, dict) else None
 
@@ -7259,6 +8262,50 @@ def debug_preflight(url: str) -> int:
     return 0
 
 
+def _runtime_smoke_output(message: str) -> None:
+    """Report smoke results even when a Windows windowed build has no console."""
+    write_diagnostic(message)
+    stream = getattr(sys, "stdout", None)
+    if stream is not None:
+        print(message, file=stream, flush=True)
+
+
+def _normalized_numeric_version(value: object) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(component) for component in str(value).split("."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _smoke_ytdlp_stack() -> tuple[str, str, tuple[str, ...]]:
+    """Import the pinned extractor stack and prove its packaged solver data is readable."""
+    ytdlp_module = load_yt_dlp()
+    if ytdlp_module is None:
+        raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
+    ytdlp_version = str(getattr(ytdlp_module.version, "__version__", "unknown"))
+    if _normalized_numeric_version(ytdlp_version) != _normalized_numeric_version(PINNED_YTDLP_VERSION):
+        raise RuntimeError(
+            f"yt-dlp version {ytdlp_version} does not match pinned {PINNED_YTDLP_VERSION}"
+        )
+
+    ejs_module = importlib.import_module("yt_dlp_ejs")
+    ejs_version = str(getattr(ejs_module, "version", "unknown"))
+    if _normalized_numeric_version(ejs_version) != _normalized_numeric_version(PINNED_YTDLP_EJS_VERSION):
+        raise RuntimeError(
+            f"yt-dlp-ejs version {ejs_version} does not match pinned {PINNED_YTDLP_EJS_VERSION}"
+        )
+
+    resources_module = importlib.import_module("importlib.resources")
+    solver_root = resources_module.files("yt_dlp_ejs.yt.solver")
+    verified_resources: list[str] = []
+    for resource_name in YTDLP_EJS_SOLVER_RESOURCES:
+        resource = solver_root.joinpath(resource_name)
+        if not resource.is_file() or not resource.read_bytes():
+            raise RuntimeError(f"yt-dlp-ejs solver resource is missing or empty: {resource_name}")
+        verified_resources.append(resource_name)
+    return ytdlp_version, ejs_version, tuple(verified_resources)
+
+
 def runtime_smoke() -> int:
     """Verify packaged dependencies without opening the GUI or fetching media."""
     runtimes = {
@@ -7266,28 +8313,38 @@ def runtime_smoke() -> int:
         "ffprobe": DownloaderApp._find_ffprobe(),
         "deno": DownloaderApp._find_deno(),
     }
-    print(
+    _runtime_smoke_output(
         f"VODFORGE_RUNTIME_SMOKE version={__version__} "
         f"platform={sys.platform} frozen={bool(getattr(sys, 'frozen', False))}"
     )
     failures: list[str] = []
     for name, path in runtimes.items():
         if not path:
-            print(f"{name}=missing")
+            _runtime_smoke_output(f"{name}=missing")
             failures.append(name)
             continue
         try:
             version = probe_runtime_version(name, path)
         except Exception as exc:
-            print(f"{name}={path} execution_failed={type(exc).__name__}: {exc}")
+            _runtime_smoke_output(f"{name}={path} execution_failed={type(exc).__name__}: {exc}")
             failures.append(name)
         else:
-            print(f"{name}={path} version={version}")
-    print(f"diagnostics={DIAGNOSTICS_LOG_PATH}")
+            _runtime_smoke_output(f"{name}={path} version={version}")
+    try:
+        ytdlp_version, ejs_version, solver_resources = _smoke_ytdlp_stack()
+    except Exception as exc:
+        _runtime_smoke_output(f"yt-dlp-stack=failed error={type(exc).__name__}: {exc}")
+        failures.append("yt-dlp-stack")
+    else:
+        _runtime_smoke_output(
+            f"yt-dlp={ytdlp_version} yt-dlp-ejs={ejs_version} "
+            f"solver_resources={','.join(solver_resources)}"
+        )
+    _runtime_smoke_output(f"diagnostics={DIAGNOSTICS_LOG_PATH}")
     if failures:
-        print(f"VODFORGE_RUNTIME_SMOKE_FAILED runtimes={','.join(failures)}")
+        _runtime_smoke_output(f"VODFORGE_RUNTIME_SMOKE_FAILED dependencies={','.join(failures)}")
         return 1
-    print("VODFORGE_RUNTIME_SMOKE_OK")
+    _runtime_smoke_output("VODFORGE_RUNTIME_SMOKE_OK")
     return 0
 
 

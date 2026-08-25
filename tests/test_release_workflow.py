@@ -50,9 +50,12 @@ def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
 
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
     requirements = (ROOT / "requirements.txt").read_text().splitlines()
+    app_source = (ROOT / "yt_downloader" / "app.py").read_text()
 
     assert "yt-dlp[default]==2026.8.19" in requirements
     assert not any(line.startswith("yt-dlp>=") for line in requirements)
+    assert 'PINNED_YTDLP_VERSION = "2026.8.19"' in app_source
+    assert 'PINNED_YTDLP_EJS_VERSION = "0.8.0"' in app_source
 
 
 def test_macos_release_script_requires_accepted_notarization_and_stapling():
@@ -74,6 +77,19 @@ def test_packaged_apps_receive_the_requested_operating_system_version_metadata()
     assert 'StringStruct(\'FileVersion\', \'$displayVersion\')' in windows_build
     assert 'StringStruct(\'ProductVersion\', \'$displayVersion\')' in windows_build
     assert '"--version-file", $versionResourceFile' in windows_build
+
+
+def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
+    macos_build = (ROOT / "build_macos.sh").read_text()
+    windows_build = (ROOT / "build_windows.ps1").read_text()
+    app_source = (ROOT / "yt_downloader" / "app.py").read_text()
+
+    assert "--collect-all yt_dlp" in macos_build
+    assert "--collect-all yt_dlp" in windows_build
+    assert '"$app_binary" --runtime-smoke' in macos_build
+    assert 'Start-Process -FilePath $appBinary -ArgumentList "--runtime-smoke" -Wait -PassThru' in windows_build
+    assert 'resources_module.files("yt_dlp_ejs.yt.solver")' in app_source
+    assert 'YTDLP_EJS_SOLVER_RESOURCES = ("core.min.js", "lib.min.js")' in app_source
 
 
 def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
