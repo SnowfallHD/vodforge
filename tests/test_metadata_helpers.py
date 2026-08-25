@@ -41,6 +41,7 @@ from yt_downloader.app import (
     iter_video_infos,
     package_downloaded_media_from_staging,
     append_batch_failure_report,
+    apply_youtube_runtime_options,
     apply_ytdlp_cookie_options,
     best_thumbnail_for_download,
     format_ytdlp_user_error,
@@ -1478,60 +1479,31 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
 
 
 # ---------------------------------------------------------------------------
-# Tests for multi-client extractor args and relaxed format selection
+# Tests for YouTube runtime configuration and relaxed format selection
 # ---------------------------------------------------------------------------
 
 
-def test_apply_youtube_extractor_args_sets_player_client():
-    """VODForge should configure yt-dlp to try multiple YouTube player clients.
-
-    yt-dlp 2026.x expects player_client as a *list*, not a comma-separated
-    string.  A string gets iterated character-by-character, silently skipping
-    every "unsupported client" and falling back to defaults that fail on some
-    videos.
-    """
-    from yt_downloader.app import apply_youtube_extractor_args
-
+def test_apply_youtube_runtime_options_uses_deno_without_pinning_player_clients():
     opts: dict = {}
-    apply_youtube_extractor_args(opts)
-    assert "extractor_args" in opts
-    youtube_args = opts["extractor_args"]["youtube"]
-    assert "player_client" in youtube_args
-    clients = youtube_args["player_client"]
-    # Must be a list, not a comma-separated string
-    assert isinstance(clients, list), f"player_client must be a list, got {type(clients)}"
-    # Must include 'android' (works without JS runtime) and at least one web client
-    assert "android" in clients
-    assert any(c.startswith("web") for c in clients), f"Expected a web client in {clients}"
+    apply_youtube_runtime_options(opts, deno_path="/bundle/deno")
+
+    assert opts["js_runtimes"] == {"deno": {"path": "/bundle/deno"}}
+    assert "remote_components" not in opts
+    assert "extractor_args" not in opts
 
 
-def test_apply_youtube_extractor_args_preserves_existing_player_client():
-    """If caller already set player_client, don't overwrite it."""
-    from yt_downloader.app import apply_youtube_extractor_args
-
+def test_apply_youtube_runtime_options_preserves_explicit_extractor_args():
     opts = {"extractor_args": {"youtube": {"player_client": ["web"]}}}
-    apply_youtube_extractor_args(opts)
+    apply_youtube_runtime_options(opts, deno_path="/bundle/deno")
+
     assert opts["extractor_args"]["youtube"]["player_client"] == ["web"]
 
 
-def test_player_client_list_not_string_to_prevent_char_splitting():
-    """Regression: player_client must be a list, not a comma-separated string.
-
-    yt-dlp 2026.x iterates player_client as a list of client names. If a
-    string like "default,android" is passed, yt-dlp iterates over individual
-    characters ("d","e","f",...) and silently skips every "unsupported
-    client", causing intermittent video download failures.
-    """
-    from yt_downloader.app import apply_youtube_extractor_args
-
+def test_apply_youtube_runtime_options_without_deno_leaves_defaults_untouched():
     opts: dict = {}
-    apply_youtube_extractor_args(opts)
-    clients = opts["extractor_args"]["youtube"]["player_client"]
-    assert isinstance(clients, list)
-    # No element should be a single character or comma
-    for c in clients:
-        assert len(c) > 1, f"Client name '{c}' looks like a split character"
-        assert "," not in c, f"Client name '{c}' contains a comma"
+    apply_youtube_runtime_options(opts, deno_path=None)
+
+    assert opts == {}
 
 
 def test_choose_best_video_format_relaxes_bitrate_requirement():

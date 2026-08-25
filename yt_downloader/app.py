@@ -2129,37 +2129,21 @@ def apply_ytdlp_cookie_options(
     return opts
 
 
-def apply_youtube_extractor_args(opts: dict[str, Any]) -> dict[str, Any]:
-    """Configure YouTube extractor to try multiple player clients.
+def apply_youtube_runtime_options(opts: dict[str, Any], *, deno_path: str | None) -> dict[str, Any]:
+    """Enable yt-dlp's supported YouTube challenge solver without pinning clients.
 
-    yt-dlp's built-in default clients are ``android_vr`` and ``web_safari``.
-    ``android_vr`` cannot access videos marked "for kids" and returns fewer
-    formats.  Adding ``android`` fixes that, but we avoid ``web`` because it
-    does a separate full extraction pass with JS challenge solving that
-    duplicates what ``web_safari`` already provides — adding ~2-4s per video
-    on machines with Deno installed.
-
-    NOTE: yt-dlp 2026.x expects player_client as a *list* of client names,
-    not a comma-separated string.  Passing a string like "default,android"
-    causes yt-dlp to iterate over individual characters ("d","e","f",...)
-    and silently skip every "unsupported client", falling back to the
-    built-in defaults which fail on some videos.
-
-    See: https://github.com/yt-dlp/yt-dlp/issues/16556
+    YouTube changes which player clients can expose downloadable adaptive
+    formats.  A previously useful hard-coded ``web_safari``/``android`` list
+    eventually caused some 1080p videos to expose only the progressive 360p
+    format.  Leave ``player_client`` unset so the pinned yt-dlp release can use
+    its maintained defaults and contextual authenticated/age-restricted
+    fallbacks.  Deno remains explicit because JavaScript challenge solving is
+    required for reliable format discovery.  The matching EJS scripts are
+    installed and packaged by the pinned ``yt-dlp[default]`` dependency rather
+    than fetched as executable code while the app is running.
     """
-    existing = opts.get("extractor_args", {})
-    if not isinstance(existing, dict):
-        existing = {}
-    youtube_args = existing.get("youtube", {})
-    if not isinstance(youtube_args, dict):
-        youtube_args = {}
-    # Don't overwrite an explicit player_client if the caller set one.
-    # Order matters: web_safari is tried first (gets all formats via Deno),
-    # android is the fallback (no JS needed, handles "for kids" videos).
-    if "player_client" not in youtube_args:
-        youtube_args["player_client"] = ["web_safari", "android"]
-    existing["youtube"] = youtube_args
-    opts["extractor_args"] = existing
+    if deno_path:
+        opts["js_runtimes"] = {"deno": {"path": deno_path}}
     return opts
 
 
@@ -4963,7 +4947,6 @@ class DownloaderApp(tk.Tk):
         assert yt_dlp is not None
         try:
             opts = {"quiet": True, "skip_download": True, "noplaylist": False, "extract_flat": False, "logger": QueueLogger(self.events)}
-            apply_youtube_extractor_args(opts)
             apply_ytdlp_cookie_options(
                 opts,
                 use_cookies=self.use_cookies_var.get(),
@@ -4974,9 +4957,7 @@ class DownloaderApp(tk.Tk):
             if ffmpeg:
                 opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
             deno = self._find_deno()
-            if deno:
-                opts["js_runtimes"] = {"deno": {"path": deno}}
-                opts["remote_components"] = ["ejs:github"]
+            apply_youtube_runtime_options(opts, deno_path=deno)
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             self.events.put(("metadata", info))
@@ -5513,7 +5494,8 @@ class DownloaderApp(tk.Tk):
                 "ignore_no_formats_error": True,
             }
             apply_ytdlp_cookie_options(playlist_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
-            apply_youtube_extractor_args(playlist_opts)
+            playlist_deno = self._find_deno()
+            apply_youtube_runtime_options(playlist_opts, deno_path=playlist_deno)
             log_options("playlist detection", playlist_opts)
 
             def detect_playlist() -> dict[str, Any] | None:
@@ -5571,17 +5553,15 @@ class DownloaderApp(tk.Tk):
                         "ignore_no_formats_error": True,
                     }
                     apply_ytdlp_cookie_options(preflight_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
-                    apply_youtube_extractor_args(preflight_opts)
                     ffmpeg_for_preflight = self._find_ffmpeg()
                     if ffmpeg_for_preflight:
                         preflight_opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg_for_preflight)
                     deno = self._find_deno()
                     write_diagnostic(f"{label} preflight runtime path: ffmpeg={ffmpeg_for_preflight}")
                     write_diagnostic(f"{label} preflight runtime path: deno={deno}")
+                    apply_youtube_runtime_options(preflight_opts, deno_path=deno)
                     if deno:
-                        preflight_opts["js_runtimes"] = {"deno": {"path": deno}}
-                        preflight_opts["remote_components"] = ["ejs:github"]
-                        write_diagnostic(f"{label} preflight Deno/EJS enabled: remote_components=ejs:github")
+                        write_diagnostic(f"{label} preflight Deno/bundled-EJS enabled")
                     else:
                         write_diagnostic(f"{label} preflight Deno/EJS disabled: no deno runtime found")
                     log_options(f"{label} preflight", preflight_opts)
@@ -5802,11 +5782,8 @@ class DownloaderApp(tk.Tk):
         if ffmpeg:
             opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
         deno = self._find_deno()
-        if deno:
-            opts["js_runtimes"] = {"deno": {"path": deno}}
-            opts["remote_components"] = ["ejs:github"]
+        apply_youtube_runtime_options(opts, deno_path=deno)
         apply_ytdlp_cookie_options(opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
-        apply_youtube_extractor_args(opts)
         return opts
 
     @staticmethod
@@ -6030,13 +6007,11 @@ def debug_preflight(url: str) -> int:
     deno = DownloaderApp._find_deno()
     write_diagnostic(f"debug-preflight runtime path: ffmpeg={ffmpeg}")
     write_diagnostic(f"debug-preflight runtime path: deno={deno}")
+    apply_youtube_runtime_options(opts, deno_path=deno)
     if deno:
-        opts["js_runtimes"] = {"deno": {"path": deno}}
-        opts["remote_components"] = ["ejs:github"]
-        write_diagnostic("debug-preflight Deno/EJS enabled: remote_components=ejs:github")
+        write_diagnostic("debug-preflight Deno/bundled-EJS enabled")
     else:
         write_diagnostic("debug-preflight Deno/EJS disabled: no deno runtime found")
-    apply_youtube_extractor_args(opts)
     log_options("debug-preflight", opts)
 
     def analyze_source_formats() -> dict[str, Any] | None:
@@ -6060,10 +6035,27 @@ def debug_preflight(url: str) -> int:
         print(f"DEBUG_PREFLIGHT_FAILED: {type(exc).__name__}: {exc}")
         print(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
         return 1
-    video_count = len(iter_video_infos(info)) if isinstance(info, dict) else 0
+    video_infos = iter_video_infos(info) if isinstance(info, dict) else []
+    video_count = len(video_infos)
     format_count = len(info.get("formats") or []) if isinstance(info, dict) else 0
     write_diagnostic(f"debug-preflight success: id={(info or {}).get('id') if isinstance(info, dict) else None} videos={video_count} formats={format_count}")
     print(f"DEBUG_PREFLIGHT_OK videos={video_count} formats={format_count}")
+    for video_info in video_infos:
+        try:
+            plan = build_auto_export_plan(video_info, mode=ExportMode.AUTO_CBR, max_height=DEFAULT_MAX_HEIGHT)
+        except Exception as exc:
+            print(f"DEBUG_PREFLIGHT_SELECTION_FAILED id={video_info.get('id') or 'unknown'}: {type(exc).__name__}: {exc}")
+            continue
+        exposed_heights = [
+            fmt.get("height")
+            for fmt in video_info.get("formats") or []
+            if isinstance(fmt, dict) and isinstance(fmt.get("height"), int) and not _is_none_codec(fmt.get("vcodec"))
+        ]
+        print(
+            f"DEBUG_PREFLIGHT_SELECTION id={video_info.get('id') or 'unknown'} "
+            f"exposed_max_height={max(exposed_heights) if exposed_heights else 'unknown'} "
+            f"selected={plan.format_selector} output={plan.output_width or 'unknown'}x{plan.output_height or 'unknown'}"
+        )
     print(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
     return 0
 

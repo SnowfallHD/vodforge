@@ -48,6 +48,13 @@ def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
     assert 'brew --prefix python@3.13' in workflow
 
 
+def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
+    requirements = (ROOT / "requirements.txt").read_text().splitlines()
+
+    assert "yt-dlp[default]==2026.8.19" in requirements
+    assert not any(line.startswith("yt-dlp>=") for line in requirements)
+
+
 def test_macos_release_script_requires_accepted_notarization_and_stapling():
     script = (ROOT / "sign_and_notarize_macos.sh").read_text()
 
