@@ -17,10 +17,11 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Offers a manual override when you need exact export settings.
 - Embeds useful metadata and thumbnails in the MP4 when supported.
 - Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
-- Embeds standard ID3 title/artist metadata by default. Cover art defaults to a clean MP3, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
+- Embeds standard ID3 title/artist metadata by default. Cover art defaults to **No Art**, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
 - Writes a compact, readable `metadata.json` beside each video.
 - Keeps playlist and non-playlist downloads organized in collision-safe folders.
-- Includes browser-cookie and `cookies.txt` options for videos you are authorized to access.
+- Ignores playlist expansion by default so a copied watch link downloads only that video or audio item; turn **Ignore playlists** off when you intentionally want every item in a playlist.
+- Keeps YouTube access explicit: **Public** uses no cookies, while `cookies.txt` and **Browser** are separate opt-in methods for content you are authorized to access.
 - Shows progress, speed, ETA, diagnostics, and per-item batch failures.
 - Keeps a private, local Library history of completed downloads and their saved folders across app restarts, with separate MP4 and MP3 views.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
@@ -94,7 +95,7 @@ MP3 uses the same channel, playlist, and item folders, but its default output is
 <output>/<channel>/<playlist-or-videos-folder>/<item title> [video-id]/<item title>.mp3
 ```
 
-The artwork shown for MP3 items in Forge and Library is kept in VODForge's private per-user thumbnail cache and is not written beside the MP3. A selected custom cover becomes the item's cached VODForge artwork; otherwise VODForge uses the YouTube thumbnail for its UI even when the clean MP3 setting leaves that thumbnail unembedded.
+The artwork shown for MP3 items in Forge and Library is kept in VODForge's private per-user thumbnail cache and is not written beside the MP3. A selected custom cover becomes the item's cached VODForge artwork; otherwise VODForge uses the YouTube thumbnail for its UI even when **No Art** leaves that thumbnail unembedded.
 
 Diagnostics are written to `%LOCALAPPDATA%\VODForge\logs\` on Windows and `~/Library/Logs/VODForge/` on macOS.
 
@@ -191,7 +192,7 @@ The test suite focuses on export planning, FFmpeg command construction, metadata
 - Available resolutions and formats depend on the source video and YouTube.
 - A larger output bitrate cannot restore detail that was not present in the source.
 - YouTube audio is already compressed. The 320 kbps MP3 default minimizes additional encoding loss, but it cannot become lossless or restore source detail.
-- Browser-cookie import reads cookies through `yt-dlp`; VODForge does not upload or store cookie contents.
+- Browser-cookie and `cookies.txt` access run through `yt-dlp`; only the selected method is active, and VODForge does not upload or store cookie contents.
 - Download only content you own or have permission to use, and follow the applicable platform terms and laws.
 
 ## Contributing

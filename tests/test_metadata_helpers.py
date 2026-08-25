@@ -11,6 +11,8 @@ from PIL import Image
 import yt_downloader.app as app_module
 from yt_downloader.app import (
     AudioExportPlan,
+    CookieSource,
+    DEFAULT_IGNORE_PLAYLISTS,
     RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
     AUDIO_BITRATE,
     AUDIO_SAMPLE_RATE,
@@ -30,6 +32,7 @@ from yt_downloader.app import (
     build_failed_encoding_summary_metadata,
     build_description_display_text,
     clean_single_video_url,
+    cookie_inputs_for_source,
     center_alpha_content,
     cached_thumbnail_path,
     embed_custom_mp3_cover_art,
@@ -538,13 +541,17 @@ def test_single_video_toggle_blocks_playlist_url_without_video_id():
 
     assert clean_single_video_url(url) == url
     assert single_video_url_requires_video_id_error(url) == (
-        "This is a playlist URL. Turn off Single video only to process the whole playlist."
+        "This link is a playlist. Turn off ‘Ignore playlists’ to download every item."
     )
 
 
 def test_single_video_toggle_allows_watch_and_short_urls_with_video_id():
     assert single_video_url_requires_video_id_error("https://www.youtube.com/watch?list=PL&v=abc&t=30s") is None
     assert single_video_url_requires_video_id_error("https://youtu.be/abc?list=PL&t=30s") is None
+
+
+def test_ignore_playlists_is_the_safe_default():
+    assert DEFAULT_IGNORE_PLAYLISTS is True
 
 
 def test_batch_watch_urls_with_playlist_context_are_processed_as_single_videos():
@@ -1043,11 +1050,11 @@ def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
     assert plan.audio_bitrate_kbps == 320
     assert plan.embed_metadata is True
     assert plan.embed_cover_art is False
-    assert plan.cover_art_source == "None (clean MP3)"
+    assert plan.cover_art_source == "None (no art)"
     assert metadata_output_type(enriched) == OutputType.MP3
     assert "Audio format ID: 251" in source_text
     assert "Effective/target audio bitrate: 320 kbps" in output_text
-    assert "Embedded cover art: None (clean MP3)" in output_text
+    assert "Embedded cover art: None (no art)" in output_text
     assert "Video format ID" not in source_text + output_text
 
 
@@ -1378,6 +1385,15 @@ def test_cookiefile_option_is_only_added_when_user_enabled_cookies(tmp_path: Pat
 
     assert enabled["cookiefile"] == str(cookies)
     assert "cookiefile" not in disabled
+
+
+def test_cookie_source_selection_keeps_public_file_and_browser_modes_exclusive(tmp_path: Path):
+    cookies = tmp_path / "cookies.txt"
+
+    assert cookie_inputs_for_source(CookieSource.PUBLIC, cookies, "Firefox") == (False, None, None)
+    assert cookie_inputs_for_source(CookieSource.FILE, cookies, "Firefox") == (True, cookies, None)
+    assert cookie_inputs_for_source(CookieSource.BROWSER, cookies, "Firefox") == (True, None, "firefox")
+    assert cookie_inputs_for_source("invalid", cookies, "Firefox") == (False, None, None)
 
 
 def test_browser_cookie_option_uses_selected_browser_without_cookie_file(monkeypatch):

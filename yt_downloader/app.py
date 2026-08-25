@@ -109,7 +109,8 @@ MP3_CHANNEL_OPTIONS = {
     "Stereo": "2",
     "Mono": "1",
 }
-MP3_COVER_ART_OPTIONS = ("Clean MP3", "YouTube art", "Custom art")
+MP3_COVER_ART_OPTIONS = ("No Art", "YouTube art", "Custom art")
+DEFAULT_IGNORE_PLAYLISTS = True
 BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
 AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
@@ -610,6 +611,12 @@ class OutputType(str, Enum):
     MP3 = "MP3"
 
 
+class CookieSource(str, Enum):
+    PUBLIC = "Public"
+    FILE = "cookies.txt"
+    BROWSER = "Browser"
+
+
 class ExportMode(str, Enum):
     AUTO_CBR = "Auto CBR"
     STRICT_COMPLIANCE = "Strict Compliance"
@@ -966,7 +973,7 @@ def build_mp3_export_plan(info: dict[str, Any], settings: Mp3ExportSettings | No
             if settings.custom_cover_art_path is not None
             else "YouTube thumbnail"
             if settings.embed_cover_art
-            else "None (clean MP3)"
+            else "None (no art)"
         ),
         warnings=warnings,
         summary=(
@@ -1597,7 +1604,7 @@ def _windows_safe_component(value: Any, fallback: str, max_len: int = 80) -> str
     return safe or fallback
 
 
-SINGLE_VIDEO_PLAYLIST_ERROR = "This is a playlist URL. Turn off Single video only to process the whole playlist."
+SINGLE_VIDEO_PLAYLIST_ERROR = "This link is a playlist. Turn off ‘Ignore playlists’ to download every item."
 PLAYLIST_CONTEXT_QUERY_KEYS = {"list", "index", "start_radio"}
 
 
@@ -2412,7 +2419,9 @@ class ManualExportSettings:
     x264_preset: str = "medium"
 
 
-COOKIE_BROWSER_OPTIONS = ["None", "Chrome", "Edge", "Firefox", "Brave", "Chromium", "Opera", "Vivaldi"]
+COOKIE_BROWSER_PLACEHOLDER = "Choose a browser"
+COOKIE_BROWSER_OPTIONS = [COOKIE_BROWSER_PLACEHOLDER, "Chrome", "Edge", "Firefox", "Brave", "Chromium", "Opera", "Vivaldi"]
+COOKIE_SOURCE_OPTIONS = tuple(source.value for source in CookieSource)
 COOKIE_BROWSER_VALUES = {
     "Chrome": "chrome",
     "Edge": "edge",
@@ -2425,7 +2434,7 @@ COOKIE_BROWSER_VALUES = {
 WINDOWS_CHROMIUM_COOKIE_BROWSERS = {"brave", "chrome", "chromium", "edge", "opera", "vivaldi"}
 WINDOWS_CHROMIUM_COOKIE_MESSAGE = (
     "Chrome/Edge/Brave/Chromium browser-cookie import is unreliable on Windows because Chromium locks its cookie database. "
-    "Use Load Cookies… with an exported YouTube cookies.txt file, choose Firefox browser cookies, or turn off Use YouTube cookies."
+    "Choose cookies.txt with an exported YouTube cookies.txt file, choose Firefox browser cookies under Browser, or switch YouTube access to Public."
 )
 
 
@@ -2455,9 +2464,26 @@ class DownloadJob:
 
 def browser_cookie_value(label_or_value: str | None) -> str | None:
     text = str(label_or_value or "").strip()
-    if not text or text.lower() == "none":
+    if not text or text.lower() in {"none", COOKIE_BROWSER_PLACEHOLDER.lower()}:
         return None
     return COOKIE_BROWSER_VALUES.get(text, text.lower())
+
+
+def cookie_inputs_for_source(
+    source: CookieSource | str,
+    cookie_file: Path | None,
+    cookie_browser: str | None,
+) -> tuple[bool, Path | None, str | None]:
+    """Resolve one explicit cookie source without leaking an inactive choice."""
+    try:
+        selected = source if isinstance(source, CookieSource) else CookieSource(str(source))
+    except ValueError:
+        selected = CookieSource.PUBLIC
+    if selected == CookieSource.FILE:
+        return True, cookie_file, None
+    if selected == CookieSource.BROWSER:
+        return True, None, browser_cookie_value(cookie_browser)
+    return False, None, None
 
 
 def windows_chromium_cookie_warning(cookie_browser: str | None, platform: str | None = None) -> str | None:
@@ -2476,7 +2502,7 @@ def format_ytdlp_user_error(error: Any) -> str:
     if "http error 503" in lower or "503: service unavailable" in lower:
         return (
             "YouTube returned HTTP 503 Service Unavailable after retries. This is usually temporary, rate-limit/CDN related, "
-            "or a sign that YouTube wants authenticated cookies. Retry once; if it persists, use Load Cookies… with an exported "
+            "or a sign that YouTube wants authenticated cookies. Retry once; if it persists, choose cookies.txt under YouTube access with an exported "
             "YouTube cookies.txt file or Firefox browser cookies.\n\n"
             f"Original yt-dlp error: {message}"
         )
@@ -2486,7 +2512,7 @@ def format_ytdlp_user_error(error: Any) -> str:
             "• The video is private, deleted, or region-restricted.\n"
             "• The video is marked 'for kids' and yt-dlp's fallback client cannot access it.\n"
             "• No JavaScript runtime (Deno 2.x) is installed, which limits which YouTube clients yt-dlp can use.\n"
-            "Try: 1) Retry, 2) Install Deno 2.x, 3) Use cookies (Load Cookies…), 4) Verify the video plays in a browser.\n\n"
+            "Try: 1) Retry, 2) Install Deno 2.x, 3) Choose cookies.txt or Browser under YouTube access, 4) Verify the video plays in a browser.\n\n"
             f"Original yt-dlp error: {message}"
         )
     if "no video formats found" in lower or "no usable" in lower and "video" in lower:
@@ -2494,7 +2520,7 @@ def format_ytdlp_user_error(error: Any) -> str:
             "yt-dlp could not find any downloadable video formats. This usually means:\n"
             "• No JavaScript runtime (Deno 2.x) is installed — YouTube returns very limited formats without one.\n"
             "• YouTube is rate-limiting the connection — try again later or use cookies.\n"
-            "• The video requires authentication — use Load Cookies… with a YouTube cookies.txt file.\n\n"
+            "• The video requires authentication — choose cookies.txt under YouTube access and load an exported cookie file.\n\n"
             f"Original yt-dlp error: {message}"
         )
     if "no supported javascript runtime" in lower or "js runtime" in lower:
@@ -2512,8 +2538,8 @@ def format_ytdlp_user_error(error: Any) -> str:
         )
     if "sign in to confirm" in lower or "confirm you're not a bot" in lower:
         return (
-            "YouTube is asking for sign-in confirmation (bot detection). Use Load Cookies… with an exported "
-            "YouTube cookies.txt file or choose a browser under Browser cookies to authenticate.\n\n"
+            "YouTube is asking for sign-in confirmation (bot detection). Choose cookies.txt under YouTube access with an exported "
+            "YouTube cookie file, or choose Browser to read an authorized local browser profile.\n\n"
             f"Original yt-dlp error: {message}"
         )
     return message
@@ -3176,12 +3202,15 @@ class DownloaderApp(tk.Tk):
         self.mp3_custom_cover_art_var = tk.StringVar(value="Select Custom art to choose an image")
         self.mp3_cover_art_description_var = tk.StringVar()
         self.tags_var = tk.StringVar()
-        self.single_video_only_var = tk.BooleanVar(value=False)
+        self.single_video_only_var = tk.BooleanVar(value=DEFAULT_IGNORE_PLAYLISTS)
         self.use_nvenc_var = tk.BooleanVar(value=False)
-        self.use_cookies_var = tk.BooleanVar(value=False)
+        self.cookie_source_var = tk.StringVar(value=CookieSource.PUBLIC.value)
         self.cookie_file_path: Path | None = None
-        self.cookie_file_var = tk.StringVar(value="No cookies loaded")
-        self.cookie_browser_var = tk.StringVar(value="None")
+        self.cookie_file_var = tk.StringVar(value="No cookies.txt selected")
+        self.cookie_browser_var = tk.StringVar(value=COOKIE_BROWSER_PLACEHOLDER)
+        self._cookie_file_frames: list[ttk.Frame] = []
+        self._cookie_browser_frames: list[ttk.Frame] = []
+        self.cookie_source_var.trace_add("write", lambda *_args: self._on_cookie_source_changed())
         self.embed_thumbnail_var = tk.BooleanVar(value=False)
         self.write_thumbnail_var = tk.BooleanVar(value=True)
         self.embed_metadata_var = tk.BooleanVar(value=False)
@@ -3379,21 +3408,53 @@ class DownloaderApp(tk.Tk):
             popup.protocol("WM_DELETE_WINDOW", dismiss_compact_popup)
 
         def build_source_details(parent: ttk.LabelFrame | ttk.Frame) -> None:
-            ttk.Label(parent, text="Batch URL text file").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 6))
-            ttk.Label(parent, textvariable=self.url_list_file_var, style="Muted.TLabel").grid(row=0, column=1, sticky="ew", padx=10, pady=(8, 6))
-            ttk.Button(parent, text="Load URL List…", command=self._load_url_list_file).grid(row=0, column=2, sticky="e", padx=10, pady=(8, 6))
-            ttk.Label(parent, text="YouTube cookies.txt").grid(row=1, column=0, sticky="w", padx=10, pady=6)
-            ttk.Label(parent, textvariable=self.cookie_file_var, style="Muted.TLabel").grid(row=1, column=1, sticky="ew", padx=10, pady=6)
-            ttk.Button(parent, text="Load Cookies…", command=self._load_cookie_file).grid(row=1, column=2, sticky="e", padx=10, pady=6)
-            ttk.Label(parent, text="Browser cookies").grid(row=2, column=0, sticky="w", padx=10, pady=(6, 8))
-            ttk.Combobox(
-                parent,
+            batch = ttk.Frame(parent)
+            batch.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 6))
+            batch.columnconfigure(1, weight=1)
+            ttk.Label(batch, text="Batch URL list").grid(row=0, column=0, sticky="w")
+            ttk.Label(batch, textvariable=self.url_list_file_var, style="Muted.TLabel").grid(row=0, column=1, sticky="ew", padx=10)
+            batch_button = ttk.Button(batch, text="Load URL List…", command=self._load_url_list_file)
+            batch_button.grid(row=0, column=2, sticky="e")
+            ToolTip(batch_button, "Process a batch of links from a text file, one URL per line.")
+
+            access = ttk.Frame(parent)
+            access.grid(row=1, column=0, sticky="ew", padx=10, pady=6)
+            access.columnconfigure(1, weight=1)
+            ttk.Label(access, text="YouTube access").grid(row=0, column=0, sticky="w", padx=(0, 10))
+            access_combo = ttk.Combobox(
+                access,
+                textvariable=self.cookie_source_var,
+                values=COOKIE_SOURCE_OPTIONS,
+                state="readonly",
+                width=18,
+            )
+            access_combo.grid(row=0, column=1, sticky="ew")
+            ToolTip(access_combo, "Public uses no cookies. Choose cookies.txt or Browser only when YouTube requires sign-in.")
+
+            cookie_file = ttk.Frame(parent)
+            cookie_file.grid(row=2, column=0, sticky="ew", padx=10, pady=(4, 8))
+            cookie_file.columnconfigure(0, weight=1)
+            ttk.Label(cookie_file, textvariable=self.cookie_file_var, style="Muted.TLabel").grid(row=0, column=0, sticky="w")
+            cookie_file_button = ttk.Button(cookie_file, text="Choose cookies.txt…", command=self._load_cookie_file)
+            cookie_file_button.grid(row=0, column=1, sticky="e")
+            ToolTip(cookie_file_button, "Use an exported YouTube cookies.txt file for content that requires your authorized account.")
+
+            browser_frame = ttk.Frame(parent)
+            browser_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(4, 8))
+            browser_frame.columnconfigure(1, weight=1)
+            ttk.Label(browser_frame, text="Browser profile").grid(row=0, column=0, sticky="w", padx=(0, 10))
+            browser_combo = ttk.Combobox(
+                browser_frame,
                 textvariable=self.cookie_browser_var,
                 values=COOKIE_BROWSER_OPTIONS,
                 state="readonly",
                 width=18,
-            ).grid(row=2, column=1, sticky="w", padx=10, pady=(6, 8))
-            parent.columnconfigure(1, weight=1)
+            )
+            browser_combo.grid(row=0, column=1, sticky="ew")
+            browser_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_browser_cookie_selected())
+            ToolTip(browser_combo, "Read YouTube cookies directly from the selected local browser. VODForge does not save their contents.")
+            self._register_cookie_source_frames(cookie_file, browser_frame)
+            parent.columnconfigure(0, weight=1)
 
         self.manual_settings_frames: list[ttk.LabelFrame] = []
 
@@ -3429,12 +3490,16 @@ class DownloaderApp(tk.Tk):
 
         def build_advanced_options(parent: ttk.LabelFrame | ttk.Frame) -> None:
             ttk.Label(parent, text="Extra tags").grid(row=0, column=0, sticky="w", padx=10, pady=4)
-            ttk.Entry(parent, textvariable=self.tags_var).grid(row=0, column=1, sticky="ew", padx=10, pady=4)
-            ttk.Checkbutton(parent, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=1, column=0, sticky="w", padx=10, pady=1)
-            ttk.Checkbutton(parent, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=1, column=1, sticky="w", padx=10, pady=1)
-            ttk.Checkbutton(parent, text="Embed metadata", variable=self.embed_metadata_var).grid(row=2, column=0, sticky="w", padx=10, pady=1)
-            ttk.Checkbutton(parent, text="Save compact JSON", variable=self.write_info_json_var).grid(row=2, column=1, sticky="w", padx=10, pady=1)
-            ttk.Checkbutton(parent, text="Single video only (ignore playlist)", variable=self.single_video_only_var).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=1)
+            tags_entry = ttk.Entry(parent, textvariable=self.tags_var)
+            tags_entry.grid(row=0, column=1, sticky="ew", padx=10, pady=4)
+            ToolTip(tags_entry, "Add comma-separated tags to embedded metadata and the compact metadata file when those outputs are enabled.")
+            ignore_playlists = ttk.Checkbutton(parent, text="Ignore playlists", variable=self.single_video_only_var)
+            ignore_playlists.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=1)
+            ToolTip(ignore_playlists, "When a link includes a playlist, download only the linked video or audio item instead of the full playlist.")
+            ttk.Checkbutton(parent, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=2, column=0, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=2, column=1, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Embed metadata", variable=self.embed_metadata_var).grid(row=3, column=0, sticky="w", padx=10, pady=1)
+            ttk.Checkbutton(parent, text="Save compact JSON", variable=self.write_info_json_var).grid(row=3, column=1, sticky="w", padx=10, pady=1)
             nvenc_label = "Use NVIDIA NVENC GPU encoding"
             if sys.platform == "darwin":
                 nvenc_label = "NVIDIA NVENC (Windows only)"
@@ -3443,9 +3508,8 @@ class DownloaderApp(tk.Tk):
             if sys.platform == "darwin":
                 self.use_nvenc_var.set(False)
                 nvenc_checkbox.state(["disabled"])
-            ttk.Checkbutton(parent, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=1)
             manual_frame = build_manual_settings(parent)
-            manual_frame.grid(row=6, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 8))
+            manual_frame.grid(row=5, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 8))
             parent.columnconfigure(1, weight=1)
             self._refresh_manual_settings_visibility()
 
@@ -4533,6 +4597,50 @@ class DownloaderApp(tk.Tk):
             self.output_type_var.set(OutputType.MP4.value)
             return OutputType.MP4
 
+    def _selected_cookie_source(self) -> CookieSource:
+        try:
+            return CookieSource(self.cookie_source_var.get())
+        except ValueError:
+            self.cookie_source_var.set(CookieSource.PUBLIC.value)
+            return CookieSource.PUBLIC
+
+    def _cookie_inputs(self) -> tuple[bool, Path | None, str | None]:
+        return cookie_inputs_for_source(
+            self._selected_cookie_source(),
+            self.cookie_file_path,
+            self.cookie_browser_var.get(),
+        )
+
+    def _register_cookie_source_frames(self, file_frame: ttk.Frame, browser_frame: ttk.Frame) -> None:
+        self._cookie_file_frames.append(file_frame)
+        self._cookie_browser_frames.append(browser_frame)
+        self._on_cookie_source_changed()
+
+    def _on_cookie_source_changed(self) -> None:
+        source = self._selected_cookie_source()
+
+        def refresh(frames: list[ttk.Frame], visible: bool) -> list[ttk.Frame]:
+            live: list[ttk.Frame] = []
+            for frame in frames:
+                try:
+                    if not frame.winfo_exists():
+                        continue
+                    if visible:
+                        frame.grid()
+                    else:
+                        frame.grid_remove()
+                    live.append(frame)
+                except tk.TclError:
+                    continue
+            return live
+
+        self._cookie_file_frames = refresh(self._cookie_file_frames, source == CookieSource.FILE)
+        self._cookie_browser_frames = refresh(self._cookie_browser_frames, source == CookieSource.BROWSER)
+
+    def _on_browser_cookie_selected(self) -> None:
+        source = CookieSource.BROWSER if browser_cookie_value(self.cookie_browser_var.get()) else CookieSource.PUBLIC
+        self.cookie_source_var.set(source.value)
+
     def _mp3_export_settings(self) -> Mp3ExportSettings:
         quality_label = self.mp3_quality_var.get()
         sample_rate_label = self.mp3_sample_rate_var.get()
@@ -4550,7 +4658,7 @@ class DownloaderApp(tk.Tk):
         if custom_cover is not None:
             custom_cover = validate_custom_cover_art(custom_cover)
         if cover_mode == "Custom art" and custom_cover is None:
-            raise ValueError("Choose a custom cover image or select Clean MP3.")
+            raise ValueError("Choose a custom cover image or select No Art.")
         return Mp3ExportSettings(
             bitrate_kbps=MP3_QUALITY_OPTIONS[quality_label],
             sample_rate=MP3_SAMPLE_RATE_OPTIONS[sample_rate_label],
@@ -4589,20 +4697,20 @@ class DownloaderApp(tk.Tk):
         self.mp3_custom_cover_art_path = None
         self.mp3_custom_cover_art_var.set("Select Custom art to choose an image")
         if self.mp3_cover_art_mode_var.get() == "Custom art":
-            self.mp3_cover_art_mode_var.set("Clean MP3")
+            self.mp3_cover_art_mode_var.set("No Art")
         self._sync_focus_settings_summary()
 
     def _on_mp3_cover_mode_changed(self) -> None:
         mode = self.mp3_cover_art_mode_var.get()
         if mode not in MP3_COVER_ART_OPTIONS:
-            self.mp3_cover_art_mode_var.set("Clean MP3")
+            self.mp3_cover_art_mode_var.set("No Art")
             return
         if mode == "Custom art" and self.mp3_custom_cover_art_path is None:
             if not self._choose_mp3_custom_cover_art():
-                self.mp3_cover_art_mode_var.set("Clean MP3")
+                self.mp3_cover_art_mode_var.set("No Art")
                 return
         descriptions = {
-            "Clean MP3": "No image is written into the MP3. VODForge still keeps the YouTube thumbnail privately for Forge and Library.",
+            "No Art": "No image is embedded in the MP3. VODForge still keeps the YouTube thumbnail privately for Forge and Library.",
             "YouTube art": "Embeds the video's YouTube thumbnail in the MP3 and also uses it inside VODForge.",
             "Custom art": "Embeds your image and uses that same image for this run in Forge and Library.",
         }
@@ -4750,31 +4858,86 @@ class DownloaderApp(tk.Tk):
         source = ttk.Frame(root, style="FocusShell.TFrame")
         source.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
         source.columnconfigure(0, weight=1)
-        ttk.Label(source, text="SOURCE AND DESTINATION", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(source, text="Output folder", style="Muted.TLabel").grid(row=1, column=0, columnspan=2, sticky="w")
-        ttk.Entry(source, textvariable=self.output_var).grid(row=2, column=0, sticky="ew", pady=(4, 8), padx=(0, 6))
-        ttk.Button(source, text="Browse", command=self._browse_output, style="FocusQuiet.TButton").grid(row=2, column=1, sticky="e", pady=(4, 8))
-        ttk.Button(source, text="Load URL list", command=self._load_url_list_file, style="FocusQuiet.TButton").grid(row=3, column=0, sticky="w", pady=(4, 3))
-        ttk.Label(source, textvariable=self.url_list_file_var, style="Muted.TLabel", wraplength=250).grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Button(source, text="Load cookies.txt", command=self._load_cookie_file, style="FocusQuiet.TButton").grid(row=5, column=0, sticky="w", pady=(4, 3))
-        ttk.Label(source, textvariable=self.cookie_file_var, style="Muted.TLabel", wraplength=250).grid(row=6, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(source, text="Browser cookies", style="Muted.TLabel").grid(row=7, column=0, sticky="w", pady=(4, 3))
-        ttk.Combobox(source, textvariable=self.cookie_browser_var, values=COOKIE_BROWSER_OPTIONS, state="readonly", width=18).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        ttk.Checkbutton(source, text="Use YouTube cookies", variable=self.use_cookies_var).grid(row=9, column=0, columnspan=2, sticky="w", pady=(2, 0))
-        ttk.Label(source, text="Extra tags", style="Muted.TLabel").grid(row=10, column=0, columnspan=2, sticky="w", pady=(10, 3))
-        ttk.Entry(source, textvariable=self.tags_var).grid(row=11, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-        ttk.Checkbutton(source, text="Single video only", variable=self.single_video_only_var).grid(row=12, column=0, columnspan=2, sticky="w", pady=2)
+        ttk.Label(source, text="SAVE LOCATION", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 7))
+        destination = ttk.Frame(source, style="FocusShell.TFrame")
+        destination.grid(row=1, column=0, sticky="ew")
+        destination.columnconfigure(0, weight=1)
+        ttk.Entry(destination, textvariable=self.output_var).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ttk.Button(destination, text="Browse", command=self._browse_output, style="FocusQuiet.TButton").grid(row=0, column=1, sticky="e")
+
+        ttk.Label(source, text="BATCH AND PLAYLISTS", style="FocusEyebrow.TLabel").grid(row=2, column=0, sticky="w", pady=(16, 7))
+        batch_button = ttk.Button(source, text="Load URL list", command=self._load_url_list_file, style="FocusQuiet.TButton")
+        batch_button.grid(row=3, column=0, sticky="w")
+        ToolTip(batch_button, "Process a batch of links from a text file, one URL per line.")
+        self.focus_batch_url_list_button = batch_button
+        ttk.Label(source, textvariable=self.url_list_file_var, style="Muted.TLabel", wraplength=300).grid(row=4, column=0, sticky="w", pady=(4, 6))
+        ignore_playlists = ttk.Checkbutton(source, text="Ignore playlists", variable=self.single_video_only_var)
+        ignore_playlists.grid(row=5, column=0, sticky="w")
+        ToolTip(ignore_playlists, "When a link includes a playlist, download only the linked video or audio item instead of the full playlist.")
+        self.focus_ignore_playlists_button = ignore_playlists
+
+        ttk.Label(source, text="YOUTUBE ACCESS", style="FocusEyebrow.TLabel").grid(row=6, column=0, sticky="w", pady=(16, 5))
+        ttk.Label(
+            source,
+            text="Optional — use an authorized account only when public access is not enough.",
+            style="Muted.TLabel",
+            wraplength=300,
+            justify="left",
+        ).grid(row=7, column=0, sticky="w", pady=(0, 7))
+        cookie_selector = SegmentedSelector(
+            source,
+            variable=self.cookie_source_var,
+            values=COOKIE_SOURCE_OPTIONS,
+            background=THEME["bg"],
+            compact=True,
+        )
+        cookie_selector.grid(row=8, column=0, sticky="w")
+        ToolTip(cookie_selector, "Public uses no cookies. Choose cookies.txt or Browser only when YouTube requires sign-in.")
+        self.focus_cookie_source_selector = cookie_selector
+
+        cookie_file = ttk.Frame(source, style="FocusShell.TFrame")
+        cookie_file.grid(row=9, column=0, sticky="ew", pady=(7, 0))
+        cookie_file.columnconfigure(0, weight=1)
+        ttk.Label(cookie_file, textvariable=self.cookie_file_var, style="Muted.TLabel", wraplength=180).grid(row=0, column=0, sticky="w")
+        cookie_file_button = ttk.Button(cookie_file, text="Choose cookies.txt", command=self._load_cookie_file, style="FocusQuiet.TButton")
+        cookie_file_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        ToolTip(cookie_file_button, "Use an exported YouTube cookies.txt file for content that requires your authorized account.")
+
+        browser_frame = ttk.Frame(source, style="FocusShell.TFrame")
+        browser_frame.grid(row=9, column=0, sticky="ew", pady=(7, 0))
+        browser_frame.columnconfigure(0, weight=1)
+        browser_combo = ttk.Combobox(
+            browser_frame,
+            textvariable=self.cookie_browser_var,
+            values=COOKIE_BROWSER_OPTIONS,
+            state="readonly",
+            width=24,
+        )
+        browser_combo.grid(row=0, column=0, sticky="ew")
+        browser_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_browser_cookie_selected())
+        ToolTip(browser_combo, "Read YouTube cookies directly from the selected local browser. VODForge does not save their contents.")
+        self._register_cookie_source_frames(cookie_file, browser_frame)
+
+        ttk.Label(source, text="METADATA", style="FocusEyebrow.TLabel").grid(row=10, column=0, sticky="w", pady=(16, 5))
+        ttk.Label(source, text="Extra tags (comma-separated)", style="Muted.TLabel").grid(row=11, column=0, sticky="w", pady=(0, 3))
+        tags_entry = ttk.Entry(source, textvariable=self.tags_var)
+        tags_entry.grid(row=12, column=0, sticky="ew")
+        ToolTip(tags_entry, "Add tags to embedded metadata and the compact metadata file when those outputs are enabled.")
+        self.focus_tags_entry = tags_entry
 
         mp4_output = ttk.Frame(root, style="FocusShell.TFrame")
         mp4_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
         mp4_output.columnconfigure(1, weight=1)
         ttk.Label(mp4_output, text="MP4 VIDEO", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
         ttk.Label(mp4_output, text="Quality ceiling", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Combobox(mp4_output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20).grid(row=1, column=1, sticky="ew", pady=4)
+        quality_combo = ttk.Combobox(mp4_output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20)
+        quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        ToolTip(quality_combo, "Set the highest resolution VODForge may select from the available YouTube source formats.")
         ttk.Label(mp4_output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
         export_combo = ttk.Combobox(mp4_output, textvariable=self.export_mode_var, values=EXPORT_MODES, state="readonly", width=20)
         export_combo.grid(row=2, column=1, sticky="ew", pady=4)
         export_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
+        ToolTip(export_combo, "Auto CBR chooses practical settings. Strict Compliance uses the fixed VOD profile. Manual Override exposes exact encode controls.")
         ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=3, column=0, sticky="w", pady=2)
         ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=3, column=1, sticky="w", pady=2)
         ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
@@ -4785,6 +4948,7 @@ class DownloaderApp(tk.Tk):
             self.use_nvenc_var.set(False)
         nvenc = ttk.Checkbutton(mp4_output, text=nvenc_label, variable=self.use_nvenc_var)
         nvenc.grid(row=5, column=0, columnspan=2, sticky="w", pady=2)
+        ToolTip(nvenc, "Use a supported NVIDIA GPU for MP4 encoding on Windows. CPU encoding remains the compatibility default.")
         if sys.platform == "darwin":
             nvenc.state(["disabled"])
 
@@ -4793,12 +4957,20 @@ class DownloaderApp(tk.Tk):
         mp3_output.columnconfigure(1, weight=1)
         ttk.Label(mp3_output, text="MP3 AUDIO", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
         ttk.Label(mp3_output, text="Encoding quality", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Combobox(mp3_output, textvariable=self.mp3_quality_var, values=list(MP3_QUALITY_OPTIONS.keys()), state="readonly", width=24).grid(row=1, column=1, sticky="ew", pady=4)
+        mp3_quality_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_quality_var, values=list(MP3_QUALITY_OPTIONS.keys()), state="readonly", width=24)
+        mp3_quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        ToolTip(mp3_quality_combo, "Set the MP3 export bitrate. Higher settings reduce additional encoding loss but cannot restore detail missing from YouTube's source audio.")
         ttk.Label(mp3_output, text="Sample rate", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Combobox(mp3_output, textvariable=self.mp3_sample_rate_var, values=list(MP3_SAMPLE_RATE_OPTIONS.keys()), state="readonly", width=24).grid(row=2, column=1, sticky="ew", pady=4)
+        sample_rate_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_sample_rate_var, values=list(MP3_SAMPLE_RATE_OPTIONS.keys()), state="readonly", width=24)
+        sample_rate_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        ToolTip(sample_rate_combo, "Preserve source avoids unnecessary resampling. Choose 44.1 or 48 kHz only when a music or DAW workflow requires it.")
         ttk.Label(mp3_output, text="Channels", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
-        ttk.Combobox(mp3_output, textvariable=self.mp3_channels_var, values=list(MP3_CHANNEL_OPTIONS.keys()), state="readonly", width=24).grid(row=3, column=1, sticky="ew", pady=4)
-        ttk.Checkbutton(mp3_output, text="Embed title, artist, and tags", variable=self.mp3_embed_metadata_var).grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 2))
+        channels_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_channels_var, values=list(MP3_CHANNEL_OPTIONS.keys()), state="readonly", width=24)
+        channels_combo.grid(row=3, column=1, sticky="ew", pady=4)
+        ToolTip(channels_combo, "Preserve the source channel layout, or force Stereo or Mono for a specific production workflow.")
+        mp3_metadata = ttk.Checkbutton(mp3_output, text="Embed title, artist, and tags", variable=self.mp3_embed_metadata_var)
+        mp3_metadata.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 2))
+        ToolTip(mp3_metadata, "Write standard ID3 title, artist, and tag information into the MP3 file.")
         ttk.Label(mp3_output, text="Cover art", style="Muted.TLabel").grid(row=5, column=0, sticky="w", pady=(8, 4))
         cover_selector = SegmentedSelector(
             mp3_output,
@@ -4808,6 +4980,7 @@ class DownloaderApp(tk.Tk):
             compact=True,
         )
         cover_selector.grid(row=5, column=1, sticky="w", pady=(8, 4))
+        ToolTip(cover_selector, "No Art leaves the MP3 unembedded. YouTube art or Custom art writes a front-cover image into the file.")
         ttk.Label(
             mp3_output,
             textvariable=self.mp3_cover_art_description_var,
@@ -4889,6 +5062,10 @@ class DownloaderApp(tk.Tk):
             self.focus_mp4_settings_frame = None
             self.focus_mp3_settings_frame = None
             self.focus_mp3_cover_file_frame = None
+            self.focus_batch_url_list_button = None
+            self.focus_ignore_playlists_button = None
+            self.focus_cookie_source_selector = None
+            self.focus_tags_entry = None
             popup.destroy()
 
         ttk.Button(footer, text="Done", command=close_popup, style="Accent.TButton").grid(row=0, column=1, sticky="e")
@@ -5722,8 +5899,8 @@ class DownloaderApp(tk.Tk):
             return
         self.cookie_file_path = cookie_path
         self.cookie_file_var.set(cookie_path.name)
-        self.use_cookies_var.set(True)
-        self.status_var.set("Loaded YouTube cookies; authenticated/private videos can use them when enabled.")
+        self.cookie_source_var.set(CookieSource.FILE.value)
+        self.status_var.set("Loaded YouTube cookies.txt; VODForge will use it for this session.")
         self._append_log(f"Loaded YouTube cookies file: {cookie_path}")
 
     def _fetch_metadata(self) -> None:
@@ -5731,6 +5908,13 @@ class DownloaderApp(tk.Tk):
         if not url:
             messagebox.showerror(APP_NAME, "Paste a YouTube URL first.")
             return
+        ignore_playlists = self.single_video_only_var.get()
+        if ignore_playlists:
+            single_item_error = single_video_url_requires_video_id_error(url)
+            if single_item_error:
+                messagebox.showerror(APP_NAME, single_item_error)
+                return
+            url = clean_single_video_url(url)
         if yt_dlp is None:
             messagebox.showerror(APP_NAME, f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
             return
@@ -5738,17 +5922,18 @@ class DownloaderApp(tk.Tk):
             self.preview_metadata_button.config(state="disabled")
         self.status_var.set("Fetching tags and thumbnail…")
         output_type = self._selected_output_type()
-        threading.Thread(target=self._metadata_worker, args=(url, output_type), daemon=True).start()
+        threading.Thread(target=self._metadata_worker, args=(url, output_type, ignore_playlists), daemon=True).start()
 
-    def _metadata_worker(self, url: str, output_type: OutputType) -> None:
+    def _metadata_worker(self, url: str, output_type: OutputType, ignore_playlists: bool = False) -> None:
         assert yt_dlp is not None
         try:
-            opts = {"quiet": True, "skip_download": True, "noplaylist": False, "extract_flat": False, "logger": QueueLogger(self.events)}
+            opts = {"quiet": True, "skip_download": True, "noplaylist": ignore_playlists, "extract_flat": False, "logger": QueueLogger(self.events)}
+            use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
             apply_ytdlp_cookie_options(
                 opts,
-                use_cookies=self.use_cookies_var.get(),
-                cookie_file=self.cookie_file_path,
-                cookie_browser=self.cookie_browser_var.get(),
+                use_cookies=use_cookies,
+                cookie_file=cookie_file,
+                cookie_browser=cookie_browser,
             )
             ffmpeg = self._find_ffmpeg()
             if ffmpeg:
@@ -6142,7 +6327,9 @@ class DownloaderApp(tk.Tk):
         write_diagnostic(f"URL received: {url}")
         write_diagnostic(f"normalized URL: {url}")
         write_diagnostic(f"batch URL count: {len(urls)}")
-        write_diagnostic(f"playlist query present: {'list=' in url.lower()} ; single_video_only={self.single_video_only_var.get()} ; use_nvenc={self.use_nvenc_var.get()}")
+        cookie_source = self._selected_cookie_source()
+        use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
+        write_diagnostic(f"playlist query present: {'list=' in url.lower()} ; ignore_playlists={self.single_video_only_var.get()} ; use_nvenc={self.use_nvenc_var.get()} ; cookie_source={cookie_source.value}")
         if not url:
             messagebox.showerror(APP_NAME, "Paste a YouTube URL first or load a URL list text file.")
             return
@@ -6151,11 +6338,14 @@ class DownloaderApp(tk.Tk):
             messagebox.showerror(APP_NAME, "Choose an output folder.")
             return
         output_dir.mkdir(parents=True, exist_ok=True)
-        if self.use_cookies_var.get() and not self.cookie_file_path and not browser_cookie_value(self.cookie_browser_var.get()):
-            messagebox.showerror(APP_NAME, "Load a YouTube cookies.txt file, choose a browser under Browser cookies, or turn off Use YouTube cookies.")
+        if cookie_source == CookieSource.FILE and cookie_file is None:
+            messagebox.showerror(APP_NAME, "Choose a YouTube cookies.txt file, or switch YouTube access back to Public.")
             return
-        cookie_warning = None if self.cookie_file_path else windows_chromium_cookie_warning(self.cookie_browser_var.get())
-        if self.use_cookies_var.get() and cookie_warning:
+        if cookie_source == CookieSource.BROWSER and cookie_browser is None:
+            messagebox.showerror(APP_NAME, "Choose a browser profile, or switch YouTube access back to Public.")
+            return
+        cookie_warning = windows_chromium_cookie_warning(cookie_browser) if cookie_source == CookieSource.BROWSER else None
+        if cookie_warning:
             messagebox.showerror(APP_NAME, cookie_warning)
             return
 
@@ -6187,9 +6377,9 @@ class DownloaderApp(tk.Tk):
             write_info_json=self.write_info_json_var.get() if output_type == OutputType.MP4 else False,
             tags=tags,
             urls=urls,
-            use_cookies=self.use_cookies_var.get(),
-            cookie_file=self.cookie_file_path,
-            cookie_browser=browser_cookie_value(self.cookie_browser_var.get()),
+            use_cookies=use_cookies,
+            cookie_file=cookie_file,
+            cookie_browser=cookie_browser,
             batch_mode=bool(self.batch_urls),
         )
 

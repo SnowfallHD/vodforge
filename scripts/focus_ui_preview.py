@@ -9,7 +9,7 @@ from types import SimpleNamespace
 os.environ.setdefault("VODFORGE_LEGACY_UI", "0")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from yt_downloader.app import DownloaderApp, OutputType
+from yt_downloader.app import COOKIE_BROWSER_OPTIONS, COOKIE_SOURCE_OPTIONS, DownloaderApp, OutputType
 
 PREVIEW_THUMBNAILS = Path(__file__).resolve().parents[1] / "assets" / "preview_thumbnails"
 
@@ -71,7 +71,7 @@ def preview_metadata() -> list[dict[str, object]]:
                     "Audio channels": "2",
                     "Output rate-control mode": "CBR",
                     "Embedded ID3 metadata": "Yes",
-                    "Embedded cover art": "None (clean MP3)",
+                    "Embedded cover art": "None (no art)",
                     "Validation status": "Validated",
                 },
                 "warnings": [],
@@ -124,8 +124,11 @@ def main() -> None:
     parser.add_argument("--view", choices=("forge", "library", "activity"), default="forge")
     parser.add_argument("--size", default="1180x780")
     parser.add_argument("--output-type", choices=("MP4", "MP3"), default="MP4")
-    parser.add_argument("--cover-mode", choices=("Clean MP3", "YouTube art", "Custom art"), default="Clean MP3")
+    parser.add_argument("--cover-mode", choices=("No Art", "YouTube art", "Custom art"), default="No Art")
+    parser.add_argument("--cookie-source", choices=COOKIE_SOURCE_OPTIONS, default="Public")
+    parser.add_argument("--cookie-browser", choices=COOKIE_BROWSER_OPTIONS, default="Firefox")
     parser.add_argument("--settings", action="store_true")
+    parser.add_argument("--tooltip", choices=("batch", "playlists", "cookies", "tags"))
     parser.add_argument("--run-actions", action="store_true")
     parser.add_argument("--overflow", action="store_true")
     parser.add_argument("--copy-feedback", choices=("tags", "description", "thumbnail"))
@@ -142,6 +145,8 @@ def main() -> None:
     app.output_type_var.set(output_type.value)
     app.library_output_type_var.set(output_type.value)
     app.mp3_cover_art_mode_var.set(args.cover_mode)
+    app.cookie_browser_var.set(args.cookie_browser)
+    app.cookie_source_var.set(args.cookie_source)
     app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     app.metadata_items = preview_metadata()
     if args.overflow:
@@ -253,6 +258,14 @@ def main() -> None:
     app.after(450, apply_preview_state)
     if args.settings:
         app.after(300, app._show_focus_settings)
+    if args.settings and args.tooltip:
+        tooltip_widgets = {
+            "batch": "focus_batch_url_list_button",
+            "playlists": "focus_ignore_playlists_button",
+            "cookies": "focus_cookie_source_selector",
+            "tags": "focus_tags_entry",
+        }
+        app.after(850, lambda: getattr(app, tooltip_widgets[args.tooltip]).event_generate("<Enter>"))
     if args.run_actions:
         app.after(
             700,
