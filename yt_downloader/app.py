@@ -25,6 +25,16 @@ from typing import Any, Callable
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from .cloud_funnel import (
+    InstallationIdentityError,
+    InstallationState,
+    cloud_page_url,
+    installation_state_path,
+    load_or_create_installation_state,
+    mark_cloud_seen_confirmed,
+    record_cloud_click,
+    record_cloud_seen,
+)
 from .history import (
     HistoryError,
     application_data_dir,
@@ -3790,6 +3800,14 @@ class DownloaderApp(tk.Tk):
         self._closing = False
         self._close_terminator: threading.Thread | None = None
         self._close_deadline: float | None = None
+        self.installation_state_path = installation_state_path()
+        self.installation_state: InstallationState | None = None
+        self._cloud_seen_worker: threading.Thread | None = None
+        try:
+            self.installation_state = load_or_create_installation_state(self.installation_state_path)
+            write_diagnostic("anonymous installation ID loaded from the VODForge application-data folder")
+        except (InstallationIdentityError, OSError) as exc:
+            write_diagnostic(f"anonymous installation ID unavailable; Cloud funnel deduplication is disabled: {exc}")
 
         self.url_var = tk.StringVar()
         self.url_list_file_var = tk.StringVar(value="No URL list loaded")
@@ -5438,6 +5456,33 @@ class DownloaderApp(tk.Tk):
         if source_entry is not None:
             source_entry.focus_set()
 
+    def _record_cloud_cta_seen(self) -> None:
+        state = self.installation_state
+        if state is None or state.cloud_seen_confirmed or self._closing:
+            return
+        existing = self._cloud_seen_worker
+        if existing is not None and existing.is_alive():
+            return
+
+        def worker() -> None:
+            success = record_cloud_seen(state, app_version=__version__)
+            self.events.put(("cloud_seen_result", {"success": success, "install_id": state.install_id}))
+
+        self._cloud_seen_worker = threading.Thread(target=worker, daemon=True)
+        self._cloud_seen_worker.start()
+
+    def _open_cloud_early_access(self) -> None:
+        state = self.installation_state
+        destination = cloud_page_url(state.install_id if state is not None else None)
+        if state is not None:
+            threading.Thread(target=record_cloud_click, args=(state,), daemon=True).start()
+        try:
+            opened = webbrowser.open(destination)
+            if not opened:
+                write_diagnostic("Cloud early-access page was handed to the OS but no browser confirmed opening")
+        except Exception as exc:
+            write_diagnostic(f"Cloud early-access page could not be opened: {exc}")
+
     def _show_focus_settings(self) -> None:
         existing = self._focus_settings_window
         if existing is not None:
@@ -5656,14 +5701,15 @@ class DownloaderApp(tk.Tk):
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         cloud_action = ttk.Frame(cloud, style="FocusSurface.TFrame")
         cloud_action.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
-        ttk.Label(cloud_action, text="COMING SOON", style="CloudBadge.TLabel").pack(anchor="e", pady=(0, 4))
+        ttk.Label(cloud_action, text="EARLY ACCESS", style="CloudBadge.TLabel").pack(anchor="e", pady=(0, 4))
         self.focus_cloud_early_access_button = ttk.Button(
             cloud_action,
             text="Join early access",
-            state="disabled",
-            style="CloudDisabled.TButton",
+            command=self._open_cloud_early_access,
+            style="FocusQuiet.TButton",
         )
         self.focus_cloud_early_access_button.pack(anchor="e")
+        ToolTip(self.focus_cloud_early_access_button, "Open the VODForge Cloud early-access signup page in your browser.")
 
         footer = ttk.Frame(root, style="FocusShell.TFrame")
         footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(14, 0))
@@ -5691,6 +5737,7 @@ class DownloaderApp(tk.Tk):
         x = max(20, self.winfo_rootx() + (self.winfo_width() - width) // 2)
         y = max(40, self.winfo_rooty() + (self.winfo_height() - height) // 2)
         popup.geometry(f"{width}x{height}+{x}+{y}")
+        self.after_idle(self._record_cloud_cta_seen)
 
     def _show_focus_output_details(self) -> None:
         popup = tk.Toplevel(self)
@@ -8098,6 +8145,16 @@ class DownloaderApp(tk.Tk):
                     else:
                         self.status_var.set("Could not check for updates.")
                         messagebox.showinfo(APP_NAME, str(payload))
+                elif kind == "cloud_seen_result":
+                    if isinstance(payload, dict) and payload.get("success") is True:
+                        state = self.installation_state
+                        install_id = str(payload.get("install_id") or "")
+                        if state is not None and install_id == state.install_id:
+                            try:
+                                self.installation_state = mark_cloud_seen_confirmed(self.installation_state_path, install_id)
+                                write_diagnostic("Cloud early-access impression confirmed once for this installation")
+                            except (InstallationIdentityError, OSError) as exc:
+                                write_diagnostic(f"Cloud impression was accepted but local confirmation could not be saved: {exc}")
                 elif kind == "done":
                     self._finish_run_ui(str(payload), "Completed", "Complete  /  Ready to open in Library", progress=100)
                 elif kind == "partial":
