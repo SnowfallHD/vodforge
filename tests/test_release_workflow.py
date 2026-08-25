@@ -167,10 +167,11 @@ def test_release_notes_lead_with_clear_user_facing_platform_choices():
     assert "VODForge-macOS-arm64-v1.2.3.zip" in notes
     assert "VODForge-macOS-x64-v1.2.3.zip" in notes
     assert "VODForge-Windows-Setup-v1.2.3.exe" in notes
-    assert "cleaner **Forge** workspace" in notes
+    assert "**MP4 video** or **MP3 audio**" in notes
+    assert "1080p and 4K sources" in notes
     assert "original YouTube source and final VODForge output details" in notes
-    assert "render sharply on Retina Macs" in notes
-    assert "URL field resets after a run is accepted" in notes
+    assert "partial file" in notes
+    assert "seen → clicked → joined" in notes
 
 
 def test_draft_release_notes_keep_the_release_team_safety_gate():

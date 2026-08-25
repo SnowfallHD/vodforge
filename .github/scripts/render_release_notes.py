@@ -57,12 +57,15 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
-- VODForge now opens into a cleaner **Forge** workspace built around one URL field, the active download, live progress, and the run queue.
-- **Forge**, **Library**, and **Activity** use the available window space and adapt at smaller sizes without hiding the primary download controls.
-- The run deck clearly distinguishes the active, queued, and completed items while preserving VODForge's reliable sequential download behavior.
-- **Library** keeps the original YouTube source and final VODForge output details together, including video and audio bitrate information.
-- Interface icons and thumbnails now render sharply on Retina Macs, with a consistent app icon across Finder, Dock, Windows installer, executable, and taskbar.
-- Copy actions provide visible confirmation, and the URL field resets after a run is accepted so the next link is ready to paste.
+- Download either **MP4 video** or **MP3 audio** from the same Forge field, with separate format-aware controls.
+- MP3 exports default to the highest-quality available source and offer up to 320 kbps, source sample-rate preservation, channel and ID3 controls, plus no art, YouTube art, or custom embedded cover art.
+- YouTube format discovery now uses the current bundled yt-dlp, Deno, and EJS solver stack so 1080p and 4K sources are found more reliably when the video provides them.
+- MP4 and MP3 runs now reuse provider analysis, reduce redundant network and disk work, coalesce UI progress updates, and keep preview work from delaying the active download.
+- Downloads finish through isolated same-volume staging, media validation, and an atomic final commit so cancellation or a failed encode cannot replace a valid destination with a partial file.
+- **Library** keeps the original YouTube source and final VODForge output details together, including resolution, codecs, frame rate, video and audio bitrates, sample rate, channels, size, and saved location.
+- Library artwork now stays compact enough to preserve useful space for tags and descriptions at full-size layouts.
+- Playlist protection is enabled by default, cookie access is organized into clear public, cookies.txt, or browser choices, and explanatory tooltips clarify batch and access controls.
+- The optional **VODForge Cloud** early-access link now opens a privacy-narrow waitlist that records only one anonymous seen → clicked → joined funnel per installation.
 - VODForge continues to check stable GitHub Releases automatically and verifies approved updates before installation.
 - Windows downloads are signed by Kryden Ventures, LLC.
 - Mac downloads are Developer ID signed, notarized, and provided separately for Apple silicon and Intel-based Macs.

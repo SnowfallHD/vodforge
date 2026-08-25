@@ -67,6 +67,7 @@ from yt_downloader.app import (
     focus_icon_color_variant,
     focus_library_layout_mode,
     focus_layout_mode,
+    library_thumbnail_size,
     render_monochrome_icon,
     rounded_contain_image,
     rounded_cover_image,
@@ -230,6 +231,12 @@ def test_youtube_thumbnail_slots_use_standard_16_by_9_geometry():
     assert youtube_thumbnail_size(152) == (152, 86)
     assert youtube_thumbnail_size(80) == (80, 45)
     assert youtube_thumbnail_size(64) == (64, 36)
+
+
+def test_library_thumbnail_stays_16_by_9_but_caps_its_metadata_footprint():
+    assert library_thumbnail_size(196) == (196, 110)
+    assert library_thumbnail_size(320) == (240, 135)
+    assert library_thumbnail_size(600) == (240, 135)
 
 
 def test_rounded_contain_image_preserves_placeholder_artwork_without_cropping():

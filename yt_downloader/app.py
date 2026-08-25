@@ -261,6 +261,11 @@ def youtube_thumbnail_size(width: int) -> tuple[int, int]:
     return safe_width, max(1, round(safe_width * 9 / 16))
 
 
+def library_thumbnail_size(available_width: int) -> tuple[int, int]:
+    """Keep Library artwork useful without crowding tags and description."""
+    return youtube_thumbnail_size(min(max(1, int(available_width)), 240))
+
+
 def rounded_contain_image(source: Any, size: tuple[int, int], radius: int, background: str) -> Any:
     """Fit placeholder artwork inside a 16:9 slot without cropping its edges."""
     if Image is None or ImageDraw is None or ImageOps is None:
@@ -6968,7 +6973,7 @@ class DownloaderApp(tk.Tk):
         if width <= 1:
             width = max(180, self.focus_thumbnail_wrap.winfo_reqwidth())
         active_size = youtube_thumbnail_size(152)
-        library_size = youtube_thumbnail_size(max(1, width))
+        library_size = library_thumbnail_size(width)
         if not self._focus_thumbnail_is_placeholder and self._focus_thumbnail_source_path is not None:
             active_native = self._create_focus_native_image(self._focus_thumbnail_source_path, active_size, radius=10)
             library_native = self._create_focus_native_image(self._focus_thumbnail_source_path, library_size, radius=10)
