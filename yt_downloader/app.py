@@ -7895,7 +7895,6 @@ class DownloaderApp(tk.Tk):
             self.focus_details_button.grid(row=0, column=1, sticky="e")
             if not self.focus_detail_header.winfo_manager():
                 self.focus_detail_header.grid()
-            self.focus_log.after_idle(lambda: self.focus_log.see("end"))
         else:
             if not self.focus_update_dot.winfo_manager():
                 self.focus_update_dot.pack(side="left", padx=(0, 4), before=self.update_button)
@@ -10705,9 +10704,19 @@ class DownloaderApp(tk.Tk):
     def _append_log_widget(widget: Any, line: str) -> None:
         if widget is None:
             return
+        follow_tail = True
+        try:
+            _first, last = widget.yview()
+            follow_tail = float(last) >= 0.995
+        except (AttributeError, TypeError, ValueError, tk.TclError):
+            # Lightweight test doubles and not-yet-mapped widgets may not
+            # expose a meaningful viewport. Preserve the historical default
+            # for those cases rather than dropping live-tail behavior.
+            pass
         widget.config(state="normal")
         widget.insert("end", line.rstrip() + "\n")
-        widget.see("end")
+        if follow_tail:
+            widget.see("end")
         widget.config(state="disabled")
 
     @staticmethod

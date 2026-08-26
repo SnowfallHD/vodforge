@@ -52,6 +52,19 @@ class TextBuffer:
         return None
 
 
+class ScrollAwareTextBuffer(TextBuffer):
+    def __init__(self, *, last: float):
+        super().__init__()
+        self.last = last
+        self.seen: list[str] = []
+
+    def yview(self):
+        return (0.0, self.last)
+
+    def see(self, index):
+        self.seen.append(str(index))
+
+
 class LiveWorker:
     def is_alive(self):
         return True
@@ -182,6 +195,25 @@ def test_run_log_updates_activity_and_only_the_selected_active_run(tmp_path: Pat
     assert "background active line" in app.log.value
     assert "background active line" not in app.focus_log.value
     assert active_job.activity_lines[-1] == "background active line"
+
+
+def test_live_activity_follows_tail_only_when_reader_is_already_at_tail():
+    following = ScrollAwareTextBuffer(last=1.0)
+    reading_history = ScrollAwareTextBuffer(last=0.72)
+
+    DownloaderApp._append_log_widget(following, "new tail line")
+    DownloaderApp._append_log_widget(reading_history, "new tail line")
+
+    assert following.seen == ["end"]
+    assert reading_history.seen == []
+    assert "new tail line" in following.value
+    assert "new tail line" in reading_history.value
+
+
+def test_compact_layout_does_not_schedule_a_forced_activity_tail_jump():
+    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+
+    assert 'focus_log.after_idle(lambda: self.focus_log.see("end"))' not in layout_source
 
 
 def test_completed_selection_freezes_detail_progress_while_active_run_advances(tmp_path: Path):
