@@ -16,6 +16,7 @@ from .history import application_data_dir
 
 CLOUD_ORIGIN = "https://getvodforge.com"
 CLOUD_PAGE_URL = f"{CLOUD_ORIGIN}/cloud"
+CLOUD_LAUNCH_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/launch"
 CLOUD_SEEN_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/seen"
 CLOUD_CLICK_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/click"
 INSTALLATION_STATE_SCHEMA_VERSION = 1
@@ -31,6 +32,7 @@ class InstallationIdentityError(RuntimeError):
 @dataclass(frozen=True)
 class InstallationState:
     install_id: str
+    first_launch_confirmed: bool = False
     cloud_seen_confirmed: bool = False
 
 
@@ -61,6 +63,7 @@ def _read_state(path: Path) -> InstallationState:
         raise InstallationIdentityError("installation state has an unsupported schema")
     return InstallationState(
         install_id=_parse_install_id(payload.get("install_id")),
+        first_launch_confirmed=payload.get("first_launch_confirmed") is True,
         cloud_seen_confirmed=payload.get("cloud_seen_confirmed") is True,
     )
 
@@ -71,6 +74,7 @@ def _encoded_state(state: InstallationState) -> bytes:
             {
                 "schema_version": INSTALLATION_STATE_SCHEMA_VERSION,
                 "install_id": state.install_id,
+                "first_launch_confirmed": state.first_launch_confirmed,
                 "cloud_seen_confirmed": state.cloud_seen_confirmed,
             },
             indent=2,
@@ -148,6 +152,18 @@ def mark_cloud_seen_confirmed(path: Path, install_id: str) -> InstallationState:
     return updated
 
 
+def mark_first_launch_confirmed(path: Path, install_id: str) -> InstallationState:
+    state = _read_state(path)
+    normalized = _parse_install_id(install_id)
+    if state.install_id != normalized:
+        raise InstallationIdentityError("installation ID changed while recording first launch")
+    if state.first_launch_confirmed:
+        return state
+    updated = replace(state, first_launch_confirmed=True)
+    _replace_state(path, updated)
+    return updated
+
+
 def installation_platform(platform_name: str | None = None) -> str:
     value = sys.platform if platform_name is None else platform_name
     if value == "darwin":
@@ -203,6 +219,24 @@ def record_cloud_seen(
 ) -> bool:
     return _post_json(
         CLOUD_SEEN_ENDPOINT,
+        {
+            "install_id": state.install_id,
+            "platform": installation_platform(platform_name),
+            "app_version": str(app_version),
+        },
+        opener=opener,
+    )
+
+
+def record_first_launch(
+    state: InstallationState,
+    *,
+    app_version: str,
+    platform_name: str | None = None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> bool:
+    return _post_json(
+        CLOUD_LAUNCH_ENDPOINT,
         {
             "install_id": state.install_id,
             "platform": installation_platform(platform_name),

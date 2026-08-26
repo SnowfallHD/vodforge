@@ -31,8 +31,10 @@ from .cloud_funnel import (
     cloud_page_url,
     installation_state_path,
     load_or_create_installation_state,
+    mark_first_launch_confirmed,
     mark_cloud_seen_confirmed,
     record_cloud_click,
+    record_first_launch,
     record_cloud_seen,
 )
 from .history import (
@@ -3807,6 +3809,7 @@ class DownloaderApp(tk.Tk):
         self._close_deadline: float | None = None
         self.installation_state_path = installation_state_path()
         self.installation_state: InstallationState | None = None
+        self._first_launch_worker: threading.Thread | None = None
         self._cloud_seen_worker: threading.Thread | None = None
         try:
             self.installation_state = load_or_create_installation_state(self.installation_state_path)
@@ -3866,6 +3869,7 @@ class DownloaderApp(tk.Tk):
         self._load_download_history()
         self._check_runtime()
         self.after(100, self._pump_events)
+        self.after(250, self._record_first_launch)
         self.after(25, self._start_ytdlp_preload)
         self.protocol("WM_DELETE_WINDOW", self._request_application_close)
         if bool(getattr(sys, "frozen", False)):
@@ -5475,6 +5479,21 @@ class DownloaderApp(tk.Tk):
 
         self._cloud_seen_worker = threading.Thread(target=worker, daemon=True)
         self._cloud_seen_worker.start()
+
+    def _record_first_launch(self) -> None:
+        state = self.installation_state
+        if state is None or state.first_launch_confirmed or self._closing:
+            return
+        existing = self._first_launch_worker
+        if existing is not None and existing.is_alive():
+            return
+
+        def worker() -> None:
+            success = record_first_launch(state, app_version=__version__)
+            self.events.put(("first_launch_result", {"success": success, "install_id": state.install_id}))
+
+        self._first_launch_worker = threading.Thread(target=worker, daemon=True)
+        self._first_launch_worker.start()
 
     def _open_cloud_early_access(self) -> None:
         state = self.installation_state
@@ -8160,6 +8179,16 @@ class DownloaderApp(tk.Tk):
                                 write_diagnostic("Cloud early-access impression confirmed once for this installation")
                             except (InstallationIdentityError, OSError) as exc:
                                 write_diagnostic(f"Cloud impression was accepted but local confirmation could not be saved: {exc}")
+                elif kind == "first_launch_result":
+                    if isinstance(payload, dict) and payload.get("success") is True:
+                        state = self.installation_state
+                        install_id = str(payload.get("install_id") or "")
+                        if state is not None and install_id == state.install_id:
+                            try:
+                                self.installation_state = mark_first_launch_confirmed(self.installation_state_path, install_id)
+                                write_diagnostic("first successful launch confirmed once for this installation")
+                            except (InstallationIdentityError, OSError) as exc:
+                                write_diagnostic(f"first launch was accepted but local confirmation could not be saved: {exc}")
                 elif kind == "done":
                     self._finish_run_ui(str(payload), "Completed", "Complete  /  Ready to open in Library", progress=100)
                 elif kind == "partial":
