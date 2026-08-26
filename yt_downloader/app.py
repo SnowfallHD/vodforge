@@ -4312,7 +4312,9 @@ class PixelScrollTable(tk.Frame):
         self._resize_origin_x = 0.0
         self._resize_origin_width = 0
         self._resize_hover_column: str | None = None
-        self._resize_margin = 5
+        # Keep the divider itself quiet while giving trackpads and high-DPI
+        # pointers a forgiving target on either side of the hairline.
+        self._resize_margin = 8
 
         self._header = tk.Canvas(self, height=self._header_height, bg=THEME["surface"], bd=0, highlightthickness=0, xscrollincrement=1)
         self._body = tk.Canvas(self, bg=THEME["surface"], bd=0, highlightthickness=0, takefocus=True, xscrollincrement=1, yscrollincrement=1)
@@ -4515,6 +4517,10 @@ class PixelScrollTable(tk.Frame):
         self._resize_origin_width = int(rendered_width)
         self._column_options[column]["width"] = int(rendered_width)
         self._column_options[column]["stretch"] = False
+        try:
+            self._header.grab_set()
+        except tk.TclError:
+            pass
         self._set_header_cursor("sb_h_double_arrow")
         return "break"
 
@@ -4538,6 +4544,11 @@ class PixelScrollTable(tk.Frame):
             return None
         self._drag_column_resize(event)
         self._resize_column = None
+        try:
+            if self._header.grab_current() is self._header:
+                self._header.grab_release()
+        except tk.TclError:
+            pass
         self._resize_hover_column = self._column_divider_at(event.x)
         self._set_header_cursor("sb_h_double_arrow" if self._resize_hover_column is not None else "")
         self._redraw()
@@ -4579,7 +4590,7 @@ class PixelScrollTable(tk.Frame):
                     5,
                     cursor,
                     self._header_height - 5,
-                    fill=THEME["accent"] if column in {self._resize_column, self._resize_hover_column} else THEME["border"],
+                    fill=THEME["accent"] if column in {self._resize_column, self._resize_hover_column} else THEME["subtle"],
                     width=2 if column in {self._resize_column, self._resize_hover_column} else 1,
                 )
         self._header.create_line(0, self._header_height - 1, content_width, self._header_height - 1, fill=THEME["border"])

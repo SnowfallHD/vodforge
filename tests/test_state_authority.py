@@ -816,6 +816,10 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert 'self._header.bind("<ButtonRelease-1>", self._end_column_resize' in pixel_table_source
     assert "rendered_width = next(" in pixel_table_source
     assert "layout[:-1]" in pixel_table_source
+    assert "self._resize_margin = 8" in pixel_table_source
+    assert "self._header.grab_set()" in pixel_table_source
+    assert "self._header.grab_release()" in pixel_table_source
+    assert 'else THEME["subtle"]' in pixel_table_source
     assert "self._manually_resized_columns.add(column)" in pixel_table_source
     assert "def layout_column" in pixel_table_source
     assert "self.video_tree.layout_column(" in layout_source
