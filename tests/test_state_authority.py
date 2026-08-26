@@ -592,6 +592,10 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     assert 'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)' in run_list_source
     assert "for wheel_target in (popup, root, run_list, run_scroll):" in run_list_source
     assert 'wheel_target.bind("<MouseWheel>", scroll_runs, add="+")' in run_list_source
+    assert "def pointer_is_over_drop_up()" in run_list_source
+    assert "def scroll_runs_from_parent" in run_list_source
+    assert 'binding_id = self.bind(sequence, callback, add="+")' in run_list_source
+    assert "self.unbind(sequence, binding_id)" in run_list_source
     assert "button.winfo_rooty() - height - 6" in run_list_source
     assert "width = min(440" in run_list_source
     assert "height = min(184" in run_list_source

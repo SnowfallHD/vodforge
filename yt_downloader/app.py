@@ -6191,8 +6191,12 @@ class DownloaderApp(tk.Tk):
         records = self._focus_run_records()
         existing = self.__dict__.get("_focus_run_list_window")
         if existing is not None and existing.winfo_exists():
-            existing.destroy()
-            self._focus_run_list_window = None
+            cleanup = self.__dict__.get("_focus_run_list_cleanup")
+            if callable(cleanup):
+                cleanup()
+            else:
+                existing.destroy()
+                self._focus_run_list_window = None
             return
 
         # A borderless, transient surface keeps this in the app as an anchored
@@ -6287,9 +6291,24 @@ class DownloaderApp(tk.Tk):
 
         run_list.bind("<Configure>", resize_rows, add="+")
 
+        parent_wheel_bindings: list[tuple[str, str]] = []
+
         def close_drop_up() -> None:
+            for sequence, binding_id in parent_wheel_bindings:
+                try:
+                    self.unbind(sequence, binding_id)
+                except tk.TclError:
+                    pass
+            parent_wheel_bindings.clear()
+            if self.__dict__.get("_focus_run_list_cleanup") is close_drop_up:
+                self._focus_run_list_cleanup = None
             self._focus_run_list_window = None
-            popup.destroy()
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+
+        self._focus_run_list_cleanup = close_drop_up
 
         def close_if_focus_left() -> None:
             try:
@@ -6326,6 +6345,43 @@ class DownloaderApp(tk.Tk):
             wheel_target.bind("<MouseWheel>", scroll_runs, add="+")
             wheel_target.bind("<Button-4>", scroll_runs_up, add="+")
             wheel_target.bind("<Button-5>", scroll_runs_down, add="+")
+
+        def pointer_is_over_drop_up() -> bool:
+            try:
+                pointer_x, pointer_y = self.winfo_pointerxy()
+                left = popup.winfo_rootx()
+                top = popup.winfo_rooty()
+                return left <= pointer_x < left + popup.winfo_width() and top <= pointer_y < top + popup.winfo_height()
+            except tk.TclError:
+                return False
+
+        def scroll_runs_from_parent(event: tk.Event[Any]) -> str | None:
+            if not pointer_is_over_drop_up():
+                return None
+            return scroll_runs(event)
+
+        def scroll_runs_up_from_parent(event: tk.Event[Any]) -> str | None:
+            if not pointer_is_over_drop_up():
+                return None
+            return scroll_runs_up(event)
+
+        def scroll_runs_down_from_parent(event: tk.Event[Any]) -> str | None:
+            if not pointer_is_over_drop_up():
+                return None
+            return scroll_runs_down(event)
+
+        # Aqua can deliver a gesture visually over an override-redirect
+        # transient to the owning application window. Keep scoped parent
+        # bindings only while this drop-up exists, and gate them by pointer
+        # geometry so no other application surface inherits run-list scroll.
+        for sequence, callback in (
+            ("<MouseWheel>", scroll_runs_from_parent),
+            ("<Button-4>", scroll_runs_up_from_parent),
+            ("<Button-5>", scroll_runs_down_from_parent),
+        ):
+            binding_id = self.bind(sequence, callback, add="+")
+            if binding_id:
+                parent_wheel_bindings.append((sequence, binding_id))
         popup.bind("<Escape>", lambda _event: close_drop_up())
         popup.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
 
