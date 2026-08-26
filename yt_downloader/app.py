@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
 
 from .cloud_funnel import (
@@ -235,7 +236,7 @@ def focus_library_layout_mode(width: int) -> str:
     """Protect the selected item before the media table consumes medium widths."""
     if width < 920:
         return "compact"
-    if width < 1080:
+    if width < 1000:
         return "balanced"
     return "wide"
 
@@ -269,6 +270,15 @@ def accumulated_row_scroll(remainder: float, pixels: int, row_pixels: int) -> tu
     total = float(remainder) + int(pixels)
     rows = int(total / safe_row_pixels)
     return rows, total - (rows * safe_row_pixels)
+
+
+def touchpad_scroll_deltas(widget: tk.Misc, packed_delta: int | float) -> tuple[float, float]:
+    """Decode Tk 9's packed macOS precision-scroll delta into x/y motion."""
+    try:
+        raw_x, raw_y = widget.tk.call("tk::PreciseScrollDeltas", packed_delta)
+        return float(raw_x), float(raw_y)
+    except (AttributeError, TypeError, ValueError, tk.TclError):
+        return 0.0, 0.0
 
 
 def bind_smooth_vertical_wheel(
@@ -327,10 +337,18 @@ def bind_smooth_vertical_wheel(
     def on_wheel(event: tk.Event[Any]) -> str:
         return scroll_pixels(focus_wheel_pixels(getattr(event, "delta", 0)))
 
+    def on_touchpad_scroll(event: tk.Event[Any]) -> str:
+        _delta_x, delta_y = touchpad_scroll_deltas(scroller, getattr(event, "delta", 0))
+        return scroll_pixels(focus_wheel_pixels(delta_y))
+
     for target in wheel_targets:
         target.bind("<MouseWheel>", on_wheel, add="+")
         target.bind("<Button-4>", lambda _event: scroll_pixels(-36), add="+")
         target.bind("<Button-5>", lambda _event: scroll_pixels(36), add="+")
+        try:
+            target.bind("<TouchpadScroll>", on_touchpad_scroll, add="+")
+        except tk.TclError:
+            pass
 
 
 def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
@@ -3804,6 +3822,285 @@ class SleekProgressbar(tk.Canvas):
                 self.create_line(start, y1, end, y1, fill="#9a96ff")
 
 
+class PixelScrollTable(tk.Frame):
+    """Small Treeview-compatible table with true pixel scrolling."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        columns: tuple[str, ...],
+        selectmode: str = "browse",
+        row_height: int = 30,
+        header_height: int = 28,
+    ) -> None:
+        del selectmode
+        super().__init__(parent, bg=THEME["border"], bd=0, highlightthickness=1, highlightbackground=THEME["subtle"])
+        self._columns = tuple(columns)
+        self._headings = {column: column for column in columns}
+        self._column_options: dict[str, dict[str, Any]] = {
+            column: {"width": 100, "minwidth": 40, "stretch": False, "anchor": "w"}
+            for column in columns
+        }
+        self._items: dict[str, tuple[Any, ...]] = {}
+        self._order: list[str] = []
+        self._selection: str | None = None
+        self._focus_item: str | None = None
+        self._row_height = max(20, int(row_height))
+        self._header_height = max(20, int(header_height))
+        self._yscrollcommand: Callable[[float, float], Any] | None = None
+        self._xscrollcommand: Callable[[float, float], Any] | None = None
+        self._font = tkfont.Font(font=FONT_UI)
+        self._header_font = tkfont.Font(font=FONT_UI_SMALL_MEDIUM)
+
+        self._header = tk.Canvas(self, height=self._header_height, bg=THEME["surface"], bd=0, highlightthickness=0, xscrollincrement=1)
+        self._body = tk.Canvas(self, bg=THEME["surface"], bd=0, highlightthickness=0, takefocus=True, xscrollincrement=1, yscrollincrement=1)
+        self._header.pack(fill="x")
+        self._body.pack(fill="both", expand=True)
+        self._body.configure(yscrollcommand=self._report_yview, xscrollcommand=self._report_xview)
+        self._body.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self._body.bind("<Button-1>", self._select_from_pointer, add="+")
+        self._body.bind("<Up>", lambda _event: self._move_selection(-1), add="+")
+        self._body.bind("<Down>", lambda _event: self._move_selection(1), add="+")
+        self._body.bind("<Prior>", lambda _event: self._move_selection(-max(1, self._visible_rows() - 1)), add="+")
+        self._body.bind("<Next>", lambda _event: self._move_selection(max(1, self._visible_rows() - 1)), add="+")
+        self._bind_precision_scroll(self._body)
+        self._bind_precision_scroll(self._header, horizontal_only=True)
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "columns":
+            return self._columns
+        return super().__getitem__(key)
+
+    def configure(self, cnf: Any | None = None, **kwargs: Any) -> Any:
+        if cnf:
+            kwargs.update(cnf)
+        if "yscrollcommand" in kwargs:
+            self._yscrollcommand = kwargs.pop("yscrollcommand")
+        if "xscrollcommand" in kwargs:
+            self._xscrollcommand = kwargs.pop("xscrollcommand")
+        result = super().configure(**kwargs) if kwargs else None
+        self._report_yview(*self._body.yview())
+        self._report_xview(*self._body.xview())
+        return result
+
+    config = configure
+
+    def bind(self, sequence: str | None = None, func: Callable[..., Any] | None = None, add: str | bool | None = None) -> str:
+        if sequence in {"<<TreeviewSelect>>", "<Button-1>", "<Button-2>", "<Button-3>"}:
+            return self._body.bind(sequence, func, add)
+        return super().bind(sequence, func, add)
+
+    def heading(self, column: str, *, text: str = "") -> None:
+        self._headings[column] = text
+        self._redraw()
+
+    def column(self, column: str, **kwargs: Any) -> dict[str, Any]:
+        options = self._column_options[column]
+        options.update(kwargs)
+        options["width"] = max(int(options.get("minwidth", 1)), int(options.get("width", 100)))
+        self._redraw()
+        return dict(options)
+
+    def insert(self, _parent: str, index: str | int, *, iid: str, values: tuple[Any, ...]) -> str:
+        item_id = str(iid)
+        if item_id in self._items:
+            self.delete(item_id)
+        self._order.append(item_id) if index == "end" else self._order.insert(max(0, int(index)), item_id)
+        self._items[item_id] = tuple(values)
+        self._redraw()
+        return item_id
+
+    def delete(self, *items: str) -> None:
+        for raw_item in items:
+            item = str(raw_item)
+            self._items.pop(item, None)
+            if item in self._order:
+                self._order.remove(item)
+            if self._selection == item:
+                self._selection = None
+            if self._focus_item == item:
+                self._focus_item = None
+        self._redraw()
+
+    def get_children(self, _item: str | None = None) -> tuple[str, ...]:
+        return tuple(self._order)
+
+    def selection(self) -> tuple[str, ...]:
+        return (self._selection,) if self._selection in self._items else ()
+
+    def selection_set(self, item: str) -> None:
+        item_id = str(item)
+        if item_id not in self._items:
+            return
+        changed = item_id != self._selection
+        self._selection = item_id
+        self._focus_item = item_id
+        self._redraw()
+        self._see(item_id)
+        if changed:
+            self._body.event_generate("<<TreeviewSelect>>", when="tail")
+
+    def focus(self, item: str | None = None) -> str:
+        if item is None:
+            return self._focus_item or ""
+        if str(item) in self._items:
+            self._focus_item = str(item)
+        return self._focus_item or ""
+
+    def identify_row(self, y: int | float) -> str:
+        index = int(float(self._body.canvasy(y)) // self._row_height)
+        return self._order[index] if 0 <= index < len(self._order) else ""
+
+    def identify_column(self, x: int | float) -> str:
+        position = float(self._body.canvasx(x))
+        cursor = 0.0
+        for index, (_column, width, _anchor) in enumerate(self._layout_columns(), start=1):
+            cursor += width
+            if position < cursor:
+                return f"#{index}"
+        return ""
+
+    def yview(self, *args: Any) -> tuple[float, float] | None:
+        if not args:
+            return self._body.yview()
+        self._body.yview(*args)
+        return None
+
+    def xview(self, *args: Any) -> tuple[float, float] | None:
+        if not args:
+            return self._body.xview()
+        self._body.xview(*args)
+        self._header.xview(*args)
+        return None
+
+    def _report_yview(self, first: str | float, last: str | float) -> None:
+        if self._yscrollcommand is not None:
+            self._yscrollcommand(float(first), float(last))
+
+    def _report_xview(self, first: str | float, last: str | float) -> None:
+        self._header.xview_moveto(float(first))
+        if self._xscrollcommand is not None:
+            self._xscrollcommand(float(first), float(last))
+
+    def _visible_rows(self) -> int:
+        return max(1, self._body.winfo_height() // self._row_height)
+
+    def _layout_columns(self) -> list[tuple[str, int, str]]:
+        widths = [max(int(self._column_options[column].get("minwidth", 1)), int(self._column_options[column].get("width", 100))) for column in self._columns]
+        extra = max(1, self._body.winfo_width()) - sum(widths)
+        if extra > 0:
+            stretch_indices = [index for index, column in enumerate(self._columns) if self._column_options[column].get("stretch")]
+            if stretch_indices:
+                widths[stretch_indices[0]] += extra
+        return [(column, widths[index], str(self._column_options[column].get("anchor", "w"))) for index, column in enumerate(self._columns)]
+
+    def _ellipsize(self, value: Any, width: int, *, font: tkfont.Font) -> str:
+        text = str(value or "")
+        available = max(0, width - 16)
+        if font.measure(text) <= available:
+            return text
+        low, high = 0, len(text)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if font.measure(text[:middle] + "…") <= available:
+                low = middle
+            else:
+                high = middle - 1
+        return text[:low] + "…"
+
+    def _redraw(self) -> None:
+        try:
+            y_first, x_first = self._body.yview()[0], self._body.xview()[0]
+        except tk.TclError:
+            return
+        layout = self._layout_columns()
+        content_width = max(1, sum(width for _column, width, _anchor in layout))
+        content_height = max(self._row_height, len(self._order) * self._row_height)
+        self._header.delete("all")
+        self._body.delete("all")
+        cursor = 0
+        for column, width, anchor in layout:
+            self._header.create_rectangle(cursor, 0, cursor + width, self._header_height, fill=THEME["surface"], outline="")
+            self._header.create_text(cursor + (width / 2 if anchor == "center" else 10), self._header_height / 2, text=self._ellipsize(self._headings.get(column, column), width, font=self._header_font), anchor="center" if anchor == "center" else "w", fill=THEME["muted"], font=self._header_font)
+            cursor += width
+        self._header.create_line(0, self._header_height - 1, content_width, self._header_height - 1, fill=THEME["border"])
+        for row_index, item_id in enumerate(self._order):
+            top = row_index * self._row_height
+            selected = item_id == self._selection
+            self._body.create_rectangle(0, top, content_width, top + self._row_height, fill=THEME["accent_dark"] if selected else THEME["surface"], outline="")
+            values = self._items.get(item_id, ())
+            cursor = 0
+            for value_index, (_column, width, anchor) in enumerate(layout):
+                value = values[value_index] if value_index < len(values) else ""
+                text_x = cursor + (width / 2 if anchor == "center" else width - 10 if anchor == "e" else 10)
+                self._body.create_text(text_x, top + (self._row_height / 2), text=self._ellipsize(value, width, font=self._font), anchor="center" if anchor == "center" else "e" if anchor == "e" else "w", fill="#ffffff" if selected else THEME["text"], font=self._font)
+                cursor += width
+        self._header.configure(scrollregion=(0, 0, content_width, self._header_height))
+        self._body.configure(scrollregion=(0, 0, content_width, content_height))
+        self._body.xview_moveto(x_first)
+        self._header.xview_moveto(x_first)
+        self._body.yview_moveto(y_first)
+
+    def _select_from_pointer(self, event: tk.Event[Any]) -> None:
+        row = self.identify_row(event.y)
+        if row:
+            self.selection_set(row)
+            self._body.focus_set()
+
+    def _move_selection(self, amount: int) -> str:
+        if not self._order:
+            return "break"
+        try:
+            current = self._order.index(self._selection or "")
+        except ValueError:
+            current = 0 if amount >= 0 else len(self._order) - 1
+        self.selection_set(self._order[max(0, min(len(self._order) - 1, current + amount))])
+        return "break"
+
+    def _see(self, item: str) -> None:
+        try:
+            index = self._order.index(item)
+        except ValueError:
+            return
+        content_height = max(1, len(self._order) * self._row_height)
+        viewport = max(1, self._body.winfo_height())
+        top, bottom = index * self._row_height, (index + 1) * self._row_height
+        visible_top = self._body.canvasy(0)
+        if top < visible_top:
+            self._body.yview_moveto(top / content_height)
+        elif bottom > visible_top + viewport:
+            self._body.yview_moveto(max(0.0, (bottom - viewport) / content_height))
+
+    def _scroll_pixels(self, dx: int, dy: int) -> str:
+        if dy:
+            content_height = max(self._body.winfo_height(), len(self._order) * self._row_height)
+            self._body.yview_moveto(max(0.0, min(1.0, self._body.yview()[0] + (dy / max(1, content_height)))))
+        if dx:
+            content_width = max(self._body.winfo_width(), sum(width for _column, width, _anchor in self._layout_columns()))
+            self.xview("moveto", max(0.0, min(1.0, self._body.xview()[0] + (dx / max(1, content_width)))))
+        return "break"
+
+    def _bind_precision_scroll(self, target: tk.Misc, *, horizontal_only: bool = False) -> None:
+        def on_wheel(event: tk.Event[Any]) -> str:
+            pixels = focus_wheel_pixels(getattr(event, "delta", 0))
+            horizontal = horizontal_only or bool(getattr(event, "state", 0) & 0x0001)
+            return self._scroll_pixels(pixels if horizontal else 0, 0 if horizontal else pixels)
+
+        def on_touchpad(event: tk.Event[Any]) -> str:
+            delta_x, delta_y = touchpad_scroll_deltas(self, getattr(event, "delta", 0))
+            return self._scroll_pixels(focus_wheel_pixels(delta_x), 0 if horizontal_only else focus_wheel_pixels(delta_y))
+
+        target.bind("<MouseWheel>", on_wheel, add="+")
+        target.bind("<Shift-MouseWheel>", on_wheel, add="+")
+        target.bind("<Button-4>", lambda _event: self._scroll_pixels(0, -36), add="+")
+        target.bind("<Button-5>", lambda _event: self._scroll_pixels(0, 36), add="+")
+        try:
+            target.bind("<TouchpadScroll>", on_touchpad, add="+")
+        except tk.TclError:
+            pass
+
+
 class SleekScrollbar(tk.Canvas):
     """A narrow auto-hiding scrollbar without platform arrow chrome."""
 
@@ -5501,6 +5798,8 @@ class DownloaderApp(tk.Tk):
         ttk.Label(deck_header, text="RUN DECK", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w")
         self.focus_run_overflow_button = ttk.Button(deck_header, text="All runs", command=self._show_focus_run_menu, style="FocusQuiet.TButton")
         self.focus_run_overflow_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.focus_run_overflow_button.bind("<Enter>", lambda _event: self._show_focus_run_menu(), add="+")
+        self.focus_run_overflow_button.bind("<Leave>", lambda _event: self._schedule_focus_run_menu_close(), add="+")
         self.focus_deck_header = deck_header
 
         deck_border = tk.Frame(deck_area, bg=THEME["border"], bd=0, highlightthickness=0)
@@ -5562,8 +5861,10 @@ class DownloaderApp(tk.Tk):
 
         metadata_content = ttk.Frame(parent, style="FocusShell.TFrame")
         metadata_content.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 14))
-        metadata_content.columnconfigure(0, weight=3)
-        metadata_content.columnconfigure(1, weight=2)
+        # The media table owns the flexible width. Selected Item is a compact
+        # inspection rail, not a second equal-width workspace.
+        metadata_content.columnconfigure(0, weight=1)
+        metadata_content.columnconfigure(1, weight=0, minsize=340)
         metadata_content.rowconfigure(0, weight=1)
         self.focus_metadata_content = metadata_content
 
@@ -5573,12 +5874,10 @@ class DownloaderApp(tk.Tk):
         queue_panel.rowconfigure(1, weight=1)
         self.focus_library_media_label_var = tk.StringVar(value="MP4 MEDIA")
         ttk.Label(queue_panel, textvariable=self.focus_library_media_label_var, style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        self.video_tree = ttk.Treeview(
+        self.video_tree = PixelScrollTable(
             queue_panel,
             columns=("index", "title", "duration", "creator", "id", "location", "action"),
-            show="headings",
             selectmode="browse",
-            height=1,
         )
         for column, label in (("index", "#"), ("title", "Title"), ("duration", "Length"), ("creator", "Creator"), ("id", "ID"), ("location", "Saved location"), ("action", "")):
             self.video_tree.heading(column, text=label)
@@ -5595,7 +5894,6 @@ class DownloaderApp(tk.Tk):
         self.video_tree.grid(row=1, column=0, sticky="nsew")
         tree_scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
         tree_x_scroll.grid(row=2, column=0, sticky="ew", pady=(6, 0))
-        bind_smooth_vertical_wheel(self.video_tree, self.video_tree, tree_scroll, mode="rows", row_pixels=30)
         self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
         self.video_tree.bind("<Button-1>", self._on_library_tree_click, add="+")
         self.video_tree.bind("<Button-2>", self._show_library_row_menu)
@@ -5607,7 +5905,7 @@ class DownloaderApp(tk.Tk):
         details.columnconfigure(0, weight=1)
         self.selected_title_var = tk.StringVar(value="Choose a saved item or preview a URL to inspect its metadata.")
         ttk.Label(details, text="SELECTED ITEM", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        self.focus_selected_title_label = ttk.Label(details, textvariable=self.selected_title_var, wraplength=380, justify="left", style="Muted.TLabel")
+        self.focus_selected_title_label = ttk.Label(details, textvariable=self.selected_title_var, wraplength=320, justify="left", style="Muted.TLabel")
         self.focus_selected_title_label.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         details.bind(
             "<Configure>",
@@ -6294,16 +6592,46 @@ class DownloaderApp(tk.Tk):
         popup.update_idletasks()
         reveal_toplevel(popup, centered_toplevel_geometry(self, 560, 360))
 
+    def _cancel_focus_run_menu_close(self) -> None:
+        after_id = self.__dict__.pop("_focus_run_list_close_after_id", None)
+        if after_id is not None:
+            try:
+                self.after_cancel(after_id)
+            except tk.TclError:
+                pass
+
+    def _schedule_focus_run_menu_close(self) -> None:
+        self._cancel_focus_run_menu_close()
+
+        def close_if_pointer_left() -> None:
+            self._focus_run_list_close_after_id = None
+            popup = self.__dict__.get("_focus_run_list_window")
+            if popup is None or not popup.winfo_exists():
+                return
+            button = self.focus_run_overflow_button
+            try:
+                pointer_x, pointer_y = self.winfo_pointerxy()
+                hovered = self.winfo_containing(pointer_x, pointer_y)
+                hovered_path = str(hovered or "")
+                inside_popup = hovered_path == str(popup) or hovered_path.startswith(f"{popup}.")
+                if hovered is button or inside_popup:
+                    return
+            except tk.TclError:
+                return
+            cleanup = self.__dict__.get("_focus_run_list_cleanup")
+            if callable(cleanup):
+                cleanup()
+
+        # A tiny bridge lets the pointer cross the visual gap between the
+        # button and its drop-up without flicker; closure is still immediate
+        # once the pointer is outside both surfaces.
+        self._focus_run_list_close_after_id = self.after(40, close_if_pointer_left)
+
     def _show_focus_run_menu(self) -> None:
         records = self._focus_run_records()
         existing = self.__dict__.get("_focus_run_list_window")
         if existing is not None and existing.winfo_exists():
-            cleanup = self.__dict__.get("_focus_run_list_cleanup")
-            if callable(cleanup):
-                cleanup()
-            else:
-                existing.destroy()
-                self._focus_run_list_window = None
+            self._cancel_focus_run_menu_close()
             return
 
         # Keep the drop-up inside the application window. Aqua does not
@@ -6336,12 +6664,14 @@ class DownloaderApp(tk.Tk):
         run_scroll.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=10)
 
         selected_index = -1
+        selected_run_id = str(self._focus_selected_run_id or "").strip()
         row_rectangles: list[int] = []
         if records:
             for index, record in enumerate(records):
                 title = str(record.get("title") or "Untitled run")
                 status = str(record.get("status") or "Ready")
-                if str(record.get("run_id") or "") == str(self._focus_selected_run_id or ""):
+                record_run_id = str(record.get("run_id") or "").strip()
+                if selected_run_id and record_run_id == selected_run_id:
                     selected_index = index
                 row_tag = f"run-row-{index}"
                 top = index * row_height
@@ -6397,6 +6727,7 @@ class DownloaderApp(tk.Tk):
         run_list.bind("<Configure>", resize_rows, add="+")
 
         def close_drop_up() -> None:
+            self._cancel_focus_run_menu_close()
             if self.__dict__.get("_focus_run_list_cleanup") is close_drop_up:
                 self._focus_run_list_cleanup = None
             self._focus_run_list_window = None
@@ -6406,14 +6737,6 @@ class DownloaderApp(tk.Tk):
                 pass
 
         self._focus_run_list_cleanup = close_drop_up
-
-        def close_if_focus_left() -> None:
-            try:
-                focused = popup.focus_get()
-                if focused is None or not str(focused).startswith(str(popup)):
-                    close_drop_up()
-            except tk.TclError:
-                return
 
         def choose_run(record: dict[str, Any]) -> None:
             self._focus_select_run_record(record)
@@ -6429,7 +6752,8 @@ class DownloaderApp(tk.Tk):
             mode="increments",
         )
         popup.bind("<Escape>", lambda _event: close_drop_up())
-        run_list.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
+        popup.bind("<Enter>", lambda _event: self._cancel_focus_run_menu_close(), add="+")
+        popup.bind("<Leave>", lambda _event: self._schedule_focus_run_menu_close(), add="+")
 
         button = self.focus_run_overflow_button
         button.update_idletasks()
@@ -7051,8 +7375,12 @@ class DownloaderApp(tk.Tk):
         width = max(1, self.winfo_width())
         height = max(1, self.winfo_height())
         mode = focus_layout_mode(width, height)
+        compact = mode == "compact"
+        balanced = mode == "balanced"
+        library_mode = "compact" if compact else focus_library_layout_mode(width)
         layout_signature = (
             mode,
+            library_mode,
             focus_run_deck_capacity(max(1, width - 52)),
             focus_hero_thumbnail_visible(width),
         )
@@ -7060,9 +7388,6 @@ class DownloaderApp(tk.Tk):
             return
         self._focus_layout_signature = layout_signature
         self._focus_layout = mode
-        compact = mode == "compact"
-        balanced = mode == "balanced"
-        library_mode = "compact" if compact else focus_library_layout_mode(width)
         horizontal_pad = 20 if compact else 42 if balanced else 100
         self.focus_shell.pack_configure(padx=12 if compact else 20, pady=(10 if compact else 16, 10 if compact else 14))
         self.focus_command_area.grid_configure(padx=horizontal_pad, pady=(18 if compact else 26 if balanced else 42, 8 if compact else 14))
@@ -7116,7 +7441,10 @@ class DownloaderApp(tk.Tk):
         else:
             self.focus_deck_header.grid_remove()
 
-        if compact or width < 1060:
+        # The selected-details rail and its controls share one authority. When
+        # the rail is visible its four direct actions stay visible; when the
+        # rail is absent the two compact menu buttons replace them.
+        if library_mode == "compact":
             for button in self.focus_library_action_buttons:
                 button.pack_forget()
             if not self.focus_library_menu_button.winfo_manager():
@@ -7154,15 +7482,15 @@ class DownloaderApp(tk.Tk):
             self.focus_queue_panel.grid_configure(column=0, columnspan=1, padx=(0, 18))
             self.focus_library_details.grid(row=0, column=1, sticky="nsew")
             if library_mode == "balanced":
-                self.focus_metadata_content.columnconfigure(0, weight=5)
-                self.focus_metadata_content.columnconfigure(1, weight=4, minsize=300)
+                self.focus_metadata_content.columnconfigure(0, weight=1)
+                self.focus_metadata_content.columnconfigure(1, weight=0, minsize=300)
                 self.video_tree.column("creator", width=110, minwidth=90, stretch=False)
                 self.video_tree.column("id", width=90, minwidth=72, stretch=False)
                 self.video_tree.column("location", width=120, minwidth=90, stretch=False)
                 self.video_tree.column("title", width=320, minwidth=200, stretch=False)
             else:
-                self.focus_metadata_content.columnconfigure(0, weight=3)
-                self.focus_metadata_content.columnconfigure(1, weight=2, minsize=320)
+                self.focus_metadata_content.columnconfigure(0, weight=1)
+                self.focus_metadata_content.columnconfigure(1, weight=0, minsize=340)
                 self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
                 self.video_tree.column("id", width=90, minwidth=72, stretch=False)
                 self.video_tree.column("location", width=120, minwidth=90, stretch=False)

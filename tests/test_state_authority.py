@@ -582,6 +582,8 @@ def test_all_resizable_popouts_enforce_content_appropriate_minimums():
 
 def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     run_list_source = inspect.getsource(DownloaderApp._show_focus_run_menu)
+    forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
+    close_source = inspect.getsource(DownloaderApp._schedule_focus_run_menu_close)
 
     assert 'popup = tk.Frame(self, bg=THEME["border"]' in run_list_source
     assert "popup.overrideredirect(True)" not in run_list_source
@@ -597,7 +599,16 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     assert "popup.place(x=x, y=y, width=width, height=height)" in run_list_source
     assert "width = min(440" in run_list_source
     assert "height = min(184" in run_list_source
-    assert 'run_list.bind("<FocusOut>"' in run_list_source
+    assert 'focus_run_overflow_button.bind("<Enter>"' in forge_source
+    assert 'focus_run_overflow_button.bind("<Leave>"' in forge_source
+    assert "self._cancel_focus_run_menu_close()" in run_list_source
+    assert "existing.destroy()" not in run_list_source
+    assert 'popup.bind("<Enter>"' in run_list_source
+    assert 'popup.bind("<Leave>"' in run_list_source
+    assert "hovered is button or inside_popup" in close_source
+    assert "self.after(40, close_if_pointer_left)" in close_source
+    assert 'selected_run_id = str(self._focus_selected_run_id or "").strip()' in run_list_source
+    assert "if selected_run_id and record_run_id == selected_run_id:" in run_list_source
 
 
 def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
@@ -611,6 +622,13 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert 'self.video_tree.column("location", width=140, minwidth=100' in layout_source
     assert 'self.video_tree.column("title", width=360, minwidth=220, stretch=False)' in layout_source
     assert 'width=0, minwidth=0' not in layout_source
+    assert 'library_mode = "compact" if compact else focus_library_layout_mode(width)' in layout_source
+    assert "library_mode," in layout_source
+    assert 'if library_mode == "compact":' in layout_source
+    assert "library_actions_collapsed" not in layout_source
+    assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in layout_source
+    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=340)' in layout_source
+    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=300)' in layout_source
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
     assert "self.focus_run_overflow_button.grid()" in deck_source
     assert "if self._focus_run_records():" in layout_source
@@ -620,9 +638,15 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     activity_source = inspect.getsource(DownloaderApp._build_focus_activity_view)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
+    pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
+    wheel_binding_source = inspect.getsource(app_module.bind_smooth_vertical_wheel)
 
-    assert "bind_smooth_vertical_wheel(self.video_tree" in library_source
-    assert 'mode="rows", row_pixels=30' in library_source
+    assert "self.video_tree = PixelScrollTable(" in library_source
+    assert 'target.bind("<TouchpadScroll>"' in pixel_table_source
+    assert "tk::PreciseScrollDeltas" in inspect.getsource(app_module.touchpad_scroll_deltas)
+    assert "yview_moveto" in pixel_table_source
+    assert "xview(\"moveto\"" in pixel_table_source
+    assert 'target.bind("<TouchpadScroll>"' in wheel_binding_source
     assert "bind_smooth_vertical_wheel(self.log" in activity_source
     assert 'mode="pixels"' in activity_source
     assert "bind_smooth_vertical_wheel(self.focus_log" in forge_source
