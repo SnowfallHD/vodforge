@@ -23,6 +23,7 @@ from yt_downloader.app import (
     DownloaderApp,
     ExportPlan,
     ExportMode,
+    EXPORT_MODES,
     Mp3ExportSettings,
     OutputType,
     QUALITY_OPTIONS,
@@ -30,6 +31,9 @@ from yt_downloader.app import (
     ManualExportSettings,
     apply_manual_export_settings,
     build_auto_export_plan,
+    export_mode_description,
+    export_mode_display_name,
+    export_mode_from_display_name,
     build_mp3_export_plan,
     build_encoding_summary_display,
     build_encoding_summary_metadata,
@@ -2060,6 +2064,28 @@ def test_auto_export_plan_calculates_source_aware_1080p_cbr_floor_and_audio():
     assert plan.format_selector == "137+140"
     assert "/137" not in plan.format_selector
     assert "true 1080p source" in plan.summary
+
+
+def test_export_mode_labels_mark_auto_recommended_without_changing_canonical_values():
+    assert EXPORT_MODES == ["Auto CBR (Recommended)", "Strict Compliance", "Manual Override"]
+    assert export_mode_display_name(ExportMode.AUTO_CBR) == "Auto CBR (Recommended)"
+    assert export_mode_from_display_name("Auto CBR (Recommended)") == ExportMode.AUTO_CBR
+    assert export_mode_from_display_name("Auto CBR") == ExportMode.AUTO_CBR
+    assert ExportMode.AUTO_CBR.value == "Auto CBR"
+    assert ExportMode.STRICT_COMPLIANCE.value == "Strict Compliance"
+
+
+def test_export_mode_descriptions_state_the_actual_rate_control_behavior():
+    auto = export_mode_description(ExportMode.AUTO_CBR)
+    strict = export_mode_description(ExportMode.STRICT_COMPLIANCE)
+    manual = export_mode_description(ExportMode.MANUAL_OVERRIDE)
+
+    assert auto.startswith("Recommended.")
+    assert "source quality and resolution" in auto
+    assert "10 Mbps video" in strict
+    assert "320 kbps audio" in strict
+    assert "cannot add detail" in strict
+    assert "exact video bitrate, audio bitrate, and encoding speed" in manual
 
 
 def test_manual_override_keeps_source_selection_but_replaces_encode_settings():

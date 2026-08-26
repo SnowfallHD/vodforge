@@ -139,7 +139,6 @@ _BLOCKING_ANALYSIS_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_BLOCKING_AN
 CLEAN_BITRATE_STEPS = [1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 8000, 10000, 12000, 14000, 24000, 45000, 68000]
 VIDEO_MINIMUMS_KBPS = {480: 1000, 720: 1500, 1080: 2000, 1440: 6000, 2160: 12000}
 VIDEO_CAPS_KBPS = {(480, 30): 2500, (720, 30): 5000, (1080, 30): 10000, (1080, 60): 14000, (1440, 30): 24000, (2160, 30): 45000, (2160, 60): 68000}
-EXPORT_MODES = ["Auto CBR", "Strict Compliance", "Manual Override"]
 MP3_QUALITY_OPTIONS = {
     "Maximum — 320 kbps CBR": 320,
     "High — 256 kbps CBR": 256,
@@ -1014,6 +1013,44 @@ class ExportMode(str, Enum):
     AUTO_CBR = "Auto CBR"
     STRICT_COMPLIANCE = "Strict Compliance"
     MANUAL_OVERRIDE = "Manual Override"
+
+
+def export_mode_display_name(mode: ExportMode | str) -> str:
+    """Return the user-facing selector label without changing stored mode values."""
+    parsed = mode if isinstance(mode, ExportMode) else ExportMode(mode)
+    if parsed == ExportMode.AUTO_CBR:
+        return "Auto CBR (Recommended)"
+    return parsed.value
+
+
+def export_mode_from_display_name(value: ExportMode | str) -> ExportMode:
+    """Resolve a selector label back to the canonical persisted export mode."""
+    if isinstance(value, ExportMode):
+        return value
+    text = str(value).strip()
+    for mode in ExportMode:
+        if text in {mode.value, export_mode_display_name(mode)}:
+            return mode
+    raise ValueError(f"Unsupported MP4 output mode: {value!r}")
+
+
+def export_mode_description(mode: ExportMode | str) -> str:
+    """Explain each MP4 rate-control choice in direct, source-aware language."""
+    parsed = export_mode_from_display_name(mode)
+    if parsed == ExportMode.AUTO_CBR:
+        return (
+            "Recommended. Chooses a bitrate for each video from its source quality and resolution, "
+            "so a larger file is not created when a higher bitrate would not help."
+        )
+    if parsed == ExportMode.STRICT_COMPLIANCE:
+        return (
+            "Uses the same 10 Mbps video and 320 kbps audio delivery profile for every MP4. "
+            "It cannot add detail missing from the YouTube source."
+        )
+    return "Uses the exact video bitrate, audio bitrate, and encoding speed you choose below."
+
+
+EXPORT_MODES = [export_mode_display_name(mode) for mode in ExportMode]
 
 
 @dataclass(frozen=True)
@@ -4837,6 +4874,8 @@ class DownloaderApp(tk.Tk):
         self.library_output_type_var = tk.StringVar(value=OutputType.MP4.value)
         self.quality_var = tk.StringVar(value="1080p Full HD")
         self.export_mode_var = tk.StringVar(value=ExportMode.AUTO_CBR.value)
+        self.export_mode_choice_var = tk.StringVar(value=export_mode_display_name(ExportMode.AUTO_CBR))
+        self.export_mode_description_var = tk.StringVar(value=export_mode_description(ExportMode.AUTO_CBR))
         self.manual_video_bitrate_var = tk.StringVar(value=str(STRICT_VIDEO_BITRATE_KBPS))
         self.manual_audio_bitrate_var = tk.StringVar(value=str(STRICT_AUDIO_BITRATE_KBPS))
         self.manual_sample_rate_var = tk.StringVar(value=AUDIO_SAMPLE_RATE)
@@ -5207,10 +5246,10 @@ class DownloaderApp(tk.Tk):
         ttk.Label(options, text="Output mode").grid(row=1, column=0, sticky="w", padx=10, pady=4)
         export_mode_combo = ttk.Combobox(
             options,
-            textvariable=self.export_mode_var,
+            textvariable=self.export_mode_choice_var,
             values=EXPORT_MODES,
             state="readonly",
-            width=16,
+            width=22,
         )
         export_mode_combo.grid(row=1, column=1, sticky="ew", padx=10, pady=2)
         advanced_options = ttk.Frame(options)
@@ -5759,6 +5798,7 @@ class DownloaderApp(tk.Tk):
         self.output_var.trace_add("write", lambda *_args: self._sync_focus_destination())
         self.quality_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
         self.export_mode_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.export_mode_choice_var.trace_add("write", lambda *_args: self._on_export_mode_choice_changed())
         self.output_type_var.trace_add("write", lambda *_args: self._on_output_type_changed())
         self.library_output_type_var.trace_add("write", lambda *_args: self._on_library_output_type_changed())
         self.mp3_quality_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
@@ -6442,6 +6482,20 @@ class DownloaderApp(tk.Tk):
             else:
                 self.focus_transfer_var.set("VOD-ready MP4 / H.264 video / AAC audio")
 
+    def _on_export_mode_choice_changed(self) -> None:
+        try:
+            mode = export_mode_from_display_name(self.export_mode_choice_var.get())
+        except ValueError:
+            mode = ExportMode.AUTO_CBR
+            recommended = export_mode_display_name(mode)
+            if self.export_mode_choice_var.get() != recommended:
+                self.export_mode_choice_var.set(recommended)
+                return
+        self.export_mode_description_var.set(export_mode_description(mode))
+        if self.export_mode_var.get() != mode.value:
+            self.export_mode_var.set(mode.value)
+        self._refresh_manual_settings_visibility()
+
     def _on_library_output_type_changed(self) -> None:
         try:
             output_type = OutputType(self.library_output_type_var.get())
@@ -6682,20 +6736,26 @@ class DownloaderApp(tk.Tk):
         quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
         ToolTip(quality_combo, "Set the highest resolution VODForge may select from the available YouTube source formats.")
         ttk.Label(mp4_output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
-        export_combo = ttk.Combobox(mp4_output, textvariable=self.export_mode_var, values=EXPORT_MODES, state="readonly", width=20)
+        export_combo = ttk.Combobox(mp4_output, textvariable=self.export_mode_choice_var, values=EXPORT_MODES, state="readonly", width=24)
         export_combo.grid(row=2, column=1, sticky="ew", pady=4)
         export_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
-        ToolTip(export_combo, "Auto CBR chooses practical settings. Strict Compliance uses the fixed VOD profile. Manual Override exposes exact encode controls.")
-        ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=3, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=3, column=1, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=4, column=1, sticky="w", pady=2)
+        ttk.Label(
+            mp4_output,
+            textvariable=self.export_mode_description_var,
+            style="Muted.TLabel",
+            wraplength=360,
+            justify="left",
+        ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 8))
+        ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=4, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=5, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=5, column=1, sticky="w", pady=2)
         nvenc_label = "Use NVIDIA NVENC GPU encoding"
         if sys.platform == "darwin":
             nvenc_label = "NVIDIA NVENC (Windows only)"
             self.use_nvenc_var.set(False)
         nvenc = ttk.Checkbutton(mp4_output, text=nvenc_label, variable=self.use_nvenc_var)
-        nvenc.grid(row=5, column=0, columnspan=2, sticky="w", pady=2)
+        nvenc.grid(row=6, column=0, columnspan=2, sticky="w", pady=2)
         ToolTip(nvenc, "Use a supported NVIDIA GPU for MP4 encoding on Windows. CPU encoding remains the compatibility default.")
         if sys.platform == "darwin":
             nvenc.state(["disabled"])
