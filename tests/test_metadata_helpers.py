@@ -85,6 +85,7 @@ from yt_downloader.app import (
     focus_layout_mode,
     focus_run_deck_capacity,
     focus_wheel_pixels,
+    initial_window_geometry,
     accumulated_row_scroll,
     library_thumbnail_size,
     thumbnail_size_within,
@@ -230,6 +231,11 @@ def test_initial_window_size_leaves_room_for_screen_chrome():
     assert bounded_window_size(1366, 768) == (1180, 648)
     assert bounded_window_size(1280, 720) == (1180, 600)
     assert bounded_window_size(800, 600) == (776, 552)
+
+
+def test_initial_window_geometry_is_centered_and_dock_safe():
+    assert initial_window_geometry(1440, 900, platform_name="darwin") == "1180x780+130+28"
+    assert initial_window_geometry(1920, 1080, platform_name="win32") == "1180x900+370+90"
 
 
 def test_download_layout_uses_inline_details_whenever_they_fit():

@@ -206,6 +206,26 @@ def bounded_window_size(screen_width: int, screen_height: int) -> tuple[int, int
     )
 
 
+def initial_window_geometry(
+    screen_width: int,
+    screen_height: int,
+    *,
+    platform_name: str | None = None,
+) -> str:
+    """Place the first window fully on-screen instead of accepting OS cascade state."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    width, height = bounded_window_size(screen_width, screen_height)
+    x = max(0, (int(screen_width) - width) // 2)
+    if platform_name == "darwin":
+        # Keep a stable menu-bar gap and leave the existing height allowance
+        # below the window for the Dock, even when macOS remembers a low
+        # cascade position from a prior process.
+        y = 28 if int(screen_height) > 640 else 20
+    else:
+        y = max(0, (int(screen_height) - height) // 2)
+    return f"{width}x{height}+{x}+{y}"
+
+
 def download_layout_mode(width: int, height: int, *, manual_override: bool = False) -> str:
     """Choose the most expanded Download layout that fits without scrolling."""
     if width >= 1000:
@@ -314,10 +334,22 @@ def bind_smooth_vertical_wheel(
         nonlocal remainder
         if not pixels:
             return "break"
+        # A live log may append while a precision gesture is still moving.
+        # Record the reader's intent before moving the viewport so a writer
+        # cannot mistake a near-tail position for permission to snap back.
+        if pixels < 0:
+            setattr(scroller, "_vodforge_user_scroll_locked", True)
         if mode == "rows":
             rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
             if rows:
                 scroller.yview_scroll(rows, "units")
+            if pixels > 0:
+                try:
+                    _first, last = scroller.yview()
+                    if float(last) >= 0.995:
+                        setattr(scroller, "_vodforge_user_scroll_locked", False)
+                except (AttributeError, TypeError, ValueError, tk.TclError):
+                    pass
             return "break"
         if mode == "pixels":
             content_height = scrollable_pixel_height()
@@ -325,6 +357,13 @@ def bind_smooth_vertical_wheel(
             if content_height > viewport_height:
                 first, _last = scroller.yview()
                 scroller.yview_moveto(max(0.0, min(1.0, float(first) + (pixels / content_height))))
+            if pixels > 0:
+                try:
+                    _first, last = scroller.yview()
+                    if float(last) >= 0.995:
+                        setattr(scroller, "_vodforge_user_scroll_locked", False)
+                except (AttributeError, TypeError, ValueError, tk.TclError):
+                    pass
             return "break"
         try:
             scroller.yview_scroll(pixels, "units")
@@ -332,6 +371,13 @@ def bind_smooth_vertical_wheel(
             rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
             if rows:
                 scroller.yview_scroll(rows, "units")
+        if pixels > 0:
+            try:
+                _first, last = scroller.yview()
+                if float(last) >= 0.995:
+                    setattr(scroller, "_vodforge_user_scroll_locked", False)
+            except (AttributeError, TypeError, ValueError, tk.TclError):
+                pass
         return "break"
 
     def on_wheel(event: tk.Event[Any]) -> str:
@@ -4893,8 +4939,10 @@ class DownloaderApp(tk.Tk):
                 self.iconphoto(True, self._app_icon_image)
         except tk.TclError as exc:
             write_diagnostic(f"app icon could not be loaded: {exc}")
-        window_width, window_height = bounded_window_size(self.winfo_screenwidth(), self.winfo_screenheight())
-        self.geometry(f"{window_width}x{window_height}")
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        window_width, window_height = bounded_window_size(screen_width, screen_height)
+        self.geometry(initial_window_geometry(screen_width, screen_height))
         self.minsize(min(820, window_width), min(560, window_height))
         self.configure(bg=THEME["bg"])
 
@@ -5676,6 +5724,8 @@ class DownloaderApp(tk.Tk):
         self._focus_settings_window: tk.Toplevel | None = None
         self._focus_active_override = False
         self._focus_selected_run_id: str | None = None
+        self._focus_log_owner_run_id: str | None = None
+        self._focus_log_rendered_text = ""
         self._terminal_jobs: list[DownloadJob] = []
         self._completed_jobs: list[DownloadJob] = []
         self._thumbnail_preview_request_ids = {"active": 0, "library": 0}
@@ -7198,6 +7248,40 @@ class DownloaderApp(tk.Tk):
             if 0 <= index < len(self.metadata_items):
                 self._display_focus_metadata_snapshot(record, self.metadata_items[index])
 
+    def _render_focus_run_activity(self, run_id: str, text: str) -> None:
+        """Render one run's activity without letting refreshes steal its viewport."""
+        owner = str(run_id or "")
+        widget = self.focus_log
+        same_owner = self.__dict__.get("_focus_log_owner_run_id") == owner
+        if same_owner and self.__dict__.get("_focus_log_rendered_text") == text:
+            return
+
+        first = 0.0
+        last = 1.0
+        if same_owner:
+            try:
+                first, last = (float(value) for value in widget.yview())
+            except (AttributeError, TypeError, ValueError, tk.TclError):
+                first, last = 0.0, 1.0
+
+        self._set_text(widget, text, disabled=True)
+        self._focus_log_owner_run_id = owner
+        self._focus_log_rendered_text = text
+        if same_owner:
+            try:
+                if bool(getattr(widget, "_vodforge_user_scroll_locked", False)) or last < 0.995:
+                    widget.yview_moveto(first)
+                else:
+                    widget.see("end")
+            except (AttributeError, TypeError, ValueError, tk.TclError):
+                pass
+        else:
+            setattr(widget, "_vodforge_user_scroll_locked", False)
+            try:
+                widget.yview_moveto(0.0)
+            except (AttributeError, TypeError, ValueError, tk.TclError):
+                pass
+
     def _display_focus_queued_job_snapshot(self, record: dict[str, Any], job: DownloadJob) -> None:
         """Render one queued run without borrowing state from the active run."""
         self._focus_selected_run_id = job.run_id
@@ -7248,10 +7332,9 @@ class DownloaderApp(tk.Tk):
                 )
             )
         self._set_text(self.focus_summary_text, summary, disabled=True)
-        self._set_text(
-            self.focus_log,
+        self._render_focus_run_activity(
+            job.run_id,
             "\n".join(job.activity_lines) or "Queued. This run will begin after the current run finishes.",
-            disabled=True,
         )
         self._display_focus_record_thumbnail(record, info)
 
@@ -7299,10 +7382,9 @@ class DownloaderApp(tk.Tk):
             if job.output_type == OutputType.MP3
             else "Active MP4 run  /  H.264 video and AAC audio"
         )
-        self._set_text(
-            self.focus_log,
+        self._render_focus_run_activity(
+            job.run_id,
             "\n".join(job.activity_lines) or "Preparing this run…",
-            disabled=True,
         )
 
     def _display_focus_metadata_snapshot(self, record: dict[str, Any], info: dict[str, Any]) -> None:
@@ -7341,11 +7423,10 @@ class DownloaderApp(tk.Tk):
             if isinstance(job, DownloadJob)
             else sanitize_run_activity(info.get("vodforge_run_activity"))
         )
-        self._set_text(
-            self.focus_log,
+        self._render_focus_run_activity(
+            str(record.get("run_id") or metadata_run_key(info)),
             "\n".join(activity)
             or "No saved activity is available for this older item.\nOpen Activity for the persistent application log.",
-            disabled=True,
         )
         self._display_focus_record_thumbnail(record, info)
 
@@ -9360,7 +9441,7 @@ class DownloaderApp(tk.Tk):
                 if job.output_type == OutputType.MP3
                 else "Preparing source and MP4 output plan"
             )
-            self._set_text(self.focus_log, "Preparing this run…", disabled=True)
+            self._render_focus_run_activity(job.run_id, "Preparing this run…")
             self._set_text(
                 self.focus_summary_text,
                 (
@@ -10699,15 +10780,17 @@ class DownloaderApp(tk.Tk):
         active_job.activity_lines.append(line.rstrip())
         if getattr(self, "_focus_selected_run_id", None) == active_job.run_id:
             self._append_log_widget(self.focus_log, line)
+            self._focus_log_owner_run_id = active_job.run_id
+            self._focus_log_rendered_text = "\n".join(active_job.activity_lines)
 
     @staticmethod
     def _append_log_widget(widget: Any, line: str) -> None:
         if widget is None:
             return
-        follow_tail = True
+        follow_tail = not bool(getattr(widget, "_vodforge_user_scroll_locked", False))
         try:
             _first, last = widget.yview()
-            follow_tail = float(last) >= 0.995
+            follow_tail = follow_tail and float(last) >= 0.995
         except (AttributeError, TypeError, ValueError, tk.TclError):
             # Lightweight test doubles and not-yet-mapped widgets may not
             # expose a meaningful viewport. Preserve the historical default

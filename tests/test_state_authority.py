@@ -57,12 +57,16 @@ class ScrollAwareTextBuffer(TextBuffer):
         super().__init__()
         self.last = last
         self.seen: list[str] = []
+        self.moved_to: list[float] = []
 
     def yview(self):
         return (0.0, self.last)
 
     def see(self, index):
         self.seen.append(str(index))
+
+    def yview_moveto(self, fraction):
+        self.moved_to.append(float(fraction))
 
 
 class LiveWorker:
@@ -208,6 +212,46 @@ def test_live_activity_follows_tail_only_when_reader_is_already_at_tail():
     assert reading_history.seen == []
     assert "new tail line" in following.value
     assert "new tail line" in reading_history.value
+
+
+def test_live_activity_never_reclaims_tail_after_explicit_reader_scroll():
+    reading_history = ScrollAwareTextBuffer(last=1.0)
+    reading_history._vodforge_user_scroll_locked = True
+
+    DownloaderApp._append_log_widget(reading_history, "new tail line")
+
+    assert reading_history.seen == []
+    assert "new tail line" in reading_history.value
+
+
+def test_same_run_activity_refresh_preserves_reader_viewport(tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.focus_log = ScrollAwareTextBuffer(last=0.72)
+    app.focus_log._vodforge_user_scroll_locked = True
+    app._focus_log_owner_run_id = "run-1"
+    app._focus_log_rendered_text = "older activity"
+    app._set_text = lambda widget, value, **_kwargs: setattr(widget, "value", value)
+
+    app._render_focus_run_activity("run-1", "older activity\nnew line")
+
+    assert app.focus_log.moved_to == [0.0]
+    assert app.focus_log.seen == []
+    assert app.focus_log._vodforge_user_scroll_locked is True
+
+
+def test_new_run_activity_resets_scroll_ownership(tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.focus_log = ScrollAwareTextBuffer(last=0.72)
+    app.focus_log._vodforge_user_scroll_locked = True
+    app._focus_log_owner_run_id = "run-1"
+    app._focus_log_rendered_text = "older activity"
+    app._set_text = lambda widget, value, **_kwargs: setattr(widget, "value", value)
+
+    app._render_focus_run_activity("run-2", "queued")
+
+    assert app.focus_log.moved_to == [0.0]
+    assert app.focus_log._vodforge_user_scroll_locked is False
+    assert app._focus_log_owner_run_id == "run-2"
 
 
 def test_compact_layout_does_not_schedule_a_forced_activity_tail_jump():
