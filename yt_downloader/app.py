@@ -5913,6 +5913,8 @@ class DownloaderApp(tk.Tk):
         self._focus_settings_window: tk.Toplevel | None = None
         self._focus_active_override = False
         self._focus_selected_run_id: str | None = None
+        self._metadata_preview_request: dict[str, Any] | None = None
+        self._focus_selected_preview_info: dict[str, Any] | None = None
         self._focus_log_owner_run_id: str | None = None
         self._focus_log_rendered_text = ""
         self._terminal_jobs: list[DownloadJob] = []
@@ -6272,7 +6274,24 @@ class DownloaderApp(tk.Tk):
         self.focus_active_title_label.grid(row=0, column=0, sticky="w")
         ttk.Label(title_block, textvariable=self.focus_active_detail_var, style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
         ttk.Label(title_block, textvariable=self.focus_active_profile_var, style="FocusProfile.TLabel").grid(row=2, column=0, sticky="w", pady=(5, 0))
-        ttk.Label(active, textvariable=self.focus_percent_var, style="FocusPercent.TLabel").grid(row=0, column=2, rowspan=3, sticky="e", padx=(18, 0))
+        self.focus_percent_label = ttk.Label(active, textvariable=self.focus_percent_var, style="FocusPercent.TLabel")
+        self.focus_percent_label.grid(row=0, column=2, rowspan=3, sticky="e", padx=(18, 0))
+        self.focus_preview_start_button = ttk.Button(
+            active,
+            text="Start download",
+            command=self._start_selected_preview_download,
+            style="Accent.TButton",
+        )
+        self.focus_preview_start_button.grid(
+            row=0,
+            column=2,
+            rowspan=3,
+            sticky="e",
+            padx=(22, 0),
+            ipadx=10,
+            ipady=5,
+        )
+        self.focus_preview_start_button.grid_remove()
 
         progress_row = ttk.Frame(active, style="FocusShell.TFrame")
         progress_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(14, 0))
@@ -7209,7 +7228,7 @@ class DownloaderApp(tk.Tk):
         footer = ttk.Frame(root, style="FocusShell.TFrame")
         footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         footer.columnconfigure(0, weight=1)
-        preview_button = ttk.Button(footer, text="Preview metadata", command=self._fetch_metadata, style="FocusQuiet.TButton")
+        preview_button = ttk.Button(footer, text="Preview metadata", style="FocusQuiet.TButton")
         preview_button.grid(row=0, column=0, sticky="w")
 
         def close_popup() -> None:
@@ -7222,6 +7241,12 @@ class DownloaderApp(tk.Tk):
             self.focus_cookie_source_selector = None
             self.focus_tags_entry = None
             popup.destroy()
+
+        def preview_and_close() -> None:
+            if self._fetch_metadata():
+                close_popup()
+
+        preview_button.configure(command=preview_and_close)
 
         ttk.Button(footer, text="Done", command=close_popup, style="Accent.TButton").grid(row=0, column=1, sticky="e")
         popup.protocol("WM_DELETE_WINDOW", close_popup)
@@ -7435,6 +7460,7 @@ class DownloaderApp(tk.Tk):
     def _focus_select_run_record(self, record: dict[str, Any]) -> None:
         run_id = str(record.get("run_id") or "")
         self._focus_selected_run_id = run_id or None
+        self._set_focus_preview_start_action(None)
         if str(record.get("kind")) == "active":
             active_job = self.active_job
             if active_job is not None and (not run_id or run_id == active_job.run_id):
@@ -7445,6 +7471,10 @@ class DownloaderApp(tk.Tk):
             queued_job = next((job for job in self.pending_jobs if job.run_id == run_id), None)
             if queued_job is not None:
                 self._display_focus_queued_job_snapshot(record, queued_job)
+            return
+
+        if str(record.get("kind")) in {"preview_loading", "preview_failed"}:
+            self._display_metadata_preview_request(record)
             return
 
         if record.get("metadata_index") is not None:
@@ -7489,6 +7519,7 @@ class DownloaderApp(tk.Tk):
     def _display_focus_queued_job_snapshot(self, record: dict[str, Any], job: DownloadJob) -> None:
         """Render one queued run without borrowing state from the active run."""
         self._focus_selected_run_id = job.run_id
+        self._set_focus_preview_start_action(None)
         info = job.preview_info or {}
         title = download_job_display_title(job, queued=True)
         creator = str(info.get("uploader") or info.get("channel") or "Waiting for source metadata")
@@ -7571,8 +7602,50 @@ class DownloaderApp(tk.Tk):
         if is_metadata_preview(info):
             self._start_preview_download(info)
 
+    def _start_selected_preview_download(self) -> None:
+        info = self.__dict__.get("_focus_selected_preview_info")
+        if isinstance(info, dict) and is_metadata_preview(info):
+            self._start_preview_download(info)
+
+    def _set_focus_preview_start_action(self, info: dict[str, Any] | None) -> None:
+        is_preview = is_metadata_preview(info)
+        self._focus_selected_preview_info = dict(info) if is_preview and info is not None else None
+        percent_label = self.__dict__.get("focus_percent_label")
+        start_button = self.__dict__.get("focus_preview_start_button")
+        if percent_label is None or start_button is None:
+            return
+        if is_preview:
+            percent_label.grid_remove()
+            start_button.grid()
+        else:
+            start_button.grid_remove()
+            percent_label.grid()
+
+    def _display_metadata_preview_request(self, record: dict[str, Any]) -> None:
+        """Show a metadata request without turning it into a media-run authority."""
+        failed = str(record.get("kind")) == "preview_failed"
+        output_type = str(record.get("output_type") or "MP4")
+        self._set_focus_preview_start_action(None)
+        self.focus_active_title_var.set("Preview failed" if failed else "Loading preview…")
+        self.focus_active_detail_var.set("Check the message below" if failed else "Fetching title, creator, and thumbnail")
+        self.focus_active_duration_var.set("")
+        self.focus_active_profile_var.set(output_type)
+        self.focus_display_progress_var.set(0)
+        self.focus_percent_var.set("Failed" if failed else "Previewing…")
+        self.focus_display_status_var.set(
+            str(record.get("message") or "Metadata preview failed")
+            if failed
+            else "Loading metadata preview…"
+        )
+        self.focus_transfer_var.set("Preview failed  /  Try again" if failed else "Metadata only  /  No media is being downloaded")
+        message = str(record.get("message") or ("Metadata preview failed." if failed else "Fetching metadata preview…"))
+        self._set_text(self.focus_summary_text, message, disabled=True)
+        self._render_focus_run_activity(str(record.get("run_id") or "metadata-preview"), message)
+        self._reset_active_thumbnail()
+
     def _display_focus_job_snapshot(self, job: DownloadJob) -> None:
         self._focus_selected_run_id = job.run_id
+        self._set_focus_preview_start_action(None)
         info = job.preview_info or {}
         if info:
             self._display_active_job_metadata(job, info)
@@ -7610,6 +7683,7 @@ class DownloaderApp(tk.Tk):
         duration = format_duration(info.get("duration"))
         self.focus_active_duration_var.set("" if duration == "—" else duration)
         record_kind = str(record.get("kind") or "completed")
+        self._set_focus_preview_start_action(info if record_kind == "preview" else None)
         self.focus_active_profile_var.set(focus_metadata_profile_text(info, record_kind))
         terminal_status = str(info.get("vodforge_terminal_status") or record_kind.title())
         if record_kind == "completed":
@@ -7791,6 +7865,9 @@ class DownloaderApp(tk.Tk):
                     ),
                 }
             )
+        metadata_preview = self.__dict__.get("_metadata_preview_request")
+        if isinstance(metadata_preview, dict):
+            records.append(dict(metadata_preview))
         for job in self.pending_jobs:
             preview_info = job.preview_info or {}
             preview_path = str(preview_info.get("preview_thumbnail_path") or "").strip()
@@ -7888,7 +7965,11 @@ class DownloaderApp(tk.Tk):
                     "kind": "completed" if saved is not None else "preview",
                     "metadata_index": index,
                     "output_type": output_type.value,
-                    "run_id": completed_job.run_id if completed_job is not None else f"history:{index}",
+                    "run_id": (
+                        completed_job.run_id
+                        if completed_job is not None
+                        else str(item.get("vodforge_preview_run_id") or f"history:{index}")
+                    ),
                     "job": completed_job,
                     "preview_thumbnail_image": (
                         completed_job.preview_thumbnail_image if completed_job is not None else None
@@ -7956,7 +8037,7 @@ class DownloaderApp(tk.Tk):
                 else "#e8b15e"
                 if record_kind == "skipped"
                 else THEME["accent"]
-                if record_kind == "active"
+                if record_kind in {"active", "preview_loading"}
                 else THEME["muted"]
             )
             status_label = tk.Label(tile, text=status, bg=tile_bg, fg=status_color, font=FONT_UI_SMALL, bd=0, anchor="w")
@@ -8485,6 +8566,7 @@ class DownloaderApp(tk.Tk):
     ) -> None:
         history_info = dict(info)
         history_info.pop("vodforge_preview_complete", None)
+        history_info.pop("vodforge_preview_run_id", None)
         if owning_job is not None:
             history_info["vodforge_run_id"] = owning_job.run_id
             history_info["vodforge_run_activity"] = sanitize_run_activity(owning_job.activity_lines)
@@ -8521,6 +8603,7 @@ class DownloaderApp(tk.Tk):
                 continue
             retained.append(item)
         merged.pop("vodforge_preview_complete", None)
+        merged.pop("vodforge_preview_run_id", None)
         self.metadata_items = [merged, *retained]
         self._rebuild_output_dir_index()
         if self.library_output_type_var.get() != saved_type.value:
@@ -8727,25 +8810,42 @@ class DownloaderApp(tk.Tk):
         self.status_var.set("Loaded YouTube cookies.txt; VODForge will use it for this session.")
         self._append_log(f"Loaded YouTube cookies file: {cookie_path}")
 
-    def _fetch_metadata(self) -> None:
+    def _fetch_metadata(self) -> bool:
         url = self.url_var.get().strip()
         if not url:
             messagebox.showerror(APP_NAME, "Paste a YouTube URL first.")
-            return
+            return False
         ignore_playlists = self.single_video_only_var.get()
         if ignore_playlists:
             single_item_error = single_video_url_requires_video_id_error(url)
             if single_item_error:
                 messagebox.showerror(APP_NAME, single_item_error)
-                return
+                return False
         if load_yt_dlp() is None:
             messagebox.showerror(APP_NAME, f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
-            return
+            return False
         if hasattr(self, "preview_metadata_button"):
             self.preview_metadata_button.config(state="disabled")
         self.status_var.set("Fetching tags and thumbnail…")
         output_type = self._selected_output_type()
+        preview_run_id = f"preview:{uuid.uuid4().hex}"
+        preview_record = {
+            "run_id": preview_run_id,
+            "title": "Loading preview…",
+            "detail": "Fetching title, creator, and thumbnail",
+            "status": f"Loading preview…  •  {output_type.value}",
+            "progress": 0,
+            "kind": "preview_loading",
+            "output_type": output_type.value,
+            "message": "Fetching metadata preview…",
+        }
+        self._metadata_preview_request = preview_record
+        self._focus_selected_run_id = preview_run_id
+        self._select_focus_view("forge")
+        self._display_metadata_preview_request(preview_record)
+        self._refresh_focus_run_deck()
         threading.Thread(target=self._metadata_worker, args=(url, output_type, ignore_playlists), daemon=True).start()
+        return True
 
     def _provider_network_coordinator(self) -> ProviderNetworkCoordinator:
         coordinator = self.__dict__.get("_provider_network")
@@ -8805,7 +8905,9 @@ class DownloaderApp(tk.Tk):
                 return
             if isinstance(info, dict):
                 info = mark_metadata_output_type(info, output_type)
-            self.events.put(("metadata", info))
+                self.events.put(("metadata", info))
+            else:
+                self.events.put(("metadata_error", "Metadata preview returned no usable item."))
         except Exception as exc:
             self.events.put(("metadata_error", f"Metadata fetch failed: {format_ytdlp_user_error(exc)}"))
         finally:
@@ -8959,13 +9061,22 @@ class DownloaderApp(tk.Tk):
         preview_complete: bool = False,
     ) -> None:
         active_status = self.status_var.get() if active_job is not None and active_job is self.active_job else None
+        preview_request = self.__dict__.get("_metadata_preview_request") if preview_complete else None
+        preview_run_id = (
+            str(preview_request.get("run_id") or "")
+            if isinstance(preview_request, dict)
+            else ""
+        )
         incoming_items = [dict(item) for item in iter_video_infos(info)]
         new_items: list[dict[str, Any]] = []
         for incoming in incoming_items:
             if preview_complete:
                 incoming["vodforge_preview_complete"] = True
+                if preview_run_id:
+                    incoming["vodforge_preview_run_id"] = preview_run_id
             else:
                 incoming.pop("vodforge_preview_complete", None)
+                incoming.pop("vodforge_preview_run_id", None)
             video_id = str(incoming.get("id") or "")
             output_type = metadata_output_type(incoming)
             matching = next(
@@ -8983,16 +9094,32 @@ class DownloaderApp(tk.Tk):
                 matching.update(incoming)
                 if not preview_complete:
                     matching.pop("vodforge_preview_complete", None)
+                    matching.pop("vodforge_preview_run_id", None)
             else:
                 new_items.append(incoming)
         if new_items:
             self.metadata_items = [*new_items, *self.metadata_items]
+        if preview_complete:
+            self._metadata_preview_request = None
         self._rebuild_output_dir_index()
         if incoming_items:
             incoming_type = metadata_output_type(incoming_items[0])
             if self.library_output_type_var.get() != incoming_type.value:
                 self.library_output_type_var.set(incoming_type.value)
         self._render_metadata_tree()
+        if preview_run_id and self.__dict__.get("_focus_selected_run_id") == preview_run_id:
+            selected_preview = next(
+                (
+                    record
+                    for record in self._focus_run_records()
+                    if str(record.get("run_id") or "") == preview_run_id
+                    and str(record.get("kind") or "") == "preview"
+                ),
+                None,
+            )
+            if selected_preview is not None and selected_preview.get("metadata_index") is not None:
+                selected_index = int(selected_preview["metadata_index"])
+                self._display_focus_metadata_snapshot(selected_preview, self.metadata_items[selected_index])
         if active_job is not None and active_job is self.active_job and incoming_items:
             for incoming in incoming_items:
                 key = metadata_run_key(incoming)
@@ -9039,6 +9166,7 @@ class DownloaderApp(tk.Tk):
             self._refresh_focus_run_deck()
             return
 
+        self._set_focus_preview_start_action(None)
         title = download_job_display_title(job)
         creator = str(info.get("uploader") or info.get("channel") or "YouTube").strip()
         self.focus_active_title_var.set(title)
@@ -9741,6 +9869,7 @@ class DownloaderApp(tk.Tk):
             return
         job.preview_info = dict(info)
         job.preview_info.pop("vodforge_preview_complete", None)
+        job.preview_info.pop("vodforge_preview_run_id", None)
         key = metadata_run_key(info)
         if key is not None:
             job.metadata_keys.add(key)
@@ -10996,6 +11125,19 @@ class DownloaderApp(tk.Tk):
                     if self.__dict__.get("_closing", False):
                         self._append_log(f"Metadata preview ended during application close: {payload}")
                     else:
+                        preview_request = self.__dict__.get("_metadata_preview_request")
+                        if isinstance(preview_request, dict):
+                            preview_request.update(
+                                {
+                                    "title": "Preview failed",
+                                    "status": f"Preview failed  •  {preview_request.get('output_type') or 'MP4'}",
+                                    "kind": "preview_failed",
+                                    "message": str(payload),
+                                }
+                            )
+                            self._refresh_focus_run_deck()
+                            if self.__dict__.get("_focus_selected_run_id") == preview_request.get("run_id"):
+                                self._display_metadata_preview_request(preview_request)
                         self.status_var.set("Metadata preview failed")
                         self._append_log(f"ERROR: {payload}")
                         messagebox.showerror(APP_NAME, str(payload))

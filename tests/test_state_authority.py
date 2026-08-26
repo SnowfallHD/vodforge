@@ -835,6 +835,7 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
         "playlist_id": "PLpreview",
         "vodforge_output_type": "MP3",
         "vodforge_preview_complete": True,
+        "vodforge_preview_run_id": "preview:request",
     }
     built_job = make_job(tmp_path, video_id="fresh-preview")
     built_job.output_type = OutputType.MP3
@@ -857,7 +858,9 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
         )
     ]
     assert built_job.preview_info == {
-        key: value for key, value in preview.items() if key != "vodforge_preview_complete"
+        key: value
+        for key, value in preview.items()
+        if key not in {"vodforge_preview_complete", "vodforge_preview_run_id"}
     }
     assert ("preview-id", "MP3") in built_job.metadata_keys
     assert app._focus_selected_run_id == built_job.run_id
@@ -873,6 +876,62 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
     assert all(line.strip() != "widgets.append(play_button)" for line in deck_source.splitlines())
     assert 'label="Start download in Forge"' in library_menu_source
     assert 'label="Start download in Forge"' in compact_menu_source
+
+
+def test_preview_hero_replaces_large_status_with_start_download_action(tmp_path: Path):
+    class GridControl:
+        def __init__(self):
+            self.visible = True
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.focus_percent_label = GridControl()
+    app.focus_preview_start_button = GridControl()
+    preview = {
+        "id": "preview-id",
+        "webpage_url": "https://www.youtube.com/watch?v=preview-id",
+        "vodforge_output_type": "MP4",
+        "vodforge_preview_complete": True,
+    }
+    started: list[dict[str, object]] = []
+    app._start_preview_download = started.append
+
+    app._set_focus_preview_start_action(preview)
+
+    assert app.focus_percent_label.visible is False
+    assert app.focus_preview_start_button.visible is True
+    assert app._focus_selected_preview_info == preview
+    app._start_selected_preview_download()
+    assert started == [preview]
+
+    app._set_focus_preview_start_action(None)
+    assert app.focus_percent_label.visible is True
+    assert app.focus_preview_start_button.visible is False
+    assert app._focus_selected_preview_info is None
+
+    build_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
+    assert 'text="Start download"' in build_source
+    assert "self.focus_preview_start_button.grid_remove()" in build_source
+
+
+def test_metadata_preview_focuses_once_and_completion_respects_manual_selection():
+    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    fetch_source = inspect.getsource(DownloaderApp._fetch_metadata)
+    completion_source = inspect.getsource(DownloaderApp._display_metadata)
+
+    assert "def preview_and_close()" in settings_source
+    assert "if self._fetch_metadata():" in settings_source
+    assert settings_source.index("if self._fetch_metadata():") < settings_source.index("close_popup()", settings_source.index("def preview_and_close()"))
+    assert '"kind": "preview_loading"' in fetch_source
+    assert "self._focus_selected_run_id = preview_run_id" in fetch_source
+    assert "self._display_metadata_preview_request(preview_record)" in fetch_source
+    assert "self._focus_selected_run_id = preview_run_id" not in completion_source
+    assert 'self.__dict__.get("_focus_selected_run_id") == preview_run_id' in completion_source
 
 
 def test_custom_popouts_are_positioned_before_they_become_visible():
