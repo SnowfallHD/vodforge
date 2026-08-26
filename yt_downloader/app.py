@@ -2160,8 +2160,43 @@ def playlist_context_from_extraction(info: dict[str, Any], source_url: str) -> d
     return {"webpage_url": source_url}
 
 
+def apply_playlist_context(
+    info: dict[str, Any],
+    entry: dict[str, Any],
+    playlist_info: dict[str, Any],
+    source_url: str,
+    index: int,
+) -> dict[str, Any]:
+    """Attach only playlist identity proven by extraction or the source URL.
+
+    A watch URL carrying ``list=`` remains a single-item run when Ignore
+    playlists is enabled, but its output still belongs to that playlist's
+    canonical folder. A plain video/share URL has no unambiguous playlist
+    authority and intentionally remains under ``videos - no playlist``.
+    """
+    result = dict(info)
+    extracted_playlist = playlist_info.get("entries") is not None
+    playlist_title = playlist_info.get("playlist_title")
+    playlist_id = playlist_info.get("playlist_id")
+    if extracted_playlist:
+        playlist_title = playlist_title or playlist_info.get("title")
+        playlist_id = playlist_id or playlist_info.get("id")
+    playlist_id = playlist_id or youtube_url_playlist_id(source_url)
+    if playlist_title:
+        result.setdefault("playlist_title", playlist_title)
+    if playlist_id:
+        result.setdefault("playlist_id", playlist_id)
+    if playlist_title or playlist_id:
+        result.setdefault("playlist_index", entry.get("playlist_index") or index)
+    return result
+
+
 def playlist_folder_name(info: dict[str, Any]) -> str:
-    return _windows_safe_component(info.get("playlist_title") or info.get("title") or info.get("playlist_id") or info.get("id"), "Playlist", max_len=80)
+    return _windows_safe_component(
+        info.get("playlist_title") or info.get("playlist_id") or info.get("title") or info.get("id"),
+        "Playlist",
+        max_len=80,
+    )
 
 
 def channel_folder_name(info: dict[str, Any]) -> str:
@@ -2502,6 +2537,26 @@ def create_staging_dir(output_dir: Path) -> Path:
     staging = staging_root / uuid.uuid4().hex
     staging.mkdir(parents=True, exist_ok=False)
     return staging
+
+
+def validate_output_directory_access(output_dir: Path) -> None:
+    """Confirm the selected destination supports the write/remove cycle a run needs.
+
+    VODForge stages media beside the final destination so the validated artifact can
+    be committed atomically without crossing filesystems.  Touch the destination at
+    submission time so macOS protected-folder consent and unavailable network-drive
+    errors appear while the user is intentionally starting the run, rather than later
+    during a skip or cleanup operation.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    probe_path = output_dir / f".vodforge-access-{uuid.uuid4().hex}.tmp"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(probe_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    probe_path.unlink()
 
 
 def staging_output_template(staging_dir: Path) -> str:
@@ -5358,10 +5413,12 @@ class DownloaderApp(tk.Tk):
         self.download_button.pack(side="left", padx=4)
         self.cancel_button = ttk.Button(buttons, text="Cancel", command=self._cancel, state="disabled")
         self.cancel_button.pack(side="left", padx=6)
-        self.skip_video_button = ttk.Button(buttons, text="Skip Video", command=self._skip_video, state="disabled")
+        self.skip_video_button = ttk.Button(buttons, text="Skip Item", command=self._skip_video, state="disabled")
         self.skip_video_button.pack(side="left", padx=4)
-        self.skip_url_button = ttk.Button(buttons, text="Skip URL", command=self._skip_url, state="disabled")
+        ToolTip(self.skip_video_button, "Skip only the current video or audio item. If this source is a playlist, continue with its next item.")
+        self.skip_url_button = ttk.Button(buttons, text="Skip Source", command=self._skip_url, state="disabled")
         self.skip_url_button.pack(side="left", padx=4)
+        ToolTip(self.skip_url_button, "Skip the rest of this source URL. If a URL list is loaded, continue with its next URL.")
         open_folder_button = ttk.Button(buttons, text="Open Folder", command=self._open_folder)
         open_folder_button.pack(side="right", padx=4)
         view_log_button = ttk.Button(buttons, text="View Log", command=lambda: self.main_notebook.select(log_tab))
@@ -5994,10 +6051,12 @@ class DownloaderApp(tk.Tk):
         self.focus_transfer_label.grid(row=1, column=1, sticky="e", pady=(7, 0), padx=(12, 0))
         self.cancel_button = ttk.Button(progress_row, text="Cancel", command=self._cancel, state="disabled", style="FocusQuiet.TButton")
         self.cancel_button.grid(row=1, column=2, padx=(14, 6), pady=(5, 0))
-        self.skip_video_button = ttk.Button(progress_row, text="Skip video", command=self._skip_video, state="disabled", style="FocusQuiet.TButton")
+        self.skip_video_button = ttk.Button(progress_row, text="Skip item", command=self._skip_video, state="disabled", style="FocusQuiet.TButton")
         self.skip_video_button.grid(row=1, column=3, pady=(5, 0))
-        self.skip_url_button = ttk.Button(progress_row, text="Skip URL", command=self._skip_url, state="disabled", style="FocusQuiet.TButton")
+        ToolTip(self.skip_video_button, "Skip only the current video or audio item. If this source is a playlist, continue with its next item.")
+        self.skip_url_button = ttk.Button(progress_row, text="Skip source", command=self._skip_url, state="disabled", style="FocusQuiet.TButton")
         self.skip_url_button.grid(row=1, column=4, padx=(6, 0), pady=(5, 0))
+        ToolTip(self.skip_url_button, "Skip the rest of this source URL. If a URL list is loaded, continue with its next URL.")
         self.focus_compact_run_actions_button = ttk.Button(
             progress_row,
             text="Run actions",
@@ -7128,10 +7187,73 @@ class DownloaderApp(tk.Tk):
                 self._display_focus_job_snapshot(active_job)
             return
 
+        if str(record.get("kind")) == "queued":
+            queued_job = next((job for job in self.pending_jobs if job.run_id == run_id), None)
+            if queued_job is not None:
+                self._display_focus_queued_job_snapshot(record, queued_job)
+            return
+
         if record.get("metadata_index") is not None:
             index = int(record["metadata_index"])
             if 0 <= index < len(self.metadata_items):
                 self._display_focus_metadata_snapshot(record, self.metadata_items[index])
+
+    def _display_focus_queued_job_snapshot(self, record: dict[str, Any], job: DownloadJob) -> None:
+        """Render one queued run without borrowing state from the active run."""
+        self._focus_selected_run_id = job.run_id
+        info = job.preview_info or {}
+        title = download_job_display_title(job, queued=True)
+        creator = str(info.get("uploader") or info.get("channel") or "Waiting for source metadata")
+        self.focus_active_title_var.set(title)
+        self.focus_active_detail_var.set(creator)
+        duration = format_duration(info.get("duration"))
+        self.focus_active_duration_var.set("" if duration == "—" else duration)
+        self.focus_active_profile_var.set(
+            self._focus_profile_text(
+                job.output_type,
+                mp3_settings=job.mp3_settings,
+                quality_label=job.quality_label,
+                export_mode=job.export_mode,
+            )
+        )
+        self.focus_display_progress_var.set(0)
+        self.focus_percent_var.set("Queued")
+        self.focus_display_status_var.set(f"Showing queued run: {title}")
+        self.focus_transfer_var.set("Queued  /  Waiting for the current run")
+        if job.output_type == OutputType.MP3:
+            sample_rate = (
+                "Preserve source"
+                if job.mp3_settings.sample_rate is None
+                else f"{job.mp3_settings.sample_rate // 1000} kHz"
+            )
+            channels = "Preserve source" if job.mp3_settings.channels is None else str(job.mp3_settings.channels)
+            summary = "\n".join(
+                (
+                    "Format          MP3",
+                    f"Audio quality   {job.mp3_settings.audio_bitrate_kbps} kbps",
+                    f"Sample rate     {sample_rate}",
+                    f"Channels        {channels}",
+                    f"Save to         {job.output_dir}",
+                    "Status          Queued",
+                )
+            )
+        else:
+            summary = "\n".join(
+                (
+                    "Format          MP4",
+                    f"Quality ceiling {job.quality_label}",
+                    f"Output mode     {job.export_mode.value}",
+                    f"Save to         {job.output_dir}",
+                    "Status          Queued",
+                )
+            )
+        self._set_text(self.focus_summary_text, summary, disabled=True)
+        self._set_text(
+            self.focus_log,
+            "\n".join(job.activity_lines) or "Queued. This run will begin after the current run finishes.",
+            disabled=True,
+        )
+        self._display_focus_record_thumbnail(record, info)
 
     def _select_record_in_library(self, record: dict[str, Any]) -> None:
         metadata_index = record.get("metadata_index")
@@ -7390,6 +7512,7 @@ class DownloaderApp(tk.Tk):
                     "run_id": job.run_id,
                     "job": job,
                     "preview_thumbnail_path": preview_path,
+                    "preview_thumbnail_image": job.preview_thumbnail_image,
                 }
             )
         for terminal_job in self._terminal_jobs:
@@ -7684,8 +7807,8 @@ class DownloaderApp(tk.Tk):
         menu = tk.Menu(self, tearoff=False, bg=THEME["surface"], fg=THEME["text"], activebackground=THEME["accent_dark"], activeforeground="#ffffff")
         if str(record.get("kind")) == "active":
             menu.add_command(label="Cancel run", command=self._cancel)
-            menu.add_command(label="Skip current video", command=self._skip_video)
-            menu.add_command(label="Skip current URL", command=self._skip_url)
+            menu.add_command(label="Skip current item", command=self._skip_video)
+            menu.add_command(label="Skip current source URL", command=self._skip_url)
             menu.add_separator()
         terminal_job = record.get("job")
         if str(record.get("kind")) in {"failed", "skipped", "stopped"} and isinstance(terminal_job, DownloadJob):
@@ -9134,11 +9257,20 @@ class DownloaderApp(tk.Tk):
         if not url:
             messagebox.showerror(APP_NAME, "Paste a YouTube URL first or load a URL list text file.")
             return
-        output_dir = Path(self.output_var.get()).expanduser()
-        if not output_dir:
+        output_text = self.output_var.get().strip()
+        if not output_text:
             messagebox.showerror(APP_NAME, "Choose an output folder.")
             return
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = Path(output_text).expanduser()
+        try:
+            validate_output_directory_access(output_dir)
+        except OSError as exc:
+            messagebox.showerror(
+                APP_NAME,
+                "VODForge cannot write to the selected output folder. "
+                f"Choose another folder or allow access, then try again.\n\n{exc}",
+            )
+            return
         if cookie_source == CookieSource.FILE and cookie_file is None:
             messagebox.showerror(APP_NAME, "Choose a YouTube cookies.txt file, or switch YouTube access back to Public.")
             return
@@ -9406,13 +9538,13 @@ class DownloaderApp(tk.Tk):
 
     def _skip_video(self) -> None:
         self.skip_video_requested = True
-        self.status_var.set("Skip video requested; moving to the next playlist item after current step stops…")
+        self.status_var.set("Skip item requested; continuing with the next playlist item after the current step stops…")
         threading.Thread(target=terminate_all_active_child_processes, daemon=True).start()
 
     def _skip_url(self) -> None:
         self.skip_url_requested = True
         self.skip_video_requested = True
-        self.status_var.set("Skip URL requested; moving to the next batch URL after current step stops…")
+        self.status_var.set("Skip source URL requested; continuing with the next batch URL after the current step stops…")
         threading.Thread(target=terminate_all_active_child_processes, daemon=True).start()
 
     def _download_worker(self, job: DownloadJob) -> None:
@@ -9423,8 +9555,6 @@ class DownloaderApp(tk.Tk):
             if job.batch_mode:
                 single_url, forced_single_video = prepare_batch_item_url(single_url)
                 single_video_only = single_video_only or forced_single_video
-                if forced_single_video and single_url != (urls[0] if urls else job.url):
-                    self._emit_job_log(job, f"Batch URL normalized to single video: {single_url}")
             # Keep the active authority object itself through the worker. A
             # dataclass copy would strand terminal flags and resolved metadata
             # on a private worker object that Forge never observes.
@@ -9444,8 +9574,6 @@ class DownloaderApp(tk.Tk):
                 item_single_video_only = job.single_video_only or forced_single_video
                 self.events.put(("status", f"Batch URL {index} of {len(urls)} — starting"))
                 self._emit_job_log(job, f"Batch URL {index} of {len(urls)}: {item_url}")
-                if forced_single_video and item_url != url:
-                    self._emit_job_log(job, f"Batch URL {index}: stripped playlist/mix context; processing the pasted video only.")
                 write_diagnostic(f"batch URL {index} of {len(urls)} start: {item_url} single_video_only={item_single_video_only}")
                 try:
                     item_outcome = self._download_worker_single(
@@ -9553,12 +9681,6 @@ class DownloaderApp(tk.Tk):
                 raise RuntimeError("Video skipped by user")
             return self.cancel_requested
 
-        def add_playlist_context(info: dict[str, Any], entry: dict[str, Any], playlist_info: dict[str, Any], index: int) -> dict[str, Any]:
-            info.setdefault("playlist_title", playlist_info.get("title") or playlist_info.get("playlist_title"))
-            info.setdefault("playlist_id", playlist_info.get("id") or playlist_info.get("playlist_id"))
-            info.setdefault("playlist_index", entry.get("playlist_index") or index)
-            return info
-
         def emit_item_terminal(
             status: str,
             message: str,
@@ -9618,6 +9740,12 @@ class DownloaderApp(tk.Tk):
                 playlist_info: dict[str, Any] = {"webpage_url": job.url}
                 entries = [{"webpage_url": job.url}]
                 write_diagnostic("playlist detection skipped: Ignore playlists is active")
+                if youtube_url_video_id(job.url):
+                    self._emit_job_log(
+                        job,
+                        "No playlist context was included in this URL. To preserve a YouTube playlist folder, "
+                        "copy the full browser address containing list= instead of the shortened Share link.",
+                    )
             else:
                 self.events.put(("status", "Reading playlist…"))
                 write_diagnostic("playlist detection start")
@@ -9784,7 +9912,7 @@ class DownloaderApp(tk.Tk):
                     if not isinstance(preflight_info, dict):
                         raise RuntimeError(f"{label}: YouTube source analysis did not return metadata")
                     preflight_info = mark_metadata_output_type(
-                        add_playlist_context(preflight_info, entry, playlist_info, video_index),
+                        apply_playlist_context(preflight_info, entry, playlist_info, job.url, video_index),
                         job.output_type,
                     )
                     if job.output_type == OutputType.MP3:
@@ -9928,7 +10056,7 @@ class DownloaderApp(tk.Tk):
                         if not isinstance(info, dict):
                             raise RuntimeError(f"{label}: download did not return metadata")
                         info = mark_metadata_output_type(
-                            add_playlist_context(info, entry, playlist_info, video_index),
+                            apply_playlist_context(info, entry, playlist_info, job.url, video_index),
                             job.output_type,
                         )
                         if current_video_info and current_video_info.get("vodforge_encoding_summary"):
@@ -10403,6 +10531,17 @@ class DownloaderApp(tk.Tk):
                             queued_job.preview_info = dict(payload["info"])
                             if hasattr(self, "focus_run_deck"):
                                 self._refresh_focus_run_deck()
+                            if self._focus_selected_run_id == queued_job.run_id:
+                                record = next(
+                                    (
+                                        candidate
+                                        for candidate in self._focus_run_records()
+                                        if candidate.get("run_id") == queued_job.run_id
+                                    ),
+                                    None,
+                                )
+                                if record is not None:
+                                    self._display_focus_queued_job_snapshot(record, queued_job)
                 elif kind == "history_record":
                     if isinstance(payload, dict) and isinstance(payload.get("info"), dict):
                         output_dir = str(payload.get("output_dir") or "").strip()

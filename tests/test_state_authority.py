@@ -103,6 +103,25 @@ def test_worker_copy_with_same_run_id_resolves_to_active_authority(tmp_path: Pat
     assert app._active_run_for_metadata_event(worker_copy) is None
 
 
+def test_queued_run_selection_resolves_only_the_matching_pending_job(tmp_path: Path):
+    active_job = make_job(tmp_path, video_id="active")
+    queued_job = make_job(tmp_path, video_id="queued")
+    other_job = make_job(tmp_path, video_id="other")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active_job
+    app.pending_jobs = [other_job, queued_job]
+    app.metadata_items = []
+    displayed: list[tuple[dict, DownloadJob]] = []
+    app._display_focus_queued_job_snapshot = lambda record, job: displayed.append((record, job))
+    app._display_focus_job_snapshot = lambda _job: (_ for _ in ()).throw(AssertionError("active run leaked"))
+
+    record = {"kind": "queued", "run_id": queued_job.run_id}
+    app._focus_select_run_record(record)
+
+    assert app._focus_selected_run_id == queued_job.run_id
+    assert displayed == [(record, queued_job)]
+
+
 def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: Path):
     info = {
         "id": "library-only-id",

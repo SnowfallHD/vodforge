@@ -29,6 +29,7 @@ from yt_downloader.app import (
     QUALITY_OPTIONS,
     VIDEO_TARGET_BITRATE,
     ManualExportSettings,
+    apply_playlist_context,
     apply_manual_export_settings,
     build_auto_export_plan,
     export_mode_description,
@@ -119,6 +120,7 @@ from yt_downloader.app import (
     youtube_url_video_id,
     ytdlp_ffmpeg_location,
     validate_output_artifact,
+    validate_output_directory_access,
     write_compact_video_metadata,
 )
 
@@ -1509,6 +1511,61 @@ def test_retry_url_and_playlist_context_preserve_real_playlist_identity_only():
     ordinary_video = {"id": "video123", "title": "Ordinary video"}
     assert playlist_context_from_extraction(playlist, retry) is playlist
     assert playlist_context_from_extraction(ordinary_video, retry) == {"webpage_url": retry}
+
+
+def test_ignore_playlists_preserves_supplied_playlist_identity_for_canonical_output(tmp_path: Path):
+    source_url = "https://www.youtube.com/watch?v=video123&list=PLreal&index=4"
+    info = {"id": "video123", "title": "Playlist item", "uploader": "Creator"}
+    playlist = {
+        "_type": "playlist",
+        "id": "PLreal",
+        "title": "Real playlist",
+        "entries": [{"id": "video123", "playlist_index": 4}],
+    }
+
+    contextual = apply_playlist_context(info, playlist["entries"][0], playlist, source_url, 1)
+
+    assert contextual["playlist_id"] == "PLreal"
+    assert contextual["playlist_title"] == "Real playlist"
+    assert contextual["playlist_index"] == 4
+    assert video_output_dir(tmp_path, contextual) == (
+        tmp_path / "Creator" / "playlists" / "Real playlist" / "Playlist item [video123]"
+    )
+
+
+def test_playlist_id_in_source_url_is_retained_when_flat_extraction_loses_playlist_root(tmp_path: Path):
+    source_url = "https://youtu.be/video123?list=PLfallback"
+    info = {"id": "video123", "title": "Playlist item", "uploader": "Creator"}
+
+    contextual = apply_playlist_context(info, {"id": "video123"}, {"webpage_url": source_url}, source_url, 1)
+
+    assert contextual["playlist_id"] == "PLfallback"
+    assert contextual.get("playlist_title") is None
+    assert video_output_dir(tmp_path, contextual) == (
+        tmp_path / "Creator" / "playlists" / "PLfallback" / "Playlist item [video123]"
+    )
+
+
+def test_plain_share_url_does_not_invent_playlist_authority(tmp_path: Path):
+    source_url = "https://youtu.be/video123?si=share-token"
+    info = {"id": "video123", "title": "Single item", "uploader": "Creator"}
+
+    contextual = apply_playlist_context(info, {"id": "video123"}, {"webpage_url": source_url}, source_url, 1)
+
+    assert contextual.get("playlist_id") is None
+    assert contextual.get("playlist_title") is None
+    assert video_output_dir(tmp_path, contextual) == (
+        tmp_path / "Creator" / "videos - no playlist" / "Single item [video123]"
+    )
+
+
+def test_output_directory_access_probe_is_eager_and_leaves_no_temp_file(tmp_path: Path):
+    output_dir = tmp_path / "Downloads"
+
+    validate_output_directory_access(output_dir)
+
+    assert output_dir.is_dir()
+    assert list(output_dir.iterdir()) == []
 
 
 def test_removed_library_record_is_rediscovered_from_disk_and_readded_without_duplicate(monkeypatch, tmp_path: Path):
@@ -3239,6 +3296,131 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
         for kind, payload in emitted_events
     )
     assert not any(kind == "metadata" for kind, _payload in emitted_events)
+
+
+def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch, tmp_path: Path):
+    source_url = "https://www.youtube.com/watch?v=abc123&list=PLreal&index=4"
+    preflight = {
+        "id": "abc123",
+        "title": "Playlist Item",
+        "uploader": "Creator",
+        "webpage_url": "https://www.youtube.com/watch?v=abc123",
+        "duration": 30,
+        "formats": [
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 3000,
+                "fps": 30,
+                "protocol": "https",
+            },
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 128,
+                "asr": 48000,
+                "audio_channels": 2,
+                "protocol": "https",
+            },
+        ],
+    }
+    calls: list[tuple[str, bool]] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, *, download):
+            assert download is False
+            calls.append((url, bool(self.opts.get("extract_flat"))))
+            if self.opts.get("extract_flat") == "in_playlist":
+                return {
+                    "_type": "playlist",
+                    "id": "PLreal",
+                    "title": "Real Playlist",
+                    "entries": [
+                        {
+                            "id": "abc123",
+                            "playlist_index": 4,
+                            "webpage_url": "https://www.youtube.com/watch?v=abc123",
+                        }
+                    ],
+                }
+            return dict(preflight)
+
+        def process_ie_result(self, info, *, download):
+            assert download is True
+            staged = Path(
+                self.opts["outtmpl"]
+                .replace("%(id)s", "abc123")
+                .replace("%(ext)s", "mp4")
+            )
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(b"downloaded media")
+            return dict(info)
+
+    class FakeYtDlp:
+        YoutubeDL = FakeYoutubeDL
+
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
+    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", lambda path, *_args, **_kwargs: path)
+    probe = {
+        "format": {"format_name": "mov,mp4,m4a", "duration": "30"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264"},
+            {"codec_type": "audio", "codec_name": "aac"},
+        ],
+    }
+    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    app._find_ffmpeg = lambda: "ffmpeg"
+    app._find_ffprobe = lambda: "ffprobe"
+    app._find_deno = lambda: None
+    job = DownloadJob(
+        url=source_url,
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    outcome = app._download_worker_single(job)
+
+    expected = tmp_path / "Creator" / "playlists" / "Real Playlist" / "Playlist Item [abc123]" / "Playlist Item.mp4"
+    assert calls[0] == (source_url, True)
+    assert outcome == DownloadOutcome(success_count=1)
+    assert expected.read_bytes() == b"downloaded media"
+    emitted_metadata = [payload for kind, payload in app.events.queue if kind == "job_metadata"]
+    assert emitted_metadata
+    assert emitted_metadata[-1]["info"]["playlist_id"] == "PLreal"
+    assert emitted_metadata[-1]["info"]["playlist_title"] == "Real Playlist"
 
 
 @pytest.mark.parametrize("output_type", [OutputType.MP4, OutputType.MP3])
