@@ -6445,6 +6445,21 @@ class DownloaderApp(tk.Tk):
             if underline is not None:
                 underline.configure(bg=THEME["accent"] if active else THEME["bg"])
         self._focus_selected_view = name
+        if name == "activity":
+            activity_log = self.__dict__.get("log")
+            if activity_log is not None:
+                setattr(activity_log, "_vodforge_user_scroll_locked", False)
+
+                def show_latest_activity() -> None:
+                    try:
+                        activity_log.see("end")
+                    except (AttributeError, tk.TclError):
+                        pass
+
+                try:
+                    activity_log.after_idle(show_latest_activity)
+                except (AttributeError, tk.TclError):
+                    show_latest_activity()
 
     def _sync_focus_destination(self) -> None:
         path = self.output_var.get().strip() or "Choose destination"
@@ -7307,7 +7322,7 @@ class DownloaderApp(tk.Tk):
         else:
             setattr(widget, "_vodforge_user_scroll_locked", False)
             try:
-                widget.yview_moveto(0.0)
+                widget.see("end")
             except (AttributeError, TypeError, ValueError, tk.TclError):
                 pass
 

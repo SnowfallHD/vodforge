@@ -75,8 +75,23 @@ class LiveWorker:
 
 
 class Control:
-    def config(self, **_kwargs):
+    def __init__(self):
+        self.raised = False
+        self.configured: list[dict[str, object]] = []
+
+    def config(self, **kwargs):
+        self.configured.append(dict(kwargs))
         return None
+
+    configure = config
+
+    def tkraise(self):
+        self.raised = True
+
+
+class IdleTextBuffer(ScrollAwareTextBuffer):
+    def after_idle(self, callback):
+        callback()
 
 
 class SelectedTree:
@@ -250,9 +265,29 @@ def test_new_run_activity_resets_scroll_ownership(tmp_path: Path):
 
     app._render_focus_run_activity("run-2", "queued")
 
-    assert app.focus_log.moved_to == [0.0]
+    assert app.focus_log.moved_to == []
+    assert app.focus_log.seen == ["end"]
     assert app.focus_log._vodforge_user_scroll_locked is False
     assert app._focus_log_owner_run_id == "run-2"
+
+
+def test_opening_activity_view_starts_at_latest_line():
+    activity_view = Control()
+    activity_log = IdleTextBuffer(last=0.4)
+    activity_log._vodforge_user_scroll_locked = True
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_views = {"activity": activity_view}
+    app._focus_nav_buttons = {"activity": Control()}
+    app._focus_nav_underlines = {"activity": Control()}
+    app._focus_nav_icons = {"activity": (None, None)}
+    app.log = activity_log
+
+    app._select_focus_view("activity")
+
+    assert activity_view.raised is True
+    assert app._focus_selected_view == "activity"
+    assert activity_log._vodforge_user_scroll_locked is False
+    assert activity_log.seen == ["end"]
 
 
 def test_compact_layout_does_not_schedule_a_forced_activity_tail_jump():
