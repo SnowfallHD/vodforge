@@ -585,11 +585,15 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
 
     assert "tk.Toplevel(self)" in run_list_source
     assert "popup.overrideredirect(True)" in run_list_source
-    assert "visible_rows = min(6, max(1, len(records)))" in run_list_source
+    assert "visible_rows = min(5, max(1, len(records)))" in run_list_source
+    assert "tk.Canvas(" in run_list_source
+    assert "yscrollincrement=1" in run_list_source
     assert "SleekScrollbar(root, command=run_list.yview)" in run_list_source
+    assert 'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)' in run_list_source
+    assert 'run_list.bind("<MouseWheel>", scroll_runs)' in run_list_source
     assert "button.winfo_rooty() - height - 6" in run_list_source
     assert "width = min(440" in run_list_source
-    assert "height = min(188" in run_list_source
+    assert "height = min(184" in run_list_source
     assert 'popup.bind("<FocusOut>"' in run_list_source
 
 

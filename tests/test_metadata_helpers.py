@@ -77,6 +77,7 @@ from yt_downloader.app import (
     focus_library_layout_mode,
     focus_layout_mode,
     focus_run_deck_capacity,
+    focus_wheel_pixels,
     library_thumbnail_size,
     thumbnail_size_within,
     render_monochrome_icon,
@@ -440,6 +441,15 @@ def test_focus_deck_capacity_and_hero_art_follow_available_width_not_density_lab
     assert focus_run_deck_capacity(200) == 1
     assert focus_hero_thumbnail_visible(720)
     assert not focus_hero_thumbnail_visible(719)
+
+
+def test_focus_run_drop_up_normalizes_trackpad_and_mouse_wheel_motion_to_pixels():
+    assert focus_wheel_pixels(0) == 0
+    assert focus_wheel_pixels(3) == -3
+    assert focus_wheel_pixels(-7) == 7
+    assert focus_wheel_pixels(120) == -36
+    assert focus_wheel_pixels(-120) == 36
+    assert focus_wheel_pixels(480) == -72
 
 
 def test_rounded_contain_image_preserves_placeholder_artwork_without_cropping():

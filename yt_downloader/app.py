@@ -251,6 +251,17 @@ def focus_hero_thumbnail_visible(width: int) -> bool:
     return int(width) >= 720
 
 
+def focus_wheel_pixels(delta: int) -> int:
+    """Normalize high-resolution trackpad and coarse wheel deltas to pixels."""
+    raw_delta = int(delta)
+    if raw_delta == 0:
+        return 0
+    pixels = -raw_delta
+    if abs(raw_delta) >= 120:
+        pixels = -round(raw_delta / 120) * 36
+    return max(-72, min(72, pixels))
+
+
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
     raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
     base = Path(raw_meipass) if raw_meipass else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
@@ -6196,39 +6207,84 @@ class DownloaderApp(tk.Tk):
         root.pack(fill="both", expand=True, padx=1, pady=1)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
-        visible_rows = min(6, max(1, len(records)))
-        run_list = tk.Listbox(
+        visible_rows = min(5, max(1, len(records)))
+        row_height = 31
+        run_list = tk.Canvas(
             root,
-            height=visible_rows,
+            height=visible_rows * row_height,
             width=1,
-            activestyle="none",
-            selectmode="browse",
             bg=THEME["surface"],
-            fg=THEME["text"],
-            selectbackground=THEME["accent_dark"],
-            selectforeground=THEME["text"],
             relief="flat",
             bd=0,
             highlightthickness=0,
-            font=FONT_UI,
-            exportselection=False,
+            yscrollincrement=1,
+            takefocus=True,
         )
         run_scroll = SleekScrollbar(root, command=run_list.yview)
         run_list.configure(yscrollcommand=run_scroll.set)
-        run_list.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=7)
-        run_scroll.grid(row=0, column=1, sticky="ns", padx=(3, 4), pady=4)
+        run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)
+        run_scroll.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=10)
 
+        selected_index = -1
+        row_rectangles: list[int] = []
         if records:
             for index, record in enumerate(records):
                 title = str(record.get("title") or "Untitled run")
                 status = str(record.get("status") or "Ready")
-                run_list.insert("end", f"{title}  —  {status}")
                 if str(record.get("run_id") or "") == str(self._focus_selected_run_id or ""):
-                    run_list.selection_set(index)
-                    run_list.see(index)
+                    selected_index = index
+                row_tag = f"run-row-{index}"
+                top = index * row_height
+                rectangle = run_list.create_rectangle(
+                    0,
+                    top,
+                    1,
+                    top + row_height - 1,
+                    fill=THEME["accent_dark"] if index == selected_index else THEME["surface"],
+                    outline="",
+                    tags=(row_tag,),
+                )
+                row_rectangles.append(rectangle)
+                label = f"{title}  —  {status}"
+                if len(label) > 58:
+                    label = f"{label[:55]}..."
+                run_list.create_text(
+                    10,
+                    top + (row_height / 2),
+                    text=label,
+                    anchor="w",
+                    fill=THEME["text"],
+                    font=FONT_UI,
+                    tags=(row_tag,),
+                )
+                run_list.tag_bind(
+                    row_tag,
+                    "<Button-1>",
+                    lambda _event, item=record: choose_run(item),
+                )
+
+                def show_hover(_event: Any, *, item_index: int = index, item_rectangle: int = rectangle) -> None:
+                    if item_index != selected_index:
+                        run_list.itemconfigure(item_rectangle, fill=THEME["surface_2"])
+
+                def hide_hover(_event: Any, *, item_index: int = index, item_rectangle: int = rectangle) -> None:
+                    fill = THEME["accent_dark"] if item_index == selected_index else THEME["surface"]
+                    run_list.itemconfigure(item_rectangle, fill=fill)
+
+                run_list.tag_bind(row_tag, "<Enter>", show_hover)
+                run_list.tag_bind(row_tag, "<Leave>", hide_hover)
         else:
-            run_list.insert("end", "No runs yet")
-            run_list.configure(state="disabled")
+            run_list.create_text(10, row_height / 2, text="No runs yet", anchor="w", fill=THEME["muted"], font=FONT_UI)
+
+        run_list.configure(scrollregion=(0, 0, 1, max(row_height, len(records) * row_height)))
+
+        def resize_rows(event: tk.Event[Any]) -> None:
+            for index, rectangle in enumerate(row_rectangles):
+                top = index * row_height
+                run_list.coords(rectangle, 0, top, max(1, event.width), top + row_height - 1)
+            run_list.configure(scrollregion=(0, 0, max(1, event.width), max(row_height, len(records) * row_height)))
+
+        run_list.bind("<Configure>", resize_rows, add="+")
 
         def close_drop_up() -> None:
             self._focus_run_list_window = None
@@ -6242,20 +6298,21 @@ class DownloaderApp(tk.Tk):
             except tk.TclError:
                 return
 
-        def choose_run(_event: Any = None) -> None:
-            selection = run_list.curselection()
-            if not selection or not records:
-                return
-            index = int(selection[0])
-            if 0 <= index < len(records):
-                self._focus_select_run_record(records[index])
+        def choose_run(record: dict[str, Any]) -> None:
+            self._focus_select_run_record(record)
             close_drop_up()
 
-        run_list.bind("<<ListboxSelect>>", choose_run)
         run_list.bind("<Escape>", lambda _event: close_drop_up())
-        run_list.bind("<MouseWheel>", lambda event: run_list.yview_scroll(-1 if event.delta > 0 else 1, "units"))
-        run_list.bind("<Button-4>", lambda _event: run_list.yview_scroll(-1, "units"))
-        run_list.bind("<Button-5>", lambda _event: run_list.yview_scroll(1, "units"))
+
+        def scroll_runs(event: tk.Event[Any]) -> str:
+            pixels = focus_wheel_pixels(int(getattr(event, "delta", 0)))
+            if pixels:
+                run_list.yview_scroll(pixels, "units")
+            return "break"
+
+        run_list.bind("<MouseWheel>", scroll_runs)
+        run_list.bind("<Button-4>", lambda _event: (run_list.yview_scroll(-36, "units"), "break")[1])
+        run_list.bind("<Button-5>", lambda _event: (run_list.yview_scroll(36, "units"), "break")[1])
         popup.bind("<Escape>", lambda _event: close_drop_up())
         popup.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
 
@@ -6263,7 +6320,7 @@ class DownloaderApp(tk.Tk):
         button.update_idletasks()
         popup.update_idletasks()
         width = min(440, max(340, self.winfo_width() - 48))
-        height = min(188, max(74, popup.winfo_reqheight()))
+        height = min(184, max(78, popup.winfo_reqheight()))
         screen_width = popup.winfo_screenwidth()
         screen_height = popup.winfo_screenheight()
         x = min(screen_width - width - 12, max(12, button.winfo_rootx() + button.winfo_width() - width))
