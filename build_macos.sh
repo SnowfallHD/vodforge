@@ -112,6 +112,13 @@ if [[ "$bundle_icon_name" != "VODForge.icns" ]] || [[ ! -f "$bundle_icon" ]] || 
   exit 1
 fi
 
+# PyInstaller ad-hoc signs the initial bundle, but the version metadata above is
+# intentionally finalized afterward. Re-sign only after every local bundle
+# mutation so the test application is structurally valid on disk. Public
+# releases still replace this ad-hoc signature with Developer ID signing.
+/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"
+/usr/bin/codesign --verify --deep --strict "dist/VODForge.app"
+
 "$app_binary" --runtime-smoke
-echo "Built unsigned local VODForge v${build_version}: dist/VODForge.app"
+echo "Built ad-hoc signed local VODForge v${build_version}: dist/VODForge.app"
 echo "Developer ID signing and notarization are still required before public distribution."

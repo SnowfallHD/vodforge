@@ -3072,6 +3072,30 @@ class DownloadJob:
     cookie_browser: str | None = None
     batch_mode: bool = False
     preview_info: dict[str, Any] | None = None
+    run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    metadata_keys: set[tuple[str, str]] = field(default_factory=set)
+    history_identities: set[tuple[str, str, str]] = field(default_factory=set)
+    preview_thumbnail_image: Any | None = field(default=None, repr=False)
+    terminal_status: str | None = None
+    terminal_message: str = ""
+
+
+def download_job_display_title(job: DownloadJob, *, queued: bool = False) -> str:
+    """Return resolved run metadata or a neutral state, never a raw source URL."""
+    title = str((job.preview_info or {}).get("title") or "").strip()
+    if title:
+        return title
+    state = "Queued" if queued else "Preparing"
+    media = "audio" if job.output_type == OutputType.MP3 else "video"
+    return f"{state} {media} run"
+
+
+def metadata_run_key(info: dict[str, Any]) -> tuple[str, str] | None:
+    """Identify in-memory metadata that belongs to one provider item and output type."""
+    video_id = str(info.get("id") or "").strip()
+    if not video_id:
+        return None
+    return video_id, metadata_output_type(info).value
 
 
 @dataclass(frozen=True)
@@ -4559,6 +4583,8 @@ class DownloaderApp(tk.Tk):
         self._focus_layout: str | None = None
         self._focus_settings_window: tk.Toplevel | None = None
         self._focus_active_override = False
+        self._terminal_jobs: list[DownloadJob] = []
+        self._thumbnail_preview_request_ids = {"active": 0, "library": 0}
         self._focus_icon_images: dict[tuple[str, int, str], Any] = {}
 
         self.focus_active_title_var = tk.StringVar(value="Ready for a new run")
@@ -4594,6 +4620,9 @@ class DownloaderApp(tk.Tk):
         self._focus_thumbnail_source_image = None
         self._focus_thumbnail_source_path: Path | None = None
         self._focus_thumbnail_is_placeholder = True
+        self._focus_active_thumbnail_source_image = None
+        self._focus_active_thumbnail_source_path: Path | None = None
+        self._focus_active_thumbnail_is_placeholder = True
         if Image is not None and ImageOps is not None and ImageTk is not None:
             try:
                 with Image.open(bundled_asset_path("VODForge.png")) as source:
@@ -4601,6 +4630,7 @@ class DownloaderApp(tk.Tk):
                 resampling = getattr(Image, "Resampling", Image)
                 self._focus_brand_source_image = icon.copy()
                 self._focus_thumbnail_source_image = icon.copy()
+                self._focus_active_thumbnail_source_image = icon.copy()
                 self._focus_brand_image = ImageTk.PhotoImage(icon.resize((34, 34), resampling.LANCZOS))
                 self._focus_brand_nav_image = ImageTk.PhotoImage(icon.resize((20, 20), resampling.LANCZOS))
                 tile_icon = rounded_contain_image(icon, youtube_thumbnail_size(152), 10, THEME["surface"])
@@ -5874,14 +5904,25 @@ class DownloaderApp(tk.Tk):
         current_url = self.active_job.url if self.active_job is not None else self.url_var.get().strip()
         if active and current_url:
             active_type = self.active_job.output_type if self.active_job is not None else self._selected_output_type()
+            active_preview = self.active_job.preview_info if self.active_job is not None else None
+            active_preview_path = str((active_preview or {}).get("preview_thumbnail_path") or "").strip()
             records.append(
                 {
-                    "title": self.focus_active_title_var.get() or current_url,
+                    "title": (
+                        download_job_display_title(self.active_job)
+                        if self.active_job is not None
+                        else self.focus_active_title_var.get() or "Preparing run"
+                    ),
                     "detail": self.focus_active_detail_var.get(),
                     "status": f"{self.status_var.get() or 'Active'}  •  {active_type.value}",
                     "progress": float(self.progress_var.get()),
                     "kind": "active",
                     "output_type": active_type.value,
+                    "run_id": self.active_job.run_id if self.active_job is not None else "",
+                    "preview_thumbnail_path": active_preview_path,
+                    "preview_thumbnail_image": (
+                        self.active_job.preview_thumbnail_image if self.active_job is not None else None
+                    ),
                 }
             )
         for job in self.pending_jobs:
@@ -5889,7 +5930,7 @@ class DownloaderApp(tk.Tk):
             preview_path = str(preview_info.get("preview_thumbnail_path") or "").strip()
             records.append(
                 {
-                    "title": str(preview_info.get("title") or job.url),
+                    "title": download_job_display_title(job, queued=True),
                     "detail": str(preview_info.get("uploader") or preview_info.get("channel") or self._focus_profile_text(
                             job.output_type,
                             mp3_settings=job.mp3_settings,
@@ -5900,10 +5941,51 @@ class DownloaderApp(tk.Tk):
                     "progress": 0,
                     "kind": "queued",
                     "output_type": job.output_type.value,
+                    "run_id": job.run_id,
                     "preview_thumbnail_path": preview_path,
                 }
             )
+        for terminal_job in self._terminal_jobs:
+            terminal_preview = terminal_job.preview_info or {}
+            records.append(
+                {
+                    "title": download_job_display_title(terminal_job),
+                    "detail": str(
+                        terminal_preview.get("uploader")
+                        or terminal_preview.get("channel")
+                        or terminal_job.terminal_message
+                        or "Run did not produce an output"
+                    ),
+                    "status": f"{terminal_job.terminal_status or 'Stopped'}  •  {terminal_job.output_type.value}",
+                    "progress": 0,
+                    "kind": "failed" if terminal_job.terminal_status == "Failed" else "stopped",
+                    "output_type": terminal_job.output_type.value,
+                    "run_id": terminal_job.run_id,
+                    "job": terminal_job,
+                    "preview_thumbnail_path": str(terminal_preview.get("preview_thumbnail_path") or "").strip(),
+                    "preview_thumbnail_image": terminal_job.preview_thumbnail_image,
+                }
+            )
+        active_keys = self.active_job.metadata_keys if self.active_job is not None else set()
+        active_history_identities = (
+            self.active_job.history_identities if self.active_job is not None else set()
+        )
+        terminal_keys = {
+            key
+            for terminal_job in self._terminal_jobs
+            for key in terminal_job.metadata_keys
+        }
         for index, item in enumerate(self.metadata_items):
+            item_key = metadata_run_key(item)
+            item_history_identity = history_identity(item) if history_output_dir(item) is not None else None
+            if (
+                history_output_dir(item) is None
+                and item_key is not None
+                and (item_key in active_keys or item_key in terminal_keys)
+            ):
+                continue
+            if item_history_identity is not None and item_history_identity in active_history_identities:
+                continue
             saved = history_output_dir(item)
             output_type = metadata_output_type(item)
             records.append(
@@ -5966,7 +6048,16 @@ class DownloaderApp(tk.Tk):
                 bd=0,
             )
             title_label.grid(row=0, column=1, sticky="ew", padx=(0, 4))
-            status_color = THEME["success"] if str(record.get("kind")) == "completed" else THEME["accent"] if str(record.get("kind")) == "active" else THEME["muted"]
+            record_kind = str(record.get("kind"))
+            status_color = (
+                THEME["success"]
+                if record_kind == "completed"
+                else "#ff7a7a"
+                if record_kind == "failed"
+                else THEME["accent"]
+                if record_kind == "active"
+                else THEME["muted"]
+            )
             status_label = tk.Label(tile, text=status, bg=tile_bg, fg=status_color, font=FONT_UI_SMALL, bd=0, anchor="w")
             is_primary_active = column == 0 and str(record.get("kind")) == "active"
             if is_primary_active:
@@ -6031,6 +6122,12 @@ class DownloaderApp(tk.Tk):
     def _focus_thumbnail_source_for_record(self, record: dict[str, Any]) -> Any | None:
         if Image is None:
             return None
+        direct_image = record.get("preview_thumbnail_image")
+        if direct_image is not None:
+            try:
+                return direct_image.convert("RGBA").copy()
+            except Exception:
+                pass
         candidates: list[Path] = []
         direct = str(record.get("preview_thumbnail_path") or "").strip()
         if direct:
@@ -6058,8 +6155,8 @@ class DownloaderApp(tk.Tk):
                         return source.convert("RGBA").copy()
             except Exception as exc:
                 write_diagnostic(f"run thumbnail could not be loaded ({path}): {exc}")
-        if str(record.get("kind")) == "active" and self._focus_thumbnail_source_image is not None:
-            return self._focus_thumbnail_source_image
+        if str(record.get("kind")) == "active" and self._focus_active_thumbnail_source_image is not None:
+            return self._focus_active_thumbnail_source_image
         return self._focus_brand_source_image
 
     def _focus_photo_from_source(self, source: Any | None, size: tuple[int, int], radius: int) -> Any | None:
@@ -6068,6 +6165,8 @@ class DownloaderApp(tk.Tk):
         try:
             is_placeholder = source is self._focus_brand_source_image or (
                 source is self._focus_thumbnail_source_image and self._focus_thumbnail_is_placeholder
+            ) or (
+                source is self._focus_active_thumbnail_source_image and self._focus_active_thumbnail_is_placeholder
             )
             rendered = (
                 rounded_contain_image(source, size, radius, THEME["surface"])
@@ -6080,7 +6179,7 @@ class DownloaderApp(tk.Tk):
             return None
 
     def _focus_activate_run_record(self, record: dict[str, Any], event: tk.Event[Any] | None = None) -> None:
-        if str(record.get("kind")) == "active":
+        if str(record.get("kind")) in {"active", "failed", "stopped"}:
             self._show_focus_run_actions_menu(record, event)
             return
         self._focus_select_run_record(record)
@@ -6091,6 +6190,10 @@ class DownloaderApp(tk.Tk):
             menu.add_command(label="Cancel run", command=self._cancel)
             menu.add_command(label="Skip current video", command=self._skip_video)
             menu.add_command(label="Skip current URL", command=self._skip_url)
+            menu.add_separator()
+        terminal_job = record.get("job")
+        if str(record.get("kind")) in {"failed", "stopped"} and isinstance(terminal_job, DownloadJob):
+            menu.add_command(label="Retry run", command=lambda job=terminal_job: self._retry_terminal_job(job))
             menu.add_separator()
         metadata_index = record.get("metadata_index")
         if metadata_index is not None:
@@ -6401,7 +6504,13 @@ class DownloaderApp(tk.Tk):
             self.status_var.set(f"Loaded {len(self.download_history)} downloaded media item(s) from history.")
             self._append_log(f"Loaded download history: {self.history_path}")
 
-    def _record_download_history(self, info: dict[str, Any], output_dir: Path) -> None:
+    def _record_download_history(
+        self,
+        info: dict[str, Any],
+        output_dir: Path,
+        *,
+        owning_job: DownloadJob | None = None,
+    ) -> None:
         try:
             self.download_history = upsert_history(self.download_history, info, output_dir)
             save_history(self.history_path, self.download_history)
@@ -6411,6 +6520,8 @@ class DownloaderApp(tk.Tk):
             return
 
         saved_record = self.download_history[0]
+        if owning_job is not None:
+            owning_job.history_identities.add(history_identity(saved_record))
         saved_id = str(saved_record.get("id") or "")
         saved_type = metadata_output_type(saved_record)
         merged = dict(saved_record)
@@ -6824,7 +6935,8 @@ class DownloaderApp(tk.Tk):
         pending[key] = self.after(900, restore)
         self._focus_copy_feedback_after_ids = pending
 
-    def _display_metadata(self, info: dict[str, Any]) -> None:
+    def _display_metadata(self, info: dict[str, Any], *, active_job: DownloadJob | None = None) -> None:
+        active_status = self.status_var.get() if active_job is not None and active_job is self.active_job else None
         incoming_items = iter_video_infos(info)
         new_items: list[dict[str, Any]] = []
         for incoming in incoming_items:
@@ -6837,6 +6949,7 @@ class DownloaderApp(tk.Tk):
                     if video_id
                     and str(item.get("id") or "") == video_id
                     and metadata_output_type(item) == output_type
+                    and not (active_job is not None and history_output_dir(item) is not None)
                 ),
                 None,
             )
@@ -6852,7 +6965,60 @@ class DownloaderApp(tk.Tk):
             if self.library_output_type_var.get() != incoming_type.value:
                 self.library_output_type_var.set(incoming_type.value)
         self._render_metadata_tree()
-        self.status_var.set(f"Showing metadata for {len(incoming_items)} fetched item(s); saved history remains available.")
+        if active_job is not None and active_job is self.active_job and incoming_items:
+            for incoming in incoming_items:
+                key = metadata_run_key(incoming)
+                if key is not None:
+                    active_job.metadata_keys.add(key)
+            self._display_active_job_metadata(active_job, incoming_items[0])
+            if active_status is not None:
+                self.status_var.set(active_status)
+        else:
+            self.status_var.set(f"Showing metadata for {len(incoming_items)} fetched item(s); saved history remains available.")
+
+    def _display_active_job_metadata(self, job: DownloadJob, info: dict[str, Any]) -> None:
+        """Apply provider metadata only to the run that currently owns the Forge surface."""
+        if job is not self.active_job:
+            return
+        job.preview_info = {**(job.preview_info or {}), **info}
+        title = download_job_display_title(job)
+        creator = str(info.get("uploader") or info.get("channel") or "YouTube").strip()
+        self.focus_active_title_var.set(title)
+        self.focus_active_detail_var.set(creator)
+        duration = format_duration(info.get("duration"))
+        self.focus_active_duration_var.set("" if duration == "—" else duration)
+        summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
+        output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+        if job.output_type == OutputType.MP3:
+            bitrate = _display_value(output.get("Target audio bitrate"), f"{job.mp3_settings.bitrate_kbps} kbps")
+            sample_rate = _display_value(output.get("Audio sample rate"), "Source rate")
+            self.focus_active_profile_var.set(f"MP3  •  {bitrate}  •  {sample_rate}")
+        else:
+            mode = _display_value(output.get("Output rate-control mode"), job.export_mode.value)
+            self.focus_active_profile_var.set(f"MP4  •  {job.quality_label}  •  {mode}")
+
+        preview_thumbnail = str(info.get("preview_thumbnail_path") or "").strip()
+        preview_thumbnail_path = Path(preview_thumbnail) if preview_thumbnail else None
+        cached_thumbnail = cached_thumbnail_path(info)
+        thumbnail = best_thumbnail(info)
+        thumbnail_url = str((thumbnail or {}).get("url") or "").strip()
+        if preview_thumbnail_path is not None and preview_thumbnail_path.is_file():
+            self._load_thumbnail_file(preview_thumbnail_path, target="active")
+        elif cached_thumbnail is not None and cached_thumbnail.is_file():
+            self._load_thumbnail_file(cached_thumbnail, target="active")
+        elif thumbnail_url:
+            self._reset_active_thumbnail()
+            self._load_thumbnail_preview(thumbnail_url, target="active", owner_run_id=job.run_id)
+        else:
+            self._reset_active_thumbnail()
+        self._refresh_focus_run_deck()
+
+    def _active_run_for_metadata_event(self, event_job: DownloadJob) -> DownloadJob | None:
+        """Resolve worker copies to the one active run authority; reject stale run events."""
+        active_job = self.active_job
+        if active_job is None or event_job.run_id != active_job.run_id:
+            return None
+        return active_job
 
     def _rebuild_output_dir_index(self) -> None:
         self.video_output_dirs_by_id = {}
@@ -6896,7 +7062,11 @@ class DownloaderApp(tk.Tk):
         if hasattr(self, "focus_summary_text"):
             self._set_text(self.focus_summary_text, "No output selected.", disabled=True)
         if hasattr(self, "focus_run_deck") and self._focus_brand_source_image is not None:
-            self._render_focus_thumbnail_surfaces(self._focus_brand_source_image, placeholder=True)
+            self._render_focus_thumbnail_surfaces(
+                self._focus_brand_source_image,
+                placeholder=True,
+                target="library",
+            )
 
     def _on_video_selected(self, _event: Any = None) -> None:
         selection = self.video_tree.selection()
@@ -6926,20 +7096,6 @@ class DownloaderApp(tk.Tk):
         self.selected_title_var.set(
             f"{title}\n{output_type.value} • {creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}\n{location_text}"
         )
-        if hasattr(self, "focus_active_title_var") and not bool(self._focus_active_override or (self.worker and self.worker.is_alive())):
-            self.focus_active_title_var.set(title)
-            self.focus_active_detail_var.set(creator)
-            duration = format_duration(info.get("duration"))
-            self.focus_active_duration_var.set("" if duration == "—" else duration)
-            summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
-            output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
-            if output_type == OutputType.MP3:
-                bitrate = _display_value(output.get("Target audio bitrate"), "320 kbps")
-                sample_rate = _display_value(output.get("Audio sample rate"), "Source rate")
-                self.focus_active_profile_var.set(f"MP3  •  {bitrate}  •  {sample_rate}")
-            else:
-                mode = _display_value(output.get("Output rate-control mode"), self.export_mode_var.get())
-                self.focus_active_profile_var.set(f"MP4  •  {self.quality_var.get()}  •  {mode}")
         tags_text = build_tags_display_text(info)
         description = build_description_display_text(info)
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
@@ -6955,17 +7111,22 @@ class DownloaderApp(tk.Tk):
         preview_thumbnail_path = Path(preview_thumbnail) if preview_thumbnail else None
         local_thumbnail = saved / "thumbnail.jpeg" if saved is not None else None
         cached_thumbnail = cached_thumbnail_path(info)
+        thumbnail_target = "library"
         if preview_thumbnail_path is not None and preview_thumbnail_path.is_file():
-            self._load_thumbnail_file(preview_thumbnail_path)
+            self._load_thumbnail_file(preview_thumbnail_path, target=thumbnail_target)
         elif local_thumbnail is not None and local_thumbnail.is_file():
-            self._load_thumbnail_file(local_thumbnail)
+            self._load_thumbnail_file(local_thumbnail, target=thumbnail_target)
         elif cached_thumbnail is not None and cached_thumbnail.is_file():
-            self._load_thumbnail_file(cached_thumbnail)
+            self._load_thumbnail_file(cached_thumbnail, target=thumbnail_target)
         elif self.last_thumbnail_url:
-            self._load_thumbnail_preview(self.last_thumbnail_url)
+            self._load_thumbnail_preview(self.last_thumbnail_url, target=thumbnail_target)
         else:
             if hasattr(self, "focus_run_deck") and self._focus_brand_source_image is not None:
-                self._render_focus_thumbnail_surfaces(self._focus_brand_source_image, placeholder=True)
+                self._render_focus_thumbnail_surfaces(
+                    self._focus_brand_source_image,
+                    placeholder=True,
+                    target=thumbnail_target,
+                )
             else:
                 self.thumbnail_label.config(image="", text="No thumbnail loaded")
         self.status_var.set(f"Showing metadata for: {info.get('title') or info.get('id') or 'selected video'}")
@@ -6977,42 +7138,72 @@ class DownloaderApp(tk.Tk):
         library_width: int | None = None,
         placeholder: bool | None = None,
         source_path: Path | None = None,
+        target: str = "both",
     ) -> None:
         if Image is None or ImageOps is None or ImageTk is None or not hasattr(self, "focus_thumbnail_wrap"):
             return
+        if target not in {"active", "library", "both"}:
+            raise ValueError(f"Unsupported thumbnail target: {target}")
         if source is not None:
-            self._focus_thumbnail_source_image = source.convert("RGBA").copy()
-            self._focus_thumbnail_source_path = source_path
-            if placeholder is not None:
-                self._focus_thumbnail_is_placeholder = placeholder
-        image = self._focus_thumbnail_source_image if self._focus_thumbnail_source_image is not None else self._focus_brand_source_image
-        if image is None:
+            normalized = source.convert("RGBA").copy()
+            if target in {"active", "both"}:
+                self._focus_active_thumbnail_source_image = normalized.copy()
+                self._focus_active_thumbnail_source_path = source_path
+                if placeholder is not None:
+                    self._focus_active_thumbnail_is_placeholder = placeholder
+            if target in {"library", "both"}:
+                self._focus_thumbnail_source_image = normalized.copy()
+                self._focus_thumbnail_source_path = source_path
+                if placeholder is not None:
+                    self._focus_thumbnail_is_placeholder = placeholder
+        active_image = self._focus_active_thumbnail_source_image or self._focus_brand_source_image
+        library_image = self._focus_thumbnail_source_image or self._focus_brand_source_image
+        if active_image is None or library_image is None:
             return
         width = library_width or max(1, self.focus_thumbnail_wrap.winfo_width())
         if width <= 1:
             width = max(180, self.focus_thumbnail_wrap.winfo_reqwidth())
         active_size = youtube_thumbnail_size(152)
         library_size = library_thumbnail_size(width)
-        if not self._focus_thumbnail_is_placeholder and self._focus_thumbnail_source_path is not None:
-            active_native = self._create_focus_native_image(self._focus_thumbnail_source_path, active_size, radius=10)
-            library_native = self._create_focus_native_image(self._focus_thumbnail_source_path, library_size, radius=10)
-            if active_native is not None and library_native is not None:
-                if int(self.focus_thumbnail_wrap.cget("height")) != library_size[1]:
-                    self.focus_thumbnail_wrap.configure(height=library_size[1])
-                self._set_focus_thumbnail_images(active_native, library_native, native=True)
-                return
-            self._delete_focus_native_images(active_native, library_native)
-        if self._focus_thumbnail_is_placeholder:
-            active_cover = rounded_contain_image(image, active_size, 10, THEME["surface"])
-            library_cover = rounded_contain_image(image, library_size, 10, THEME["surface"])
-        else:
-            active_cover = rounded_cover_image(image, active_size, 10)
-            library_cover = rounded_cover_image(image, library_size, 10)
-        active_cover = flatten_alpha_image(active_cover, THEME["bg"])
-        library_cover = flatten_alpha_image(library_cover, THEME["bg"])
         if int(self.focus_thumbnail_wrap.cget("height")) != library_size[1]:
             self.focus_thumbnail_wrap.configure(height=library_size[1])
-        self._set_focus_thumbnail_images(ImageTk.PhotoImage(active_cover), ImageTk.PhotoImage(library_cover), native=False)
+        active_rendered = self._render_focus_thumbnail_image(
+            active_image,
+            active_size,
+            placeholder=self._focus_active_thumbnail_is_placeholder,
+            source_path=self._focus_active_thumbnail_source_path,
+        )
+        library_rendered = self._render_focus_thumbnail_image(
+            library_image,
+            library_size,
+            placeholder=self._focus_thumbnail_is_placeholder,
+            source_path=self._focus_thumbnail_source_path,
+        )
+        if active_rendered is not None and library_rendered is not None:
+            self._set_focus_thumbnail_images(
+                active_rendered,
+                library_rendered,
+                native=isinstance(active_rendered, str) or isinstance(library_rendered, str),
+            )
+
+    def _render_focus_thumbnail_image(
+        self,
+        image: Any,
+        size: tuple[int, int],
+        *,
+        placeholder: bool,
+        source_path: Path | None,
+    ) -> Any | None:
+        if not placeholder and source_path is not None:
+            native = self._create_focus_native_image(source_path, size, radius=10)
+            if native is not None:
+                return native
+        rendered = (
+            rounded_contain_image(image, size, 10, THEME["surface"])
+            if placeholder
+            else rounded_cover_image(image, size, 10)
+        )
+        return ImageTk.PhotoImage(flatten_alpha_image(rendered, THEME["bg"]))
 
     def _create_focus_native_image(self, path: Path, size: tuple[int, int], *, radius: int = 0) -> str | None:
         """Use AppKit-backed NSImage drawing when Tk exposes it on macOS."""
@@ -7060,88 +7251,146 @@ class DownloaderApp(tk.Tk):
         self._focus_native_thumbnail_images = (active, library) if native else ()
         self._delete_focus_native_images(*old_native)
 
-    def _load_thumbnail_file(self, path: Path) -> None:
-        self._thumbnail_request_id = getattr(self, "_thumbnail_request_id", 0) + 1
+    def _thumbnail_request_ids(self) -> dict[str, int]:
+        request_ids = getattr(self, "_thumbnail_preview_request_ids", None)
+        if not isinstance(request_ids, dict):
+            request_ids = {"active": 0, "library": 0}
+            self._thumbnail_preview_request_ids = request_ids
+        return request_ids
+
+    def _invalidate_thumbnail_request(self, target: str) -> int:
+        if target not in {"active", "library"}:
+            raise ValueError(f"Thumbnail requests require one owning surface, not {target!r}.")
+        request_ids = self._thumbnail_request_ids()
+        request_ids[target] = int(request_ids.get(target, 0)) + 1
+        return request_ids[target]
+
+    def _thumbnail_label_for_target(self, target: str) -> Any:
+        if target == "active" and hasattr(self, "focus_active_thumbnail_label"):
+            return self.focus_active_thumbnail_label
+        return self.thumbnail_label
+
+    def _reset_active_thumbnail(self) -> None:
+        self._invalidate_thumbnail_request("active")
+        if self._focus_brand_source_image is not None:
+            self._render_focus_thumbnail_surfaces(
+                self._focus_brand_source_image,
+                placeholder=True,
+                target="active",
+            )
+
+    def _load_thumbnail_file(self, path: Path, *, target: str) -> None:
+        self._invalidate_thumbnail_request(target)
+        target_label = self._thumbnail_label_for_target(target)
         if Image is None or ImageTk is None:
-            self.thumbnail_label.config(text=f"Saved thumbnail:\n{path}")
+            target_label.config(text=f"Saved thumbnail:\n{path}")
             return
         try:
             with Image.open(path) as source:
                 image = source.copy()
+            if target == "active" and self.active_job is not None:
+                self.active_job.preview_thumbnail_image = image.convert("RGBA").copy()
             if hasattr(self, "focus_run_deck"):
-                self._render_focus_thumbnail_surfaces(image, placeholder=False, source_path=path)
+                self._render_focus_thumbnail_surfaces(image, placeholder=False, source_path=path, target=target)
                 return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
             self.thumbnail_label.config(image=self.thumbnail_image, text="")
         except Exception as exc:
-            self.thumbnail_label.config(text=f"Saved thumbnail preview failed:\n{exc}\n\n{path}")
+            target_label.config(text=f"Saved thumbnail preview failed:\n{exc}\n\n{path}")
 
-    def _load_thumbnail_preview(self, url: str) -> None:
+    def _load_thumbnail_preview(
+        self,
+        url: str,
+        *,
+        target: str,
+        owner_run_id: str = "",
+    ) -> None:
+        target_label = self._thumbnail_label_for_target(target)
         if Image is None or ImageTk is None:
-            self.thumbnail_label.config(text=f"Thumbnail URL:\n{url}")
+            target_label.config(text=f"Thumbnail URL:\n{url}")
             return
-        self._thumbnail_request_id = getattr(self, "_thumbnail_request_id", 0) + 1
-        request_id = self._thumbnail_request_id
+        request_target = target
+        request_id = self._invalidate_thumbnail_request(request_target)
         requests = getattr(self, "_thumbnail_preview_requests", None)
         worker = getattr(self, "_thumbnail_preview_thread", None)
         if requests is None:
-            requests = queue.Queue(maxsize=1)
+            requests = queue.Queue(maxsize=2)
             self._thumbnail_preview_requests = requests
+        retained: list[tuple[int, str, str, str]] = []
         while True:
             try:
-                requests.put_nowait((request_id, url))
+                pending = requests.get_nowait()
+                requests.task_done()
+            except queue.Empty:
                 break
-            except queue.Full:
-                try:
-                    requests.get_nowait()
-                    requests.task_done()
-                except queue.Empty:
-                    continue
+            if len(pending) == 4 and pending[2] != request_target:
+                retained.append(pending)
+        for pending in retained[-1:]:
+            requests.put_nowait(pending)
+        requests.put_nowait((request_id, url, request_target, owner_run_id))
         if worker is None or not worker.is_alive():
             worker = threading.Thread(target=self._thumbnail_preview_loop, daemon=True)
             self._thumbnail_preview_thread = worker
             worker.start()
-        self.thumbnail_label.config(text="Loading thumbnail…")
+        target_label.config(text="Loading thumbnail…")
 
     def _thumbnail_preview_loop(self) -> None:
-        requests: queue.Queue[tuple[int, str]] = self._thumbnail_preview_requests
+        requests: queue.Queue[tuple[int, str, str, str]] = self._thumbnail_preview_requests
         while True:
-            request_id, url = requests.get()
+            request_id, url, target, owner_run_id = requests.get()
             try:
                 ran, data = self._provider_network_coordinator().run_preview(
                     lambda: download_bounded_url_bytes(url, timeout_seconds=15),
                     should_abort=lambda: (
                         bool(self.__dict__.get("_closing", False))
-                        or request_id != getattr(self, "_thumbnail_request_id", 0)
+                        or request_id != self._thumbnail_request_ids().get(target, 0)
                     ),
                 )
                 if not ran:
                     continue
-                self.events.put(("thumbnail_preview_result", {"id": request_id, "url": url, "data": data}))
+                self.events.put((
+                    "thumbnail_preview_result",
+                    {"id": request_id, "url": url, "data": data, "target": target, "run_id": owner_run_id},
+                ))
             except Exception as exc:
-                self.events.put(("thumbnail_preview_result", {"id": request_id, "url": url, "error": str(exc)}))
+                self.events.put((
+                    "thumbnail_preview_result",
+                    {"id": request_id, "url": url, "error": str(exc), "target": target, "run_id": owner_run_id},
+                ))
             finally:
                 requests.task_done()
 
     def _display_thumbnail_preview_result(self, payload: dict[str, Any]) -> None:
-        if int(payload.get("id") or -1) != getattr(self, "_thumbnail_request_id", 0):
+        target = str(payload.get("target") or "library")
+        if int(payload.get("id") or -1) != self._thumbnail_request_ids().get(target, 0):
             return
         error = str(payload.get("error") or "").strip()
         url = str(payload.get("url") or "")
+        target_label = self._thumbnail_label_for_target(target)
         if error:
-            self.thumbnail_label.config(text=f"Thumbnail preview failed:\n{error}\n\nURL:\n{url}")
+            target_label.config(text=f"Thumbnail preview failed:\n{error}\n\nURL:\n{url}")
             return
         try:
             image = decode_bounded_thumbnail(bytes(payload.get("data") or b""))
             if hasattr(self, "focus_run_deck"):
-                self._render_focus_thumbnail_surfaces(image, placeholder=False)
+                owner_run_id = str(payload.get("run_id") or "")
+                if target == "active" and owner_run_id:
+                    owner_job = self.active_job if self.active_job is not None and self.active_job.run_id == owner_run_id else next(
+                        (job for job in self._terminal_jobs if job.run_id == owner_run_id),
+                        None,
+                    )
+                    if owner_job is not None:
+                        owner_job.preview_thumbnail_image = image.convert("RGBA").copy()
+                self._render_focus_thumbnail_surfaces(image, placeholder=False, target=target)
+                if target == "active":
+                    self._refresh_focus_run_deck()
                 return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
             self.thumbnail_label.config(image=self.thumbnail_image, text="")
         except Exception as exc:
-            self.thumbnail_label.config(text=f"Thumbnail preview failed:\n{exc}\n\nURL:\n{url}")
+            target_label.config(text=f"Thumbnail preview failed:\n{exc}\n\nURL:\n{url}")
 
     def _start_download(self) -> None:
         urls = list(self.batch_urls) if self.batch_urls else [self.url_var.get().strip()]
@@ -7240,8 +7489,11 @@ class DownloaderApp(tk.Tk):
         self.progress_var.set(0)
         self.status_var.set("Starting…")
         if hasattr(self, "focus_active_title_var"):
-            self.focus_active_title_var.set(job.url)
-            self.focus_active_detail_var.set("Preparing source")
+            self.focus_active_title_var.set(download_job_display_title(job))
+            preview_info = job.preview_info or {}
+            self.focus_active_detail_var.set(
+                str(preview_info.get("uploader") or preview_info.get("channel") or "Preparing source")
+            )
             self.focus_active_duration_var.set("")
             self.focus_active_profile_var.set(
                 self._focus_profile_text(
@@ -7256,7 +7508,11 @@ class DownloaderApp(tk.Tk):
                 if job.output_type == OutputType.MP3
                 else "Preparing source and MP4 output plan"
             )
-            self._refresh_focus_run_deck()
+            if preview_info:
+                self._display_active_job_metadata(job, preview_info)
+            else:
+                self._reset_active_thumbnail()
+                self._refresh_focus_run_deck()
         self.events.put(("progress_determinate", 0))
         if hasattr(self, "focus_run_deck"):
             self.download_button.config(text="Queue run", state="normal")
@@ -7281,6 +7537,39 @@ class DownloaderApp(tk.Tk):
         job = self.pending_jobs.pop(0)
         self._launch_download_job(job)
         return True
+
+    def _archive_active_terminal_job(self, status: str, message: str) -> None:
+        job = self.active_job
+        if job is None:
+            return
+        job.terminal_status = status
+        job.terminal_message = message
+        if (
+            job.preview_thumbnail_image is None
+            and self._focus_active_thumbnail_source_image is not None
+            and not self._focus_active_thumbnail_is_placeholder
+        ):
+            job.preview_thumbnail_image = self._focus_active_thumbnail_source_image.convert("RGBA").copy()
+        self._terminal_jobs = [item for item in self._terminal_jobs if item.run_id != job.run_id]
+        self._terminal_jobs.insert(0, job)
+        del self._terminal_jobs[20:]
+
+    def _retry_terminal_job(self, failed_job: DownloadJob) -> None:
+        retry_job = replace(
+            failed_job,
+            run_id=uuid.uuid4().hex,
+            metadata_keys=set(),
+            history_identities=set(),
+            terminal_status=None,
+            terminal_message="",
+        )
+        self._terminal_jobs = [item for item in self._terminal_jobs if item.run_id != failed_job.run_id]
+        if self.active_job is not None or (self.worker and self.worker.is_alive()):
+            self.pending_jobs.append(retry_job)
+            self._enqueue_queue_preview(retry_job)
+            self._refresh_focus_run_deck()
+            return
+        self._launch_download_job(retry_job)
 
     def _cancel(self) -> None:
         self.cancel_requested = True
@@ -7643,7 +7932,7 @@ class DownloaderApp(tk.Tk):
                             self.events.put(("log", f"{label}: Manual Override settings {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio, {plan.audio_sample_rate} Hz, {plan.audio_channels} channel(s), x264 preset {plan.x264_preset}."))
                     current_plan = plan
                     current_video_info = build_encoding_summary_metadata(preflight_info, plan)
-                    self.events.put(("metadata", current_video_info))
+                    self.events.put(("job_metadata", {"job": job, "info": current_video_info}))
                     self.events.put(("log", f"{label}: selected format {plan.format_selector}"))
                     if isinstance(plan, AudioExportPlan):
                         self.events.put(("log", f"{label}: selected highest-quality audio source {plan.audio_codec} ~{plan.source_audio_kbps:.0f} kbps."))
@@ -7700,7 +7989,7 @@ class DownloaderApp(tk.Tk):
                         if current_video_info and current_video_info.get("vodforge_encoding_summary"):
                             info["vodforge_encoding_summary"] = current_video_info["vodforge_encoding_summary"]
                         current_video_info = info
-                        self.events.put(("metadata", info))
+                        self.events.put(("job_metadata", {"job": job, "info": info}))
                         put_stage_progress(video_index, total_videos, 0.10, 0.40, 1.0)
 
                         expected_extension = ".mp3" if job.output_type == OutputType.MP3 else ".mp4"
@@ -7813,7 +8102,7 @@ class DownloaderApp(tk.Tk):
                             validation_status="Validated",
                         )
                         current_video_info = info
-                        self.events.put(("metadata", info))
+                        self.events.put(("job_metadata", {"job": job, "info": info}))
                         outcome = outcome.combined_with(DownloadOutcome(success_count=len(output_paths)))
                         if job.output_type == OutputType.MP3:
                             try:
@@ -7833,7 +8122,11 @@ class DownloaderApp(tk.Tk):
                             self.events.put(
                                 (
                                     "history_record",
-                                    {"info": info, "output_dir": str(primary_output.parent)},
+                                    {
+                                        "job": job,
+                                        "info": info,
+                                        "output_dir": str(primary_output.parent),
+                                    },
                                 )
                             )
                         if job.write_info_json:
@@ -7886,7 +8179,10 @@ class DownloaderApp(tk.Tk):
                     if total_videos <= 1 and "video skipped" not in issue.lower():
                         raise
                     if current_video_info is not None:
-                        self.events.put(("metadata", build_failed_encoding_summary_metadata(current_video_info, current_plan, issue)))
+                        self.events.put((
+                            "job_metadata",
+                            {"job": job, "info": build_failed_encoding_summary_metadata(current_video_info, current_plan, issue)},
+                        ))
                     write_diagnostic(f"{label} failed but playlist will continue: {type(exc).__name__}: {exc}")
                     if "video skipped" in issue.lower():
                         outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
@@ -7924,7 +8220,17 @@ class DownloaderApp(tk.Tk):
         except Exception as exc:
             self._active_progress_context = None
             if current_video_info is not None:
-                self.events.put(("metadata", build_failed_encoding_summary_metadata(current_video_info, current_plan, format_ytdlp_user_error(exc))))
+                self.events.put((
+                    "job_metadata",
+                    {
+                        "job": job,
+                        "info": build_failed_encoding_summary_metadata(
+                            current_video_info,
+                            current_plan,
+                            format_ytdlp_user_error(exc),
+                        ),
+                    },
+                ))
             user_error = format_ytdlp_user_error(exc)
             write_diagnostic(f"download worker error: {type(exc).__name__}: {exc}")
             if "cancelled" in user_error.lower() and not re_raise:
@@ -7983,6 +8289,10 @@ class DownloaderApp(tk.Tk):
         opts: dict[str, Any] = {
             "format": selected_format,
             "outtmpl": outtmpl,
+            # yt-dlp probes formats with NamedTemporaryFile before downloading.
+            # An absolute per-run temp path is required because packaged macOS
+            # applications may start with `/` as their working directory.
+            "paths": {"home": str(staging_dir), "temp": str(staging_dir)},
             "windowsfilenames": True,
             "restrictfilenames": False,
             "noplaylist": False,
@@ -8118,6 +8428,20 @@ class DownloaderApp(tk.Tk):
                 elif kind == "metadata":
                     if isinstance(payload, dict):
                         self._display_metadata(payload)
+                elif kind == "job_metadata":
+                    if (
+                        isinstance(payload, dict)
+                        and isinstance(payload.get("job"), DownloadJob)
+                        and isinstance(payload.get("info"), dict)
+                    ):
+                        metadata_job = payload["job"]
+                        active_metadata_job = self._active_run_for_metadata_event(metadata_job)
+                        if active_metadata_job is not None:
+                            self._display_metadata(payload["info"], active_job=active_metadata_job)
+                        else:
+                            write_diagnostic(
+                                f"ignored stale run metadata event for run_id={metadata_job.run_id}"
+                            )
                 elif kind == "thumbnail_preview_result":
                     if isinstance(payload, dict):
                         self._display_thumbnail_preview_result(payload)
@@ -8132,7 +8456,17 @@ class DownloaderApp(tk.Tk):
                     if isinstance(payload, dict) and isinstance(payload.get("info"), dict):
                         output_dir = str(payload.get("output_dir") or "").strip()
                         if output_dir:
-                            self._record_download_history(payload["info"], Path(output_dir))
+                            history_job = payload.get("job")
+                            owning_job = (
+                                self._active_run_for_metadata_event(history_job)
+                                if isinstance(history_job, DownloadJob)
+                                else None
+                            )
+                            self._record_download_history(
+                                payload["info"],
+                                Path(output_dir),
+                                owning_job=owning_job,
+                            )
                 elif kind == "metadata_fetch_done":
                     if hasattr(self, "preview_metadata_button"):
                         self.preview_metadata_button.config(state="normal")
@@ -8199,6 +8533,8 @@ class DownloaderApp(tk.Tk):
                     if self.__dict__.get("_closing", False):
                         self._append_log(f"ERROR during application close: {payload}")
                         continue
+                    self._archive_active_terminal_job("Failed", str(payload))
+                    self.progress_var.set(0)
                     self.status_var.set("Failed")
                     self._append_log(f"ERROR: {payload}")
                     messagebox.showerror(APP_NAME, str(payload))
@@ -8209,6 +8545,7 @@ class DownloaderApp(tk.Tk):
                     if hasattr(self, "focus_transfer_var"):
                         self.focus_transfer_var.set("Run failed  /  Review Activity for details")
                         self.focus_run_status_var.set("Failed")
+                        self.focus_percent_var.set("Failed")
                         self._refresh_focus_run_deck()
                     if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
                         self._set_focus_run_controls_visible(False)
@@ -8218,6 +8555,8 @@ class DownloaderApp(tk.Tk):
         self.after(100, self._pump_events)
 
     def _finish_run_ui(self, message: str, run_status: str, transfer_text: str, *, progress: float | None = None) -> None:
+        if run_status == "Stopped":
+            self._archive_active_terminal_job(run_status, message)
         if progress is not None:
             self.progress_var.set(progress)
         self.status_var.set(message)

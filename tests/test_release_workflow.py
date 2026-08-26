@@ -79,6 +79,16 @@ def test_packaged_apps_receive_the_requested_operating_system_version_metadata()
     assert '"--version-file", $versionResourceFile' in windows_build
 
 
+def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
+    macos_build = (ROOT / "build_macos.sh").read_text()
+
+    version_mutation = macos_build.index('Set :$version_key $bundle_version')
+    local_signing = macos_build.index('/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"')
+    strict_verification = macos_build.index('/usr/bin/codesign --verify --deep --strict "dist/VODForge.app"')
+    runtime_smoke = macos_build.index('"$app_binary" --runtime-smoke')
+    assert version_mutation < local_signing < strict_verification < runtime_smoke
+
+
 def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
     macos_build = (ROOT / "build_macos.sh").read_text()
     windows_build = (ROOT / "build_windows.ps1").read_text()

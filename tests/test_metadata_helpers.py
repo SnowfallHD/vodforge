@@ -59,6 +59,7 @@ from yt_downloader.app import (
     parse_url_list_text,
     diagnostics_dir,
     download_bounded_url_bytes,
+    download_job_display_title,
     bounded_window_size,
     download_layout_mode,
     bundled_asset_path,
@@ -75,6 +76,7 @@ from yt_downloader.app import (
     metadata_layout_mode,
     metadata_indices_for_output_type,
     metadata_output_type,
+    metadata_run_key,
     platform_font_families,
     prepare_batch_item_url,
     prepare_custom_cover_art,
@@ -180,6 +182,169 @@ def test_download_layout_uses_inline_details_whenever_they_fit():
     assert download_layout_mode(1120, 380) == "wide-compact"
     assert download_layout_mode(900, 700) == "stacked-expanded"
     assert download_layout_mode(900, 560) == "stacked-compact"
+
+
+def test_unresolved_run_titles_never_expose_the_raw_source_url(tmp_path: Path):
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=private-source-token",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    assert download_job_display_title(job) == "Preparing video run"
+    assert download_job_display_title(job, queued=True) == "Queued video run"
+    job.preview_info = {"title": "Resolved title"}
+    assert download_job_display_title(job) == "Resolved title"
+
+
+def test_focus_run_records_use_one_active_run_authority_without_preview_duplicate(tmp_path: Path):
+    class Value:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    active_info = {"id": "active-id", "title": "Current title", "vodforge_output_type": "MP4"}
+    active_job = DownloadJob(
+        url="https://www.youtube.com/watch?v=active-id",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+        preview_info=dict(active_info),
+        metadata_keys={metadata_run_key(active_info)},
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_preview_runs = None
+    app._focus_active_override = False
+    app.active_job = active_job
+    app.worker = None
+    app.pending_jobs = []
+    app._terminal_jobs = []
+    app.metadata_items = [active_info, {"id": "older", "title": "Older preview", "vodforge_output_type": "MP4"}]
+    app.url_var = Value("")
+    app.focus_active_title_var = Value("stale previous title")
+    app.focus_active_detail_var = Value("Current creator")
+    app.status_var = Value("Downloading")
+    app.progress_var = Value(54)
+
+    records = app._focus_run_records()
+
+    assert [(record["kind"], record["title"]) for record in records] == [
+        ("active", "Current title"),
+        ("preview", "Older preview"),
+    ]
+    assert all(record["title"] != active_job.url for record in records)
+
+
+def test_failed_run_replaces_its_ephemeral_metadata_card(tmp_path: Path):
+    class Value:
+        def __init__(self, value):
+            self.value = value
+
+        def get(self):
+            return self.value
+
+    failed_info = {"id": "failed-id", "title": "Resolved failure", "vodforge_output_type": "MP4"}
+    failed_job = DownloadJob(
+        url="https://youtu.be/failed-id",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+        preview_info=dict(failed_info),
+        metadata_keys={metadata_run_key(failed_info)},
+        terminal_status="Failed",
+        terminal_message="No output produced",
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_preview_runs = None
+    app._focus_active_override = False
+    app.active_job = None
+    app.worker = None
+    app.pending_jobs = []
+    app._terminal_jobs = [failed_job]
+    app.metadata_items = [failed_info]
+    app.url_var = Value("")
+
+    records = app._focus_run_records()
+
+    assert len(records) == 1
+    assert records[0]["kind"] == "failed"
+    assert records[0]["title"] == "Resolved failure"
+    assert records[0]["job"] is failed_job
+
+
+def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(tmp_path: Path):
+    failed_job = DownloadJob(
+        url="https://youtu.be/retry-id",
+        output_dir=tmp_path,
+        output_type=OutputType.MP3,
+        quality_label="Best available up to 4K",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(bitrate_kbps=320),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=["producer"],
+        preview_info={"id": "retry-id", "title": "Retry me", "vodforge_output_type": "MP3"},
+        metadata_keys={("retry-id", "MP3")},
+        terminal_status="Failed",
+        terminal_message="Temporary failure",
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = [failed_job]
+    app.active_job = None
+    app.worker = None
+    launched: list[DownloadJob] = []
+    app._launch_download_job = launched.append
+
+    app._retry_terminal_job(failed_job)
+
+    assert app._terminal_jobs == []
+    assert len(launched) == 1
+    retry_job = launched[0]
+    assert retry_job.run_id != failed_job.run_id
+    assert retry_job.url == failed_job.url
+    assert retry_job.output_type == OutputType.MP3
+    assert retry_job.mp3_settings.bitrate_kbps == 320
+    assert retry_job.tags == ["producer"]
+    assert retry_job.metadata_keys == set()
+    assert retry_job.terminal_status is None
 
 
 def test_manual_override_requires_room_for_all_inline_fields():
@@ -2571,7 +2736,47 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
     assert calls == {"extract": 1, "process": 1}
     assert outcome == DownloadOutcome(success_count=1)
     assert expected.read_bytes() == b"downloaded media"
-    assert any(kind == "done" for kind, _payload in list(app.events.queue))
+    emitted_events = list(app.events.queue)
+    assert any(kind == "done" for kind, _payload in emitted_events)
+    assert any(
+        kind == "job_metadata" and payload["job"] is job and payload["info"]["id"] == "abc123"
+        for kind, payload in emitted_events
+    )
+    assert not any(kind == "metadata" for kind, _payload in emitted_events)
+
+
+@pytest.mark.parametrize("output_type", [OutputType.MP4, OutputType.MP3])
+def test_ytdlp_format_probes_use_the_per_run_staging_directory(monkeypatch, tmp_path: Path, output_type: OutputType):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app._find_ffmpeg = lambda: "ffmpeg"
+    app._find_deno = lambda: None
+    staging_dir = tmp_path / "output" / ".yt-dlp-downloader-staging" / "run-id"
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=source",
+        output_dir=tmp_path / "output",
+        output_type=output_type,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    opts = app._build_ydl_options(job, staging_dir, format_selector="251" if output_type == OutputType.MP3 else "137+251")
+
+    assert opts["paths"] == {"home": str(staging_dir), "temp": str(staging_dir)}
+    assert Path(opts["paths"]["temp"]).is_absolute()
+    ytdlp_module = load_yt_dlp()
+    assert ytdlp_module is not None
+    with ytdlp_module.YoutubeDL(opts) as ydl:
+        assert Path(ydl.get_output_path("temp")) == staging_dir
 
 
 def test_playlist_loads_cookie_source_once_and_reuses_memory_session(monkeypatch, tmp_path: Path):
