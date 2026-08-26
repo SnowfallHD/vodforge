@@ -974,3 +974,65 @@ def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path:
     assert app.metadata_items == []
     assert app.download_history == []
     assert "not deleted" in app.status_var.get()
+
+
+def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, tmp_path: Path):
+    stopped = make_job(tmp_path, video_id="stopped-item")
+    stopped.output_type = OutputType.MP4
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = {
+        "id": "stopped-item",
+        "title": "Stopped item",
+        "vodforge_output_type": "MP4",
+    }
+    stopped.metadata_keys.add(("stopped-item", "MP4"))
+    unrelated = make_job(tmp_path, video_id="other-item")
+    unrelated.output_type = OutputType.MP4
+    unrelated.terminal_status = "Stopped"
+    unrelated.preview_info = {
+        "id": "other-item",
+        "title": "Other item",
+        "vodforge_output_type": "MP4",
+    }
+    unrelated.metadata_keys.add(("other-item", "MP4"))
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = SelectedTree()
+    # Reproduce the legacy cancellation row: it has media identity but no
+    # vodforge_terminal_run_id linking it to the Forge terminal collection.
+    app.metadata_items = [dict(stopped.preview_info)]
+    app.download_history = []
+    app.history_path = tmp_path / "history.json"
+    app._terminal_jobs = [stopped, unrelated]
+    app._completed_jobs = []
+    app.status_var = Value("")
+    app._render_metadata_tree = lambda: None
+    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    app._remove_selected_library_item()
+
+    assert app.metadata_items == []
+    assert [job.run_id for job in app._terminal_jobs] == [unrelated.run_id]
+
+
+def test_cancelled_active_run_links_its_library_row_to_the_terminal_recent(tmp_path: Path):
+    stopped = make_job(tmp_path, video_id="stopped-item")
+    stopped.preview_info = {
+        "id": "stopped-item",
+        "title": "Stopped item",
+        "vodforge_output_type": "MP4",
+    }
+    stopped.metadata_keys.add(("stopped-item", "MP4"))
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = stopped
+    app._terminal_jobs = []
+    app.metadata_items = [dict(stopped.preview_info)]
+    app._focus_active_thumbnail_source_image = None
+    app._focus_active_thumbnail_is_placeholder = True
+    app._focus_selected_run_id = stopped.run_id
+
+    app._archive_active_terminal_job("Stopped", "Cancelled by user")
+
+    assert app.metadata_items[0]["vodforge_terminal_status"] == "Stopped"
+    assert app.metadata_items[0]["vodforge_terminal_message"] == "Cancelled by user"
+    assert app.metadata_items[0]["vodforge_terminal_run_id"] == stopped.run_id

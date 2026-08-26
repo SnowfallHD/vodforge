@@ -9349,9 +9349,16 @@ class DownloaderApp(tk.Tk):
                 return
             for completed_job in self.__dict__.get("_completed_jobs", []):
                 completed_job.history_identities.discard(identity)
-        terminal_run_id = str(info.get("vodforge_terminal_run_id") or "")
-        if terminal_run_id:
-            self._terminal_jobs = [job for job in self._terminal_jobs if job.run_id != terminal_run_id]
+        terminal_run_ids = {str(info.get("vodforge_terminal_run_id") or "")}
+        item_key = metadata_run_key(info)
+        if item_key is not None:
+            for terminal_job in self._terminal_jobs:
+                terminal_info = terminal_job.preview_info or {}
+                if item_key in terminal_job.metadata_keys or metadata_run_key(terminal_info) == item_key:
+                    terminal_run_ids.add(terminal_job.run_id)
+        terminal_run_ids.discard("")
+        if terminal_run_ids:
+            self._terminal_jobs = [job for job in self._terminal_jobs if job.run_id not in terminal_run_ids]
         self.metadata_items.pop(index)
         self._rebuild_output_dir_index()
         self._render_metadata_tree()
@@ -9974,6 +9981,20 @@ class DownloaderApp(tk.Tk):
         self._terminal_jobs = [item for item in self._terminal_jobs if item.run_id != job.run_id]
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
+        preview_key = metadata_run_key(job.preview_info or {})
+        if preview_key is not None:
+            matching = next(
+                (
+                    item
+                    for item in self.metadata_items
+                    if history_output_dir(item) is None and metadata_run_key(item) == preview_key
+                ),
+                None,
+            )
+            if matching is not None:
+                matching["vodforge_terminal_status"] = status
+                matching["vodforge_terminal_message"] = message
+                matching["vodforge_terminal_run_id"] = job.run_id
 
     def _archive_active_completed_job(self, status: str, message: str) -> None:
         job = self.active_job
