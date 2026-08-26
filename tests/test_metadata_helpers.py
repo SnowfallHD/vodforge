@@ -147,6 +147,39 @@ def test_diagnostics_writer_reuses_and_resets_its_line_buffered_sink(monkeypatch
         app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
 
 
+def test_persistent_activity_log_survives_reopen_and_stays_bounded(monkeypatch, tmp_path: Path):
+    log_path = tmp_path / "activity.log"
+    monkeypatch.setattr(app_module, "ACTIVITY_LOG_MAX_BYTES", 120)
+    monkeypatch.setattr(app_module, "ACTIVITY_LOG_COMPACT_BYTES", 80)
+    app_module.prepare_activity_log(log_path)
+
+    for index in range(12):
+        app_module.append_activity_log(f"activity line {index:02d}", log_path)
+
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+    app_module.prepare_activity_log(log_path)
+    restored = app_module.load_activity_log_tail(log_path)
+
+    assert "activity line 11" in restored
+    assert "activity line 00" not in restored
+    assert log_path.stat().st_size <= app_module.ACTIVITY_LOG_COMPACT_BYTES
+
+
+def test_persistent_activity_log_does_not_store_cookie_file_path(tmp_path: Path):
+    log_path = tmp_path / "activity.log"
+
+    app_module.append_activity_log(
+        "Loaded YouTube cookies file: /Users/example/private/cookies.txt",
+        log_path,
+    )
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+
+    assert app_module.load_activity_log_tail(log_path) == "Loaded YouTube cookies file."
+    assert "/Users/example/private/cookies.txt" not in log_path.read_text(encoding="utf-8")
+
+
 def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")

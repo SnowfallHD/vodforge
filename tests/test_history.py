@@ -7,6 +7,8 @@ import pytest
 
 from yt_downloader.history import (
     HistoryError,
+    MAX_RUN_ACTIVITY_CHARS,
+    MAX_RUN_ACTIVITY_LINES,
     application_data_dir,
     history_identity,
     history_output_dir,
@@ -69,6 +71,28 @@ def test_history_round_trip_and_redownload_deduplication(tmp_path: Path):
     assert loaded == history
     assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == 1
     assert history_identity(loaded[0]) == history_identity(history[0])
+
+
+def test_history_round_trip_preserves_bounded_per_run_activity(tmp_path: Path):
+    activity = [f"line {index}" for index in range(MAX_RUN_ACTIVITY_LINES + 20)]
+    history = upsert_history(
+        [],
+        {
+            "id": "abc123",
+            "title": "Example",
+            "vodforge_run_id": "run-authority-123",
+            "vodforge_run_activity": activity,
+        },
+        tmp_path / "downloads" / "Example",
+    )
+    path = tmp_path / "state" / "download-history.json"
+
+    save_history(path, history)
+    loaded = load_history(path)
+
+    assert loaded[0]["vodforge_run_id"] == "run-authority-123"
+    assert loaded[0]["vodforge_run_activity"] == activity[:MAX_RUN_ACTIVITY_LINES]
+    assert sum(len(line) for line in loaded[0]["vodforge_run_activity"]) <= MAX_RUN_ACTIVITY_CHARS
 
 
 def test_history_keeps_same_video_downloaded_to_two_locations(tmp_path: Path):

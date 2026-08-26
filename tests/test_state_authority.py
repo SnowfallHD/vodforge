@@ -173,6 +173,8 @@ def test_completed_selection_freezes_detail_progress_while_active_run_advances(t
         "uploader": "Completed creator",
         "duration": 60,
         "vodforge_output_type": "MP4",
+        "vodforge_run_id": "completed-run",
+        "vodforge_run_activity": ["persisted completed activity"],
         "vodforge_encoding_summary": {
             "output": {
                 "Resolution": "1920x1080",
@@ -210,6 +212,7 @@ def test_completed_selection_freezes_detail_progress_while_active_run_advances(t
     assert app.focus_display_progress_var.get() == 100
     assert app.focus_percent_var.get() == "100%"
     assert app.focus_run_status_var.get() == "64%  /  Active"
+    assert "persisted completed activity" in app.focus_log.value
 
 
 def test_completed_run_thumbnail_selection_uses_each_records_own_image(tmp_path: Path):

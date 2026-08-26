@@ -13,6 +13,9 @@ HISTORY_SCHEMA_VERSION = 1
 MAX_HISTORY_ITEMS = 5000
 MAX_DESCRIPTION_CHARS = 20_000
 MAX_HISTORY_FILE_BYTES = 128 * 1024 * 1024
+MAX_RUN_ACTIVITY_LINES = 500
+MAX_RUN_ACTIVITY_LINE_CHARS = 2_000
+MAX_RUN_ACTIVITY_CHARS = 100_000
 
 HISTORY_METADATA_KEYS = (
     "id",
@@ -33,6 +36,8 @@ HISTORY_METADATA_KEYS = (
     "playlist_index",
     "vodforge_output_type",
     "vodforge_encoding_summary",
+    "vodforge_run_id",
+    "vodforge_run_activity",
 )
 
 
@@ -91,6 +96,30 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def sanitize_run_activity(value: Any) -> list[str]:
+    """Bound app-owned, user-visible run activity before durable storage."""
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    total_chars = 0
+    for item in value:
+        line = str(item).replace("\x00", "").replace("\r", "").rstrip()
+        if not line:
+            continue
+        line = line[:MAX_RUN_ACTIVITY_LINE_CHARS]
+        remaining = MAX_RUN_ACTIVITY_CHARS - total_chars
+        if remaining <= 0:
+            break
+        line = line[:remaining]
+        if not line:
+            break
+        result.append(line)
+        total_chars += len(line)
+        if len(result) >= MAX_RUN_ACTIVITY_LINES:
+            break
+    return result
+
+
 def history_output_dir(record: dict[str, Any]) -> Path | None:
     value = str(record.get("vodforge_output_dir") or "").strip()
     return Path(value).expanduser() if value else None
@@ -130,6 +159,10 @@ def sanitize_history_record(
             value = _clean_string_list(value)
         elif key == "description":
             value = str(value or "")[:MAX_DESCRIPTION_CHARS]
+        elif key == "vodforge_run_activity":
+            value = sanitize_run_activity(value)
+        elif key == "vodforge_run_id":
+            value = str(value or "").strip()[:128]
         else:
             value = _json_safe(value)
         if value not in (None, "", [], {}):

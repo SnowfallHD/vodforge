@@ -45,6 +45,7 @@ from .history import (
     history_identity,
     history_output_dir,
     load_history,
+    sanitize_run_activity,
     save_history,
     upsert_history,
 )
@@ -676,10 +677,17 @@ def probe_runtime_version(tool_name: str, executable: str) -> str:
 
 
 DIAGNOSTICS_LOG_PATH = diagnostics_dir() / "latest.log"
+ACTIVITY_LOG_PATH = diagnostics_dir() / "activity.log"
 BATCH_FAILURE_REPORT_PATH = diagnostics_dir() / "batch-url-failures.txt"
+ACTIVITY_LOG_MAX_BYTES = 5 * 1024 * 1024
+ACTIVITY_LOG_COMPACT_BYTES = 4 * 1024 * 1024
+ACTIVITY_LOG_RENDER_CHARS = 500_000
 _DIAGNOSTICS_LOG_LOCK = threading.RLock()
 _DIAGNOSTICS_LOG_HANDLE: Any | None = None
 _DIAGNOSTICS_LOG_HANDLE_PATH: Path | None = None
+_ACTIVITY_LOG_LOCK = threading.RLock()
+_ACTIVITY_LOG_HANDLE: Any | None = None
+_ACTIVITY_LOG_HANDLE_PATH: Path | None = None
 _ACTIVE_CHILD_PROCESSES: set[Any] = set()
 _ACTIVE_CHILD_PROCESS_LOCK = threading.RLock()
 _CHILD_TERMINATION_LOCK = threading.RLock()
@@ -719,6 +727,85 @@ def reset_diagnostics_log() -> None:
             DIAGNOSTICS_LOG_PATH.write_text("", encoding="utf-8")
     except Exception:
         pass
+
+
+def _close_activity_log_locked() -> None:
+    global _ACTIVITY_LOG_HANDLE, _ACTIVITY_LOG_HANDLE_PATH
+    if _ACTIVITY_LOG_HANDLE is not None:
+        _ACTIVITY_LOG_HANDLE.close()
+    _ACTIVITY_LOG_HANDLE = None
+    _ACTIVITY_LOG_HANDLE_PATH = None
+
+
+def _compact_activity_log_locked(path: Path, *, retain_bytes: int | None = None) -> None:
+    retain_bytes = ACTIVITY_LOG_COMPACT_BYTES if retain_bytes is None else retain_bytes
+    if not path.exists() or path.stat().st_size <= retain_bytes:
+        return
+    with path.open("rb") as source:
+        source.seek(-retain_bytes, os.SEEK_END)
+        retained = source.read()
+    newline = retained.find(b"\n")
+    if newline >= 0:
+        retained = retained[newline + 1 :]
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_bytes(retained)
+    if os.name != "nt":
+        temporary.chmod(0o600)
+    temporary.replace(path)
+
+
+def prepare_activity_log(path: Path | None = None) -> None:
+    """Create and bound the persistent, local-only user-facing activity log."""
+    target = ACTIVITY_LOG_PATH if path is None else path
+    try:
+        with _ACTIVITY_LOG_LOCK:
+            if _ACTIVITY_LOG_HANDLE_PATH == target:
+                _close_activity_log_locked()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch(exist_ok=True)
+            if os.name != "nt":
+                target.chmod(0o600)
+            _compact_activity_log_locked(target)
+    except Exception:
+        pass
+
+
+def append_activity_log(line: str, path: Path | None = None) -> None:
+    global _ACTIVITY_LOG_HANDLE, _ACTIVITY_LOG_HANDLE_PATH
+    target = ACTIVITY_LOG_PATH if path is None else path
+    try:
+        with _ACTIVITY_LOG_LOCK:
+            if _ACTIVITY_LOG_HANDLE is None or _ACTIVITY_LOG_HANDLE_PATH != target:
+                _close_activity_log_locked()
+                target.parent.mkdir(parents=True, exist_ok=True)
+                _ACTIVITY_LOG_HANDLE = target.open("a", encoding="utf-8", buffering=1)
+                _ACTIVITY_LOG_HANDLE_PATH = target
+            persistent_line = line.replace("\x00", "").rstrip()
+            if persistent_line.startswith("Loaded YouTube cookies file:"):
+                persistent_line = "Loaded YouTube cookies file."
+            _ACTIVITY_LOG_HANDLE.write(persistent_line + "\n")
+            if _ACTIVITY_LOG_HANDLE.tell() >= ACTIVITY_LOG_MAX_BYTES:
+                _close_activity_log_locked()
+                _compact_activity_log_locked(target)
+    except Exception:
+        pass
+
+
+def load_activity_log_tail(path: Path | None = None, *, max_chars: int = ACTIVITY_LOG_RENDER_CHARS) -> str:
+    target = ACTIVITY_LOG_PATH if path is None else path
+    try:
+        with _ACTIVITY_LOG_LOCK:
+            if not target.exists():
+                return ""
+            text = target.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return ""
+    if len(text) > max_chars:
+        text = text[-max_chars:]
+        newline = text.find("\n")
+        if newline >= 0:
+            text = text[newline + 1 :]
+    return text.rstrip()
 
 
 def reset_batch_failure_report(path: Path = BATCH_FAILURE_REPORT_PATH) -> None:
@@ -4532,6 +4619,7 @@ class QueueLogger:
 class DownloaderApp(tk.Tk):
     def __init__(self) -> None:
         reset_diagnostics_log()
+        prepare_activity_log()
         write_diagnostic(f"app start: name={APP_NAME} frozen={getattr(sys, 'frozen', False)} executable={sys.executable} argv={sys.argv}")
         write_diagnostic(f"diagnostics log path: {DIAGNOSTICS_LOG_PATH}")
         write_diagnostic("yt-dlp import deferred until after the first window paint")
@@ -4627,9 +4715,15 @@ class DownloaderApp(tk.Tk):
         self.video_output_dirs_by_id: dict[str, Path] = {}
         self._active_progress_context: tuple[int, int, float, float] | None = None
         self._provider_network = ProviderNetworkCoordinator()
+        self._persist_activity = False
 
         self._apply_theme()
         self._build_ui()
+        previous_activity = load_activity_log_tail()
+        if previous_activity:
+            self._set_text(self.log, previous_activity, disabled=True)
+        self._persist_activity = True
+        self._append_log(f"—— Session started {datetime.now().isoformat(timespec='seconds')} ——")
         self._load_download_history()
         self._check_runtime()
         self.after(100, self._pump_events)
@@ -5983,7 +6077,7 @@ class DownloaderApp(tk.Tk):
         log_wrap.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 10))
         log_wrap.columnconfigure(0, weight=1)
         log_wrap.rowconfigure(1, weight=1)
-        ttk.Label(log_wrap, text="DOWNLOAD AND PROCESSING LOG", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        ttk.Label(log_wrap, text="PERSISTENT LOCAL DOWNLOAD AND PROCESSING LOG", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
         self.log = tk.Text(log_wrap, height=1, width=1, wrap="word", state="disabled", bg=THEME["bg"], fg=THEME["muted"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=6, font=FONT_MONO)
         log_scrollbar = SleekScrollbar(log_wrap, command=self.log.yview)
         self.log.configure(yscrollcommand=log_scrollbar.set)
@@ -6867,11 +6961,15 @@ class DownloaderApp(tk.Tk):
         _source_summary, output_summary = build_encoding_summary_display(info)
         self._set_text(self.focus_summary_text, output_summary, disabled=True)
         job = record.get("job")
-        activity = list(job.activity_lines) if isinstance(job, DownloadJob) else []
+        activity = (
+            list(job.activity_lines)
+            if isinstance(job, DownloadJob)
+            else sanitize_run_activity(info.get("vodforge_run_activity"))
+        )
         self._set_text(
             self.focus_log,
             "\n".join(activity)
-            or "Per-run activity is available for downloads completed in this session.\nOpen Activity for the full application log.",
+            or "No saved activity is available for this older item.\nOpen Activity for the persistent application log.",
             disabled=True,
         )
         self._display_focus_record_thumbnail(record, info)
@@ -7678,8 +7776,12 @@ class DownloaderApp(tk.Tk):
         *,
         owning_job: DownloadJob | None = None,
     ) -> None:
+        history_info = dict(info)
+        if owning_job is not None:
+            history_info["vodforge_run_id"] = owning_job.run_id
+            history_info["vodforge_run_activity"] = sanitize_run_activity(owning_job.activity_lines)
         try:
-            self.download_history = upsert_history(self.download_history, info, output_dir)
+            self.download_history = upsert_history(self.download_history, history_info, output_dir)
             save_history(self.history_path, self.download_history)
         except HistoryError as exc:
             if owning_job is not None:
@@ -7719,6 +7821,38 @@ class DownloaderApp(tk.Tk):
             self._append_job_log(owning_job, f"Saved download history entry: {output_dir}")
         else:
             self._append_log(f"Saved download history entry: {output_dir}")
+
+    def _persist_job_activity_to_history(self, job: DownloadJob) -> None:
+        identities = set(job.history_identities)
+        if not identities:
+            return
+        activity = sanitize_run_activity(job.activity_lines)
+        updated_history: list[dict[str, Any]] = []
+        changed = False
+        for record in self.download_history:
+            if history_identity(record) not in identities:
+                updated_history.append(record)
+                continue
+            updated = dict(record)
+            updated["vodforge_run_id"] = job.run_id
+            updated["vodforge_run_activity"] = activity
+            updated_history.append(updated)
+            changed = True
+        if not changed:
+            return
+        try:
+            save_history(self.history_path, updated_history)
+        except HistoryError as exc:
+            self._append_job_log(job, f"WARNING: {exc}")
+            return
+        self.download_history = updated_history
+        for index, item in enumerate(self.metadata_items):
+            if history_output_dir(item) is None or history_identity(item) not in identities:
+                continue
+            updated = dict(item)
+            updated["vodforge_run_id"] = job.run_id
+            updated["vodforge_run_activity"] = activity
+            self.metadata_items[index] = updated
 
     def _manual_help_icon(self, frame: ttk.LabelFrame, row: int, text: str) -> None:
         icon = ttk.Label(frame, text="?", style="Accent.TLabel", cursor="question_arrow")
@@ -10135,6 +10269,7 @@ class DownloaderApp(tk.Tk):
         finished_job = self.active_job
         if finished_job is not None:
             self._append_job_log(finished_job, message)
+            self._persist_job_activity_to_history(finished_job)
         else:
             self._append_log(message)
         if run_status == "Stopped" and not (finished_job is not None and finished_job.item_terminal_emitted):
@@ -10159,6 +10294,8 @@ class DownloaderApp(tk.Tk):
 
     def _append_log(self, line: str) -> None:
         self._append_log_widget(self.log, line)
+        if self.__dict__.get("_persist_activity", False):
+            append_activity_log(line)
 
     def _emit_job_log(self, job: DownloadJob, line: str) -> None:
         self.events.put(("job_log", {"job": job, "line": line}))
