@@ -5156,7 +5156,7 @@ class DownloaderApp(tk.Tk):
             self._register_cookie_source_frames(cookie_file, browser_frame)
             parent.columnconfigure(0, weight=1)
 
-        self.manual_settings_frames: list[ttk.LabelFrame] = []
+        self.manual_settings_frames: list[ttk.Frame] = []
 
         def build_manual_settings(parent: ttk.Frame) -> ttk.LabelFrame:
             frame = ttk.LabelFrame(parent, text="Manual Override Settings")
@@ -6651,6 +6651,27 @@ class DownloaderApp(tk.Tk):
         root.columnconfigure(1, weight=1)
         root.rowconfigure(2, weight=1)
 
+        def bind_readonly_combo(
+            combo: ttk.Combobox,
+            command: Callable[[], None] | None = None,
+        ) -> None:
+            """Run the selection action without leaving native entry text selected."""
+
+            def selected(_event: tk.Event[Any]) -> None:
+                if command is not None:
+                    command()
+
+                def release_selection() -> None:
+                    try:
+                        combo.selection_clear()
+                        popup.focus_set()
+                    except tk.TclError:
+                        return
+
+                popup.after_idle(release_selection)
+
+            combo.bind("<<ComboboxSelected>>", selected, add="+")
+
         heading = ttk.Frame(root, style="FocusShell.TFrame")
         heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 16))
         heading.columnconfigure(0, weight=1)
@@ -6716,7 +6737,7 @@ class DownloaderApp(tk.Tk):
             width=24,
         )
         browser_combo.grid(row=0, column=0, sticky="ew")
-        browser_combo.bind("<<ComboboxSelected>>", lambda _event: self._on_browser_cookie_selected())
+        bind_readonly_combo(browser_combo, self._on_browser_cookie_selected)
         ToolTip(browser_combo, "Read YouTube cookies directly from the selected local browser. VODForge does not save their contents.")
         self._register_cookie_source_frames(cookie_file, browser_frame)
 
@@ -6734,11 +6755,12 @@ class DownloaderApp(tk.Tk):
         ttk.Label(mp4_output, text="Quality ceiling", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
         quality_combo = ttk.Combobox(mp4_output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20)
         quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        bind_readonly_combo(quality_combo)
         ToolTip(quality_combo, "Set the highest resolution VODForge may select from the available YouTube source formats.")
         ttk.Label(mp4_output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
         export_combo = ttk.Combobox(mp4_output, textvariable=self.export_mode_choice_var, values=EXPORT_MODES, state="readonly", width=24)
         export_combo.grid(row=2, column=1, sticky="ew", pady=4)
-        export_combo.bind("<<ComboboxSelected>>", lambda _event: self._refresh_manual_settings_visibility())
+        bind_readonly_combo(export_combo, self._refresh_manual_settings_visibility)
         ttk.Label(
             mp4_output,
             textvariable=self.export_mode_description_var,
@@ -6746,16 +6768,47 @@ class DownloaderApp(tk.Tk):
             wraplength=360,
             justify="left",
         ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 8))
-        ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=4, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=4, column=1, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=5, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=5, column=1, sticky="w", pady=2)
+        manual = ttk.Frame(mp4_output, style="FocusShell.TFrame")
+        manual.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3, 8))
+        manual.columnconfigure(0, weight=1, uniform="manual-field")
+        manual.columnconfigure(1, weight=1, uniform="manual-field")
+        manual_fields = (
+            ("Video bitrate (kbps)", self.manual_video_bitrate_var, None),
+            ("Audio bitrate (kbps)", self.manual_audio_bitrate_var, None),
+            ("Sample rate", self.manual_sample_rate_var, ["44100", "48000"]),
+            ("Channels", self.manual_channels_var, ["Mono", "Stereo"]),
+            ("Encoding speed", self.manual_preset_var, ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"]),
+        )
+        for index, (label, variable, values) in enumerate(manual_fields):
+            field = ttk.Frame(manual, style="FocusShell.TFrame")
+            field.grid(
+                row=index // 2,
+                column=index % 2,
+                sticky="ew",
+                padx=(0, 8) if index % 2 == 0 else (8, 0),
+                pady=(0, 7),
+            )
+            field.columnconfigure(0, weight=1)
+            ttk.Label(field, text=label, style="Muted.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 3))
+            if values is None:
+                widget: ttk.Entry | ttk.Combobox = ttk.Entry(field, textvariable=variable)
+            else:
+                widget = ttk.Combobox(field, textvariable=variable, values=values, state="readonly", width=12)
+                bind_readonly_combo(widget)
+            widget.grid(row=1, column=0, sticky="ew")
+        self.manual_settings_frames = [manual]
+        self.manual_settings_frame = manual
+
+        ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=5, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=5, column=1, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=6, column=0, sticky="w", pady=2)
+        ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=6, column=1, sticky="w", pady=2)
         nvenc_label = "Use NVIDIA NVENC GPU encoding"
         if sys.platform == "darwin":
             nvenc_label = "NVIDIA NVENC (Windows only)"
             self.use_nvenc_var.set(False)
         nvenc = ttk.Checkbutton(mp4_output, text=nvenc_label, variable=self.use_nvenc_var)
-        nvenc.grid(row=6, column=0, columnspan=2, sticky="w", pady=2)
+        nvenc.grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
         ToolTip(nvenc, "Use a supported NVIDIA GPU for MP4 encoding on Windows. CPU encoding remains the compatibility default.")
         if sys.platform == "darwin":
             nvenc.state(["disabled"])
@@ -6767,14 +6820,17 @@ class DownloaderApp(tk.Tk):
         ttk.Label(mp3_output, text="Encoding quality", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
         mp3_quality_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_quality_var, values=list(MP3_QUALITY_OPTIONS.keys()), state="readonly", width=24)
         mp3_quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        bind_readonly_combo(mp3_quality_combo)
         ToolTip(mp3_quality_combo, "Set the MP3 export bitrate. Higher settings reduce additional encoding loss but cannot restore detail missing from YouTube's source audio.")
         ttk.Label(mp3_output, text="Sample rate", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
         sample_rate_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_sample_rate_var, values=list(MP3_SAMPLE_RATE_OPTIONS.keys()), state="readonly", width=24)
         sample_rate_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        bind_readonly_combo(sample_rate_combo)
         ToolTip(sample_rate_combo, "Preserve source avoids unnecessary resampling. Choose 44.1 or 48 kHz only when a music or DAW workflow requires it.")
         ttk.Label(mp3_output, text="Channels", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
         channels_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_channels_var, values=list(MP3_CHANNEL_OPTIONS.keys()), state="readonly", width=24)
         channels_combo.grid(row=3, column=1, sticky="ew", pady=4)
+        bind_readonly_combo(channels_combo)
         ToolTip(channels_combo, "Preserve the source channel layout, or force Stereo or Mono for a specific production workflow.")
         mp3_metadata = ttk.Checkbutton(mp3_output, text="Embed title, artist, and tags", variable=self.mp3_embed_metadata_var)
         mp3_metadata.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 2))
@@ -6814,29 +6870,6 @@ class DownloaderApp(tk.Tk):
         self.focus_mp3_cover_file_frame = cover_file
         self._on_mp3_cover_mode_changed()
 
-        manual = ttk.Frame(root, style="FocusShell.TFrame")
-        manual.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(18, 0))
-        manual.columnconfigure(1, weight=1)
-        manual.columnconfigure(3, weight=1)
-        ttk.Label(manual, text="MANUAL OVERRIDE", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 7))
-        manual_fields = (
-            ("Video bitrate (kbps)", self.manual_video_bitrate_var, None),
-            ("Audio bitrate (kbps)", self.manual_audio_bitrate_var, None),
-            ("Sample rate", self.manual_sample_rate_var, ["44100", "48000"]),
-            ("Channels", self.manual_channels_var, ["Mono", "Stereo"]),
-            ("x264 preset", self.manual_preset_var, ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"]),
-        )
-        for index, (label, variable, values) in enumerate(manual_fields):
-            row = 1 + index // 2
-            column = (index % 2) * 2
-            ttk.Label(manual, text=label, style="Muted.TLabel").grid(row=row, column=column, sticky="w", padx=(0, 8), pady=4)
-            if values is None:
-                widget: ttk.Entry | ttk.Combobox = ttk.Entry(manual, textvariable=variable)
-            else:
-                widget = ttk.Combobox(manual, textvariable=variable, values=values, state="readonly")
-            widget.grid(row=row, column=column + 1, sticky="ew", padx=(0, 20), pady=4)
-        self.manual_settings_frames = [manual]
-        self.manual_settings_frame = manual
         self._refresh_output_specific_settings()
 
         cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(14, 10))
@@ -8084,7 +8117,7 @@ class DownloaderApp(tk.Tk):
         if not frames:
             fallback = getattr(self, "manual_settings_frame", None)
             frames = [fallback] if fallback is not None else []
-        live_frames: list[ttk.LabelFrame] = []
+        live_frames: list[ttk.Frame] = []
         manual_override = (
             self._selected_output_type() == OutputType.MP4
             and self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value

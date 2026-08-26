@@ -583,6 +583,26 @@ def test_all_resizable_popouts_enforce_content_appropriate_minimums():
     assert "height=135" in selected_source
 
 
+def test_focus_settings_keep_manual_controls_in_the_mp4_flow_and_release_combo_selection():
+    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+
+    description_index = settings_source.index("textvariable=self.export_mode_description_var")
+    manual_index = settings_source.index('manual = ttk.Frame(mp4_output, style="FocusShell.TFrame")')
+    checkboxes_index = settings_source.index('text="Save thumbnail"')
+
+    assert description_index < manual_index < checkboxes_index
+    assert "manual = ttk.Frame(root" not in settings_source
+    assert 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"' in settings_source
+    assert '"Video bitrate (kbps)"' in settings_source
+    assert '"Audio bitrate (kbps)"' in settings_source
+    assert '"Sample rate"' in settings_source
+    assert '"Channels"' in settings_source
+    assert '"Encoding speed"' in settings_source
+    assert "bind_readonly_combo(export_combo, self._refresh_manual_settings_visibility)" in settings_source
+    assert "combo.selection_clear()" in settings_source
+    assert "popup.focus_set()" in settings_source
+
+
 def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     run_list_source = inspect.getsource(DownloaderApp._show_focus_run_menu)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
