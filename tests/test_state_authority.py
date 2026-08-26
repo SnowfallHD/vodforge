@@ -929,12 +929,16 @@ def test_preview_hero_replaces_large_status_with_start_download_action(tmp_path:
     class GridControl:
         def __init__(self):
             self.visible = True
+            self.configured: dict[str, object] = {}
 
         def grid(self):
             self.visible = True
 
         def grid_remove(self):
             self.visible = False
+
+        def configure(self, **kwargs):
+            self.configured.update(kwargs)
 
     app = DownloaderApp.__new__(DownloaderApp)
     app.focus_percent_label = GridControl()
@@ -952,6 +956,7 @@ def test_preview_hero_replaces_large_status_with_start_download_action(tmp_path:
 
     assert app.focus_percent_label.visible is False
     assert app.focus_preview_start_button.visible is True
+    assert app.focus_preview_start_button.configured["text"] == "Start download"
     assert app._focus_selected_preview_info == preview
     app._start_selected_preview_download()
     assert started == [preview]
@@ -964,6 +969,106 @@ def test_preview_hero_replaces_large_status_with_start_download_action(tmp_path:
     build_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
     assert 'text="Start download"' in build_source
     assert "self.focus_preview_start_button.grid_remove()" in build_source
+
+
+def test_terminal_focus_uses_retry_restart_actions_and_outcome_colors(tmp_path: Path):
+    class GridControl:
+        def __init__(self):
+            self.visible = True
+            self.configured: dict[str, object] = {}
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+        def configure(self, **kwargs):
+            self.configured.update(kwargs)
+
+    class ProgressControl:
+        def __init__(self):
+            self.configured: dict[str, object] = {}
+
+        def configure(self, **kwargs):
+            self.configured.update(kwargs)
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.focus_percent_label = GridControl()
+    app.focus_preview_start_button = GridControl()
+    app.progress_bar = ProgressControl()
+    app.focus_active_title_var = Value("")
+    app.focus_active_detail_var = Value("")
+    app.focus_active_duration_var = Value("")
+    app.focus_active_profile_var = Value("")
+    app.focus_display_progress_var = Value(0)
+    app.focus_percent_var = Value("")
+    app.focus_display_status_var = Value("")
+    app.focus_transfer_var = Value("")
+    app.focus_summary_text = object()
+    app._set_text = lambda *_args, **_kwargs: None
+    app._render_focus_run_activity = lambda *_args, **_kwargs: None
+    app._display_focus_record_thumbnail = lambda *_args, **_kwargs: None
+    retried: list[DownloadJob] = []
+    app._retry_terminal_job = retried.append
+    terminal = make_job(tmp_path, video_id="terminal")
+    terminal.preview_info = {
+        "id": "terminal",
+        "title": "Terminal item",
+        "vodforge_output_type": "MP4",
+    }
+
+    terminal.terminal_status = "Failed"
+    app._display_focus_metadata_snapshot(
+        {"kind": "failed", "run_id": terminal.run_id, "job": terminal},
+        {**terminal.preview_info, "vodforge_terminal_status": "Failed"},
+    )
+
+    assert app.focus_display_progress_var.get() == 100
+    assert app.focus_percent_label.visible is False
+    assert app.focus_preview_start_button.configured["text"] == "Retry Download"
+    assert app.progress_bar.configured["bar_color"] == app_module.THEME["danger"]
+    app.focus_preview_start_button.configured["command"]()
+    assert retried == [terminal]
+
+    terminal.terminal_status = "Skipped"
+    app._display_focus_metadata_snapshot(
+        {"kind": "skipped", "run_id": terminal.run_id, "job": terminal},
+        {**terminal.preview_info, "vodforge_terminal_status": "Skipped"},
+    )
+
+    assert app.focus_preview_start_button.configured["text"] == "Restart Download"
+    assert app.progress_bar.configured["bar_color"] == app_module.THEME["warning"]
+
+    progress_source = inspect.getsource(app_module.SleekProgressbar.configure)
+    assert 'if "bar_color" in kwargs:' in progress_source
+
+
+def test_terminal_outcomes_become_the_explicit_forge_focus(tmp_path: Path):
+    terminal = make_job(tmp_path, video_id="terminal")
+    terminal.terminal_status = "Failed"
+    record = {"kind": "failed", "run_id": terminal.run_id, "job": terminal}
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.focus_run_deck = object()
+    app._focus_views = {"forge": object()}
+    app._focus_run_records = lambda: [record]
+    selected_views: list[str] = []
+    selected_records: list[dict[str, object]] = []
+    app._select_focus_view = selected_views.append
+    app._focus_select_run_record = selected_records.append
+
+    app._focus_terminal_job(terminal)
+
+    assert app._focus_selected_run_id == terminal.run_id
+    assert selected_views == ["forge"]
+    assert selected_records == [record]
+
+    pump_source = inspect.getsource(DownloaderApp._pump_events)
+    finish_source = inspect.getsource(DownloaderApp._finish_run_ui)
+    archive_source = inspect.getsource(DownloaderApp._archive_item_terminal_job)
+    assert "self._focus_terminal_job(failed_job)" in pump_source
+    assert "self._focus_terminal_job(finished_job)" in finish_source
+    assert "self._focus_terminal_job(job)" in archive_source
 
 
 def test_metadata_preview_focuses_once_and_completion_respects_manual_selection():

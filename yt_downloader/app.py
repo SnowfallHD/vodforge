@@ -1029,6 +1029,8 @@ THEME = {
     "accent": "#7170ff",
     "accent_dark": "#5e6ad2",
     "success": "#35d07f",
+    "warning": "#e8b15e",
+    "danger": "#ff7a7a",
     "border": "#2b2e37",
 }
 FONT_UI_FAMILY, FONT_MONO_FAMILY = platform_font_families()
@@ -4226,6 +4228,10 @@ class SleekProgressbar(tk.Canvas):
             self._maximum = max(1.0, float(kwargs.pop("maximum")))
         if "value" in kwargs:
             self._variable.set(float(kwargs.pop("value")))
+        if "track_color" in kwargs:
+            self._track_color = str(kwargs.pop("track_color"))
+        if "bar_color" in kwargs:
+            self._bar_color = str(kwargs.pop("bar_color"))
         result = super().configure(**kwargs) if kwargs else None
         self._redraw()
         return result
@@ -4274,7 +4280,7 @@ class SleekProgressbar(tk.Canvas):
         if end > start:
             self.create_rectangle(start, y1, end, y2, fill=self._bar_color, outline="")
             if y1 > 0:
-                self.create_line(start, y1, end, y1, fill="#9a96ff")
+                self.create_line(start, y1, end, y1, fill=self._bar_color)
 
 
 class PixelScrollTable(tk.Frame):
@@ -7459,22 +7465,33 @@ class DownloaderApp(tk.Tk):
 
     def _focus_select_run_record(self, record: dict[str, Any]) -> None:
         run_id = str(record.get("run_id") or "")
+        record_kind = str(record.get("kind") or "")
         self._focus_selected_run_id = run_id or None
         self._set_focus_preview_start_action(None)
-        if str(record.get("kind")) == "active":
+        if record_kind == "active":
             active_job = self.active_job
             if active_job is not None and (not run_id or run_id == active_job.run_id):
                 self._display_focus_job_snapshot(active_job)
             return
 
-        if str(record.get("kind")) == "queued":
+        if record_kind == "queued":
             queued_job = next((job for job in self.pending_jobs if job.run_id == run_id), None)
             if queued_job is not None:
                 self._display_focus_queued_job_snapshot(record, queued_job)
             return
 
-        if str(record.get("kind")) in {"preview_loading", "preview_failed"}:
+        if record_kind in {"preview_loading", "preview_failed"}:
             self._display_metadata_preview_request(record)
+            return
+
+        if record_kind in {"failed", "skipped", "stopped"} and isinstance(record.get("job"), DownloadJob):
+            metadata_index = record.get("metadata_index")
+            info = (
+                self.metadata_items[int(metadata_index)]
+                if metadata_index is not None and 0 <= int(metadata_index) < len(self.metadata_items)
+                else record["job"].preview_info or {}
+            )
+            self._display_focus_metadata_snapshot(record, info)
             return
 
         if record.get("metadata_index") is not None:
@@ -7520,6 +7537,7 @@ class DownloaderApp(tk.Tk):
         """Render one queued run without borrowing state from the active run."""
         self._focus_selected_run_id = job.run_id
         self._set_focus_preview_start_action(None)
+        self._set_focus_progress_color()
         info = job.preview_info or {}
         title = download_job_display_title(job, queued=True)
         creator = str(info.get("uploader") or info.get("channel") or "Waiting for source metadata")
@@ -7615,17 +7633,36 @@ class DownloaderApp(tk.Tk):
         if percent_label is None or start_button is None:
             return
         if is_preview:
+            start_button.configure(text="Start download", command=self._start_selected_preview_download)
             percent_label.grid_remove()
             start_button.grid()
         else:
             start_button.grid_remove()
             percent_label.grid()
 
+    def _set_focus_terminal_action(self, job: DownloadJob, status: str) -> None:
+        """Replace terminal percent text with the canonical fresh-run action."""
+        self._focus_selected_preview_info = None
+        percent_label = self.__dict__.get("focus_percent_label")
+        action_button = self.__dict__.get("focus_preview_start_button")
+        if percent_label is None or action_button is None:
+            return
+        label = "Retry Download" if status == "Failed" else "Restart Download"
+        action_button.configure(text=label, command=lambda: self._retry_terminal_job(job))
+        percent_label.grid_remove()
+        action_button.grid()
+
+    def _set_focus_progress_color(self, color: str = THEME["accent"]) -> None:
+        progress_bar = self.__dict__.get("progress_bar")
+        if progress_bar is not None:
+            progress_bar.configure(bar_color=color)
+
     def _display_metadata_preview_request(self, record: dict[str, Any]) -> None:
         """Show a metadata request without turning it into a media-run authority."""
         failed = str(record.get("kind")) == "preview_failed"
         output_type = str(record.get("output_type") or "MP4")
         self._set_focus_preview_start_action(None)
+        self._set_focus_progress_color()
         self.focus_active_title_var.set("Preview failed" if failed else "Loading preview…")
         self.focus_active_detail_var.set("Check the message below" if failed else "Fetching title, creator, and thumbnail")
         self.focus_active_duration_var.set("")
@@ -7646,6 +7683,7 @@ class DownloaderApp(tk.Tk):
     def _display_focus_job_snapshot(self, job: DownloadJob) -> None:
         self._focus_selected_run_id = job.run_id
         self._set_focus_preview_start_action(None)
+        self._set_focus_progress_color()
         info = job.preview_info or {}
         if info:
             self._display_active_job_metadata(job, info)
@@ -7684,6 +7722,7 @@ class DownloaderApp(tk.Tk):
         self.focus_active_duration_var.set("" if duration == "—" else duration)
         record_kind = str(record.get("kind") or "completed")
         self._set_focus_preview_start_action(info if record_kind == "preview" else None)
+        self._set_focus_progress_color()
         self.focus_active_profile_var.set(focus_metadata_profile_text(info, record_kind))
         terminal_status = str(info.get("vodforge_terminal_status") or record_kind.title())
         if record_kind == "completed":
@@ -7697,10 +7736,16 @@ class DownloaderApp(tk.Tk):
             self.focus_display_status_var.set(f"Showing completed preview: {title}")
             self.focus_transfer_var.set("Preview complete  /  Ready to start download")
         else:
-            self.focus_display_progress_var.set(0)
+            self.focus_display_progress_var.set(100)
             self.focus_percent_var.set(terminal_status)
             self.focus_display_status_var.set(f"Showing {terminal_status.lower()} run: {title}")
             self.focus_transfer_var.set(f"{terminal_status}  /  Retry is available")
+            terminal_job = record.get("job")
+            if isinstance(terminal_job, DownloadJob):
+                self._set_focus_terminal_action(terminal_job, terminal_status)
+            self._set_focus_progress_color(
+                THEME["danger"] if terminal_status == "Failed" else THEME["warning"]
+            )
         _source_summary, output_summary = build_encoding_summary_display(info)
         if record_kind == "preview":
             output_summary = preview_output_summary_display()
@@ -8032,9 +8077,9 @@ class DownloaderApp(tk.Tk):
             status_color = (
                 THEME["success"]
                 if record_kind == "completed"
-                else "#ff7a7a"
+                else THEME["danger"]
                 if record_kind == "failed"
-                else "#e8b15e"
+                else THEME["warning"]
                 if record_kind == "skipped"
                 else THEME["accent"]
                 if record_kind in {"active", "preview_loading"}
@@ -9167,6 +9212,7 @@ class DownloaderApp(tk.Tk):
             return
 
         self._set_focus_preview_start_action(None)
+        self._set_focus_progress_color()
         title = download_job_display_title(job)
         creator = str(info.get("uploader") or info.get("channel") or "YouTube").strip()
         self.focus_active_title_var.set(title)
@@ -9399,6 +9445,7 @@ class DownloaderApp(tk.Tk):
             return
         self._focus_selected_run_id = None
         self._set_focus_preview_start_action(None)
+        self._set_focus_progress_color()
         self.focus_active_title_var.set("Ready for a new run")
         self.focus_active_detail_var.set("Paste a YouTube URL above, then press Return to begin.")
         self.focus_active_duration_var.set("")
@@ -10110,7 +10157,27 @@ class DownloaderApp(tk.Tk):
         self._rebuild_output_dir_index()
         self._render_metadata_tree()
         if hasattr(self, "focus_run_deck"):
+            self._focus_terminal_job(job)
             self._refresh_focus_run_deck()
+
+    def _focus_terminal_job(self, job: DownloadJob) -> None:
+        """Make a terminal outcome the explicit Forge selection and render it."""
+        if self.__dict__.get("focus_run_deck") is None:
+            return
+        self._focus_selected_run_id = job.run_id
+        if self.__dict__.get("_focus_views") is not None:
+            self._select_focus_view("forge")
+        record = next(
+            (
+                candidate
+                for candidate in self._focus_run_records()
+                if str(candidate.get("run_id") or "") == job.run_id
+                and str(candidate.get("kind") or "") in {"failed", "skipped", "stopped"}
+            ),
+            None,
+        )
+        if record is not None:
+            self._focus_select_run_record(record)
 
     def _retry_terminal_job(self, failed_job: DownloadJob) -> None:
         retry_url = retry_url_for_item(failed_job.preview_info or {}, failed_job.url)
@@ -11317,6 +11384,8 @@ class DownloaderApp(tk.Tk):
                     if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
                         self._set_focus_run_controls_visible(False)
                         self._refresh_focus_run_deck()
+                    if failed_job is not None:
+                        self._focus_terminal_job(failed_job)
         except queue.Empty:
             pass
         self.after(100, self._pump_events)
@@ -11347,6 +11416,8 @@ class DownloaderApp(tk.Tk):
         if not self._launch_next_pending_job() and self.__dict__.get("focus_transfer_var") is not None:
             self._set_focus_run_controls_visible(False)
             self._refresh_focus_run_deck()
+        if run_status == "Stopped" and finished_job is not None and not finished_job.item_terminal_emitted:
+            self._focus_terminal_job(finished_job)
 
     def _append_log(self, line: str) -> None:
         self._append_log_widget(self.log, line)
