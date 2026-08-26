@@ -18,7 +18,7 @@ def _release_notes_module():
 
 
 def test_release_workflow_signs_before_packaging_windows_portable_archive():
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     app_sign = workflow.index("name: Sign packaged Windows application")
     installer_build = workflow.index("name: Build Windows installer")
@@ -32,7 +32,7 @@ def test_release_workflow_signs_before_packaging_windows_portable_archive():
 
 
 def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert "vodforge-macos-${{ matrix.architecture }}-unsigned" in workflow
     assert 'VODFORGE_UNSIGNED_REVIEW: "1"' in workflow
@@ -41,7 +41,7 @@ def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
 
 
 def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
 
     assert "if ! brew install python@3.13 python-tk@3.13 ffmpeg deno; then" in workflow
     assert 'brew list --versions "$formula"' in workflow
@@ -49,8 +49,8 @@ def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
 
 
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
-    requirements = (ROOT / "requirements.txt").read_text().splitlines()
-    app_source = (ROOT / "yt_downloader" / "app.py").read_text()
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
 
     assert "yt-dlp[default]==2026.8.19" in requirements
     assert not any(line.startswith("yt-dlp>=") for line in requirements)
@@ -59,7 +59,7 @@ def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
 
 
 def test_macos_release_script_requires_accepted_notarization_and_stapling():
-    script = (ROOT / "sign_and_notarize_macos.sh").read_text()
+    script = (ROOT / "sign_and_notarize_macos.sh").read_text(encoding="utf-8")
 
     assert 'notary_status" != "Accepted"' in script
     assert "stapler staple" in script
@@ -68,8 +68,8 @@ def test_macos_release_script_requires_accepted_notarization_and_stapling():
 
 
 def test_packaged_apps_receive_the_requested_operating_system_version_metadata():
-    macos_build = (ROOT / "build_macos.sh").read_text()
-    windows_build = (ROOT / "build_windows.ps1").read_text()
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
 
     assert "for version_key in CFBundleShortVersionString CFBundleVersion" in macos_build
     assert 'Set :$version_key $bundle_version' in macos_build
@@ -80,7 +80,7 @@ def test_packaged_apps_receive_the_requested_operating_system_version_metadata()
 
 
 def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
-    macos_build = (ROOT / "build_macos.sh").read_text()
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
 
     version_mutation = macos_build.index('Set :$version_key $bundle_version')
     local_signing = macos_build.index('/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"')
@@ -90,9 +90,9 @@ def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
 
 
 def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
-    macos_build = (ROOT / "build_macos.sh").read_text()
-    windows_build = (ROOT / "build_windows.ps1").read_text()
-    app_source = (ROOT / "yt_downloader" / "app.py").read_text()
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+    app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
 
     assert "--collect-all yt_dlp" in macos_build
     assert "--collect-all yt_dlp" in windows_build
@@ -103,9 +103,9 @@ def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
 
 
 def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
-    macos_build = (ROOT / "build_macos.sh").read_text()
-    windows_build = (ROOT / "build_windows.ps1").read_text()
-    installer = (ROOT / "installer_windows.iss").read_text()
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+    installer = (ROOT / "installer_windows.iss").read_text(encoding="utf-8")
 
     assert '--icon "$icon_file"' in macos_build
     assert "Print :CFBundleIconFile" in macos_build
@@ -154,7 +154,7 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
 
 
 def test_release_finalizer_replaces_unsigned_reviews_and_regenerates_checksums():
-    script = (ROOT / "finalize_macos_release.sh").read_text()
+    script = (ROOT / "finalize_macos_release.sh").read_text(encoding="utf-8")
 
     assert "Release finalization must run from main" in script
     assert "unsigned-review.zip" in script
