@@ -139,6 +139,7 @@ def main() -> None:
     parser.add_argument("--settings", action="store_true")
     parser.add_argument("--tooltip", choices=("batch", "playlists", "cookies", "tags"))
     parser.add_argument("--run-actions", action="store_true")
+    parser.add_argument("--all-runs", action="store_true")
     parser.add_argument("--overflow", action="store_true")
     parser.add_argument("--copy-feedback", choices=("tags", "description", "thumbnail"))
     parser.add_argument("--terminal", choices=("failed", "skipped"))
@@ -221,6 +222,19 @@ def main() -> None:
         {"title": "Fruit of the Spirit", "status": "Queued  •  MP3", "progress": 0, "kind": "queued", "metadata_index": 2, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "desert-sunset.jpg")},
         {"title": "Created for Good Works", "status": "Completed  •  MP3", "progress": 100, "kind": "completed", "metadata_index": 3, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "rainforest-falls.jpg")},
     ]
+    if args.overflow:
+        for index in range(4, len(app.metadata_items)):
+            info = app.metadata_items[index]
+            app._focus_preview_runs.append(
+                {
+                    "title": str(info.get("title") or f"Visual QA run {index + 1}"),
+                    "status": f"Completed  •  {info.get('vodforge_output_type') or 'MP4'}",
+                    "progress": 100,
+                    "kind": "completed",
+                    "metadata_index": index,
+                    "preview_thumbnail_path": str(info.get("preview_thumbnail_path") or ""),
+                }
+            )
     log_lines = "\n".join(
         (
             "14:28:17   [info]      Starting download",
@@ -319,6 +333,10 @@ def main() -> None:
                 SimpleNamespace(x_root=840, y_root=560),
             ),
         )
+    if args.all_runs:
+        app.after(600, app.lift)
+        app.after(620, app.focus_force)
+        app.after(780, app._show_focus_run_menu)
     if args.copy_feedback:
         app.after(1200, lambda: app._show_copy_feedback(args.copy_feedback))
     if args.selected_details:

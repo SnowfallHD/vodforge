@@ -580,6 +580,35 @@ def test_all_resizable_popouts_enforce_content_appropriate_minimums():
     assert "height=135" in selected_source
 
 
+def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
+    run_list_source = inspect.getsource(DownloaderApp._show_focus_run_menu)
+
+    assert "tk.Toplevel(self)" in run_list_source
+    assert "popup.overrideredirect(True)" in run_list_source
+    assert "visible_rows = min(6, max(1, len(records)))" in run_list_source
+    assert "SleekScrollbar(root, command=run_list.yview)" in run_list_source
+    assert "button.winfo_rooty() - height - 6" in run_list_source
+    assert "width = min(440" in run_list_source
+    assert "height = min(188" in run_list_source
+    assert 'popup.bind("<FocusOut>"' in run_list_source
+
+
+def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
+    library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
+    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+
+    assert 'orient="horizontal"' in library_source
+    assert "xscrollcommand=tree_x_scroll.set" in library_source
+    assert 'self.video_tree.column("creator", width=120, minwidth=90' in layout_source
+    assert 'self.video_tree.column("location", width=140, minwidth=100' in layout_source
+    assert 'self.video_tree.column("title", width=360, minwidth=220, stretch=False)' in layout_source
+    assert 'width=0, minwidth=0' not in layout_source
+    assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
+    assert "self.focus_run_overflow_button.grid()" in deck_source
+    assert "if self._focus_run_records():" in layout_source
+
+
 def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path: Path):
     output_dir = tmp_path / "Creator" / "playlists" / "Playlist" / "Video [authority-id]"
     output_dir.mkdir(parents=True)

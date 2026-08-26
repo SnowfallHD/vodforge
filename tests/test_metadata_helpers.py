@@ -73,12 +73,16 @@ from yt_downloader.app import (
     configure_windows_app_identity,
     flatten_alpha_image,
     focus_icon_color_variant,
+    focus_hero_thumbnail_visible,
     focus_library_layout_mode,
     focus_layout_mode,
+    focus_run_deck_capacity,
     library_thumbnail_size,
+    thumbnail_size_within,
     render_monochrome_icon,
     rounded_contain_image,
     rounded_cover_image,
+    rounded_fit_image,
     runtime_window_icon_asset,
     metadata_layout_mode,
     metadata_indices_for_output_type,
@@ -411,6 +415,31 @@ def test_library_thumbnail_stays_16_by_9_but_caps_its_metadata_footprint():
     assert library_thumbnail_size(196) == (196, 110)
     assert library_thumbnail_size(320) == (240, 135)
     assert library_thumbnail_size(600) == (240, 135)
+
+
+def test_thumbnail_size_is_bounded_without_cropping_or_distortion():
+    assert thumbnail_size_within((1280, 720), (240, 135)) == (240, 135)
+    assert thumbnail_size_within((480, 360), (240, 135)) == (180, 135)
+    assert thumbnail_size_within((720, 1280), (240, 135)) == (76, 135)
+    assert thumbnail_size_within((0, 360), (240, 135)) == (1, 1)
+
+
+def test_rounded_fit_thumbnail_preserves_full_source_aspect_inside_maximum_box():
+    source = Image.new("RGB", (480, 360), "#ff0000")
+    rendered = rounded_fit_image(source, (240, 135), 10)
+
+    assert rendered.size == (180, 135)
+    assert rendered.getpixel((90, 67))[:3] == (255, 0, 0)
+
+
+def test_focus_deck_capacity_and_hero_art_follow_available_width_not_density_label():
+    assert focus_run_deck_capacity(1100) == 4
+    assert focus_run_deck_capacity(880) == 4
+    assert focus_run_deck_capacity(700) == 3
+    assert focus_run_deck_capacity(500) == 2
+    assert focus_run_deck_capacity(200) == 1
+    assert focus_hero_thumbnail_visible(720)
+    assert not focus_hero_thumbnail_visible(719)
 
 
 def test_rounded_contain_image_preserves_placeholder_artwork_without_cropping():

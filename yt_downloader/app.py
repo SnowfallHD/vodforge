@@ -240,6 +240,17 @@ def focus_library_layout_mode(width: int) -> str:
     return "wide"
 
 
+def focus_run_deck_capacity(available_width: int, *, maximum: int = 4) -> int:
+    """Show every run card that fits instead of collapsing by breakpoint."""
+    safe_width = max(1, int(available_width))
+    return max(1, min(max(1, int(maximum)), safe_width // 220))
+
+
+def focus_hero_thumbnail_visible(width: int) -> bool:
+    """Keep the selected-run artwork until the window is genuinely narrow."""
+    return int(width) >= 720
+
+
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
     raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
     base = Path(raw_meipass) if raw_meipass else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
@@ -266,6 +277,29 @@ def youtube_thumbnail_size(width: int) -> tuple[int, int]:
 def library_thumbnail_size(available_width: int) -> tuple[int, int]:
     """Keep Library artwork useful without crowding tags and description."""
     return youtube_thumbnail_size(min(max(1, int(available_width)), 240))
+
+
+def thumbnail_size_within(
+    source_size: tuple[int, int],
+    maximum_size: tuple[int, int],
+) -> tuple[int, int]:
+    """Aspect-fit a thumbnail inside a maximum box without cropping or distortion."""
+    source_width, source_height = source_size
+    maximum_width, maximum_height = maximum_size
+    if min(source_width, source_height, maximum_width, maximum_height) <= 0:
+        return 1, 1
+    scale = min(maximum_width / source_width, maximum_height / source_height)
+    return max(1, round(source_width * scale)), max(1, round(source_height * scale))
+
+
+def rounded_fit_image(source: Any, maximum_size: tuple[int, int], radius: int) -> Any:
+    """Return a bounded, aspect-preserving thumbnail with no backing container."""
+    if Image is None or ImageDraw is None or ImageOps is None:
+        raise RuntimeError("Pillow is required for thumbnail rendering")
+    resampling = getattr(Image, "Resampling", Image)
+    fitted = ImageOps.contain(source.convert("RGBA"), maximum_size, method=resampling.LANCZOS)
+    fitted.putalpha(rounded_alpha_mask(fitted.size, min(radius, min(fitted.size) // 2)))
+    return fitted
 
 
 def rounded_contain_image(source: Any, size: tuple[int, int], radius: int, background: str) -> Any:
@@ -3673,13 +3707,18 @@ class SleekScrollbar(tk.Canvas):
         parent: tk.Misc,
         *,
         command: Callable[..., Any],
+        orient: str = "vertical",
         width: int = 8,
         thumb_color: str = THEME["border"],
         hover_color: str = THEME["subtle"],
     ) -> None:
+        if orient not in {"vertical", "horizontal"}:
+            raise ValueError(f"Unsupported scrollbar orientation: {orient}")
+        self._orient = orient
         super().__init__(
             parent,
-            width=width,
+            width=width if orient == "vertical" else 1,
+            height=width if orient == "horizontal" else 1,
             bg=THEME["bg"],
             bd=0,
             highlightthickness=0,
@@ -3709,7 +3748,7 @@ class SleekScrollbar(tk.Canvas):
         self._redraw()
 
     def _thumb_bounds(self) -> tuple[float, float] | None:
-        length = max(1, self.winfo_height())
+        length = max(1, self.winfo_height() if self._orient == "vertical" else self.winfo_width())
         visible = max(0.0, min(1.0, self._last - self._first))
         if visible >= 0.999:
             return None
@@ -3725,10 +3764,14 @@ class SleekScrollbar(tk.Canvas):
             bounds = self._thumb_bounds()
             if bounds is None:
                 return
-            x = max(2, self.winfo_width() // 2)
             start, end = bounds
             color = self._hover_color if self._hovered else self._thumb_color
-            self.create_line(x, start + 3, x, max(start + 3, end - 3), fill=color, width=4, capstyle=tk.ROUND)
+            if self._orient == "vertical":
+                cross = max(2, self.winfo_width() // 2)
+                self.create_line(cross, start + 3, cross, max(start + 3, end - 3), fill=color, width=4, capstyle=tk.ROUND)
+            else:
+                cross = max(2, self.winfo_height() // 2)
+                self.create_line(start + 3, cross, max(start + 3, end - 3), cross, fill=color, width=4, capstyle=tk.ROUND)
         except tk.TclError:
             return
 
@@ -3746,15 +3789,17 @@ class SleekScrollbar(tk.Canvas):
         if bounds is None:
             return
         start, end = bounds
-        if start <= event.y <= end:
-            self._drag_offset = event.y - start
+        pointer = event.y if self._orient == "vertical" else event.x
+        if start <= pointer <= end:
+            self._drag_offset = pointer - start
             return
         self._drag_offset = (end - start) / 2
-        self._move_thumb(event.y - self._drag_offset)
+        self._move_thumb(pointer - self._drag_offset)
 
     def _drag(self, event: tk.Event[Any]) -> None:
         if self._drag_offset is not None:
-            self._move_thumb(event.y - self._drag_offset)
+            pointer = event.y if self._orient == "vertical" else event.x
+            self._move_thumb(pointer - self._drag_offset)
 
     def _end_drag(self, _event: tk.Event[Any]) -> None:
         self._drag_offset = None
@@ -3763,7 +3808,7 @@ class SleekScrollbar(tk.Canvas):
         bounds = self._thumb_bounds()
         if bounds is None:
             return
-        length = max(1.0, float(self.winfo_height()))
+        length = max(1.0, float(self.winfo_height() if self._orient == "vertical" else self.winfo_width()))
         thumb_length = bounds[1] - bounds[0]
         travel = max(1.0, length - thumb_length)
         visible = max(0.0, min(1.0, self._last - self._first))
@@ -5437,9 +5482,11 @@ class DownloaderApp(tk.Tk):
         self.video_tree.column("location", width=140, minwidth=90, stretch=False, anchor="w")
         self.video_tree.column("action", width=42, minwidth=42, stretch=False, anchor="center")
         tree_scroll = SleekScrollbar(queue_panel, command=self.video_tree.yview)
-        self.video_tree.configure(yscrollcommand=tree_scroll.set)
+        tree_x_scroll = SleekScrollbar(queue_panel, command=self.video_tree.xview, orient="horizontal")
+        self.video_tree.configure(yscrollcommand=tree_scroll.set, xscrollcommand=tree_x_scroll.set)
         self.video_tree.grid(row=1, column=0, sticky="nsew")
         tree_scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
+        tree_x_scroll.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
         self.video_tree.bind("<Button-1>", self._on_library_tree_click, add="+")
         self.video_tree.bind("<Button-2>", self._show_library_row_menu)
@@ -6130,18 +6177,101 @@ class DownloaderApp(tk.Tk):
 
     def _show_focus_run_menu(self) -> None:
         records = self._focus_run_records()
-        menu = tk.Menu(self, tearoff=False, bg=THEME["surface"], fg=THEME["text"], activebackground=THEME["accent_dark"], activeforeground="#ffffff")
-        if not records:
-            menu.add_command(label="No runs yet", state="disabled")
-        else:
-            for record in records:
+        existing = self.__dict__.get("_focus_run_list_window")
+        if existing is not None and existing.winfo_exists():
+            existing.destroy()
+            self._focus_run_list_window = None
+            return
+
+        # A borderless, transient surface keeps this in the app as an anchored
+        # drop-up rather than opening another titled window. Its list is capped
+        # at six visible rows; the sleek scrollbar owns the overflow.
+        popup = tk.Toplevel(self)
+        self._focus_run_list_window = popup
+        popup.overrideredirect(True)
+        popup.transient(self)
+        popup.configure(bg=THEME["border"])
+
+        root = tk.Frame(popup, bg=THEME["surface"], bd=0, highlightthickness=0)
+        root.pack(fill="both", expand=True, padx=1, pady=1)
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
+        visible_rows = min(6, max(1, len(records)))
+        run_list = tk.Listbox(
+            root,
+            height=visible_rows,
+            width=1,
+            activestyle="none",
+            selectmode="browse",
+            bg=THEME["surface"],
+            fg=THEME["text"],
+            selectbackground=THEME["accent_dark"],
+            selectforeground=THEME["text"],
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            font=FONT_UI,
+            exportselection=False,
+        )
+        run_scroll = SleekScrollbar(root, command=run_list.yview)
+        run_list.configure(yscrollcommand=run_scroll.set)
+        run_list.grid(row=0, column=0, sticky="nsew", padx=(10, 0), pady=7)
+        run_scroll.grid(row=0, column=1, sticky="ns", padx=(3, 4), pady=4)
+
+        if records:
+            for index, record in enumerate(records):
                 title = str(record.get("title") or "Untitled run")
                 status = str(record.get("status") or "Ready")
-                menu.add_command(label=f"{title[:42]}  —  {status}", command=lambda item=record: self._focus_select_run_record(item))
-        try:
-            menu.tk_popup(self.focus_run_overflow_button.winfo_rootx(), self.focus_run_overflow_button.winfo_rooty() + self.focus_run_overflow_button.winfo_height())
-        finally:
-            menu.grab_release()
+                run_list.insert("end", f"{title}  —  {status}")
+                if str(record.get("run_id") or "") == str(self._focus_selected_run_id or ""):
+                    run_list.selection_set(index)
+                    run_list.see(index)
+        else:
+            run_list.insert("end", "No runs yet")
+            run_list.configure(state="disabled")
+
+        def close_drop_up() -> None:
+            self._focus_run_list_window = None
+            popup.destroy()
+
+        def close_if_focus_left() -> None:
+            try:
+                focused = popup.focus_get()
+                if focused is None or not str(focused).startswith(str(popup)):
+                    close_drop_up()
+            except tk.TclError:
+                return
+
+        def choose_run(_event: Any = None) -> None:
+            selection = run_list.curselection()
+            if not selection or not records:
+                return
+            index = int(selection[0])
+            if 0 <= index < len(records):
+                self._focus_select_run_record(records[index])
+            close_drop_up()
+
+        run_list.bind("<<ListboxSelect>>", choose_run)
+        run_list.bind("<Escape>", lambda _event: close_drop_up())
+        run_list.bind("<MouseWheel>", lambda event: run_list.yview_scroll(-1 if event.delta > 0 else 1, "units"))
+        run_list.bind("<Button-4>", lambda _event: run_list.yview_scroll(-1, "units"))
+        run_list.bind("<Button-5>", lambda _event: run_list.yview_scroll(1, "units"))
+        popup.bind("<Escape>", lambda _event: close_drop_up())
+        popup.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
+
+        button = self.focus_run_overflow_button
+        button.update_idletasks()
+        popup.update_idletasks()
+        width = min(440, max(340, self.winfo_width() - 48))
+        height = min(188, max(74, popup.winfo_reqheight()))
+        screen_width = popup.winfo_screenwidth()
+        screen_height = popup.winfo_screenheight()
+        x = min(screen_width - width - 12, max(12, button.winfo_rootx() + button.winfo_width() - width))
+        y = button.winfo_rooty() - height - 6
+        if y < 20:
+            y = min(screen_height - height - 20, button.winfo_rooty() + button.winfo_height() + 6)
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+        run_list.focus_set()
 
     def _focus_select_run_record(self, record: dict[str, Any]) -> None:
         run_id = str(record.get("run_id") or "")
@@ -6497,7 +6627,10 @@ class DownloaderApp(tk.Tk):
             child.destroy()
         self._focus_run_thumbnail_images: list[Any] = []
         records = self._focus_run_records()
-        limit = 4 if self._focus_layout in {"wide", "balanced"} else 1
+        deck_width = self.focus_run_deck.winfo_width()
+        if deck_width <= 1:
+            deck_width = max(1, self.winfo_width() - 52)
+        limit = focus_run_deck_capacity(deck_width)
         visible = records[:limit]
         if not visible:
             empty = ttk.Frame(self.focus_run_deck, style="FocusShell.TFrame")
@@ -6628,11 +6761,8 @@ class DownloaderApp(tk.Tk):
         if skipped:
             parts.append(f"{skipped} skipped")
         self.focus_run_count_var.set("  •  ".join(parts))
-        if len(records) > limit:
-            self.focus_run_overflow_button.grid()
-            self.focus_run_overflow_button.configure(text=f"All {len(records)} runs")
-        else:
-            self.focus_run_overflow_button.grid_remove()
+        self.focus_run_overflow_button.grid()
+        self.focus_run_overflow_button.configure(text=f"All {len(records)} runs")
 
     def _focus_thumbnail_source_for_record(self, record: dict[str, Any]) -> Any | None:
         if Image is None:
@@ -6686,7 +6816,7 @@ class DownloaderApp(tk.Tk):
             rendered = (
                 rounded_contain_image(source, size, radius, THEME["surface"])
                 if is_placeholder
-                else rounded_cover_image(source, size, radius)
+                else rounded_fit_image(source, size, radius)
             )
             return ImageTk.PhotoImage(rendered)
         except Exception as exc:
@@ -6742,8 +6872,14 @@ class DownloaderApp(tk.Tk):
         width = max(1, self.winfo_width())
         height = max(1, self.winfo_height())
         mode = focus_layout_mode(width, height)
-        if mode == self._focus_layout and not force:
+        layout_signature = (
+            mode,
+            focus_run_deck_capacity(max(1, width - 52)),
+            focus_hero_thumbnail_visible(width),
+        )
+        if layout_signature == self.__dict__.get("_focus_layout_signature") and not force:
             return
+        self._focus_layout_signature = layout_signature
         self._focus_layout = mode
         compact = mode == "compact"
         balanced = mode == "balanced"
@@ -6754,7 +6890,8 @@ class DownloaderApp(tk.Tk):
         self.focus_active_frame.grid_configure(padx=horizontal_pad, pady=(6 if compact else 10 if balanced else 16, 9 if compact else 14))
         self.focus_detail_wrap.grid_configure(padx=horizontal_pad, pady=(0, 7 if compact else 12))
         self.focus_destination_button.configure(width=170 if compact else 210 if balanced else 240)
-        active_title_width = max(260, width - (2 * horizontal_pad) - (0 if compact else 180) - 150)
+        show_hero_thumbnail = focus_hero_thumbnail_visible(width)
+        active_title_width = max(260, width - (2 * horizontal_pad) - (180 if show_hero_thumbnail else 0) - 150)
         self.focus_active_title_label.configure(wraplength=active_title_width)
         self.focus_summary_text.configure(font=(FONT_MONO_FAMILY, 8) if balanced else FONT_MONO)
         self.focus_log.configure(font=(FONT_MONO_FAMILY, 8) if compact else FONT_MONO, pady=0 if compact else 4)
@@ -6763,7 +6900,10 @@ class DownloaderApp(tk.Tk):
         if compact:
             self.focus_update_dot.pack_forget()
             self.update_button.configure(text="Updates")
-            self.focus_active_thumb_wrap.grid_remove()
+            if show_hero_thumbnail:
+                self.focus_active_thumb_wrap.grid()
+            else:
+                self.focus_active_thumb_wrap.grid_remove()
             self.focus_transfer_label.grid_remove()
             if active:
                 self.focus_compact_run_actions_button.grid()
@@ -6778,8 +6918,6 @@ class DownloaderApp(tk.Tk):
             if not self.focus_detail_header.winfo_manager():
                 self.focus_detail_header.grid()
             self.focus_log.after_idle(lambda: self.focus_log.see("end"))
-            if not self.focus_deck_header.winfo_manager():
-                self.focus_deck_header.grid()
         else:
             if not self.focus_update_dot.winfo_manager():
                 self.focus_update_dot.pack(side="left", padx=(0, 4), before=self.update_button)
@@ -6792,6 +6930,11 @@ class DownloaderApp(tk.Tk):
             self.focus_summary_frame.grid(row=0, column=1, sticky="nsew")
             self.focus_details_button.grid_remove()
             self.focus_detail_header.grid_remove()
+
+        if self._focus_run_records():
+            if not self.focus_deck_header.winfo_manager():
+                self.focus_deck_header.grid()
+        else:
             self.focus_deck_header.grid_remove()
 
         if compact or width < 1060:
@@ -6815,9 +6958,13 @@ class DownloaderApp(tk.Tk):
             self.focus_queue_panel.grid_configure(column=0, columnspan=2, padx=0)
             self.focus_metadata_content.columnconfigure(0, weight=1)
             self.focus_metadata_content.columnconfigure(1, weight=0, minsize=0)
-            for column in ("creator", "id", "location"):
-                self.video_tree.column(column, width=0, minwidth=0, stretch=False)
-            self.video_tree.column("title", minwidth=150)
+            # Keep the canonical table intact at small widths. The sleek
+            # horizontal scrollbar makes every field reachable without
+            # squeezing columns to zero or changing what the table means.
+            self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
+            self.video_tree.column("id", width=90, minwidth=72, stretch=False)
+            self.video_tree.column("location", width=140, minwidth=100, stretch=False)
+            self.video_tree.column("title", width=360, minwidth=220, stretch=False)
         else:
             if library_mode == "balanced":
                 self.focus_library_view.rowconfigure(1, weight=2, minsize=190)
@@ -6830,9 +6977,10 @@ class DownloaderApp(tk.Tk):
             if library_mode == "balanced":
                 self.focus_metadata_content.columnconfigure(0, weight=5)
                 self.focus_metadata_content.columnconfigure(1, weight=4, minsize=300)
-                for column in ("creator", "id", "location"):
-                    self.video_tree.column(column, width=0, minwidth=0, stretch=False)
-                self.video_tree.column("title", minwidth=170)
+                self.video_tree.column("creator", width=110, minwidth=90, stretch=False)
+                self.video_tree.column("id", width=90, minwidth=72, stretch=False)
+                self.video_tree.column("location", width=120, minwidth=90, stretch=False)
+                self.video_tree.column("title", width=320, minwidth=200, stretch=False)
             else:
                 self.focus_metadata_content.columnconfigure(0, weight=3)
                 self.focus_metadata_content.columnconfigure(1, weight=2, minsize=320)
@@ -7831,14 +7979,21 @@ class DownloaderApp(tk.Tk):
         placeholder: bool,
         source_path: Path | None,
     ) -> Any | None:
-        if not placeholder and source_path is not None:
-            native = self._create_focus_native_image(source_path, size, radius=10)
+        if (
+            not placeholder
+            and source_path is not None
+        ):
+            native = self._create_focus_native_image(
+                source_path,
+                thumbnail_size_within(tuple(image.size), size),
+                radius=10,
+            )
             if native is not None:
                 return native
         rendered = (
             rounded_contain_image(image, size, 10, THEME["surface"])
             if placeholder
-            else rounded_cover_image(image, size, 10)
+            else rounded_fit_image(image, size, 10)
         )
         return ImageTk.PhotoImage(flatten_alpha_image(rendered, THEME["bg"]))
 
