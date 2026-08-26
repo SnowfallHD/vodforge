@@ -78,6 +78,7 @@ from yt_downloader.app import (
     focus_layout_mode,
     focus_run_deck_capacity,
     focus_wheel_pixels,
+    accumulated_row_scroll,
     library_thumbnail_size,
     thumbnail_size_within,
     render_monochrome_icon,
@@ -452,6 +453,18 @@ def test_focus_run_drop_up_normalizes_trackpad_and_mouse_wheel_motion_to_pixels(
     assert focus_wheel_pixels(120) == -36
     assert focus_wheel_pixels(-120) == 36
     assert focus_wheel_pixels(480) == -72
+
+
+def test_row_scrollers_accumulate_trackpad_pixels_without_amplifying_each_event():
+    rows, remainder = accumulated_row_scroll(0, 7, 30)
+    assert rows == 0
+    assert remainder == 7
+    rows, remainder = accumulated_row_scroll(remainder, 25, 30)
+    assert rows == 1
+    assert remainder == 2
+    rows, remainder = accumulated_row_scroll(remainder, -33, 30)
+    assert rows == -1
+    assert remainder == -1
 
 
 def test_rounded_contain_image_preserves_placeholder_artwork_without_cropping():

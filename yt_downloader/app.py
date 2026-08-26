@@ -263,6 +263,97 @@ def focus_wheel_pixels(delta: int | float) -> int:
     return int(max(-72, min(72, magnitude if pixels > 0 else -magnitude)))
 
 
+def accumulated_row_scroll(remainder: float, pixels: int, row_pixels: int) -> tuple[int, float]:
+    """Accumulate high-resolution wheel motion before moving row widgets."""
+    safe_row_pixels = max(1, int(row_pixels))
+    total = float(remainder) + int(pixels)
+    rows = int(total / safe_row_pixels)
+    return rows, total - (rows * safe_row_pixels)
+
+
+def bind_smooth_vertical_wheel(
+    scroller: tk.Misc,
+    *targets: tk.Misc,
+    mode: str = "pixels",
+    row_pixels: int = 30,
+) -> None:
+    """Preserve trackpad deltas instead of letting Tk amplify them into jumps."""
+    if mode not in {"pixels", "increments", "rows"}:
+        raise ValueError(f"Unsupported smooth-scroll mode: {mode}")
+    wheel_targets = targets or (scroller,)
+    remainder = 0.0
+
+    def scrollable_pixel_height() -> int:
+        try:
+            if isinstance(scroller, tk.Text):
+                measured = scroller.count("1.0", "end", "ypixels")
+                if measured:
+                    return max(scroller.winfo_height(), int(measured[0]))
+            if isinstance(scroller, tk.Canvas):
+                raw_region = str(scroller.cget("scrollregion") or "").split()
+                if len(raw_region) == 4:
+                    return max(scroller.winfo_height(), round(float(raw_region[3]) - float(raw_region[1])))
+                bounds = scroller.bbox("all")
+                if bounds is not None:
+                    return max(scroller.winfo_height(), int(bounds[3] - bounds[1]))
+        except (tk.TclError, TypeError, ValueError):
+            pass
+        return 0
+
+    def scroll_pixels(pixels: int) -> str:
+        nonlocal remainder
+        if not pixels:
+            return "break"
+        if mode == "rows":
+            rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
+            if rows:
+                scroller.yview_scroll(rows, "units")
+            return "break"
+        if mode == "pixels":
+            content_height = scrollable_pixel_height()
+            viewport_height = max(1, scroller.winfo_height())
+            if content_height > viewport_height:
+                first, _last = scroller.yview()
+                scroller.yview_moveto(max(0.0, min(1.0, float(first) + (pixels / content_height))))
+            return "break"
+        try:
+            scroller.yview_scroll(pixels, "units")
+        except tk.TclError:
+            rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
+            if rows:
+                scroller.yview_scroll(rows, "units")
+        return "break"
+
+    def on_wheel(event: tk.Event[Any]) -> str:
+        return scroll_pixels(focus_wheel_pixels(getattr(event, "delta", 0)))
+
+    for target in wheel_targets:
+        target.bind("<MouseWheel>", on_wheel, add="+")
+        target.bind("<Button-4>", lambda _event: scroll_pixels(-36), add="+")
+        target.bind("<Button-5>", lambda _event: scroll_pixels(36), add="+")
+
+
+def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
+    """Place a hidden custom window before mapping it to avoid visible jumps."""
+    popup.geometry(geometry)
+    popup.deiconify()
+    popup.lift()
+
+
+def centered_toplevel_geometry(
+    owner: tk.Misc,
+    width: int,
+    height: int,
+    *,
+    minimum_x: int = 20,
+    minimum_y: int = 40,
+) -> str:
+    """Return owner-centered geometry without mapping a Toplevel early."""
+    x = max(minimum_x, owner.winfo_rootx() + (owner.winfo_width() - width) // 2)
+    y = max(minimum_y, owner.winfo_rooty() + (owner.winfo_height() - height) // 2)
+    return f"{width}x{height}+{x}+{y}"
+
+
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
     raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
     base = Path(raw_meipass) if raw_meipass else (Path(__file__).resolve().parents[1] if repo_root is None else repo_root)
@@ -3592,8 +3683,8 @@ class ToolTip:
             x = self.widget.winfo_rootx() + 20
             y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
             self.tip = tk.Toplevel(self.widget)
+            self.tip.withdraw()
             self.tip.wm_overrideredirect(True)
-            self.tip.wm_geometry(f"+{x}+{y}")
             label = tk.Label(
                 self.tip,
                 text=self.text,
@@ -3608,6 +3699,8 @@ class ToolTip:
                 font=FONT_UI_SMALL,
             )
             label.pack()
+            self.tip.update_idletasks()
+            reveal_toplevel(self.tip, f"+{x}+{y}")
         except tk.TclError:
             self.tip = None
 
@@ -4398,6 +4491,7 @@ class DownloaderApp(tk.Tk):
         ) -> None:
             dismiss_compact_popup()
             popup = tk.Toplevel(self)
+            popup.withdraw()
             self._compact_popup = popup
             popup.title(f"{APP_NAME} · {title}")
             popup.transient(self)
@@ -4418,8 +4512,8 @@ class DownloaderApp(tk.Tk):
             popup_y = anchor.winfo_rooty() + anchor.winfo_height() + 6
             if popup_y + popup_height > screen_height - 40:
                 popup_y = max(20, anchor.winfo_rooty() - popup_height - 6)
-            popup.geometry(f"{popup_width}x{popup_height}+{popup_x}+{popup_y}")
             popup.minsize(popup_width, popup_height)
+            reveal_toplevel(popup, f"{popup_width}x{popup_height}+{popup_x}+{popup_y}")
             popup.bind("<Escape>", lambda _event: dismiss_compact_popup())
             popup.protocol("WM_DELETE_WINDOW", dismiss_compact_popup)
 
@@ -5390,6 +5484,8 @@ class DownloaderApp(tk.Tk):
             insertwidth=0,
         )
         self.focus_summary_text.grid(row=0, column=0, sticky="nsew")
+        bind_smooth_vertical_wheel(self.focus_log, mode="pixels")
+        bind_smooth_vertical_wheel(self.focus_summary_text, mode="pixels")
         self._set_text(
             self.focus_summary_text,
             "Format        MP4\nVideo         H.264\nAudio         AAC\nOutput mode   Auto CBR\nSave to       " + self.output_var.get(),
@@ -5499,6 +5595,7 @@ class DownloaderApp(tk.Tk):
         self.video_tree.grid(row=1, column=0, sticky="nsew")
         tree_scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
         tree_x_scroll.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        bind_smooth_vertical_wheel(self.video_tree, self.video_tree, tree_scroll, mode="rows", row_pixels=30)
         self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
         self.video_tree.bind("<Button-1>", self._on_library_tree_click, add="+")
         self.video_tree.bind("<Button-2>", self._show_library_row_menu)
@@ -5564,6 +5661,13 @@ class DownloaderApp(tk.Tk):
         self.output_summary_text = tk.Text(summary, height=8, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
         self.source_summary_text.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         self.output_summary_text.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        for text_widget in (
+            self.pulled_tags_text,
+            self.description_text,
+            self.source_summary_text,
+            self.output_summary_text,
+        ):
+            bind_smooth_vertical_wheel(text_widget, mode="pixels")
         self.focus_library_summary = summary
 
     def _build_focus_activity_view(self, parent: ttk.Frame) -> None:
@@ -5587,6 +5691,7 @@ class DownloaderApp(tk.Tk):
         self.log.configure(yscrollcommand=log_scrollbar.set)
         self.log.grid(row=1, column=0, sticky="nsew")
         log_scrollbar.grid(row=1, column=1, sticky="ns", padx=(6, 0))
+        bind_smooth_vertical_wheel(self.log, self.log, log_scrollbar, mode="pixels")
 
     def _set_focus_run_controls_visible(self, visible: bool) -> None:
         controls = getattr(self, "focus_run_controls", ())
@@ -5926,6 +6031,7 @@ class DownloaderApp(tk.Tk):
                 pass
 
         popup = tk.Toplevel(self)
+        popup.withdraw()
         self._focus_settings_window = popup
         popup.title(f"{APP_NAME} Settings")
         popup.transient(self)
@@ -6165,13 +6271,12 @@ class DownloaderApp(tk.Tk):
         popup.update_idletasks()
         width = min(820, max(700, popup.winfo_reqwidth()))
         height = min(720, max(560, popup.winfo_reqheight()))
-        x = max(20, self.winfo_rootx() + (self.winfo_width() - width) // 2)
-        y = max(40, self.winfo_rooty() + (self.winfo_height() - height) // 2)
-        popup.geometry(f"{width}x{height}+{x}+{y}")
+        reveal_toplevel(popup, centered_toplevel_geometry(self, width, height))
         self.after_idle(self._record_cloud_cta_seen)
 
     def _show_focus_output_details(self) -> None:
         popup = tk.Toplevel(self)
+        popup.withdraw()
         popup.title(f"{APP_NAME} Output Details")
         popup.transient(self)
         popup.configure(bg=THEME["bg"])
@@ -6184,8 +6289,10 @@ class DownloaderApp(tk.Tk):
         text.pack(fill="both", expand=True, pady=(12, 12))
         text.insert("1.0", self.focus_summary_text.get("1.0", "end").strip())
         text.configure(state="disabled")
+        bind_smooth_vertical_wheel(text, mode="pixels")
         ttk.Button(frame, text="Done", command=popup.destroy, style="Accent.TButton").pack(anchor="e")
-        popup.geometry("560x360")
+        popup.update_idletasks()
+        reveal_toplevel(popup, centered_toplevel_geometry(self, 560, 360))
 
     def _show_focus_run_menu(self) -> None:
         records = self._focus_run_records()
@@ -6199,14 +6306,12 @@ class DownloaderApp(tk.Tk):
                 self._focus_run_list_window = None
             return
 
-        # A borderless, transient surface keeps this in the app as an anchored
-        # drop-up rather than opening another titled window. Its list is capped
-        # at five visible rows; the sleek scrollbar owns the overflow.
-        popup = tk.Toplevel(self)
+        # Keep the drop-up inside the application window. Aqua does not
+        # reliably deliver trackpad gestures to an override-redirect Toplevel,
+        # while in-window widgets follow the same working wheel path as the
+        # Library table. The list remains capped at five visible rows.
+        popup = tk.Frame(self, bg=THEME["border"], bd=0, highlightthickness=0)
         self._focus_run_list_window = popup
-        popup.overrideredirect(True)
-        popup.transient(self)
-        popup.configure(bg=THEME["border"])
 
         root = tk.Frame(popup, bg=THEME["surface"], bd=0, highlightthickness=0)
         root.pack(fill="both", expand=True, padx=1, pady=1)
@@ -6291,15 +6396,7 @@ class DownloaderApp(tk.Tk):
 
         run_list.bind("<Configure>", resize_rows, add="+")
 
-        parent_wheel_bindings: list[tuple[str, str]] = []
-
         def close_drop_up() -> None:
-            for sequence, binding_id in parent_wheel_bindings:
-                try:
-                    self.unbind(sequence, binding_id)
-                except tk.TclError:
-                    pass
-            parent_wheel_bindings.clear()
             if self.__dict__.get("_focus_run_list_cleanup") is close_drop_up:
                 self._focus_run_list_cleanup = None
             self._focus_run_list_window = None
@@ -6323,80 +6420,32 @@ class DownloaderApp(tk.Tk):
             close_drop_up()
 
         run_list.bind("<Escape>", lambda _event: close_drop_up())
-
-        def scroll_runs(event: tk.Event[Any]) -> str:
-            pixels = focus_wheel_pixels(getattr(event, "delta", 0))
-            if pixels:
-                run_list.yview_scroll(pixels, "units")
-            return "break"
-
-        def scroll_runs_up(_event: tk.Event[Any]) -> str:
-            run_list.yview_scroll(-36, "units")
-            return "break"
-
-        def scroll_runs_down(_event: tk.Event[Any]) -> str:
-            run_list.yview_scroll(36, "units")
-            return "break"
-
-        # macOS can target the canvas, its padding frame, the scrollbar, or the
-        # borderless toplevel itself during a trackpad gesture. Bind every
-        # surface inside this transient so the open drop-up owns the gesture.
-        for wheel_target in (popup, root, run_list, run_scroll):
-            wheel_target.bind("<MouseWheel>", scroll_runs, add="+")
-            wheel_target.bind("<Button-4>", scroll_runs_up, add="+")
-            wheel_target.bind("<Button-5>", scroll_runs_down, add="+")
-
-        def pointer_is_over_drop_up() -> bool:
-            try:
-                pointer_x, pointer_y = self.winfo_pointerxy()
-                left = popup.winfo_rootx()
-                top = popup.winfo_rooty()
-                return left <= pointer_x < left + popup.winfo_width() and top <= pointer_y < top + popup.winfo_height()
-            except tk.TclError:
-                return False
-
-        def scroll_runs_from_parent(event: tk.Event[Any]) -> str | None:
-            if not pointer_is_over_drop_up():
-                return None
-            return scroll_runs(event)
-
-        def scroll_runs_up_from_parent(event: tk.Event[Any]) -> str | None:
-            if not pointer_is_over_drop_up():
-                return None
-            return scroll_runs_up(event)
-
-        def scroll_runs_down_from_parent(event: tk.Event[Any]) -> str | None:
-            if not pointer_is_over_drop_up():
-                return None
-            return scroll_runs_down(event)
-
-        # Aqua can deliver a gesture visually over an override-redirect
-        # transient to the owning application window. Keep scoped parent
-        # bindings only while this drop-up exists, and gate them by pointer
-        # geometry so no other application surface inherits run-list scroll.
-        for sequence, callback in (
-            ("<MouseWheel>", scroll_runs_from_parent),
-            ("<Button-4>", scroll_runs_up_from_parent),
-            ("<Button-5>", scroll_runs_down_from_parent),
-        ):
-            binding_id = self.bind(sequence, callback, add="+")
-            if binding_id:
-                parent_wheel_bindings.append((sequence, binding_id))
+        bind_smooth_vertical_wheel(
+            run_list,
+            popup,
+            root,
+            run_list,
+            run_scroll,
+            mode="increments",
+        )
         popup.bind("<Escape>", lambda _event: close_drop_up())
-        popup.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
+        run_list.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
 
         button = self.focus_run_overflow_button
         button.update_idletasks()
         popup.update_idletasks()
         width = min(440, max(340, self.winfo_width() - 48))
         height = min(184, max(78, popup.winfo_reqheight()))
-        screen_width = popup.winfo_screenwidth()
-        screen_height = popup.winfo_screenheight()
-        x = min(screen_width - width - 12, max(12, button.winfo_rootx() + button.winfo_width() - width))
-        y = button.winfo_rooty() - height - 6
+        x = button.winfo_rootx() - self.winfo_rootx() + button.winfo_width() - width
+        x = min(self.winfo_width() - width - 12, max(12, x))
+        y = button.winfo_rooty() - self.winfo_rooty() - height - 6
         if y < 20:
-            y = min(screen_height - height - 20, button.winfo_rooty() + button.winfo_height() + 6)
-        popup.geometry(f"{width}x{height}+{x}+{y}")
+            y = min(
+                self.winfo_height() - height - 20,
+                button.winfo_rooty() - self.winfo_rooty() + button.winfo_height() + 6,
+            )
+        popup.place(x=x, y=y, width=width, height=height)
+        popup.lift()
         run_list.focus_set()
 
     def _focus_select_run_record(self, record: dict[str, Any]) -> None:
@@ -6570,6 +6619,7 @@ class DownloaderApp(tk.Tk):
         except (IndexError, TypeError, ValueError):
             return
         popup = tk.Toplevel(self)
+        popup.withdraw()
         popup.title(f"{APP_NAME} Selected Item")
         popup.transient(self)
         popup.configure(bg=THEME["bg"])
@@ -6603,13 +6653,16 @@ class DownloaderApp(tk.Tk):
         tags.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
         tags.insert("1.0", build_tags_display_text(info) or "No tags found for this video.")
         tags.configure(state="disabled")
+        bind_smooth_vertical_wheel(tags, mode="pixels")
         ttk.Label(root, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=5, column=0, sticky="w", pady=(0, 4))
         description = tk.Text(root, height=5, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=10, pady=8, font=FONT_UI)
         description.grid(row=6, column=0, sticky="nsew")
         description.insert("1.0", build_description_display_text(info) or "No description found for this video.")
         description.configure(state="disabled")
+        bind_smooth_vertical_wheel(description, mode="pixels")
         ttk.Button(root, text="Done", command=popup.destroy, style="Accent.TButton").grid(row=7, column=0, sticky="e", pady=(14, 0))
-        popup.geometry("680x620")
+        popup.update_idletasks()
+        reveal_toplevel(popup, centered_toplevel_geometry(self, 680, 620))
 
     def _focus_run_records(self) -> list[dict[str, Any]]:
         preview = getattr(self, "_focus_preview_runs", None)

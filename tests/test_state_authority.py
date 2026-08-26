@@ -583,23 +583,21 @@ def test_all_resizable_popouts_enforce_content_appropriate_minimums():
 def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     run_list_source = inspect.getsource(DownloaderApp._show_focus_run_menu)
 
-    assert "tk.Toplevel(self)" in run_list_source
-    assert "popup.overrideredirect(True)" in run_list_source
+    assert 'popup = tk.Frame(self, bg=THEME["border"]' in run_list_source
+    assert "popup.overrideredirect(True)" not in run_list_source
+    assert "popup.transient(self)" not in run_list_source
     assert "visible_rows = min(5, max(1, len(records)))" in run_list_source
     assert "tk.Canvas(" in run_list_source
     assert "yscrollincrement=1" in run_list_source
     assert "SleekScrollbar(root, command=run_list.yview)" in run_list_source
     assert 'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)' in run_list_source
-    assert "for wheel_target in (popup, root, run_list, run_scroll):" in run_list_source
-    assert 'wheel_target.bind("<MouseWheel>", scroll_runs, add="+")' in run_list_source
-    assert "def pointer_is_over_drop_up()" in run_list_source
-    assert "def scroll_runs_from_parent" in run_list_source
-    assert 'binding_id = self.bind(sequence, callback, add="+")' in run_list_source
-    assert "self.unbind(sequence, binding_id)" in run_list_source
-    assert "button.winfo_rooty() - height - 6" in run_list_source
+    assert "bind_smooth_vertical_wheel(" in run_list_source
+    assert 'mode="increments"' in run_list_source
+    assert "button.winfo_rooty() - self.winfo_rooty() - height - 6" in run_list_source
+    assert "popup.place(x=x, y=y, width=width, height=height)" in run_list_source
     assert "width = min(440" in run_list_source
     assert "height = min(184" in run_list_source
-    assert 'popup.bind("<FocusOut>"' in run_list_source
+    assert 'run_list.bind("<FocusOut>"' in run_list_source
 
 
 def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
@@ -616,6 +614,35 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
     assert "self.focus_run_overflow_button.grid()" in deck_source
     assert "if self._focus_run_records():" in layout_source
+
+
+def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
+    library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    activity_source = inspect.getsource(DownloaderApp._build_focus_activity_view)
+    forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
+
+    assert "bind_smooth_vertical_wheel(self.video_tree" in library_source
+    assert 'mode="rows", row_pixels=30' in library_source
+    assert "bind_smooth_vertical_wheel(self.log" in activity_source
+    assert 'mode="pixels"' in activity_source
+    assert "bind_smooth_vertical_wheel(self.focus_log" in forge_source
+    assert "bind_smooth_vertical_wheel(self.focus_summary_text" in forge_source
+
+
+def test_custom_popouts_are_positioned_before_they_become_visible():
+    compact_source = inspect.getsource(DownloaderApp._build_ui)
+    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
+    selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
+
+    for source in (compact_source, settings_source, output_source, selected_source):
+        assert "popup.withdraw()" in source
+        assert "reveal_toplevel(popup," in source
+        assert source.index("popup.withdraw()") < source.index("reveal_toplevel(popup,")
+
+    assert "centered_toplevel_geometry(self, width, height)" in settings_source
+    assert "centered_toplevel_geometry(self, 560, 360)" in output_source
+    assert "centered_toplevel_geometry(self, 680, 620)" in selected_source
 
 
 def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path: Path):
