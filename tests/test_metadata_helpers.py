@@ -39,6 +39,7 @@ from yt_downloader.app import (
     build_encoding_summary_display,
     build_encoding_summary_metadata,
     build_failed_encoding_summary_metadata,
+    summary_label_color,
     build_description_display_text,
     clean_single_video_url,
     cookie_inputs_for_source,
@@ -2072,9 +2073,27 @@ def test_encoding_summary_display_switches_per_selected_video_and_handles_missin
     assert "None" not in source_missing + output_missing
     assert "Format selector: Not available" in source_missing
     assert "Output file path: Not produced" in output_missing
-    source_labels = [line.split(":", 1)[0] for line in source_two.splitlines()]
-    output_labels = [line.split(":", 1)[0] for line in output_two.splitlines()]
-    assert source_labels[:10] == output_labels[:10]
+    assert "Format selector:" not in output_two
+    assert "Video format ID:" not in output_two
+    assert "Audio format ID:" not in output_two
+
+
+def test_encoding_summary_comparison_labels_use_stable_restrained_colors():
+    comparable_labels = [
+        "Container/ext",
+        "Resolution",
+        "Frame rate",
+        "Video codec",
+        "Video bitrate",
+        "Audio codec",
+        "Audio bitrate",
+        "File size",
+    ]
+    colors = [summary_label_color(label) for label in comparable_labels]
+
+    assert len(colors) == len(set(colors))
+    assert all(color.startswith("#") and len(color) == 7 for color in colors)
+    assert summary_label_color("Output status") == app_module.THEME["muted"]
 
 
 def test_failed_video_encoding_summary_preserves_source_and_no_output_reason():
@@ -2085,7 +2104,9 @@ def test_failed_video_encoding_summary_preserves_source_and_no_output_reason():
     source_text, output_text = build_encoding_summary_display(failed)
 
     assert "Format selector: 137+251" in source_text
-    assert "Format selector: Not applicable" in output_text
+    assert "Format selector:" not in output_text
+    assert "Video format ID:" not in output_text
+    assert "Audio format ID:" not in output_text
     assert "Output file path: Not produced" in output_text
     assert "Validation status: Failed" in output_text
     assert "Failure reason: yt-dlp failed" in output_text

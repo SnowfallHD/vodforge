@@ -2041,6 +2041,34 @@ AUDIO_SUMMARY_COMPARISON_ROWS = [
 ]
 
 
+# Keep source/output comparisons visually traceable without turning the summaries
+# into a high-saturation legend. Only the label token is tinted; values retain the
+# normal text color so codec names, paths, and measurements remain easy to read.
+SUMMARY_LABEL_COLORS = {
+    "Format selector": "#9ca1aa",
+    "Video format ID": "#a1a5ad",
+    "Audio format ID": "#969ca7",
+    "Container/ext": "#91a0aa",
+    "Resolution": "#8fa2b4",
+    "Frame rate": "#999dae",
+    "Video codec": "#9c96aa",
+    "Video bitrate": "#879da8",
+    "Audio codec": "#8fa39d",
+    "Audio bitrate": "#829b9d",
+    "Audio sample rate": "#999eaa",
+    "Audio channels": "#8f99a8",
+    "HDR/SDR or pixel format": "#a097a4",
+    "File size": "#a39d8f",
+    "Effective/target video bitrate": "#8f96b2",
+    "Effective/target audio bitrate": "#879fa1",
+    "Selection/status": "#9b95a7",
+}
+
+
+def summary_label_color(label: str) -> str:
+    return SUMMARY_LABEL_COLORS.get(str(label), THEME["muted"])
+
+
 def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
     summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
     source = summary.get("source") if isinstance(summary.get("source"), dict) else {}
@@ -2051,7 +2079,8 @@ def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
     rows = AUDIO_SUMMARY_COMPARISON_ROWS if metadata_output_type(info) == OutputType.MP3 else SUMMARY_COMPARISON_ROWS
     for label, source_key, output_key in rows:
         source_lines.append(f"{label}: {_display_value(source.get(source_key), 'Not available')}")
-        output_lines.append(f"{label}: {_display_value(output.get(output_key), 'Not applicable' if output_key is None else 'Not available')}")
+        if output_key is not None:
+            output_lines.append(f"{label}: {_display_value(output.get(output_key), 'Not available')}")
     output_lines.extend([
         f"Output status: {_display_value(output.get('Output status'), 'Not available')}",
         f"Output file path: {_display_value(output.get('Output file path'), 'Not produced')}",
@@ -8964,6 +8993,22 @@ class DownloaderApp(tk.Tk):
         if disabled:
             widget.config(state="disabled")
 
+    def _set_encoding_summary_text(self, widget: tk.Text, text: str) -> None:
+        widget.config(state="normal")
+        widget.delete("1.0", "end")
+        for line_index, line in enumerate(text.splitlines()):
+            if line_index:
+                widget.insert("end", "\n")
+            label, separator, value = line.partition(":")
+            if not separator:
+                widget.insert("end", line)
+                continue
+            tag_name = f"summary-label-{line_index}"
+            widget.tag_configure(tag_name, foreground=summary_label_color(label))
+            widget.insert("end", f"{label}:", tag_name)
+            widget.insert("end", value)
+        widget.config(state="disabled")
+
     def _display_selected_metadata(self, index: int) -> None:
         if index < 0 or index >= len(self.metadata_items):
             return
@@ -8986,8 +9031,8 @@ class DownloaderApp(tk.Tk):
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
         self._set_text(self.description_text, description or "No description found for this video.")
         source_summary, output_summary = build_encoding_summary_display(info)
-        self._set_text(self.source_summary_text, source_summary, disabled=True)
-        self._set_text(self.output_summary_text, output_summary, disabled=True)
+        self._set_encoding_summary_text(self.source_summary_text, source_summary)
+        self._set_encoding_summary_text(self.output_summary_text, output_summary)
         thumb = best_thumbnail(info)
         self.last_thumbnail_url = str((thumb or {}).get("url") or "") or None
         preview_thumbnail = str(info.get("preview_thumbnail_path") or "").strip()

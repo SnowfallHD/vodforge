@@ -164,6 +164,7 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     app.output_summary_text = object()
     app.focus_summary_text = None
     app._set_text = lambda *_args, **_kwargs: None
+    app._set_encoding_summary_text = lambda *_args, **_kwargs: None
     thumbnail_requests: list[tuple[str, str]] = []
     app._load_thumbnail_preview = lambda url, *, target="both", **_kwargs: thumbnail_requests.append((url, target))
 
