@@ -1,4 +1,5 @@
 import json
+import inspect
 import queue
 import threading
 import time
@@ -43,6 +44,7 @@ from yt_downloader.app import (
     find_valid_existing_output,
     output_artifact_matches_plan,
     playlist_context_from_extraction,
+    pointer_inside_widget_bounds,
     retry_url_for_item,
     single_video_url_requires_video_id_error,
     build_tags_display_text,
@@ -413,6 +415,58 @@ def test_focus_layout_collapses_before_live_details_are_clipped():
     assert focus_layout_mode(1000, 720) == "balanced"
     assert focus_layout_mode(920, 650) == "compact"
     assert focus_layout_mode(820, 560) == "compact"
+
+
+def test_tooltip_hit_testing_uses_exact_visible_widget_bounds():
+    class WidgetBounds:
+        def __init__(self, left, top, width, height, *, mapped=True):
+            self.left = left
+            self.top = top
+            self.width = width
+            self.height = height
+            self.mapped = mapped
+
+        def winfo_ismapped(self):
+            return self.mapped
+
+        def winfo_rootx(self):
+            return self.left
+
+        def winfo_rooty(self):
+            return self.top
+
+        def winfo_width(self):
+            return self.width
+
+        def winfo_height(self):
+            return self.height
+
+    public = WidgetBounds(100, 50, 48, 24)
+    cookies = WidgetBounds(148, 50, 76, 24)
+    hidden_browser = WidgetBounds(224, 50, 64, 24, mapped=False)
+
+    targets = (public, cookies, hidden_browser)
+    assert pointer_inside_widget_bounds(targets, 100, 50)
+    assert pointer_inside_widget_bounds(targets, 223, 73)
+    assert not pointer_inside_widget_bounds(targets, 224, 60)
+    assert not pointer_inside_widget_bounds(targets, 120, 74)
+
+
+def test_tooltips_share_one_delayed_pointer_verified_window_controller():
+    tooltip_source = inspect.getsource(app_module.ToolTip)
+    controller_source = inspect.getsource(app_module._TooltipController)
+    selector_source = inspect.getsource(app_module.SegmentedSelector)
+
+    assert "_vodforge_tooltip_controller" in tooltip_source
+    assert "targets_provider" in tooltip_source
+    assert 'target.bind("<ButtonPress>"' in tooltip_source
+    assert "TOOLTIP_DELAY_MS" in controller_source
+    assert "TOOLTIP_POINTER_POLL_MS" in controller_source
+    assert "not tooltip.contains_pointer()" in controller_source
+    assert "def _destroy_tip" in controller_source
+    assert "self._cancel_pointer_poll()" in controller_source
+    assert "def tooltip_targets" in selector_source
+    assert "tuple(self._labels.values())" in selector_source
 
 
 def test_focus_library_layout_protects_selected_item_at_medium_widths():

@@ -3771,28 +3771,85 @@ def apply_youtube_runtime_options(opts: dict[str, Any], *, deno_path: str | None
     return opts
 
 
-class ToolTip:
-    """Small hover tooltip for Tk/ttk widgets."""
+TOOLTIP_DELAY_MS = 420
+TOOLTIP_POINTER_POLL_MS = 40
 
-    def __init__(self, widget: tk.Widget, text: str) -> None:
-        self.widget = widget
-        self.text = text
-        self.tip: tk.Toplevel | None = None
-        widget.bind("<Enter>", self.show, add="+")
-        widget.bind("<Leave>", self.hide, add="+")
 
-    def show(self, _event: Any = None) -> None:
-        if self.tip is not None or not self.text:
-            return
+def pointer_inside_widget_bounds(widgets: tuple[tk.Widget, ...], pointer_x: int, pointer_y: int) -> bool:
+    """Return whether a screen-space point is inside one of the exact widget bounds."""
+    for widget in widgets:
         try:
-            x = self.widget.winfo_rootx() + 20
-            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
-            self.tip = tk.Toplevel(self.widget)
-            self.tip.withdraw()
-            self.tip.wm_overrideredirect(True)
+            if not widget.winfo_ismapped():
+                continue
+            left = widget.winfo_rootx()
+            top = widget.winfo_rooty()
+            width = widget.winfo_width()
+            height = widget.winfo_height()
+        except tk.TclError:
+            continue
+        if left <= pointer_x < left + width and top <= pointer_y < top + height:
+            return True
+    return False
+
+
+class _TooltipController:
+    """One authoritative tooltip surface per window.
+
+    Tk can miss a widget ``<Leave>`` when a pointer moves quickly across child
+    widgets or when an override-redirect tooltip appears under the pointer. A
+    single controller prevents competing tooltip windows, delays transient
+    flyovers, and verifies the real pointer position while a tooltip is open.
+    """
+
+    def __init__(self, host: tk.Misc) -> None:
+        self.host = host
+        self.tip: tk.Toplevel | None = None
+        self.pending_after_id: str | None = None
+        self.pointer_poll_after_id: str | None = None
+        self.pending: ToolTip | None = None
+        self.active: ToolTip | None = None
+        host.bind("<Unmap>", lambda _event: self.hide(), add="+")
+        host.bind("<Destroy>", lambda event: self.hide() if event.widget is host else None, add="+")
+
+    def request_show(self, tooltip: "ToolTip") -> None:
+        if not tooltip.text:
+            return
+        if self.active is tooltip:
+            return
+        self._cancel_pending()
+        if self.active is not None and self.active is not tooltip:
+            self._destroy_tip()
+        self.pending = tooltip
+        try:
+            self.pending_after_id = self.host.after(TOOLTIP_DELAY_MS, lambda: self._show_if_owned(tooltip))
+        except tk.TclError:
+            self.pending = None
+
+    def request_hide(self, tooltip: "ToolTip") -> None:
+        try:
+            self.host.after_idle(lambda: self._hide_if_pointer_left(tooltip))
+        except tk.TclError:
+            self.hide()
+
+    def _hide_if_pointer_left(self, tooltip: "ToolTip") -> None:
+        if (self.pending is tooltip or self.active is tooltip) and not tooltip.contains_pointer():
+            self.hide()
+
+    def _show_if_owned(self, tooltip: "ToolTip") -> None:
+        self.pending_after_id = None
+        if self.pending is not tooltip or not tooltip.contains_pointer():
+            if self.pending is tooltip:
+                self.pending = None
+            return
+        self._destroy_tip()
+        try:
+            left, top, _right, bottom = tooltip.anchor_bounds()
+            tip = tk.Toplevel(self.host)
+            tip.withdraw()
+            tip.wm_overrideredirect(True)
             label = tk.Label(
-                self.tip,
-                text=self.text,
+                tip,
+                text=tooltip.text,
                 justify="left",
                 wraplength=320,
                 bg="#111214",
@@ -3804,18 +3861,117 @@ class ToolTip:
                 font=FONT_UI_SMALL,
             )
             label.pack()
-            self.tip.update_idletasks()
-            reveal_toplevel(self.tip, f"+{x}+{y}")
-        except tk.TclError:
-            self.tip = None
+            tip.update_idletasks()
+            screen_width = tip.winfo_screenwidth()
+            screen_height = tip.winfo_screenheight()
+            tip_width = tip.winfo_reqwidth()
+            tip_height = tip.winfo_reqheight()
+            x = min(max(8, left), max(8, screen_width - tip_width - 8))
+            y = bottom + 8
+            if y + tip_height > screen_height - 8:
+                y = max(8, top - tip_height - 8)
+            self.tip = tip
+            self.pending = None
+            self.active = tooltip
+            reveal_toplevel(tip, f"+{x}+{y}")
+            self._schedule_pointer_poll()
+        except (tk.TclError, ValueError):
+            self._destroy_tip()
 
-    def hide(self, _event: Any = None) -> None:
+    def _schedule_pointer_poll(self) -> None:
+        self._cancel_pointer_poll()
+        try:
+            self.pointer_poll_after_id = self.host.after(TOOLTIP_POINTER_POLL_MS, self._poll_pointer)
+        except tk.TclError:
+            self.pointer_poll_after_id = None
+
+    def _poll_pointer(self) -> None:
+        self.pointer_poll_after_id = None
+        tooltip = self.active
+        if tooltip is None or not tooltip.contains_pointer():
+            self.hide()
+            return
+        self._schedule_pointer_poll()
+
+    def _cancel_pending(self) -> None:
+        if self.pending_after_id is not None:
+            try:
+                self.host.after_cancel(self.pending_after_id)
+            except tk.TclError:
+                pass
+        self.pending_after_id = None
+        self.pending = None
+
+    def _cancel_pointer_poll(self) -> None:
+        if self.pointer_poll_after_id is not None:
+            try:
+                self.host.after_cancel(self.pointer_poll_after_id)
+            except tk.TclError:
+                pass
+        self.pointer_poll_after_id = None
+
+    def _destroy_tip(self) -> None:
+        self._cancel_pointer_poll()
         if self.tip is not None:
             try:
                 self.tip.destroy()
             except tk.TclError:
                 pass
-            self.tip = None
+        self.tip = None
+        self.active = None
+
+    def hide(self) -> None:
+        self._cancel_pending()
+        self._cancel_pointer_poll()
+        self._destroy_tip()
+
+
+class ToolTip:
+    """Precise, delayed hover tooltip coordinated within its containing window."""
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        targets_provider = getattr(widget, "tooltip_targets", None)
+        targets = tuple(targets_provider()) if callable(targets_provider) else (widget,)
+        self.targets = targets or (widget,)
+        host = widget.winfo_toplevel()
+        controller = getattr(host, "_vodforge_tooltip_controller", None)
+        if controller is None:
+            controller = _TooltipController(host)
+            setattr(host, "_vodforge_tooltip_controller", controller)
+        self.controller: _TooltipController = controller
+        for target in self.targets:
+            target.bind("<Enter>", lambda _event, tooltip=self: tooltip.controller.request_show(tooltip), add="+")
+            target.bind("<Leave>", lambda _event, tooltip=self: tooltip.controller.request_hide(tooltip), add="+")
+            target.bind("<ButtonPress>", lambda _event, tooltip=self: tooltip.controller.hide(), add="+")
+            target.bind("<Destroy>", lambda _event, tooltip=self: tooltip.controller.hide(), add="+")
+
+    def contains_pointer(self) -> bool:
+        try:
+            pointer_x, pointer_y = self.widget.winfo_pointerxy()
+        except tk.TclError:
+            return False
+        return pointer_inside_widget_bounds(self.targets, pointer_x, pointer_y)
+
+    def anchor_bounds(self) -> tuple[int, int, int, int]:
+        bounds: list[tuple[int, int, int, int]] = []
+        for target in self.targets:
+            try:
+                if target.winfo_ismapped():
+                    left = target.winfo_rootx()
+                    top = target.winfo_rooty()
+                    bounds.append((left, top, left + target.winfo_width(), top + target.winfo_height()))
+            except tk.TclError:
+                continue
+        if not bounds:
+            raise ValueError("tooltip target is not visible")
+        return (
+            min(item[0] for item in bounds),
+            min(item[1] for item in bounds),
+            max(item[2] for item in bounds),
+            max(item[3] for item in bounds),
+        )
 
 
 class SleekProgressbar(tk.Canvas):
@@ -4569,6 +4725,10 @@ class SegmentedSelector(tk.Frame):
             self._labels[value] = label
         self._trace_id = variable.trace_add("write", lambda *_args: self._sync())
         self._sync()
+
+    def tooltip_targets(self) -> tuple[tk.Label, ...]:
+        """Use only the visible segments as tooltip hit zones, not the frame."""
+        return tuple(self._labels.values())
 
     def _set_hover(self, value: str, hovered: bool) -> None:
         if self._variable.get() == value:
