@@ -251,15 +251,16 @@ def focus_hero_thumbnail_visible(width: int) -> bool:
     return int(width) >= 720
 
 
-def focus_wheel_pixels(delta: int) -> int:
+def focus_wheel_pixels(delta: int | float) -> int:
     """Normalize high-resolution trackpad and coarse wheel deltas to pixels."""
-    raw_delta = int(delta)
+    raw_delta = float(delta)
     if raw_delta == 0:
         return 0
     pixels = -raw_delta
     if abs(raw_delta) >= 120:
         pixels = -round(raw_delta / 120) * 36
-    return max(-72, min(72, pixels))
+    magnitude = max(1, round(abs(pixels)))
+    return int(max(-72, min(72, magnitude if pixels > 0 else -magnitude)))
 
 
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
@@ -6196,7 +6197,7 @@ class DownloaderApp(tk.Tk):
 
         # A borderless, transient surface keeps this in the app as an anchored
         # drop-up rather than opening another titled window. Its list is capped
-        # at six visible rows; the sleek scrollbar owns the overflow.
+        # at five visible rows; the sleek scrollbar owns the overflow.
         popup = tk.Toplevel(self)
         self._focus_run_list_window = popup
         popup.overrideredirect(True)
@@ -6305,14 +6306,26 @@ class DownloaderApp(tk.Tk):
         run_list.bind("<Escape>", lambda _event: close_drop_up())
 
         def scroll_runs(event: tk.Event[Any]) -> str:
-            pixels = focus_wheel_pixels(int(getattr(event, "delta", 0)))
+            pixels = focus_wheel_pixels(getattr(event, "delta", 0))
             if pixels:
                 run_list.yview_scroll(pixels, "units")
             return "break"
 
-        run_list.bind("<MouseWheel>", scroll_runs)
-        run_list.bind("<Button-4>", lambda _event: (run_list.yview_scroll(-36, "units"), "break")[1])
-        run_list.bind("<Button-5>", lambda _event: (run_list.yview_scroll(36, "units"), "break")[1])
+        def scroll_runs_up(_event: tk.Event[Any]) -> str:
+            run_list.yview_scroll(-36, "units")
+            return "break"
+
+        def scroll_runs_down(_event: tk.Event[Any]) -> str:
+            run_list.yview_scroll(36, "units")
+            return "break"
+
+        # macOS can target the canvas, its padding frame, the scrollbar, or the
+        # borderless toplevel itself during a trackpad gesture. Bind every
+        # surface inside this transient so the open drop-up owns the gesture.
+        for wheel_target in (popup, root, run_list, run_scroll):
+            wheel_target.bind("<MouseWheel>", scroll_runs, add="+")
+            wheel_target.bind("<Button-4>", scroll_runs_up, add="+")
+            wheel_target.bind("<Button-5>", scroll_runs_down, add="+")
         popup.bind("<Escape>", lambda _event: close_drop_up())
         popup.bind("<FocusOut>", lambda _event: popup.after(50, close_if_focus_left), add="+")
 

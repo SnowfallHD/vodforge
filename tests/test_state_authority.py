@@ -590,7 +590,8 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     assert "yscrollincrement=1" in run_list_source
     assert "SleekScrollbar(root, command=run_list.yview)" in run_list_source
     assert 'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)' in run_list_source
-    assert 'run_list.bind("<MouseWheel>", scroll_runs)' in run_list_source
+    assert "for wheel_target in (popup, root, run_list, run_scroll):" in run_list_source
+    assert 'wheel_target.bind("<MouseWheel>", scroll_runs, add="+")' in run_list_source
     assert "button.winfo_rooty() - height - 6" in run_list_source
     assert "width = min(440" in run_list_source
     assert "height = min(184" in run_list_source

@@ -447,6 +447,8 @@ def test_focus_run_drop_up_normalizes_trackpad_and_mouse_wheel_motion_to_pixels(
     assert focus_wheel_pixels(0) == 0
     assert focus_wheel_pixels(3) == -3
     assert focus_wheel_pixels(-7) == 7
+    assert focus_wheel_pixels(0.4) == -1
+    assert focus_wheel_pixels(-0.4) == 1
     assert focus_wheel_pixels(120) == -36
     assert focus_wheel_pixels(-120) == 36
     assert focus_wheel_pixels(480) == -72
