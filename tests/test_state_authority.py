@@ -995,6 +995,8 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
         "vodforge_output_type": "MP4",
     }
     unrelated.metadata_keys.add(("other-item", "MP4"))
+    active = make_job(tmp_path, video_id="stopped-item")
+    queued = make_job(tmp_path, video_id="stopped-item")
 
     app = DownloaderApp.__new__(DownloaderApp)
     app.video_tree = SelectedTree()
@@ -1005,6 +1007,8 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
     app.history_path = tmp_path / "history.json"
     app._terminal_jobs = [stopped, unrelated]
     app._completed_jobs = []
+    app.active_job = active
+    app.pending_jobs = [queued]
     app.status_var = Value("")
     app._render_metadata_tree = lambda: None
     monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
@@ -1013,6 +1017,14 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
 
     assert app.metadata_items == []
     assert [job.run_id for job in app._terminal_jobs] == [unrelated.run_id]
+    assert app.active_job is active
+    assert app.pending_jobs == [queued]
+    assert "Library and Forge recents" in app.status_var.get()
+
+    removal_source = inspect.getsource(DownloaderApp._remove_library_item_from_forge_recents)
+    assert "never execution or files" in removal_source
+    assert "active_job" not in removal_source
+    assert "pending_jobs" not in removal_source
 
 
 def test_cancelled_active_run_links_its_library_row_to_the_terminal_recent(tmp_path: Path):

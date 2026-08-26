@@ -9333,7 +9333,11 @@ class DownloaderApp(tk.Tk):
         title = str(info.get("title") or info.get("id") or "this item")
         if not messagebox.askyesno(
             APP_NAME,
-            f"Remove “{title}” from VODForge Library?\n\nThe media file and its folder will remain on your computer.",
+            (
+                f"Remove “{title}” from VODForge Library and Forge recents?\n\n"
+                "This removes its VODForge history cards. Media files and folders remain on your computer. "
+                "Any active or queued run keeps running."
+            ),
         ):
             return
         saved = history_output_dir(info)
@@ -9347,6 +9351,17 @@ class DownloaderApp(tk.Tk):
                 self.download_history = previous_history
                 messagebox.showerror(APP_NAME, str(exc))
                 return
+        self._remove_library_item_from_forge_recents(info)
+        self.metadata_items.pop(index)
+        self._rebuild_output_dir_index()
+        self._render_metadata_tree()
+        self.status_var.set("Removed the item from Library and Forge recents. Media files were not deleted.")
+
+    def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> None:
+        """Remove presentation history for one Library item, never execution or files."""
+        saved = history_output_dir(info)
+        if saved is not None:
+            identity = history_identity(info)
             for completed_job in self.__dict__.get("_completed_jobs", []):
                 completed_job.history_identities.discard(identity)
         terminal_run_ids = {str(info.get("vodforge_terminal_run_id") or "")}
@@ -9359,10 +9374,6 @@ class DownloaderApp(tk.Tk):
         terminal_run_ids.discard("")
         if terminal_run_ids:
             self._terminal_jobs = [job for job in self._terminal_jobs if job.run_id not in terminal_run_ids]
-        self.metadata_items.pop(index)
-        self._rebuild_output_dir_index()
-        self._render_metadata_tree()
-        self.status_var.set("Removed the Library record. The media file was not deleted.")
 
     def _set_text(self, widget: tk.Text, text: str, *, disabled: bool = False) -> None:
         widget.config(state="normal")
