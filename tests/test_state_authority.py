@@ -9,6 +9,9 @@ and each thumbnail surface owns its own asynchronous request generation.
 from dataclasses import replace
 import inspect
 from pathlib import Path
+import queue
+
+import yt_downloader.app as app_module
 
 from yt_downloader.app import (
     DownloadJob,
@@ -30,6 +33,41 @@ class Value:
 
     def set(self, value):
         self.value = value
+
+
+class TextBuffer:
+    def __init__(self):
+        self.value = ""
+
+    def config(self, **_kwargs):
+        return None
+
+    def insert(self, _index, value):
+        self.value += str(value)
+
+    def delete(self, _start, _end):
+        self.value = ""
+
+    def see(self, _index):
+        return None
+
+
+class LiveWorker:
+    def is_alive(self):
+        return True
+
+
+class Control:
+    def config(self, **_kwargs):
+        return None
+
+
+class SelectedTree:
+    def __init__(self, index: int = 0):
+        self.index = index
+
+    def selection(self):
+        return (str(self.index),)
 
 
 def make_job(tmp_path: Path, *, video_id: str = "authority-id") -> DownloadJob:
@@ -99,8 +137,119 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     assert app.focus_active_detail_var.get() == "Forge-owned creator"
     assert app.focus_active_duration_var.get() == "9:59"
     assert app.focus_active_profile_var.get() == "Forge-owned profile"
+    assert app.status_var.get() == "Ready"
     assert thumbnail_requests == [("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")]
     assert "Library selection" in app.selected_title_var.get()
+
+
+def test_run_log_updates_activity_and_only_the_selected_active_run(tmp_path: Path):
+    active_job = make_job(tmp_path)
+    worker_copy = replace(active_job)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active_job
+    app._focus_selected_run_id = active_job.run_id
+    app.log = TextBuffer()
+    app.focus_log = TextBuffer()
+
+    app._append_job_log(worker_copy, "active-only line")
+
+    assert "active-only line" in app.log.value
+    assert "active-only line" in app.focus_log.value
+    assert active_job.activity_lines == ["active-only line"]
+
+    app._focus_selected_run_id = "completed-run"
+    app._append_job_log(worker_copy, "background active line")
+
+    assert "background active line" in app.log.value
+    assert "background active line" not in app.focus_log.value
+    assert active_job.activity_lines[-1] == "background active line"
+
+
+def test_completed_selection_freezes_detail_progress_while_active_run_advances(tmp_path: Path):
+    active_job = make_job(tmp_path, video_id="active")
+    completed_info = {
+        "id": "completed",
+        "title": "Completed run",
+        "uploader": "Completed creator",
+        "duration": 60,
+        "vodforge_output_type": "MP4",
+        "vodforge_encoding_summary": {
+            "output": {
+                "Resolution": "1920x1080",
+                "Output rate-control mode": "Auto CBR",
+            }
+        },
+    }
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active_job
+    app.worker = LiveWorker()
+    app._focus_active_override = False
+    app._focus_selected_run_id = "completed-run"
+    app.focus_active_title_var = Value("")
+    app.focus_active_detail_var = Value("")
+    app.focus_active_duration_var = Value("")
+    app.focus_active_profile_var = Value("")
+    app.focus_display_progress_var = Value(0)
+    app.focus_percent_var = Value("0%")
+    app.focus_display_status_var = Value("")
+    app.focus_transfer_var = Value("")
+    app.focus_run_status_var = Value("28% / Active")
+    app.focus_summary_text = TextBuffer()
+    app.focus_log = TextBuffer()
+    app.progress_var = Value(28)
+    app._display_focus_record_thumbnail = lambda *_args: None
+
+    app._display_focus_metadata_snapshot(
+        {"run_id": "completed-run", "kind": "completed"},
+        completed_info,
+    )
+    app.progress_var.set(64)
+    app._sync_focus_progress()
+
+    assert app.focus_active_title_var.get() == "Completed run"
+    assert app.focus_display_progress_var.get() == 100
+    assert app.focus_percent_var.get() == "100%"
+    assert app.focus_run_status_var.get() == "64%  /  Active"
+
+
+def test_completed_run_thumbnail_selection_uses_each_records_own_image(tmp_path: Path):
+    first = tmp_path / "first.jpg"
+    second = tmp_path / "second.jpg"
+    first.touch()
+    second.touch()
+    app = DownloaderApp.__new__(DownloaderApp)
+    loaded: list[tuple[Path, str, str]] = []
+    app._load_thumbnail_file = lambda path, *, target, owner_run_id="": loaded.append((path, target, owner_run_id))
+
+    app._display_focus_record_thumbnail(
+        {"run_id": "first-run"},
+        {"preview_thumbnail_path": str(first)},
+    )
+    app._display_focus_record_thumbnail(
+        {"run_id": "second-run"},
+        {"preview_thumbnail_path": str(second)},
+    )
+
+    assert loaded == [
+        (first, "active", "first-run"),
+        (second, "active", "second-run"),
+    ]
+
+
+def test_bounded_thumbnail_fetch_is_not_serialized_behind_media_provider(monkeypatch):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._closing = False
+    app._thumbnail_preview_request_ids = {"active": 7, "library": 0}
+    app.events = queue.Queue()
+    monkeypatch.setattr("yt_downloader.app.download_bounded_url_bytes", lambda *_args, **_kwargs: b"image")
+    app._provider_network_coordinator = lambda: (_ for _ in ()).throw(AssertionError("provider gate used"))
+
+    app._fetch_thumbnail_preview_request(7, "https://example.test/thumb.jpg", "active", "run-7")
+
+    kind, payload = app.events.get_nowait()
+    assert kind == "thumbnail_preview_result"
+    assert payload["data"] == b"image"
+    assert payload["run_id"] == "run-7"
 
 
 def test_thumbnail_request_generations_are_independent_by_surface():
@@ -213,3 +362,245 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     assert launched[0].metadata_keys == set()
     assert launched[0].history_identities == set()
     assert launched[0].terminal_status is None
+
+
+def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(tmp_path: Path):
+    failed_job = make_job(tmp_path)
+    failed_job.url = "https://youtu.be/authority-id"
+    failed_job.terminal_status = "Failed"
+    failed_job.preview_info = {
+        "id": "authority-id",
+        "playlist_id": "PLauthority",
+        "vodforge_output_type": "MP4",
+        "vodforge_terminal_run_id": failed_job.run_id,
+    }
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = [failed_job]
+    app.metadata_items = [dict(failed_job.preview_info)]
+    app.active_job = None
+    app.worker = None
+    launched: list[DownloadJob] = []
+    app._launch_download_job = launched.append
+
+    app._retry_terminal_job(failed_job)
+
+    assert len(launched) == 1
+    assert launched[0].url == "https://www.youtube.com/watch?v=authority-id&list=PLauthority"
+    assert launched[0].urls == [launched[0].url]
+    assert app.metadata_items == []
+
+
+def test_skipped_item_is_one_terminal_run_not_a_preview_duplicate(tmp_path: Path):
+    skipped = make_job(tmp_path)
+    skipped.terminal_status = "Skipped"
+    skipped.preview_info = {
+        "id": "authority-id",
+        "title": "Skipped item",
+        "vodforge_output_type": "MP4",
+        "vodforge_terminal_status": "Skipped",
+        "vodforge_terminal_run_id": skipped.run_id,
+    }
+    skipped.metadata_keys.add(("authority-id", "MP4"))
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_preview_runs = None
+    app._focus_active_override = False
+    app.active_job = None
+    app.worker = None
+    app.pending_jobs = []
+    app._terminal_jobs = [skipped]
+    app._completed_jobs = []
+    app.metadata_items = [dict(skipped.preview_info)]
+    app.url_var = Value("")
+    app.focus_active_title_var = Value("")
+    app.focus_active_detail_var = Value("")
+    app.status_var = Value("Ready")
+    app.progress_var = Value(0)
+
+    records = app._focus_run_records()
+
+    assert [(record["kind"], record["run_id"]) for record in records] == [
+        ("skipped", skipped.run_id)
+    ]
+    assert records[0]["metadata_index"] == 0
+
+
+def test_retry_joins_latest_queue_position_with_fresh_authority(tmp_path: Path):
+    failed = make_job(tmp_path, video_id="failed")
+    failed.terminal_status = "Failed"
+    active = make_job(tmp_path, video_id="active")
+    queued = make_job(tmp_path, video_id="queued")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = [failed]
+    app.metadata_items = []
+    app.active_job = active
+    app.worker = LiveWorker()
+    app.pending_jobs = [queued]
+    app._enqueue_queue_preview = lambda _job: None
+    app._refresh_focus_run_deck = lambda: None
+
+    app._retry_terminal_job(failed)
+
+    assert app.pending_jobs[0] is queued
+    assert app.pending_jobs[1].run_id != failed.run_id
+    assert app.pending_jobs[1].url == failed.url
+
+
+def test_newest_completed_run_remains_owner_of_a_repeated_history_identity(tmp_path: Path):
+    info = {"id": "same", "title": "Same item", "vodforge_output_type": "MP4"}
+    saved = upsert_history([], info, tmp_path)[0]
+    identity = history_identity(saved)
+    newest = make_job(tmp_path, video_id="same")
+    oldest = make_job(tmp_path, video_id="same")
+    newest.history_identities.add(identity)
+    oldest.history_identities.add(identity)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_preview_runs = None
+    app._focus_active_override = False
+    app.active_job = None
+    app.worker = None
+    app.pending_jobs = []
+    app._terminal_jobs = []
+    app._completed_jobs = [newest, oldest]
+    app.metadata_items = [saved]
+    app.url_var = Value("")
+    app.focus_active_title_var = Value("")
+    app.focus_active_detail_var = Value("")
+    app.status_var = Value("Ready")
+    app.progress_var = Value(0)
+
+    records = app._focus_run_records()
+
+    assert len(records) == 1
+    assert records[0]["job"] is newest
+    assert records[0]["run_id"] == newest.run_id
+
+
+def test_one_item_skip_does_not_archive_a_second_parent_terminal_card(tmp_path: Path):
+    parent = make_job(tmp_path)
+    parent.item_terminal_emitted = True
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = parent
+    app._append_job_log = lambda *_args: None
+    app._archive_active_terminal_job = lambda *_args: (_ for _ in ()).throw(AssertionError("duplicate parent terminal"))
+    app.progress_var = Value(0)
+    app.status_var = Value("")
+    app.download_button = Control()
+    app.cancel_button = Control()
+    app.skip_video_button = Control()
+    app.skip_url_button = Control()
+    app._launch_next_pending_job = lambda: False
+
+    app._finish_run_ui("Stopped after skip", "Stopped", "Stopped")
+
+    assert app.status_var.get() == "Stopped after skip"
+
+
+def test_single_url_worker_mutates_the_active_authority_not_a_private_copy(tmp_path: Path):
+    active = make_job(tmp_path)
+    app = DownloaderApp.__new__(DownloaderApp)
+
+    def worker(received):
+        assert received is active
+        received.item_terminal_emitted = True
+
+    app._download_worker_single = worker
+    app._download_worker(active)
+
+    assert active.item_terminal_emitted is True
+
+
+def test_background_run_thumbnail_error_cannot_replace_selected_run_surface():
+    class Label:
+        def __init__(self):
+            self.text = "selected thumbnail"
+
+        def config(self, **kwargs):
+            self.text = str(kwargs.get("text") or "")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._thumbnail_preview_request_ids = {"active": 0, "library": 0, "run:active-run": 3}
+    app._focus_selected_run_id = "completed-run"
+    app.focus_active_thumbnail_label = Label()
+    app.thumbnail_label = Label()
+    app._refresh_focus_run_deck = lambda: None
+
+    app._display_thumbnail_preview_result({
+        "id": 3,
+        "url": "https://example.invalid/thumb.jpg",
+        "target": "run:active-run",
+        "run_id": "active-run",
+        "error": "network failed",
+    })
+
+    assert app.focus_active_thumbnail_label.text == "selected thumbnail"
+
+
+def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surface(monkeypatch):
+    class Label:
+        def __init__(self):
+            self.text = "selected thumbnail"
+
+        def config(self, **kwargs):
+            self.text = str(kwargs.get("text") or "")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._thumbnail_preview_request_ids = {"active": 0, "library": 0, "run:active-run": 3}
+    app._focus_selected_run_id = "completed-run"
+    app.focus_active_thumbnail_label = Label()
+    app.thumbnail_label = Label()
+    app.focus_run_deck = object()
+    app._refresh_focus_run_deck = lambda: None
+    monkeypatch.setattr(
+        app_module,
+        "decode_bounded_thumbnail",
+        lambda _data: (_ for _ in ()).throw(ValueError("invalid pixels")),
+    )
+
+    app._display_thumbnail_preview_result({
+        "id": 3,
+        "url": "https://example.invalid/thumb.jpg",
+        "target": "run:active-run",
+        "run_id": "active-run",
+        "data": b"not an image",
+    })
+
+    assert app.thumbnail_label.text == "selected thumbnail"
+
+
+def test_all_resizable_popouts_enforce_content_appropriate_minimums():
+    compact_source = inspect.getsource(DownloaderApp._build_ui)
+    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
+    selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
+
+    assert "popup.minsize(popup_width, popup_height)" in compact_source
+    assert "popup.minsize(700, 540)" in settings_source
+    assert "popup.minsize(480, 300)" in output_source
+    assert "popup.minsize(560, 520)" in selected_source
+    assert "height=135" in selected_source
+
+
+def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path: Path):
+    output_dir = tmp_path / "Creator" / "playlists" / "Playlist" / "Video [authority-id]"
+    output_dir.mkdir(parents=True)
+    media = output_dir / "Video.mp4"
+    media.write_bytes(b"keep me")
+    info = {"id": "authority-id", "title": "Video", "vodforge_output_type": "MP4"}
+    saved = upsert_history([], info, output_dir)[0]
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = SelectedTree()
+    app.metadata_items = [saved]
+    app.download_history = [saved]
+    app.history_path = tmp_path / "history.json"
+    app._terminal_jobs = []
+    app._completed_jobs = []
+    app.status_var = Value("")
+    app._render_metadata_tree = lambda: None
+    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    app._remove_selected_library_item()
+
+    assert media.read_bytes() == b"keep me"
+    assert app.metadata_items == []
+    assert app.download_history == []
+    assert "not deleted" in app.status_var.get()

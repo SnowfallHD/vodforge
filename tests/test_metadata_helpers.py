@@ -9,6 +9,7 @@ import pytest
 from PIL import Image
 
 import yt_downloader.app as app_module
+from yt_downloader.history import history_output_dir, upsert_history
 from yt_downloader.app import (
     AudioExportPlan,
     CookieSource,
@@ -19,6 +20,7 @@ from yt_downloader.app import (
     DownloadJob,
     DownloadOutcome,
     DownloaderApp,
+    ExportPlan,
     ExportMode,
     Mp3ExportSettings,
     OutputType,
@@ -37,6 +39,11 @@ from yt_downloader.app import (
     center_alpha_content,
     cached_thumbnail_path,
     embed_custom_mp3_cover_art,
+    existing_output_candidate_dirs,
+    find_valid_existing_output,
+    output_artifact_matches_plan,
+    playlist_context_from_extraction,
+    retry_url_for_item,
     single_video_url_requires_video_id_error,
     build_tags_display_text,
     build_vod_ffmpeg_command,
@@ -96,6 +103,8 @@ from yt_downloader.app import (
     video_file_name,
     video_output_dir,
     youtube_thumbnail_size,
+    youtube_url_playlist_id,
+    youtube_url_video_id,
     ytdlp_ffmpeg_location,
     validate_output_artifact,
     write_compact_video_metadata,
@@ -775,10 +784,67 @@ def test_ignore_playlists_is_the_safe_default():
 def test_batch_watch_urls_with_playlist_context_are_processed_as_single_videos():
     url = "https://www.youtube.com/watch?v=abc123&list=PLmix&index=12&t=30s"
 
-    cleaned_url, single_video_only = prepare_batch_item_url(url)
+    preserved_url, single_video_only = prepare_batch_item_url(url)
 
-    assert cleaned_url == "https://www.youtube.com/watch?v=abc123&t=30s"
+    assert preserved_url == url
     assert single_video_only is True
+    assert youtube_url_video_id(preserved_url) == "abc123"
+    assert youtube_url_playlist_id(preserved_url) == "PLmix"
+
+
+def test_existing_playlist_output_candidates_include_canonical_and_legacy_paths(tmp_path: Path):
+    info = {
+        "id": "abc123",
+        "title": "One song",
+        "uploader": "Creator",
+        "playlist_id": "PLmix",
+        "playlist_title": "The Mix",
+    }
+
+    candidates = existing_output_candidate_dirs(tmp_path, info, "One song.mp4")
+
+    assert candidates[0] == tmp_path / "Creator" / "playlists" / "The Mix" / "One song [abc123]"
+    assert tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]" in candidates
+
+
+def test_valid_legacy_single_output_is_reused_by_later_playlist_run(monkeypatch, tmp_path: Path):
+    info = {
+        "id": "abc123",
+        "title": "One song",
+        "uploader": "Creator",
+        "playlist_id": "PLmix",
+        "playlist_title": "The Mix",
+    }
+    legacy = tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]" / "One song.mp4"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_bytes(b"valid-media")
+    probe = {"format": {"duration": "30", "format_name": "mp4"}, "streams": []}
+    validated: list[Path] = []
+
+    def validate(path, *_args, **_kwargs):
+        validated.append(path)
+        return probe
+
+    monkeypatch.setattr(app_module, "validate_output_artifact", validate)
+
+    found = find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe")
+
+    assert found == (legacy, probe)
+    assert validated == [legacy]
+
+
+def test_invalid_existing_output_is_not_treated_as_downloaded(monkeypatch, tmp_path: Path):
+    info = {"id": "abc123", "title": "One song", "uploader": "Creator"}
+    candidate = tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]" / "One song.mp4"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_bytes(b"corrupt")
+    monkeypatch.setattr(
+        app_module,
+        "validate_output_artifact",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("corrupt")),
+    )
+
+    assert find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe") is None
 
 
 def test_batch_playlist_urls_remain_playlist_jobs():
@@ -1167,6 +1233,265 @@ def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(monk
     assert results == [canonical, canonical]
     assert app_module.decode_bounded_thumbnail(canonical.read_bytes()).size == (16, 9)
     assert not list(canonical.parent.glob(".*.tmp"))
+
+
+def test_existing_mp4_must_match_the_requested_export_plan_not_only_container_and_codecs():
+    plan = ExportPlan(
+        mode=ExportMode.AUTO_CBR,
+        video_format_id="137",
+        audio_format_id="251",
+        format_selector="137+251",
+        output_width=1920,
+        output_height=1080,
+        source_video_kbps=3000,
+        effective_video_kbps=3000,
+        video_bitrate_kbps=2000,
+        source_audio_kbps=130,
+        effective_audio_kbps=130,
+        audio_bitrate_kbps=192,
+        audio_sample_rate="48000",
+        audio_channels="2",
+    )
+    matching = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "bit_rate": "1999000",
+                "pix_fmt": "yuv420p",
+                "profile": "High",
+            },
+            {"codec_type": "audio", "codec_name": "aac", "bit_rate": "194000", "sample_rate": "48000", "channels": 2},
+        ],
+        "format": {"format_name": "mov,mp4", "tags": {}},
+    }
+    sidecar_summary = {
+        "Output rate-control mode": "Auto CBR",
+        "Target video bitrate": "2000 kbps",
+        "Target audio bitrate": "192 kbps",
+    }
+    stale_360p = {
+        **matching,
+        "streams": [{**matching["streams"][0], "width": 640, "height": 360}, matching["streams"][1]],
+    }
+
+    assert output_artifact_matches_plan(
+        matching,
+        plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        custom_cover_art=False,
+        expected_tags=[],
+        sidecar_summary=sidecar_summary,
+    )
+    assert not output_artifact_matches_plan(
+        stale_360p,
+        plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        custom_cover_art=False,
+        expected_tags=[],
+        sidecar_summary=sidecar_summary,
+    )
+    assert not output_artifact_matches_plan(
+        {**matching, "streams": [{**matching["streams"][0], "profile": "Main"}, matching["streams"][1]]},
+        plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        custom_cover_art=False,
+        expected_tags=[],
+        sidecar_summary=sidecar_summary,
+    )
+
+
+def test_existing_mp3_rejects_stale_bitrate_and_custom_cover_request():
+    plan = AudioExportPlan(
+        output_type=OutputType.MP3,
+        audio_format_id="251",
+        format_selector="251",
+        source_audio_kbps=130,
+        effective_audio_kbps=130,
+        audio_bitrate_kbps=320,
+        source_sample_rate="48000",
+        output_sample_rate="48000",
+        source_channels="2",
+        output_channels="2",
+        audio_codec="opus",
+        embed_metadata=False,
+        embed_cover_art=False,
+        cover_art_source="No Art",
+    )
+    probe = {
+        "streams": [{"codec_type": "audio", "codec_name": "mp3", "bit_rate": "128000", "sample_rate": "48000", "channels": 2}],
+        "format": {"format_name": "mp3", "tags": {}},
+    }
+    sidecar_summary = {
+        "Output rate-control mode": "CBR",
+        "Target audio bitrate": "320 kbps",
+    }
+
+    assert not output_artifact_matches_plan(
+        probe,
+        plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        custom_cover_art=False,
+        expected_tags=[],
+        sidecar_summary=sidecar_summary,
+    )
+    probe["streams"][0]["bit_rate"] = "320000"
+    assert not output_artifact_matches_plan(
+        probe,
+        plan,
+        embed_metadata=False,
+        embed_cover_art=True,
+        custom_cover_art=True,
+        expected_tags=[],
+        sidecar_summary=sidecar_summary,
+    )
+
+
+def test_retry_url_and_playlist_context_preserve_real_playlist_identity_only():
+    retry = retry_url_for_item(
+        {"id": "video123", "playlist_id": "PLreal"},
+        "https://youtu.be/video123",
+    )
+    assert retry == "https://www.youtube.com/watch?v=video123&list=PLreal"
+    playlist = {"_type": "playlist", "id": "PLreal", "title": "Real playlist", "entries": []}
+    ordinary_video = {"id": "video123", "title": "Ordinary video"}
+    assert playlist_context_from_extraction(playlist, retry) is playlist
+    assert playlist_context_from_extraction(ordinary_video, retry) == {"webpage_url": retry}
+
+
+def test_removed_library_record_is_rediscovered_from_disk_and_readded_without_duplicate(monkeypatch, tmp_path: Path):
+    info = {
+        "id": "video123",
+        "title": "Playlist item",
+        "uploader": "Creator",
+        "playlist_id": "PLreal",
+        "playlist_title": "Real playlist",
+        "duration": 60,
+        "vodforge_output_type": "MP4",
+    }
+    target_dir = video_output_dir(tmp_path, info)
+    target_dir.mkdir(parents=True)
+    target = target_dir / video_file_name(info, ".mp4")
+    target.write_bytes(b"existing validated media")
+    plan = ExportPlan(
+        mode=ExportMode.AUTO_CBR,
+        video_format_id="137",
+        audio_format_id="251",
+        format_selector="137+251",
+        output_width=1920,
+        output_height=1080,
+        source_video_kbps=3000,
+        effective_video_kbps=3000,
+        video_bitrate_kbps=2000,
+        source_audio_kbps=130,
+        effective_audio_kbps=130,
+        audio_bitrate_kbps=192,
+        audio_sample_rate="48000",
+        audio_channels="2",
+    )
+    probe = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "bit_rate": "2000000",
+                "pix_fmt": "yuv420p",
+                "profile": "High",
+            },
+            {"codec_type": "audio", "codec_name": "aac", "bit_rate": "192000", "sample_rate": "48000", "channels": 2},
+        ],
+        "format": {"format_name": "mov,mp4", "duration": "60", "tags": {}},
+    }
+    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    write_compact_video_metadata(
+        target_dir,
+        build_encoding_summary_metadata(info, plan, output_path=target, ffprobe_data=probe, validation_status="Validated"),
+        [],
+    )
+
+    removed_library_history: list[dict] = []
+    found = find_valid_existing_output(
+        tmp_path,
+        info,
+        OutputType.MP4,
+        "ffprobe",
+        plan=plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        expected_tags=[],
+        expected_duration_seconds=60,
+    )
+    assert found is not None and found[0] == target
+    restored_history = upsert_history(removed_library_history, info, found[0].parent)
+    assert len(restored_history) == 1
+    assert history_output_dir(restored_history[0]) == target.parent
+    assert target.is_file()
+
+
+def test_moved_media_with_leftover_sidecars_redownloads_to_same_single_library_identity(tmp_path: Path):
+    info = {
+        "id": "video123",
+        "title": "Playlist item",
+        "uploader": "Creator",
+        "playlist_id": "PLreal",
+        "playlist_title": "Real playlist",
+        "duration": 60,
+        "vodforge_output_type": "MP4",
+    }
+    item_dir = video_output_dir(tmp_path, info)
+    item_dir.mkdir(parents=True)
+    media = item_dir / video_file_name(info, ".mp4")
+    media.write_bytes(b"original media")
+    (item_dir / "thumbnail.jpeg").write_bytes(b"sidecar art")
+    (item_dir / "metadata.json").write_text("{}", encoding="utf-8")
+    history = upsert_history([], info, item_dir)
+
+    moved_dir = tmp_path / "User organized elsewhere"
+    moved_dir.mkdir()
+    moved_media = moved_dir / media.name
+    media.replace(moved_media)
+
+    assert find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe") is None
+    assert moved_media.read_bytes() == b"original media"
+    assert (item_dir / "thumbnail.jpeg").is_file()
+    assert (item_dir / "metadata.json").is_file()
+
+    # A later successful download returns to the same canonical item folder.
+    media.write_bytes(b"new canonical media")
+    refreshed = upsert_history(history, info, item_dir)
+    assert len(refreshed) == 1
+    assert history_output_dir(refreshed[0]) == item_dir
+    assert moved_media.is_file()
+    assert media.is_file()
+
+
+def test_moved_media_never_reuses_valid_vodforge_transcode_backups(monkeypatch, tmp_path: Path):
+    info = {"id": "video123", "title": "Video", "uploader": "Creator"}
+    item_dir = video_output_dir(tmp_path, info)
+    item_dir.mkdir(parents=True)
+    target_name = video_file_name(info, ".mp4")
+    for backup_name in (
+        "__vodforge-original.mp4",
+        "__vodforge-tmp.mp4",
+        f"{Path(target_name).stem}.pre-vodforge.mp4",
+        f"{Path(target_name).stem}.vodforge-tmp.mp4",
+    ):
+        (item_dir / backup_name).write_bytes(b"valid-looking backup")
+    monkeypatch.setattr(
+        app_module,
+        "validate_output_artifact",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("transient backup must not be probed")),
+    )
+
+    assert find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe") is None
 
 
 def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(tmp_path: Path):
@@ -2175,6 +2500,9 @@ def test_ffprobe_json_uses_unicode_safe_decoding(monkeypatch, tmp_path: Path):
     assert seen["kwargs"]["timeout"] == app_module.FFPROBE_TIMEOUT_SECONDS
     assert "-show_entries" in seen["command"]
     assert "-show_streams" not in seen["command"]
+    show_entries = seen["command"][seen["command"].index("-show_entries") + 1]
+    assert "format_tags" in show_entries
+    assert "stream_disposition" in show_entries
 
 
 def test_output_validator_accepts_expected_mp4_and_mp3_streams(tmp_path: Path):

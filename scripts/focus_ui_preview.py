@@ -9,7 +9,16 @@ from types import SimpleNamespace
 os.environ.setdefault("VODFORGE_LEGACY_UI", "0")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from yt_downloader.app import COOKIE_BROWSER_OPTIONS, COOKIE_SOURCE_OPTIONS, DownloaderApp, OutputType
+from yt_downloader.app import (
+    COOKIE_BROWSER_OPTIONS,
+    COOKIE_SOURCE_OPTIONS,
+    DownloadJob,
+    DownloaderApp,
+    ExportMode,
+    ManualExportSettings,
+    Mp3ExportSettings,
+    OutputType,
+)
 
 PREVIEW_THUMBNAILS = Path(__file__).resolve().parents[1] / "assets" / "preview_thumbnails"
 
@@ -132,6 +141,9 @@ def main() -> None:
     parser.add_argument("--run-actions", action="store_true")
     parser.add_argument("--overflow", action="store_true")
     parser.add_argument("--copy-feedback", choices=("tags", "description", "thumbnail"))
+    parser.add_argument("--terminal", choices=("failed", "skipped"))
+    parser.add_argument("--selected-details", action="store_true")
+    parser.add_argument("--output-details", action="store_true")
     args = parser.parse_args()
 
     app = DownloaderApp()
@@ -149,6 +161,37 @@ def main() -> None:
     app.cookie_source_var.set(args.cookie_source)
     app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     app.metadata_items = preview_metadata()
+    terminal_job = None
+    if args.terminal:
+        terminal_status = args.terminal.title()
+        terminal_job = DownloadJob(
+            url="https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLvisualqa",
+            output_dir=Path(app.output_var.get()),
+            output_type=output_type,
+            quality_label=app.quality_var.get(),
+            export_mode=ExportMode(app.export_mode_var.get()),
+            manual_settings=ManualExportSettings(),
+            mp3_settings=Mp3ExportSettings(),
+            single_video_only=True,
+            use_nvenc=False,
+            embed_thumbnail=False,
+            write_thumbnail=False,
+            embed_metadata=False,
+            write_info_json=False,
+            tags=[],
+            terminal_status=terminal_status,
+            terminal_message=f"Visual QA {args.terminal} run",
+        )
+        terminal_info = dict(app.metadata_items[0])
+        terminal_info.update({
+            "vodforge_terminal_status": terminal_status,
+            "vodforge_terminal_message": terminal_job.terminal_message,
+            "vodforge_terminal_run_id": terminal_job.run_id,
+        })
+        terminal_job.preview_info = terminal_info
+        terminal_job.metadata_keys.add((str(terminal_info["id"]), output_type.value))
+        app.metadata_items[0] = terminal_info
+        app._terminal_jobs = [terminal_job]
     if args.overflow:
         seed_items = list(app.metadata_items)
         for index in range(4, 32):
@@ -171,7 +214,9 @@ def main() -> None:
     app.skip_video_button.configure(state="normal")
     app.skip_url_button.configure(state="normal")
     app._focus_preview_runs = [
-        {"title": "Good Desires vs. Bad Desires", "status": f"73%  •  1m 26s left  •  {output_type.value}", "progress": 73, "kind": "active", "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg")},
+        ({"title": "Good Desires vs. Bad Desires", "status": f"{terminal_job.terminal_status}  •  {output_type.value}", "progress": 0, "kind": args.terminal, "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg"), "run_id": terminal_job.run_id, "job": terminal_job}
+         if terminal_job is not None else
+         {"title": "Good Desires vs. Bad Desires", "status": f"73%  •  1m 26s left  •  {output_type.value}", "progress": 73, "kind": "active", "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg")}),
         {"title": "Walk in the Spirit", "status": "Next  •  MP4", "progress": 0, "kind": "queued", "metadata_index": 1, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "forest-river.jpg")},
         {"title": "Fruit of the Spirit", "status": "Queued  •  MP3", "progress": 0, "kind": "queued", "metadata_index": 2, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "desert-sunset.jpg")},
         {"title": "Created for Good Works", "status": "Completed  •  MP3", "progress": 100, "kind": "completed", "metadata_index": 3, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "rainforest-falls.jpg")},
@@ -238,7 +283,7 @@ def main() -> None:
             if output_type == OutputType.MP3 and args.cover_mode == "Custom art"
             else PREVIEW_THUMBNAILS / "alpine-lake.jpg"
         )
-        app._load_thumbnail_file(active_art)
+        app._load_thumbnail_file(active_art, target="active")
         app._set_text(app.focus_log, log_lines, disabled=True)
         app._set_text(app.log, log_lines, disabled=True)
         app._set_text(app.focus_summary_text, output_lines, disabled=True)
@@ -276,6 +321,10 @@ def main() -> None:
         )
     if args.copy_feedback:
         app.after(1200, lambda: app._show_copy_feedback(args.copy_feedback))
+    if args.selected_details:
+        app.after(700, app._show_selected_metadata_details)
+    if args.output_details:
+        app.after(700, app._show_focus_output_details)
     app.mainloop()
 
 
