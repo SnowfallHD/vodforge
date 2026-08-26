@@ -261,6 +261,11 @@ def focus_library_layout_mode(width: int) -> str:
     return "wide"
 
 
+def resized_table_column_width(initial_width: int, delta: int, minimum_width: int) -> int:
+    """Clamp one user-resized table column without affecting its neighbors."""
+    return max(int(minimum_width), int(initial_width) + int(delta))
+
+
 def focus_run_deck_capacity(available_width: int, *, maximum: int = 4) -> int:
     """Show every run card that fits instead of collapsing by breakpoint."""
     safe_width = max(1, int(available_width))
@@ -3800,6 +3805,46 @@ def metadata_run_key(info: dict[str, Any]) -> tuple[str, str] | None:
     return video_id, metadata_output_type(info).value
 
 
+def focus_metadata_profile_text(info: dict[str, Any], record_kind: str) -> str:
+    """Describe saved output or a completed preview without redundant placeholders."""
+    output_type = metadata_output_type(info)
+    summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
+    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+    tokens = [output_type.value]
+    resolution = str(output.get("Resolution") or "").strip()
+    if resolution.casefold() not in {"", "unknown", "not available", "mp4", "audio only"}:
+        tokens.append(resolution)
+    mode = str(output.get("Output rate-control mode") or output.get("Target audio bitrate") or "").strip()
+    if mode.casefold() not in {"", "unknown", "not available", "not applicable"}:
+        tokens.append(mode)
+    if record_kind == "preview":
+        tokens.append("Preview complete")
+    elif record_kind == "completed" and len(tokens) == 1:
+        tokens.append("Completed")
+    return "  •  ".join(tokens)
+
+
+def preview_output_summary_display() -> str:
+    """Explain the boundary between metadata preview and produced media."""
+    return "\n".join(
+        (
+            "Output status: Preview complete",
+            "Output file path: Not produced",
+            "Next action: Start download in Forge",
+        )
+    )
+
+
+def is_metadata_preview(info: dict[str, Any] | None) -> bool:
+    """Return true only for a metadata-only item, never a terminal or saved run."""
+    return bool(
+        isinstance(info, dict)
+        and info.get("vodforge_preview_complete") is True
+        and history_output_dir(info) is None
+        and not str(info.get("vodforge_terminal_status") or "").strip()
+    )
+
+
 @dataclass(frozen=True)
 class DownloadOutcome:
     success_count: int = 0
@@ -4262,6 +4307,12 @@ class PixelScrollTable(tk.Frame):
         self._xscrollcommand: Callable[[float, float], Any] | None = None
         self._font = tkfont.Font(font=FONT_UI)
         self._header_font = tkfont.Font(font=FONT_UI_SMALL_MEDIUM)
+        self._manually_resized_columns: set[str] = set()
+        self._resize_column: str | None = None
+        self._resize_origin_x = 0.0
+        self._resize_origin_width = 0
+        self._resize_hover_column: str | None = None
+        self._resize_margin = 5
 
         self._header = tk.Canvas(self, height=self._header_height, bg=THEME["surface"], bd=0, highlightthickness=0, xscrollincrement=1)
         self._body = tk.Canvas(self, bg=THEME["surface"], bd=0, highlightthickness=0, takefocus=True, xscrollincrement=1, yscrollincrement=1)
@@ -4274,6 +4325,11 @@ class PixelScrollTable(tk.Frame):
         self._body.bind("<Down>", lambda _event: self._move_selection(1), add="+")
         self._body.bind("<Prior>", lambda _event: self._move_selection(-max(1, self._visible_rows() - 1)), add="+")
         self._body.bind("<Next>", lambda _event: self._move_selection(max(1, self._visible_rows() - 1)), add="+")
+        self._header.bind("<Motion>", self._update_resize_cursor, add="+")
+        self._header.bind("<Leave>", self._clear_resize_cursor, add="+")
+        self._header.bind("<ButtonPress-1>", self._begin_column_resize, add="+")
+        self._header.bind("<B1-Motion>", self._drag_column_resize, add="+")
+        self._header.bind("<ButtonRelease-1>", self._end_column_resize, add="+")
         self._bind_precision_scroll(self._body)
         self._bind_precision_scroll(self._header, horizontal_only=True)
 
@@ -4311,6 +4367,12 @@ class PixelScrollTable(tk.Frame):
         options["width"] = max(int(options.get("minwidth", 1)), int(options.get("width", 100)))
         self._redraw()
         return dict(options)
+
+    def layout_column(self, column: str, **kwargs: Any) -> dict[str, Any]:
+        """Apply responsive defaults while retaining widths dragged this session."""
+        if column in self._manually_resized_columns:
+            kwargs.pop("width", None)
+        return self.column(column, **kwargs)
 
     def insert(self, _parent: str, index: str | int, *, iid: str, values: tuple[Any, ...]) -> str:
         item_id = str(iid)
@@ -4405,6 +4467,82 @@ class PixelScrollTable(tk.Frame):
                 widths[stretch_indices[0]] += extra
         return [(column, widths[index], str(self._column_options[column].get("anchor", "w"))) for index, column in enumerate(self._columns)]
 
+    def _column_divider_at(self, x: int | float) -> str | None:
+        position = float(self._header.canvasx(x))
+        cursor = 0.0
+        layout = self._layout_columns()
+        for column, width, _anchor in layout[:-1]:
+            cursor += width
+            if abs(position - cursor) <= self._resize_margin:
+                return column
+        return None
+
+    def _set_header_cursor(self, cursor: str) -> None:
+        try:
+            self._header.configure(cursor=cursor)
+        except tk.TclError:
+            self._header.configure(cursor="arrow" if not cursor else "sb_h_double_arrow")
+
+    def _update_resize_cursor(self, event: tk.Event[Any]) -> None:
+        if self._resize_column is not None:
+            return
+        hovered = self._column_divider_at(event.x)
+        if hovered != self._resize_hover_column:
+            self._resize_hover_column = hovered
+            self._redraw()
+        self._set_header_cursor("sb_h_double_arrow" if hovered is not None else "")
+
+    def _clear_resize_cursor(self, _event: tk.Event[Any] | None = None) -> None:
+        if self._resize_column is not None:
+            return
+        if self._resize_hover_column is not None:
+            self._resize_hover_column = None
+            self._redraw()
+        self._set_header_cursor("")
+
+    def _begin_column_resize(self, event: tk.Event[Any]) -> str | None:
+        column = self._column_divider_at(event.x)
+        if column is None:
+            return None
+        rendered_width = next(
+            width
+            for rendered_column, width, _anchor in self._layout_columns()
+            if rendered_column == column
+        )
+        self._resize_column = column
+        self._resize_hover_column = column
+        self._resize_origin_x = float(event.x)
+        self._resize_origin_width = int(rendered_width)
+        self._column_options[column]["width"] = int(rendered_width)
+        self._column_options[column]["stretch"] = False
+        self._set_header_cursor("sb_h_double_arrow")
+        return "break"
+
+    def _drag_column_resize(self, event: tk.Event[Any]) -> str | None:
+        column = self._resize_column
+        if column is None:
+            return None
+        current_x = float(event.x)
+        options = self._column_options[column]
+        options["width"] = resized_table_column_width(
+            self._resize_origin_width,
+            round(current_x - self._resize_origin_x),
+            int(options.get("minwidth", 1)),
+        )
+        self._manually_resized_columns.add(column)
+        self._redraw()
+        return "break"
+
+    def _end_column_resize(self, event: tk.Event[Any]) -> str | None:
+        if self._resize_column is None:
+            return None
+        self._drag_column_resize(event)
+        self._resize_column = None
+        self._resize_hover_column = self._column_divider_at(event.x)
+        self._set_header_cursor("sb_h_double_arrow" if self._resize_hover_column is not None else "")
+        self._redraw()
+        return "break"
+
     def _ellipsize(self, value: Any, width: int, *, font: tkfont.Font) -> str:
         text = str(value or "")
         available = max(0, width - 16)
@@ -4421,7 +4559,8 @@ class PixelScrollTable(tk.Frame):
 
     def _redraw(self) -> None:
         try:
-            y_first, x_first = self._body.yview()[0], self._body.xview()[0]
+            y_first = self._body.yview()[0]
+            x_offset = max(0.0, float(self._body.canvasx(0)))
         except tk.TclError:
             return
         layout = self._layout_columns()
@@ -4434,6 +4573,15 @@ class PixelScrollTable(tk.Frame):
             self._header.create_rectangle(cursor, 0, cursor + width, self._header_height, fill=THEME["surface"], outline="")
             self._header.create_text(cursor + (width / 2 if anchor == "center" else 10), self._header_height / 2, text=self._ellipsize(self._headings.get(column, column), width, font=self._header_font), anchor="center" if anchor == "center" else "w", fill=THEME["muted"], font=self._header_font)
             cursor += width
+            if column != layout[-1][0]:
+                self._header.create_line(
+                    cursor,
+                    5,
+                    cursor,
+                    self._header_height - 5,
+                    fill=THEME["accent"] if column in {self._resize_column, self._resize_hover_column} else THEME["border"],
+                    width=2 if column in {self._resize_column, self._resize_hover_column} else 1,
+                )
         self._header.create_line(0, self._header_height - 1, content_width, self._header_height - 1, fill=THEME["border"])
         for row_index, item_id in enumerate(self._order):
             top = row_index * self._row_height
@@ -4448,6 +4596,7 @@ class PixelScrollTable(tk.Frame):
                 cursor += width
         self._header.configure(scrollregion=(0, 0, content_width, self._header_height))
         self._body.configure(scrollregion=(0, 0, content_width, content_height))
+        x_first = min(1.0, x_offset / max(1, content_width))
         self._body.xview_moveto(x_first)
         self._header.xview_moveto(x_first)
         self._body.yview_moveto(y_first)
@@ -7400,6 +7549,17 @@ class DownloaderApp(tk.Tk):
             self.video_tree.focus(iid)
         self._display_selected_metadata(index)
 
+    def _start_preview_record(self, record: dict[str, Any]) -> None:
+        metadata_index = record.get("metadata_index")
+        if metadata_index is None:
+            return
+        try:
+            info = self.metadata_items[int(metadata_index)]
+        except (IndexError, TypeError, ValueError):
+            return
+        if is_metadata_preview(info):
+            self._start_preview_download(info)
+
     def _display_focus_job_snapshot(self, job: DownloadJob) -> None:
         self._focus_selected_run_id = job.run_id
         info = job.preview_info or {}
@@ -7434,32 +7594,31 @@ class DownloaderApp(tk.Tk):
     def _display_focus_metadata_snapshot(self, record: dict[str, Any], info: dict[str, Any]) -> None:
         title = str(info.get("title") or info.get("id") or record.get("title") or "Untitled run")
         creator = str(info.get("uploader") or info.get("channel") or record.get("detail") or "Unknown creator")
-        output_type = metadata_output_type(info)
         self.focus_active_title_var.set(title)
         self.focus_active_detail_var.set(creator)
         duration = format_duration(info.get("duration"))
         self.focus_active_duration_var.set("" if duration == "—" else duration)
-        summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
-        output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
-        resolution = _display_value(output.get("Resolution"), "Audio only" if output_type == OutputType.MP3 else "MP4")
-        mode = _display_value(
-            output.get("Output rate-control mode"),
-            _display_value(output.get("Target audio bitrate"), "Completed"),
-        )
-        self.focus_active_profile_var.set(f"{output_type.value}  •  {resolution}  •  {mode}")
         record_kind = str(record.get("kind") or "completed")
+        self.focus_active_profile_var.set(focus_metadata_profile_text(info, record_kind))
         terminal_status = str(info.get("vodforge_terminal_status") or record_kind.title())
         if record_kind == "completed":
             self.focus_display_progress_var.set(100)
             self.focus_percent_var.set("100%")
             self.focus_display_status_var.set(f"Showing completed run: {title}")
             self.focus_transfer_var.set("Complete  /  Ready to open in Library")
+        elif record_kind == "preview":
+            self.focus_display_progress_var.set(100)
+            self.focus_percent_var.set("Preview complete")
+            self.focus_display_status_var.set(f"Showing completed preview: {title}")
+            self.focus_transfer_var.set("Preview complete  /  Ready to start download")
         else:
             self.focus_display_progress_var.set(0)
             self.focus_percent_var.set(terminal_status)
             self.focus_display_status_var.set(f"Showing {terminal_status.lower()} run: {title}")
             self.focus_transfer_var.set(f"{terminal_status}  /  Retry is available")
         _source_summary, output_summary = build_encoding_summary_display(info)
+        if record_kind == "preview":
+            output_summary = preview_output_summary_display()
         self._set_text(self.focus_summary_text, output_summary, disabled=True)
         job = record.get("job")
         activity = (
@@ -7517,7 +7676,10 @@ class DownloaderApp(tk.Tk):
             except (IndexError, TypeError, ValueError):
                 selected_info = None
         terminal_job = self._terminal_job_for_metadata(selected_info) if isinstance(selected_info, dict) else None
-        if terminal_job is not None:
+        if is_metadata_preview(selected_info):
+            menu.add_command(label="Start download in Forge", command=lambda: self._start_preview_download(selected_info))
+            menu.add_separator()
+        elif terminal_job is not None:
             menu.add_command(label="↻ Retry in Forge", command=lambda: self._retry_terminal_job(terminal_job))
             menu.add_separator()
         menu.add_command(label="Copy tags", command=self._copy_tags)
@@ -7698,6 +7860,8 @@ class DownloaderApp(tk.Tk):
             if item_history_identity is not None and item_history_identity in active_history_identities:
                 continue
             saved = history_output_dir(item)
+            if saved is None and not is_metadata_preview(item):
+                continue
             output_type = metadata_output_type(item)
             completed_job = (
                 completed_jobs_by_identity.get(item_history_identity)
@@ -7708,8 +7872,8 @@ class DownloaderApp(tk.Tk):
                 {
                     "title": str(item.get("title") or item.get("id") or "Untitled media"),
                     "detail": str(item.get("uploader") or item.get("channel") or format_duration(item.get("duration"))),
-                    "status": f"{'Completed' if saved is not None else 'Previewed'}  •  {output_type.value}",
-                    "progress": 100 if saved is not None else 0,
+                    "status": f"{'Completed' if saved is not None else 'Preview complete'}  •  {output_type.value}",
+                    "progress": 100,
                     "kind": "completed" if saved is not None else "preview",
                     "metadata_index": index,
                     "output_type": output_type.value,
@@ -7800,6 +7964,7 @@ class DownloaderApp(tk.Tk):
             widgets = [tile, title_label, status_label]
             if thumbnail is not None:
                 widgets.append(image_label)
+            hover_widgets = list(widgets)
             if record_kind in {"failed", "skipped", "stopped"} and isinstance(record.get("job"), DownloadJob):
                 retry_button = tk.Canvas(
                     tile,
@@ -7817,14 +7982,42 @@ class DownloaderApp(tk.Tk):
                     lambda _event, job=record["job"]: self._retry_terminal_job(job),
                 )
                 retry_button.place(x=thumbnail_size[0] // 2, y=thumbnail_size[1] // 2, anchor="center")
-                widgets.append(retry_button)
+                hover_widgets.append(retry_button)
+            elif record_kind == "preview" and record.get("metadata_index") is not None:
+                play_button = tk.Canvas(
+                    tile,
+                    width=30,
+                    height=30,
+                    bg=tile_bg,
+                    bd=0,
+                    highlightthickness=0,
+                    cursor="hand2",
+                )
+                play_button.create_oval(2, 2, 28, 28, fill=THEME["accent"], outline=THEME["border"], width=1)
+                play_icon = self._load_focus_icon("send-filled", 20, "#ffffff")
+                if play_icon is not None:
+                    play_button.create_image(15, 15, image=play_icon)
+                play_button.bind(
+                    "<Button-1>",
+                    lambda _event, item=record: self._start_preview_record(item),
+                )
+                play_button.bind(
+                    "<Button-2>",
+                    lambda event, item=record: self._show_focus_run_actions_menu(item, event),
+                )
+                play_button.bind(
+                    "<Button-3>",
+                    lambda event, item=record: self._show_focus_run_actions_menu(item, event),
+                )
+                play_button.place(x=thumbnail_size[0] // 2, y=thumbnail_size[1] // 2, anchor="center")
+                hover_widgets.append(play_button)
             if bar is not None:
                 widgets.append(bar)
 
             def sync_tile_hover(
                 *,
                 card: tk.Frame = tile,
-                card_widgets: tuple[tk.Widget, ...] = tuple(widgets),
+                card_widgets: tuple[tk.Widget, ...] = tuple(hover_widgets),
             ) -> None:
                 try:
                     pointer_x = self.winfo_pointerx()
@@ -7936,7 +8129,10 @@ class DownloaderApp(tk.Tk):
             menu.add_command(label="Skip current source URL", command=self._skip_url)
             menu.add_separator()
         terminal_job = record.get("job")
-        if str(record.get("kind")) in {"failed", "skipped", "stopped"} and isinstance(terminal_job, DownloadJob):
+        if str(record.get("kind")) == "preview":
+            menu.add_command(label="Start download in Forge", command=lambda: self._start_preview_record(record))
+            menu.add_separator()
+        elif str(record.get("kind")) in {"failed", "skipped", "stopped"} and isinstance(terminal_job, DownloadJob):
             menu.add_command(label="Retry run", command=lambda job=terminal_job: self._retry_terminal_job(job))
             menu.add_separator()
         metadata_index = record.get("metadata_index")
@@ -8066,10 +8262,10 @@ class DownloaderApp(tk.Tk):
             # Keep the canonical table intact at small widths. The sleek
             # horizontal scrollbar makes every field reachable without
             # squeezing columns to zero or changing what the table means.
-            self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
-            self.video_tree.column("id", width=90, minwidth=72, stretch=False)
-            self.video_tree.column("location", width=140, minwidth=100, stretch=False)
-            self.video_tree.column("title", width=360, minwidth=220, stretch=False)
+            self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
+            self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
+            self.video_tree.layout_column("location", width=140, minwidth=100, stretch=False)
+            self.video_tree.layout_column("title", width=360, minwidth=220, stretch=False)
         else:
             if library_mode == "balanced":
                 self.focus_library_view.rowconfigure(1, weight=2, minsize=190)
@@ -8082,17 +8278,17 @@ class DownloaderApp(tk.Tk):
             if library_mode == "balanced":
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=300)
-                self.video_tree.column("creator", width=110, minwidth=90, stretch=False)
-                self.video_tree.column("id", width=90, minwidth=72, stretch=False)
-                self.video_tree.column("location", width=120, minwidth=90, stretch=False)
-                self.video_tree.column("title", width=320, minwidth=200, stretch=False)
+                self.video_tree.layout_column("creator", width=110, minwidth=90, stretch=False)
+                self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
+                self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
+                self.video_tree.layout_column("title", width=320, minwidth=200, stretch=False)
             else:
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=340)
-                self.video_tree.column("creator", width=120, minwidth=90, stretch=False)
-                self.video_tree.column("id", width=90, minwidth=72, stretch=False)
-                self.video_tree.column("location", width=120, minwidth=90, stretch=False)
-                self.video_tree.column("title", minwidth=220)
+                self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
+                self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
+                self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
+                self.video_tree.layout_column("title", minwidth=220)
         self._sync_focus_destination()
         self._refresh_focus_run_deck()
 
@@ -8277,6 +8473,7 @@ class DownloaderApp(tk.Tk):
         owning_job: DownloadJob | None = None,
     ) -> None:
         history_info = dict(info)
+        history_info.pop("vodforge_preview_complete", None)
         if owning_job is not None:
             history_info["vodforge_run_id"] = owning_job.run_id
             history_info["vodforge_run_activity"] = sanitize_run_activity(owning_job.activity_lines)
@@ -8312,6 +8509,7 @@ class DownloaderApp(tk.Tk):
                 merged = {**item, **saved_record}
                 continue
             retained.append(item)
+        merged.pop("vodforge_preview_complete", None)
         self.metadata_items = [merged, *retained]
         self._rebuild_output_dir_index()
         if self.library_output_type_var.get() != saved_type.value:
@@ -8742,11 +8940,21 @@ class DownloaderApp(tk.Tk):
         pending[key] = self.after(900, restore)
         self._focus_copy_feedback_after_ids = pending
 
-    def _display_metadata(self, info: dict[str, Any], *, active_job: DownloadJob | None = None) -> None:
+    def _display_metadata(
+        self,
+        info: dict[str, Any],
+        *,
+        active_job: DownloadJob | None = None,
+        preview_complete: bool = False,
+    ) -> None:
         active_status = self.status_var.get() if active_job is not None and active_job is self.active_job else None
-        incoming_items = iter_video_infos(info)
+        incoming_items = [dict(item) for item in iter_video_infos(info)]
         new_items: list[dict[str, Any]] = []
         for incoming in incoming_items:
+            if preview_complete:
+                incoming["vodforge_preview_complete"] = True
+            else:
+                incoming.pop("vodforge_preview_complete", None)
             video_id = str(incoming.get("id") or "")
             output_type = metadata_output_type(incoming)
             matching = next(
@@ -8762,6 +8970,8 @@ class DownloaderApp(tk.Tk):
             )
             if matching is not None:
                 matching.update(incoming)
+                if not preview_complete:
+                    matching.pop("vodforge_preview_complete", None)
             else:
                 new_items.append(incoming)
         if new_items:
@@ -8876,7 +9086,11 @@ class DownloaderApp(tk.Tk):
             item = self.metadata_items[metadata_index]
             output_dir = history_output_dir(item)
             terminal_status = str(item.get("vodforge_terminal_status") or "").strip()
-            location = terminal_status or (output_dir.name if output_dir is not None else "Preview only")
+            location = (
+                terminal_status
+                or (output_dir.name if output_dir is not None else "")
+                or ("Preview complete" if is_metadata_preview(item) else "Not downloaded")
+            )
             retry_available = terminal_status in {"Skipped", "Failed"} and bool(item.get("vodforge_terminal_run_id"))
             values = (*video_list_row_values(item, fallback_index=visible_position), location)
             if "action" in self.video_tree["columns"]:
@@ -8952,7 +9166,10 @@ class DownloaderApp(tk.Tk):
             except (IndexError, TypeError, ValueError):
                 info = None
         terminal_job = self._terminal_job_for_metadata(info) if isinstance(info, dict) else None
-        if terminal_job is not None:
+        if is_metadata_preview(info):
+            menu.add_command(label="Start download in Forge", command=lambda: self._start_preview_download(info))
+            menu.add_separator()
+        elif terminal_job is not None:
             menu.add_command(label="↻ Retry in Forge", command=lambda: self._retry_terminal_job(terminal_job))
             menu.add_separator()
         if isinstance(info, dict) and history_output_dir(info) is not None:
@@ -9036,6 +9253,8 @@ class DownloaderApp(tk.Tk):
         terminal_message = str(info.get("vodforge_terminal_message") or "").strip()
         if terminal_status:
             location_text = terminal_status + (f" — {terminal_message}" if terminal_message else "")
+        elif is_metadata_preview(info):
+            location_text = "Preview complete — Start download in Forge when ready"
         else:
             location_text = f"Saved in {saved}" if saved is not None else "Not downloaded in this history"
         self.selected_title_var.set(
@@ -9046,6 +9265,8 @@ class DownloaderApp(tk.Tk):
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
         self._set_text(self.description_text, description or "No description found for this video.")
         source_summary, output_summary = build_encoding_summary_display(info)
+        if is_metadata_preview(info):
+            output_summary = preview_output_summary_display()
         self._set_encoding_summary_text(self.source_summary_text, source_summary)
         self._set_encoding_summary_text(self.output_summary_text, output_summary)
         thumb = best_thumbnail(info)
@@ -9381,26 +9602,45 @@ class DownloaderApp(tk.Tk):
 
     def _start_download(self) -> None:
         urls = list(self.batch_urls) if self.batch_urls else [self.url_var.get().strip()]
-        if self.single_video_only_var.get():
-            for url in urls:
+        job = self._build_download_job_from_current_settings(
+            urls,
+            output_type=self._selected_output_type(),
+            single_video_only=self.single_video_only_var.get(),
+            batch_mode=bool(self.batch_urls),
+        )
+        if job is None:
+            return
+        self._start_or_queue_download_job(job, clear_source=True)
+
+    def _build_download_job_from_current_settings(
+        self,
+        urls: list[str],
+        *,
+        output_type: OutputType,
+        single_video_only: bool,
+        batch_mode: bool,
+    ) -> DownloadJob | None:
+        normalized_urls = [str(url).strip() for url in urls if str(url).strip()]
+        if single_video_only:
+            for url in normalized_urls:
                 single_video_error = single_video_url_requires_video_id_error(url)
                 if single_video_error:
                     messagebox.showerror(APP_NAME, single_video_error)
-                    return
-        url = urls[0].strip() if urls else ""
+                    return None
+        url = normalized_urls[0] if normalized_urls else ""
         write_diagnostic(f"URL received: {url}")
         write_diagnostic(f"normalized URL: {url}")
-        write_diagnostic(f"batch URL count: {len(urls)}")
+        write_diagnostic(f"batch URL count: {len(normalized_urls)}")
         cookie_source = self._selected_cookie_source()
         use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
-        write_diagnostic(f"playlist query present: {'list=' in url.lower()} ; ignore_playlists={self.single_video_only_var.get()} ; use_nvenc={self.use_nvenc_var.get()} ; cookie_source={cookie_source.value}")
+        write_diagnostic(f"playlist query present: {'list=' in url.lower()} ; ignore_playlists={single_video_only} ; use_nvenc={self.use_nvenc_var.get()} ; cookie_source={cookie_source.value}")
         if not url:
             messagebox.showerror(APP_NAME, "Paste a YouTube URL first or load a URL list text file.")
-            return
+            return None
         output_text = self.output_var.get().strip()
         if not output_text:
             messagebox.showerror(APP_NAME, "Choose an output folder.")
-            return
+            return None
         output_dir = Path(output_text).expanduser()
         try:
             validate_output_directory_access(output_dir)
@@ -9410,20 +9650,19 @@ class DownloaderApp(tk.Tk):
                 "VODForge cannot write to the selected output folder. "
                 f"Choose another folder or allow access, then try again.\n\n{exc}",
             )
-            return
+            return None
         if cookie_source == CookieSource.FILE and cookie_file is None:
             messagebox.showerror(APP_NAME, "Choose a YouTube cookies.txt file, or switch YouTube access back to Public.")
-            return
+            return None
         if cookie_source == CookieSource.BROWSER and cookie_browser is None:
             messagebox.showerror(APP_NAME, "Choose a browser profile, or switch YouTube access back to Public.")
-            return
+            return None
         cookie_warning = windows_chromium_cookie_warning(cookie_browser) if cookie_source == CookieSource.BROWSER else None
         if cookie_warning:
             messagebox.showerror(APP_NAME, cookie_warning)
-            return
+            return None
 
         tags = [tag.strip() for tag in self.tags_var.get().split(",") if tag.strip()]
-        output_type = self._selected_output_type()
         try:
             manual_settings = (
                 self._manual_export_settings()
@@ -9433,8 +9672,8 @@ class DownloaderApp(tk.Tk):
             mp3_settings = self._mp3_export_settings() if output_type == OutputType.MP3 else Mp3ExportSettings()
         except ValueError as exc:
             messagebox.showerror(APP_NAME, str(exc))
-            return
-        job = DownloadJob(
+            return None
+        return DownloadJob(
             url=url,
             output_dir=output_dir,
             output_type=output_type,
@@ -9442,20 +9681,21 @@ class DownloaderApp(tk.Tk):
             export_mode=ExportMode(self.export_mode_var.get()),
             manual_settings=manual_settings,
             mp3_settings=mp3_settings,
-            single_video_only=self.single_video_only_var.get(),
+            single_video_only=single_video_only,
             use_nvenc=self.use_nvenc_var.get() if output_type == OutputType.MP4 else False,
             embed_thumbnail=self.embed_thumbnail_var.get() if output_type == OutputType.MP4 else False,
             write_thumbnail=self.write_thumbnail_var.get() if output_type == OutputType.MP4 else False,
             embed_metadata=self.embed_metadata_var.get() if output_type == OutputType.MP4 else False,
             write_info_json=self.write_info_json_var.get() if output_type == OutputType.MP4 else False,
             tags=tags,
-            urls=urls,
+            urls=normalized_urls,
             use_cookies=use_cookies,
             cookie_file=cookie_file,
             cookie_browser=cookie_browser,
-            batch_mode=bool(self.batch_urls),
+            batch_mode=batch_mode,
         )
 
+    def _start_or_queue_download_job(self, job: DownloadJob, *, clear_source: bool) -> None:
         if self.worker is not None and self.worker.is_alive():
             self.pending_jobs.append(job)
             if hasattr(self, "focus_run_deck"):
@@ -9464,11 +9704,45 @@ class DownloaderApp(tk.Tk):
                 self._refresh_focus_run_deck()
                 self.download_button.configure(text="Queue run", state="normal")
                 self._enqueue_queue_preview(job)
-            self._reset_source_input_after_send()
+            if clear_source:
+                self._reset_source_input_after_send()
             return
 
         self._launch_download_job(job)
-        self._reset_source_input_after_send()
+        if clear_source:
+            self._reset_source_input_after_send()
+
+    def _start_preview_download(self, info: dict[str, Any]) -> None:
+        """Turn one metadata preview into a fresh Forge-owned one-item run."""
+        fallback_url = str(info.get("webpage_url") or info.get("original_url") or info.get("url") or "").strip()
+        source_url = retry_url_for_item(info, fallback_url) if fallback_url else ""
+        if not source_url:
+            messagebox.showinfo(APP_NAME, "This preview does not include a source URL to download.")
+            return
+        output_type = metadata_output_type(info)
+        job = self._build_download_job_from_current_settings(
+            [source_url],
+            output_type=output_type,
+            single_video_only=True,
+            batch_mode=False,
+        )
+        if job is None:
+            return
+        job.preview_info = dict(info)
+        job.preview_info.pop("vodforge_preview_complete", None)
+        key = metadata_run_key(info)
+        if key is not None:
+            job.metadata_keys.add(key)
+        self._focus_selected_run_id = job.run_id
+        self._start_or_queue_download_job(job, clear_source=False)
+        self._select_focus_view("forge")
+        if any(pending is job for pending in self.pending_jobs):
+            record = next(
+                (candidate for candidate in self._focus_run_records() if candidate.get("run_id") == job.run_id),
+                None,
+            )
+            if record is not None:
+                self._display_focus_queued_job_snapshot(record, job)
 
     def _launch_download_job(self, job: DownloadJob, *, select_detail: bool = True) -> None:
         self.active_job = job
@@ -10646,7 +10920,7 @@ class DownloaderApp(tk.Tk):
                             self.focus_run_status_var.set(f"{self.progress_var.get():.0f}%  /  ETA {eta}")
                 elif kind == "metadata":
                     if isinstance(payload, dict):
-                        self._display_metadata(payload)
+                        self._display_metadata(payload, preview_complete=True)
                 elif kind == "job_metadata":
                     if (
                         isinstance(payload, dict)

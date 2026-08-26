@@ -83,10 +83,12 @@ from yt_downloader.app import (
     focus_icon_color_variant,
     focus_hero_thumbnail_visible,
     focus_library_layout_mode,
+    focus_metadata_profile_text,
     focus_layout_mode,
     focus_run_deck_capacity,
     focus_wheel_pixels,
     initial_window_geometry,
+    is_metadata_preview,
     accumulated_row_scroll,
     library_thumbnail_size,
     thumbnail_size_within,
@@ -99,6 +101,8 @@ from yt_downloader.app import (
     metadata_indices_for_output_type,
     metadata_output_type,
     metadata_run_key,
+    preview_output_summary_display,
+    resized_table_column_width,
     platform_font_families,
     prepare_batch_item_url,
     prepare_custom_cover_art,
@@ -305,7 +309,15 @@ def test_focus_run_records_use_one_active_run_authority_without_preview_duplicat
     app.worker = None
     app.pending_jobs = []
     app._terminal_jobs = []
-    app.metadata_items = [active_info, {"id": "older", "title": "Older preview", "vodforge_output_type": "MP4"}]
+    app.metadata_items = [
+        active_info,
+        {
+            "id": "older",
+            "title": "Older preview",
+            "vodforge_output_type": "MP4",
+            "vodforge_preview_complete": True,
+        },
+    ]
     app.url_var = Value("")
     app.focus_active_title_var = Value("stale previous title")
     app.focus_active_detail_var = Value("Current creator")
@@ -489,6 +501,63 @@ def test_focus_library_layout_protects_selected_item_at_medium_widths():
     assert focus_library_layout_mode(999) == "balanced"
     assert focus_library_layout_mode(920) == "balanced"
     assert focus_library_layout_mode(919) == "compact"
+
+
+def test_library_column_resize_clamps_only_at_the_column_minimum():
+    assert resized_table_column_width(320, 80, 200) == 400
+    assert resized_table_column_width(320, -40, 200) == 280
+    assert resized_table_column_width(320, -500, 200) == 200
+
+
+def test_preview_and_completed_profiles_omit_redundant_media_placeholders():
+    mp4_preview = {"vodforge_output_type": "MP4"}
+    mp3_completed = {
+        "vodforge_output_type": "MP3",
+        "vodforge_encoding_summary": {
+            "output": {
+                "Resolution": "Audio only",
+                "Output rate-control mode": "CBR",
+            }
+        },
+    }
+    mp4_completed = {
+        "vodforge_output_type": "MP4",
+        "vodforge_encoding_summary": {
+            "output": {
+                "Resolution": "1920x1080",
+                "Output rate-control mode": "CBR",
+            }
+        },
+    }
+
+    assert focus_metadata_profile_text(mp4_preview, "preview") == "MP4  •  Preview complete"
+    assert focus_metadata_profile_text(mp3_completed, "completed") == "MP3  •  CBR"
+    assert focus_metadata_profile_text(mp4_completed, "completed") == "MP4  •  1920x1080  •  CBR"
+    assert focus_metadata_profile_text({"vodforge_output_type": "MP4"}, "failed") == "MP4"
+    assert preview_output_summary_display() == (
+        "Output status: Preview complete\n"
+        "Output file path: Not produced\n"
+        "Next action: Start download in Forge"
+    )
+
+
+def test_only_explicit_completed_metadata_is_a_preview():
+    assert is_metadata_preview({"id": "preview", "vodforge_preview_complete": True})
+    assert not is_metadata_preview({"id": "active-metadata"})
+    assert not is_metadata_preview(
+        {
+            "id": "terminal-preview",
+            "vodforge_preview_complete": True,
+            "vodforge_terminal_status": "Failed",
+        }
+    )
+    assert not is_metadata_preview(
+        {
+            "id": "saved-preview",
+            "vodforge_preview_complete": True,
+            "vodforge_output_dir": "/tmp/saved-preview",
+        }
+    )
 
 
 def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):

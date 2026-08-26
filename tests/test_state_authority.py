@@ -772,9 +772,9 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
 
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
-    assert 'self.video_tree.column("creator", width=120, minwidth=90' in layout_source
-    assert 'self.video_tree.column("location", width=140, minwidth=100' in layout_source
-    assert 'self.video_tree.column("title", width=360, minwidth=220, stretch=False)' in layout_source
+    assert 'self.video_tree.layout_column("creator", width=120, minwidth=90' in layout_source
+    assert 'self.video_tree.layout_column("location", width=140, minwidth=100' in layout_source
+    assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=False)' in layout_source
     assert 'width=0, minwidth=0' not in layout_source
     assert 'library_mode = "compact" if compact else focus_library_layout_mode(width)' in layout_source
     assert "library_mode," in layout_source
@@ -805,6 +805,70 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
     assert 'mode="pixels"' in activity_source
     assert "bind_smooth_vertical_wheel(self.focus_log" in forge_source
     assert "bind_smooth_vertical_wheel(self.focus_summary_text" in forge_source
+
+
+def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():
+    pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
+    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+
+    assert 'self._header.bind("<ButtonPress-1>", self._begin_column_resize' in pixel_table_source
+    assert 'self._header.bind("<B1-Motion>", self._drag_column_resize' in pixel_table_source
+    assert 'self._header.bind("<ButtonRelease-1>", self._end_column_resize' in pixel_table_source
+    assert "rendered_width = next(" in pixel_table_source
+    assert "layout[:-1]" in pixel_table_source
+    assert "self._manually_resized_columns.add(column)" in pixel_table_source
+    assert "def layout_column" in pixel_table_source
+    assert "self.video_tree.layout_column(" in layout_source
+    assert 'xscrollincrement=1' in pixel_table_source
+
+
+def test_preview_items_expose_fresh_forge_start_actions_without_library_ownership(tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    preview = {
+        "id": "preview-id",
+        "title": "Preview title",
+        "webpage_url": "https://www.youtube.com/watch?v=preview-id",
+        "playlist_id": "PLpreview",
+        "vodforge_output_type": "MP3",
+        "vodforge_preview_complete": True,
+    }
+    built_job = make_job(tmp_path, video_id="fresh-preview")
+    built_job.output_type = OutputType.MP3
+    build_calls: list[tuple[list[str], dict[str, object]]] = []
+    selected_views: list[str] = []
+    submitted: list[tuple[DownloadJob, bool]] = []
+    app.pending_jobs = []
+    app._build_download_job_from_current_settings = lambda urls, **kwargs: (
+        build_calls.append((list(urls), dict(kwargs))) or built_job
+    )
+    app._select_focus_view = selected_views.append
+    app._start_or_queue_download_job = lambda job, *, clear_source: submitted.append((job, clear_source))
+
+    app._start_preview_download(preview)
+
+    assert build_calls == [
+        (
+            ["https://www.youtube.com/watch?v=preview-id&list=PLpreview"],
+            {"output_type": OutputType.MP3, "single_video_only": True, "batch_mode": False},
+        )
+    ]
+    assert built_job.preview_info == {
+        key: value for key, value in preview.items() if key != "vodforge_preview_complete"
+    }
+    assert ("preview-id", "MP3") in built_job.metadata_keys
+    assert app._focus_selected_run_id == built_job.run_id
+    assert selected_views == ["forge"]
+    assert submitted == [(built_job, False)]
+
+    deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
+    library_menu_source = inspect.getsource(DownloaderApp._show_library_row_menu)
+    compact_menu_source = inspect.getsource(DownloaderApp._show_library_actions_menu)
+    assert 'record_kind == "preview"' in deck_source
+    assert 'self._start_preview_record(item)' in deck_source
+    assert "hover_widgets.append(play_button)" in deck_source
+    assert all(line.strip() != "widgets.append(play_button)" for line in deck_source.splitlines())
+    assert 'label="Start download in Forge"' in library_menu_source
+    assert 'label="Start download in Forge"' in compact_menu_source
 
 
 def test_custom_popouts_are_positioned_before_they_become_visible():

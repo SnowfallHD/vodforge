@@ -27,6 +27,7 @@ def preview_metadata() -> list[dict[str, object]]:
     return [
         {
             "id": "dQw4w9WgXcQ",
+            "vodforge_preview_complete": True,
             "title": "Good Desires vs. Bad Desires (How Do We Know the Difference?)",
             "uploader": "BibleProject",
             "duration": 1967,
@@ -43,6 +44,7 @@ def preview_metadata() -> list[dict[str, object]]:
         },
         {
             "id": "walk-spirit",
+            "vodforge_preview_complete": True,
             "title": "Walk in the Spirit",
             "uploader": "Study Archive",
             "duration": 1422,
@@ -52,6 +54,7 @@ def preview_metadata() -> list[dict[str, object]]:
         },
         {
             "id": "fruit-spirit",
+            "vodforge_preview_complete": True,
             "title": "Fruit of the Spirit",
             "uploader": "Study Archive",
             "duration": 1108,
@@ -162,6 +165,13 @@ def main() -> None:
     app.cookie_source_var.set(args.cookie_source)
     app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     app.metadata_items = preview_metadata()
+
+    def preview_start_intent(info: dict[str, object]) -> None:
+        """Exercise the UI handoff without starting provider or media work."""
+        app.status_var.set(f"Start download requested for {info.get('title') or info.get('id') or 'preview'}")
+        app._select_focus_view("forge")
+
+    app._start_preview_download = preview_start_intent
     terminal_job = None
     if args.terminal:
         terminal_status = args.terminal.title()
@@ -218,7 +228,7 @@ def main() -> None:
         ({"title": "Good Desires vs. Bad Desires", "status": f"{terminal_job.terminal_status}  •  {output_type.value}", "progress": 0, "kind": args.terminal, "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg"), "run_id": terminal_job.run_id, "job": terminal_job}
          if terminal_job is not None else
          {"title": "Good Desires vs. Bad Desires", "status": f"73%  •  1m 26s left  •  {output_type.value}", "progress": 73, "kind": "active", "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg")}),
-        {"title": "Walk in the Spirit", "status": "Next  •  MP4", "progress": 0, "kind": "queued", "metadata_index": 1, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "forest-river.jpg")},
+        {"title": "Walk in the Spirit", "status": "Preview complete  •  MP4", "progress": 100, "kind": "preview", "metadata_index": 1, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "forest-river.jpg")},
         {"title": "Fruit of the Spirit", "status": "Queued  •  MP3", "progress": 0, "kind": "queued", "metadata_index": 2, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "desert-sunset.jpg")},
         {"title": "Created for Good Works", "status": "Completed  •  MP3", "progress": 100, "kind": "completed", "metadata_index": 3, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "rainforest-falls.jpg")},
     ]
@@ -312,6 +322,10 @@ def main() -> None:
         app._select_focus_view(args.view)
         app._apply_focus_layout(force=True)
         app._refresh_focus_run_deck()
+        if args.view == "library":
+            selection = app.video_tree.selection()
+            if selection:
+                app._display_selected_metadata(int(selection[0]))
 
     apply_preview_state()
     app.after(450, apply_preview_state)
