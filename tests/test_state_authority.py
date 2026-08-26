@@ -878,6 +878,53 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
     assert 'label="Start download in Forge"' in compact_menu_source
 
 
+def test_submitting_a_previewed_url_adopts_it_into_one_fresh_active_run(tmp_path: Path):
+    preview = {
+        "id": "preview-id",
+        "title": "Preview title",
+        "webpage_url": "https://www.youtube.com/watch?v=preview-id",
+        "vodforge_output_type": "MP4",
+        "vodforge_preview_complete": True,
+        "vodforge_preview_run_id": "preview:old-presentation-id",
+    }
+    job = make_job(tmp_path, video_id="preview-id")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.metadata_items = [preview]
+
+    adopted = app._adopt_matching_preview_for_download_job(job)
+
+    assert adopted is True
+    assert job.run_id != "preview:old-presentation-id"
+    assert job.metadata_keys == {("preview-id", "MP4")}
+    assert job.preview_info == {
+        key: value
+        for key, value in preview.items()
+        if key not in {"vodforge_preview_complete", "vodforge_preview_run_id"}
+    }
+    assert app.metadata_items == [preview]
+
+    app._focus_preview_runs = None
+    app._focus_active_override = False
+    app.active_job = job
+    app.worker = None
+    app.pending_jobs = []
+    app._terminal_jobs = []
+    app._completed_jobs = []
+    app.url_var = Value(job.url)
+    app.focus_active_title_var = Value("")
+    app.focus_active_detail_var = Value("")
+    app.status_var = Value("Starting")
+    app.progress_var = Value(0)
+
+    records = app._focus_run_records()
+
+    assert [(record["kind"], record["run_id"]) for record in records] == [("active", job.run_id)]
+    start_source = inspect.getsource(DownloaderApp._start_download)
+    assert start_source.index("self._adopt_matching_preview_for_download_job(job)") < start_source.index(
+        "self._start_or_queue_download_job(job, clear_source=True)"
+    )
+
+
 def test_preview_hero_replaces_large_status_with_start_download_action(tmp_path: Path):
     class GridControl:
         def __init__(self):
@@ -1011,6 +1058,13 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
     app.pending_jobs = [queued]
     app.status_var = Value("")
     app._render_metadata_tree = lambda: None
+    app._focus_selected_run_id = stopped.run_id
+    app.focus_run_deck = object()
+    app._focus_run_records = lambda: [{"kind": "completed", "run_id": unrelated.run_id}]
+    selected_records: list[dict[str, object]] = []
+    app._focus_select_run_record = selected_records.append
+    refreshes: list[bool] = []
+    app._refresh_focus_run_deck = lambda: refreshes.append(True)
     monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
 
     app._remove_selected_library_item()
@@ -1019,6 +1073,8 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
     assert [job.run_id for job in app._terminal_jobs] == [unrelated.run_id]
     assert app.active_job is active
     assert app.pending_jobs == [queued]
+    assert selected_records == [{"kind": "completed", "run_id": unrelated.run_id}]
+    assert refreshes == [True]
     assert "Library and Forge recents" in app.status_var.get()
 
     removal_source = inspect.getsource(DownloaderApp._remove_library_item_from_forge_recents)

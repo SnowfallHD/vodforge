@@ -9351,18 +9351,23 @@ class DownloaderApp(tk.Tk):
                 self.download_history = previous_history
                 messagebox.showerror(APP_NAME, str(exc))
                 return
-        self._remove_library_item_from_forge_recents(info)
+        removed_run_ids = self._remove_library_item_from_forge_recents(info)
+        removed_run_ids.add(str(info.get("vodforge_preview_run_id") or f"history:{index}"))
         self.metadata_items.pop(index)
         self._rebuild_output_dir_index()
         self._render_metadata_tree()
+        self._reconcile_focus_after_library_removal(removed_run_ids)
         self.status_var.set("Removed the item from Library and Forge recents. Media files were not deleted.")
 
-    def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> None:
+    def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> set[str]:
         """Remove presentation history for one Library item, never execution or files."""
+        removed_run_ids: set[str] = set()
         saved = history_output_dir(info)
         if saved is not None:
             identity = history_identity(info)
             for completed_job in self.__dict__.get("_completed_jobs", []):
+                if identity in completed_job.history_identities:
+                    removed_run_ids.add(completed_job.run_id)
                 completed_job.history_identities.discard(identity)
         terminal_run_ids = {str(info.get("vodforge_terminal_run_id") or "")}
         item_key = metadata_run_key(info)
@@ -9374,6 +9379,38 @@ class DownloaderApp(tk.Tk):
         terminal_run_ids.discard("")
         if terminal_run_ids:
             self._terminal_jobs = [job for job in self._terminal_jobs if job.run_id not in terminal_run_ids]
+            removed_run_ids.update(terminal_run_ids)
+        return removed_run_ids
+
+    def _reconcile_focus_after_library_removal(self, removed_run_ids: set[str]) -> None:
+        """Render a surviving Forge record when the selected history item was removed."""
+        selected_run_id = str(self.__dict__.get("_focus_selected_run_id") or "")
+        if not selected_run_id or self.__dict__.get("focus_run_deck") is None:
+            return
+        records = self._focus_run_records()
+        if (
+            selected_run_id not in removed_run_ids
+            and any(str(record.get("run_id") or "") == selected_run_id for record in records)
+        ):
+            return
+        if records:
+            self._focus_select_run_record(records[0])
+            self._refresh_focus_run_deck()
+            return
+        self._focus_selected_run_id = None
+        self._set_focus_preview_start_action(None)
+        self.focus_active_title_var.set("Ready for a new run")
+        self.focus_active_detail_var.set("Paste a YouTube URL above, then press Return to begin.")
+        self.focus_active_duration_var.set("")
+        self.focus_active_profile_var.set(self._focus_profile_text(self._selected_output_type()))
+        self.focus_display_progress_var.set(0)
+        self.focus_percent_var.set("0%")
+        self.focus_display_status_var.set("No run selected")
+        self.focus_transfer_var.set("Ready for a new run")
+        self._set_text(self.focus_summary_text, "No run selected.", disabled=True)
+        self._render_focus_run_activity("", "No run selected.")
+        self._reset_active_thumbnail()
+        self._refresh_focus_run_deck()
 
     def _set_text(self, widget: tk.Text, text: str, *, disabled: bool = False) -> None:
         widget.config(state="normal")
@@ -9767,7 +9804,33 @@ class DownloaderApp(tk.Tk):
         )
         if job is None:
             return
+        self._adopt_matching_preview_for_download_job(job)
         self._start_or_queue_download_job(job, clear_source=True)
+
+    def _adopt_matching_preview_for_download_job(self, job: DownloadJob) -> bool:
+        """Seed a fresh run from its preview so one item changes state instead of duplicating."""
+        source_urls = job.urls or [job.url]
+        if job.batch_mode or len(source_urls) != 1:
+            return False
+        video_id = youtube_url_video_id(job.url)
+        if not video_id:
+            return False
+        preview_key = (video_id, job.output_type.value)
+        preview = next(
+            (
+                item
+                for item in self.metadata_items
+                if is_metadata_preview(item) and metadata_run_key(item) == preview_key
+            ),
+            None,
+        )
+        if preview is None:
+            return False
+        job.preview_info = dict(preview)
+        job.preview_info.pop("vodforge_preview_complete", None)
+        job.preview_info.pop("vodforge_preview_run_id", None)
+        job.metadata_keys.add(preview_key)
+        return True
 
     def _build_download_job_from_current_settings(
         self,
@@ -10003,6 +10066,8 @@ class DownloaderApp(tk.Tk):
                 None,
             )
             if matching is not None:
+                matching.pop("vodforge_preview_complete", None)
+                matching.pop("vodforge_preview_run_id", None)
                 matching["vodforge_terminal_status"] = status
                 matching["vodforge_terminal_message"] = message
                 matching["vodforge_terminal_run_id"] = job.run_id
