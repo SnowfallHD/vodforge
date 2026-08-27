@@ -145,6 +145,29 @@ def history_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     return str(record.get("title") or "").strip(), normalized_dir, history_output_type(record)
 
 
+def history_media_identity(record: dict[str, Any]) -> tuple[str, str, str]:
+    """Identify the provider item and playlist context independently of location."""
+    video_id = str(record.get("id") or "").strip()
+    source = video_id or str(record.get("title") or "").strip()
+    playlist_id = str(record.get("playlist_id") or "").strip()
+    return source, playlist_id, history_output_type(record)
+
+
+def history_media_file_exists(record: dict[str, Any]) -> bool:
+    """Return whether a recorded item folder still contains its media artifact."""
+    output_dir = history_output_dir(record)
+    if output_dir is None:
+        return False
+    extension = ".mp3" if history_output_type(record) == "MP3" else ".mp4"
+    try:
+        return any(
+            path.is_file() and path.stat().st_size > 0
+            for path in output_dir.glob(f"*{extension}")
+        )
+    except OSError:
+        return False
+
+
 def sanitize_history_record(
     info: dict[str, Any],
     output_dir: Path | str,
@@ -185,10 +208,21 @@ def upsert_history(
     output_dir: Path | str,
     *,
     recorded_at: str | None = None,
+    replace_missing_media: bool = False,
 ) -> list[dict[str, Any]]:
     record = sanitize_history_record(info, output_dir, recorded_at=recorded_at)
     identity = history_identity(record)
-    remaining = [item for item in existing if history_identity(item) != identity]
+    media_identity = history_media_identity(record)
+    remaining = [
+        item
+        for item in existing
+        if history_identity(item) != identity
+        and not (
+            replace_missing_media
+            and history_media_identity(item) == media_identity
+            and not history_media_file_exists(item)
+        )
+    ]
     return [record, *remaining][:MAX_HISTORY_ITEMS]
 
 

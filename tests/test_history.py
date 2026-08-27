@@ -11,6 +11,8 @@ from yt_downloader.history import (
     MAX_RUN_ACTIVITY_LINES,
     application_data_dir,
     history_identity,
+    history_media_file_exists,
+    history_media_identity,
     history_output_dir,
     history_output_type,
     load_history,
@@ -101,6 +103,64 @@ def test_history_keeps_same_video_downloaded_to_two_locations(tmp_path: Path):
 
     assert len(second) == 2
     assert history_output_dir(second[0]) != history_output_dir(second[1])
+
+
+def test_redownload_replaces_a_missing_same_item_location(tmp_path: Path):
+    missing_location = tmp_path / "moved-away" / "Example"
+    replacement_location = tmp_path / "downloads" / "Example"
+    original = upsert_history(
+        [],
+        {
+            "id": "abc123",
+            "title": "Example",
+            "playlist_id": "PLone",
+            "vodforge_output_type": "MP4",
+        },
+        missing_location,
+    )
+
+    replaced = upsert_history(
+        original,
+        {
+            "id": "abc123",
+            "title": "Example restored",
+            "playlist_id": "PLone",
+            "vodforge_output_type": "MP4",
+        },
+        replacement_location,
+        replace_missing_media=True,
+    )
+
+    assert len(replaced) == 1
+    assert history_output_dir(replaced[0]) == replacement_location.resolve()
+    assert replaced[0]["title"] == "Example restored"
+    assert history_media_identity(replaced[0]) == history_media_identity(original[0])
+
+
+def test_redownload_preserves_another_location_that_still_has_media(tmp_path: Path):
+    first_location = tmp_path / "archive" / "Example"
+    second_location = tmp_path / "downloads" / "Example"
+    first_location.mkdir(parents=True)
+    (first_location / "Example.mp4").write_bytes(b"existing media")
+    original = upsert_history(
+        [],
+        {"id": "abc123", "title": "Example", "vodforge_output_type": "MP4"},
+        first_location,
+    )
+
+    updated = upsert_history(
+        original,
+        {"id": "abc123", "title": "Example", "vodforge_output_type": "MP4"},
+        second_location,
+        replace_missing_media=True,
+    )
+
+    assert history_media_file_exists(original[0]) is True
+    assert len(updated) == 2
+    assert {history_output_dir(item) for item in updated} == {
+        first_location.resolve(),
+        second_location.resolve(),
+    }
 
 
 def test_history_keeps_mp4_and_mp3_for_same_video_and_location(tmp_path: Path):

@@ -357,6 +357,24 @@ def main() -> None:
         app.after(700, app._show_selected_metadata_details)
     if args.output_details:
         app.after(700, app._show_focus_output_details)
+
+    def reveal_review_window() -> None:
+        # Keep the no-download review harness deterministic when another signed
+        # VODForge bundle is already open. Aqua can otherwise create the Python
+        # menu-bar owner while leaving this root window at an unmapped 0x0 size.
+        app.geometry(args.size)
+        app.deiconify()
+        app.lift()
+        app.update_idletasks()
+        print(
+            "review window: "
+            f"state={app.state()} geometry={app.geometry()} "
+            f"mapped={bool(app.winfo_ismapped())}",
+            flush=True,
+        )
+
+    app.after(40, reveal_review_window)
+    app.after(520, reveal_review_window)
     app.mainloop()
 
 

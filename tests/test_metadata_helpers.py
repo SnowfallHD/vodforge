@@ -10,7 +10,7 @@ import pytest
 from PIL import Image
 
 import yt_downloader.app as app_module
-from yt_downloader.history import history_output_dir, upsert_history
+from yt_downloader.history import history_output_dir, sanitize_history_record, upsert_history
 from yt_downloader.app import (
     AudioExportPlan,
     CookieSource,
@@ -23,6 +23,7 @@ from yt_downloader.app import (
     DownloaderApp,
     ExportPlan,
     ExportMode,
+    ManualAudioCodec,
     EXPORT_MODES,
     Mp3ExportSettings,
     OutputType,
@@ -42,9 +43,12 @@ from yt_downloader.app import (
     summary_label_color,
     build_description_display_text,
     clean_single_video_url,
+    canonical_youtube_url,
     cookie_inputs_for_source,
     center_alpha_content,
     cached_thumbnail_path,
+    existing_cached_thumbnail_path,
+    legacy_cached_thumbnail_path,
     embed_custom_mp3_cover_art,
     existing_output_candidate_dirs,
     find_valid_existing_output,
@@ -61,6 +65,7 @@ from yt_downloader.app import (
     choose_windows_output_directory,
     cleanup_legacy_encode_sidecars,
     compact_video_metadata,
+    create_staging_dir,
     run_cancellable_blocking_step,
     format_duration,
     iter_video_infos,
@@ -83,6 +88,8 @@ from yt_downloader.app import (
     focus_icon_color_variant,
     focus_hero_thumbnail_visible,
     focus_library_layout_mode,
+    focus_library_horizontal_padding,
+    pixel_table_visible_row_window,
     focus_metadata_profile_text,
     focus_layout_mode,
     focus_run_deck_capacity,
@@ -103,6 +110,7 @@ from yt_downloader.app import (
     metadata_run_key,
     preview_output_summary_display,
     resized_table_column_width,
+    resolved_video_output_target,
     platform_font_families,
     prepare_batch_item_url,
     prepare_custom_cover_art,
@@ -501,6 +509,24 @@ def test_focus_library_layout_protects_selected_item_at_medium_widths():
     assert focus_library_layout_mode(999) == "balanced"
     assert focus_library_layout_mode(920) == "balanced"
     assert focus_library_layout_mode(919) == "compact"
+
+
+def test_ultrawide_library_workspace_is_bounded_and_centered():
+    assert focus_library_horizontal_padding(1180) == 18
+    assert focus_library_horizontal_padding(1600) == 18
+    assert focus_library_horizontal_padding(2560) == 480
+
+
+def test_virtual_table_clamps_a_stale_scroll_offset_after_filtering_to_fewer_rows():
+    offset, first_row, last_row = pixel_table_visible_row_window(
+        total_rows=3,
+        row_height=30,
+        viewport_height=60,
+        y_offset=1200,
+    )
+
+    assert offset == 30
+    assert (first_row, last_row) == (0, 3)
 
 
 def test_library_column_resize_clamps_only_at_the_column_minimum():
@@ -987,6 +1013,17 @@ def test_clean_single_video_url_removes_playlist_params_but_keeps_video_id():
         assert clean_single_video_url(original) == expected
 
 
+def test_canonical_youtube_url_keeps_item_and_proven_playlist_context_only():
+    assert canonical_youtube_url(
+        {
+            "id": "abc123",
+            "playlist_id": "PLsafe",
+            "webpage_url": "https://www.youtube.com/watch?v=abc123&list=PLsafe&index=4&t=10&token=secret",
+        }
+    ) == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
+    assert canonical_youtube_url({}, "https://example.com/watch?v=abc123") is None
+
+
 def test_single_video_toggle_blocks_playlist_url_without_video_id():
     url = "https://www.youtube.com/playlist?list=PL"
 
@@ -1055,6 +1092,26 @@ def test_valid_legacy_single_output_is_reused_by_later_playlist_run(monkeypatch,
 
     assert found == (legacy, probe)
     assert validated == [legacy]
+
+
+def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_new_allocation(monkeypatch, tmp_path: Path):
+    output_root = tmp_path
+    segment = 0
+    while len(str(output_root).encode("utf-16-le")) // 2 <= app_module.WINDOWS_SAFE_PATH_LIMIT:
+        output_root /= f"deep-{segment:02d}"
+        segment += 1
+    info = {"id": "abc123", "title": "One song", "uploader": "Creator"}
+    legacy = output_root / "path-safe videos" / "abc123" / "One song.mp4"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_bytes(b"valid legacy media")
+    probe = {"format": {"duration": "30", "format_name": "mp4"}, "streams": []}
+    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+
+    found = find_valid_existing_output(output_root, info, OutputType.MP4, "ffprobe")
+
+    assert found == (legacy, probe)
+    with pytest.raises(ValueError, match="shorter output folder"):
+        resolved_video_output_target(output_root, info, ".mp4")
 
 
 def test_invalid_existing_output_is_not_treated_as_downloaded(monkeypatch, tmp_path: Path):
@@ -1130,6 +1187,33 @@ def test_long_windows_paths_keep_full_media_filename_with_compact_title_folder(t
     assert target_dir.name != f"{long_title} [Hi4j2pF4AAM]"
     assert len(str(target_dir / f"{long_title}.mp4")) <= app_module.WINDOWS_SAFE_PATH_LIMIT
     assert (target_dir / f"{long_title}.mp4").name == f"{long_title}.mp4"
+
+
+def test_path_budget_keeps_channel_playlist_and_truncated_title_instead_of_an_id_only_fallback():
+    info = {
+        "title": "A descriptive production title " * 8,
+        "id": "Hi4j2pF4AAM",
+        "channel": "Production Channel",
+        "playlist_title": "A long but meaningful playlist name " * 3,
+        "playlist_id": "PL123",
+    }
+    output_dir = Path("C:/Users/Viewer/OneDrive - Company/Deep/Approved/Delivery/Root")
+
+    target_dir, target_name = resolved_video_output_target(output_dir, info, ".mp4")
+
+    assert target_dir.parts[-4].startswith("Production Chan")
+    assert target_dir.parts[-3] == "playlists"
+    assert "path-safe videos" not in target_dir.parts
+    assert target_dir.name.endswith("[Hi4j2pF4AAM]")
+    assert target_dir.name != "Hi4j2pF4AAM"
+    assert len(str(target_dir / target_name).encode("utf-16-le")) // 2 <= app_module.WINDOWS_SAFE_PATH_LIMIT
+
+
+def test_windows_reserved_device_names_are_never_used_as_raw_directories(tmp_path: Path):
+    output = video_output_dir(tmp_path, {"title": "NUL", "id": "abc", "channel": "CON"})
+
+    assert output.parts[-3] == "_CON"
+    assert output.name.startswith("_NUL")
 
 
 def test_package_downloaded_media_from_staging_only_moves_current_job_files(tmp_path: Path):
@@ -1278,7 +1362,34 @@ def test_staging_output_template_never_targets_real_final_folders(tmp_path: Path
     assert "Single Videos" not in template
     assert "%(playlist_title" not in template
     assert "%(title)" not in template
-    assert "video [%(id)s].%(ext)s" in template
+    assert template.endswith("%(id)s.%(ext)s")
+
+
+def test_short_same_volume_staging_fits_when_the_previous_layout_would_exhaust_windows_path_budget(tmp_path: Path):
+    output_root = tmp_path
+    segment = 0
+    while len(str(output_root).encode("utf-16-le")) // 2 < 180:
+        output_root /= f"delivery-{segment:02d}"
+        segment += 1
+    output_root.mkdir(parents=True)
+
+    staging = create_staging_dir(output_root)
+    video_id = "Hi4j2pF4AAM"
+    # yt-dlp may append temporary suffixes while writing, so the proof must
+    # cover the longest enabled in-flight form rather than only the final name.
+    actual_artifact = staging / f"{video_id}.mp4.part"
+    previous_artifact = (
+        output_root
+        / ".yt-dlp-downloader-staging"
+        / ("a" * 32)
+        / video_id
+        / f"video [{video_id}].mp4.part"
+    )
+
+    assert staging.parent.name == ".vfstage"
+    assert len(staging.name) == 8
+    assert app_module._path_would_exceed_windows_safe_limit(actual_artifact) is False
+    assert app_module._path_would_exceed_windows_safe_limit(previous_artifact) is True
 
 
 def test_download_reuses_preflight_result_without_mutating_it():
@@ -1426,6 +1537,60 @@ def test_private_thumbnail_cache_is_read_through_without_a_second_network_fetch(
     )
 
     assert save_cached_thumbnail_image(info, data_dir=tmp_path) == cached
+
+
+def test_thumbnail_cache_key_is_stable_when_history_keeps_a_different_thumbnail_variant(tmp_path: Path):
+    full = {
+        "id": "beat123",
+        "vodforge_output_type": "MP4",
+        "thumbnails": [{"url": "https://i.ytimg.com/beat123/maxres.jpg", "width": 1280}],
+    }
+    compact = {
+        "id": "beat123",
+        "vodforge_output_type": "MP4",
+        "thumbnail": "https://i.ytimg.com/beat123/default.jpg",
+    }
+    canonical = cached_thumbnail_path(full, data_dir=tmp_path)
+    assert canonical == cached_thumbnail_path(compact, data_dir=tmp_path)
+    assert canonical is not None
+    canonical.parent.mkdir(parents=True)
+    Image.new("RGB", (16, 9), "purple").save(canonical, format="JPEG")
+    assert existing_cached_thumbnail_path(compact, data_dir=tmp_path) == canonical
+    assert legacy_cached_thumbnail_path(full, data_dir=tmp_path) != canonical
+
+
+def test_v015_thumbnail_variant_is_found_and_migrated_after_a_cold_history_restart(tmp_path: Path):
+    old_variant = "https://i.ytimg.com/vi/beat123/maxresdefault.jpg"
+    history_variant = "https://i.ytimg.com/vi/beat123/default.jpg"
+    old_cache = legacy_cached_thumbnail_path(
+        {"id": "beat123", "thumbnail": old_variant},
+        data_dir=tmp_path,
+    )
+    assert old_cache is not None
+    old_cache.parent.mkdir(parents=True)
+    Image.new("RGB", (32, 18), "purple").save(old_cache, format="JPEG")
+    full_info = {
+        "id": "beat123",
+        "vodforge_output_type": "MP4",
+        "thumbnail": history_variant,
+        "thumbnails": [
+            {"url": history_variant, "width": 120, "height": 90},
+            {"url": old_variant, "width": 1280, "height": 720},
+        ],
+    }
+    history = sanitize_history_record(full_info, tmp_path / "saved")
+    assert history["thumbnail"] == history_variant
+    assert "thumbnails" not in history
+    assert "best_thumbnail" not in history
+    stable = cached_thumbnail_path(history, data_dir=tmp_path)
+    assert stable is not None and not stable.exists()
+
+    found = existing_cached_thumbnail_path(history, data_dir=tmp_path)
+
+    assert found == stable
+    assert stable.is_file()
+    assert app_module.decode_bounded_thumbnail(stable.read_bytes()).size == (32, 18)
+    assert old_cache.is_file()
 
 
 def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(monkeypatch, tmp_path: Path):
@@ -1971,6 +2136,18 @@ def test_vod_ffmpeg_command_uses_manual_override_audio_and_preset(tmp_path: Path
     assert "-c:a aac -b:a 256k -ar 44100 -ac 1" in joined
 
 
+def test_manual_override_can_encode_mp3_audio_inside_the_mp4_container(tmp_path: Path):
+    command = build_vod_ffmpeg_command(
+        "ffmpeg",
+        tmp_path / "source.mp4",
+        tmp_path / "output.mp4",
+        audio_codec=ManualAudioCodec.MP3,
+    )
+
+    assert "-c:a libmp3lame" in " ".join(command)
+    assert "-c:a aac" not in " ".join(command)
+
+
 def test_auto_source_selection_prefers_true_1080p_h264_when_effective_quality_wins():
     formats = [
         {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
@@ -2238,7 +2415,7 @@ def test_export_mode_descriptions_state_the_actual_rate_control_behavior():
     assert "10 Mbps video" in strict
     assert "320 kbps audio" in strict
     assert "cannot add detail" in strict
-    assert "exact video bitrate, audio bitrate, and encoding speed" in manual
+    assert "exact video bitrate, audio codec, audio bitrate, and encoding speed" in manual
 
 
 def test_manual_override_keeps_source_selection_but_replaces_encode_settings():
@@ -2252,7 +2429,7 @@ def test_manual_override_keeps_source_selection_but_replaces_encode_settings():
     plan = build_auto_export_plan(info, mode=ExportMode.MANUAL_OVERRIDE, max_height=1080)
     manual = apply_manual_export_settings(
         plan,
-        ManualExportSettings(video_bitrate_kbps=15000, audio_bitrate_kbps=256, audio_sample_rate="44100", audio_channels="1", x264_preset="fast"),
+        ManualExportSettings(video_bitrate_kbps=15000, audio_bitrate_kbps=256, audio_sample_rate="44100", audio_channels="1", audio_codec=ManualAudioCodec.MP3, x264_preset="fast"),
     )
 
     assert manual.format_selector == "137+140"
@@ -2262,6 +2439,7 @@ def test_manual_override_keeps_source_selection_but_replaces_encode_settings():
     assert manual.audio_bitrate_kbps == 256
     assert manual.audio_sample_rate == "44100"
     assert manual.audio_channels == "1"
+    assert manual.output_audio_codec is ManualAudioCodec.MP3
     assert manual.x264_preset == "fast"
 
 
@@ -2845,6 +3023,28 @@ def test_output_validator_accepts_expected_mp4_and_mp3_streams(tmp_path: Path):
 
     assert validate_output_artifact(mp4, OutputType.MP4, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp4_probe) is mp4_probe
     assert validate_output_artifact(mp3, OutputType.MP3, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp3_probe) is mp3_probe
+
+
+def test_output_validator_honors_the_selected_manual_mp4_audio_codec(tmp_path: Path):
+    output = tmp_path / "video.mp4"
+    output.write_bytes(b"mp4 bytes")
+    probe = {
+        "format": {"format_name": "mov,mp4", "duration": "60.0"},
+        "streams": [
+            {"codec_type": "video", "codec_name": "h264"},
+            {"codec_type": "audio", "codec_name": "mp3"},
+        ],
+    }
+
+    assert validate_output_artifact(
+        output,
+        OutputType.MP4,
+        "ffprobe",
+        expected_audio_codec="mp3",
+        ffprobe_data=probe,
+    ) is probe
+    with pytest.raises(RuntimeError, match="AAC audio"):
+        validate_output_artifact(output, OutputType.MP4, "ffprobe", ffprobe_data=probe)
 
 
 @pytest.mark.parametrize(

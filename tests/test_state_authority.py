@@ -17,6 +17,7 @@ from yt_downloader.app import (
     DownloadJob,
     DownloaderApp,
     ExportMode,
+    ManualAudioCodec,
     ManualExportSettings,
     Mp3ExportSettings,
     OutputType,
@@ -168,6 +169,8 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     app = DownloaderApp.__new__(DownloaderApp)
     app.metadata_items = [info]
     app.selected_title_var = Value("")
+    app.selected_meta_var = Value("")
+    app.selected_location_var = Value("")
     app.focus_active_title_var = Value("Forge-owned title")
     app.focus_active_detail_var = Value("Forge-owned creator")
     app.focus_active_duration_var = Value("9:59")
@@ -191,7 +194,13 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     assert app.focus_active_profile_var.get() == "Forge-owned profile"
     assert app.status_var.get() == "Ready"
     assert thumbnail_requests == [("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")]
-    assert "Library selection" in app.selected_title_var.get()
+    assert app.selected_title_var.get() == "Library selection"
+    assert "MP4 • Library creator" in app.selected_meta_var.get()
+    assert app.selected_location_var.get() == "Not downloaded in this history"
+
+    library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    assert "thumbnail_wrap.pack_propagate(False)" in library_source
+    assert "thumbnail_wrap.grid_propagate(False)" not in library_source
 
 
 def test_run_log_updates_activity_and_only_the_selected_active_run(tmp_path: Path):
@@ -726,6 +735,7 @@ def test_focus_settings_keep_manual_controls_in_the_mp4_flow_and_release_combo_s
     assert 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"' in settings_source
     assert '"Video bitrate (kbps)"' in settings_source
     assert '"Audio bitrate (kbps)"' in settings_source
+    assert '("Audio codec", self.manual_audio_codec_var, [codec.value for codec in ManualAudioCodec])' in settings_source
     assert '"Sample rate"' in settings_source
     assert '"Channels"' in settings_source
     assert '"Encoding speed"' in settings_source
@@ -749,7 +759,7 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     assert 'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)' in run_list_source
     assert "bind_smooth_vertical_wheel(" in run_list_source
     assert 'mode="increments"' in run_list_source
-    assert "button.winfo_rooty() - self.winfo_rooty() - height - 6" in run_list_source
+    assert "button.winfo_rooty() - self.winfo_rooty() - height + 1" in run_list_source
     assert "popup.place(x=x, y=y, width=width, height=height)" in run_list_source
     assert "width = min(440" in run_list_source
     assert "height = min(184" in run_list_source
@@ -766,9 +776,13 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
 
 
 def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
+    focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+    deck_resize_source = inspect.getsource(DownloaderApp._schedule_focus_run_deck_geometry_refresh)
+    root_resize_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
 
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
@@ -781,11 +795,32 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert 'if library_mode == "compact":' in layout_source
     assert "library_actions_collapsed" not in layout_source
     assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in layout_source
-    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=340)' in layout_source
-    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=300)' in layout_source
+    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)' in layout_source
+    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in layout_source
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
+    assert "for column in range(4):" in deck_source
+    assert 'deck.bind("<Configure>", self._schedule_focus_run_deck_geometry_refresh' in forge_source
+    assert 'capacity == self.__dict__.get("_focus_run_deck_rendered_capacity")' in deck_resize_source
     assert "self.focus_run_overflow_button.grid()" in deck_source
     assert "if self._focus_run_records():" in layout_source
+    assert "ttk.Sizegrip(self" in focus_ui_source
+    assert 'self.bind("<Configure>", self._schedule_focus_layout' in focus_ui_source
+    assert "self.after(16, apply)" in root_resize_source
+
+
+def test_library_copy_feedback_and_youtube_url_actions_keep_stable_button_geometry():
+    library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    feedback_source = inspect.getsource(DownloaderApp._show_copy_feedback)
+    compact_actions_source = inspect.getsource(DownloaderApp._show_library_actions_menu)
+    row_actions_source = inspect.getsource(DownloaderApp._show_library_row_menu)
+    popup_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
+    forge_actions_source = inspect.getsource(DownloaderApp._show_focus_run_actions_menu)
+
+    assert 'button.configure(width=max(len(normal_label), len("Copied")))' in library_source
+    assert 'button.configure(text="Copied", style="FocusCopySuccess.TButton")' in feedback_source
+    assert 'button.configure(text=original_label, style="FocusQuiet.TButton")' in feedback_source
+    for source in (compact_actions_source, row_actions_source, popup_source, forge_actions_source):
+        assert "Copy YouTube URL" in source
 
 
 def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
@@ -809,7 +844,9 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
 
 def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
+    report_yview_source = inspect.getsource(app_module.PixelScrollTable._report_yview)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+    render_source = inspect.getsource(DownloaderApp._render_metadata_tree)
 
     assert 'self._header.bind("<ButtonPress-1>", self._begin_column_resize' in pixel_table_source
     assert 'self._header.bind("<B1-Motion>", self._drag_column_resize' in pixel_table_source
@@ -821,7 +858,19 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "self._header.grab_release()" in pixel_table_source
     assert 'else THEME["subtle"]' in pixel_table_source
     assert "self._manually_resized_columns.add(column)" in pixel_table_source
+    assert "heading_anchor = self._heading_anchors.get(column) or anchor" in pixel_table_source
+    assert 'anchor="w" if column == "duration" else None' in inspect.getsource(DownloaderApp._build_focus_library_view)
     assert "def layout_column" in pixel_table_source
+    assert "def replace_rows" in pixel_table_source
+    assert "self._body.delete(\"all\")" in pixel_table_source
+    assert "pixel_table_visible_row_window(" in pixel_table_source
+    assert "for row_index in range(first_row, last_row):" in pixel_table_source
+    assert "self._body.bind(\"<Configure>\", lambda _event: self._schedule_redraw()" in pixel_table_source
+    assert "_schedule_redraw" not in report_yview_source
+    assert "Every supported scroll entry point already schedules a redraw" in report_yview_source
+    assert 'replace_rows = getattr(self.video_tree, "replace_rows", None)' in render_source
+    assert "children = replace_rows(rows, selected=target)" in render_source
+    assert "if callable(replace_rows):" in render_source
     assert "self.video_tree.layout_column(" in layout_source
     assert 'xscrollincrement=1' in pixel_table_source
 
@@ -1128,6 +1177,268 @@ def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path:
     assert "not deleted" in app.status_var.get()
 
 
+def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monkeypatch, tmp_path: Path):
+    info = {
+        "id": "active-item",
+        "title": "Active item",
+        "vodforge_output_type": "MP4",
+    }
+    item_key = app_module.metadata_run_key(info)
+    assert item_key is not None
+    active = make_job(tmp_path, video_id="active-item")
+    active.preview_info = dict(info)
+    active.metadata_keys.add(item_key)
+    queued_same_item = make_job(tmp_path, video_id="active-item")
+    queued_same_item.preview_info = dict(info)
+    queued_same_item.metadata_keys.add(item_key)
+    unrelated_queued = make_job(tmp_path, video_id="other-item")
+    unrelated_queued.preview_info = {
+        "id": "other-item",
+        "title": "Other item",
+        "vodforge_output_type": "MP4",
+    }
+    unrelated_key = app_module.metadata_run_key(unrelated_queued.preview_info)
+    assert unrelated_key is not None
+    unrelated_queued.metadata_keys.add(unrelated_key)
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = SelectedTree()
+    app.metadata_items = [dict(info)]
+    app.download_history = []
+    app.history_path = tmp_path / "history.json"
+    app.active_job = active
+    app.pending_jobs = [queued_same_item, unrelated_queued]
+    app._terminal_jobs = []
+    app._completed_jobs = []
+    app._library_suppressed_run_ids = set()
+    app.status_var = Value("")
+    cancellations: list[str] = []
+    reconciled: list[set[str]] = []
+    app._cancel = lambda: cancellations.append(active.run_id)
+    app._render_metadata_tree = lambda: None
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(set(run_ids))
+    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    app._remove_selected_library_item()
+
+    assert cancellations == [active.run_id]
+    assert app.metadata_items == []
+    assert app.pending_jobs == [unrelated_queued]
+    assert app._library_suppressed_run_ids == {active.run_id, queued_same_item.run_id}
+    assert active.run_id in reconciled[0]
+    assert queued_same_item.run_id in reconciled[0]
+    assert app._active_run_for_metadata_event(replace(active)) is None
+
+    # Worker completion, failure, and playlist-item events arriving after the
+    # removal cannot resurrect the run on either Library or Forge.
+    app._archive_active_terminal_job("Stopped", "late stop")
+    app._archive_active_completed_job("Completed", "late completion")
+    child = replace(
+        active,
+        run_id="child-item-run",
+        origin_run_id=active.run_id,
+        preview_info=dict(info),
+    )
+    app._archive_item_terminal_job(child, dict(info))
+    assert app._terminal_jobs == []
+    assert app._completed_jobs == []
+    assert app.metadata_items == []
+
+
+def test_remove_active_library_item_after_history_commit_still_stops_its_exact_run(monkeypatch, tmp_path: Path):
+    active = make_job(tmp_path, video_id="active-item")
+    older_terminal = make_job(tmp_path, video_id="active-item")
+    older_terminal.terminal_status = "Failed"
+    older_terminal.preview_info = {
+        "id": "active-item",
+        "title": "Older failed attempt",
+        "vodforge_output_type": "MP4",
+    }
+    older_terminal.metadata_keys.add(("active-item", "MP4"))
+    output_dir = tmp_path / "Creator" / "videos - no playlist" / "Active item [active-item]"
+    output_dir.mkdir(parents=True)
+    (output_dir / "Active item.mp4").write_bytes(b"committed output")
+    saved = upsert_history(
+        [],
+        {
+            "id": "active-item",
+            "title": "Active item",
+            "vodforge_output_type": "MP4",
+            "vodforge_run_id": active.run_id,
+        },
+        output_dir,
+    )[0]
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = SelectedTree()
+    app.metadata_items = [saved]
+    app.download_history = [saved]
+    app.history_path = tmp_path / "history.json"
+    app.active_job = active
+    app.pending_jobs = []
+    app._terminal_jobs = [older_terminal]
+    app._completed_jobs = []
+    app._library_suppressed_run_ids = set()
+    app.status_var = Value("")
+    cancellations: list[str] = []
+    reconciled: list[set[str]] = []
+    app._cancel = lambda: cancellations.append(active.run_id)
+    app._render_metadata_tree = lambda: None
+    app._rebuild_output_dir_index = lambda: None
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(set(run_ids))
+    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    app._remove_selected_library_item()
+
+    assert cancellations == [active.run_id]
+    assert app._library_suppressed_run_ids == {active.run_id}
+    assert app.metadata_items == []
+    assert app.download_history == []
+    assert app._terminal_jobs == []
+    assert len(reconciled) == 1
+    assert active.run_id in reconciled[0]
+    assert older_terminal.run_id in reconciled[0]
+
+
+def test_manual_mp3_in_mp4_rejects_unsupported_bitrate_before_launch():
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.manual_video_bitrate_var = Value("10000")
+    app.manual_audio_bitrate_var = Value("1024")
+    app.manual_sample_rate_var = Value("48000")
+    app.manual_channels_var = Value("Stereo")
+    app.manual_audio_codec_var = Value(ManualAudioCodec.MP3.value)
+    app.manual_preset_var = Value("medium")
+
+    try:
+        app._manual_export_settings()
+    except ValueError as exc:
+        assert "encoder-supported values" in str(exc)
+        assert "320" in str(exc)
+    else:
+        raise AssertionError("unsupported MP3 bitrate was accepted")
+
+    app.manual_audio_bitrate_var.set("256")
+    settings = app._manual_export_settings()
+    assert settings.audio_codec is ManualAudioCodec.MP3
+    assert settings.audio_bitrate_kbps == 256
+
+
+def test_hidden_manual_values_cannot_block_auto_or_strict_mp4_runs(monkeypatch, tmp_path: Path):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.output_var = Value(str(tmp_path))
+    app.tags_var = Value("")
+    app.quality_var = Value("1080p Full HD")
+    app.use_nvenc_var = Value(False)
+    app.embed_thumbnail_var = Value(False)
+    app.write_thumbnail_var = Value(False)
+    app.embed_metadata_var = Value(False)
+    app.write_info_json_var = Value(False)
+    app._selected_cookie_source = lambda: app_module.CookieSource.PUBLIC
+    app._cookie_inputs = lambda: (False, None, None)
+    app._manual_export_settings = lambda: (_ for _ in ()).throw(
+        AssertionError("hidden Manual settings were parsed")
+    )
+    app._mp3_export_settings = lambda: Mp3ExportSettings()
+    monkeypatch.setattr(app_module, "validate_output_directory_access", lambda _path: None)
+
+    for mode in (ExportMode.AUTO_CBR, ExportMode.STRICT_COMPLIANCE):
+        app.export_mode_var = Value(mode.value)
+        job = app._build_download_job_from_current_settings(
+            ["https://www.youtube.com/watch?v=authority-id"],
+            output_type=OutputType.MP4,
+            single_video_only=True,
+            batch_mode=False,
+        )
+
+        assert job is not None
+        assert job.export_mode is mode
+        assert job.manual_settings == ManualExportSettings()
+
+
+def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(monkeypatch, tmp_path: Path):
+    terminal = make_job(tmp_path, video_id="same-item")
+    terminal.terminal_status = "Failed"
+    terminal.preview_info = {
+        "id": "same-item",
+        "title": "Old failed attempt",
+        "vodforge_output_type": "MP4",
+    }
+    terminal.metadata_keys.add(("same-item", "MP4"))
+    active = make_job(tmp_path, video_id="same-item")
+    terminal_row = {
+        **terminal.preview_info,
+        "vodforge_terminal_status": "Failed",
+        "vodforge_terminal_message": "old failure",
+        "vodforge_terminal_run_id": terminal.run_id,
+    }
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active
+    app.metadata_items = [terminal_row]
+    app.library_output_type_var = Value("MP4")
+    app.status_var = Value("Active")
+    app._render_metadata_tree = lambda **_kwargs: None
+    app._display_active_job_metadata = lambda *_args, **_kwargs: None
+
+    app._display_metadata(
+        {"id": "same-item", "title": "Fresh active attempt", "vodforge_output_type": "MP4"},
+        active_job=active,
+    )
+
+    claimed = app.metadata_items[0]
+    assert claimed[app_module.ACTIVE_METADATA_RUN_ID_KEY] == active.run_id
+    assert claimed["title"] == "Fresh active attempt"
+    assert "vodforge_terminal_status" not in claimed
+    assert "vodforge_terminal_run_id" not in claimed
+
+    app.video_tree = SelectedTree()
+    app.download_history = []
+    app.history_path = tmp_path / "history.json"
+    app.pending_jobs = []
+    app._terminal_jobs = [terminal]
+    app._completed_jobs = []
+    app._library_suppressed_run_ids = set()
+    cancellations: list[str] = []
+    app._cancel = lambda: cancellations.append(active.run_id)
+    app._reconcile_focus_after_library_removal = lambda _run_ids: None
+    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    app._remove_selected_library_item()
+
+    assert cancellations == [active.run_id]
+    assert active.run_id in app._library_suppressed_run_ids
+    assert app.metadata_items == []
+
+
+def test_late_worker_events_cannot_resurrect_a_library_removed_run(tmp_path: Path):
+    active = make_job(tmp_path, video_id="removed-item")
+    active.preview_info = {
+        "id": "removed-item",
+        "title": "Removed item",
+        "vodforge_output_type": "MP4",
+    }
+    child = replace(
+        active,
+        run_id="late-child",
+        origin_run_id=active.run_id,
+        preview_info=dict(active.preview_info),
+    )
+    unrelated = make_job(tmp_path, video_id="unrelated")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active
+    app.pending_jobs = [unrelated]
+    app._library_suppressed_run_ids = {active.run_id}
+    app.events = queue.Queue()
+    app.events.put(("history_record", {"job": replace(active), "info": dict(active.preview_info), "output_dir": str(tmp_path / "late")}))
+    app.events.put(("item_terminal", {"job": child, "info": dict(active.preview_info)}))
+    app._record_download_history = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("late history resurrected"))
+    app._archive_item_terminal_job = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("late terminal resurrected"))
+    app.after = lambda *_args, **_kwargs: None
+
+    app._pump_events()
+
+    assert app.pending_jobs == [unrelated]
+
+
 def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, tmp_path: Path):
     stopped = make_job(tmp_path, video_id="stopped-item")
     stopped.output_type = OutputType.MP4
@@ -1183,7 +1494,7 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
     assert "Library and Forge recents" in app.status_var.get()
 
     removal_source = inspect.getsource(DownloaderApp._remove_library_item_from_forge_recents)
-    assert "never execution or files" in removal_source
+    assert "without deleting media files" in removal_source
     assert "active_job" not in removal_source
     assert "pending_jobs" not in removal_source
 

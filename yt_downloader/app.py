@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from datetime import datetime
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import tkinter as tk
 import tkinter.font as tkfont
@@ -122,6 +123,7 @@ AUDIO_SAMPLE_RATE = "48000"
 AUDIO_CHANNELS = "2"
 STRICT_VIDEO_BITRATE_KBPS = 10000
 STRICT_AUDIO_BITRATE_KBPS = 320
+MP3_IN_MP4_BITRATES_KBPS = (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
 DEFAULT_MAX_HEIGHT = 1080
 THUMBNAIL_MAX_BYTES = 300 * 1024
 THUMBNAIL_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024
@@ -266,6 +268,11 @@ def resized_table_column_width(initial_width: int, delta: int, minimum_width: in
     return max(int(minimum_width), int(initial_width) + int(delta))
 
 
+def focus_library_horizontal_padding(width: int, *, maximum_content_width: int = 1600) -> int:
+    """Center a bounded Library workspace without squeezing ordinary windows."""
+    return max(18, (max(1, int(width)) - int(maximum_content_width)) // 2)
+
+
 def focus_run_deck_capacity(available_width: int, *, maximum: int = 4) -> int:
     """Show every run card that fits instead of collapsing by breakpoint."""
     safe_width = max(1, int(available_width))
@@ -295,6 +302,26 @@ def accumulated_row_scroll(remainder: float, pixels: int, row_pixels: int) -> tu
     total = float(remainder) + int(pixels)
     rows = int(total / safe_row_pixels)
     return rows, total - (rows * safe_row_pixels)
+
+
+def pixel_table_visible_row_window(
+    total_rows: int,
+    row_height: int,
+    viewport_height: int,
+    y_offset: float,
+) -> tuple[float, int, int]:
+    """Clamp a virtual table viewport and include a small paint buffer."""
+    safe_rows = max(0, int(total_rows))
+    safe_row_height = max(1, int(row_height))
+    safe_viewport = max(safe_row_height, int(viewport_height))
+    content_height = max(safe_row_height, safe_rows * safe_row_height)
+    clamped_offset = max(0.0, min(float(y_offset), max(0, content_height - safe_viewport)))
+    first_row = max(0, int(clamped_offset // safe_row_height) - 1)
+    last_row = min(
+        safe_rows,
+        int((clamped_offset + safe_viewport) // safe_row_height) + 2,
+    )
+    return clamped_offset, first_row, last_row
 
 
 def touchpad_scroll_deltas(widget: tk.Misc, packed_delta: int | float) -> tuple[float, float]:
@@ -1068,6 +1095,19 @@ class ExportMode(str, Enum):
     MANUAL_OVERRIDE = "Manual Override"
 
 
+class ManualAudioCodec(str, Enum):
+    AAC = "AAC"
+    MP3 = "MP3"
+
+    @property
+    def ffmpeg_encoder(self) -> str:
+        return "aac" if self is ManualAudioCodec.AAC else "libmp3lame"
+
+    @property
+    def ffprobe_codec(self) -> str:
+        return "aac" if self is ManualAudioCodec.AAC else "mp3"
+
+
 def export_mode_display_name(mode: ExportMode | str) -> str:
     """Return the user-facing selector label without changing stored mode values."""
     parsed = mode if isinstance(mode, ExportMode) else ExportMode(mode)
@@ -1100,7 +1140,7 @@ def export_mode_description(mode: ExportMode | str) -> str:
             "Uses the same 10 Mbps video and 320 kbps audio delivery profile for every MP4. "
             "It cannot add detail missing from the YouTube source."
         )
-    return "Uses the exact video bitrate, audio bitrate, and encoding speed you choose below."
+    return "Uses the exact video bitrate, audio codec, audio bitrate, and encoding speed you choose below."
 
 
 EXPORT_MODES = [export_mode_display_name(mode) for mode in ExportMode]
@@ -1122,6 +1162,7 @@ class ExportPlan:
     audio_bitrate_kbps: int
     audio_sample_rate: str = AUDIO_SAMPLE_RATE
     audio_channels: str = AUDIO_CHANNELS
+    output_audio_codec: ManualAudioCodec = ManualAudioCodec.AAC
     x264_preset: str = "medium"
     fps: float | None = None
     video_codec: str = "unknown"
@@ -1615,6 +1656,7 @@ def apply_manual_export_settings(plan: ExportPlan, settings: "ManualExportSettin
         audio_bitrate_kbps=settings.audio_bitrate_kbps,
         audio_sample_rate=settings.audio_sample_rate,
         audio_channels=settings.audio_channels,
+        output_audio_codec=settings.audio_codec,
         x264_preset=settings.x264_preset,
         fps=plan.fps,
         video_codec=plan.video_codec,
@@ -1622,7 +1664,7 @@ def apply_manual_export_settings(plan: ExportPlan, settings: "ManualExportSettin
         warnings=list(plan.warnings),
         summary=(
             f"Manual Override will export H.264 CBR {settings.video_bitrate_kbps / 1000:g} Mbps "
-            f"+ AAC {settings.audio_bitrate_kbps} kbps, {settings.audio_sample_rate} Hz, "
+            f"+ {settings.audio_codec.value} {settings.audio_bitrate_kbps} kbps, {settings.audio_sample_rate} Hz, "
             f"{settings.audio_channels} channel(s)."
         ),
     )
@@ -1937,6 +1979,29 @@ def build_terminal_item_metadata(
     return enriched
 
 
+ACTIVE_METADATA_RUN_ID_KEY = "vodforge_active_run_id"
+_ACTIVE_METADATA_STALE_KEYS = (
+    "vodforge_preview_complete",
+    "vodforge_preview_run_id",
+    "vodforge_terminal_status",
+    "vodforge_terminal_message",
+    "vodforge_terminal_run_id",
+)
+
+
+def claim_active_metadata_row(
+    row: dict[str, Any],
+    incoming: dict[str, Any],
+    run_id: str,
+) -> dict[str, Any]:
+    """Give one ephemeral Library row to an exact active run authority."""
+    row.update(incoming)
+    for key in _ACTIVE_METADATA_STALE_KEYS:
+        row.pop(key, None)
+    row[ACTIVE_METADATA_RUN_ID_KEY] = str(run_id)
+    return row
+
+
 def _planned_output_summary(plan: ExportPlan | AudioExportPlan, output_path: Path | None = None) -> dict[str, str]:
     if isinstance(plan, AudioExportPlan):
         return {
@@ -1967,7 +2032,11 @@ def _planned_output_summary(plan: ExportPlan | AudioExportPlan, output_path: Pat
         "Measured video bitrate": "Pending",
         "Pixel format": "yuv420p",
         "H.264 profile": "High",
-        "Output audio codec": "AAC",
+        "Output audio codec": (
+            "AAC"
+            if plan.output_audio_codec is ManualAudioCodec.AAC
+            else "MP3 (libmp3lame)"
+        ),
         "Target audio bitrate": f"{plan.audio_bitrate_kbps} kbps",
         "Measured audio bitrate": "Pending",
         "Audio sample rate": plan.audio_sample_rate,
@@ -2153,8 +2222,19 @@ def _windows_safe_component(value: Any, fallback: str, max_len: int = 80) -> str
     text = _clean_windows_component_text(value, fallback)
     safe = "".join(ch if ch not in '<>:"/\\|?*\0' else "_" for ch in text).strip(" .")
     safe = " ".join(safe.split())
-    if len(safe) > max_len:
-        safe = safe[:max_len].rstrip(" ._-…") + "…"
+    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{index}" for index in range(1, 10)), *(f"LPT{index}" for index in range(1, 10))}
+    if safe.partition(".")[0].upper() in reserved:
+        safe = f"_{safe}"
+    if len(safe.encode("utf-16-le")) // 2 > max_len:
+        kept: list[str] = []
+        used_units = 0
+        for character in safe:
+            units = len(character.encode("utf-16-le")) // 2
+            if used_units + units > max(1, max_len - 1):
+                break
+            kept.append(character)
+            used_units += units
+        safe = "".join(kept).rstrip(" ._-…") + "…"
     return safe or fallback
 
 
@@ -2235,6 +2315,36 @@ def retry_url_for_item(info: dict[str, Any], fallback_url: str) -> str:
     return fallback_url.strip()
 
 
+def canonical_youtube_url(info: dict[str, Any], fallback_url: str = "") -> str | None:
+    """Return a public item URL without copying unrelated query or auth data."""
+    candidates = [
+        str(info.get("webpage_url") or "").strip(),
+        str(info.get("original_url") or "").strip(),
+        str(info.get("url") or "").strip(),
+        str(fallback_url or "").strip(),
+    ]
+    video_id = str(info.get("id") or "").strip()
+    playlist_id = str(info.get("playlist_id") or "").strip()
+    for candidate in candidates:
+        parsed = urllib.parse.urlsplit(candidate)
+        host = parsed.netloc.casefold().removeprefix("www.")
+        if parsed.scheme not in {"http", "https"} or host not in {"youtube.com", "m.youtube.com", "youtu.be"}:
+            continue
+        video_id = video_id or str(youtube_url_video_id(candidate) or "").strip()
+        playlist_id = playlist_id or str(youtube_url_playlist_id(candidate) or "").strip()
+    if video_id:
+        query: dict[str, str] = {"v": video_id}
+        if playlist_id:
+            query["list"] = playlist_id
+        return "https://www.youtube.com/watch?" + urllib.parse.urlencode(query)
+    for candidate in candidates:
+        parsed = urllib.parse.urlsplit(candidate)
+        host = parsed.netloc.casefold().removeprefix("www.")
+        if parsed.scheme in {"http", "https"} and host in {"youtube.com", "m.youtube.com", "youtu.be"}:
+            return candidate
+    return None
+
+
 def playlist_context_from_extraction(info: dict[str, Any], source_url: str) -> dict[str, Any]:
     """Return playlist authority only when the provider actually returned playlist entries."""
     if info.get("entries") is not None:
@@ -2305,7 +2415,7 @@ def video_output_dir(output_dir: Path, info: dict[str, Any]) -> Path:
 def _path_would_exceed_windows_safe_limit(path: Path) -> bool:
     # Stay below the legacy MAX_PATH boundary because packaged FFmpeg/Explorer and
     # third-party tooling are not guaranteed to be longPathAware on every user PC.
-    return len(str(path)) > WINDOWS_SAFE_PATH_LIMIT
+    return len(str(path).encode("utf-16-le")) // 2 > WINDOWS_SAFE_PATH_LIMIT
 
 
 def compact_video_folder_name(info: dict[str, Any], max_title_len: int) -> str:
@@ -2330,26 +2440,54 @@ def compact_video_folder_name(info: dict[str, Any], max_title_len: int) -> str:
     return f"{title_safe}{suffix}"
 
 
-def shallow_video_output_dir(output_dir: Path, info: dict[str, Any]) -> Path:
+def legacy_shallow_video_output_dir(output_dir: Path, info: dict[str, Any]) -> Path:
+    """Locate the v0.1.5 ID-only fallback without creating new opaque paths."""
     video_id = _windows_safe_component(info.get("id"), "video", max_len=32)
     return output_dir / channel_folder_name(info) / "path-safe videos" / video_id
 
 
 def compact_video_output_dir(output_dir: Path, info: dict[str, Any], target_file_name: str) -> Path:
-    channel_dir = output_dir / channel_folder_name(info)
-    if info.get("playlist_title") or info.get("playlist_id"):
-        parent = channel_dir / "playlists" / playlist_folder_name(info)
-    else:
-        parent = channel_dir / "videos - no playlist"
-    for max_title_len in range(80, 0, -1):
-        candidate = parent / compact_video_folder_name(info, max_title_len)
+    has_playlist = bool(info.get("playlist_title") or info.get("playlist_id"))
+    channel_limit = 80
+    playlist_limit = 80
+    title_limit = 80
+    while True:
+        channel = _windows_safe_component(
+            info.get("channel") or info.get("uploader") or info.get("channel_id") or "Unknown Channel",
+            "Unknown Channel",
+            max_len=channel_limit,
+        )
+        parent = output_dir / channel
+        if has_playlist:
+            playlist = _windows_safe_component(
+                info.get("playlist_title") or info.get("playlist_id") or "Playlist",
+                "Playlist",
+                max_len=playlist_limit,
+            )
+            parent = parent / "playlists" / playlist
+        else:
+            parent = parent / "videos - no playlist"
+        candidate = parent / compact_video_folder_name(info, title_limit)
         if not _path_would_exceed_windows_safe_limit(candidate / target_file_name):
             return candidate
-    # Last resort: shallow path-safe directory using just the video ID.
-    # This handles cases where the output root + channel name alone are
-    # already very deep (e.g. OneDrive paths like
-    # C:\Users\Name\OneDrive - org\Downloads\...\Channel\...\file.mp4).
-    return shallow_video_output_dir(output_dir, info)
+        if title_limit > 4:
+            name, current, minimum = "title", title_limit, 4
+        elif has_playlist and playlist_limit > 16:
+            name, current, minimum = "playlist", playlist_limit, 16
+        elif channel_limit > 16:
+            name, current, minimum = "channel", channel_limit, 16
+        else:
+            raise ValueError(
+                "The selected output folder is too deep for a Windows-compatible media path. "
+                "Choose a shorter output folder and try again."
+            )
+        updated = max(minimum, current - 4)
+        if name == "title":
+            title_limit = updated
+        elif name == "playlist":
+            playlist_limit = updated
+        else:
+            channel_limit = updated
 
 
 def resolved_video_output_dir(output_dir: Path, info: dict[str, Any], target_file_name: str | None = None) -> Path:
@@ -2380,15 +2518,27 @@ def existing_output_candidate_dirs(output_dir: Path, info: dict[str, Any], targe
         if path not in candidates:
             candidates.append(path)
 
-    canonical = resolved_video_output_dir(output_dir, info, target_file_name)
-    add(canonical)
+    canonical_primary = video_output_dir(output_dir, info)
+    add(canonical_primary)
+    try:
+        canonical = resolved_video_output_dir(output_dir, info, target_file_name)
+        add(canonical)
+    except ValueError:
+        canonical = canonical_primary
     legacy_info = dict(info)
     legacy_info.pop("playlist_title", None)
     legacy_info.pop("playlist_id", None)
     legacy_info.pop("playlist_index", None)
     legacy_info.pop("_vodforge_output_dir", None)
-    legacy = resolved_video_output_dir(output_dir, legacy_info, target_file_name)
-    add(legacy)
+    legacy_primary = video_output_dir(output_dir, legacy_info)
+    add(legacy_primary)
+    try:
+        legacy = resolved_video_output_dir(output_dir, legacy_info, target_file_name)
+        add(legacy)
+    except ValueError:
+        legacy = legacy_primary
+    add(legacy_shallow_video_output_dir(output_dir, info))
+    add(output_dir / "path-safe videos" / _windows_safe_component(info.get("id"), "video", max_len=32))
 
     safe_video_id = _windows_safe_component(info.get("id"), "", max_len=32)
     suffix = f"[{safe_video_id}]" if safe_video_id else ""
@@ -2447,7 +2597,17 @@ def find_valid_existing_output(
     """Reuse only a provider-ID-scoped artifact that passes full media validation."""
     extension = ".mp3" if output_type == OutputType.MP3 else ".mp4"
     target_file_name = video_file_name(info, extension)
-    for candidate_dir in existing_output_candidate_dirs(output_dir, info, target_file_name):
+    try:
+        target_dir, target_file_name = resolved_video_output_target(output_dir, info, extension)
+    except ValueError:
+        # Lookup remains compatible with v0.1.5's emergency ID-only paths even
+        # when this release would reject creating a new artifact under the
+        # same overly deep root.
+        target_dir = None
+    candidate_dirs = existing_output_candidate_dirs(output_dir, info, target_file_name)
+    if target_dir is not None and target_dir not in candidate_dirs:
+        candidate_dirs.insert(0, target_dir)
+    for candidate_dir in candidate_dirs:
         exact = candidate_dir / target_file_name
         paths = [exact]
         try:
@@ -2470,6 +2630,11 @@ def find_valid_existing_output(
                     ffprobe,
                     expected_duration_seconds=expected_duration_seconds,
                     require_audio=True,
+                    expected_audio_codec=(
+                        plan.output_audio_codec.ffprobe_codec
+                        if isinstance(plan, ExportPlan)
+                        else "mp3"
+                    ),
                     control_check=control_check,
                 )
             except Exception as exc:
@@ -2572,6 +2737,15 @@ def output_artifact_matches_plan(
         return False
     if str(sidecar_summary.get("Target audio bitrate") or "") != f"{plan.audio_bitrate_kbps} kbps":
         return False
+    if str(audio.get("codec_name") or "").lower() != plan.output_audio_codec.ffprobe_codec:
+        return False
+    expected_audio_label = "AAC" if plan.output_audio_codec is ManualAudioCodec.AAC else "MP3 (libmp3lame)"
+    saved_audio_label = str(sidecar_summary.get("Output audio codec") or "")
+    if saved_audio_label and saved_audio_label.casefold() not in {
+        expected_audio_label.casefold(),
+        plan.output_audio_codec.ffprobe_codec.casefold(),
+    }:
+        return False
     if str(video.get("pix_fmt") or "").lower() != "yuv420p":
         return False
     if str(video.get("profile") or "").casefold() != "high":
@@ -2615,10 +2789,19 @@ def read_url_list_file(path: Path) -> list[str]:
 
 
 def create_staging_dir(output_dir: Path) -> Path:
-    staging_root = output_dir / ".yt-dlp-downloader-staging"
-    staging = staging_root / uuid.uuid4().hex
-    staging.mkdir(parents=True, exist_ok=False)
-    return staging
+    # Keep staging on the destination volume for atomic commit, but reserve far
+    # less of Windows' legacy path budget than the former long root + UUID. The
+    # staging directory is private implementation state, so use a deliberately
+    # compact name and token; final user-facing paths retain descriptive names.
+    staging_root = output_dir / ".vfstage"
+    for _attempt in range(16):
+        staging = staging_root / uuid.uuid4().hex[:8]
+        try:
+            staging.mkdir(parents=True, exist_ok=False)
+            return staging
+        except FileExistsError:
+            continue
+    raise RuntimeError("VODForge could not allocate a unique staging directory.")
 
 
 def validate_output_directory_access(output_dir: Path) -> None:
@@ -2645,7 +2828,7 @@ def staging_output_template(staging_dir: Path) -> str:
     # yt-dlp writes only into this per-job staging directory. Final user-facing
     # folders are created later from extracted metadata, so old downloads are
     # never scanned or moved.
-    return str(staging_dir / "%(id)s" / "video [%(id)s].%(ext)s")
+    return str(staging_dir / "%(id)s.%(ext)s")
 
 
 def iter_video_infos(info: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2760,9 +2943,30 @@ def _find_staged_media_file(staging_dir: Path, video_id: str, *, expected_extens
     return max(candidates, key=lambda path: (path.stat().st_mtime, path.stat().st_size))
 
 
-def video_file_name(info: dict[str, Any], ext: str) -> str:
-    title = _windows_safe_component(info.get("title"), "video", max_len=120)
+def video_file_name(info: dict[str, Any], ext: str, *, max_title_len: int = 120) -> str:
+    title = _windows_safe_component(info.get("title"), "video", max_len=max_title_len)
     return f"{title}{ext}"
+
+
+def resolved_video_output_target(output_dir: Path, info: dict[str, Any], ext: str) -> tuple[Path, str]:
+    """Allocate one path budget while preserving the canonical hierarchy."""
+    primary = video_output_dir(output_dir, info)
+    for title_limit in range(120, 23, -4):
+        target_file_name = video_file_name(info, ext, max_title_len=title_limit)
+        if not _path_would_exceed_windows_safe_limit(primary / target_file_name):
+            return primary, target_file_name
+    for title_limit in range(120, 23, -4):
+        target_file_name = video_file_name(info, ext, max_title_len=title_limit)
+        try:
+            compact = compact_video_output_dir(output_dir, info, target_file_name)
+        except ValueError:
+            continue
+        if not _path_would_exceed_windows_safe_limit(compact / target_file_name):
+            return compact, target_file_name
+    raise ValueError(
+        "The selected output folder is too deep for a Windows-compatible media path. "
+        "Choose a shorter output folder and try again."
+    )
 
 
 def collect_staged_media_files(
@@ -2805,25 +3009,7 @@ def package_downloaded_media_from_staging(
                 break
     for video, staged in staged_media:
         ext = expected_extension.lower() if expected_extension else staged.suffix.lower()
-        target_file_name = video_file_name(video, ext)
-        target_dir = resolved_video_output_dir(output_dir, video, target_file_name)
-        # If even the shallow fallback + full title filename exceeds the
-        # Windows safe limit, use the shallow path-safe directory (just
-        # Channel/path-safe videos/VideoID) which keeps the full MP4 title
-        # filename while minimizing folder depth. This handles deep output
-        # roots (OneDrive, nested user folders) where channel + playlist +
-        # video folder + full title filename would exceed Windows limits.
-        if _path_would_exceed_windows_safe_limit(target_dir / target_file_name):
-            shallow = shallow_video_output_dir(output_dir, video)
-            if not _path_would_exceed_windows_safe_limit(shallow / target_file_name):
-                target_dir = shallow
-                write_diagnostic(f"shallow path-safe directory selected for full-title filename: {target_dir}")
-            else:
-                # Last resort: the output root itself is so deep that even
-                # Channel/path-safe videos/VideoID/FullTitle.mp4 exceeds the
-                # limit. Use VideoID/FullTitle.mp4 directly under output root.
-                target_dir = output_dir / "path-safe videos" / _windows_safe_component(video.get("id"), "video", max_len=32)
-                write_diagnostic(f"emergency shallow directory selected: {target_dir}")
+        target_dir, target_file_name = resolved_video_output_target(output_dir, video, ext)
         target_dir.mkdir(parents=True, exist_ok=True)
         remember_video_output_dir(video, target_dir)
         target = target_dir / target_file_name
@@ -2844,10 +3030,11 @@ def build_vod_ffmpeg_command(
     audio_bitrate_kbps: int = STRICT_AUDIO_BITRATE_KBPS,
     audio_sample_rate: str = AUDIO_SAMPLE_RATE,
     audio_channels: str = AUDIO_CHANNELS,
+    audio_codec: ManualAudioCodec = ManualAudioCodec.AAC,
     x264_preset: str = "medium",
     use_nvenc: bool = False,
 ) -> list[str]:
-    """Return the H.264/AAC constrained-CBR command for one calculated export plan."""
+    """Return the constrained-CBR command for one calculated MP4 export plan."""
     video_bitrate = f"{int(video_bitrate_kbps)}k"
     audio_bitrate = f"{int(audio_bitrate_kbps)}k"
     buffer_size = f"{int(video_bitrate_kbps) * 2}k"
@@ -2878,7 +3065,7 @@ def build_vod_ffmpeg_command(
         "-map", "0:a:0?",
         *video_args,
         "-movflags", "+faststart",
-        "-c:a", "aac",
+        "-c:a", audio_codec.ffmpeg_encoder,
         "-b:a", audio_bitrate,
         "-ar", str(audio_sample_rate),
         "-ac", str(audio_channels),
@@ -2973,6 +3160,7 @@ def validate_output_artifact(
     *,
     expected_duration_seconds: float | None = None,
     require_audio: bool = True,
+    expected_audio_codec: str = "aac",
     ffprobe_data: dict[str, Any] | None = None,
     control_check: Any | None = None,
 ) -> dict[str, Any]:
@@ -3023,8 +3211,9 @@ def validate_output_artifact(
         raise RuntimeError(f"the output container is not MP4 ({','.join(sorted(container_tokens)) or 'unknown'})")
     if not any(str(stream.get("codec_name") or "").lower() == "h264" for stream in video_streams):
         raise RuntimeError("the MP4 output does not contain the required H.264 video stream")
-    if require_audio and not any(str(stream.get("codec_name") or "").lower() == "aac" for stream in audio_streams):
-        raise RuntimeError("the MP4 output does not contain the required AAC audio stream")
+    expected_codec = str(expected_audio_codec or "aac").strip().lower()
+    if require_audio and not any(str(stream.get("codec_name") or "").lower() == expected_codec for stream in audio_streams):
+        raise RuntimeError(f"the MP4 output does not contain the required {expected_codec.upper()} audio stream")
     return data
 
 
@@ -3241,7 +3430,7 @@ def transcode_to_vod_streaming_settings(
     use_nvenc: bool = False,
     control_check: Any | None = None,
 ) -> Path:
-    """Re-encode an MP4 to H.264/AAC using Auto CBR, Strict Compliance, or manual per-file targets."""
+    """Re-encode an MP4 to the selected VODForge delivery plan."""
     if path.suffix.lower() != ".mp4" or not path.exists():
         return path
     temp_output, backup = transcode_temp_paths(path)
@@ -3249,6 +3438,8 @@ def transcode_to_vod_streaming_settings(
     audio_bitrate = plan.audio_bitrate_kbps if plan else STRICT_AUDIO_BITRATE_KBPS
     audio_sample_rate = plan.audio_sample_rate if plan else AUDIO_SAMPLE_RATE
     audio_channels = plan.audio_channels if plan else AUDIO_CHANNELS
+    audio_codec = plan.output_audio_codec if plan else ManualAudioCodec.AAC
+    audio_codec_label = audio_codec.value
     x264_preset = plan.x264_preset if plan else "medium"
 
     cleanup_legacy_encode_sidecars(path)
@@ -3275,6 +3466,7 @@ def transcode_to_vod_streaming_settings(
             audio_bitrate_kbps=audio_bitrate,
             audio_sample_rate=audio_sample_rate,
             audio_channels=audio_channels,
+            audio_codec=audio_codec,
             x264_preset=x264_preset,
             use_nvenc=use_nvenc,
         )
@@ -3335,9 +3527,9 @@ def transcode_to_vod_streaming_settings(
         output_reader.join(timeout=1)
         if return_code != 0:
             tail = "\n".join(output_lines[-40:])
-            raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}; ffmpeg exited with code {return_code}: {tail[-4000:]}")
+            raise RuntimeError(f"VODForge H.264/{audio_codec_label} CBR transcode failed for {path.name}; ffmpeg exited with code {return_code}: {tail[-4000:]}")
         if not temp_output.is_file() or temp_output.stat().st_size <= 0:
-            raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}; FFmpeg produced no usable output")
+            raise RuntimeError(f"VODForge H.264/{audio_codec_label} CBR transcode failed for {path.name}; FFmpeg produced no usable output")
         if progress_callback:
             progress_callback(1.0)
         # The downloaded source and temp live in the per-job staging directory.
@@ -3352,7 +3544,7 @@ def transcode_to_vod_streaming_settings(
             write_diagnostic(f"transcode temp cleanup failed for {temp_output}: {cleanup_exc}")
         if isinstance(exc, RuntimeError):
             raise
-        raise RuntimeError(f"VODForge H.264/AAC CBR transcode failed for {path.name}: {exc}") from exc
+        raise RuntimeError(f"VODForge H.264/{audio_codec_label} CBR transcode failed for {path.name}: {exc}") from exc
     finally:
         if process is not None:
             finalize_active_child_process(process, confirmed_exited=process_confirmed_exited)
@@ -3485,9 +3677,92 @@ def cached_thumbnail_path(info: dict[str, Any], *, data_dir: Path | None = None)
     identity = str(info.get("id") or "").strip() or url or str(info.get("title") or "").strip()
     if not identity:
         return None
-    digest = hashlib.sha256(f"{identity}\0{url}".encode("utf-8", errors="replace")).hexdigest()[:32]
+    output_type = metadata_output_type(info).value
+    digest = hashlib.sha256(f"{identity}\0{output_type}".encode("utf-8", errors="replace")).hexdigest()[:32]
     root = data_dir if data_dir is not None else application_data_dir()
     return root / "thumbnail-cache" / f"{digest}.jpeg"
+
+
+def legacy_cached_thumbnail_paths(info: dict[str, Any], *, data_dir: Path | None = None) -> tuple[Path, ...]:
+    """Return every derivable v0.1.5 URL-sensitive cache path."""
+    urls: list[str] = []
+
+    def add_url(value: Any) -> None:
+        if isinstance(value, dict):
+            value = value.get("url")
+        url = str(value or "").strip()
+        if url not in urls:
+            urls.append(url)
+
+    add_url(best_thumbnail_for_download(info))
+    add_url(info.get("best_thumbnail"))
+    add_url(info.get("thumbnail"))
+    # v0.1.5 keyed the cache by the exact selected URL, while its history row
+    # could retain only a lower-resolution `thumbnail` URL. Reconstruct the
+    # bounded, deterministic YouTube variants that yt-dlp used so a cold
+    # upgrade can find the old private JPEG without guessing among unrelated
+    # cache files. Query-bearing URLs cannot be reconstructed safely and will
+    # simply be fetched into the stable cache when the network is available.
+    provider_id = str(info.get("id") or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{6,128}", provider_id):
+        for filename in (
+            "maxresdefault.jpg",
+            "hq720.jpg",
+            "sddefault.jpg",
+            "hqdefault.jpg",
+            "mqdefault.jpg",
+            "default.jpg",
+            "0.jpg",
+            "1.jpg",
+            "2.jpg",
+            "3.jpg",
+        ):
+            add_url(f"https://i.ytimg.com/vi/{provider_id}/{filename}")
+            add_url(f"https://img.youtube.com/vi/{provider_id}/{filename}")
+        for filename in (
+            "maxresdefault.webp",
+            "sddefault.webp",
+            "hqdefault.webp",
+            "mqdefault.webp",
+            "default.webp",
+        ):
+            add_url(f"https://i.ytimg.com/vi_webp/{provider_id}/{filename}")
+    if not urls:
+        urls.append("")
+
+    root = data_dir if data_dir is not None else application_data_dir()
+    paths: list[Path] = []
+    for url in urls:
+        identity = str(info.get("id") or "").strip() or url or str(info.get("title") or "").strip()
+        if not identity:
+            continue
+        digest = hashlib.sha256(f"{identity}\0{url}".encode("utf-8", errors="replace")).hexdigest()[:32]
+        path = root / "thumbnail-cache" / f"{digest}.jpeg"
+        if path not in paths:
+            paths.append(path)
+    return tuple(paths)
+
+
+def legacy_cached_thumbnail_path(info: dict[str, Any], *, data_dir: Path | None = None) -> Path | None:
+    """Return the first v0.1.5 cache candidate for compatibility callers."""
+    paths = legacy_cached_thumbnail_paths(info, data_dir=data_dir)
+    return paths[0] if paths else None
+
+
+def existing_cached_thumbnail_path(info: dict[str, Any], *, data_dir: Path | None = None) -> Path | None:
+    """Prefer the stable cache key while retaining already-downloaded v0.1.5 art."""
+    stable = cached_thumbnail_path(info, data_dir=data_dir)
+    candidates = (stable, *legacy_cached_thumbnail_paths(info, data_dir=data_dir))
+    for path in candidates:
+        try:
+            if path is not None and path.is_file() and 0 < path.stat().st_size <= THUMBNAIL_MAX_BYTES:
+                if path == stable:
+                    return path
+                migrated = save_cached_thumbnail_bytes(info, path.read_bytes(), data_dir=data_dir)
+                return migrated or path
+        except (OSError, RuntimeError):
+            continue
+    return None
 
 
 def prune_thumbnail_cache(cache_dir: Path, *, max_items: int = THUMBNAIL_CACHE_MAX_ITEMS) -> None:
@@ -3541,6 +3816,33 @@ def save_cached_thumbnail_image(info: dict[str, Any], *, data_dir: Path | None =
             prune_thumbnail_cache(path.parent)
             return path
         finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def save_cached_thumbnail_bytes(
+    info: dict[str, Any],
+    data: bytes,
+    *,
+    data_dir: Path | None = None,
+) -> Path | None:
+    """Persist already-bounded remote preview bytes for later offline deck use."""
+    path = cached_thumbnail_path(info, data_dir=data_dir)
+    if path is None:
+        return None
+    image = decode_bounded_thumbnail(data).convert("RGB")
+    with thumbnail_cache_lock(path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.tmp")
+        try:
+            _save_jpeg_under_size(image, temporary)
+            os.replace(temporary, path)
+            prune_thumbnail_cache(path.parent)
+            return path
+        finally:
+            image.close()
             try:
                 temporary.unlink(missing_ok=True)
             except OSError:
@@ -3735,6 +4037,7 @@ class ManualExportSettings:
     audio_bitrate_kbps: int = STRICT_AUDIO_BITRATE_KBPS
     audio_sample_rate: str = AUDIO_SAMPLE_RATE
     audio_channels: str = AUDIO_CHANNELS
+    audio_codec: ManualAudioCodec = ManualAudioCodec.AAC
     x264_preset: str = "medium"
 
 
@@ -3780,6 +4083,7 @@ class DownloadJob:
     batch_mode: bool = False
     preview_info: dict[str, Any] | None = None
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    origin_run_id: str | None = None
     metadata_keys: set[tuple[str, str]] = field(default_factory=set)
     history_identities: set[tuple[str, str, str]] = field(default_factory=set)
     preview_thumbnail_image: Any | None = field(default=None, repr=False)
@@ -4299,6 +4603,7 @@ class PixelScrollTable(tk.Frame):
         super().__init__(parent, bg=THEME["border"], bd=0, highlightthickness=1, highlightbackground=THEME["subtle"])
         self._columns = tuple(columns)
         self._headings = {column: column for column in columns}
+        self._heading_anchors: dict[str, str | None] = {column: None for column in columns}
         self._column_options: dict[str, dict[str, Any]] = {
             column: {"width": 100, "minwidth": 40, "stretch": False, "anchor": "w"}
             for column in columns
@@ -4318,6 +4623,8 @@ class PixelScrollTable(tk.Frame):
         self._resize_origin_x = 0.0
         self._resize_origin_width = 0
         self._resize_hover_column: str | None = None
+        self._redraw_after_id: str | None = None
+        self._redrawing = False
         # Keep the divider itself quiet while giving trackpads and high-DPI
         # pointers a forgiving target on either side of the hairline.
         self._resize_margin = 8
@@ -4327,7 +4634,7 @@ class PixelScrollTable(tk.Frame):
         self._header.pack(fill="x")
         self._body.pack(fill="both", expand=True)
         self._body.configure(yscrollcommand=self._report_yview, xscrollcommand=self._report_xview)
-        self._body.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self._body.bind("<Configure>", lambda _event: self._schedule_redraw(), add="+")
         self._body.bind("<Button-1>", self._select_from_pointer, add="+")
         self._body.bind("<Up>", lambda _event: self._move_selection(-1), add="+")
         self._body.bind("<Down>", lambda _event: self._move_selection(1), add="+")
@@ -4365,8 +4672,10 @@ class PixelScrollTable(tk.Frame):
             return self._body.bind(sequence, func, add)
         return super().bind(sequence, func, add)
 
-    def heading(self, column: str, *, text: str = "") -> None:
+    def heading(self, column: str, *, text: str = "", anchor: str | None = None) -> None:
         self._headings[column] = text
+        if anchor is not None:
+            self._heading_anchors[column] = anchor
         self._redraw()
 
     def column(self, column: str, **kwargs: Any) -> dict[str, Any]:
@@ -4380,6 +4689,7 @@ class PixelScrollTable(tk.Frame):
         """Apply responsive defaults while retaining widths dragged this session."""
         if column in self._manually_resized_columns:
             kwargs.pop("width", None)
+            kwargs.pop("stretch", None)
         return self.column(column, **kwargs)
 
     def insert(self, _parent: str, index: str | int, *, iid: str, values: tuple[Any, ...]) -> str:
@@ -4390,6 +4700,35 @@ class PixelScrollTable(tk.Frame):
         self._items[item_id] = tuple(values)
         self._redraw()
         return item_id
+
+    def replace_rows(
+        self,
+        rows: Iterable[tuple[str, tuple[Any, ...]]],
+        *,
+        selected: str | None = None,
+    ) -> tuple[str, ...]:
+        """Replace the complete model with one Canvas redraw.
+
+        Treeview-compatible callers historically deleted and inserted every
+        row separately. On a Canvas table that rebuilt the whole surface for
+        every mutation, making a large Library effectively quadratic. Keep the
+        model update atomic and let the virtualized renderer paint once.
+        """
+        items: dict[str, tuple[Any, ...]] = {}
+        order: list[str] = []
+        for raw_item, values in rows:
+            item = str(raw_item)
+            if item in items:
+                order.remove(item)
+            order.append(item)
+            items[item] = tuple(values)
+        self._items = items
+        self._order = order
+        preferred = str(selected) if selected is not None else self._selection
+        self._selection = preferred if preferred in items else None
+        self._focus_item = self._selection
+        self._redraw()
+        return tuple(order)
 
     def delete(self, *items: str) -> None:
         for raw_item in items:
@@ -4445,6 +4784,7 @@ class PixelScrollTable(tk.Frame):
         if not args:
             return self._body.yview()
         self._body.yview(*args)
+        self._schedule_redraw()
         return None
 
     def xview(self, *args: Any) -> tuple[float, float] | None:
@@ -4457,6 +4797,10 @@ class PixelScrollTable(tk.Frame):
     def _report_yview(self, first: str | float, last: str | float) -> None:
         if self._yscrollcommand is not None:
             self._yscrollcommand(float(first), float(last))
+        # Every supported scroll entry point already schedules a redraw. Canvas
+        # can report yview again after a scrollregion update; scheduling from
+        # that callback creates a self-sustaining idle redraw loop on Aqua and
+        # makes initial mapping and native resize needlessly expensive.
 
     def _report_xview(self, first: str | float, last: str | float) -> None:
         self._header.xview_moveto(float(first))
@@ -4472,7 +4816,9 @@ class PixelScrollTable(tk.Frame):
         if extra > 0:
             stretch_indices = [index for index, column in enumerate(self._columns) if self._column_options[column].get("stretch")]
             if stretch_indices:
-                widths[stretch_indices[0]] += extra
+                index = stretch_indices[0]
+                stretch_max = self._column_options[self._columns[index]].get("stretchmax")
+                widths[index] += min(extra, max(0, int(stretch_max) - widths[index])) if stretch_max else extra
         return [(column, widths[index], str(self._column_options[column].get("anchor", "w"))) for index, column in enumerate(self._columns)]
 
     def _column_divider_at(self, x: int | float) -> str | None:
@@ -4575,48 +4921,88 @@ class PixelScrollTable(tk.Frame):
         return text[:low] + "…"
 
     def _redraw(self) -> None:
+        if self._redraw_after_id is not None:
+            try:
+                self.after_cancel(self._redraw_after_id)
+            except tk.TclError:
+                pass
+            self._redraw_after_id = None
         try:
-            y_first = self._body.yview()[0]
+            y_offset = max(0.0, float(self._body.canvasy(0)))
             x_offset = max(0.0, float(self._body.canvasx(0)))
         except tk.TclError:
             return
+        self._redrawing = True
         layout = self._layout_columns()
         content_width = max(1, sum(width for _column, width, _anchor in layout))
         content_height = max(self._row_height, len(self._order) * self._row_height)
-        self._header.delete("all")
-        self._body.delete("all")
-        cursor = 0
-        for column, width, anchor in layout:
-            self._header.create_rectangle(cursor, 0, cursor + width, self._header_height, fill=THEME["surface"], outline="")
-            self._header.create_text(cursor + (width / 2 if anchor == "center" else 10), self._header_height / 2, text=self._ellipsize(self._headings.get(column, column), width, font=self._header_font), anchor="center" if anchor == "center" else "w", fill=THEME["muted"], font=self._header_font)
-            cursor += width
-            if column != layout[-1][0]:
-                self._header.create_line(
-                    cursor,
-                    5,
-                    cursor,
-                    self._header_height - 5,
-                    fill=THEME["accent"] if column in {self._resize_column, self._resize_hover_column} else THEME["subtle"],
-                    width=2 if column in {self._resize_column, self._resize_hover_column} else 1,
-                )
-        self._header.create_line(0, self._header_height - 1, content_width, self._header_height - 1, fill=THEME["border"])
-        for row_index, item_id in enumerate(self._order):
-            top = row_index * self._row_height
-            selected = item_id == self._selection
-            self._body.create_rectangle(0, top, content_width, top + self._row_height, fill=THEME["accent_dark"] if selected else THEME["surface"], outline="")
-            values = self._items.get(item_id, ())
+        try:
+            self._header.delete("all")
+            self._body.delete("all")
             cursor = 0
-            for value_index, (_column, width, anchor) in enumerate(layout):
-                value = values[value_index] if value_index < len(values) else ""
-                text_x = cursor + (width / 2 if anchor == "center" else width - 10 if anchor == "e" else 10)
-                self._body.create_text(text_x, top + (self._row_height / 2), text=self._ellipsize(value, width, font=self._font), anchor="center" if anchor == "center" else "e" if anchor == "e" else "w", fill="#ffffff" if selected else THEME["text"], font=self._font)
+            for column, width, anchor in layout:
+                heading_anchor = self._heading_anchors.get(column) or anchor
+                self._header.create_rectangle(cursor, 0, cursor + width, self._header_height, fill=THEME["surface"], outline="")
+                self._header.create_text(
+                    cursor + (width / 2 if heading_anchor == "center" else width - 10 if heading_anchor == "e" else 10),
+                    self._header_height / 2,
+                    text=self._ellipsize(self._headings.get(column, column), width, font=self._header_font),
+                    anchor="center" if heading_anchor == "center" else "e" if heading_anchor == "e" else "w",
+                    fill=THEME["muted"],
+                    font=self._header_font,
+                )
                 cursor += width
-        self._header.configure(scrollregion=(0, 0, content_width, self._header_height))
-        self._body.configure(scrollregion=(0, 0, content_width, content_height))
-        x_first = min(1.0, x_offset / max(1, content_width))
-        self._body.xview_moveto(x_first)
-        self._header.xview_moveto(x_first)
-        self._body.yview_moveto(y_first)
+                if column != layout[-1][0]:
+                    self._header.create_line(
+                        cursor,
+                        5,
+                        cursor,
+                        self._header_height - 5,
+                        fill=THEME["accent"] if column in {self._resize_column, self._resize_hover_column} else THEME["subtle"],
+                        width=2 if column in {self._resize_column, self._resize_hover_column} else 1,
+                    )
+            self._header.create_line(0, self._header_height - 1, content_width, self._header_height - 1, fill=THEME["border"])
+
+            viewport_height = max(self._row_height, self._body.winfo_height())
+            y_offset, first_row, last_row = pixel_table_visible_row_window(
+                len(self._order),
+                self._row_height,
+                viewport_height,
+                y_offset,
+            )
+            for row_index in range(first_row, last_row):
+                item_id = self._order[row_index]
+                top = row_index * self._row_height
+                selected = item_id == self._selection
+                self._body.create_rectangle(0, top, content_width, top + self._row_height, fill=THEME["accent_dark"] if selected else THEME["surface"], outline="")
+                values = self._items.get(item_id, ())
+                cursor = 0
+                for value_index, (_column, width, anchor) in enumerate(layout):
+                    value = values[value_index] if value_index < len(values) else ""
+                    text_x = cursor + (width / 2 if anchor == "center" else width - 10 if anchor == "e" else 10)
+                    self._body.create_text(text_x, top + (self._row_height / 2), text=self._ellipsize(value, width, font=self._font), anchor="center" if anchor == "center" else "e" if anchor == "e" else "w", fill="#ffffff" if selected else THEME["text"], font=self._font)
+                    cursor += width
+            self._header.configure(scrollregion=(0, 0, content_width, self._header_height))
+            self._body.configure(scrollregion=(0, 0, content_width, content_height))
+            self._body.xview_moveto(min(1.0, x_offset / max(1, content_width)))
+            self._header.xview_moveto(min(1.0, x_offset / max(1, content_width)))
+            self._body.yview_moveto(min(1.0, y_offset / max(1, content_height)))
+        finally:
+            self._redrawing = False
+
+    def _schedule_redraw(self) -> None:
+        """Coalesce resize/scroll storms into one redraw at the next idle turn."""
+        if self._redraw_after_id is not None:
+            return
+
+        def redraw() -> None:
+            self._redraw_after_id = None
+            self._redraw()
+
+        try:
+            self._redraw_after_id = self.after_idle(redraw)
+        except tk.TclError:
+            self._redraw_after_id = None
 
     def _select_from_pointer(self, event: tk.Event[Any]) -> None:
         row = self.identify_row(event.y)
@@ -4647,11 +5033,13 @@ class PixelScrollTable(tk.Frame):
             self._body.yview_moveto(top / content_height)
         elif bottom > visible_top + viewport:
             self._body.yview_moveto(max(0.0, (bottom - viewport) / content_height))
+        self._schedule_redraw()
 
     def _scroll_pixels(self, dx: int, dy: int) -> str:
         if dy:
             content_height = max(self._body.winfo_height(), len(self._order) * self._row_height)
             self._body.yview_moveto(max(0.0, min(1.0, self._body.yview()[0] + (dy / max(1, content_height)))))
+            self._schedule_redraw()
         if dx:
             content_width = max(self._body.winfo_width(), sum(width for _column, width, _anchor in self._layout_columns()))
             self.xview("moveto", max(0.0, min(1.0, self._body.xview()[0] + (dx / max(1, content_width)))))
@@ -5176,6 +5564,7 @@ class DownloaderApp(tk.Tk):
         self.export_mode_description_var = tk.StringVar(value=export_mode_description(ExportMode.AUTO_CBR))
         self.manual_video_bitrate_var = tk.StringVar(value=str(STRICT_VIDEO_BITRATE_KBPS))
         self.manual_audio_bitrate_var = tk.StringVar(value=str(STRICT_AUDIO_BITRATE_KBPS))
+        self.manual_audio_codec_var = tk.StringVar(value=ManualAudioCodec.AAC.value)
         self.manual_sample_rate_var = tk.StringVar(value=AUDIO_SAMPLE_RATE)
         self.manual_channels_var = tk.StringVar(value="Stereo")
         self.manual_preset_var = tk.StringVar(value="medium")
@@ -5303,6 +5692,7 @@ class DownloaderApp(tk.Tk):
         style.configure("FocusProgress.Horizontal.TProgressbar", background=THEME["accent"], troughcolor=THEME["surface_2"], bordercolor=THEME["bg"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], thickness=4, borderwidth=0)
         style.configure("FocusDeck.Horizontal.TProgressbar", background=THEME["accent"], troughcolor=THEME["border"], bordercolor=THEME["surface"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], thickness=3, borderwidth=0)
         style.configure("Focus.TPanedwindow", background=THEME["bg"], sashwidth=1, sashrelief="flat", handlesize=0, handlepad=0)
+        style.configure("Focus.TSizegrip", background=THEME["bg"])
         self.option_add("*TCombobox*Listbox.background", THEME["surface"])
         self.option_add("*TCombobox*Listbox.foreground", THEME["text"])
         self.option_add("*TCombobox*Listbox.selectBackground", THEME["accent_dark"])
@@ -5463,23 +5853,26 @@ class DownloaderApp(tk.Tk):
             self._manual_help_icon(frame, 0, "Target video bitrate for the H.264 encode. Higher = larger file and more CPU time; it cannot add detail beyond the source.")
             ttk.Label(frame, text="Audio bitrate (kbps)").grid(row=1, column=0, sticky="w", padx=8, pady=6)
             ttk.Entry(frame, textvariable=self.manual_audio_bitrate_var, width=12).grid(row=1, column=1, sticky="ew", padx=8, pady=6)
-            self._manual_help_icon(frame, 1, "Target AAC audio bitrate. 192 kbps is usually enough; 320 kbps matches the VOD preset but may exceed source quality.")
-            ttk.Label(frame, text="Sample rate").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-            ttk.Combobox(frame, textvariable=self.manual_sample_rate_var, values=["44100", "48000"], state="readonly", width=10).grid(row=2, column=1, sticky="ew", padx=8, pady=6)
-            self._manual_help_icon(frame, 2, "Audio samples per second. Use 48000 for video/streaming; use 44100 only when matching music/audio sources.")
-            ttk.Label(frame, text="Channels").grid(row=3, column=0, sticky="w", padx=8, pady=6)
-            ttk.Combobox(frame, textvariable=self.manual_channels_var, values=["Mono", "Stereo"], state="readonly", width=10).grid(row=3, column=1, sticky="ew", padx=8, pady=6)
-            self._manual_help_icon(frame, 3, "Output audio layout. Stereo is normal for YouTube/VOD; Mono is only for speech-first files or smaller audio.")
-            ttk.Label(frame, text="x264 preset").grid(row=4, column=0, sticky="w", padx=8, pady=6)
-            ttk.Combobox(frame, textvariable=self.manual_preset_var, values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"], state="readonly", width=10).grid(row=4, column=1, sticky="ew", padx=8, pady=6)
-            self._manual_help_icon(frame, 4, "Encoder speed/efficiency tradeoff. Ultrafast = quickest but bigger/lower quality; slower = better compression but heavier CPU. Medium is safest.")
+            self._manual_help_icon(frame, 1, "Target audio bitrate. A higher value cannot restore detail missing from YouTube's source.")
+            ttk.Label(frame, text="Audio codec").grid(row=2, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_audio_codec_var, values=[codec.value for codec in ManualAudioCodec], state="readonly", width=10).grid(row=2, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 2, "AAC is the broad MP4 compatibility default. MP3 audio is available for workflows that specifically require it inside the MP4 container.")
+            ttk.Label(frame, text="Sample rate").grid(row=3, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_sample_rate_var, values=["44100", "48000"], state="readonly", width=10).grid(row=3, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 3, "Audio samples per second. Use 48000 for video/streaming; use 44100 only when matching music/audio sources.")
+            ttk.Label(frame, text="Channels").grid(row=4, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_channels_var, values=["Mono", "Stereo"], state="readonly", width=10).grid(row=4, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 4, "Output audio layout. Stereo is normal for YouTube/VOD; Mono is only for speech-first files or smaller audio.")
+            ttk.Label(frame, text="x264 preset").grid(row=5, column=0, sticky="w", padx=8, pady=6)
+            ttk.Combobox(frame, textvariable=self.manual_preset_var, values=["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"], state="readonly", width=10).grid(row=5, column=1, sticky="ew", padx=8, pady=6)
+            self._manual_help_icon(frame, 5, "Encoder speed/efficiency tradeoff. Ultrafast = quickest but bigger/lower quality; slower = better compression but heavier CPU. Medium is safest.")
             ttk.Label(
                 frame,
-                text="Codec stays H.264 + AAC; these fields control the encode profile used when Manual Override is selected. x264 preset applies only when NVENC is off.",
+                text="Video stays H.264; Manual Override can pair it with AAC or MP3 audio. x264 preset applies only when NVENC is off.",
                 style="Muted.TLabel",
                 wraplength=420,
                 justify="left",
-            ).grid(row=5, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
+            ).grid(row=6, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
             frame.columnconfigure(1, weight=1)
             self.manual_settings_frames.append(frame)
             if not hasattr(self, "manual_settings_frame"):
@@ -5925,6 +6318,7 @@ class DownloaderApp(tk.Tk):
         self._focus_log_rendered_text = ""
         self._terminal_jobs: list[DownloadJob] = []
         self._completed_jobs: list[DownloadJob] = []
+        self._library_suppressed_run_ids: set[str] = set()
         self._thumbnail_preview_request_ids = {"active": 0, "library": 0}
         self._focus_icon_images: dict[tuple[str, int, str], Any] = {}
 
@@ -6115,7 +6509,10 @@ class DownloaderApp(tk.Tk):
         self._sync_focus_progress()
         self._select_focus_view("forge")
         self._refresh_focus_run_deck()
-        self.bind("<Configure>", self._apply_focus_layout, add="+")
+        self.focus_resize_grip = ttk.Sizegrip(self, style="Focus.TSizegrip")
+        self.focus_resize_grip.place(relx=1.0, rely=1.0, anchor="se")
+        self.focus_resize_grip.lift()
+        self.bind("<Configure>", self._schedule_focus_layout, add="+")
         self.after_idle(self.focus_url_entry.focus_set)
 
     def _build_focus_forge_view(self, parent: ttk.Frame) -> None:
@@ -6424,6 +6821,7 @@ class DownloaderApp(tk.Tk):
         deck = ttk.Frame(deck_border, style="FocusShell.TFrame")
         deck.pack(fill="both", expand=True, padx=1, pady=1)
         self.focus_run_deck = deck
+        deck.bind("<Configure>", self._schedule_focus_run_deck_geometry_refresh, add="+")
 
         footer = ttk.Frame(parent, style="FocusShell.TFrame")
         footer.grid(row=4, column=0, sticky="ew", padx=26, pady=(4, 0))
@@ -6465,7 +6863,13 @@ class DownloaderApp(tk.Tk):
                 ttk.Button(action_row, text="Copy thumbnail URL", command=self._copy_thumbnail_url, style="FocusQuiet.TButton"),
                 "Copy thumbnail URL",
             ),
+            "youtube": (
+                ttk.Button(action_row, text="Copy YouTube URL", command=self._copy_youtube_url, style="FocusQuiet.TButton"),
+                "Copy YouTube URL",
+            ),
         }
+        for button, normal_label in self.focus_library_copy_buttons.values():
+            button.configure(width=max(len(normal_label), len("Copied")))
         self._focus_copy_feedback_after_ids: dict[str, str] = {}
         self.focus_library_action_buttons = [
             *(button for button, _label in self.focus_library_copy_buttons.values()),
@@ -6484,6 +6888,7 @@ class DownloaderApp(tk.Tk):
         metadata_content.columnconfigure(1, weight=0, minsize=340)
         metadata_content.rowconfigure(0, weight=1)
         self.focus_metadata_content = metadata_content
+        self.focus_library_actions = actions
 
         queue_panel = ttk.Frame(metadata_content, style="FocusShell.TFrame")
         queue_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 18))
@@ -6497,9 +6902,13 @@ class DownloaderApp(tk.Tk):
             selectmode="browse",
         )
         for column, label in (("index", "#"), ("title", "Title"), ("duration", "Length"), ("creator", "Creator"), ("id", "ID"), ("location", "Saved location"), ("action", "")):
-            self.video_tree.heading(column, text=label)
+            self.video_tree.heading(
+                column,
+                text=label,
+                anchor="w" if column == "duration" else None,
+            )
         self.video_tree.column("index", width=44, minwidth=38, stretch=False, anchor="center")
-        self.video_tree.column("title", width=420, minwidth=220, stretch=True, anchor="w")
+        self.video_tree.column("title", width=360, minwidth=220, stretch=True, stretchmax=560, anchor="w")
         self.video_tree.column("duration", width=72, minwidth=62, stretch=False, anchor="center")
         self.video_tree.column("creator", width=140, minwidth=90, stretch=False, anchor="w")
         self.video_tree.column("id", width=100, minwidth=72, stretch=False, anchor="w")
@@ -6519,19 +6928,58 @@ class DownloaderApp(tk.Tk):
 
         details = ttk.Frame(metadata_content, style="FocusShell.TFrame")
         details.grid(row=0, column=1, sticky="nsew")
+        # Keep the inspection rail authoritative instead of letting wrapped
+        # child requests feed back into Grid and progressively starve the
+        # table after repeated resize cycles.
+        details.configure(width=410)
+        details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
+        details.rowconfigure(3, weight=1, minsize=70)
+        details.rowconfigure(4, weight=2, minsize=110)
         self.selected_title_var = tk.StringVar(value="Choose a saved item or preview a URL to inspect its metadata.")
+        self.selected_meta_var = tk.StringVar(value="")
+        self.selected_location_var = tk.StringVar(value="")
         ttk.Label(details, text="SELECTED ITEM", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 6))
-        self.focus_selected_title_label = ttk.Label(details, textvariable=self.selected_title_var, wraplength=320, justify="left", style="Muted.TLabel")
-        self.focus_selected_title_label.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        details.bind(
-            "<Configure>",
-            lambda event: self.focus_selected_title_label.configure(wraplength=max(180, event.width - 8)),
-            add="+",
+        overview = ttk.Frame(details, style="FocusShell.TFrame")
+        overview.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        overview.columnconfigure(0, weight=1)
+        self.focus_selected_title_label = ttk.Label(
+            overview,
+            textvariable=self.selected_title_var,
+            wraplength=220,
+            justify="left",
+            style="FocusActiveTitle.TLabel",
         )
-        thumbnail_wrap = tk.Frame(details, bg=THEME["bg"], height=youtube_thumbnail_size(196)[1], bd=0, highlightthickness=0)
-        thumbnail_wrap.grid(row=2, column=0, sticky="ew", pady=(0, 10))
-        thumbnail_wrap.grid_propagate(False)
+        self.focus_selected_title_label.grid(row=0, column=0, sticky="new", padx=(0, 12))
+        self.focus_selected_meta_label = ttk.Label(
+            overview,
+            textvariable=self.selected_meta_var,
+            wraplength=220,
+            justify="left",
+            style="Muted.TLabel",
+        )
+        self.focus_selected_meta_label.grid(row=1, column=0, sticky="new", padx=(0, 12), pady=(4, 0))
+        self.focus_selected_location_label = ttk.Label(
+            overview,
+            textvariable=self.selected_location_var,
+            wraplength=220,
+            justify="left",
+            style="FocusProfile.TLabel",
+        )
+        self.focus_selected_location_label.grid(row=2, column=0, sticky="new", padx=(0, 12), pady=(4, 0))
+        thumbnail_wrap = tk.Frame(
+            overview,
+            bg=THEME["bg"],
+            width=144,
+            height=youtube_thumbnail_size(144)[1],
+            bd=0,
+            highlightthickness=0,
+        )
+        thumbnail_wrap.grid(row=0, column=1, rowspan=3, sticky="ne")
+        # The thumbnail label is packed inside this wrapper, so pack—not Grid—
+        # owns child geometry. Disabling the correct propagation keeps the
+        # responsive 104/124/144 px artwork cap authoritative.
+        thumbnail_wrap.pack_propagate(False)
         self.focus_thumbnail_wrap = thumbnail_wrap
         self.thumbnail_label = tk.Label(
             thumbnail_wrap,
@@ -6548,21 +6996,38 @@ class DownloaderApp(tk.Tk):
             lambda event: self._render_focus_thumbnail_surfaces(library_width=event.width),
             add="+",
         )
+
+        def layout_selected_overview(event: tk.Event[Any]) -> None:
+            artwork_width = 104 if event.height < 300 else 124 if event.width < 380 else 144
+            thumbnail_wrap.configure(width=artwork_width, height=youtube_thumbnail_size(artwork_width)[1])
+            text_width = max(130, event.width - artwork_width - 24)
+            self.focus_selected_title_label.configure(wraplength=text_width)
+            self.focus_selected_meta_label.configure(wraplength=text_width)
+            self.focus_selected_location_label.configure(wraplength=text_width)
+
+        details.bind("<Configure>", layout_selected_overview, add="+")
+
         tags_line = ttk.Frame(details, style="FocusShell.TFrame")
-        tags_line.grid(row=3, column=0, sticky="nsew", pady=(0, 6))
-        tags_line.columnconfigure(1, weight=1)
-        ttk.Label(tags_line, text="TAGS", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="nw", padx=(0, 10))
-        self.pulled_tags_text = tk.Text(tags_line, height=1, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=1, font=FONT_UI)
-        self.pulled_tags_text.grid(row=0, column=1, sticky="nsew")
+        tags_line.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+        tags_line.columnconfigure(0, weight=1)
+        tags_line.rowconfigure(1, weight=1)
+        ttk.Label(tags_line, text="TAGS", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.pulled_tags_text = tk.Text(tags_line, height=3, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=9, pady=7, font=FONT_UI)
+        tags_scroll = SleekScrollbar(tags_line, command=self.pulled_tags_text.yview)
+        self.pulled_tags_text.configure(yscrollcommand=tags_scroll.set)
+        self.pulled_tags_text.grid(row=1, column=0, sticky="nsew")
+        tags_scroll.grid(row=1, column=1, sticky="ns", padx=(5, 0))
 
         description_line = ttk.Frame(details, style="FocusShell.TFrame")
         description_line.grid(row=4, column=0, sticky="nsew")
-        description_line.columnconfigure(1, weight=1)
-        ttk.Label(description_line, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="nw", padx=(0, 10))
-        self.description_text = tk.Text(description_line, height=2, width=1, wrap="word", bg=THEME["bg"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=0, pady=1, font=FONT_UI)
-        self.description_text.grid(row=0, column=1, sticky="nsew")
-        details.rowconfigure(3, weight=1)
-        details.rowconfigure(4, weight=2)
+        description_line.columnconfigure(0, weight=1)
+        description_line.rowconfigure(1, weight=1)
+        ttk.Label(description_line, text="DESCRIPTION", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.description_text = tk.Text(description_line, height=5, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=9, pady=7, font=FONT_UI)
+        description_scroll = SleekScrollbar(description_line, command=self.description_text.yview)
+        self.description_text.configure(yscrollcommand=description_scroll.set)
+        self.description_text.grid(row=1, column=0, sticky="nsew")
+        description_scroll.grid(row=1, column=1, sticky="ns", padx=(5, 0))
         self.focus_library_details = details
 
         summary = ttk.Frame(parent, style="FocusShell.TFrame")
@@ -6576,6 +7041,7 @@ class DownloaderApp(tk.Tk):
         self.output_summary_text = tk.Text(summary, height=8, width=1, wrap="word", state="disabled", bg=THEME["surface"], fg=THEME["text"], insertbackground=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=12, pady=10, font=FONT_MONO)
         self.source_summary_text.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         self.output_summary_text.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        self.focus_library_summary = summary
         for text_widget in (
             self.pulled_tags_text,
             self.description_text,
@@ -7113,6 +7579,7 @@ class DownloaderApp(tk.Tk):
         manual_fields = (
             ("Video bitrate (kbps)", self.manual_video_bitrate_var, None),
             ("Audio bitrate (kbps)", self.manual_audio_bitrate_var, None),
+            ("Audio codec", self.manual_audio_codec_var, [codec.value for codec in ManualAudioCodec]),
             ("Sample rate", self.manual_sample_rate_var, ["44100", "48000"]),
             ("Channels", self.manual_channels_var, ["Mono", "Stereo"]),
             ("Encoding speed", self.manual_preset_var, ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"]),
@@ -7453,11 +7920,13 @@ class DownloaderApp(tk.Tk):
         height = min(184, max(78, popup.winfo_reqheight()))
         x = button.winfo_rootx() - self.winfo_rootx() + button.winfo_width() - width
         x = min(self.winfo_width() - width - 12, max(12, x))
-        y = button.winfo_rooty() - self.winfo_rooty() - height - 6
+        # The in-window drop-up can sit flush with the trigger. This removes
+        # the geometric dead zone instead of asking a short timer to hide it.
+        y = button.winfo_rooty() - self.winfo_rooty() - height + 1
         if y < 20:
             y = min(
                 self.winfo_height() - height - 20,
-                button.winfo_rooty() - self.winfo_rooty() + button.winfo_height() + 6,
+                button.winfo_rooty() - self.winfo_rooty() + button.winfo_height() - 1,
             )
         popup.place(x=x, y=y, width=width, height=height)
         popup.lift()
@@ -7706,7 +8175,7 @@ class DownloaderApp(tk.Tk):
         self.focus_transfer_var.set(
             "Active MP3 run  /  highest-quality audio source"
             if job.output_type == OutputType.MP3
-            else "Active MP4 run  /  H.264 video and AAC audio"
+            else f"Active MP4 run  /  H.264 video and {job.manual_settings.audio_codec.value if job.export_mode == ExportMode.MANUAL_OVERRIDE else 'AAC'} audio"
         )
         self._render_focus_run_activity(
             job.run_id,
@@ -7772,7 +8241,7 @@ class DownloaderApp(tk.Tk):
                 saved / name
                 for name in ("thumbnail.jpg", "thumbnail.jpeg", "thumbnail.png", "thumbnail.webp")
             )
-        cached = cached_thumbnail_path(info)
+        cached = existing_cached_thumbnail_path(info)
         if cached is not None:
             candidates.append(cached)
         for candidate in candidates:
@@ -7792,7 +8261,12 @@ class DownloaderApp(tk.Tk):
         thumbnail_url = str((thumbnail or {}).get("url") or "").strip()
         if thumbnail_url:
             self._reset_active_thumbnail()
-            self._load_thumbnail_preview(thumbnail_url, target="active", owner_run_id=str(record.get("run_id") or ""))
+            self._load_thumbnail_preview(
+                thumbnail_url,
+                target="active",
+                owner_run_id=str(record.get("run_id") or ""),
+                cache_info=info,
+            )
             return
         self._reset_active_thumbnail()
 
@@ -7815,6 +8289,7 @@ class DownloaderApp(tk.Tk):
         menu.add_command(label="Copy tags", command=self._copy_tags)
         menu.add_command(label="Copy description", command=self._copy_description)
         menu.add_command(label="Copy thumbnail URL", command=self._copy_thumbnail_url)
+        menu.add_command(label="Copy YouTube URL", command=self._copy_youtube_url)
         menu.add_separator()
         menu.add_command(label="Open saved location", command=self._open_selected_saved_location)
         menu.add_command(label="Remove from Library…", command=self._remove_selected_library_item)
@@ -7874,7 +8349,15 @@ class DownloaderApp(tk.Tk):
         description.insert("1.0", build_description_display_text(info) or "No description found for this video.")
         description.configure(state="disabled")
         bind_smooth_vertical_wheel(description, mode="pixels")
-        ttk.Button(root, text="Done", command=popup.destroy, style="Accent.TButton").grid(row=7, column=0, sticky="e", pady=(14, 0))
+        popup_actions = ttk.Frame(root, style="FocusShell.TFrame")
+        popup_actions.grid(row=7, column=0, sticky="e", pady=(14, 0))
+        ttk.Button(
+            popup_actions,
+            text="Copy YouTube URL",
+            command=lambda: self._copy_youtube_url(info),
+            style="FocusQuiet.TButton",
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(popup_actions, text="Done", command=popup.destroy, style="Accent.TButton").pack(side="left")
         popup.update_idletasks()
         reveal_toplevel(popup, centered_toplevel_geometry(self, 680, 620))
 
@@ -7886,7 +8369,7 @@ class DownloaderApp(tk.Tk):
         records: list[dict[str, Any]] = []
         active = bool(self._focus_active_override or self.active_job is not None or (self.worker and self.worker.is_alive()))
         current_url = self.active_job.url if self.active_job is not None else self.url_var.get().strip()
-        if active and current_url:
+        if active and current_url and not self._library_run_is_suppressed(self.active_job):
             active_type = self.active_job.output_type if self.active_job is not None else self._selected_output_type()
             active_preview = self.active_job.preview_info if self.active_job is not None else None
             active_preview_path = str((active_preview or {}).get("preview_thumbnail_path") or "").strip()
@@ -7914,6 +8397,8 @@ class DownloaderApp(tk.Tk):
         if isinstance(metadata_preview, dict):
             records.append(dict(metadata_preview))
         for job in self.pending_jobs:
+            if self._library_run_is_suppressed(job):
+                continue
             preview_info = job.preview_info or {}
             preview_path = str(preview_info.get("preview_thumbnail_path") or "").strip()
             records.append(
@@ -7936,6 +8421,8 @@ class DownloaderApp(tk.Tk):
                 }
             )
         for terminal_job in self._terminal_jobs:
+            if self._library_run_is_suppressed(terminal_job):
+                continue
             terminal_preview = terminal_job.preview_info or {}
             terminal_metadata_index = next(
                 (
@@ -8023,6 +8510,29 @@ class DownloaderApp(tk.Tk):
             )
         return records
 
+    def _schedule_focus_run_deck_geometry_refresh(self, event: tk.Event[Any]) -> None:
+        """Reconcile the deck after Tk commits child geometry.
+
+        Root Configure arrives before nested widths settle on Windows. A stale
+        child width could render three cards and then cache a four-card root
+        signature until the user changed tabs. The deck's own settled width is
+        the final authority.
+        """
+        capacity = focus_run_deck_capacity(max(1, int(event.width)))
+        if capacity == self.__dict__.get("_focus_run_deck_rendered_capacity"):
+            return
+        if self.__dict__.get("_focus_run_deck_refresh_after_id") is not None:
+            return
+
+        def refresh() -> None:
+            self._focus_run_deck_refresh_after_id = None
+            self._refresh_focus_run_deck()
+
+        try:
+            self._focus_run_deck_refresh_after_id = self.after_idle(refresh)
+        except tk.TclError:
+            self._focus_run_deck_refresh_after_id = None
+
     def _refresh_focus_run_deck(self) -> None:
         if not hasattr(self, "focus_run_deck"):
             return
@@ -8034,7 +8544,10 @@ class DownloaderApp(tk.Tk):
         if deck_width <= 1:
             deck_width = max(1, self.winfo_width() - 52)
         limit = focus_run_deck_capacity(deck_width)
+        self._focus_run_deck_rendered_capacity = limit
         visible = records[:limit]
+        for column in range(4):
+            self.focus_run_deck.columnconfigure(column, weight=0, uniform="")
         if not visible:
             empty = ttk.Frame(self.focus_run_deck, style="FocusShell.TFrame")
             empty.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
@@ -8118,7 +8631,8 @@ class DownloaderApp(tk.Tk):
                     "<Button-1>",
                     lambda _event, job=record["job"]: self._retry_terminal_job(job),
                 )
-                retry_button.place(x=thumbnail_size[0] // 2, y=thumbnail_size[1] // 2, anchor="center")
+                overlay_parent = image_label if thumbnail is not None else tile
+                retry_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
                 hover_widgets.append(retry_button)
             elif record_kind == "preview" and record.get("metadata_index") is not None:
                 play_button = tk.Canvas(
@@ -8146,7 +8660,8 @@ class DownloaderApp(tk.Tk):
                     "<Button-3>",
                     lambda event, item=record: self._show_focus_run_actions_menu(item, event),
                 )
-                play_button.place(x=thumbnail_size[0] // 2, y=thumbnail_size[1] // 2, anchor="center")
+                overlay_parent = image_label if thumbnail is not None else tile
+                play_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
                 hover_widgets.append(play_button)
             if bar is not None:
                 widgets.append(bar)
@@ -8222,7 +8737,7 @@ class DownloaderApp(tk.Tk):
                 saved = history_output_dir(item)
                 if saved is not None:
                     candidates.extend((saved / "thumbnail.jpg", saved / "thumbnail.jpeg", saved / "thumbnail.png", saved / "thumbnail.webp"))
-                cached = cached_thumbnail_path(item)
+                cached = existing_cached_thumbnail_path(item)
                 if cached is not None:
                     candidates.append(cached)
         for path in candidates:
@@ -8287,6 +8802,12 @@ class DownloaderApp(tk.Tk):
                         self._open_selected_saved_location(),
                     ),
                 )
+        youtube_url = self._youtube_url_for_run_record(record)
+        if youtube_url:
+            menu.add_command(
+                label="Copy YouTube URL",
+                command=lambda url=youtube_url: self._copy_youtube_url_value(url),
+            )
         menu.add_command(label="View Activity", command=lambda: self._select_focus_view("activity"))
         x = event.x_root if event is not None else self.winfo_pointerx()
         y = event.y_root if event is not None else self.winfo_pointery()
@@ -8301,6 +8822,22 @@ class DownloaderApp(tk.Tk):
         if record is not None:
             self._show_focus_run_actions_menu(record)
 
+    def _schedule_focus_layout(self, event: tk.Event[Any] | None = None) -> None:
+        """Cap root relayout churn while a native window edge is being dragged."""
+        if event is not None and event.widget is not self:
+            return
+        if self.__dict__.get("_focus_layout_after_id") is not None:
+            return
+
+        def apply() -> None:
+            self._focus_layout_after_id = None
+            self._apply_focus_layout()
+
+        try:
+            self._focus_layout_after_id = self.after(16, apply)
+        except tk.TclError:
+            self._focus_layout_after_id = None
+
     def _apply_focus_layout(self, event: tk.Event[Any] | None = None, *, force: bool = False) -> None:
         if event is not None and event.widget is not self:
             return
@@ -8310,6 +8847,12 @@ class DownloaderApp(tk.Tk):
         compact = mode == "compact"
         balanced = mode == "balanced"
         library_mode = "compact" if compact else focus_library_layout_mode(width)
+        library_padding = focus_library_horizontal_padding(width)
+        if library_padding != self.__dict__.get("_focus_library_horizontal_padding"):
+            self._focus_library_horizontal_padding = library_padding
+            self.focus_library_actions.grid_configure(padx=library_padding)
+            self.focus_metadata_content.grid_configure(padx=library_padding)
+            self.focus_library_summary.grid_configure(padx=library_padding)
         layout_signature = (
             mode,
             library_mode,
@@ -8405,8 +8948,11 @@ class DownloaderApp(tk.Tk):
             self.video_tree.layout_column("title", width=360, minwidth=220, stretch=False)
         else:
             if library_mode == "balanced":
-                self.focus_library_view.rowconfigure(1, weight=2, minsize=190)
-                self.focus_library_view.rowconfigure(2, weight=3, minsize=210)
+                # Medium-height windows need to protect the selected item's
+                # tags/description surfaces from collapsing to a single line.
+                # The lower source/output panes remain independently scrollable.
+                self.focus_library_view.rowconfigure(1, weight=4, minsize=300)
+                self.focus_library_view.rowconfigure(2, weight=1, minsize=120)
             else:
                 self.focus_library_view.rowconfigure(1, weight=2, minsize=220)
                 self.focus_library_view.rowconfigure(2, weight=3, minsize=230)
@@ -8414,18 +8960,20 @@ class DownloaderApp(tk.Tk):
             self.focus_library_details.grid(row=0, column=1, sticky="nsew")
             if library_mode == "balanced":
                 self.focus_metadata_content.columnconfigure(0, weight=1)
-                self.focus_metadata_content.columnconfigure(1, weight=0, minsize=300)
+                self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)
+                self.focus_library_details.configure(width=330)
                 self.video_tree.layout_column("creator", width=110, minwidth=90, stretch=False)
                 self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
                 self.video_tree.layout_column("title", width=320, minwidth=200, stretch=False)
             else:
                 self.focus_metadata_content.columnconfigure(0, weight=1)
-                self.focus_metadata_content.columnconfigure(1, weight=0, minsize=340)
+                self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)
+                self.focus_library_details.configure(width=410)
                 self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
                 self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
-                self.video_tree.layout_column("title", minwidth=220)
+                self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=560)
         self._sync_focus_destination()
         self._refresh_focus_run_deck()
 
@@ -8616,7 +9164,12 @@ class DownloaderApp(tk.Tk):
             history_info["vodforge_run_id"] = owning_job.run_id
             history_info["vodforge_run_activity"] = sanitize_run_activity(owning_job.activity_lines)
         try:
-            self.download_history = upsert_history(self.download_history, history_info, output_dir)
+            self.download_history = upsert_history(
+                self.download_history,
+                history_info,
+                output_dir,
+                replace_missing_media=True,
+            )
             save_history(self.history_path, self.download_history)
         except HistoryError as exc:
             if owning_job is not None:
@@ -8633,8 +9186,11 @@ class DownloaderApp(tk.Tk):
         saved_type = metadata_output_type(saved_record)
         merged = dict(saved_record)
         retained: list[dict[str, Any]] = []
+        persisted_identities = {history_identity(item) for item in self.download_history}
         metadata_items = self.__dict__.get("metadata_items", [])
         for item in metadata_items:
+            if history_output_dir(item) is not None and history_identity(item) not in persisted_identities:
+                continue
             if history_identity(item) == history_identity(saved_record):
                 merged = {**item, **saved_record}
                 continue
@@ -8649,6 +9205,7 @@ class DownloaderApp(tk.Tk):
             retained.append(item)
         merged.pop("vodforge_preview_complete", None)
         merged.pop("vodforge_preview_run_id", None)
+        merged.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
         self.metadata_items = [merged, *retained]
         self._rebuild_output_dir_index()
         if self.library_output_type_var.get() != saved_type.value:
@@ -8732,11 +9289,25 @@ class DownloaderApp(tk.Tk):
 
         channels_label = self.manual_channels_var.get()
         channels = "1" if channels_label == "Mono" else "2"
+        audio_codec = ManualAudioCodec(self.manual_audio_codec_var.get())
+        audio_bitrate_kbps = positive_int(
+            self.manual_audio_bitrate_var.get(),
+            "Manual audio bitrate",
+            32,
+            1024,
+        )
+        if audio_codec is ManualAudioCodec.MP3 and audio_bitrate_kbps not in MP3_IN_MP4_BITRATES_KBPS:
+            choices = ", ".join(str(value) for value in MP3_IN_MP4_BITRATES_KBPS)
+            raise ValueError(
+                "MP3 audio bitrate must be one of the encoder-supported values: "
+                f"{choices} kbps."
+            )
         return ManualExportSettings(
             video_bitrate_kbps=positive_int(self.manual_video_bitrate_var.get(), "Manual video bitrate", 100, 100000),
-            audio_bitrate_kbps=positive_int(self.manual_audio_bitrate_var.get(), "Manual audio bitrate", 32, 1024),
+            audio_bitrate_kbps=audio_bitrate_kbps,
             audio_sample_rate=self.manual_sample_rate_var.get() or AUDIO_SAMPLE_RATE,
             audio_channels=channels,
+            audio_codec=audio_codec,
             x264_preset=self.manual_preset_var.get() or "medium",
         )
 
@@ -9065,6 +9636,43 @@ class DownloaderApp(tk.Tk):
             self.status_var.set("Copied thumbnail URL to clipboard.")
             self._show_copy_feedback("thumbnail")
 
+    def _copy_youtube_url_value(self, url: str) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(url)
+        self.status_var.set("Copied YouTube URL to clipboard.")
+        self._show_copy_feedback("youtube")
+
+    def _copy_youtube_url(self, info: dict[str, Any] | None = None) -> None:
+        selected = info
+        if selected is None:
+            selection = self.video_tree.selection()
+            if selection:
+                try:
+                    selected = self.metadata_items[int(selection[0])]
+                except (IndexError, TypeError, ValueError):
+                    selected = None
+        url = canonical_youtube_url(selected or {})
+        if not url:
+            messagebox.showinfo(APP_NAME, "This item does not include a YouTube URL to copy.")
+            return
+        self._copy_youtube_url_value(url)
+
+    def _youtube_url_for_run_record(self, record: dict[str, Any]) -> str | None:
+        metadata_index = record.get("metadata_index")
+        if metadata_index is not None:
+            try:
+                info = self.metadata_items[int(metadata_index)]
+            except (IndexError, TypeError, ValueError):
+                info = None
+            if isinstance(info, dict):
+                url = canonical_youtube_url(info)
+                if url:
+                    return url
+        job = record.get("job")
+        if isinstance(job, DownloadJob):
+            return canonical_youtube_url(job.preview_info or {}, job.url)
+        return canonical_youtube_url(record)
+
     def _copy_description(self) -> None:
         text = self.description_text.get("1.0", "end").strip()
         if text:
@@ -9115,7 +9723,9 @@ class DownloaderApp(tk.Tk):
         incoming_items = [dict(item) for item in iter_video_infos(info)]
         new_items: list[dict[str, Any]] = []
         for incoming in incoming_items:
-            if preview_complete:
+            if active_job is not None:
+                incoming = claim_active_metadata_row({}, incoming, active_job.run_id)
+            elif preview_complete:
                 incoming["vodforge_preview_complete"] = True
                 if preview_run_id:
                     incoming["vodforge_preview_run_id"] = preview_run_id
@@ -9136,8 +9746,11 @@ class DownloaderApp(tk.Tk):
                 None,
             )
             if matching is not None:
-                matching.update(incoming)
-                if not preview_complete:
+                if active_job is not None:
+                    claim_active_metadata_row(matching, incoming, active_job.run_id)
+                else:
+                    matching.update(incoming)
+                if not preview_complete and active_job is None:
                     matching.pop("vodforge_preview_complete", None)
                     matching.pop("vodforge_preview_run_id", None)
             else:
@@ -9185,7 +9798,7 @@ class DownloaderApp(tk.Tk):
         selected_for_details = selected_run_id is None or selected_run_id == job.run_id
         preview_thumbnail = str(info.get("preview_thumbnail_path") or "").strip()
         preview_thumbnail_path = Path(preview_thumbnail) if preview_thumbnail else None
-        cached_thumbnail = cached_thumbnail_path(info)
+        cached_thumbnail = existing_cached_thumbnail_path(info)
         thumbnail = best_thumbnail(info)
         thumbnail_url = str((thumbnail or {}).get("url") or "").strip()
         local_thumbnail_path = (
@@ -9207,6 +9820,7 @@ class DownloaderApp(tk.Tk):
                     thumbnail_url,
                     target=f"run:{job.run_id}",
                     owner_run_id=job.run_id,
+                    cache_info=info,
                 )
             self._refresh_focus_run_deck()
             return
@@ -9242,7 +9856,12 @@ class DownloaderApp(tk.Tk):
             self._load_thumbnail_file(local_thumbnail_path, target="active")
         elif thumbnail_url:
             self._reset_active_thumbnail()
-            self._load_thumbnail_preview(thumbnail_url, target="active", owner_run_id=job.run_id)
+            self._load_thumbnail_preview(
+                thumbnail_url,
+                target="active",
+                owner_run_id=job.run_id,
+                cache_info=info,
+            )
         else:
             self._reset_active_thumbnail()
         self._refresh_focus_run_deck()
@@ -9250,9 +9869,35 @@ class DownloaderApp(tk.Tk):
     def _active_run_for_metadata_event(self, event_job: DownloadJob) -> DownloadJob | None:
         """Resolve worker copies to the one active run authority; reject stale run events."""
         active_job = self.active_job
-        if active_job is None or event_job.run_id != active_job.run_id:
+        if (
+            active_job is None
+            or event_job.run_id != active_job.run_id
+            or self._library_run_is_suppressed(event_job)
+        ):
             return None
         return active_job
+
+    def _library_run_is_suppressed(self, job: DownloadJob | None) -> bool:
+        if job is None:
+            return False
+        suppressed = self.__dict__.get("_library_suppressed_run_ids", set())
+        return job.run_id in suppressed or bool(job.origin_run_id and job.origin_run_id in suppressed)
+
+    @staticmethod
+    def _library_item_matches_execution_job(info: dict[str, Any], job: DownloadJob) -> bool:
+        """Match an exact run-owned row, never a historical lookalike."""
+        persisted_run_id = str(info.get("vodforge_run_id") or "").strip()
+        if persisted_run_id:
+            return persisted_run_id == job.run_id
+        if history_output_dir(info) is not None:
+            return False
+        active_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
+        if active_run_id:
+            return active_run_id == job.run_id
+        item_key = metadata_run_key(info)
+        if item_key is None:
+            return False
+        return item_key in job.metadata_keys or item_key == metadata_run_key(job.preview_info or {})
 
     def _rebuild_output_dir_index(self) -> None:
         self.video_output_dirs_by_id = {}
@@ -9264,9 +9909,8 @@ class DownloaderApp(tk.Tk):
 
     def _render_metadata_tree(self, *, selected_index: int | None = None) -> None:
         selected_iid = self.video_tree.selection()[0] if self.video_tree.selection() else None
-        for item in self.video_tree.get_children():
-            self.video_tree.delete(item)
         visible_indices = metadata_indices_for_output_type(self.metadata_items, self.library_output_type_var.get())
+        rows: list[tuple[str, tuple[Any, ...]]] = []
         for visible_position, metadata_index in enumerate(visible_indices, start=1):
             item = self.metadata_items[metadata_index]
             output_dir = history_output_dir(item)
@@ -9280,12 +9924,24 @@ class DownloaderApp(tk.Tk):
             values = (*video_list_row_values(item, fallback_index=visible_position), location)
             if "action" in self.video_tree["columns"]:
                 values = (*values, "↻" if retry_available else "")
-            self.video_tree.insert("", "end", iid=str(metadata_index), values=values)
-        children = self.video_tree.get_children()
+            rows.append((str(metadata_index), values))
+        preferred = str(selected_index) if selected_index is not None else selected_iid
+        target = preferred if preferred is not None and any(iid == preferred for iid, _values in rows) else rows[0][0] if rows else None
+        replace_rows = getattr(self.video_tree, "replace_rows", None)
+        if callable(replace_rows):
+            children = replace_rows(rows, selected=target)
+        else:
+            # Keep the opt-in legacy ttk.Treeview usable without bringing its
+            # row-at-a-time behavior back to the default pixel table.
+            for child in self.video_tree.get_children():
+                self.video_tree.delete(child)
+            for iid, values in rows:
+                self.video_tree.insert("", "end", iid=iid, values=values)
+            children = self.video_tree.get_children()
+            if target is not None:
+                self.video_tree.selection_set(target)
         if children:
-            preferred = str(selected_index) if selected_index is not None else selected_iid
-            target = preferred if preferred in children else children[0]
-            self.video_tree.selection_set(target)
+            assert target is not None
             self.video_tree.focus(target)
             self._display_selected_metadata(int(target))
         else:
@@ -9296,6 +9952,10 @@ class DownloaderApp(tk.Tk):
     def _clear_library_selection(self) -> None:
         output_type = self.library_output_type_var.get()
         self.selected_title_var.set(f"No {output_type} items yet. Preview or forge a URL to add one.")
+        if hasattr(self, "selected_meta_var"):
+            self.selected_meta_var.set("")
+        if hasattr(self, "selected_location_var"):
+            self.selected_location_var.set("")
         self.last_thumbnail_url = None
         self._set_text(self.pulled_tags_text, f"No {output_type} item selected.")
         self._set_text(self.description_text, f"Your {output_type} metadata will appear here.")
@@ -9360,6 +10020,9 @@ class DownloaderApp(tk.Tk):
         if isinstance(info, dict) and history_output_dir(info) is not None:
             menu.add_command(label="Open saved location", command=self._open_selected_saved_location)
             menu.add_separator()
+        if isinstance(info, dict) and canonical_youtube_url(info):
+            menu.add_command(label="Copy YouTube URL", command=lambda item=info: self._copy_youtube_url(item))
+            menu.add_separator()
         menu.add_command(label="Remove from Library…", command=self._remove_selected_library_item)
         try:
             menu.tk_popup(event.x_root, event.y_root)
@@ -9377,15 +10040,65 @@ class DownloaderApp(tk.Tk):
         except (IndexError, TypeError, ValueError):
             return
         title = str(info.get("title") or info.get("id") or "this item")
+        item_key = metadata_run_key(info)
+        active_row_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
+        persisted_run_id = str(info.get("vodforge_run_id") or "").strip()
+        terminal_history = bool(
+            not active_row_run_id
+            and item_key is not None
+            and any(
+                item_key in terminal_job.metadata_keys
+                or item_key == metadata_run_key(terminal_job.preview_info or {})
+                for terminal_job in self.__dict__.get("_terminal_jobs", [])
+            )
+        )
+        active_job = self.__dict__.get("active_job")
+
+        def matches_execution_owner(job: DownloadJob) -> bool:
+            if not self._library_item_matches_execution_job(info, job):
+                return False
+            # A saved row can coexist briefly with an active run after its
+            # media commit while optional post-processing finishes. Its exact
+            # run ID outranks an older same-video terminal-history heuristic.
+            explicit_owner = persisted_run_id or active_row_run_id
+            return not terminal_history or explicit_owner == job.run_id
+
+        active_match = (
+            active_job
+            if isinstance(active_job, DownloadJob)
+            and matches_execution_owner(active_job)
+            else None
+        )
+        queued_matches = [
+            job
+            for job in self.__dict__.get("pending_jobs", [])
+            if matches_execution_owner(job)
+        ]
+        execution_notice = ""
+        if active_match is not None:
+            execution_notice = " Its active run will be stopped and will not return to Forge recents."
+        elif queued_matches:
+            execution_notice = " Its queued run will be removed before it starts."
         if not messagebox.askyesno(
             APP_NAME,
             (
                 f"Remove “{title}” from VODForge Library and Forge recents?\n\n"
-                "This removes its VODForge history cards. Media files and folders remain on your computer. "
-                "Any active or queued run keeps running."
+                "This removes its VODForge history cards. Media files and folders remain on your computer."
+                + execution_notice
             ),
         ):
             return
+        removed_run_ids: set[str] = set()
+        for job in [*(queued_matches), *([active_match] if active_match is not None else [])]:
+            self.__dict__.setdefault("_library_suppressed_run_ids", set()).add(job.run_id)
+            removed_run_ids.add(job.run_id)
+        if queued_matches:
+            queued_ids = {job.run_id for job in queued_matches}
+            self.pending_jobs = [
+                job for job in self.__dict__.get("pending_jobs", []) if job.run_id not in queued_ids
+            ]
+        if active_match is not None:
+            self._cancel()
         saved = history_output_dir(info)
         previous_history = list(self.download_history)
         if saved is not None:
@@ -9397,16 +10110,21 @@ class DownloaderApp(tk.Tk):
                 self.download_history = previous_history
                 messagebox.showerror(APP_NAME, str(exc))
                 return
-        removed_run_ids = self._remove_library_item_from_forge_recents(info)
+        removed_run_ids.update(self._remove_library_item_from_forge_recents(info))
         removed_run_ids.add(str(info.get("vodforge_preview_run_id") or f"history:{index}"))
         self.metadata_items.pop(index)
         self._rebuild_output_dir_index()
         self._render_metadata_tree()
         self._reconcile_focus_after_library_removal(removed_run_ids)
-        self.status_var.set("Removed the item from Library and Forge recents. Media files were not deleted.")
+        if active_match is not None:
+            self.status_var.set("Removed the item from Library and Forge recents; its active run is stopping. Media files were not deleted.")
+        elif queued_matches:
+            self.status_var.set("Removed the item and its queued run from Library and Forge. Media files were not deleted.")
+        else:
+            self.status_var.set("Removed the item from Library and Forge recents. Media files were not deleted.")
 
     def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> set[str]:
-        """Remove presentation history for one Library item, never execution or files."""
+        """Remove one item's presentation history without deleting media files."""
         removed_run_ids: set[str] = set()
         saved = history_output_dir(info)
         if saved is not None:
@@ -9498,9 +10216,16 @@ class DownloaderApp(tk.Tk):
             location_text = "Preview complete — Start download in Forge when ready"
         else:
             location_text = f"Saved in {saved}" if saved is not None else "Not downloaded in this history"
-        self.selected_title_var.set(
-            f"{title}\n{output_type.value} • {creator} • {format_duration(info.get('duration'))} • {info.get('id') or 'no id'}\n{location_text}"
+        metadata_text = (
+            f"{output_type.value} • {creator} • {format_duration(info.get('duration'))} • "
+            f"{info.get('id') or 'no id'}"
         )
+        if hasattr(self, "selected_meta_var") and hasattr(self, "selected_location_var"):
+            self.selected_title_var.set(title)
+            self.selected_meta_var.set(metadata_text)
+            self.selected_location_var.set(location_text)
+        else:
+            self.selected_title_var.set(f"{title}\n{metadata_text}\n{location_text}")
         tags_text = build_tags_display_text(info)
         description = build_description_display_text(info)
         self._set_text(self.pulled_tags_text, tags_text or "No tags found for this video.")
@@ -9515,7 +10240,7 @@ class DownloaderApp(tk.Tk):
         preview_thumbnail = str(info.get("preview_thumbnail_path") or "").strip()
         preview_thumbnail_path = Path(preview_thumbnail) if preview_thumbnail else None
         local_thumbnail = saved / "thumbnail.jpeg" if saved is not None else None
-        cached_thumbnail = cached_thumbnail_path(info)
+        cached_thumbnail = existing_cached_thumbnail_path(info)
         thumbnail_target = "library"
         if preview_thumbnail_path is not None and preview_thumbnail_path.is_file():
             self._load_thumbnail_file(preview_thumbnail_path, target=thumbnail_target)
@@ -9524,7 +10249,11 @@ class DownloaderApp(tk.Tk):
         elif cached_thumbnail is not None and cached_thumbnail.is_file():
             self._load_thumbnail_file(cached_thumbnail, target=thumbnail_target)
         elif self.last_thumbnail_url:
-            self._load_thumbnail_preview(self.last_thumbnail_url, target=thumbnail_target)
+            self._load_thumbnail_preview(
+                self.last_thumbnail_url,
+                target=thumbnail_target,
+                cache_info=info,
+            )
         else:
             if hasattr(self, "focus_run_deck") and self._focus_brand_source_image is not None:
                 self._render_focus_thumbnail_surfaces(
@@ -9720,6 +10449,7 @@ class DownloaderApp(tk.Tk):
         *,
         target: str,
         owner_run_id: str = "",
+        cache_info: dict[str, Any] | None = None,
     ) -> None:
         target_label = self._thumbnail_label_for_target(target)
         if Image is None or ImageTk is None:
@@ -9732,18 +10462,18 @@ class DownloaderApp(tk.Tk):
         if requests is None:
             requests = queue.Queue(maxsize=2)
             self._thumbnail_preview_requests = requests
-        retained: list[tuple[int, str, str, str]] = []
+        retained: list[tuple[int, str, str, str, dict[str, Any] | None]] = []
         while True:
             try:
                 pending = requests.get_nowait()
                 requests.task_done()
             except queue.Empty:
                 break
-            if len(pending) == 4 and pending[2] != request_target:
+            if len(pending) >= 4 and pending[2] != request_target:
                 retained.append(pending)
         for pending in retained[-1:]:
             requests.put_nowait(pending)
-        requests.put_nowait((request_id, url, request_target, owner_run_id))
+        requests.put_nowait((request_id, url, request_target, owner_run_id, dict(cache_info) if cache_info else None))
         if worker is None or not worker.is_alive():
             worker = threading.Thread(target=self._thumbnail_preview_loop, daemon=True)
             self._thumbnail_preview_thread = worker
@@ -9752,11 +10482,13 @@ class DownloaderApp(tk.Tk):
             target_label.config(text="Loading thumbnail…")
 
     def _thumbnail_preview_loop(self) -> None:
-        requests: queue.Queue[tuple[int, str, str, str]] = self._thumbnail_preview_requests
+        requests: queue.Queue[tuple[int, str, str, str, dict[str, Any] | None]] = self._thumbnail_preview_requests
         while True:
-            request_id, url, target, owner_run_id = requests.get()
+            request = requests.get()
+            request_id, url, target, owner_run_id = request[:4]
+            cache_info = request[4] if len(request) > 4 else None
             try:
-                self._fetch_thumbnail_preview_request(request_id, url, target, owner_run_id)
+                self._fetch_thumbnail_preview_request(request_id, url, target, owner_run_id, cache_info)
             except Exception as exc:
                 self.events.put((
                     "thumbnail_preview_result",
@@ -9771,6 +10503,7 @@ class DownloaderApp(tk.Tk):
         url: str,
         target: str,
         owner_run_id: str,
+        cache_info: dict[str, Any] | None = None,
     ) -> None:
         if (
             bool(self.__dict__.get("_closing", False))
@@ -9787,6 +10520,11 @@ class DownloaderApp(tk.Tk):
             or request_id != self._thumbnail_request_ids().get(target, 0)
         ):
             return
+        if cache_info:
+            try:
+                save_cached_thumbnail_bytes(cache_info, data)
+            except Exception as exc:
+                write_diagnostic(f"remote thumbnail cache write failed: {type(exc).__name__}: {exc}")
         self.events.put((
             "thumbnail_preview_result",
             {"id": request_id, "url": url, "data": data, "target": target, "run_id": owner_run_id},
@@ -9827,8 +10565,7 @@ class DownloaderApp(tk.Tk):
                         self._refresh_focus_run_deck()
                         return
                 self._render_focus_thumbnail_surfaces(image, placeholder=False, target=target)
-                if target == "active":
-                    self._refresh_focus_run_deck()
+                self._refresh_focus_run_deck()
                 return
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
@@ -9930,10 +10667,11 @@ class DownloaderApp(tk.Tk):
             return None
 
         tags = [tag.strip() for tag in self.tags_var.get().split(",") if tag.strip()]
+        export_mode = ExportMode(self.export_mode_var.get())
         try:
             manual_settings = (
                 self._manual_export_settings()
-                if output_type == OutputType.MP4
+                if output_type == OutputType.MP4 and export_mode == ExportMode.MANUAL_OVERRIDE
                 else ManualExportSettings()
             )
             mp3_settings = self._mp3_export_settings() if output_type == OutputType.MP3 else Mp3ExportSettings()
@@ -9945,7 +10683,7 @@ class DownloaderApp(tk.Tk):
             output_dir=output_dir,
             output_type=output_type,
             quality_label=self.quality_var.get(),
-            export_mode=ExportMode(self.export_mode_var.get()),
+            export_mode=export_mode,
             manual_settings=manual_settings,
             mp3_settings=mp3_settings,
             single_video_only=single_video_only,
@@ -10049,7 +10787,7 @@ class DownloaderApp(tk.Tk):
                 (
                     "Format        MP3\nAudio         Pending\nOutput mode   Highest-quality source\n"
                     if job.output_type == OutputType.MP3
-                    else "Format        MP4\nVideo         H.264\nAudio         AAC\nOutput mode   Pending\n"
+                    else f"Format        MP4\nVideo         H.264\nAudio         {job.manual_settings.audio_codec.value if job.export_mode == ExportMode.MANUAL_OVERRIDE else 'AAC'}\nOutput mode   Pending\n"
                 )
                 + f"Save to       {job.output_dir}",
                 disabled=True,
@@ -10088,7 +10826,7 @@ class DownloaderApp(tk.Tk):
 
     def _archive_active_terminal_job(self, status: str, message: str) -> None:
         job = self.active_job
-        if job is None:
+        if job is None or self._library_run_is_suppressed(job):
             return
         job.terminal_status = status
         job.terminal_message = message
@@ -10113,6 +10851,7 @@ class DownloaderApp(tk.Tk):
                 None,
             )
             if matching is not None:
+                matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
                 matching.pop("vodforge_preview_complete", None)
                 matching.pop("vodforge_preview_run_id", None)
                 matching["vodforge_terminal_status"] = status
@@ -10121,7 +10860,7 @@ class DownloaderApp(tk.Tk):
 
     def _archive_active_completed_job(self, status: str, message: str) -> None:
         job = self.active_job
-        if job is None:
+        if job is None or self._library_run_is_suppressed(job):
             return
         job.terminal_status = status
         job.terminal_message = message
@@ -10138,6 +10877,8 @@ class DownloaderApp(tk.Tk):
 
     def _archive_item_terminal_job(self, job: DownloadJob, info: dict[str, Any]) -> None:
         """Archive one playlist item attempt without transferring Library authority."""
+        if self._library_run_is_suppressed(job):
+            return
         self._terminal_jobs = [item for item in self._terminal_jobs if item.run_id != job.run_id]
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
@@ -10152,6 +10893,7 @@ class DownloaderApp(tk.Tk):
         )
         if matching is not None:
             matching.update(info)
+            matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
         else:
             self.metadata_items.insert(0, dict(info))
         self._rebuild_output_dir_index()
@@ -10186,6 +10928,7 @@ class DownloaderApp(tk.Tk):
             url=retry_url,
             urls=[retry_url],
             run_id=uuid.uuid4().hex,
+            origin_run_id=None,
             metadata_keys=set(),
             history_identities=set(),
             activity_lines=[],
@@ -10426,6 +11169,7 @@ class DownloaderApp(tk.Tk):
                 batch_mode=False,
                 preview_info=terminal_info,
                 run_id=terminal_run_id,
+                origin_run_id=job.run_id,
                 metadata_keys={key} if (key := metadata_run_key(terminal_info)) is not None else set(),
                 history_identities=set(),
                 activity_lines=[message],
@@ -10712,14 +11456,13 @@ class DownloaderApp(tk.Tk):
                             job,
                             f"{label}: already downloaded and valid; reused {existing_path}.",
                         )
-                        if job.output_type == OutputType.MP3:
-                            try:
-                                cached_thumbnail = save_cached_thumbnail_image(current_video_info)
-                                if cached_thumbnail is not None:
-                                    self._emit_job_log(job, f"{label}: refreshed private Library artwork cache")
-                            except Exception as exc:
-                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                                self._emit_job_log(job, f"WARNING: {label}: existing MP3 is valid, but Library artwork could not be refreshed: {exc}")
+                        try:
+                            cached_thumbnail = save_cached_thumbnail_image(current_video_info)
+                            if cached_thumbnail is not None:
+                                self._emit_job_log(job, f"{label}: refreshed private Library artwork cache")
+                        except Exception as exc:
+                            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
+                            self._emit_job_log(job, f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed: {exc}")
                         if job.write_info_json:
                             try:
                                 write_compact_video_metadata(existing_path.parent, current_video_info, job.tags)
@@ -10740,7 +11483,11 @@ class DownloaderApp(tk.Tk):
                     try:
                         ffmpeg = self._find_ffmpeg()
                         if not ffmpeg:
-                            required_output = "MP3 audio" if job.output_type == OutputType.MP3 else "H.264 / AAC MP4 video"
+                            required_output = (
+                                "MP3 audio"
+                                if job.output_type == OutputType.MP3
+                                else f"H.264 / {plan.output_audio_codec.value} MP4 video"
+                            )
                             raise RuntimeError(f"FFmpeg is required to create the {required_output} output.")
                         ydl_opts = self._build_ydl_options(job, staging_dir=staging_dir, format_selector=plan.format_selector)
                         ydl_opts["noplaylist"] = True
@@ -10820,7 +11567,7 @@ class DownloaderApp(tk.Tk):
                                 self.events.put(("status", f"{label} — transcoding"))
                                 encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
                                 self._emit_job_log(job, f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}")
-                                write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
+                                write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
                                 put_stage_progress(video_index, total_videos, 0.50, 0.40, (encode_index - 1) / total_mp4)
                                 transcode_started = time.monotonic()
                                 transcode_to_vod_streaming_settings(
@@ -10853,6 +11600,11 @@ class DownloaderApp(tk.Tk):
                                 ffprobe,
                                 expected_duration_seconds=_float_or_none(staged_info.get("duration") or info.get("duration")),
                                 require_audio=True,
+                                expected_audio_codec=(
+                                    plan.output_audio_codec.ffprobe_codec
+                                    if isinstance(plan, ExportPlan)
+                                    else "mp3"
+                                ),
                                 control_check=raise_for_control_requests,
                             )
                             validated_staged.append((staged_info, staged_path, probe_data))
@@ -10895,20 +11647,19 @@ class DownloaderApp(tk.Tk):
                         current_video_info = info
                         self.events.put(("job_metadata", {"job": job, "info": info}))
                         outcome = outcome.combined_with(DownloadOutcome(success_count=len(output_paths)))
-                        if job.output_type == OutputType.MP3:
-                            try:
-                                cached_thumbnail = (
-                                    save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
-                                    if custom_cover_for_cache is not None
-                                    else save_cached_thumbnail_image(info)
-                                )
-                                if cached_thumbnail is not None:
-                                    artwork_source = "custom cover" if custom_cover_for_cache is not None else "YouTube thumbnail"
-                                    self._emit_job_log(job, f"{label}: cached {artwork_source} privately for Forge and Library")
-                            except Exception as exc:
-                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                                write_diagnostic(f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}")
-                                self._emit_job_log(job, f"WARNING: {label}: the MP3 is complete, but its Library artwork could not be cached.")
+                        try:
+                            cached_thumbnail = (
+                                save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
+                                if job.output_type == OutputType.MP3 and custom_cover_for_cache is not None
+                                else save_cached_thumbnail_image(info)
+                            )
+                            if cached_thumbnail is not None:
+                                artwork_source = "custom cover" if custom_cover_for_cache is not None else "YouTube thumbnail"
+                                self._emit_job_log(job, f"{label}: cached {artwork_source} privately for Forge and Library")
+                        except Exception as exc:
+                            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
+                            write_diagnostic(f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}")
+                            self._emit_job_log(job, f"WARNING: {label}: the media is complete, but its Library artwork could not be cached.")
                         if primary_output is not None:
                             self.events.put(
                                 (
@@ -11188,6 +11939,11 @@ class DownloaderApp(tk.Tk):
         try:
             while True:
                 kind, payload = self.events.get_nowait()
+                if (
+                    kind in {"progress_indeterminate_start", "progress_indeterminate_stop", "progress_determinate", "progress", "status"}
+                    and self._library_run_is_suppressed(self.active_job)
+                ):
+                    continue
                 if kind == "log":
                     self._append_log(str(payload))
                 elif kind == "job_log":
@@ -11265,6 +12021,11 @@ class DownloaderApp(tk.Tk):
                         output_dir = str(payload.get("output_dir") or "").strip()
                         if output_dir:
                             history_job = payload.get("job")
+                            if isinstance(history_job, DownloadJob) and self._library_run_is_suppressed(history_job):
+                                write_diagnostic(
+                                    f"ignored history event for Library-removed run_id={history_job.run_id}"
+                                )
+                                continue
                             owning_job = (
                                 self._active_run_for_metadata_event(history_job)
                                 if isinstance(history_job, DownloadJob)
@@ -11281,7 +12042,9 @@ class DownloaderApp(tk.Tk):
                         and isinstance(payload.get("job"), DownloadJob)
                         and isinstance(payload.get("info"), dict)
                     ):
-                        self._archive_item_terminal_job(payload["job"], payload["info"])
+                        terminal_job = payload["job"]
+                        if not self._library_run_is_suppressed(terminal_job):
+                            self._archive_item_terminal_job(terminal_job, payload["info"])
                 elif kind == "metadata_fetch_done":
                     if hasattr(self, "preview_metadata_button"):
                         self.preview_metadata_button.config(state="normal")
@@ -11362,6 +12125,13 @@ class DownloaderApp(tk.Tk):
                         self._append_log(f"ERROR during application close: {payload}")
                         continue
                     failed_job = self.active_job
+                    if self._library_run_is_suppressed(failed_job):
+                        self._finish_run_ui(
+                            "Removed from Library; the run was stopped.",
+                            "Stopped",
+                            "Stopped  /  Removed from Library",
+                        )
+                        continue
                     if failed_job is not None:
                         self._append_job_log(failed_job, f"ERROR: {payload}")
                     else:
@@ -11392,12 +12162,15 @@ class DownloaderApp(tk.Tk):
 
     def _finish_run_ui(self, message: str, run_status: str, transfer_text: str, *, progress: float | None = None) -> None:
         finished_job = self.active_job
-        if finished_job is not None:
+        suppressed = self._library_run_is_suppressed(finished_job)
+        if finished_job is not None and not suppressed:
             self._append_job_log(finished_job, message)
             self._persist_job_activity_to_history(finished_job)
         else:
             self._append_log(message)
-        if run_status == "Stopped" and not (finished_job is not None and finished_job.item_terminal_emitted):
+        if suppressed:
+            pass
+        elif run_status == "Stopped" and not (finished_job is not None and finished_job.item_terminal_emitted):
             self._archive_active_terminal_job(run_status, message)
         elif run_status in {"Completed", "Partial"}:
             self._archive_active_completed_job(run_status, message)
@@ -11416,7 +12189,11 @@ class DownloaderApp(tk.Tk):
         if not self._launch_next_pending_job() and self.__dict__.get("focus_transfer_var") is not None:
             self._set_focus_run_controls_visible(False)
             self._refresh_focus_run_deck()
-        if run_status == "Stopped" and finished_job is not None and not finished_job.item_terminal_emitted:
+        if suppressed and finished_job is not None:
+            self._terminal_jobs = [job for job in self._terminal_jobs if job.run_id != finished_job.run_id]
+            self._completed_jobs = [job for job in self._completed_jobs if job.run_id != finished_job.run_id]
+            self._reconcile_focus_after_library_removal({finished_job.run_id})
+        elif run_status == "Stopped" and finished_job is not None and not finished_job.item_terminal_emitted:
             self._focus_terminal_job(finished_job)
 
     def _append_log(self, line: str) -> None:
