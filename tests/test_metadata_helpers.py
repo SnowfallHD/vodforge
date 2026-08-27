@@ -94,6 +94,7 @@ from yt_downloader.app import (
     focus_layout_mode,
     focus_run_deck_capacity,
     focus_wheel_pixels,
+    pixel_scroll_target,
     initial_window_geometry,
     is_metadata_preview,
     accumulated_row_scroll,
@@ -450,6 +451,16 @@ def test_focus_layout_collapses_before_live_details_are_clipped():
     assert focus_layout_mode(820, 560) == "compact"
 
 
+def test_fraction_addressed_pixel_scroll_uses_the_visible_viewport_ratio():
+    # Canvas-style surfaces expose a visible fraction; converting a 36 px
+    # gesture through that ratio must move precisely and clamp at the tail.
+    target = pixel_scroll_target(0.0, 0.1, 47, 36)
+
+    assert target == pytest.approx(0.0765957447)
+    assert pixel_scroll_target(0.9, 1.0, 47, 36) == pytest.approx(0.9)
+    assert pixel_scroll_target(0.0, 1.0, 47, 36) == 0.0
+
+
 def test_tooltip_hit_testing_uses_exact_visible_widget_bounds():
     class WidgetBounds:
         def __init__(self, left, top, width, height, *, mapped=True):
@@ -515,6 +526,8 @@ def test_ultrawide_library_workspace_is_bounded_and_centered():
     assert focus_library_horizontal_padding(1180) == 18
     assert focus_library_horizontal_padding(1600) == 18
     assert focus_library_horizontal_padding(2560) == 480
+    assert focus_library_horizontal_padding(2000) == focus_library_horizontal_padding(2015)
+    assert focus_library_horizontal_padding(2016) > focus_library_horizontal_padding(2015)
 
 
 def test_virtual_table_clamps_a_stale_scroll_offset_after_filtering_to_fewer_rows():

@@ -10,6 +10,7 @@ from dataclasses import replace
 import inspect
 from pathlib import Path
 import queue
+from types import SimpleNamespace
 
 import yt_downloader.app as app_module
 
@@ -805,7 +806,44 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "if self._focus_run_records():" in layout_source
     assert "ttk.Sizegrip(self" in focus_ui_source
     assert 'self.bind("<Configure>", self._schedule_focus_layout' in focus_ui_source
-    assert "self.after(16, apply)" in root_resize_source
+    assert "self.after(16, apply)" not in root_resize_source
+    assert "self._apply_focus_layout(width=width, height=height)" in root_resize_source
+    assert "self.after_idle(refresh)" not in deck_resize_source
+
+
+def test_native_resize_applies_live_dimensions_without_waiting_for_pointer_release():
+    class LayoutProbe:
+        def __init__(self):
+            self.calls = []
+
+        def _apply_focus_layout(self, **kwargs):
+            self.calls.append(kwargs)
+
+    probe = LayoutProbe()
+    event = SimpleNamespace(widget=probe, width=918, height=701)
+
+    DownloaderApp._schedule_focus_layout(probe, event)
+
+    assert probe.calls == [{"width": 918, "height": 701}]
+
+
+def test_run_deck_capacity_crossing_refreshes_synchronously_once():
+    class DeckProbe:
+        def __init__(self):
+            self._focus_run_deck_rendered_capacity = 3
+            self.refreshes = 0
+
+        def _refresh_focus_run_deck(self):
+            self.refreshes += 1
+            self._focus_run_deck_rendered_capacity = 4
+
+    probe = DeckProbe()
+    event = SimpleNamespace(width=900)
+
+    DownloaderApp._schedule_focus_run_deck_geometry_refresh(probe, event)
+    DownloaderApp._schedule_focus_run_deck_geometry_refresh(probe, event)
+
+    assert probe.refreshes == 1
 
 
 def test_library_copy_feedback_and_youtube_url_actions_keep_stable_button_geometry():
@@ -836,10 +874,23 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
     assert "yview_moveto" in pixel_table_source
     assert "xview(\"moveto\"" in pixel_table_source
     assert 'target.bind("<TouchpadScroll>"' in wheel_binding_source
+    assert "pixel_scroll_target" in wheel_binding_source
+    assert 'scroller.yview_scroll(pixels, "pixels")' in wheel_binding_source
+    assert 'count("1.0", "end", "ypixels")' not in wheel_binding_source
     assert "bind_smooth_vertical_wheel(self.log" in activity_source
     assert 'mode="pixels"' in activity_source
     assert "bind_smooth_vertical_wheel(self.focus_log" in forge_source
     assert "bind_smooth_vertical_wheel(self.focus_summary_text" in forge_source
+
+
+def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is_native():
+    library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
+
+    assert "details.rowconfigure(3, weight=2, minsize=96)" in library_source
+    assert "bind_smooth_vertical_wheel(text_widget, mode=\"pixels\")" in library_source
+    assert "rounded_canvas_rectangle_points" in forge_source
+    assert 'Image.new("RGBA", (width * scale, height * scale)' not in forge_source
 
 
 def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():

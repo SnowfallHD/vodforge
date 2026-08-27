@@ -269,8 +269,13 @@ def resized_table_column_width(initial_width: int, delta: int, minimum_width: in
 
 
 def focus_library_horizontal_padding(width: int, *, maximum_content_width: int = 1600) -> int:
-    """Center a bounded Library workspace without squeezing ordinary windows."""
-    return max(18, (max(1, int(width)) - int(maximum_content_width)) // 2)
+    """Center a bounded Library workspace without per-pixel Grid reflows."""
+    overflow = max(0, max(1, int(width)) - int(maximum_content_width))
+    # A one-pixel padding update touches three managed Library surfaces. At
+    # ultrawide sizes that needlessly reflows the hidden page throughout a
+    # native frame drag, even while Forge is visible. Center in visually
+    # indistinguishable 32 px window-width steps instead.
+    return max(18, (overflow // 32) * 16)
 
 
 def focus_run_deck_capacity(available_width: int, *, maximum: int = 4) -> int:
@@ -294,6 +299,57 @@ def focus_wheel_pixels(delta: int | float) -> int:
         pixels = -round(raw_delta / 120) * 36
     magnitude = max(1, round(abs(pixels)))
     return int(max(-72, min(72, magnitude if pixels > 0 else -magnitude)))
+
+
+def pixel_scroll_target(
+    first: float,
+    last: float,
+    viewport_height: int,
+    pixels: int | float,
+) -> float:
+    """Move a fraction-addressed viewport by real pixels.
+
+    Text widgets use their native pixel-scroll command because their fractions
+    can be temporarily stale while wrapped display-line metrics settle. This
+    calculation remains the smooth fallback for Canvas-style surfaces whose
+    current visible fraction is their scroll authority.
+    """
+    safe_first = max(0.0, min(1.0, float(first)))
+    safe_last = max(safe_first, min(1.0, float(last)))
+    visible_fraction = safe_last - safe_first
+    if visible_fraction <= 0.0 or visible_fraction >= 0.999:
+        return safe_first
+    movement = float(pixels) * visible_fraction / max(1, int(viewport_height))
+    return max(0.0, min(1.0 - visible_fraction, safe_first + movement))
+
+
+def rounded_canvas_rectangle_points(width: int, height: int, radius: int) -> tuple[float, ...]:
+    """Return a smooth native-Canvas rounded rectangle without raster work."""
+    right = max(1.0, float(width) - 1.0)
+    bottom = max(1.0, float(height) - 1.0)
+    curve = max(0.0, min(float(radius), right / 2.0, bottom / 2.0))
+    return (
+        curve, 0.0,
+        curve, 0.0,
+        right - curve, 0.0,
+        right - curve, 0.0,
+        right, 0.0,
+        right, curve,
+        right, curve,
+        right, bottom - curve,
+        right, bottom - curve,
+        right, bottom,
+        right - curve, bottom,
+        right - curve, bottom,
+        curve, bottom,
+        curve, bottom,
+        0.0, bottom,
+        0.0, bottom - curve,
+        0.0, bottom - curve,
+        0.0, curve,
+        0.0, curve,
+        0.0, 0.0,
+    )
 
 
 def accumulated_row_scroll(remainder: float, pixels: int, row_pixels: int) -> tuple[int, float]:
@@ -345,23 +401,6 @@ def bind_smooth_vertical_wheel(
     wheel_targets = targets or (scroller,)
     remainder = 0.0
 
-    def scrollable_pixel_height() -> int:
-        try:
-            if isinstance(scroller, tk.Text):
-                measured = scroller.count("1.0", "end", "ypixels")
-                if measured:
-                    return max(scroller.winfo_height(), int(measured[0]))
-            if isinstance(scroller, tk.Canvas):
-                raw_region = str(scroller.cget("scrollregion") or "").split()
-                if len(raw_region) == 4:
-                    return max(scroller.winfo_height(), round(float(raw_region[3]) - float(raw_region[1])))
-                bounds = scroller.bbox("all")
-                if bounds is not None:
-                    return max(scroller.winfo_height(), int(bounds[3] - bounds[1]))
-        except (tk.TclError, TypeError, ValueError):
-            pass
-        return 0
-
     def scroll_pixels(pixels: int) -> str:
         nonlocal remainder
         if not pixels:
@@ -384,11 +423,25 @@ def bind_smooth_vertical_wheel(
                     pass
             return "break"
         if mode == "pixels":
-            content_height = scrollable_pixel_height()
-            viewport_height = max(1, scroller.winfo_height())
-            if content_height > viewport_height:
-                first, _last = scroller.yview()
-                scroller.yview_moveto(max(0.0, min(1.0, float(first) + (pixels / content_height))))
+            if isinstance(scroller, tk.Text):
+                try:
+                    # Native Text pixel scrolling does not depend on yview
+                    # fractions that may be stale while wrapped display-line
+                    # metrics settle after insertion or a resize.
+                    scroller.yview_scroll(pixels, "pixels")
+                except tk.TclError:
+                    rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
+                    if rows:
+                        scroller.yview_scroll(rows, "units")
+            else:
+                viewport_height = max(1, scroller.winfo_height())
+                try:
+                    first, last = scroller.yview()
+                    target = pixel_scroll_target(float(first), float(last), viewport_height, pixels)
+                    if target != float(first):
+                        scroller.yview_moveto(target)
+                except (AttributeError, TypeError, ValueError, tk.TclError):
+                    pass
             if pixels > 0:
                 try:
                     _first, last = scroller.yview()
@@ -6538,29 +6591,24 @@ class DownloaderApp(tk.Tk):
         command_inner = tk.Frame(command_box, bg=THEME["surface"], bd=0, highlightthickness=0)
         command_inner.columnconfigure(1, weight=1)
         command_window = command_box.create_window(12, 2, anchor="nw", window=command_inner)
-        command_background = command_box.create_image(0, 0, anchor="nw")
+        command_background = command_box.create_polygon(
+            rounded_canvas_rectangle_points(1, 40, 8),
+            smooth=True,
+            splinesteps=16,
+            fill=THEME["surface"],
+            outline=THEME["border"],
+            width=1,
+        )
         command_box.tag_lower(command_background)
-        command_state = {"image": None}
 
         def redraw_command_box(_event: Any = None) -> None:
             width = max(1, command_box.winfo_width())
             height = max(1, command_box.winfo_height())
-            if Image is not None and ImageDraw is not None and ImageTk is not None:
-                scale = 4
-                surface = Image.new("RGBA", (width * scale, height * scale), (0, 0, 0, 0))
-                ImageDraw.Draw(surface).rounded_rectangle(
-                    (0, 0, width * scale - 1, height * scale - 1),
-                    radius=min(8, height // 2) * scale,
-                    fill=THEME["surface"],
-                    outline=THEME["border"],
-                    width=scale,
-                )
-                resampling = getattr(Image, "Resampling", Image)
-                surface = surface.resize((width, height), resampling.LANCZOS)
-                command_state["image"] = ImageTk.PhotoImage(surface)
-                command_box.itemconfigure(command_background, image=command_state["image"])
-                command_box.coords(command_background, 0, 0)
-                command_box.tag_lower(command_background)
+            command_box.coords(
+                command_background,
+                *rounded_canvas_rectangle_points(width, height, min(8, height // 2)),
+            )
+            command_box.tag_lower(command_background)
             command_box.coords(command_window, 10, 2)
             command_box.itemconfigure(command_window, width=max(1, width - 20), height=max(1, height - 4))
 
@@ -6934,8 +6982,8 @@ class DownloaderApp(tk.Tk):
         details.configure(width=410)
         details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
-        details.rowconfigure(3, weight=1, minsize=70)
-        details.rowconfigure(4, weight=2, minsize=110)
+        details.rowconfigure(3, weight=2, minsize=96)
+        details.rowconfigure(4, weight=3, minsize=120)
         self.selected_title_var = tk.StringVar(value="Choose a saved item or preview a URL to inspect its metadata.")
         self.selected_meta_var = tk.StringVar(value="")
         self.selected_location_var = tk.StringVar(value="")
@@ -8511,27 +8559,22 @@ class DownloaderApp(tk.Tk):
         return records
 
     def _schedule_focus_run_deck_geometry_refresh(self, event: tk.Event[Any]) -> None:
-        """Reconcile the deck after Tk commits child geometry.
+        """Reconcile the deck immediately when its discrete capacity changes.
 
         Root Configure arrives before nested widths settle on Windows. A stale
         child width could render three cards and then cache a four-card root
-        signature until the user changed tabs. The deck's own settled width is
-        the final authority.
+        signature until the user changed tabs. The deck's own width remains the
+        final authority, but an idle callback can be deferred for the whole
+        native resize gesture. Rebuilding only at 220 px capacity boundaries is
+        both immediate and bounded.
         """
         capacity = focus_run_deck_capacity(max(1, int(event.width)))
         if capacity == self.__dict__.get("_focus_run_deck_rendered_capacity"):
             return
-        if self.__dict__.get("_focus_run_deck_refresh_after_id") is not None:
-            return
-
-        def refresh() -> None:
-            self._focus_run_deck_refresh_after_id = None
-            self._refresh_focus_run_deck()
-
         try:
-            self._focus_run_deck_refresh_after_id = self.after_idle(refresh)
+            self._refresh_focus_run_deck()
         except tk.TclError:
-            self._focus_run_deck_refresh_after_id = None
+            return
 
     def _refresh_focus_run_deck(self) -> None:
         if not hasattr(self, "focus_run_deck"):
@@ -8823,26 +8866,34 @@ class DownloaderApp(tk.Tk):
             self._show_focus_run_actions_menu(record)
 
     def _schedule_focus_layout(self, event: tk.Event[Any] | None = None) -> None:
-        """Cap root relayout churn while a native window edge is being dragged."""
+        """Apply breakpoint authority during, not after, a native resize drag.
+
+        ``after`` callbacks can be held until Aqua or Windows exits its native
+        live-resize loop. The expensive layout body is already guarded by a
+        discrete signature, so every root Configure can cheaply offer its live
+        dimensions while only real breakpoint/capacity transitions rebuild.
+        """
         if event is not None and event.widget is not self:
             return
-        if self.__dict__.get("_focus_layout_after_id") is not None:
-            return
-
-        def apply() -> None:
-            self._focus_layout_after_id = None
-            self._apply_focus_layout()
-
         try:
-            self._focus_layout_after_id = self.after(16, apply)
+            width = max(1, int(event.width)) if event is not None else max(1, self.winfo_width())
+            height = max(1, int(event.height)) if event is not None else max(1, self.winfo_height())
+            self._apply_focus_layout(width=width, height=height)
         except tk.TclError:
-            self._focus_layout_after_id = None
+            return
 
-    def _apply_focus_layout(self, event: tk.Event[Any] | None = None, *, force: bool = False) -> None:
+    def _apply_focus_layout(
+        self,
+        event: tk.Event[Any] | None = None,
+        *,
+        force: bool = False,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
         if event is not None and event.widget is not self:
             return
-        width = max(1, self.winfo_width())
-        height = max(1, self.winfo_height())
+        width = max(1, int(width)) if width is not None else max(1, self.winfo_width())
+        height = max(1, int(height)) if height is not None else max(1, self.winfo_height())
         mode = focus_layout_mode(width, height)
         compact = mode == "compact"
         balanced = mode == "balanced"
