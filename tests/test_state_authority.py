@@ -50,6 +50,9 @@ class TextBuffer:
     def delete(self, _start, _end):
         self.value = ""
 
+    def get(self, _start, _end):
+        return self.value
+
     def see(self, _index):
         return None
 
@@ -202,6 +205,182 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     assert "thumbnail_wrap.pack_propagate(False)" in library_source
     assert "thumbnail_wrap.grid_propagate(False)" not in library_source
+
+
+def test_next_run_output_toggle_cannot_rewrite_a_selected_forge_run():
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.output_type_var = Value("MP3")
+    app.quality_var = Value("1080p Full HD")
+    app.export_mode_var = Value("Auto CBR")
+    app.mp3_quality_var = Value("Maximum — 320 kbps CBR")
+    app.mp3_sample_rate_var = Value("Preserve source")
+    app.mp3_channels_var = Value("Preserve source")
+    app.mp3_embed_metadata_var = Value(True)
+    app.mp3_cover_art_mode_var = Value("No Art")
+    app.mp3_custom_cover_art_path = None
+    app.batch_urls = []
+    app.worker = None
+    app._focus_active_override = False
+    app._focus_selected_run_id = "completed-run"
+    app.focus_command_hint_var = Value("")
+    app.focus_active_profile_var = Value("MP4  •  Auto CBR")
+    app.focus_active_detail_var = Value("Selected creator")
+    app.focus_transfer_var = Value("Complete  /  Ready to open in Library")
+    app.focus_summary_text = TextBuffer()
+    app.focus_summary_text.insert("1.0", "Container/ext: mp4\nSave to       /completed/run.mp4")
+    app.output_var = Value("/next/run")
+    app.focus_output_display_var = Value("")
+    app._focus_layout = "wide"
+    refreshed: list[bool] = []
+    app._refresh_output_specific_settings = lambda: refreshed.append(True)
+
+    app._on_output_type_changed()
+
+    assert "MP3 audio" in app.focus_command_hint_var.get()
+    assert refreshed == [True]
+    assert app.focus_active_profile_var.get() == "MP4  •  Auto CBR"
+    assert app.focus_transfer_var.get() == "Complete  /  Ready to open in Library"
+    assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /completed/run.mp4"
+
+    app._sync_focus_destination()
+
+    assert app.focus_output_display_var.get() == "/next/run"
+    assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /completed/run.mp4"
+
+    app.focus_run_deck = object()
+    app._focus_run_records = lambda: []
+    app._set_focus_preview_start_action = lambda *_args: None
+    app._set_focus_progress_color = lambda *_args: None
+    app.focus_active_title_var = Value("Selected title")
+    app.focus_active_duration_var = Value("4:16")
+    app.focus_display_progress_var = Value(100)
+    app.focus_percent_var = Value("100%")
+    app.focus_display_status_var = Value("Showing completed run")
+    app._render_focus_run_activity = lambda *_args: None
+    app._reset_active_thumbnail = lambda: None
+    app._refresh_focus_run_deck = lambda: None
+
+    app._reconcile_focus_after_library_removal({"completed-run"})
+
+    assert app._focus_selected_run_id is None
+    assert app.focus_active_profile_var.get() == "MP3  •  320 kbps  •  Source rate"
+    assert app.focus_transfer_var.get() == "Audio-only MP3  /  best YouTube audio source"
+    assert app.focus_summary_text.value == "\n".join(
+        (
+            "Format        MP3",
+            "Audio         Best YouTube source",
+            "Output mode   Maximum — 320 kbps CBR",
+            "Sample rate   Preserve source",
+            "Save to       /next/run",
+        )
+    )
+
+
+def test_next_run_destination_cannot_rewrite_the_selected_active_run():
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_selected_run_id = "active-run"
+    app.active_job = SimpleNamespace(run_id="active-run")
+    app.worker = LiveWorker()
+    app.output_var = Value("/next/run")
+    app.focus_output_display_var = Value("")
+    app.focus_summary_text = TextBuffer()
+    app.focus_summary_text.insert("1.0", "Container/ext: mp4\nSave to       /active/run.mp4")
+    app._focus_layout = "wide"
+
+    app._sync_focus_destination()
+
+    assert app.focus_output_display_var.get() == "/next/run"
+    assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /active/run.mp4"
+
+
+def test_library_suppressed_active_run_cannot_reclaim_the_neutral_forge_hero(tmp_path: Path):
+    active = make_job(tmp_path, video_id="removed-active")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active
+    app.worker = LiveWorker()
+    app._library_suppressed_run_ids = {active.run_id}
+    app._focus_selected_run_id = None
+    app._focus_active_override = False
+    app.output_type_var = Value("MP3")
+    app.quality_var = Value("1080p Full HD")
+    app.export_mode_var = Value("Auto CBR")
+    app.mp3_quality_var = Value("Maximum — 320 kbps CBR")
+    app.mp3_sample_rate_var = Value("Preserve source")
+    app.mp3_channels_var = Value("Preserve source")
+    app.mp3_embed_metadata_var = Value(True)
+    app.mp3_cover_art_mode_var = Value("No Art")
+    app.mp3_custom_cover_art_path = None
+    app.batch_urls = []
+    app.output_var = Value("/next/run")
+    app.focus_command_hint_var = Value("")
+    app.focus_active_profile_var = Value("MP4  •  Active")
+    app.focus_active_detail_var = Value("Ready")
+    app.focus_transfer_var = Value("Active MP4 run")
+    app.focus_summary_text = TextBuffer()
+    app.focus_summary_text.insert("1.0", "Container/ext: mp4\nSave to       /removed/run.mp4")
+
+    app._sync_focus_settings_summary()
+
+    neutral_transfer = "Audio-only MP3  /  best YouTube audio source"
+    neutral_summary = app.focus_summary_text.value
+    assert app._focus_shows_next_run_defaults() is True
+    assert app._focus_follows_active_run() is False
+    assert app.focus_active_profile_var.get() == "MP3  •  320 kbps  •  Source rate"
+    assert app.focus_transfer_var.get() == neutral_transfer
+    assert "Format        MP3" in neutral_summary
+
+    app._append_log = lambda *_args: None
+    app._terminal_jobs = []
+    app._completed_jobs = []
+    app.progress_var = Value(58)
+    app.status_var = Value("Removed run is stopping")
+    app.download_button = Control()
+    app.cancel_button = Control()
+    app.skip_video_button = Control()
+    app.skip_url_button = Control()
+    app.focus_run_status_var = Value("Ready")
+    app._refresh_focus_run_deck = lambda: None
+    app._launch_next_pending_job = lambda: False
+    app._set_focus_run_controls_visible = lambda *_args: None
+    app.focus_run_deck = object()
+    app._focus_run_records = lambda: []
+    app._reconcile_focus_after_library_removal = lambda *_args: None
+
+    app._finish_run_ui(
+        "Removed from Library; the run was stopped.",
+        "Stopped",
+        "Stopped  /  Removed from Library",
+    )
+
+    assert app.focus_transfer_var.get() == neutral_transfer
+    assert app.focus_summary_text.value == neutral_summary
+
+
+def test_neutral_manual_mp4_summary_and_transfer_follow_the_selected_audio_codec():
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.output_type_var = Value("MP4")
+    app.quality_var = Value("1080p Full HD")
+    app.export_mode_var = Value("Manual Override")
+    app.manual_audio_codec_var = Value("MP3")
+    app.batch_urls = []
+    app.worker = None
+    app._focus_active_override = False
+    app._focus_selected_run_id = None
+    app.output_var = Value("/next/run")
+    app.focus_command_hint_var = Value("")
+    app.focus_active_profile_var = Value("")
+    app.focus_active_detail_var = Value("Ready")
+    app.focus_transfer_var = Value("")
+    app.focus_summary_text = TextBuffer()
+
+    app._sync_focus_settings_summary()
+
+    assert app.focus_active_profile_var.get() == "1080p Full HD  •  Manual Override"
+    assert app.focus_transfer_var.get() == "VOD-ready MP4 / H.264 video / MP3 audio"
+    assert "Audio         MP3" in app.focus_summary_text.value
+    assert "Output mode   Manual Override" in app.focus_summary_text.value
+    focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
+    assert 'self.manual_audio_codec_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())' in focus_ui_source
 
 
 def test_run_log_updates_activity_and_only_the_selected_active_run(tmp_path: Path):

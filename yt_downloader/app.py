@@ -6562,6 +6562,7 @@ class DownloaderApp(tk.Tk):
         self.output_var.trace_add("write", lambda *_args: self._sync_focus_destination())
         self.quality_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
         self.export_mode_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
+        self.manual_audio_codec_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())
         self.export_mode_choice_var.trace_add("write", lambda *_args: self._on_export_mode_choice_changed())
         self.output_type_var.trace_add("write", lambda *_args: self._on_output_type_changed())
         self.library_output_type_var.trace_add("write", lambda *_args: self._on_library_output_type_changed())
@@ -7180,7 +7181,7 @@ class DownloaderApp(tk.Tk):
         if len(path) > max_chars:
             path = "..." + path[-(max_chars - 3) :]
         self.focus_output_display_var.set(path)
-        if hasattr(self, "focus_summary_text") and self._focus_follows_active_run():
+        if hasattr(self, "focus_summary_text") and self._focus_shows_next_run_defaults():
             current = self.focus_summary_text.get("1.0", "end").strip().splitlines()
             retained = [line for line in current if not line.startswith("Save to")]
             retained.append(f"Save to       {self.output_var.get()}")
@@ -7341,12 +7342,6 @@ class DownloaderApp(tk.Tk):
     def _on_output_type_changed(self) -> None:
         self._sync_focus_settings_summary()
         self._refresh_output_specific_settings()
-        if not bool(self.worker and self.worker.is_alive()):
-            output_type = self._selected_output_type()
-            if output_type == OutputType.MP3:
-                self.focus_transfer_var.set("Audio-only MP3  /  best YouTube audio source")
-            else:
-                self.focus_transfer_var.set("VOD-ready MP4 / H.264 video / AAC audio")
 
     def _on_export_mode_choice_changed(self) -> None:
         try:
@@ -7383,10 +7378,18 @@ class DownloaderApp(tk.Tk):
         if self.batch_urls:
             summary += f"  /  {len(self.batch_urls)} URLs loaded"
         self.focus_command_hint_var.set(summary)
-        if not bool(self.worker and self.worker.is_alive()):
+        if self._focus_shows_next_run_defaults():
             self.focus_active_profile_var.set(self._focus_profile_text(output_type))
             if not self.focus_active_detail_var.get().strip():
                 self.focus_active_detail_var.set("Ready")
+            self.focus_transfer_var.set(self._focus_next_run_transfer_text(output_type))
+            summary_widget = self.__dict__.get("focus_summary_text")
+            if summary_widget is not None:
+                self._set_text(
+                    summary_widget,
+                    self._focus_next_run_summary(output_type),
+                    disabled=True,
+                )
 
     def _refresh_output_specific_settings(self) -> None:
         output_type = self._selected_output_type()
@@ -7436,9 +7439,68 @@ class DownloaderApp(tk.Tk):
     def _focus_follows_active_run(self) -> bool:
         selected_run_id = self.__dict__.get("_focus_selected_run_id")
         active_job = self.__dict__.get("active_job")
+        if isinstance(active_job, DownloadJob) and self._library_run_is_suppressed(active_job):
+            return False
         return selected_run_id is None or (
             active_job is not None and selected_run_id == active_job.run_id
         )
+
+    def _focus_shows_next_run_defaults(self) -> bool:
+        """Return true only when Forge is showing its neutral, unowned hero."""
+        selected_run_id = str(self.__dict__.get("_focus_selected_run_id") or "").strip()
+        worker = self.__dict__.get("worker")
+        active_job = self.__dict__.get("active_job")
+        active_run_suppressed = isinstance(active_job, DownloadJob) and self._library_run_is_suppressed(active_job)
+        return (
+            not selected_run_id
+            and not bool(self.__dict__.get("_focus_active_override", False))
+            and (active_run_suppressed or not bool(worker and worker.is_alive()))
+        )
+
+    def _focus_next_run_summary(self, output_type: OutputType) -> str:
+        """Describe pending input settings without borrowing from a run snapshot."""
+        if output_type == OutputType.MP3:
+            return "\n".join(
+                (
+                    "Format        MP3",
+                    "Audio         Best YouTube source",
+                    f"Output mode   {self.mp3_quality_var.get()}",
+                    f"Sample rate   {self.mp3_sample_rate_var.get()}",
+                    f"Save to       {self.output_var.get()}",
+                )
+            )
+        try:
+            export_mode = ExportMode(self.export_mode_var.get())
+        except ValueError:
+            export_mode = ExportMode.AUTO_CBR
+        audio_codec = self._focus_next_run_mp4_audio_codec(export_mode)
+        return "\n".join(
+            (
+                "Format        MP4",
+                "Video         H.264",
+                f"Audio         {audio_codec}",
+                f"Output mode   {export_mode.value}",
+                f"Save to       {self.output_var.get()}",
+            )
+        )
+
+    def _focus_next_run_transfer_text(self, output_type: OutputType) -> str:
+        if output_type == OutputType.MP3:
+            return "Audio-only MP3  /  best YouTube audio source"
+        return f"VOD-ready MP4 / H.264 video / {self._focus_next_run_mp4_audio_codec()} audio"
+
+    def _focus_next_run_mp4_audio_codec(self, export_mode: ExportMode | None = None) -> str:
+        if export_mode is None:
+            try:
+                export_mode = ExportMode(self.export_mode_var.get())
+            except ValueError:
+                export_mode = ExportMode.AUTO_CBR
+        if export_mode != ExportMode.MANUAL_OVERRIDE:
+            return ManualAudioCodec.AAC.value
+        try:
+            return ManualAudioCodec(self.manual_audio_codec_var.get()).value
+        except ValueError:
+            return ManualAudioCodec.AAC.value
 
     def _reset_source_input_after_send(self) -> None:
         """Prepare the source field for the next run after a job is accepted."""
@@ -10251,12 +10313,17 @@ class DownloaderApp(tk.Tk):
         self.focus_active_title_var.set("Ready for a new run")
         self.focus_active_detail_var.set("Paste a YouTube URL above, then press Return to begin.")
         self.focus_active_duration_var.set("")
-        self.focus_active_profile_var.set(self._focus_profile_text(self._selected_output_type()))
+        output_type = self._selected_output_type()
+        self.focus_active_profile_var.set(self._focus_profile_text(output_type))
         self.focus_display_progress_var.set(0)
         self.focus_percent_var.set("0%")
         self.focus_display_status_var.set("No run selected")
-        self.focus_transfer_var.set("Ready for a new run")
-        self._set_text(self.focus_summary_text, "No run selected.", disabled=True)
+        self.focus_transfer_var.set(self._focus_next_run_transfer_text(output_type))
+        self._set_text(
+            self.focus_summary_text,
+            self._focus_next_run_summary(output_type),
+            disabled=True,
+        )
         self._render_focus_run_activity("", "No run selected.")
         self._reset_active_thumbnail()
         self._refresh_focus_run_deck()
