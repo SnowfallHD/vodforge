@@ -87,6 +87,7 @@ from yt_downloader.app import (
     flatten_alpha_image,
     focus_icon_color_variant,
     focus_hero_thumbnail_visible,
+    focus_library_action_layout_mode,
     focus_library_layout_mode,
     focus_library_horizontal_padding,
     pixel_table_visible_row_window,
@@ -520,6 +521,13 @@ def test_focus_library_layout_protects_selected_item_at_medium_widths():
     assert focus_library_layout_mode(999) == "balanced"
     assert focus_library_layout_mode(920) == "balanced"
     assert focus_library_layout_mode(919) == "compact"
+
+
+def test_focus_library_header_actions_condense_before_crushing_the_subtitle():
+    assert focus_library_action_layout_mode(1284, 1200, 240, 720) == "menu"
+    assert focus_library_action_layout_mode(1319, 1200, 240, 720) == "menu"
+    assert focus_library_action_layout_mode(1320, 977, 240, 720) == "menu"
+    assert focus_library_action_layout_mode(1320, 978, 240, 720) == "direct"
 
 
 def test_ultrawide_library_workspace_is_bounded_and_centered():

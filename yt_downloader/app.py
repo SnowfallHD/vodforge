@@ -263,6 +263,19 @@ def focus_library_layout_mode(width: int) -> str:
     return "wide"
 
 
+def focus_library_action_layout_mode(
+    width: int,
+    available_width: int,
+    heading_required_width: int,
+    direct_actions_required_width: int,
+) -> str:
+    """Condense header actions before they can squeeze the Library subtitle."""
+    if int(width) < 1320:
+        return "menu"
+    required_width = max(0, int(heading_required_width)) + max(0, int(direct_actions_required_width)) + 18
+    return "direct" if int(available_width) >= required_width else "menu"
+
+
 def resized_table_column_width(initial_width: int, delta: int, minimum_width: int) -> int:
     """Clamp one user-resized table column without affecting its neighbors."""
     return max(int(minimum_width), int(initial_width) + int(delta))
@@ -6888,6 +6901,7 @@ class DownloaderApp(tk.Tk):
         actions.columnconfigure(0, weight=1)
         heading = ttk.Frame(actions, style="FocusShell.TFrame")
         heading.grid(row=0, column=0, sticky="w")
+        self.focus_library_heading = heading
         heading_title = ttk.Frame(heading, style="FocusShell.TFrame")
         heading_title.pack(anchor="w")
         ttk.Label(heading_title, text="Library", style="FocusTitle.TLabel").pack(side="left")
@@ -8904,9 +8918,22 @@ class DownloaderApp(tk.Tk):
             self.focus_library_actions.grid_configure(padx=library_padding)
             self.focus_metadata_content.grid_configure(padx=library_padding)
             self.focus_library_summary.grid_configure(padx=library_padding)
+        focus_shell_padding = 12 if compact else 20
+        library_header_width = max(1, width - (2 * focus_shell_padding) - (2 * library_padding))
+        direct_actions_required_width = sum(
+            max(1, int(button.winfo_reqwidth())) + 6
+            for button in self.focus_library_action_buttons
+        )
+        library_action_mode = focus_library_action_layout_mode(
+            width,
+            library_header_width,
+            self.focus_library_heading.winfo_reqwidth(),
+            direct_actions_required_width,
+        )
         layout_signature = (
             mode,
             library_mode,
+            library_action_mode,
             focus_run_deck_capacity(max(1, width - 52)),
             focus_hero_thumbnail_visible(width),
         )
@@ -8915,7 +8942,7 @@ class DownloaderApp(tk.Tk):
         self._focus_layout_signature = layout_signature
         self._focus_layout = mode
         horizontal_pad = 20 if compact else 42 if balanced else 100
-        self.focus_shell.pack_configure(padx=12 if compact else 20, pady=(10 if compact else 16, 10 if compact else 14))
+        self.focus_shell.pack_configure(padx=focus_shell_padding, pady=(10 if compact else 16, 10 if compact else 14))
         self.focus_command_area.grid_configure(padx=horizontal_pad, pady=(18 if compact else 26 if balanced else 42, 8 if compact else 14))
         self.focus_active_frame.grid_configure(padx=horizontal_pad, pady=(6 if compact else 10 if balanced else 16, 9 if compact else 14))
         self.focus_detail_wrap.grid_configure(padx=horizontal_pad, pady=(0, 7 if compact else 12))
@@ -8966,9 +8993,9 @@ class DownloaderApp(tk.Tk):
         else:
             self.focus_deck_header.grid_remove()
 
-        # The selected-details rail and its controls share one authority. When
-        # the rail is visible its four direct actions stay visible; when the
-        # rail is absent the two compact menu buttons replace them.
+        # A hidden details rail needs an explicit way to reopen it. At medium
+        # widths the rail stays visible while only the action strip condenses,
+        # so the Library subtitle never competes with five fixed-width buttons.
         if library_mode == "compact":
             for button in self.focus_library_action_buttons:
                 button.pack_forget()
@@ -8976,6 +9003,12 @@ class DownloaderApp(tk.Tk):
                 self.focus_library_menu_button.pack(side="left")
             if not self.focus_library_details_button.winfo_manager():
                 self.focus_library_details_button.pack(side="left", padx=(6, 0), before=self.focus_library_menu_button)
+        elif library_action_mode == "menu":
+            for button in self.focus_library_action_buttons:
+                button.pack_forget()
+            self.focus_library_details_button.pack_forget()
+            if not self.focus_library_menu_button.winfo_manager():
+                self.focus_library_menu_button.pack(side="left")
         else:
             self.focus_library_menu_button.pack_forget()
             self.focus_library_details_button.pack_forget()

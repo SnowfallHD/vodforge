@@ -792,6 +792,10 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=False)' in layout_source
     assert 'width=0, minwidth=0' not in layout_source
     assert 'library_mode = "compact" if compact else focus_library_layout_mode(width)' in layout_source
+    assert "focus_library_action_layout_mode(" in layout_source
+    assert "self.focus_library_heading.winfo_reqwidth()" in layout_source
+    assert "button.winfo_reqwidth()" in layout_source
+    assert 'elif library_action_mode == "menu":' in layout_source
     assert "library_mode," in layout_source
     assert 'if library_mode == "compact":' in layout_source
     assert "library_actions_collapsed" not in layout_source
