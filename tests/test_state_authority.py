@@ -1039,6 +1039,147 @@ def test_native_window_dimensions_do_not_propagate_from_responsive_children():
     assert "self.pack_propagate(True)" not in init_source
 
 
+def test_library_padding_scheduler_runs_before_unchanged_layout_short_circuit():
+    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+
+    padding_index = layout_source.index("self._schedule_focus_library_padding(library_padding)")
+    signature_guard_index = layout_source.index(
+        'if layout_signature == self.__dict__.get("_focus_layout_signature") and not force'
+    )
+
+    assert padding_index < signature_guard_index
+
+
+def test_slow_native_resize_coalesces_cosmetic_library_centering():
+    class GridProbe:
+        def __init__(self):
+            self.padding = []
+
+        def grid_configure(self, **kwargs):
+            self.padding.append(kwargs["padx"])
+
+    class PaddingProbe:
+        _apply_pending_focus_library_padding = DownloaderApp._apply_pending_focus_library_padding
+        _set_focus_library_padding = DownloaderApp._set_focus_library_padding
+
+        def __init__(self):
+            self.focus_library_actions = GridProbe()
+            self.focus_metadata_content = GridProbe()
+            self.focus_library_summary = GridProbe()
+            self._focus_library_horizontal_padding = 18
+            self.callbacks = {}
+            self.cancelled = []
+            self.delays = []
+
+        def after(self, delay, callback):
+            after_id = f"after-{len(self.delays) + 1}"
+            self.delays.append(delay)
+            self.callbacks[after_id] = callback
+            return after_id
+
+        def after_cancel(self, after_id):
+            self.cancelled.append(after_id)
+            self.callbacks.pop(after_id, None)
+
+    probe = PaddingProbe()
+
+    DownloaderApp._schedule_focus_library_padding(probe, 34)
+    DownloaderApp._schedule_focus_library_padding(probe, 50)
+    DownloaderApp._schedule_focus_library_padding(probe, 66)
+
+    assert probe.focus_library_actions.padding == []
+    assert probe.focus_metadata_content.padding == []
+    assert probe.focus_library_summary.padding == []
+    assert probe.delays == [120, 120, 120]
+    assert probe.cancelled == ["after-1", "after-2"]
+    assert tuple(probe.callbacks) == ("after-3",)
+
+    probe.callbacks["after-3"]()
+
+    assert probe.focus_library_actions.padding == [66]
+    assert probe.focus_metadata_content.padding == [66]
+    assert probe.focus_library_summary.padding == [66]
+    assert probe._focus_library_horizontal_padding == 66
+
+
+def test_returning_to_applied_library_padding_cancels_stale_resize_work():
+    class PaddingProbe:
+        _apply_pending_focus_library_padding = DownloaderApp._apply_pending_focus_library_padding
+        _set_focus_library_padding = DownloaderApp._set_focus_library_padding
+
+        def __init__(self):
+            self._focus_library_horizontal_padding = 18
+            self.callbacks = {}
+            self.cancelled = []
+
+        def after(self, _delay, callback):
+            self.callbacks["pending"] = callback
+            return "pending"
+
+        def after_cancel(self, after_id):
+            self.cancelled.append(after_id)
+            self.callbacks.pop(after_id, None)
+
+    probe = PaddingProbe()
+
+    DownloaderApp._schedule_focus_library_padding(probe, 50)
+    DownloaderApp._schedule_focus_library_padding(probe, 18)
+
+    assert probe.cancelled == ["pending"]
+    assert probe.callbacks == {}
+    assert probe._focus_library_pending_horizontal_padding == 18
+
+
+def test_ultrawide_resize_burst_releases_large_live_padding_once():
+    class GridProbe:
+        def __init__(self):
+            self.padding = []
+
+        def grid_configure(self, **kwargs):
+            self.padding.append(kwargs["padx"])
+
+    class PaddingProbe:
+        _apply_pending_focus_library_padding = DownloaderApp._apply_pending_focus_library_padding
+        _set_focus_library_padding = DownloaderApp._set_focus_library_padding
+
+        def __init__(self):
+            self.focus_library_actions = GridProbe()
+            self.focus_metadata_content = GridProbe()
+            self.focus_library_summary = GridProbe()
+            self._focus_library_horizontal_padding = 480
+            self.callbacks = {}
+            self.cancelled = []
+            self.delays = []
+
+        def after(self, delay, callback):
+            after_id = f"after-{len(self.delays) + 1}"
+            self.delays.append(delay)
+            self.callbacks[after_id] = callback
+            return after_id
+
+        def after_cancel(self, after_id):
+            self.cancelled.append(after_id)
+            self.callbacks.pop(after_id, None)
+
+    probe = PaddingProbe()
+
+    DownloaderApp._schedule_focus_library_padding(probe, 464)
+    DownloaderApp._schedule_focus_library_padding(probe, 448)
+
+    assert probe.focus_library_actions.padding == [18]
+    assert probe.focus_metadata_content.padding == [18]
+    assert probe.focus_library_summary.padding == [18]
+    assert probe._focus_library_horizontal_padding == 18
+    assert probe.cancelled == ["after-1"]
+
+    probe.callbacks["after-2"]()
+
+    assert probe.focus_library_actions.padding == [18, 448]
+    assert probe.focus_metadata_content.padding == [18, 448]
+    assert probe.focus_library_summary.padding == [18, 448]
+    assert probe._focus_library_horizontal_padding == 448
+
+
 def test_run_deck_capacity_crossing_refreshes_synchronously_once():
     class DeckProbe:
         def __init__(self):

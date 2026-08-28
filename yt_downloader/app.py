@@ -9022,6 +9022,60 @@ class DownloaderApp(tk.Tk):
         except tk.TclError:
             return
 
+    def _schedule_focus_library_padding(self, padding: int) -> None:
+        """Settle cosmetic ultrawide centering after native edge motion stops.
+
+        Reconfiguring three large Library grids at every 32-pixel centering
+        step can briefly stall a slow native resize.  The pointer then reaches
+        the screen boundary before the held window edge catches up.  Structural
+        breakpoints still apply synchronously; only this cosmetic centering is
+        trailing and coalesced.
+        """
+        requested = max(18, int(padding))
+        self._focus_library_pending_horizontal_padding = requested
+        pending_after_id = self.__dict__.get("_focus_library_padding_after_id")
+        applied = int(self.__dict__.get("_focus_library_horizontal_padding", 18))
+        # An earlier settled ultrawide margin must not squeeze the workspace
+        # while the next gesture shrinks the window. Drop to the ordinary live
+        # margin once per resize burst, then keep all subsequent motion free of
+        # large-grid reflows until the final centering pass.
+        if pending_after_id is None and applied > 18 and requested != applied:
+            self._set_focus_library_padding(18)
+            applied = int(self.__dict__.get("_focus_library_horizontal_padding", 18))
+        if pending_after_id is not None:
+            try:
+                self.after_cancel(pending_after_id)
+            except tk.TclError:
+                pass
+            self._focus_library_padding_after_id = None
+        if requested == applied:
+            return
+        try:
+            self._focus_library_padding_after_id = self.after(
+                120,
+                self._apply_pending_focus_library_padding,
+            )
+        except tk.TclError:
+            self._focus_library_padding_after_id = None
+
+    def _apply_pending_focus_library_padding(self) -> None:
+        self._focus_library_padding_after_id = None
+        requested = int(self.__dict__.get("_focus_library_pending_horizontal_padding", 18))
+        applied = int(self.__dict__.get("_focus_library_horizontal_padding", 18))
+        if requested == applied:
+            return
+        self._set_focus_library_padding(requested)
+
+    def _set_focus_library_padding(self, padding: int) -> None:
+        requested = max(18, int(padding))
+        try:
+            self.focus_library_actions.grid_configure(padx=requested)
+            self.focus_metadata_content.grid_configure(padx=requested)
+            self.focus_library_summary.grid_configure(padx=requested)
+        except tk.TclError:
+            return
+        self._focus_library_horizontal_padding = requested
+
     def _apply_focus_layout(
         self,
         event: tk.Event[Any] | None = None,
@@ -9040,11 +9094,7 @@ class DownloaderApp(tk.Tk):
         library_vertical_mode = focus_library_vertical_layout_mode(height)
         library_mode = "compact" if compact or library_vertical_mode == "compact" else focus_library_layout_mode(width)
         library_padding = focus_library_horizontal_padding(width)
-        if library_padding != self.__dict__.get("_focus_library_horizontal_padding"):
-            self._focus_library_horizontal_padding = library_padding
-            self.focus_library_actions.grid_configure(padx=library_padding)
-            self.focus_metadata_content.grid_configure(padx=library_padding)
-            self.focus_library_summary.grid_configure(padx=library_padding)
+        self._schedule_focus_library_padding(library_padding)
         focus_shell_padding = 12 if compact else 20
         layout_signature = (
             mode,
