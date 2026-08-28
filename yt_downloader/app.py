@@ -5670,6 +5670,12 @@ class DownloaderApp(tk.Tk):
         window_width, window_height = bounded_window_size(screen_width, screen_height)
         self.geometry(initial_window_geometry(screen_width, screen_height))
         self.minsize(min(820, window_width), min(560, window_height))
+        # The window manager owns the top-level dimensions during a native
+        # resize.  Responsive descendants may change their requested sizes at
+        # breakpoints, but those requests must never move the opposite window
+        # edge.  The explicit geometry above and subsequent Configure events
+        # remain the sole size authority.
+        self.pack_propagate(False)
         self.configure(bg=THEME["bg"])
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()

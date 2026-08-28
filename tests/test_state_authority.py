@@ -1028,6 +1028,17 @@ def test_native_resize_callbacks_never_rewrite_the_window_anchor_or_opposite_edg
         assert "winfo_rooty" not in source
 
 
+def test_native_window_dimensions_do_not_propagate_from_responsive_children():
+    init_source = inspect.getsource(DownloaderApp.__init__)
+
+    geometry_index = init_source.index("self.geometry(initial_window_geometry")
+    propagation_index = init_source.index("self.pack_propagate(False)")
+    build_index = init_source.index("self._build_ui()")
+
+    assert geometry_index < propagation_index < build_index
+    assert "self.pack_propagate(True)" not in init_source
+
+
 def test_run_deck_capacity_crossing_refreshes_synchronously_once():
     class DeckProbe:
         def __init__(self):
