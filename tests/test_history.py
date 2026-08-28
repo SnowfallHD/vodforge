@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 
@@ -261,15 +261,15 @@ def test_redownload_preserves_same_item_history_when_prior_folder_cannot_be_read
 
 def test_external_storage_roots_are_recognized_cross_platform():
     assert history_module._external_storage_root(
-        Path("/Volumes/Archive/Videos/Example"),
+        PurePosixPath("/Volumes/Archive/Videos/Example"),
         platform_name="darwin",
     ) == "/Volumes/Archive"
     assert history_module._external_storage_root(
-        Path("/mnt/archive/Videos/Example"),
+        PurePosixPath("/mnt/archive/Videos/Example"),
         platform_name="linux",
     ) == "/mnt/archive"
     assert history_module._external_storage_root(
-        Path(r"E:\\Videos\\Example"),
+        PureWindowsPath(r"E:\Videos\Example"),
         platform_name="win32",
     ) == "E:\\"
 
