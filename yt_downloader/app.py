@@ -2468,11 +2468,13 @@ def canonical_youtube_url(info: dict[str, Any], fallback_url: str = "") -> str |
         if playlist_id:
             query["list"] = playlist_id
         return "https://www.youtube.com/watch?" + urllib.parse.urlencode(query)
+    if playlist_id:
+        return "https://www.youtube.com/playlist?" + urllib.parse.urlencode({"list": playlist_id})
     for candidate in candidates:
         parsed = urllib.parse.urlsplit(candidate)
         host = parsed.netloc.casefold().removeprefix("www.")
         if parsed.scheme in {"http", "https"} and host in {"youtube.com", "m.youtube.com", "youtu.be"}:
-            return candidate
+            return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
     return None
 
 
@@ -10133,12 +10135,7 @@ class DownloaderApp(tk.Tk):
         if history_output_dir(info) is not None:
             return False
         active_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
-        if active_run_id:
-            return active_run_id == job.run_id
-        item_key = metadata_run_key(info)
-        if item_key is None:
-            return False
-        return item_key in job.metadata_keys or item_key == metadata_run_key(job.preview_info or {})
+        return bool(active_run_id) and active_run_id == job.run_id
 
     def _rebuild_output_dir_index(self) -> None:
         self.video_output_dirs_by_id = {}
@@ -10860,6 +10857,7 @@ class DownloaderApp(tk.Tk):
         job.preview_info.pop("vodforge_preview_complete", None)
         job.preview_info.pop("vodforge_preview_run_id", None)
         job.metadata_keys.add(preview_key)
+        claim_active_metadata_row(preview, job.preview_info, job.run_id)
         return True
 
     def _build_download_job_from_current_settings(
@@ -10985,6 +10983,7 @@ class DownloaderApp(tk.Tk):
         key = metadata_run_key(info)
         if key is not None:
             job.metadata_keys.add(key)
+        claim_active_metadata_row(info, job.preview_info, job.run_id)
         self._focus_selected_run_id = job.run_id
         self._start_or_queue_download_job(job, clear_source=False)
         self._select_focus_view("forge")

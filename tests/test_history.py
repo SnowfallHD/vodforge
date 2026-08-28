@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+import yt_downloader.history as history_module
+
 from yt_downloader.history import (
     HistoryError,
     MAX_RUN_ACTIVITY_CHARS,
@@ -39,6 +41,15 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_pa
             "duration": 42,
             "uploader": "Creator",
             "tags": ["one", "one", "two"],
+            "webpage_url": "https://www.youtube.com/watch?v=abc123&list=PLsafe&token=secret#private",
+            "original_url": "https://youtu.be/abc123?si=tracking&auth=secret",
+            "thumbnail": "https://i.ytimg.com/vi/abc123/default.jpg?token=secret#private",
+            "best_thumbnail": {
+                "url": "https://i.ytimg.com/vi/abc123/maxresdefault.jpg?auth=secret",
+                "width": 1280,
+                "height": 720,
+                "http_headers": {"Authorization": "secret"},
+            },
             "cookiefile": "/private/cookies.txt",
             "http_headers": {"Authorization": "secret"},
             "password": "secret",
@@ -49,6 +60,14 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_pa
 
     assert record["id"] == "abc123"
     assert record["tags"] == ["one", "two"]
+    assert record["webpage_url"] == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
+    assert record["original_url"] == "https://www.youtube.com/watch?v=abc123"
+    assert record["thumbnail"] == "https://i.ytimg.com/vi/abc123/default.jpg"
+    assert record["best_thumbnail"] == {
+        "url": "https://i.ytimg.com/vi/abc123/maxresdefault.jpg",
+        "width": 1280,
+        "height": 720,
+    }
     assert history_output_dir(record) == (tmp_path / "downloads" / "Example").resolve()
     assert record["vodforge_recorded_at"] == "2026-08-05T12:00:00+00:00"
     assert history_output_type(record) == "MP4"
@@ -161,6 +180,98 @@ def test_redownload_preserves_another_location_that_still_has_media(tmp_path: Pa
         first_location.resolve(),
         second_location.resolve(),
     }
+
+
+def test_redownload_preserves_same_item_history_when_prior_storage_is_unavailable(
+    monkeypatch,
+    tmp_path: Path,
+):
+    unavailable_location = tmp_path / "offline-drive" / "Example"
+    replacement_location = tmp_path / "downloads" / "Example"
+    original = upsert_history(
+        [],
+        {
+            "id": "abc123",
+            "title": "Archived example",
+            "playlist_id": "PLone",
+            "vodforge_output_type": "MP4",
+        },
+        unavailable_location,
+    )
+    unavailable_root = tmp_path / "offline-drive"
+    monkeypatch.setattr(
+        history_module,
+        "_external_storage_root",
+        lambda _path: str(unavailable_root),
+    )
+
+    updated = upsert_history(
+        original,
+        {
+            "id": "abc123",
+            "title": "Fresh local copy",
+            "playlist_id": "PLone",
+            "vodforge_output_type": "MP4",
+        },
+        replacement_location,
+        replace_missing_media=True,
+    )
+
+    assert len(updated) == 2
+    assert {history_output_dir(item) for item in updated} == {
+        unavailable_location.resolve(),
+        replacement_location.resolve(),
+    }
+
+
+def test_redownload_preserves_same_item_history_when_prior_folder_cannot_be_read(
+    monkeypatch,
+    tmp_path: Path,
+):
+    unavailable_location = tmp_path / "restricted" / "Example"
+    unavailable_location.mkdir(parents=True)
+    replacement_location = tmp_path / "downloads" / "Example"
+    original = upsert_history(
+        [],
+        {"id": "abc123", "title": "Restricted example", "vodforge_output_type": "MP4"},
+        unavailable_location,
+    )
+    original_iterdir = Path.iterdir
+
+    def restricted_iterdir(path: Path):
+        if path == unavailable_location.resolve():
+            raise PermissionError("storage is temporarily unavailable")
+        return original_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", restricted_iterdir)
+
+    updated = upsert_history(
+        original,
+        {"id": "abc123", "title": "Fresh local copy", "vodforge_output_type": "MP4"},
+        replacement_location,
+        replace_missing_media=True,
+    )
+
+    assert len(updated) == 2
+    assert {history_output_dir(item) for item in updated} == {
+        unavailable_location.resolve(),
+        replacement_location.resolve(),
+    }
+
+
+def test_external_storage_roots_are_recognized_cross_platform():
+    assert history_module._external_storage_root(
+        Path("/Volumes/Archive/Videos/Example"),
+        platform_name="darwin",
+    ) == "/Volumes/Archive"
+    assert history_module._external_storage_root(
+        Path("/mnt/archive/Videos/Example"),
+        platform_name="linux",
+    ) == "/mnt/archive"
+    assert history_module._external_storage_root(
+        Path(r"E:\\Videos\\Example"),
+        platform_name="win32",
+    ) == "E:\\"
 
 
 def test_history_keeps_mp4_and_mp3_for_same_video_and_location(tmp_path: Path):

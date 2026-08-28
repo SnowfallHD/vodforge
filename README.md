@@ -14,16 +14,18 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Supports quality caps from 360p through 4K when the source provides them.
 - Defaults to source-aware **Auto CBR** with resolution-specific bitrate floors and caps.
 - Includes **Strict Compliance** mode for fixed H.264 10 Mbps video and AAC 320 kbps audio.
-- Offers a manual override when you need exact export settings.
+- Offers a manual MP4 override when you need exact video bitrate, encoding speed, sample rate, channels, and AAC or MP3 audio settings.
 - Embeds useful metadata and thumbnails in the MP4 when supported.
 - Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
 - Embeds standard ID3 title/artist metadata by default. Cover art defaults to **No Art**, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
 - Writes a compact, readable `metadata.json` beside each video.
-- Keeps playlist and non-playlist downloads organized in collision-safe folders.
+- Keeps playlist and non-playlist downloads organized in collision-safe, path-length-aware folders that retain recognizable channel, playlist, and video titles.
 - Ignores playlist expansion by default so a copied watch link downloads only that video or audio item; turn **Ignore playlists** off when you intentionally want every item in a playlist.
 - Keeps YouTube access explicit: **Public** uses no cookies, while `cookies.txt` and **Browser** are separate opt-in methods for content you are authorized to access.
 - Shows progress, speed, ETA, diagnostics, and per-item batch failures.
-- Keeps a private, local Library history of completed downloads and their saved folders across app restarts, with separate MP4 and MP3 views.
+- Combines private local download history across app restarts with current-session metadata previews, separate MP4 and MP3 views, a pixel-scrolling table, and draggable session-persistent columns.
+- Keeps each Forge run's format and output details stable while the MP4/MP3 selector and Settings configure only the next run.
+- Lets preview items start downloads directly, failed items retry, skipped or stopped items restart as fresh runs, and Library removal stop only the exact active or queued run it owns without deleting downloaded media.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
 
 ## Install a packaged release
@@ -71,6 +73,10 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 3. Pick an output folder. For MP4, choose a quality cap and export mode. For MP3, the default is the maximum 320 kbps profile; producer-oriented sample-rate and channel controls are in Settings.
 4. Start or queue the run.
 
+Forge keeps active, queued, completed, previewed, stopped, and failed attempts under separate run identities. Selecting an older card does not overwrite the current run, and changing MP4/MP3 or output settings does not rewrite the selected card's recorded format. Preview, retry, and restart actions always enter the normal sequential run queue as fresh attempts.
+
+Library combines saved history and metadata-only previews. Its table scrolls by pixels and its column dividers can be dragged without changing the meaning of the columns. The **Actions** menu provides copy/open commands and, where applicable, **Start download in Forge**. Removing an item removes its VODForge Library and Forge presentation history; if that row owns an exact active or queued run, that run is stopped or dequeued, while unrelated runs and media files remain untouched.
+
 Typical output:
 
 ```text
@@ -99,7 +105,7 @@ The artwork shown for MP3 items in Forge and Library is kept in VODForge's priva
 
 Diagnostics are written to `%LOCALAPPDATA%\VODForge\logs\` on Windows and `~/Library/Logs/VODForge/` on macOS.
 
-Completed-download history is written to `%LOCALAPPDATA%\VODForge\download-history.json` on Windows and `~/Library/Application Support/VODForge/download-history.json` on macOS. It contains an allow-listed copy of display metadata, media type, and the saved output folder. It never stores cookie files, cookie contents, tokens, passwords, or browser-session data. A missing external drive or moved folder is reported without deleting the history entry.
+Completed-download history is written to `%LOCALAPPDATA%\VODForge\download-history.json` on Windows and `~/Library/Application Support/VODForge/download-history.json` on macOS. It contains an allow-listed copy of display metadata, sanitized public URLs, media type, and the saved output folder. It never stores cookie files, cookie contents, authentication tokens, passwords, or browser-session data. An unavailable external drive is not mistaken for deleted media. If media was actually moved or removed, downloading the same item again replaces the stale saved-location record instead of creating a duplicate.
 
 ## Build the Windows app
 

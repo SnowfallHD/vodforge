@@ -1405,8 +1405,16 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
     assert built_job.preview_info == {
         key: value
         for key, value in preview.items()
-        if key not in {"vodforge_preview_complete", "vodforge_preview_run_id"}
+        if key
+        not in {
+            "vodforge_preview_complete",
+            "vodforge_preview_run_id",
+            app_module.ACTIVE_METADATA_RUN_ID_KEY,
+        }
     }
+    assert preview[app_module.ACTIVE_METADATA_RUN_ID_KEY] == built_job.run_id
+    assert "vodforge_preview_complete" not in preview
+    assert "vodforge_preview_run_id" not in preview
     assert ("preview-id", "MP3") in built_job.metadata_keys
     assert app._focus_selected_run_id == built_job.run_id
     assert selected_views == ["forge"]
@@ -1444,8 +1452,11 @@ def test_submitting_a_previewed_url_adopts_it_into_one_fresh_active_run(tmp_path
     assert job.preview_info == {
         key: value
         for key, value in preview.items()
-        if key not in {"vodforge_preview_complete", "vodforge_preview_run_id"}
+        if key != app_module.ACTIVE_METADATA_RUN_ID_KEY
     }
+    assert preview[app_module.ACTIVE_METADATA_RUN_ID_KEY] == job.run_id
+    assert "vodforge_preview_complete" not in preview
+    assert "vodforge_preview_run_id" not in preview
     assert app.metadata_items == [preview]
 
     app._focus_preview_runs = None
@@ -1699,7 +1710,9 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monk
 
     app = DownloaderApp.__new__(DownloaderApp)
     app.video_tree = SelectedTree()
-    app.metadata_items = [dict(info)]
+    claimed_info = dict(info)
+    claimed_info[app_module.ACTIVE_METADATA_RUN_ID_KEY] = active.run_id
+    app.metadata_items = [claimed_info]
     app.download_history = []
     app.history_path = tmp_path / "history.json"
     app.active_job = active
@@ -1719,10 +1732,10 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monk
 
     assert cancellations == [active.run_id]
     assert app.metadata_items == []
-    assert app.pending_jobs == [unrelated_queued]
-    assert app._library_suppressed_run_ids == {active.run_id, queued_same_item.run_id}
+    assert app.pending_jobs == [queued_same_item, unrelated_queued]
+    assert app._library_suppressed_run_ids == {active.run_id}
     assert active.run_id in reconciled[0]
-    assert queued_same_item.run_id in reconciled[0]
+    assert queued_same_item.run_id not in reconciled[0]
     assert app._active_run_for_metadata_event(replace(active)) is None
 
     # Worker completion, failure, and playlist-item events arriving after the
@@ -1739,6 +1752,56 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monk
     assert app._terminal_jobs == []
     assert app._completed_jobs == []
     assert app.metadata_items == []
+
+
+def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(monkeypatch, tmp_path: Path):
+    preview = {
+        "id": "same-video",
+        "title": "Claimed preview",
+        "vodforge_output_type": "MP4",
+        "vodforge_preview_complete": True,
+        "vodforge_preview_run_id": "preview:old",
+    }
+    claimed_queue = make_job(tmp_path, video_id="same-video")
+    claimed_queue.preview_info = {
+        "id": "same-video",
+        "title": "Claimed preview",
+        "vodforge_output_type": "MP4",
+    }
+    claimed_queue.metadata_keys.add(("same-video", "MP4"))
+    app_module.claim_active_metadata_row(preview, claimed_queue.preview_info, claimed_queue.run_id)
+
+    other_same_video = make_job(tmp_path, video_id="same-video")
+    other_same_video.preview_info = {
+        "id": "same-video",
+        "title": "Separate attempt",
+        "vodforge_output_type": "MP4",
+    }
+    other_same_video.metadata_keys.add(("same-video", "MP4"))
+    unrelated = make_job(tmp_path, video_id="other-video")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = SelectedTree()
+    app.metadata_items = [preview]
+    app.download_history = []
+    app.history_path = tmp_path / "history.json"
+    app.active_job = None
+    app.pending_jobs = [claimed_queue, other_same_video, unrelated]
+    app._terminal_jobs = []
+    app._completed_jobs = []
+    app._library_suppressed_run_ids = set()
+    app.status_var = Value("")
+    reconciled: list[set[str]] = []
+    app._render_metadata_tree = lambda: None
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(set(run_ids))
+    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+
+    app._remove_selected_library_item()
+
+    assert app.metadata_items == []
+    assert app.pending_jobs == [other_same_video, unrelated]
+    assert app._library_suppressed_run_ids == {claimed_queue.run_id}
+    assert reconciled == [{claimed_queue.run_id, "history:0"}]
 
 
 def test_remove_active_library_item_after_history_commit_still_stops_its_exact_run(monkeypatch, tmp_path: Path):

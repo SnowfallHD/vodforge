@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import ntpath
 import os
+import stat
 import sys
+import urllib.parse
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 
@@ -16,6 +19,9 @@ MAX_HISTORY_FILE_BYTES = 128 * 1024 * 1024
 MAX_RUN_ACTIVITY_LINES = 500
 MAX_RUN_ACTIVITY_LINE_CHARS = 2_000
 MAX_RUN_ACTIVITY_CHARS = 100_000
+HISTORY_MEDIA_PRESENT = "present"
+HISTORY_MEDIA_MISSING = "missing"
+HISTORY_MEDIA_UNAVAILABLE = "unavailable"
 
 HISTORY_METADATA_KEYS = (
     "id",
@@ -96,6 +102,66 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _safe_url_identifier(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text or len(text) > 128 or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in text):
+        return ""
+    return text
+
+
+def _sanitize_history_url(value: Any, *, preserve_youtube_context: bool) -> str | None:
+    """Retain a usable public URL without credentials, fragments, or arbitrary query data."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(text)
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        return None
+
+    hostname = parsed.hostname.casefold()
+    youtube_host = hostname.removeprefix("www.")
+    if preserve_youtube_context and youtube_host in {"youtube.com", "m.youtube.com", "youtu.be"}:
+        query = urllib.parse.parse_qs(parsed.query)
+        video_id = ""
+        if youtube_host == "youtu.be":
+            video_id = _safe_url_identifier(parsed.path.strip("/").split("/", 1)[0])
+        else:
+            video_id = _safe_url_identifier((query.get("v") or [""])[0])
+        playlist_id = _safe_url_identifier((query.get("list") or [""])[0])
+        if video_id:
+            canonical_query = {"v": video_id}
+            if playlist_id:
+                canonical_query["list"] = playlist_id
+            return "https://www.youtube.com/watch?" + urllib.parse.urlencode(canonical_query)
+        if playlist_id:
+            return "https://www.youtube.com/playlist?" + urllib.parse.urlencode({"list": playlist_id})
+
+    safe_host = parsed.hostname
+    if ":" in safe_host and not safe_host.startswith("["):
+        safe_host = f"[{safe_host}]"
+    default_port = (parsed.scheme == "http" and port == 80) or (parsed.scheme == "https" and port == 443)
+    netloc = safe_host if port is None or default_port else f"{safe_host}:{port}"
+    return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path or "/", "", ""))
+
+
+def _sanitize_thumbnail_record(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    url = _sanitize_history_url(value.get("url"), preserve_youtube_context=False)
+    if not url:
+        return None
+    result: dict[str, Any] = {"url": url}
+    for key in ("width", "height", "filesize", "filesize_approx"):
+        metric = value.get(key)
+        if isinstance(metric, (int, float)) and not isinstance(metric, bool) and metric >= 0:
+            result[key] = metric
+    return result
+
+
 def sanitize_run_activity(value: Any) -> list[str]:
     """Bound app-owned, user-visible run activity before durable storage."""
     if not isinstance(value, list):
@@ -153,19 +219,65 @@ def history_media_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     return source, playlist_id, history_output_type(record)
 
 
-def history_media_file_exists(record: dict[str, Any]) -> bool:
-    """Return whether a recorded item folder still contains its media artifact."""
+def _external_storage_root(path: Path, *, platform_name: str | None = None) -> str | None:
+    """Return a removable/network storage root whose absence is inconclusive."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    raw_path = str(path)
+    if platform_name.startswith("win"):
+        windows_path = PureWindowsPath(raw_path)
+        drive, _tail = ntpath.splitdrive(raw_path)
+        if drive:
+            return windows_path.anchor or f"{drive}\\"
+        return None
+
+    parts = PurePosixPath(raw_path).parts
+    if platform_name == "darwin" and len(parts) >= 3 and parts[:2] == ("/", "Volumes"):
+        return str(PurePosixPath(*parts[:3]))
+    if platform_name.startswith("linux"):
+        if len(parts) >= 3 and parts[:2] in {("/", "mnt"), ("/", "media")}:
+            return str(PurePosixPath(*parts[:3]))
+        if len(parts) >= 4 and parts[:3] == ("/", "run", "media"):
+            return str(PurePosixPath(*parts[:4]))
+    return None
+
+
+def history_media_file_state(record: dict[str, Any]) -> str:
+    """Return present, missing, or unavailable for a recorded media artifact."""
     output_dir = history_output_dir(record)
     if output_dir is None:
-        return False
+        return HISTORY_MEDIA_MISSING
     extension = ".mp3" if history_output_type(record) == "MP3" else ".mp4"
     try:
-        return any(
-            path.is_file() and path.stat().st_size > 0
-            for path in output_dir.glob(f"*{extension}")
-        )
+        directory_stat = output_dir.stat()
+    except FileNotFoundError:
+        storage_root = _external_storage_root(output_dir)
+        if storage_root and not Path(storage_root).exists():
+            return HISTORY_MEDIA_UNAVAILABLE
+        return HISTORY_MEDIA_MISSING
     except OSError:
-        return False
+        return HISTORY_MEDIA_UNAVAILABLE
+    if not stat.S_ISDIR(directory_stat.st_mode):
+        return HISTORY_MEDIA_MISSING
+
+    try:
+        for path in output_dir.iterdir():
+            if path.suffix.casefold() != extension:
+                continue
+            try:
+                if path.is_file() and path.stat().st_size > 0:
+                    return HISTORY_MEDIA_PRESENT
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return HISTORY_MEDIA_UNAVAILABLE
+    except OSError:
+        return HISTORY_MEDIA_UNAVAILABLE
+    return HISTORY_MEDIA_MISSING
+
+
+def history_media_file_exists(record: dict[str, Any]) -> bool:
+    """Return whether a recorded item folder still contains its media artifact."""
+    return history_media_file_state(record) == HISTORY_MEDIA_PRESENT
 
 
 def sanitize_history_record(
@@ -186,6 +298,12 @@ def sanitize_history_record(
             value = sanitize_run_activity(value)
         elif key == "vodforge_run_id":
             value = str(value or "").strip()[:128]
+        elif key in {"webpage_url", "original_url"}:
+            value = _sanitize_history_url(value, preserve_youtube_context=True)
+        elif key == "thumbnail":
+            value = _sanitize_history_url(value, preserve_youtube_context=False)
+        elif key == "best_thumbnail":
+            value = _sanitize_thumbnail_record(value)
         else:
             value = _json_safe(value)
         if value not in (None, "", [], {}):
@@ -220,7 +338,7 @@ def upsert_history(
         and not (
             replace_missing_media
             and history_media_identity(item) == media_identity
-            and not history_media_file_exists(item)
+            and history_media_file_state(item) == HISTORY_MEDIA_MISSING
         )
     ]
     return [record, *remaining][:MAX_HISTORY_ITEMS]

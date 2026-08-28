@@ -1094,6 +1094,19 @@ def test_canonical_youtube_url_keeps_item_and_proven_playlist_context_only():
     assert canonical_youtube_url({}, "https://example.com/watch?v=abc123") is None
 
 
+def test_canonical_youtube_url_strips_untrusted_query_data_without_an_item_id():
+    assert canonical_youtube_url(
+        {
+            "playlist_id": "PLsafe",
+            "webpage_url": "https://www.youtube.com/playlist?list=PLsafe&si=tracking&token=secret",
+        }
+    ) == "https://www.youtube.com/playlist?list=PLsafe"
+    assert canonical_youtube_url(
+        {},
+        "https://www.youtube.com/@Creator/videos?si=tracking&token=secret#featured",
+    ) == "https://www.youtube.com/@Creator/videos"
+
+
 def test_single_video_toggle_blocks_playlist_url_without_video_id():
     url = "https://www.youtube.com/playlist?list=PL"
 
