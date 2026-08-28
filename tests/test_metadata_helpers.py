@@ -87,8 +87,8 @@ from yt_downloader.app import (
     flatten_alpha_image,
     focus_icon_color_variant,
     focus_hero_thumbnail_visible,
-    focus_library_action_layout_mode,
     focus_library_layout_mode,
+    focus_library_vertical_layout_mode,
     focus_library_horizontal_padding,
     pixel_table_visible_row_window,
     focus_metadata_profile_text,
@@ -111,7 +111,9 @@ from yt_downloader.app import (
     metadata_output_type,
     metadata_run_key,
     preview_output_summary_display,
+    responsive_table_stretch_indices,
     resized_table_column_width,
+    stretched_table_column_widths,
     resolved_video_output_target,
     platform_font_families,
     prepare_batch_item_url,
@@ -523,11 +525,55 @@ def test_focus_library_layout_protects_selected_item_at_medium_widths():
     assert focus_library_layout_mode(919) == "compact"
 
 
-def test_focus_library_header_actions_condense_before_crushing_the_subtitle():
-    assert focus_library_action_layout_mode(1284, 1200, 240, 720) == "menu"
-    assert focus_library_action_layout_mode(1319, 1200, 240, 720) == "menu"
-    assert focus_library_action_layout_mode(1320, 977, 240, 720) == "menu"
-    assert focus_library_action_layout_mode(1320, 978, 240, 720) == "direct"
+def test_focus_library_vertical_layout_protects_description_before_it_can_collapse():
+    assert focus_library_vertical_layout_mode(920) == "wide"
+    assert focus_library_vertical_layout_mode(919) == "balanced"
+    assert focus_library_vertical_layout_mode(740) == "balanced"
+    assert focus_library_vertical_layout_mode(739) == "compact"
+
+
+def test_table_spare_width_expands_every_eligible_column_and_respects_limits():
+    assert stretched_table_column_widths([40, 100, 60], 260, {0: None, 1: None}) == [70, 130, 60]
+    assert stretched_table_column_widths([40, 100, 60], 300, {0: 50, 1: None}) == [50, 190, 60]
+    assert stretched_table_column_widths([40, 100, 60], 260, {}) == [40, 100, 60]
+    assert stretched_table_column_widths([80, 100], 120, {0: None, 1: None}) == [80, 100]
+
+
+def test_manual_table_widths_stay_exact_while_other_columns_fill_the_viewport():
+    columns = ("index", "title", "duration")
+    widths = [44, 360, 72]
+    eligible = set(columns)
+
+    title_manual = responsive_table_stretch_indices(
+        columns,
+        eligible,
+        {"title"},
+        last_resized_column="title",
+    )
+    assert title_manual == [0, 2]
+    assert stretched_table_column_widths(
+        widths,
+        600,
+        {index: None for index in title_manual},
+    ) == [106, 360, 134]
+    assert stretched_table_column_widths(
+        widths,
+        800,
+        {index: None for index in title_manual},
+    ) == [206, 360, 234]
+
+    all_manual = responsive_table_stretch_indices(
+        columns,
+        eligible,
+        set(columns),
+        last_resized_column="duration",
+    )
+    assert all_manual == [0, 1]
+    assert stretched_table_column_widths(
+        widths,
+        800,
+        {index: None for index in all_manual},
+    ) == [206, 522, 72]
 
 
 def test_ultrawide_library_workspace_is_bounded_and_centered():
@@ -764,37 +810,40 @@ def test_accepted_run_resets_source_field_and_batch_state_for_the_next_send():
     assert app.focus_url_entry.focused is True
 
 
-def test_copy_feedback_temporarily_confirms_then_restores_the_button():
-    class FakeButton:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, str]] = []
+def test_library_actions_feedback_keeps_one_fixed_button_width():
+    class ButtonProbe:
+        def __init__(self):
+            self.calls = []
 
-        def configure(self, **kwargs: str) -> None:
+        def configure(self, **kwargs):
             self.calls.append(kwargs)
 
-    button = FakeButton()
     app = object.__new__(DownloaderApp)
-    app.focus_library_copy_buttons = {"tags": (button, "Copy tags")}
-    app._focus_copy_feedback_after_ids = {}
-    scheduled: dict[str, object] = {}
-
-    def schedule(delay: int, callback: object) -> str:
-        scheduled["delay"] = delay
-        scheduled["callback"] = callback
-        return "after-1"
-
-    app.after = schedule
+    app.focus_library_menu_button = ButtonProbe()
+    app._focus_library_action_feedback_after_id = None
+    scheduled = {}
     app.after_cancel = lambda _after_id: None
 
-    DownloaderApp._show_copy_feedback(app, "tags")
+    def schedule(delay, callback):
+        scheduled["delay"] = delay
+        scheduled["callback"] = callback
+        return "feedback-1"
 
-    assert button.calls[-1] == {"text": "Copied", "style": "FocusCopySuccess.TButton"}
+    app.after = schedule
+
+    DownloaderApp._run_library_copy_action(app, lambda: True)
+
+    assert app.focus_library_menu_button.calls == [{"text": "Copied", "width": 7}]
     assert scheduled["delay"] == 900
-    assert app._focus_copy_feedback_after_ids == {"tags": "after-1"}
+    assert app._focus_library_action_feedback_after_id == "feedback-1"
 
     scheduled["callback"]()
-    assert button.calls[-1] == {"text": "Copy tags", "style": "FocusQuiet.TButton"}
-    assert app._focus_copy_feedback_after_ids == {}
+    assert app.focus_library_menu_button.calls[-1] == {"text": "Actions", "width": 7}
+    assert app._focus_library_action_feedback_after_id is None
+
+    calls_before = list(app.focus_library_menu_button.calls)
+    DownloaderApp._run_library_copy_action(app, lambda: False)
+    assert app.focus_library_menu_button.calls == calls_before
 
 
 def test_windows_app_identity_is_a_noop_on_other_platforms():

@@ -57,18 +57,18 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
-- Download either **MP4 video** or **MP3 audio** from the same Forge field, with separate format-aware controls.
-- Forge now keeps queued, active, completed, skipped, stopped, and failed runs isolated under stable run identities, so selecting Library items or older runs cannot overwrite the current run's title, thumbnail, progress, activity, or output details.
-- Failed downloads offer **Retry Download**, while skipped or stopped downloads offer **Restart Download**. Each action creates a fresh run and safely joins the sequential queue.
-- Metadata previews now focus immediately, report **Preview complete** truthfully, and provide direct **Start download** actions in Forge and Library. Sending the same URL promotes the preview into the new active run without a duplicate preview card.
-- The pixel-scrolling Library table now has discoverable draggable column dividers with minimum widths and session-persistent sizing, while retaining responsive layouts and horizontal overflow.
-- Removing a Library entry also removes its matching Forge recent card and reconciles the selected hero, without deleting downloaded media, sidecars, active work, or queued work.
-- Forge activity stays owned by the selected run, and the separate Activity tab retains a bounded private application log across restarts. Live output follows only while the reader is already at the bottom.
-- Exact submitted URL context now preserves YouTube playlist organization even for one-item scope, while shortened links remain safely under the no-playlist destination instead of guessing membership.
-- Downloads use isolated same-volume staging, contract validation, and an atomic final commit so cancellation or a failed encode cannot replace a valid destination with a partial file.
-- YouTube format discovery uses the bundled yt-dlp, Deno, and EJS solver stack so 1080p and 4K sources are found more reliably when the video provides them.
-- MP4 and MP3 runs reuse provider analysis and retain format-aware quality, metadata, artwork, and encoding controls.
-- **Library** keeps the original YouTube source and final VODForge output details together, including resolution, codecs, frame rate, bitrates, sample rate, channels, size, and saved location.
+- Window resizing and responsive Library transitions are substantially smoother on macOS and Windows, with breakpoint changes applied during the drag instead of after release.
+- The pixel-scrolling Library table keeps draggable, session-persistent columns while making divider placement, hit tracking, and large MP4/MP3 list switches more responsive.
+- Selected Library details now use a bounded responsive rail with clearer title, metadata, saved-location, thumbnail, tags, and description hierarchy. Tags and descriptions retain usable independently scrollable space, and ultrawide layouts no longer stretch the table into empty space.
+- Library and Forge menus now include **Copy YouTube URL**, Library actions stay behind one stable **Actions** menu at every size, and the Run Deck fills its available card capacity consistently.
+- MP4 **Manual Override** can select AAC or MP3 audio inside the MP4 container, with codec-aware bitrate validation, FFmpeg output, retry, history, and final-output summaries.
+- Removing a Library item now stops its exact active run or removes its exact queued run before it starts, then removes the matching Library and Forge presentation history. Downloaded media and folders remain untouched, and unrelated work is preserved.
+- Forge's MP4/MP3 selector and output settings configure only the next run; a selected active, queued, completed, failed, stopped, or preview item keeps its own format and output details.
+- Failed downloads retain **Retry Download**, while skipped or stopped downloads retain **Restart Download**. Preview items retain direct **Start download** actions in Forge and Library.
+- Path-safe output folders preserve recognizable channel, playlist, and video titles within Windows path limits instead of falling back to opaque hashes, while retaining compatibility with older saved locations.
+- Forge, Library, and the Run Deck now share a bounded private thumbnail cache, so moved media can retain its artwork and re-downloading a missing item replaces the stale saved location instead of creating a duplicate.
+- Downloads still use isolated same-volume staging, contract validation, and an atomic final commit so cancellation or a failed encode cannot replace a valid destination with a partial file.
+- Download either **MP4 video** or **MP3 audio** from the same Forge field. Bundled yt-dlp, Deno, and EJS format discovery continues to find 1080p and 4K sources when the video provides them, while **Library** keeps the original YouTube source and final VODForge output details together.
 - The optional **VODForge Cloud** early-access funnel remains privacy-narrow: one random anonymous installation identifier records the seen → clicked → joined journey alongside only OS family and app version.
 - VODForge continues to check stable GitHub Releases automatically and verifies approved updates before installation.
 - Windows downloads are signed by Kryden Ventures, LLC.

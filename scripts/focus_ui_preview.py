@@ -144,7 +144,6 @@ def main() -> None:
     parser.add_argument("--run-actions", action="store_true")
     parser.add_argument("--all-runs", action="store_true")
     parser.add_argument("--overflow", action="store_true")
-    parser.add_argument("--copy-feedback", choices=("tags", "description", "thumbnail"))
     parser.add_argument("--terminal", choices=("failed", "skipped"))
     parser.add_argument("--selected-details", action="store_true")
     parser.add_argument("--output-details", action="store_true")
@@ -351,8 +350,6 @@ def main() -> None:
         app.after(600, app.lift)
         app.after(620, app.focus_force)
         app.after(780, app._show_focus_run_menu)
-    if args.copy_feedback:
-        app.after(1200, lambda: app._show_copy_feedback(args.copy_feedback))
     if args.selected_details:
         app.after(700, app._show_selected_metadata_details)
     if args.output_details:

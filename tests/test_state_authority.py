@@ -968,16 +968,23 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "xscrollcommand=tree_x_scroll.set" in library_source
     assert 'self.video_tree.layout_column("creator", width=120, minwidth=90' in layout_source
     assert 'self.video_tree.layout_column("location", width=140, minwidth=100' in layout_source
-    assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=False)' in layout_source
+    assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
     assert 'width=0, minwidth=0' not in layout_source
-    assert 'library_mode = "compact" if compact else focus_library_layout_mode(width)' in layout_source
-    assert "focus_library_action_layout_mode(" in layout_source
-    assert "self.focus_library_heading.winfo_reqwidth()" in layout_source
-    assert "button.winfo_reqwidth()" in layout_source
-    assert 'elif library_action_mode == "menu":' in layout_source
+    assert 'library_vertical_mode = focus_library_vertical_layout_mode(height)' in layout_source
+    assert 'library_mode = "compact" if compact or library_vertical_mode == "compact" else focus_library_layout_mode(width)' in layout_source
+    assert "focus_library_action_layout_mode(" not in layout_source
+    assert "self.focus_library_action_buttons" not in layout_source
+    assert 'if not self.focus_library_menu_button.winfo_manager():' in layout_source
     assert "library_mode," in layout_source
+    assert "library_vertical_mode," in layout_source
     assert 'if library_mode == "compact":' in layout_source
     assert "library_actions_collapsed" not in layout_source
+    assert 'self.video_tree.layout_column("index", width=44, minwidth=38, stretch=True)' in layout_source
+    assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
+    assert 'self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)' in layout_source
+    assert 'self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)' in layout_source
+    assert 'self.video_tree.layout_column("id", width=90, minwidth=72, stretch=True)' in layout_source
+    assert 'self.video_tree.layout_column("location", width=140, minwidth=100, stretch=True)' in layout_source
     assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in layout_source
     assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)' in layout_source
     assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in layout_source
@@ -1010,6 +1017,17 @@ def test_native_resize_applies_live_dimensions_without_waiting_for_pointer_relea
     assert probe.calls == [{"width": 918, "height": 701}]
 
 
+def test_native_resize_callbacks_never_rewrite_the_window_anchor_or_opposite_edge():
+    schedule_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
+    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+
+    for source in (schedule_source, layout_source):
+        assert ".geometry(" not in source
+        assert ".wm_geometry(" not in source
+        assert "winfo_rootx" not in source
+        assert "winfo_rooty" not in source
+
+
 def test_run_deck_capacity_crossing_refreshes_synchronously_once():
     class DeckProbe:
         def __init__(self):
@@ -1029,19 +1047,22 @@ def test_run_deck_capacity_crossing_refreshes_synchronously_once():
     assert probe.refreshes == 1
 
 
-def test_library_copy_feedback_and_youtube_url_actions_keep_stable_button_geometry():
+def test_library_actions_remain_one_stable_menu_at_every_width():
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
-    feedback_source = inspect.getsource(DownloaderApp._show_copy_feedback)
     compact_actions_source = inspect.getsource(DownloaderApp._show_library_actions_menu)
     row_actions_source = inspect.getsource(DownloaderApp._show_library_row_menu)
     popup_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
     forge_actions_source = inspect.getsource(DownloaderApp._show_focus_run_actions_menu)
 
-    assert 'button.configure(width=max(len(normal_label), len("Copied")))' in library_source
-    assert 'button.configure(text="Copied", style="FocusCopySuccess.TButton")' in feedback_source
-    assert 'button.configure(text=original_label, style="FocusQuiet.TButton")' in feedback_source
+    assert 'text="Actions"' in library_source
+    assert "width=7" in library_source
+    assert "focus_library_action_buttons" not in library_source
+    assert "focus_library_copy_buttons" not in library_source
+    for label in ("Copy tags", "Copy description", "Copy thumbnail URL", "Copy YouTube URL", "Open saved location"):
+        assert label in compact_actions_source
     for source in (compact_actions_source, row_actions_source, popup_source, forge_actions_source):
         assert "Copy YouTube URL" in source
+    assert compact_actions_source.count("_run_library_copy_action") == 4
 
 
 def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
@@ -1068,9 +1089,15 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
 
 def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is_native():
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
 
+    assert "details.configure(width=410, height=360)" in library_source
     assert "details.rowconfigure(3, weight=2, minsize=96)" in library_source
+    assert "details.rowconfigure(4, weight=3, minsize=120)" in library_source
+    assert "focus_library_vertical_layout_mode(height)" in layout_source
+    assert "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)" in layout_source
+    assert "self.focus_library_view.rowconfigure(1, weight=2, minsize=360)" in layout_source
     assert "bind_smooth_vertical_wheel(text_widget, mode=\"pixels\")" in library_source
     assert "rounded_canvas_rectangle_points" in forge_source
     assert 'Image.new("RGBA", (width * scale, height * scale)' not in forge_source
@@ -1078,6 +1105,7 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
 
 def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
+    column_layout_source = inspect.getsource(app_module.PixelScrollTable._layout_columns)
     report_yview_source = inspect.getsource(app_module.PixelScrollTable._report_yview)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
     render_source = inspect.getsource(DownloaderApp._render_metadata_tree)
@@ -1092,9 +1120,13 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "self._header.grab_release()" in pixel_table_source
     assert 'else THEME["subtle"]' in pixel_table_source
     assert "self._manually_resized_columns.add(column)" in pixel_table_source
+    assert "self._last_manually_resized_column = column" in pixel_table_source
+    assert "responsive_table_stretch_indices" in column_layout_source
     assert "heading_anchor = self._heading_anchors.get(column) or anchor" in pixel_table_source
     assert 'anchor="w" if column == "duration" else None' in inspect.getsource(DownloaderApp._build_focus_library_view)
     assert "def layout_column" in pixel_table_source
+    assert "stretched_table_column_widths" in column_layout_source
+    assert "stretch_limits" in column_layout_source
     assert "def replace_rows" in pixel_table_source
     assert "self._body.delete(\"all\")" in pixel_table_source
     assert "pixel_table_visible_row_window(" in pixel_table_source
@@ -1107,6 +1139,84 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "if callable(replace_rows):" in render_source
     assert "self.video_tree.layout_column(" in layout_source
     assert 'xscrollincrement=1' in pixel_table_source
+
+
+def test_manual_column_width_keeps_responsive_stretch_authority():
+    class ColumnProbe:
+        def __init__(self):
+            self._manually_resized_columns = {"title"}
+            self.calls = []
+
+        def column(self, column, **kwargs):
+            self.calls.append((column, kwargs))
+            return kwargs
+
+    probe = ColumnProbe()
+
+    app_module.PixelScrollTable.layout_column(
+        probe,
+        "title",
+        width=360,
+        minwidth=220,
+        stretch=True,
+        stretchmax=None,
+    )
+
+    assert probe.calls == [
+        (
+            "title",
+            {"minwidth": 220, "stretch": True, "stretchmax": None},
+        )
+    ]
+
+
+def test_column_release_does_not_rebase_untouched_columns():
+    class HeaderProbe:
+        def grab_current(self):
+            return None
+
+    class ResizeProbe:
+        def __init__(self):
+            self._columns = ("index", "title", "duration")
+            self._column_options = {
+                "index": {"width": 44, "stretch": True},
+                "title": {"width": 360, "stretch": True},
+                "duration": {"width": 72, "stretch": True},
+            }
+            self._resize_column = "title"
+            self._header = HeaderProbe()
+            self._resize_hover_column = None
+            self.cursor = None
+            self.redraws = 0
+
+        def _drag_column_resize(self, _event):
+            self._column_options["title"]["width"] = 420
+            return "break"
+
+        def _column_divider_at(self, _x):
+            return None
+
+        def _set_header_cursor(self, cursor):
+            self.cursor = cursor
+
+        def _redraw(self):
+            self.redraws += 1
+
+    probe = ResizeProbe()
+
+    result = app_module.PixelScrollTable._end_column_resize(
+        probe,
+        SimpleNamespace(x=420),
+    )
+
+    assert result == "break"
+    assert probe._resize_column is None
+    assert probe._column_options == {
+        "index": {"width": 44, "stretch": True},
+        "title": {"width": 420, "stretch": True},
+        "duration": {"width": 72, "stretch": True},
+    }
+    assert probe.redraws == 1
 
 
 def test_preview_items_expose_fresh_forge_start_actions_without_library_ownership(tmp_path: Path):

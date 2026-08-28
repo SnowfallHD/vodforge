@@ -263,17 +263,82 @@ def focus_library_layout_mode(width: int) -> str:
     return "wide"
 
 
-def focus_library_action_layout_mode(
-    width: int,
+def focus_library_vertical_layout_mode(height: int) -> str:
+    """Protect the selected-details reader as vertical room is reduced."""
+    if int(height) < 740:
+        return "compact"
+    if int(height) < 920:
+        return "balanced"
+    return "wide"
+
+
+def stretched_table_column_widths(
+    widths: Iterable[int],
     available_width: int,
-    heading_required_width: int,
-    direct_actions_required_width: int,
-) -> str:
-    """Condense header actions before they can squeeze the Library subtitle."""
-    if int(width) < 1320:
-        return "menu"
-    required_width = max(0, int(heading_required_width)) + max(0, int(direct_actions_required_width)) + 18
-    return "direct" if int(available_width) >= required_width else "menu"
+    stretch_limits: dict[int, int | None],
+) -> list[int]:
+    """Distribute spare viewport width across every eligible table column."""
+    result = [max(1, int(width)) for width in widths]
+    remaining = max(0, int(available_width) - sum(result))
+    active = [
+        index
+        for index in sorted(stretch_limits)
+        if 0 <= index < len(result)
+        and (stretch_limits[index] is None or result[index] < int(stretch_limits[index]))
+    ]
+    while remaining > 0 and active:
+        share = max(1, remaining // len(active))
+        progressed = False
+        for index in tuple(active):
+            if remaining <= 0:
+                break
+            limit = stretch_limits[index]
+            headroom = remaining if limit is None else max(0, int(limit) - result[index])
+            addition = min(remaining, share, headroom)
+            if addition > 0:
+                result[index] += addition
+                remaining -= addition
+                progressed = True
+        active = [
+            index
+            for index in active
+            if stretch_limits[index] is None or result[index] < int(stretch_limits[index])
+        ]
+        if not progressed:
+            break
+    return result
+
+
+def responsive_table_stretch_indices(
+    columns: Iterable[str],
+    stretch_columns: Iterable[str],
+    manually_resized_columns: Iterable[str],
+    *,
+    resizing_column: str | None = None,
+    last_resized_column: str | None = None,
+) -> list[int]:
+    """Choose responsive fill columns without moving the active divider."""
+    ordered = list(columns)
+    eligible = set(stretch_columns)
+    manual = set(manually_resized_columns)
+    automatic = [
+        index
+        for index, column in enumerate(ordered)
+        if column in eligible and column not in manual and column != resizing_column
+    ]
+    if automatic:
+        return automatic
+    # Once every eligible column has been touched, keep the most recently
+    # dragged divider exact and let the other columns share the fill. Their
+    # stored bases remain unchanged, so shrinking and widening the frame does
+    # not manufacture permanent widths or unnecessary horizontal overflow.
+    return [
+        index
+        for index, column in enumerate(ordered)
+        if column in eligible
+        and column != resizing_column
+        and column != last_resized_column
+    ]
 
 
 def resized_table_column_width(initial_width: int, delta: int, minimum_width: int) -> int:
@@ -4685,6 +4750,7 @@ class PixelScrollTable(tk.Frame):
         self._font = tkfont.Font(font=FONT_UI)
         self._header_font = tkfont.Font(font=FONT_UI_SMALL_MEDIUM)
         self._manually_resized_columns: set[str] = set()
+        self._last_manually_resized_column: str | None = None
         self._resize_column: str | None = None
         self._resize_origin_x = 0.0
         self._resize_origin_width = 0
@@ -4755,7 +4821,6 @@ class PixelScrollTable(tk.Frame):
         """Apply responsive defaults while retaining widths dragged this session."""
         if column in self._manually_resized_columns:
             kwargs.pop("width", None)
-            kwargs.pop("stretch", None)
         return self.column(column, **kwargs)
 
     def insert(self, _parent: str, index: str | int, *, iid: str, values: tuple[Any, ...]) -> str:
@@ -4878,13 +4943,23 @@ class PixelScrollTable(tk.Frame):
 
     def _layout_columns(self) -> list[tuple[str, int, str]]:
         widths = [max(int(self._column_options[column].get("minwidth", 1)), int(self._column_options[column].get("width", 100))) for column in self._columns]
-        extra = max(1, self._body.winfo_width()) - sum(widths)
-        if extra > 0:
-            stretch_indices = [index for index, column in enumerate(self._columns) if self._column_options[column].get("stretch")]
-            if stretch_indices:
-                index = stretch_indices[0]
-                stretch_max = self._column_options[self._columns[index]].get("stretchmax")
-                widths[index] += min(extra, max(0, int(stretch_max) - widths[index])) if stretch_max else extra
+        stretch_columns = {
+            column
+            for column in self._columns
+            if self._column_options[column].get("stretch")
+        }
+        stretch_limits: dict[int, int | None] = {}
+        for index in responsive_table_stretch_indices(
+            self._columns,
+            stretch_columns,
+            self._manually_resized_columns,
+            resizing_column=self._resize_column,
+            last_resized_column=self._last_manually_resized_column,
+        ):
+            column = self._columns[index]
+            raw_limit = self._column_options[column].get("stretchmax")
+            stretch_limits[index] = int(raw_limit) if raw_limit is not None else None
+        widths = stretched_table_column_widths(widths, max(1, self._body.winfo_width()), stretch_limits)
         return [(column, widths[index], str(self._column_options[column].get("anchor", "w"))) for index, column in enumerate(self._columns)]
 
     def _column_divider_at(self, x: int | float) -> str | None:
@@ -4934,7 +5009,6 @@ class PixelScrollTable(tk.Frame):
         self._resize_origin_x = float(event.x)
         self._resize_origin_width = int(rendered_width)
         self._column_options[column]["width"] = int(rendered_width)
-        self._column_options[column]["stretch"] = False
         try:
             self._header.grab_set()
         except tk.TclError:
@@ -4954,13 +5028,16 @@ class PixelScrollTable(tk.Frame):
             int(options.get("minwidth", 1)),
         )
         self._manually_resized_columns.add(column)
+        self._last_manually_resized_column = column
         self._redraw()
         return "break"
 
     def _end_column_resize(self, event: tk.Event[Any]) -> str | None:
-        if self._resize_column is None:
+        column = self._resize_column
+        if column is None:
             return None
         self._drag_column_resize(event)
+
         self._resize_column = None
         try:
             if self._header.grab_current() is self._header:
@@ -5748,8 +5825,6 @@ class DownloaderApp(tk.Tk):
         style.map("FocusQuiet.TButton", background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])], foreground=[("active", THEME["text"])])
         style.configure("CloudDisabled.TButton", background=THEME["surface_2"], foreground=THEME["subtle"], bordercolor=THEME["surface_2"], lightcolor=THEME["surface_2"], darkcolor=THEME["surface_2"], focusthickness=0, focuscolor=THEME["surface_2"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
         style.map("CloudDisabled.TButton", background=[("disabled", THEME["surface_2"])], foreground=[("disabled", THEME["subtle"])])
-        style.configure("FocusCopySuccess.TButton", background=THEME["accent_dark"], foreground="#ffffff", bordercolor=THEME["accent"], lightcolor=THEME["accent"], darkcolor=THEME["accent"], focusthickness=0, focuscolor=THEME["accent_dark"], relief="flat", padding=(11, 6), font=FONT_UI_SMALL_MEDIUM)
-        style.map("FocusCopySuccess.TButton", background=[("active", THEME["accent"]), ("pressed", THEME["accent_dark"])], foreground=[("active", "#ffffff")])
         style.configure("FocusIcon.TButton", background=THEME["bg"], foreground=THEME["muted"], bordercolor=THEME["bg"], lightcolor=THEME["bg"], darkcolor=THEME["bg"], focusthickness=0, focuscolor=THEME["bg"], relief="flat", padding=(9, 8))
         style.map("FocusIcon.TButton", background=[("active", THEME["surface"]), ("pressed", THEME["panel"])])
         style.configure("FocusDestination.TButton", background=THEME["surface"], foreground=THEME["muted"], bordercolor=THEME["border"], lightcolor=THEME["border"], darkcolor=THEME["border"], focusthickness=0, focuscolor=THEME["surface"], relief="flat", padding=(12, 7), font=FONT_UI_SMALL)
@@ -6902,7 +6977,6 @@ class DownloaderApp(tk.Tk):
         actions.columnconfigure(0, weight=1)
         heading = ttk.Frame(actions, style="FocusShell.TFrame")
         heading.grid(row=0, column=0, sticky="w")
-        self.focus_library_heading = heading
         heading_title = ttk.Frame(heading, style="FocusShell.TFrame")
         heading_title.pack(anchor="w")
         ttk.Label(heading_title, text="Library", style="FocusTitle.TLabel").pack(side="left")
@@ -6916,32 +6990,16 @@ class DownloaderApp(tk.Tk):
         ttk.Label(heading, text="Saved downloads and metadata previews", style="Muted.TLabel").pack(anchor="w", pady=(3, 0))
         action_row = ttk.Frame(actions, style="FocusShell.TFrame")
         action_row.grid(row=0, column=1, sticky="e")
-        self.focus_library_copy_buttons = {
-            "tags": (ttk.Button(action_row, text="Copy tags", command=self._copy_tags, style="FocusQuiet.TButton"), "Copy tags"),
-            "description": (
-                ttk.Button(action_row, text="Copy description", command=self._copy_description, style="FocusQuiet.TButton"),
-                "Copy description",
-            ),
-            "thumbnail": (
-                ttk.Button(action_row, text="Copy thumbnail URL", command=self._copy_thumbnail_url, style="FocusQuiet.TButton"),
-                "Copy thumbnail URL",
-            ),
-            "youtube": (
-                ttk.Button(action_row, text="Copy YouTube URL", command=self._copy_youtube_url, style="FocusQuiet.TButton"),
-                "Copy YouTube URL",
-            ),
-        }
-        for button, normal_label in self.focus_library_copy_buttons.values():
-            button.configure(width=max(len(normal_label), len("Copied")))
-        self._focus_copy_feedback_after_ids: dict[str, str] = {}
-        self.focus_library_action_buttons = [
-            *(button for button, _label in self.focus_library_copy_buttons.values()),
-            ttk.Button(action_row, text="Open saved location", command=self._open_selected_saved_location, style="FocusQuiet.TButton"),
-        ]
-        for button in self.focus_library_action_buttons:
-            button.pack(side="left", padx=(6, 0))
         self.focus_library_details_button = ttk.Button(action_row, text="Selected details", command=self._show_selected_metadata_details, style="FocusQuiet.TButton")
-        self.focus_library_menu_button = ttk.Button(action_row, text="Actions", command=self._show_library_actions_menu, style="FocusQuiet.TButton")
+        self.focus_library_menu_button = ttk.Button(
+            action_row,
+            text="Actions",
+            width=7,
+            command=self._show_library_actions_menu,
+            style="FocusQuiet.TButton",
+        )
+        self._focus_library_action_feedback_after_id: str | None = None
+        self.focus_library_menu_button.pack(side="left")
 
         metadata_content = ttk.Frame(parent, style="FocusShell.TFrame")
         metadata_content.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 14))
@@ -6994,7 +7052,7 @@ class DownloaderApp(tk.Tk):
         # Keep the inspection rail authoritative instead of letting wrapped
         # child requests feed back into Grid and progressively starve the
         # table after repeated resize cycles.
-        details.configure(width=410)
+        details.configure(width=410, height=360)
         details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
         details.rowconfigure(3, weight=2, minsize=96)
@@ -8410,10 +8468,10 @@ class DownloaderApp(tk.Tk):
         elif terminal_job is not None:
             menu.add_command(label="↻ Retry in Forge", command=lambda: self._retry_terminal_job(terminal_job))
             menu.add_separator()
-        menu.add_command(label="Copy tags", command=self._copy_tags)
-        menu.add_command(label="Copy description", command=self._copy_description)
-        menu.add_command(label="Copy thumbnail URL", command=self._copy_thumbnail_url)
-        menu.add_command(label="Copy YouTube URL", command=self._copy_youtube_url)
+        menu.add_command(label="Copy tags", command=lambda: self._run_library_copy_action(self._copy_tags))
+        menu.add_command(label="Copy description", command=lambda: self._run_library_copy_action(self._copy_description))
+        menu.add_command(label="Copy thumbnail URL", command=lambda: self._run_library_copy_action(self._copy_thumbnail_url))
+        menu.add_command(label="Copy YouTube URL", command=lambda: self._run_library_copy_action(self._copy_youtube_url))
         menu.add_separator()
         menu.add_command(label="Open saved location", command=self._open_selected_saved_location)
         menu.add_command(label="Remove from Library…", command=self._remove_selected_library_item)
@@ -8973,7 +9031,8 @@ class DownloaderApp(tk.Tk):
         mode = focus_layout_mode(width, height)
         compact = mode == "compact"
         balanced = mode == "balanced"
-        library_mode = "compact" if compact else focus_library_layout_mode(width)
+        library_vertical_mode = focus_library_vertical_layout_mode(height)
+        library_mode = "compact" if compact or library_vertical_mode == "compact" else focus_library_layout_mode(width)
         library_padding = focus_library_horizontal_padding(width)
         if library_padding != self.__dict__.get("_focus_library_horizontal_padding"):
             self._focus_library_horizontal_padding = library_padding
@@ -8981,21 +9040,10 @@ class DownloaderApp(tk.Tk):
             self.focus_metadata_content.grid_configure(padx=library_padding)
             self.focus_library_summary.grid_configure(padx=library_padding)
         focus_shell_padding = 12 if compact else 20
-        library_header_width = max(1, width - (2 * focus_shell_padding) - (2 * library_padding))
-        direct_actions_required_width = sum(
-            max(1, int(button.winfo_reqwidth())) + 6
-            for button in self.focus_library_action_buttons
-        )
-        library_action_mode = focus_library_action_layout_mode(
-            width,
-            library_header_width,
-            self.focus_library_heading.winfo_reqwidth(),
-            direct_actions_required_width,
-        )
         layout_signature = (
             mode,
             library_mode,
-            library_action_mode,
+            library_vertical_mode,
             focus_run_deck_capacity(max(1, width - 52)),
             focus_hero_thumbnail_visible(width),
         )
@@ -9055,28 +9103,15 @@ class DownloaderApp(tk.Tk):
         else:
             self.focus_deck_header.grid_remove()
 
-        # A hidden details rail needs an explicit way to reopen it. At medium
-        # widths the rail stays visible while only the action strip condenses,
-        # so the Library subtitle never competes with five fixed-width buttons.
+        # Library actions intentionally stay behind one stable menu at every
+        # size. Only the Selected details launcher follows rail visibility.
+        if not self.focus_library_menu_button.winfo_manager():
+            self.focus_library_menu_button.pack(side="left")
         if library_mode == "compact":
-            for button in self.focus_library_action_buttons:
-                button.pack_forget()
-            if not self.focus_library_menu_button.winfo_manager():
-                self.focus_library_menu_button.pack(side="left")
             if not self.focus_library_details_button.winfo_manager():
                 self.focus_library_details_button.pack(side="left", padx=(6, 0), before=self.focus_library_menu_button)
-        elif library_action_mode == "menu":
-            for button in self.focus_library_action_buttons:
-                button.pack_forget()
-            self.focus_library_details_button.pack_forget()
-            if not self.focus_library_menu_button.winfo_manager():
-                self.focus_library_menu_button.pack(side="left")
         else:
-            self.focus_library_menu_button.pack_forget()
             self.focus_library_details_button.pack_forget()
-            for button in self.focus_library_action_buttons:
-                if not button.winfo_manager():
-                    button.pack(side="left", padx=(6, 0))
 
         if library_mode == "compact":
             self.focus_library_view.rowconfigure(1, weight=2, minsize=125)
@@ -9088,19 +9123,20 @@ class DownloaderApp(tk.Tk):
             # Keep the canonical table intact at small widths. The sleek
             # horizontal scrollbar makes every field reachable without
             # squeezing columns to zero or changing what the table means.
-            self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
-            self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
-            self.video_tree.layout_column("location", width=140, minwidth=100, stretch=False)
-            self.video_tree.layout_column("title", width=360, minwidth=220, stretch=False)
+            self.video_tree.layout_column("index", width=44, minwidth=38, stretch=True)
+            self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)
+            self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)
+            self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)
+            self.video_tree.layout_column("id", width=90, minwidth=72, stretch=True)
+            self.video_tree.layout_column("location", width=140, minwidth=100, stretch=True)
         else:
-            if library_mode == "balanced":
-                # Medium-height windows need to protect the selected item's
-                # tags/description surfaces from collapsing to a single line.
-                # The lower source/output panes remain independently scrollable.
-                self.focus_library_view.rowconfigure(1, weight=4, minsize=300)
+            if library_vertical_mode == "balanced":
+                # Reduced-height windows give the independently scrollable
+                # source/output panes less room before sacrificing metadata.
+                self.focus_library_view.rowconfigure(1, weight=4, minsize=360)
                 self.focus_library_view.rowconfigure(2, weight=1, minsize=120)
             else:
-                self.focus_library_view.rowconfigure(1, weight=2, minsize=220)
+                self.focus_library_view.rowconfigure(1, weight=2, minsize=360)
                 self.focus_library_view.rowconfigure(2, weight=3, minsize=230)
             self.focus_queue_panel.grid_configure(column=0, columnspan=1, padx=(0, 18))
             self.focus_library_details.grid(row=0, column=1, sticky="nsew")
@@ -9108,6 +9144,8 @@ class DownloaderApp(tk.Tk):
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)
                 self.focus_library_details.configure(width=330)
+                self.video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
+                self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=False)
                 self.video_tree.layout_column("creator", width=110, minwidth=90, stretch=False)
                 self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
@@ -9116,6 +9154,8 @@ class DownloaderApp(tk.Tk):
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)
                 self.focus_library_details.configure(width=410)
+                self.video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
+                self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=False)
                 self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
                 self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
@@ -9767,28 +9807,30 @@ class DownloaderApp(tk.Tk):
         except Exception as exc:
             write_diagnostic(f"queued run preview unavailable for {job.url}: {type(exc).__name__}: {exc}")
 
-    def _copy_tags(self) -> None:
+    def _copy_tags(self) -> bool:
         text = self.pulled_tags_text.get("1.0", "end").strip()
         if text:
             self.clipboard_clear()
             self.clipboard_append(text)
             self.status_var.set("Copied tags to clipboard.")
-            self._show_copy_feedback("tags")
+            return True
+        return False
 
-    def _copy_thumbnail_url(self) -> None:
+    def _copy_thumbnail_url(self) -> bool:
         if self.last_thumbnail_url:
             self.clipboard_clear()
             self.clipboard_append(self.last_thumbnail_url)
             self.status_var.set("Copied thumbnail URL to clipboard.")
-            self._show_copy_feedback("thumbnail")
+            return True
+        return False
 
-    def _copy_youtube_url_value(self, url: str) -> None:
+    def _copy_youtube_url_value(self, url: str) -> bool:
         self.clipboard_clear()
         self.clipboard_append(url)
         self.status_var.set("Copied YouTube URL to clipboard.")
-        self._show_copy_feedback("youtube")
+        return True
 
-    def _copy_youtube_url(self, info: dict[str, Any] | None = None) -> None:
+    def _copy_youtube_url(self, info: dict[str, Any] | None = None) -> bool:
         selected = info
         if selected is None:
             selection = self.video_tree.selection()
@@ -9800,8 +9842,8 @@ class DownloaderApp(tk.Tk):
         url = canonical_youtube_url(selected or {})
         if not url:
             messagebox.showinfo(APP_NAME, "This item does not include a YouTube URL to copy.")
-            return
-        self._copy_youtube_url_value(url)
+            return False
+        return self._copy_youtube_url_value(url)
 
     def _youtube_url_for_run_record(self, record: dict[str, Any]) -> str | None:
         metadata_index = record.get("metadata_index")
@@ -9819,38 +9861,35 @@ class DownloaderApp(tk.Tk):
             return canonical_youtube_url(job.preview_info or {}, job.url)
         return canonical_youtube_url(record)
 
-    def _copy_description(self) -> None:
+    def _copy_description(self) -> bool:
         text = self.description_text.get("1.0", "end").strip()
         if text:
             self.clipboard_clear()
             self.clipboard_append(text)
             self.status_var.set("Copied description to clipboard.")
-            self._show_copy_feedback("description")
+            return True
+        return False
 
-    def _show_copy_feedback(self, key: str) -> None:
-        """Briefly confirm a successful copy without adding persistent UI."""
-        entry = getattr(self, "focus_library_copy_buttons", {}).get(key)
-        if entry is None:
+    def _run_library_copy_action(self, action: Callable[[], bool]) -> None:
+        if not action():
             return
-        button, original_label = entry
-        pending = getattr(self, "_focus_copy_feedback_after_ids", {})
-        previous_after_id = pending.pop(key, None)
-        if previous_after_id is not None:
+        button = self.focus_library_menu_button
+        pending = self._focus_library_action_feedback_after_id
+        if pending is not None:
             try:
-                self.after_cancel(previous_after_id)
+                self.after_cancel(pending)
             except tk.TclError:
                 pass
-        button.configure(text="Copied", style="FocusCopySuccess.TButton")
+        button.configure(text="Copied", width=7)
 
         def restore() -> None:
+            self._focus_library_action_feedback_after_id = None
             try:
-                button.configure(text=original_label, style="FocusQuiet.TButton")
+                button.configure(text="Actions", width=7)
             except tk.TclError:
                 pass
-            pending.pop(key, None)
 
-        pending[key] = self.after(900, restore)
-        self._focus_copy_feedback_after_ids = pending
+        self._focus_library_action_feedback_after_id = self.after(900, restore)
 
     def _display_metadata(
         self,
