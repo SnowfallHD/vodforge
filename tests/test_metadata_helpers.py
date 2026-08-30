@@ -4060,7 +4060,7 @@ def test_batch_cancellation_reports_stopped_or_partial_truthfully(monkeypatch, t
     assert not any(kind in {"done", "error"} for kind, _payload in events)
 
 
-def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_path: Path):
+def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(monkeypatch, tmp_path: Path):
     preflight = {
         "id": "abc123",
         "title": "Fast Path",
@@ -4128,8 +4128,22 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
     probe = {
         "format": {"format_name": "mov,mp4,m4a", "duration": "30"},
         "streams": [
-            {"codec_type": "video", "codec_name": "h264"},
-            {"codec_type": "audio", "codec_name": "aac"},
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "width": 1920,
+                "height": 1080,
+                "bit_rate": "4000000",
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "bit_rate": "192000",
+                "sample_rate": "48000",
+                "channels": 2,
+            },
         ],
     }
     validated_plans = []
@@ -4162,7 +4176,7 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
         embed_thumbnail=False,
         write_thumbnail=False,
         embed_metadata=False,
-        write_info_json=False,
+        write_info_json=True,
         tags=[],
     )
 
@@ -4183,6 +4197,63 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
         for kind, payload in emitted_events
     )
     assert not any(kind == "metadata" for kind, _payload in emitted_events)
+
+    app.events = queue.Queue()
+    monkeypatch.setattr(
+        app_module,
+        "create_staging_dir",
+        lambda *_args, **_kwargs: pytest.fail("a valid existing output must bypass staging"),
+    )
+    second_outcome = app._download_worker_single(job)
+
+    assert second_outcome == DownloadOutcome(success_count=1)
+    assert calls == {"extract": 2, "process": 1}
+    assert expected.read_bytes() == b"downloaded media"
+    assert not (tmp_path / ".vfstage").exists()
+    reuse_events = list(app.events.queue)
+    assert any(
+        kind == "history_record"
+        and payload["job"] is job
+        and payload["info"]["vodforge_encoding_summary"]["output"]["Validation status"]
+        == "Validated existing output"
+        and Path(payload["output_dir"]) == expected.parent
+        for kind, payload in reuse_events
+    )
+    existing_metadata_index = next(
+        index
+        for index, (kind, payload) in enumerate(reuse_events)
+        if kind == "job_metadata"
+        and payload["info"]["vodforge_encoding_summary"]["output"]["Validation status"]
+        == "Validated existing output"
+    )
+    history_index = next(
+        index
+        for index, (kind, _payload) in enumerate(reuse_events)
+        if index > existing_metadata_index and kind == "history_record"
+    )
+    folders_index = next(
+        index
+        for index, (kind, _payload) in enumerate(reuse_events)
+        if index > history_index and kind == "download_folders"
+    )
+    reuse_log_index = next(
+        index
+        for index, (kind, payload) in enumerate(reuse_events)
+        if index > folders_index
+        and kind == "job_log"
+        and "already downloaded and valid" in payload["line"]
+    )
+    terminal_status_index = next(
+        index
+        for index, (kind, payload) in enumerate(reuse_events)
+        if index > reuse_log_index
+        and kind == "status"
+        and str(payload).endswith("existing valid output")
+    )
+    assert any(
+        index > terminal_status_index and kind == "done"
+        for index, (kind, _payload) in enumerate(reuse_events)
+    )
 
 
 def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch, tmp_path: Path):

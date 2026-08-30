@@ -4605,6 +4605,12 @@ class DownloadOutcome:
         )
 
 
+@dataclass(frozen=True)
+class _ExistingOutputReuse:
+    metadata: dict[str, Any]
+    outcome: DownloadOutcome
+
+
 def browser_cookie_value(label_or_value: str | None) -> str | None:
     text = str(label_or_value or "").strip()
     if not text or text.lower() in {"none", COOKIE_BROWSER_PLACEHOLDER.lower()}:
@@ -11684,6 +11690,112 @@ class DownloaderApp(tk.Tk):
             else:
                 self.events.put(("error", f"{exc}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}"))
 
+    def _try_reuse_existing_output(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        plan: ExportPlan | AudioExportPlan,
+        *,
+        label: str,
+        all_output_dirs: list[Path],
+        control_check: Callable[[], None],
+    ) -> _ExistingOutputReuse | None:
+        ffprobe = self._find_ffprobe()
+        if not ffprobe:
+            return None
+        existing_output = find_valid_existing_output(
+            job.output_dir,
+            info,
+            job.output_type,
+            ffprobe,
+            plan=plan,
+            embed_metadata=(
+                job.mp3_settings.embed_metadata
+                if job.output_type == OutputType.MP3
+                else job.embed_metadata
+            ),
+            embed_cover_art=(
+                job.mp3_settings.embed_cover_art
+                if job.output_type == OutputType.MP3
+                else job.embed_thumbnail
+            ),
+            custom_cover_art=(
+                job.output_type == OutputType.MP3
+                and job.mp3_settings.custom_cover_art_path is not None
+            ),
+            expected_tags=job.tags,
+            expected_duration_seconds=_float_or_none(info.get("duration")),
+            control_check=control_check,
+        )
+        if existing_output is None:
+            return None
+
+        existing_path, existing_probe = existing_output
+        remember_video_output_dir(info, existing_path.parent)
+        reused_info = build_encoding_summary_metadata(
+            info,
+            plan,
+            output_path=existing_path,
+            ffprobe_data=existing_probe,
+            validation_status="Validated existing output",
+        )
+        self.events.put(("job_metadata", {"job": job, "info": reused_info}))
+        self.events.put(
+            (
+                "history_record",
+                {
+                    "job": job,
+                    "info": reused_info,
+                    "output_dir": str(existing_path.parent),
+                },
+            )
+        )
+        all_output_dirs.append(existing_path.parent)
+        self.events.put(("download_folders", sorted(set(all_output_dirs))))
+        reuse_outcome = DownloadOutcome(success_count=1)
+        self._emit_job_log(
+            job,
+            f"{label}: already downloaded and valid; reused {existing_path}.",
+        )
+        try:
+            cached_thumbnail = save_cached_thumbnail_image(reused_info)
+            if cached_thumbnail is not None:
+                self._emit_job_log(job, f"{label}: refreshed private Library artwork cache")
+        except Exception as exc:
+            reuse_outcome = reuse_outcome.combined_with(
+                DownloadOutcome(sidecar_failure_count=1)
+            )
+            self._emit_job_log(
+                job,
+                f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed: {exc}",
+            )
+        if job.write_info_json:
+            try:
+                write_compact_video_metadata(existing_path.parent, reused_info, job.tags)
+            except Exception as exc:
+                reuse_outcome = reuse_outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed: {exc}",
+                )
+        if job.write_thumbnail:
+            try:
+                save_thumbnail_image(existing_path.parent, reused_info)
+            except Exception as exc:
+                reuse_outcome = reuse_outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed: {exc}",
+                )
+        return _ExistingOutputReuse(
+            metadata=reused_info,
+            outcome=reuse_outcome,
+        )
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -12022,82 +12134,17 @@ class DownloaderApp(tk.Tk):
                         self._emit_job_log(job, f"WARNING: {label}: {warning}")
                     put_stage_progress(video_index, total_videos, 0.0, 0.10, 1.0)
 
-                    existing_ffprobe = self._find_ffprobe()
-                    existing_output = (
-                        find_valid_existing_output(
-                            job.output_dir,
-                            current_video_info,
-                            job.output_type,
-                            existing_ffprobe,
-                            plan=plan,
-                            embed_metadata=(
-                                job.mp3_settings.embed_metadata
-                                if job.output_type == OutputType.MP3
-                                else job.embed_metadata
-                            ),
-                            embed_cover_art=(
-                                job.mp3_settings.embed_cover_art
-                                if job.output_type == OutputType.MP3
-                                else job.embed_thumbnail
-                            ),
-                            custom_cover_art=(
-                                job.output_type == OutputType.MP3
-                                and job.mp3_settings.custom_cover_art_path is not None
-                            ),
-                            expected_tags=job.tags,
-                            expected_duration_seconds=_float_or_none(current_video_info.get("duration")),
-                            control_check=raise_for_control_requests,
-                        )
-                        if existing_ffprobe
-                        else None
+                    existing_reuse = self._try_reuse_existing_output(
+                        job,
+                        current_video_info,
+                        plan,
+                        label=label,
+                        all_output_dirs=all_output_dirs,
+                        control_check=raise_for_control_requests,
                     )
-                    if existing_output is not None:
-                        existing_path, existing_probe = existing_output
-                        remember_video_output_dir(current_video_info, existing_path.parent)
-                        current_video_info = build_encoding_summary_metadata(
-                            current_video_info,
-                            plan,
-                            output_path=existing_path,
-                            ffprobe_data=existing_probe,
-                            validation_status="Validated existing output",
-                        )
-                        self.events.put(("job_metadata", {"job": job, "info": current_video_info}))
-                        self.events.put(
-                            (
-                                "history_record",
-                                {
-                                    "job": job,
-                                    "info": current_video_info,
-                                    "output_dir": str(existing_path.parent),
-                                },
-                            )
-                        )
-                        all_output_dirs.append(existing_path.parent)
-                        self.events.put(("download_folders", sorted(set(all_output_dirs))))
-                        outcome = outcome.combined_with(DownloadOutcome(success_count=1))
-                        self._emit_job_log(
-                            job,
-                            f"{label}: already downloaded and valid; reused {existing_path}.",
-                        )
-                        try:
-                            cached_thumbnail = save_cached_thumbnail_image(current_video_info)
-                            if cached_thumbnail is not None:
-                                self._emit_job_log(job, f"{label}: refreshed private Library artwork cache")
-                        except Exception as exc:
-                            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                            self._emit_job_log(job, f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed: {exc}")
-                        if job.write_info_json:
-                            try:
-                                write_compact_video_metadata(existing_path.parent, current_video_info, job.tags)
-                            except Exception as exc:
-                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                                self._emit_job_log(job, f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed: {exc}")
-                        if job.write_thumbnail:
-                            try:
-                                save_thumbnail_image(existing_path.parent, current_video_info)
-                            except Exception as exc:
-                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                                self._emit_job_log(job, f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed: {exc}")
+                    if existing_reuse is not None:
+                        current_video_info = existing_reuse.metadata
+                        outcome = outcome.combined_with(existing_reuse.outcome)
                         put_stage_progress(video_index, total_videos, 0.10, 0.90, 1.0)
                         self.events.put(("status", f"{label} complete — existing valid output"))
                         continue
