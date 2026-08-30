@@ -1581,6 +1581,19 @@ class Mp3ExportSettings:
     custom_cover_art_path: Path | None = None
 
 
+def mp3_sample_rate_display(
+    sample_rate: str | int | None,
+    *,
+    source_label: str,
+) -> str:
+    if sample_rate in {None, ""}:
+        return source_label
+    try:
+        return f"{int(sample_rate) / 1000:g} kHz"
+    except (TypeError, ValueError):
+        return str(sample_rate)
+
+
 @dataclass(frozen=True)
 class AudioExportPlan:
     output_type: OutputType
@@ -7777,7 +7790,10 @@ class DownloaderApp(tk.Tk):
         if output_type == OutputType.MP3:
             settings = mp3_settings or self._mp3_export_settings()
             rate = f"{settings.bitrate_kbps} kbps"
-            sample_rate = f"{int(settings.sample_rate) / 1000:g} kHz" if settings.sample_rate else "Source rate"
+            sample_rate = mp3_sample_rate_display(
+                settings.sample_rate,
+                source_label="Source rate",
+            )
             return f"MP3  •  {rate}  •  {sample_rate}"
         return f"{quality_label or self.quality_var.get()}  •  {(export_mode or ExportMode(self.export_mode_var.get())).value}"
 
@@ -8593,16 +8609,15 @@ class DownloaderApp(tk.Tk):
         self.focus_display_status_var.set(f"Showing queued run: {title}")
         self.focus_transfer_var.set("Queued  /  Waiting for the current run")
         if job.output_type == OutputType.MP3:
-            sample_rate = (
-                "Preserve source"
-                if job.mp3_settings.sample_rate is None
-                else f"{job.mp3_settings.sample_rate // 1000} kHz"
+            sample_rate = mp3_sample_rate_display(
+                job.mp3_settings.sample_rate,
+                source_label="Preserve source",
             )
             channels = "Preserve source" if job.mp3_settings.channels is None else str(job.mp3_settings.channels)
             summary = "\n".join(
                 (
                     "Format          MP3",
-                    f"Audio quality   {job.mp3_settings.audio_bitrate_kbps} kbps",
+                    f"Audio quality   {job.mp3_settings.bitrate_kbps} kbps",
                     f"Sample rate     {sample_rate}",
                     f"Channels        {channels}",
                     f"Save to         {job.output_dir}",

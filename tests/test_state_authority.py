@@ -127,6 +127,26 @@ def make_job(tmp_path: Path, *, video_id: str = "authority-id") -> DownloadJob:
     )
 
 
+def make_queued_snapshot_app() -> DownloaderApp:
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.focus_active_title_var = Value("")
+    app.focus_active_detail_var = Value("")
+    app.focus_active_duration_var = Value("")
+    app.focus_active_profile_var = Value("")
+    app.focus_display_progress_var = Value(0)
+    app.focus_percent_var = Value("")
+    app.focus_display_status_var = Value("")
+    app.focus_transfer_var = Value("")
+    app.focus_summary_text = TextBuffer()
+    app._set_focus_preview_start_action = lambda _info: None
+    app._set_focus_progress_color = lambda: None
+    app._focus_profile_text = lambda *_args, **_kwargs: "Queued MP3"
+    app._set_text = lambda widget, value, **_kwargs: setattr(widget, "value", value)
+    app._render_focus_run_activity = lambda *_args: None
+    app._display_focus_record_thumbnail = lambda *_args: None
+    return app
+
+
 def test_worker_copy_with_same_run_id_resolves_to_active_authority(tmp_path: Path):
     active_job = make_job(tmp_path)
     worker_copy = replace(active_job, url="https://youtu.be/authority-id")
@@ -158,6 +178,35 @@ def test_queued_run_selection_resolves_only_the_matching_pending_job(tmp_path: P
 
     assert app._focus_selected_run_id == queued_job.run_id
     assert displayed == [(record, queued_job)]
+
+
+def test_queued_mp3_snapshot_renders_default_bitrate_without_crashing(tmp_path: Path):
+    app = make_queued_snapshot_app()
+    job = make_job(tmp_path, video_id="queued-mp3-default")
+    job.output_type = OutputType.MP3
+    job.mp3_settings = Mp3ExportSettings(bitrate_kbps=320)
+
+    app._display_focus_queued_job_snapshot({"run_id": job.run_id}, job)
+
+    assert "Audio quality   320 kbps" in app.focus_summary_text.value
+    assert "Sample rate     Preserve source" in app.focus_summary_text.value
+
+
+def test_queued_mp3_snapshot_formats_explicit_string_sample_rate(tmp_path: Path):
+    app = make_queued_snapshot_app()
+    job = make_job(tmp_path, video_id="queued-mp3-explicit")
+    job.output_type = OutputType.MP3
+    job.mp3_settings = Mp3ExportSettings(
+        bitrate_kbps=192,
+        sample_rate="48000",
+        channels="2",
+    )
+
+    app._display_focus_queued_job_snapshot({"run_id": job.run_id}, job)
+
+    assert "Audio quality   192 kbps" in app.focus_summary_text.value
+    assert "Sample rate     48 kHz" in app.focus_summary_text.value
+    assert "Channels        2" in app.focus_summary_text.value
 
 
 def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: Path):
