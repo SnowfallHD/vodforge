@@ -3810,6 +3810,34 @@ class _ExpandedDownloadSource:
     cookie_source_loaded: bool = False
 
 
+@dataclass(frozen=True)
+class _DownloadItemContext:
+    entry: dict[str, Any]
+    index: int
+    total: int
+    video_url: str
+    label: str
+
+
+@dataclass(frozen=True)
+class _AnalyzedDownloadItem:
+    preflight_info: dict[str, Any]
+    display_info: dict[str, Any]
+    plan: ExportPlan | AudioExportPlan
+    session_cookies: tuple[Any, ...]
+    cookie_source_loaded: bool
+
+
+def _download_entry_url(entry: dict[str, Any], fallback_url: str) -> str:
+    url = str(entry.get("webpage_url") or entry.get("url") or "").strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    video_id = str(entry.get("id") or url).strip()
+    if video_id:
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return fallback_url
+
+
 def _normalize_download_source_result(
     extracted_info: dict[str, Any] | None,
     source_url: str,
@@ -5274,6 +5302,97 @@ def _build_playlist_detection_options(
     )
     apply_youtube_runtime_options(options, deno_path=deno_path)
     return options
+
+
+def _build_item_preflight_options(
+    job: DownloadJob,
+    *,
+    cookie_source_loaded: bool,
+    ffmpeg: str | None,
+    deno_path: str | None,
+) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "extract_flat": False,
+        "logger": QueueLogger(None, diagnostic_prefix="preflight yt-dlp"),
+        "socket_timeout": 30,
+        "ignore_no_formats_error": True,
+    }
+    apply_ytdlp_network_retry_policy(options, source_analysis=True)
+    apply_ytdlp_cookie_options(
+        options,
+        use_cookies=job.use_cookies,
+        cookie_file=job.cookie_file,
+        cookie_browser=job.cookie_browser,
+    )
+    if cookie_source_loaded:
+        options.pop("cookiefile", None)
+        options.pop("cookiesfrombrowser", None)
+    if ffmpeg:
+        options["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
+    apply_youtube_runtime_options(options, deno_path=deno_path)
+    return options
+
+
+def _build_download_item_plan(
+    job: DownloadJob,
+    preflight_info: dict[str, Any],
+    *,
+    max_height: int,
+) -> ExportPlan | AudioExportPlan:
+    if job.output_type == OutputType.MP3:
+        return build_mp3_export_plan(preflight_info, job.mp3_settings)
+    plan = build_auto_export_plan(
+        preflight_info,
+        mode=job.export_mode,
+        max_height=max_height,
+    )
+    if job.export_mode == ExportMode.MANUAL_OVERRIDE:
+        return apply_manual_export_settings(plan, job.manual_settings)
+    return plan
+
+
+def _download_item_plan_log_lines(
+    job: DownloadJob,
+    label: str,
+    plan: ExportPlan | AudioExportPlan,
+) -> list[str]:
+    lines: list[str] = []
+    if job.export_mode == ExportMode.MANUAL_OVERRIDE and isinstance(plan, ExportPlan):
+        lines.append(
+            f"{label}: Manual Override settings {plan.video_bitrate_kbps} kbps video + "
+            f"{plan.audio_bitrate_kbps} kbps audio, {plan.audio_sample_rate} Hz, "
+            f"{plan.audio_channels} channel(s), x264 preset {plan.x264_preset}."
+        )
+    lines.append(f"{label}: selected format {plan.format_selector}")
+    if isinstance(plan, AudioExportPlan):
+        lines.extend(
+            (
+                f"{label}: selected highest-quality audio source {plan.audio_codec} "
+                f"~{plan.source_audio_kbps:.0f} kbps.",
+                f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art "
+                f"{'embedded' if plan.embed_cover_art else 'not embedded'}.",
+            )
+        )
+    else:
+        target_label = (
+            "Manual target"
+            if job.export_mode == ExportMode.MANUAL_OVERRIDE
+            else "Auto CBR target"
+        )
+        lines.extend(
+            (
+                f"{label}: selected video {plan.output_height}p {plan.video_codec} "
+                f"~{plan.source_video_kbps:.0f} kbps; selected audio {plan.audio_codec} "
+                f"~{plan.source_audio_kbps:.0f} kbps.",
+                f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + "
+                f"{plan.audio_bitrate_kbps} kbps audio.",
+            )
+        )
+    lines.extend(f"WARNING: {label}: {warning}" for warning in plan.warnings)
+    return lines
 
 
 class DownloaderApp(UiEventHandlersMixin, tk.Tk):
@@ -11508,6 +11627,103 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             cookie_source_loaded=job.use_cookies,
         )
 
+    def _analyze_download_item(
+        self,
+        job: DownloadJob,
+        ytdlp_module: Any,
+        provider_network: ProviderNetworkCoordinator,
+        item: _DownloadItemContext,
+        playlist_info: dict[str, Any],
+        max_height: int,
+        session_cookies: tuple[Any, ...],
+        cookie_source_loaded: bool,
+        *,
+        control_check: Callable[[], None],
+        blocking_step_cancelled: Callable[[], bool],
+        progress_callback: Callable[[float], None],
+    ) -> _AnalyzedDownloadItem:
+        """Analyze and plan one item while the caller owns the provider lease."""
+        self.events.put(("status", f"{item.label} — analyzing source formats"))
+        self._emit_job_log(job, f"{item.label}: URL {item.video_url}")
+        progress_callback(0.0)
+
+        ffmpeg = self._find_ffmpeg()
+        deno = self._find_deno()
+        options = _build_item_preflight_options(
+            job,
+            cookie_source_loaded=cookie_source_loaded,
+            ffmpeg=ffmpeg,
+            deno_path=deno,
+        )
+        write_diagnostic(f"{item.label} preflight runtime path: ffmpeg={ffmpeg}")
+        write_diagnostic(f"{item.label} preflight runtime path: deno={deno}")
+        write_diagnostic(
+            f"{item.label} preflight Deno/bundled-EJS enabled"
+            if deno
+            else f"{item.label} preflight Deno/EJS disabled: no deno runtime found"
+        )
+        log_options(f"{item.label} preflight", options)
+
+        analysis_step = partial(
+            _analyze_source_formats_step,
+            ytdlp_module,
+            dict(options),
+            tuple(session_cookies),
+            item.video_url,
+            item.label,
+            control_check=control_check,
+            emit_log=partial(self._emit_job_log, job),
+        )
+        preflight_info, updated_session_cookies = run_cancellable_blocking_step(
+            partial(provider_network.run_primary, analysis_step),
+            blocking_step_cancelled,
+            timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+            poll_seconds=ANALYSIS_POLL_SECONDS,
+            label=f"{item.label} source analysis",
+            on_wait=lambda elapsed: (
+                write_diagnostic(
+                    f"{item.label} analysis still running after {elapsed:.0f}s"
+                ),
+                self.events.put(
+                    (
+                        "status",
+                        f"{item.label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available.",
+                    )
+                ),
+            ),
+        )
+        if not isinstance(preflight_info, dict):
+            raise RuntimeError(
+                f"{item.label}: YouTube source analysis did not return metadata"
+            )
+        preflight_info = mark_metadata_output_type(
+            apply_playlist_context(
+                preflight_info,
+                item.entry,
+                playlist_info,
+                job.url,
+                item.index,
+            ),
+            job.output_type,
+        )
+        plan = _build_download_item_plan(
+            job,
+            preflight_info,
+            max_height=max_height,
+        )
+        display_info = build_encoding_summary_metadata(preflight_info, plan)
+        self.events.put(("job_metadata", {"job": job, "info": display_info}))
+        for line in _download_item_plan_log_lines(job, item.label, plan):
+            self._emit_job_log(job, line)
+        progress_callback(1.0)
+        return _AnalyzedDownloadItem(
+            preflight_info=preflight_info,
+            display_info=display_info,
+            plan=plan,
+            session_cookies=updated_session_cookies,
+            cookie_source_loaded=job.use_cookies,
+        )
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -11518,15 +11734,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ytdlp_module = load_yt_dlp()
         if ytdlp_module is None:
             raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
-
-        def video_url_from_entry(entry: dict[str, Any]) -> str:
-            url = str(entry.get("webpage_url") or entry.get("url") or "").strip()
-            if url.startswith("http://") or url.startswith("https://"):
-                return url
-            video_id = str(entry.get("id") or url).strip()
-            if video_id:
-                return f"https://www.youtube.com/watch?v={video_id}"
-            return job.url
 
         def global_progress(video_index: int, total_videos: int, stage_start: float, stage_weight: float, stage_fraction: float = 0.0) -> float:
             total_videos = max(total_videos, 1)
@@ -11633,91 +11840,43 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     current_video_info = None
                     current_plan = None
                     custom_cover_for_cache: Path | None = None
-                    video_url = video_url_from_entry(entry)
+                    video_url = _download_entry_url(entry, job.url)
                     label = f"Video {video_index} of {total_videos}"
+                    item = _DownloadItemContext(
+                        entry=entry,
+                        index=video_index,
+                        total=total_videos,
+                        video_url=video_url,
+                        label=label,
+                    )
                     raise_for_control_requests()
-                    self.events.put(("status", f"{label} — analyzing source formats"))
-                    self._emit_job_log(job, f"{label}: URL {video_url}")
-                    put_stage_progress(video_index, total_videos, 0.0, 0.10, 0.0)
                     provider_network.begin_primary(raise_for_control_requests)
                     primary_intent_active = True
-
-                    preflight_opts: dict[str, Any] = {
-                        "quiet": True,
-                        "skip_download": True,
-                        "noplaylist": True,
-                        "extract_flat": False,
-                        "logger": QueueLogger(None, diagnostic_prefix="preflight yt-dlp"),
-                        "socket_timeout": 30,
-                        "ignore_no_formats_error": True,
-                    }
-                    apply_ytdlp_network_retry_policy(preflight_opts, source_analysis=True)
-                    apply_ytdlp_cookie_options(preflight_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
-                    if cookie_source_loaded:
-                        preflight_opts.pop("cookiefile", None)
-                        preflight_opts.pop("cookiesfrombrowser", None)
-                    ffmpeg_for_preflight = self._find_ffmpeg()
-                    if ffmpeg_for_preflight:
-                        preflight_opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg_for_preflight)
-                    deno = self._find_deno()
-                    write_diagnostic(f"{label} preflight runtime path: ffmpeg={ffmpeg_for_preflight}")
-                    write_diagnostic(f"{label} preflight runtime path: deno={deno}")
-                    apply_youtube_runtime_options(preflight_opts, deno_path=deno)
-                    if deno:
-                        write_diagnostic(f"{label} preflight Deno/bundled-EJS enabled")
-                    else:
-                        write_diagnostic(f"{label} preflight Deno/EJS disabled: no deno runtime found")
-                    log_options(f"{label} preflight", preflight_opts)
-
-                    analysis_step = partial(
-                        _analyze_source_formats_step,
+                    analyzed_item = self._analyze_download_item(
+                        job,
                         ytdlp_module,
-                        dict(preflight_opts),
-                        tuple(job_session_cookies),
-                        video_url,
-                        label,
+                        provider_network,
+                        item,
+                        playlist_info,
+                        max_height,
+                        job_session_cookies,
+                        cookie_source_loaded,
                         control_check=raise_for_control_requests,
-                        emit_log=partial(self._emit_job_log, job),
+                        blocking_step_cancelled=video_blocking_step_cancelled,
+                        progress_callback=lambda fraction: put_stage_progress(
+                            video_index,
+                            total_videos,
+                            0.0,
+                            0.10,
+                            fraction,
+                        ),
                     )
-
-                    preflight_result = run_cancellable_blocking_step(
-                        partial(provider_network.run_primary, analysis_step),
-                        video_blocking_step_cancelled,
-                        timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
-                        poll_seconds=ANALYSIS_POLL_SECONDS,
-                        label=f"{label} source analysis",
-                        on_wait=lambda elapsed, label=label: (write_diagnostic(f"{label} analysis still running after {elapsed:.0f}s"), self.events.put(("status", f"{label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available."))),
-                    )
-                    preflight_info, preflight_session_cookies = preflight_result
-                    job_session_cookies = preflight_session_cookies
-                    cookie_source_loaded = job.use_cookies
-                    if not isinstance(preflight_info, dict):
-                        raise RuntimeError(f"{label}: YouTube source analysis did not return metadata")
-                    preflight_info = mark_metadata_output_type(
-                        apply_playlist_context(preflight_info, entry, playlist_info, job.url, video_index),
-                        job.output_type,
-                    )
-                    if job.output_type == OutputType.MP3:
-                        plan: ExportPlan | AudioExportPlan = build_mp3_export_plan(preflight_info, job.mp3_settings)
-                    else:
-                        plan = build_auto_export_plan(preflight_info, mode=job.export_mode, max_height=max_height)
-                        if job.export_mode == ExportMode.MANUAL_OVERRIDE:
-                            plan = apply_manual_export_settings(plan, job.manual_settings)
-                            self._emit_job_log(job, f"{label}: Manual Override settings {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio, {plan.audio_sample_rate} Hz, {plan.audio_channels} channel(s), x264 preset {plan.x264_preset}.")
-                    current_plan = plan
-                    current_video_info = build_encoding_summary_metadata(preflight_info, plan)
-                    self.events.put(("job_metadata", {"job": job, "info": current_video_info}))
-                    self._emit_job_log(job, f"{label}: selected format {plan.format_selector}")
-                    if isinstance(plan, AudioExportPlan):
-                        self._emit_job_log(job, f"{label}: selected highest-quality audio source {plan.audio_codec} ~{plan.source_audio_kbps:.0f} kbps.")
-                        self._emit_job_log(job, f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art {'embedded' if plan.embed_cover_art else 'not embedded'}.")
-                    else:
-                        self._emit_job_log(job, f"{label}: selected video {plan.output_height}p {plan.video_codec} ~{plan.source_video_kbps:.0f} kbps; selected audio {plan.audio_codec} ~{plan.source_audio_kbps:.0f} kbps.")
-                        target_label = "Manual target" if job.export_mode == ExportMode.MANUAL_OVERRIDE else "Auto CBR target"
-                        self._emit_job_log(job, f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + {plan.audio_bitrate_kbps} kbps audio.")
-                    for warning in plan.warnings:
-                        self._emit_job_log(job, f"WARNING: {label}: {warning}")
-                    put_stage_progress(video_index, total_videos, 0.0, 0.10, 1.0)
+                    preflight_info = analyzed_item.preflight_info
+                    current_video_info = analyzed_item.display_info
+                    current_plan = analyzed_item.plan
+                    plan = analyzed_item.plan
+                    job_session_cookies = analyzed_item.session_cookies
+                    cookie_source_loaded = analyzed_item.cookie_source_loaded
 
                     existing_reuse = self._try_reuse_existing_output(
                         job,
@@ -11768,7 +11927,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             ytdlp_module,
                             ydl_opts,
                             preflight_info,
-                            tuple(preflight_session_cookies),
+                            tuple(job_session_cookies),
                             control_check=raise_for_control_requests,
                         )
                         info, job_session_cookies = provider_network.run_primary(
