@@ -9873,13 +9873,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.events.put(("metadata_fetch_done", None))
 
     def _enqueue_queue_preview(self, job: DownloadJob) -> None:
-        requests = getattr(self, "_queued_preview_requests", None)
+        request_queue = getattr(self, "_queued_preview_requests", None)
         worker = getattr(self, "_queued_preview_thread", None)
-        if requests is None:
-            requests = queue.Queue(maxsize=MAX_QUEUED_PREVIEW_REQUESTS)
-            self._queued_preview_requests = requests
+        if request_queue is None:
+            request_queue = queue.Queue(maxsize=MAX_QUEUED_PREVIEW_REQUESTS)
+            self._queued_preview_requests = request_queue
         try:
-            requests.put_nowait(job)
+            request_queue.put_nowait(job)
         except queue.Full:
             write_diagnostic(
                 f"queued preview skipped: request cap {MAX_QUEUED_PREVIEW_REQUESTS} reached; media run remains queued"
@@ -9891,14 +9891,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             worker.start()
 
     def _queued_preview_loop(self) -> None:
-        requests: queue.Queue[DownloadJob] = self._queued_preview_requests
+        request_queue: queue.Queue[DownloadJob] = self._queued_preview_requests
         while True:
-            job = requests.get()
+            job = request_queue.get()
             try:
                 if any(item is job for item in self.pending_jobs):
                     self._queue_preview_worker(job)
             finally:
-                requests.task_done()
+                request_queue.task_done()
 
     def _queue_preview_worker(self, job: DownloadJob) -> None:
         """Fetch one queued run's display metadata without downloading its media."""
@@ -10813,23 +10813,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         request_target = target
         request_id = self._invalidate_thumbnail_request(request_target)
-        requests = getattr(self, "_thumbnail_preview_requests", None)
+        request_queue = getattr(self, "_thumbnail_preview_requests", None)
         worker = getattr(self, "_thumbnail_preview_thread", None)
-        if requests is None:
-            requests = queue.Queue(maxsize=2)
-            self._thumbnail_preview_requests = requests
+        if request_queue is None:
+            request_queue = queue.Queue(maxsize=2)
+            self._thumbnail_preview_requests = request_queue
         retained: list[tuple[int, str, str, str, dict[str, Any] | None]] = []
         while True:
             try:
-                pending = requests.get_nowait()
-                requests.task_done()
+                pending = request_queue.get_nowait()
+                request_queue.task_done()
             except queue.Empty:
                 break
             if len(pending) >= 4 and pending[2] != request_target:
                 retained.append(pending)
         for pending in retained[-1:]:
-            requests.put_nowait(pending)
-        requests.put_nowait((request_id, url, request_target, owner_run_id, dict(cache_info) if cache_info else None))
+            request_queue.put_nowait(pending)
+        request_queue.put_nowait((request_id, url, request_target, owner_run_id, dict(cache_info) if cache_info else None))
         if worker is None or not worker.is_alive():
             worker = threading.Thread(target=self._thumbnail_preview_loop, daemon=True)
             self._thumbnail_preview_thread = worker
@@ -10838,9 +10838,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             target_label.config(text="Loading thumbnail…")
 
     def _thumbnail_preview_loop(self) -> None:
-        requests: queue.Queue[tuple[int, str, str, str, dict[str, Any] | None]] = self._thumbnail_preview_requests
+        request_queue: queue.Queue[tuple[int, str, str, str, dict[str, Any] | None]] = self._thumbnail_preview_requests
         while True:
-            request = requests.get()
+            request = request_queue.get()
             request_id, url, target, owner_run_id = request[:4]
             cache_info = request[4] if len(request) > 4 else None
             try:
@@ -10851,7 +10851,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     {"id": request_id, "url": url, "error": str(exc), "target": target, "run_id": owner_run_id},
                 ))
             finally:
-                requests.task_done()
+                request_queue.task_done()
 
     def _fetch_thumbnail_preview_request(
         self,

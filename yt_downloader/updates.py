@@ -7,7 +7,8 @@ import platform
 import plistlib
 import re
 import shutil
-import subprocess
+# Update verification uses fixed executables or injected argv-only runners, never a shell.
+import subprocess  # nosec B404
 import sys
 import textwrap
 import urllib.error
@@ -144,7 +145,8 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # LATEST_RELEASE_API is a fixed HTTPS endpoint owned by this repository.
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
@@ -193,7 +195,8 @@ def parse_sha256sums(text: str) -> dict[str, str]:
 def _fetch_small_text(url: str, *, timeout: float) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # The only caller passes an exact URL returned by _trusted_github_download.
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except (urllib.error.HTTPError, urllib.error.URLError) as exc:
         raise RuntimeError("VODForge could not download the release checksums.") from exc
@@ -253,7 +256,8 @@ def download_verified_update(
     downloaded = 0
     request = urllib.request.Request(asset_url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"})
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response, temporary.open("wb") as output:
+        # asset_url was exact-canonicalized immediately above, before any network access.
+        with urllib.request.urlopen(request, timeout=timeout) as response, temporary.open("wb") as output:  # nosec B310
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
