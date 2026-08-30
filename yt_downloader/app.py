@@ -94,7 +94,25 @@ from .output_validation import (
     output_artifact_plan_mismatches as _output_artifact_plan_mismatches,
 )
 from .output_validation import validate_output_artifact as _validate_output_artifact
-from .platform_services import open_path as open_system_path
+from .platform_services import (
+    RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
+    choose_output_directory,
+    choose_windows_output_directory,
+    configure_windows_app_identity,
+    diagnostics_dir,
+    find_runtime_executable,
+    focus_view_shortcut_bindings,
+    hidden_window_subprocess_kwargs,
+    is_macos,
+    is_windows,
+    open_path as open_system_path,
+    output_directory_failure_guidance,
+    platform_font_families,
+    probe_runtime_version,
+    runtime_executable_candidates,
+    runtime_version_command,
+    runtime_window_icon_asset,
+)
 from .private_files import open_private_text_file, write_private_bytes
 from .safe_output import (
     commit_file_beneath,
@@ -200,50 +218,10 @@ BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
 AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
 AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
-RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS = 60
 THUMBNAIL_CACHE_MAX_ITEMS = 1000
 CUSTOM_COVER_MAX_INPUT_BYTES = 50 * 1024 * 1024
 CUSTOM_COVER_MAX_PIXELS = 50_000_000
 CUSTOM_COVER_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
-
-
-def diagnostics_dir(
-    *,
-    platform_name: str | None = None,
-    home: Path | None = None,
-    local_app_data: str | None = None,
-) -> Path:
-    """Return the platform's conventional per-user diagnostics directory."""
-    platform_name = sys.platform if platform_name is None else platform_name
-    home = Path.home() if home is None else home
-    if platform_name.startswith("win"):
-        base = local_app_data if local_app_data is not None else os.environ.get("LOCALAPPDATA")
-        if base:
-            return Path(base) / APP_NAME / "logs"
-    if platform_name == "darwin":
-        return home / "Library" / "Logs" / APP_NAME
-    return home / ".vodforge" / "logs"
-
-
-def platform_font_families(platform_name: str | None = None) -> tuple[str, str]:
-    platform_name = sys.platform if platform_name is None else platform_name
-    if platform_name == "darwin":
-        return "Helvetica Neue", "Menlo"
-    if platform_name.startswith("win"):
-        return "Segoe UI", "Cascadia Mono"
-    return "TkDefaultFont", "TkFixedFont"
-
-
-def focus_view_shortcut_bindings(
-    platform_name: str | None = None,
-) -> tuple[tuple[str, str], ...]:
-    """Return stable real-user shortcuts for the three primary app views."""
-    platform_name = sys.platform if platform_name is None else platform_name
-    modifier = "Command" if platform_name == "darwin" else "Control"
-    return tuple(
-        (f"<{modifier}-Key-{index}>", view_name)
-        for index, view_name in enumerate(("forge", "library", "activity"), start=1)
-    )
 
 
 def bounded_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
@@ -263,10 +241,9 @@ def initial_window_geometry(
     platform_name: str | None = None,
 ) -> str:
     """Place the first window fully on-screen instead of accepting OS cascade state."""
-    platform_name = sys.platform if platform_name is None else platform_name
     width, height = bounded_window_size(screen_width, screen_height)
     x = max(0, (int(screen_width) - width) // 2)
-    if platform_name == "darwin":
+    if is_macos(platform_name):
         # Keep a stable menu-bar gap and leave the existing height allowance
         # below the window for the Dock, even when macOS remembers a low
         # cascade position from a prior process.
@@ -766,84 +743,6 @@ def focus_icon_color_variant(color: str) -> str | None:
     }.get(str(color).lower())
 
 
-def runtime_window_icon_asset(platform_name: str | None = None) -> str | None:
-    """Return the runtime window icon, leaving macOS to the bundle ICNS."""
-    platform_name = sys.platform if platform_name is None else platform_name
-    if platform_name.startswith("win"):
-        return "VODForge.ico"
-    if platform_name == "darwin":
-        return None
-    return "VODForge.png"
-
-
-def configure_windows_app_identity(platform_name: str | None = None) -> bool:
-    """Give Windows a stable taskbar identity instead of a Python/Tk fallback."""
-    platform_name = sys.platform if platform_name is None else platform_name
-    if not platform_name.startswith("win"):
-        return False
-    import ctypes
-
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("SnowfallHD.VODForge")  # type: ignore[attr-defined]
-    return True
-
-
-def runtime_executable_candidates(
-    tool_name: str,
-    *,
-    platform_name: str | None = None,
-    frozen: bool | None = None,
-    executable: Path | None = None,
-    meipass: Path | None = None,
-    repo_root: Path | None = None,
-) -> list[Path]:
-    """Return deterministic runtime locations, including Finder-safe macOS paths."""
-    platform_name = sys.platform if platform_name is None else platform_name
-    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
-    executable = Path(sys.executable) if executable is None else executable
-    raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
-    meipass = Path(raw_meipass) if raw_meipass else None
-    repo_root = Path(__file__).resolve().parents[1] if repo_root is None else repo_root
-    names = [f"{tool_name}.exe", tool_name] if platform_name.startswith("win") else [tool_name, f"{tool_name}.exe"]
-
-    directories: list[Path] = []
-    if frozen:
-        # Keep the caller's path semantics intact. Resolving a simulated macOS
-        # bundle path on a Windows test host incorrectly prefixes its drive.
-        directories.append(executable.parent)
-        if meipass is not None:
-            directories.append(meipass)
-    directories.append(repo_root)
-    if tool_name in {"ffmpeg", "ffprobe"}:
-        directories.append(repo_root / "vendor" / "ffmpeg" / "bin")
-    elif tool_name == "deno":
-        directories.append(repo_root / "vendor" / "deno")
-    if platform_name == "darwin":
-        # Finder-launched .apps do not reliably inherit a shell's Homebrew PATH.
-        directories.extend((Path("/opt/homebrew/bin"), Path("/usr/local/bin")))
-
-    candidates: list[Path] = []
-    seen: set[Path] = set()
-    override = os.environ.get(f"VODFORGE_{tool_name.upper()}")
-    if override:
-        override_path = Path(override).expanduser()
-        candidates.append(override_path)
-        seen.add(override_path)
-    for directory in directories:
-        for name in names:
-            candidate = directory / name
-            if candidate not in seen:
-                candidates.append(candidate)
-                seen.add(candidate)
-    return candidates
-
-
-def find_runtime_executable(tool_name: str) -> str | None:
-    for candidate in runtime_executable_candidates(tool_name):
-        if candidate.is_file():
-            return str(candidate)
-    return shutil.which(tool_name)
-
-
 def ytdlp_ffmpeg_location(ffmpeg: str) -> str:
     """Point yt-dlp at an FFmpeg directory when the executable has a standard name."""
     normalized = ffmpeg.replace("\\", "/")
@@ -854,83 +753,6 @@ def ytdlp_ffmpeg_location(ffmpeg: str) -> str:
     if "\\" in ffmpeg and "/" not in ffmpeg:
         return parent.replace("/", "\\")
     return parent
-
-
-def choose_windows_output_directory(
-    initial_dir: str,
-    *,
-    runner: Any = subprocess.run,
-) -> str | None:
-    """Run the Windows shell folder picker out of process so shell failures cannot close VODForge."""
-    command = (
-        "$utf8=New-Object System.Text.UTF8Encoding($false);"
-        "[Console]::OutputEncoding=$utf8;$OutputEncoding=$utf8;"
-        "Add-Type -AssemblyName System.Windows.Forms;"
-        "$dialog=New-Object System.Windows.Forms.FolderBrowserDialog;"
-        "$dialog.Description='Choose where VODForge should save downloads.';"
-        "$dialog.ShowNewFolderButton=$true;"
-        "$initial=$env:VODFORGE_INITIAL_OUTPUT_DIR;"
-        "if($initial -and (Test-Path -LiteralPath $initial -PathType Container)){$dialog.SelectedPath=$initial};"
-        "if($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){"
-        "@{path=$dialog.SelectedPath} | ConvertTo-Json -Compress}"
-    )
-    environment = os.environ.copy()
-    environment["VODFORGE_INITIAL_OUTPUT_DIR"] = initial_dir
-    startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-    result = runner(
-        ["powershell.exe", "-NoProfile", "-STA", "-Command", command],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=environment,
-        startupinfo=startupinfo,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    if result.returncode:
-        detail = str(result.stderr or "").strip()
-        raise RuntimeError(detail or "Windows could not open the folder browser.")
-    output = str(result.stdout or "").strip()
-    if not output:
-        return None
-    try:
-        payload = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("Windows returned an unreadable folder selection.") from exc
-    selected = payload.get("path") if isinstance(payload, dict) else None
-    return str(selected) if selected else None
-
-
-def runtime_version_command(tool_name: str, executable: str) -> list[str]:
-    return [executable, "--version"] if tool_name == "deno" else [executable, "-version"]
-
-
-def probe_runtime_version(tool_name: str, executable: str) -> str:
-    """Execute a bundled runtime so smoke tests also catch missing dynamic libraries."""
-    startupinfo = None
-    creationflags = 0
-    if sys.platform.startswith("win"):
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    # The resolved local executable and one fixed version flag remain separate argv entries.
-    result = subprocess.run(  # nosec B603
-        runtime_version_command(tool_name, executable),
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        # Rosetta's first translation of the Intel Deno binary can take around
-        # 30 seconds on Apple silicon; keep the release gate bounded above it.
-        timeout=RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
-        startupinfo=startupinfo,
-        creationflags=creationflags,
-    )
-    return next((line.strip() for line in result.stdout.splitlines() if line.strip()), "version output unavailable")
 
 
 DIAGNOSTICS_LOG_PATH = diagnostics_dir() / "latest.log"
@@ -2886,12 +2708,7 @@ def run_ffprobe_json(
     timeout_seconds: float = FFPROBE_TIMEOUT_SECONDS,
     control_check: Any | None = None,
 ) -> dict[str, Any]:
-    startupinfo = None
-    creationflags = 0
-    if sys.platform.startswith("win"):
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process_options = hidden_window_subprocess_kwargs()
     command = [
         ffprobe,
         "-v", "error",
@@ -2911,8 +2728,7 @@ def run_ffprobe_json(
             encoding="utf-8",
             errors="replace",
             timeout=timeout_seconds,
-            startupinfo=startupinfo,
-            creationflags=creationflags,
+            **process_options,
         )
     else:
         result = run_cancellable_process_capture(
@@ -2920,8 +2736,7 @@ def run_ffprobe_json(
             timeout_seconds=timeout_seconds,
             control_check=control_check,
             check=True,
-            startupinfo=startupinfo,
-            creationflags=creationflags,
+            **process_options,
         )
     data = json.loads(result.stdout or "{}")
     if not isinstance(data, dict):
@@ -2931,7 +2746,7 @@ def run_ffprobe_json(
 
 def _ffprobe_for_ffmpeg(ffmpeg: str) -> str | None:
     ffmpeg_path = Path(ffmpeg)
-    sibling_names = ["ffprobe.exe", "ffprobe"] if sys.platform.startswith("win") else ["ffprobe", "ffprobe.exe"]
+    sibling_names = ["ffprobe.exe", "ffprobe"] if is_windows() else ["ffprobe", "ffprobe.exe"]
     for name in sibling_names:
         candidate = ffmpeg_path.with_name(name)
         if candidate.exists():
@@ -3282,12 +3097,7 @@ def transcode_to_vod_streaming_settings(
     if backup.exists():
         backup.unlink()
 
-    startupinfo = None
-    creationflags = 0
-    if sys.platform.startswith("win"):
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process_options = hidden_window_subprocess_kwargs()
 
     process: Any | None = None
     process_confirmed_exited = False
@@ -3314,8 +3124,7 @@ def transcode_to_vod_streaming_settings(
             text=True,
             encoding="utf-8",
             errors="replace",
-            startupinfo=startupinfo,
-            creationflags=creationflags,
+            **process_options,
         )
         register_active_child_process(process)
         output_lines: list[str] = []
@@ -3801,12 +3610,7 @@ def embed_custom_mp3_cover_art(
         "comment=Cover (front)",
         str(temporary),
     ]
-    startupinfo = None
-    creationflags = 0
-    if sys.platform.startswith("win"):
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    process_options = hidden_window_subprocess_kwargs()
     try:
         result = run_cancellable_process_capture(
             command,
@@ -3814,8 +3618,7 @@ def embed_custom_mp3_cover_art(
             control_check=control_check,
             check=False,
             stderr_to_stdout=True,
-            startupinfo=startupinfo,
-            creationflags=creationflags,
+            **process_options,
         )
         if result.returncode != 0 or not temporary.is_file() or temporary.stat().st_size <= 0:
             detail = next((line.strip() for line in reversed(result.stdout.splitlines()) if line.strip()), "FFmpeg did not produce an output file")
@@ -3975,9 +3778,8 @@ def cookie_inputs_for_source(
 
 
 def windows_chromium_cookie_warning(cookie_browser: str | None, platform: str | None = None) -> str | None:
-    platform = sys.platform if platform is None else platform
     browser = browser_cookie_value(cookie_browser)
-    if platform.startswith("win") and browser in WINDOWS_CHROMIUM_COOKIE_BROWSERS:
+    if is_windows(platform) and browser in WINDOWS_CHROMIUM_COOKIE_BROWSERS:
         return WINDOWS_CHROMIUM_COOKIE_MESSAGE
     return None
 
@@ -5755,11 +5557,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ttk.Checkbutton(parent, text="Embed metadata", variable=self.embed_metadata_var).grid(row=3, column=0, sticky="w", padx=10, pady=1)
             ttk.Checkbutton(parent, text="Save compact JSON", variable=self.write_info_json_var).grid(row=3, column=1, sticky="w", padx=10, pady=1)
             nvenc_label = "Use NVIDIA NVENC GPU encoding"
-            if sys.platform == "darwin":
+            if is_macos():
                 nvenc_label = "NVIDIA NVENC (Windows only)"
             nvenc_checkbox = ttk.Checkbutton(parent, text=nvenc_label, variable=self.use_nvenc_var)
             nvenc_checkbox.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=1)
-            if sys.platform == "darwin":
+            if is_macos():
                 self.use_nvenc_var.set(False)
                 nvenc_checkbox.state(["disabled"])
             manual_frame = build_manual_settings(parent)
@@ -6134,7 +5936,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return cache[key]
         color_variant = focus_icon_color_variant(color)
         vector_asset = bundled_asset_path(f"icons/lucide/{name}-{size}-{color_variant}.svg") if color_variant else None
-        if sys.platform == "darwin" and vector_asset is not None and vector_asset.is_file():
+        if is_macos() and vector_asset is not None and vector_asset.is_file():
             try:
                 image_types = self.tk.splitlist(self.tk.call("image", "types"))
                 if "nsimage" in image_types:
@@ -7531,13 +7333,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=6, column=0, sticky="w", pady=2)
         ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=6, column=1, sticky="w", pady=2)
         nvenc_label = "Use NVIDIA NVENC GPU encoding"
-        if sys.platform == "darwin":
+        if is_macos():
             nvenc_label = "NVIDIA NVENC (Windows only)"
             self.use_nvenc_var.set(False)
         nvenc = ttk.Checkbutton(mp4_output, text=nvenc_label, variable=self.use_nvenc_var)
         nvenc.grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
         ToolTip(nvenc, "Use a supported NVIDIA GPU for MP4 encoding on Windows. CPU encoding remains the compatibility default.")
-        if sys.platform == "darwin":
+        if is_macos():
             nvenc.state(["disabled"])
 
         mp3_output = ttk.Frame(root, style="FocusShell.TFrame")
@@ -9075,13 +8877,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             destination = application_data_dir() / "updates" / release.tag_name
             path = download_verified_update(release, destination)
             payload: Path | MacUpdatePlan = path
-            if sys.platform == "darwin":
+            if is_macos():
                 target_app = running_macos_app()
                 if target_app is None:
                     raise RuntimeError("VODForge must be running from the packaged app to update itself.")
                 cleanup_stale_macos_updates(destination)
                 payload = prepare_macos_update(path, target_app)
-            elif sys.platform.startswith("win"):
+            elif is_windows():
                 verify_windows_authenticode(path)
             self.events.put(("update_ready", payload))
         except Exception as exc:
@@ -9102,7 +8904,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.after(250, self.destroy)
             return
         path = update
-        if not sys.platform.startswith("win") or path.suffix.lower() != ".exe":
+        if not is_windows() or path.suffix.lower() != ".exe":
             self.status_var.set(f"Verified update downloaded: {path.name}")
             self._open_path(path.parent)
             return
@@ -9301,21 +9103,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _browse_output(self) -> None:
         initial_dir = self.output_var.get() or str(Path.home())
         try:
-            if sys.platform.startswith("win"):
-                folder = choose_windows_output_directory(initial_dir)
-            else:
-                folder = filedialog.askdirectory(initialdir=initial_dir, mustexist=True)
+            folder = choose_output_directory(
+                initial_dir,
+                standard_picker=lambda directory: filedialog.askdirectory(
+                    initialdir=directory,
+                    mustexist=True,
+                ),
+            )
         except (OSError, RuntimeError, tk.TclError) as exc:
             self._append_log(f"Output folder browser failed: {exc}")
-            guidance = (
-                "Windows could not browse that location. VODForge stayed open.\n\n"
-                "You can paste a mapped-drive or \\\\server\\share path directly into Output folder."
-                if sys.platform.startswith("win")
-                else "VODForge could not browse that location. You can type or paste the folder path directly."
-            )
             messagebox.showerror(
                 APP_NAME,
-                f"{guidance}\n\nDetails: {exc}",
+                f"{output_directory_failure_guidance()}\n\nDetails: {exc}",
             )
             return
         if folder:
@@ -10352,7 +10151,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _create_focus_native_image(self, path: Path, size: tuple[int, int], *, radius: int = 0) -> str | None:
         """Use AppKit-backed NSImage drawing when Tk exposes it on macOS."""
-        if sys.platform != "darwin" or not path.is_file():
+        if not is_macos() or not path.is_file():
             return None
         try:
             image_types = self.tk.splitlist(self.tk.call("image", "types"))

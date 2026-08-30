@@ -5,8 +5,61 @@ from pathlib import Path
 import pytest
 
 import yt_downloader.app as app_module
+import yt_downloader.platform_services as platform_module
 from yt_downloader.app import DownloaderApp
-from yt_downloader.platform_services import open_path
+from yt_downloader.platform_services import (
+    choose_output_directory,
+    hidden_window_subprocess_kwargs,
+    open_path,
+    output_directory_failure_guidance,
+)
+
+
+def test_hidden_window_subprocess_policy_is_empty_off_windows():
+    assert hidden_window_subprocess_kwargs("darwin") == {
+        "startupinfo": None,
+        "creationflags": 0,
+    }
+
+
+def test_hidden_window_subprocess_policy_is_shared_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class StartupInfo:
+        dwFlags = 4
+
+    monkeypatch.setattr(platform_module.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(platform_module.subprocess, "STARTF_USESHOWWINDOW", 8, raising=False)
+    monkeypatch.setattr(platform_module.subprocess, "CREATE_NO_WINDOW", 16, raising=False)
+
+    options = hidden_window_subprocess_kwargs("win32")
+
+    assert isinstance(options["startupinfo"], StartupInfo)
+    assert options["startupinfo"].dwFlags == 12
+    assert options["creationflags"] == 16
+
+
+def test_output_picker_routes_to_one_platform_owner():
+    calls: list[tuple[str, str]] = []
+
+    assert choose_output_directory(
+        "/initial",
+        platform_name="linux",
+        standard_picker=lambda path: calls.append(("standard", path)) or "/standard",
+        windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
+    ) == "/standard"
+    assert choose_output_directory(
+        "/initial",
+        platform_name="win32",
+        standard_picker=lambda path: calls.append(("standard", path)) or "/standard",
+        windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
+    ) == "/windows"
+    assert calls == [("standard", "/initial"), ("windows", "/initial")]
+
+
+def test_output_picker_failure_guidance_keeps_windows_network_path_help():
+    assert "\\\\server\\share" in output_directory_failure_guidance("win32")
+    assert "type or paste" in output_directory_failure_guidance("linux")
 
 
 def test_macos_folder_open_uses_the_absolute_system_executable(tmp_path: Path):
