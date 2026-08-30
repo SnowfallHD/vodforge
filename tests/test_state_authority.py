@@ -25,6 +25,7 @@ from yt_downloader.app import (
     RoundedIconButton,
     focus_view_shortcut_bindings,
 )
+from yt_downloader.focus_settings import FocusSettingsDialog
 from yt_downloader.history import history_identity, upsert_history
 
 
@@ -1056,7 +1057,7 @@ def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surfa
 
 
 def test_all_resizable_popouts_enforce_content_appropriate_minimums():
-    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    settings_source = inspect.getsource(FocusSettingsDialog.__init__)
     output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
@@ -1078,24 +1079,121 @@ def test_ui_builder_has_one_focus_ui_authority(monkeypatch):
 
 
 def test_focus_settings_keep_manual_controls_in_the_mp4_flow_and_release_combo_selection():
-    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    settings_source = inspect.getsource(FocusSettingsDialog._build_mp4_section)
+    mode_source = inspect.getsource(FocusSettingsDialog._build_mp4_mode_controls)
+    manual_source = inspect.getsource(FocusSettingsDialog._build_manual_controls)
+    flags_source = inspect.getsource(FocusSettingsDialog._build_mp4_output_flags)
+    combo_source = inspect.getsource(FocusSettingsDialog._bind_readonly_combo)
+    show_source = inspect.getsource(DownloaderApp._show_focus_settings)
 
-    description_index = settings_source.index("textvariable=self.export_mode_description_var")
-    manual_index = settings_source.index('manual = ttk.Frame(mp4_output, style="FocusShell.TFrame")')
-    checkboxes_index = settings_source.index('text="Save thumbnail"')
+    description_index = settings_source.index("self._build_mp4_mode_controls")
+    manual_index = settings_source.index("self._build_manual_controls")
+    checkboxes_index = settings_source.index("self._build_mp4_output_flags")
 
     assert description_index < manual_index < checkboxes_index
-    assert "manual = ttk.Frame(root" not in settings_source
-    assert 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"' in settings_source
-    assert '"Video bitrate (kbps)"' in settings_source
-    assert '"Audio bitrate (kbps)"' in settings_source
-    assert '("Audio codec", self.manual_audio_codec_var, [codec.value for codec in ManualAudioCodec])' in settings_source
-    assert '"Sample rate"' in settings_source
-    assert '"Channels"' in settings_source
-    assert '"Encoding speed"' in settings_source
-    assert "bind_readonly_combo(export_combo, self._refresh_manual_settings_visibility)" in settings_source
-    assert "combo.selection_clear()" in settings_source
-    assert "popup.focus_set()" in settings_source
+    assert "textvariable=self.bindings.export_mode_description" in mode_source
+    assert "manual = ttk.Frame(root" not in manual_source
+    assert 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"' in manual_source
+    assert '"Video bitrate (kbps)"' in manual_source
+    assert '"Audio bitrate (kbps)"' in manual_source
+    assert '"Audio codec",' in manual_source
+    assert "bindings.manual_audio_codec" in manual_source
+    assert "self.options.manual_audio_codecs" in manual_source
+    assert '"Sample rate"' in manual_source
+    assert '"Channels"' in manual_source
+    assert '"Encoding speed"' in manual_source
+    assert 'text="Save thumbnail"' in flags_source
+    assert "self.actions.refresh_manual_visibility" in mode_source
+    assert "combo.selection_clear()" in combo_source
+    assert "self.popup.focus_set()" in combo_source
+    assert "self.use_nvenc_var.set(False)" in show_source
+    assert 'nvenc.state(["disabled"])' in flags_source
+
+
+def test_focus_settings_dialog_owns_conditional_widget_visibility():
+    class Frame:
+        def __init__(self):
+            self.visible = True
+
+        def winfo_exists(self):
+            return True
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+    dialog = FocusSettingsDialog.__new__(FocusSettingsDialog)
+    dialog.mp4_frame = Frame()
+    dialog.mp3_frame = Frame()
+    dialog.manual_frame = Frame()
+    dialog.cookie_file_frame = Frame()
+    dialog.cookie_browser_frame = Frame()
+    dialog.mp3_cover_file_frame = Frame()
+
+    dialog.refresh_output_sections(OutputType.MP3)
+    dialog.refresh_manual_settings(False)
+    dialog.refresh_cookie_source(app_module.CookieSource.BROWSER)
+    dialog.refresh_cover_art_mode("No Art")
+
+    assert dialog.mp4_frame.visible is False
+    assert dialog.mp3_frame.visible is True
+    assert dialog.manual_frame.visible is False
+    assert dialog.cookie_file_frame.visible is False
+    assert dialog.cookie_browser_frame.visible is True
+    assert dialog.mp3_cover_file_frame.visible is False
+
+
+def test_focus_settings_preview_closes_only_after_success_and_close_is_idempotent():
+    class Popup:
+        def __init__(self):
+            self.destroy_count = 0
+
+        def destroy(self):
+            self.destroy_count += 1
+
+    preview_results = iter((False, True))
+    closed: list[str] = []
+    dialog = FocusSettingsDialog.__new__(FocusSettingsDialog)
+    dialog.popup = Popup()
+    dialog._closed = False
+    dialog.actions = SimpleNamespace(
+        preview_metadata=lambda: next(preview_results),
+        on_closed=lambda: closed.append("closed"),
+    )
+
+    dialog._preview_and_close()
+    assert dialog.popup.destroy_count == 0
+    assert closed == []
+
+    dialog._preview_and_close()
+    dialog.close()
+    assert dialog.popup.destroy_count == 1
+    assert closed == ["closed"]
+
+
+def test_focus_settings_duplicate_open_focuses_the_existing_window():
+    class Popup:
+        def __init__(self):
+            self.lift_count = 0
+            self.focus_count = 0
+
+        def winfo_exists(self):
+            return True
+
+        def lift(self):
+            self.lift_count += 1
+
+        def focus_force(self):
+            self.focus_count += 1
+
+    dialog = FocusSettingsDialog.__new__(FocusSettingsDialog)
+    dialog.popup = Popup()
+
+    assert dialog.focus_existing() is True
+    assert dialog.popup.lift_count == 1
+    assert dialog.popup.focus_count == 1
 
 
 def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
@@ -1889,13 +1987,12 @@ def test_terminal_outcomes_become_the_explicit_forge_focus(monkeypatch, tmp_path
 
 
 def test_metadata_preview_focuses_once_and_completion_respects_manual_selection():
-    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    settings_source = inspect.getsource(FocusSettingsDialog._preview_and_close)
     fetch_source = inspect.getsource(DownloaderApp._fetch_metadata)
     completion_source = inspect.getsource(DownloaderApp._display_metadata)
 
-    assert "def preview_and_close()" in settings_source
-    assert "if self._fetch_metadata():" in settings_source
-    assert settings_source.index("if self._fetch_metadata():") < settings_source.index("close_popup()", settings_source.index("def preview_and_close()"))
+    assert "if self.actions.preview_metadata():" in settings_source
+    assert settings_source.index("if self.actions.preview_metadata():") < settings_source.index("self.close()")
     assert '"kind": "preview_loading"' in fetch_source
     assert "self._focus_selected_run_id = preview_run_id" in fetch_source
     assert "self._display_metadata_preview_request(preview_record)" in fetch_source
@@ -1904,16 +2001,20 @@ def test_metadata_preview_focuses_once_and_completion_respects_manual_selection(
 
 
 def test_custom_popouts_are_positioned_before_they_become_visible():
-    settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
+    settings_init_source = inspect.getsource(FocusSettingsDialog.__init__)
+    settings_show_source = inspect.getsource(FocusSettingsDialog.show)
     output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
-    for source in (settings_source, output_source, selected_source):
+    assert "popup.withdraw()" in settings_init_source
+    assert "reveal_toplevel(" in settings_show_source
+    assert "self.owner.after_idle(self.actions.record_cloud_cta_seen)" in settings_show_source
+    for source in (output_source, selected_source):
         assert "popup.withdraw()" in source
         assert "reveal_toplevel(popup," in source
         assert source.index("popup.withdraw()") < source.index("reveal_toplevel(popup,")
 
-    assert "centered_toplevel_geometry(self, width, height)" in settings_source
+    assert "centered_toplevel_geometry(self.owner, width, height)" in settings_show_source
     assert "centered_toplevel_geometry(self, 560, 360)" in output_source
     assert "centered_toplevel_geometry(self, 680, 620)" in selected_source
 

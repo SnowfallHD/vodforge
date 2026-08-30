@@ -61,6 +61,12 @@ from .export_planning import (
 )
 from .export_planning import choose_best_audio_format as choose_best_audio_format
 from .export_planning import choose_best_video_format as choose_best_video_format
+from .focus_settings import (
+    FocusSettingsActions,
+    FocusSettingsBindings,
+    FocusSettingsDialog,
+    FocusSettingsOptions,
+)
 from .history import (
     HistoryError,
     application_data_dir,
@@ -134,6 +140,7 @@ from .ui_events import (
 )
 from .ui_layout import (
     bounded_window_size,
+    centered_toplevel_geometry,
     focus_hero_thumbnail_visible,
     focus_layout_mode,
     focus_library_horizontal_padding,
@@ -288,20 +295,6 @@ THUMBNAIL_CACHE_MAX_ITEMS = 1000
 CUSTOM_COVER_MAX_INPUT_BYTES = 50 * 1024 * 1024
 CUSTOM_COVER_MAX_PIXELS = 50_000_000
 CUSTOM_COVER_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
-
-
-def centered_toplevel_geometry(
-    owner: tk.Misc,
-    width: int,
-    height: int,
-    *,
-    minimum_x: int = 20,
-    minimum_y: int = 40,
-) -> str:
-    """Return owner-centered geometry without mapping a Toplevel early."""
-    x = max(minimum_x, owner.winfo_rootx() + (owner.winfo_width() - width) // 2)
-    y = max(minimum_y, owner.winfo_rooty() + (owner.winfo_height() - height) // 2)
-    return f"{width}x{height}+{x}+{y}"
 
 
 def bundled_asset_path(name: str, *, meipass: Path | None = None, repo_root: Path | None = None) -> Path:
@@ -3933,8 +3926,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.cookie_file_path: Path | None = None
         self.cookie_file_var = tk.StringVar(value="No cookies.txt selected")
         self.cookie_browser_var = tk.StringVar(value=COOKIE_BROWSER_PLACEHOLDER)
-        self._cookie_file_frames: list[ttk.Frame] = []
-        self._cookie_browser_frames: list[ttk.Frame] = []
         self.cookie_source_var.trace_add("write", lambda *_args: self._on_cookie_source_changed())
         self.embed_thumbnail_var = tk.BooleanVar(value=False)
         self.write_thumbnail_var = tk.BooleanVar(value=True)
@@ -4096,9 +4087,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _build_focus_ui(self) -> None:
         """Build the flat, command-first VODForge workspace."""
         self._compact_popup = None
-        self.manual_settings_frames = []
         self._focus_layout: str | None = None
-        self._focus_settings_window: tk.Toplevel | None = None
+        self._focus_settings_dialog: FocusSettingsDialog | None = None
         self._focus_active_override = False
         self._focus_selected_run_id: str | None = None
         self._metadata_preview_request: dict[str, Any] | None = None
@@ -4929,31 +4919,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.cookie_browser_var.get(),
         )
 
-    def _register_cookie_source_frames(self, file_frame: ttk.Frame, browser_frame: ttk.Frame) -> None:
-        self._cookie_file_frames.append(file_frame)
-        self._cookie_browser_frames.append(browser_frame)
-        self._on_cookie_source_changed()
-
     def _on_cookie_source_changed(self) -> None:
         source = self._selected_cookie_source()
-
-        def refresh(frames: list[ttk.Frame], visible: bool) -> list[ttk.Frame]:
-            live: list[ttk.Frame] = []
-            for frame in frames:
-                try:
-                    if not frame.winfo_exists():
-                        continue
-                    if visible:
-                        frame.grid()
-                    else:
-                        frame.grid_remove()
-                    live.append(frame)
-                except tk.TclError:
-                    continue
-            return live
-
-        self._cookie_file_frames = refresh(self._cookie_file_frames, source == CookieSource.FILE)
-        self._cookie_browser_frames = refresh(self._cookie_browser_frames, source == CookieSource.BROWSER)
+        dialog = self.__dict__.get("_focus_settings_dialog")
+        if dialog is not None:
+            dialog.refresh_cookie_source(source)
 
     def _on_browser_cookie_selected(self) -> None:
         source = CookieSource.BROWSER if browser_cookie_value(self.cookie_browser_var.get()) else CookieSource.PUBLIC
@@ -5033,15 +5003,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "Custom art": "Embeds your image and uses that same image for this run in Forge and Library.",
         }
         self.mp3_cover_art_description_var.set(descriptions[mode])
-        cover_file = getattr(self, "focus_mp3_cover_file_frame", None)
-        try:
-            if cover_file is not None and cover_file.winfo_exists():
-                if mode == "Custom art":
-                    cover_file.grid()
-                else:
-                    cover_file.grid_remove()
-        except tk.TclError:
-            pass
+        dialog = self.__dict__.get("_focus_settings_dialog")
+        if dialog is not None:
+            dialog.refresh_cover_art_mode(mode)
         self._sync_focus_settings_summary()
 
     def _focus_profile_text(
@@ -5117,21 +5081,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _refresh_output_specific_settings(self) -> None:
         output_type = self._selected_output_type()
-        mp4_frame = getattr(self, "focus_mp4_settings_frame", None)
-        mp3_frame = getattr(self, "focus_mp3_settings_frame", None)
-        try:
-            if mp4_frame is not None and mp4_frame.winfo_exists():
-                if output_type == OutputType.MP4:
-                    mp4_frame.grid()
-                else:
-                    mp4_frame.grid_remove()
-            if mp3_frame is not None and mp3_frame.winfo_exists():
-                if output_type == OutputType.MP3:
-                    mp3_frame.grid()
-                else:
-                    mp3_frame.grid_remove()
-        except tk.TclError:
-            pass
+        dialog = self.__dict__.get("_focus_settings_dialog")
+        if dialog is not None:
+            dialog.refresh_output_sections(output_type)
         self._refresh_manual_settings_visibility()
 
     def _sync_focus_duration_badge(self) -> None:
@@ -5289,306 +5241,90 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except Exception as exc:
             write_diagnostic(f"Cloud early-access page could not be opened: {exc}")
 
+    def _focus_settings_bindings(self) -> FocusSettingsBindings:
+        return FocusSettingsBindings(
+            output=self.output_var,
+            url_list_file=self.url_list_file_var,
+            single_video_only=self.single_video_only_var,
+            cookie_source=self.cookie_source_var,
+            cookie_file=self.cookie_file_var,
+            cookie_browser=self.cookie_browser_var,
+            tags=self.tags_var,
+            quality=self.quality_var,
+            export_mode_choice=self.export_mode_choice_var,
+            export_mode_description=self.export_mode_description_var,
+            manual_video_bitrate=self.manual_video_bitrate_var,
+            manual_audio_bitrate=self.manual_audio_bitrate_var,
+            manual_audio_codec=self.manual_audio_codec_var,
+            manual_sample_rate=self.manual_sample_rate_var,
+            manual_channels=self.manual_channels_var,
+            manual_preset=self.manual_preset_var,
+            write_thumbnail=self.write_thumbnail_var,
+            write_info_json=self.write_info_json_var,
+            embed_thumbnail=self.embed_thumbnail_var,
+            embed_metadata=self.embed_metadata_var,
+            use_nvenc=self.use_nvenc_var,
+            mp3_quality=self.mp3_quality_var,
+            mp3_sample_rate=self.mp3_sample_rate_var,
+            mp3_channels=self.mp3_channels_var,
+            mp3_embed_metadata=self.mp3_embed_metadata_var,
+            mp3_cover_art_mode=self.mp3_cover_art_mode_var,
+            mp3_cover_art_description=self.mp3_cover_art_description_var,
+            mp3_custom_cover_art=self.mp3_custom_cover_art_var,
+        )
+
+    @staticmethod
+    def _focus_settings_options() -> FocusSettingsOptions:
+        return FocusSettingsOptions(
+            quality=tuple(QUALITY_OPTIONS),
+            export_modes=tuple(EXPORT_MODES),
+            manual_audio_codecs=tuple(codec.value for codec in ManualAudioCodec),
+            cookie_sources=COOKIE_SOURCE_OPTIONS,
+            cookie_browsers=tuple(COOKIE_BROWSER_OPTIONS),
+            mp3_quality=tuple(MP3_QUALITY_OPTIONS),
+            mp3_sample_rates=tuple(MP3_SAMPLE_RATE_OPTIONS),
+            mp3_channels=tuple(MP3_CHANNEL_OPTIONS),
+            mp3_cover_art=MP3_COVER_ART_OPTIONS,
+        )
+
+    def _focus_settings_actions(self) -> FocusSettingsActions:
+        return FocusSettingsActions(
+            browse_output=self._browse_output,
+            load_url_list_file=self._load_url_list_file,
+            load_cookie_file=self._load_cookie_file,
+            browser_cookie_selected=self._on_browser_cookie_selected,
+            refresh_manual_visibility=self._refresh_manual_settings_visibility,
+            choose_custom_cover_art=self._choose_mp3_custom_cover_art,
+            clear_custom_cover_art=self._clear_mp3_custom_cover_art,
+            open_cloud_early_access=self._open_cloud_early_access,
+            preview_metadata=self._fetch_metadata,
+            record_cloud_cta_seen=self._record_cloud_cta_seen,
+            on_closed=self._focus_settings_closed,
+        )
+
+    def _focus_settings_closed(self) -> None:
+        self._focus_settings_dialog = None
+
     def _show_focus_settings(self) -> None:
-        existing = self._focus_settings_window
-        if existing is not None:
-            try:
-                if existing.winfo_exists():
-                    existing.lift()
-                    existing.focus_force()
-                    return
-            except tk.TclError:
-                pass
+        existing = self._focus_settings_dialog
+        if existing is not None and existing.focus_existing():
+            return
 
-        popup = tk.Toplevel(self)
-        popup.withdraw()
-        self._focus_settings_window = popup
-        popup.title(f"{APP_NAME} Settings")
-        popup.transient(self)
-        popup.configure(bg=THEME["bg"])
-        popup.resizable(True, True)
-        popup.minsize(700, 540)
-
-        root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=22, pady=20)
-        root.columnconfigure(0, weight=1)
-        root.columnconfigure(1, weight=1)
-        root.rowconfigure(2, weight=1)
-
-        def bind_readonly_combo(
-            combo: ttk.Combobox,
-            command: Callable[[], None] | None = None,
-        ) -> None:
-            """Run the selection action without leaving native entry text selected."""
-
-            def selected(_event: tk.Event[Any]) -> None:
-                if command is not None:
-                    command()
-
-                def release_selection() -> None:
-                    try:
-                        combo.selection_clear()
-                        popup.focus_set()
-                    except tk.TclError:
-                        return
-
-                popup.after_idle(release_selection)
-
-            combo.bind("<<ComboboxSelected>>", selected, add="+")
-
-        heading = ttk.Frame(root, style="FocusShell.TFrame")
-        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 16))
-        heading.columnconfigure(0, weight=1)
-        ttk.Label(heading, text="Forge settings", style="FocusTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(heading, text="Every option is available here; the main workspace stays focused.", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=(3, 0))
-
-        source = ttk.Frame(root, style="FocusShell.TFrame")
-        source.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
-        source.columnconfigure(0, weight=1)
-        ttk.Label(source, text="SAVE LOCATION", style="FocusEyebrow.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 7))
-        destination = ttk.Frame(source, style="FocusShell.TFrame")
-        destination.grid(row=1, column=0, sticky="ew")
-        destination.columnconfigure(0, weight=1)
-        ttk.Entry(destination, textvariable=self.output_var).grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        ttk.Button(destination, text="Browse", command=self._browse_output, style="FocusQuiet.TButton").grid(row=0, column=1, sticky="e")
-
-        ttk.Label(source, text="BATCH AND PLAYLISTS", style="FocusEyebrow.TLabel").grid(row=2, column=0, sticky="w", pady=(16, 7))
-        batch_button = ttk.Button(source, text="Load URL list", command=self._load_url_list_file, style="FocusQuiet.TButton")
-        batch_button.grid(row=3, column=0, sticky="w")
-        ToolTip(batch_button, "Process a batch of links from a text file, one URL per line.")
-        self.focus_batch_url_list_button = batch_button
-        ttk.Label(source, textvariable=self.url_list_file_var, style="Muted.TLabel", wraplength=300).grid(row=4, column=0, sticky="w", pady=(4, 6))
-        ignore_playlists = ttk.Checkbutton(source, text="Ignore playlists", variable=self.single_video_only_var)
-        ignore_playlists.grid(row=5, column=0, sticky="w")
-        ToolTip(ignore_playlists, "When a link includes a playlist, download only the linked video or audio item instead of the full playlist.")
-        self.focus_ignore_playlists_button = ignore_playlists
-
-        ttk.Label(source, text="YOUTUBE ACCESS", style="FocusEyebrow.TLabel").grid(row=6, column=0, sticky="w", pady=(16, 5))
-        ttk.Label(
-            source,
-            text="Optional — use an authorized account only when public access is not enough.",
-            style="Muted.TLabel",
-            wraplength=300,
-            justify="left",
-        ).grid(row=7, column=0, sticky="w", pady=(0, 7))
-        cookie_selector = SegmentedSelector(
-            source,
-            variable=self.cookie_source_var,
-            values=COOKIE_SOURCE_OPTIONS,
-            background=THEME["bg"],
-            compact=True,
-        )
-        cookie_selector.grid(row=8, column=0, sticky="w")
-        ToolTip(cookie_selector, "Public uses no cookies. Choose cookies.txt or Browser only when YouTube requires sign-in.")
-        self.focus_cookie_source_selector = cookie_selector
-
-        cookie_file = ttk.Frame(source, style="FocusShell.TFrame")
-        cookie_file.grid(row=9, column=0, sticky="ew", pady=(7, 0))
-        cookie_file.columnconfigure(0, weight=1)
-        ttk.Label(cookie_file, textvariable=self.cookie_file_var, style="Muted.TLabel", wraplength=180).grid(row=0, column=0, sticky="w")
-        cookie_file_button = ttk.Button(cookie_file, text="Choose cookies.txt", command=self._load_cookie_file, style="FocusQuiet.TButton")
-        cookie_file_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
-        ToolTip(cookie_file_button, "Use an exported YouTube cookies.txt file for content that requires your authorized account.")
-
-        browser_frame = ttk.Frame(source, style="FocusShell.TFrame")
-        browser_frame.grid(row=9, column=0, sticky="ew", pady=(7, 0))
-        browser_frame.columnconfigure(0, weight=1)
-        browser_combo = ttk.Combobox(
-            browser_frame,
-            textvariable=self.cookie_browser_var,
-            values=COOKIE_BROWSER_OPTIONS,
-            state="readonly",
-            width=24,
-        )
-        browser_combo.grid(row=0, column=0, sticky="ew")
-        bind_readonly_combo(browser_combo, self._on_browser_cookie_selected)
-        ToolTip(browser_combo, "Read YouTube cookies directly from the selected local browser. VODForge does not save their contents.")
-        self._register_cookie_source_frames(cookie_file, browser_frame)
-
-        ttk.Label(source, text="METADATA", style="FocusEyebrow.TLabel").grid(row=10, column=0, sticky="w", pady=(16, 5))
-        ttk.Label(source, text="Extra tags (comma-separated)", style="Muted.TLabel").grid(row=11, column=0, sticky="w", pady=(0, 3))
-        tags_entry = ttk.Entry(source, textvariable=self.tags_var)
-        tags_entry.grid(row=12, column=0, sticky="ew")
-        ToolTip(tags_entry, "Add tags to embedded metadata and the compact metadata file when those outputs are enabled.")
-        self.focus_tags_entry = tags_entry
-
-        mp4_output = ttk.Frame(root, style="FocusShell.TFrame")
-        mp4_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
-        mp4_output.columnconfigure(1, weight=1)
-        ttk.Label(mp4_output, text="MP4 VIDEO", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(mp4_output, text="Quality ceiling", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
-        quality_combo = ttk.Combobox(mp4_output, textvariable=self.quality_var, values=list(QUALITY_OPTIONS.keys()), state="readonly", width=20)
-        quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
-        bind_readonly_combo(quality_combo)
-        ToolTip(quality_combo, "Set the highest resolution VODForge may select from the available YouTube source formats.")
-        ttk.Label(mp4_output, text="Output mode", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
-        export_combo = ttk.Combobox(mp4_output, textvariable=self.export_mode_choice_var, values=EXPORT_MODES, state="readonly", width=24)
-        export_combo.grid(row=2, column=1, sticky="ew", pady=4)
-        bind_readonly_combo(export_combo, self._refresh_manual_settings_visibility)
-        ttk.Label(
-            mp4_output,
-            textvariable=self.export_mode_description_var,
-            style="Muted.TLabel",
-            wraplength=360,
-            justify="left",
-        ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 8))
-        manual = ttk.Frame(mp4_output, style="FocusShell.TFrame")
-        manual.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3, 8))
-        manual.columnconfigure(0, weight=1, uniform="manual-field")
-        manual.columnconfigure(1, weight=1, uniform="manual-field")
-        manual_fields = (
-            ("Video bitrate (kbps)", self.manual_video_bitrate_var, None),
-            ("Audio bitrate (kbps)", self.manual_audio_bitrate_var, None),
-            ("Audio codec", self.manual_audio_codec_var, [codec.value for codec in ManualAudioCodec]),
-            ("Sample rate", self.manual_sample_rate_var, ["44100", "48000"]),
-            ("Channels", self.manual_channels_var, ["Mono", "Stereo"]),
-            ("Encoding speed", self.manual_preset_var, ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"]),
-        )
-        for index, (label, variable, values) in enumerate(manual_fields):
-            field = ttk.Frame(manual, style="FocusShell.TFrame")
-            field.grid(
-                row=index // 2,
-                column=index % 2,
-                sticky="ew",
-                padx=(0, 8) if index % 2 == 0 else (8, 0),
-                pady=(0, 7),
-            )
-            field.columnconfigure(0, weight=1)
-            ttk.Label(field, text=label, style="Muted.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 3))
-            if values is None:
-                widget: ttk.Entry | ttk.Combobox = ttk.Entry(field, textvariable=variable)
-            else:
-                widget = ttk.Combobox(field, textvariable=variable, values=values, state="readonly", width=12)
-                bind_readonly_combo(widget)
-            widget.grid(row=1, column=0, sticky="ew")
-        self.manual_settings_frames = [manual]
-        self.manual_settings_frame = manual
-
-        ttk.Checkbutton(mp4_output, text="Save thumbnail", variable=self.write_thumbnail_var).grid(row=5, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Save compact JSON", variable=self.write_info_json_var).grid(row=5, column=1, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Embed thumbnail", variable=self.embed_thumbnail_var).grid(row=6, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(mp4_output, text="Embed metadata", variable=self.embed_metadata_var).grid(row=6, column=1, sticky="w", pady=2)
-        nvenc_label = "Use NVIDIA NVENC GPU encoding"
         if is_macos():
-            nvenc_label = "NVIDIA NVENC (Windows only)"
             self.use_nvenc_var.set(False)
-        nvenc = ttk.Checkbutton(mp4_output, text=nvenc_label, variable=self.use_nvenc_var)
-        nvenc.grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
-        ToolTip(nvenc, "Use a supported NVIDIA GPU for MP4 encoding on Windows. CPU encoding remains the compatibility default.")
-        if is_macos():
-            nvenc.state(["disabled"])
-
-        mp3_output = ttk.Frame(root, style="FocusShell.TFrame")
-        mp3_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
-        mp3_output.columnconfigure(1, weight=1)
-        ttk.Label(mp3_output, text="MP3 AUDIO", style="FocusEyebrow.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Label(mp3_output, text="Encoding quality", style="Muted.TLabel").grid(row=1, column=0, sticky="w", pady=4)
-        mp3_quality_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_quality_var, values=list(MP3_QUALITY_OPTIONS.keys()), state="readonly", width=24)
-        mp3_quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
-        bind_readonly_combo(mp3_quality_combo)
-        ToolTip(mp3_quality_combo, "Set the MP3 export bitrate. Higher settings reduce additional encoding loss but cannot restore detail missing from YouTube's source audio.")
-        ttk.Label(mp3_output, text="Sample rate", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
-        sample_rate_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_sample_rate_var, values=list(MP3_SAMPLE_RATE_OPTIONS.keys()), state="readonly", width=24)
-        sample_rate_combo.grid(row=2, column=1, sticky="ew", pady=4)
-        bind_readonly_combo(sample_rate_combo)
-        ToolTip(sample_rate_combo, "Preserve source avoids unnecessary resampling. Choose 44.1 or 48 kHz only when a music or DAW workflow requires it.")
-        ttk.Label(mp3_output, text="Channels", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
-        channels_combo = ttk.Combobox(mp3_output, textvariable=self.mp3_channels_var, values=list(MP3_CHANNEL_OPTIONS.keys()), state="readonly", width=24)
-        channels_combo.grid(row=3, column=1, sticky="ew", pady=4)
-        bind_readonly_combo(channels_combo)
-        ToolTip(channels_combo, "Preserve the source channel layout, or force Stereo or Mono for a specific production workflow.")
-        mp3_metadata = ttk.Checkbutton(mp3_output, text="Embed title, artist, and tags", variable=self.mp3_embed_metadata_var)
-        mp3_metadata.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 2))
-        ToolTip(mp3_metadata, "Write standard ID3 title, artist, and tag information into the MP3 file.")
-        ttk.Label(mp3_output, text="Cover art", style="Muted.TLabel").grid(row=5, column=0, sticky="w", pady=(8, 4))
-        cover_selector = SegmentedSelector(
-            mp3_output,
-            variable=self.mp3_cover_art_mode_var,
-            values=MP3_COVER_ART_OPTIONS,
-            background=THEME["bg"],
-            compact=True,
+        dialog = FocusSettingsDialog(
+            self,
+            app_name=APP_NAME,
+            bindings=self._focus_settings_bindings(),
+            options=self._focus_settings_options(),
+            actions=self._focus_settings_actions(),
+            macos=is_macos(),
         )
-        cover_selector.grid(row=5, column=1, sticky="w", pady=(8, 4))
-        ToolTip(cover_selector, "No Art leaves the MP3 unembedded. YouTube art or Custom art writes a front-cover image into the file.")
-        ttk.Label(
-            mp3_output,
-            textvariable=self.mp3_cover_art_description_var,
-            style="Muted.TLabel",
-            wraplength=330,
-            justify="left",
-        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(3, 0))
-        cover_file = ttk.Frame(mp3_output, style="FocusShell.TFrame")
-        cover_file.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        cover_file.columnconfigure(0, weight=1)
-        ttk.Label(cover_file, textvariable=self.mp3_custom_cover_art_var, style="Muted.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(cover_file, text="Replace image", command=self._choose_mp3_custom_cover_art, style="FocusQuiet.TButton").grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(cover_file, text="Clear", command=self._clear_mp3_custom_cover_art, style="FocusQuiet.TButton").grid(row=0, column=2, padx=(6, 0))
-        ttk.Label(
-            mp3_output,
-            text="Maximum 320 kbps minimizes additional encoding loss. Preserve source avoids unnecessary resampling; choose 44.1 or 48 kHz only when your music or DAW workflow requires it.",
-            style="Muted.TLabel",
-            wraplength=330,
-            justify="left",
-        ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-        self.focus_mp4_settings_frame = mp4_output
-        self.focus_mp3_settings_frame = mp3_output
-        self.focus_mp3_cover_file_frame = cover_file
+        self._focus_settings_dialog = dialog
+        self._on_cookie_source_changed()
         self._on_mp3_cover_mode_changed()
-
         self._refresh_output_specific_settings()
-
-        cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(14, 10))
-        cloud.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
-        cloud.columnconfigure(0, weight=1)
-        ttk.Label(cloud, text="VODForge Cloud", style="CloudTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            cloud,
-            text="Run downloads even when this computer is offline.",
-            style="FocusSurfaceMuted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
-        cloud_action = ttk.Frame(cloud, style="FocusSurface.TFrame")
-        cloud_action.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
-        ttk.Label(cloud_action, text="EARLY ACCESS", style="CloudBadge.TLabel").pack(anchor="e", pady=(0, 4))
-        self.focus_cloud_early_access_button = ttk.Button(
-            cloud_action,
-            text="Join early access",
-            command=self._open_cloud_early_access,
-            style="FocusQuiet.TButton",
-        )
-        self.focus_cloud_early_access_button.pack(anchor="e")
-        ToolTip(self.focus_cloud_early_access_button, "Open the VODForge Cloud early-access signup page in your browser.")
-
-        footer = ttk.Frame(root, style="FocusShell.TFrame")
-        footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(14, 0))
-        footer.columnconfigure(0, weight=1)
-        preview_button = ttk.Button(footer, text="Preview metadata", style="FocusQuiet.TButton")
-        preview_button.grid(row=0, column=0, sticky="w")
-
-        def close_popup() -> None:
-            self._focus_settings_window = None
-            self.focus_mp4_settings_frame = None
-            self.focus_mp3_settings_frame = None
-            self.focus_mp3_cover_file_frame = None
-            self.focus_batch_url_list_button = None
-            self.focus_ignore_playlists_button = None
-            self.focus_cookie_source_selector = None
-            self.focus_tags_entry = None
-            popup.destroy()
-
-        def preview_and_close() -> None:
-            if self._fetch_metadata():
-                close_popup()
-
-        preview_button.configure(command=preview_and_close)
-
-        ttk.Button(footer, text="Done", command=close_popup, style="Accent.TButton").grid(row=0, column=1, sticky="e")
-        popup.protocol("WM_DELETE_WINDOW", close_popup)
-        popup.bind("<Escape>", lambda _event: close_popup())
-        popup.update_idletasks()
-        width = min(820, max(700, popup.winfo_reqwidth()))
-        height = min(720, max(560, popup.winfo_reqheight()))
-        reveal_toplevel(popup, centered_toplevel_geometry(self, width, height))
-        self.after_idle(self._record_cloud_cta_seen)
+        dialog.show()
 
     def _show_focus_output_details(self) -> None:
         popup = tk.Toplevel(self)
@@ -7179,28 +6915,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ToolTip(icon, text)
 
     def _refresh_manual_settings_visibility(self) -> None:
-        frames = list(getattr(self, "manual_settings_frames", []))
-        if not frames:
-            fallback = getattr(self, "manual_settings_frame", None)
-            frames = [fallback] if fallback is not None else []
-        live_frames: list[ttk.Frame] = []
         manual_override = (
             self._selected_output_type() == OutputType.MP4
             and self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value
         )
-        for frame in frames:
-            try:
-                if not frame.winfo_exists():
-                    continue
-                if manual_override:
-                    frame.grid()
-                else:
-                    frame.grid_remove()
-                live_frames.append(frame)
-            except tk.TclError:
-                continue
-        if hasattr(self, "manual_settings_frames"):
-            self.manual_settings_frames = live_frames
+        dialog = self.__dict__.get("_focus_settings_dialog")
+        if dialog is not None:
+            dialog.refresh_manual_settings(manual_override)
 
     def _manual_export_settings(self) -> ManualExportSettings:
         def positive_int(value: str, label: str, low: int, high: int) -> int:

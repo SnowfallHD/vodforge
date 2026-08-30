@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Protocol
 
 from .platform_services import is_macos
 
@@ -19,6 +20,30 @@ LIBRARY_CENTERING_STEP = 32
 FOCUS_RUN_CARD_WIDTH = 220
 FOCUS_HERO_THUMBNAIL_MIN_WIDTH = 720
 LIBRARY_THUMBNAIL_MAX_WIDTH = 240
+
+
+class _WindowGeometryOwner(Protocol):
+    def winfo_rootx(self) -> int: ...
+
+    def winfo_rooty(self) -> int: ...
+
+    def winfo_width(self) -> int: ...
+
+    def winfo_height(self) -> int: ...
+
+
+def centered_toplevel_geometry(
+    owner: _WindowGeometryOwner,
+    width: int,
+    height: int,
+    *,
+    minimum_x: int = 20,
+    minimum_y: int = 40,
+) -> str:
+    """Return owner-centered geometry without mapping a Toplevel early."""
+    x = max(minimum_x, owner.winfo_rootx() + (owner.winfo_width() - width) // 2)
+    y = max(minimum_y, owner.winfo_rooty() + (owner.winfo_height() - height) // 2)
+    return f"{width}x{height}+{x}+{y}"
 
 
 def bounded_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
