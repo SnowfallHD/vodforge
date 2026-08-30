@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from yt_downloader import app, export_planning
@@ -40,6 +42,68 @@ def test_mp3_sample_rate_display_handles_preserved_numeric_and_unknown_values(
         )
         == expected
     )
+
+
+@pytest.mark.parametrize(
+    "nonfinite",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_export_plans_treat_nonfinite_extractor_numbers_as_unknown(
+    nonfinite: float,
+) -> None:
+    info = {
+        "formats": [
+            {
+                "format_id": "video-nonfinite-bitrate",
+                "height": 1080,
+                "width": 1920,
+                "fps": 30,
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": nonfinite,
+                "ext": "mp4",
+                "protocol": "https",
+            },
+            {
+                "format_id": "video-valid",
+                "height": 1080,
+                "width": 1920,
+                "fps": nonfinite,
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1500,
+                "ext": "mp4",
+                "protocol": "https",
+            },
+            {
+                "format_id": "audio-valid",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 128,
+                "asr": nonfinite,
+                "audio_channels": nonfinite,
+                "ext": "webm",
+                "protocol": "https",
+            },
+        ]
+    }
+
+    video_plan = export_planning.build_auto_export_plan(
+        info,
+        mode=ExportMode.AUTO_CBR,
+        max_height=1080,
+    )
+    audio_plan = export_planning.build_mp3_export_plan(info)
+    summary = app.build_encoding_summary_metadata(info, video_plan)
+
+    assert video_plan.video_format_id == "video-valid"
+    assert video_plan.fps == 30.0
+    assert math.isfinite(video_plan.source_video_kbps)
+    assert math.isfinite(video_plan.source_audio_kbps)
+    assert audio_plan.source_sample_rate is None
+    assert audio_plan.source_channels is None
+    assert summary["vodforge_encoding_summary"]["source"]["Source frame rate"] == "Unknown"
 
 
 def test_source_limited_plan_keeps_truthful_lower_resolution() -> None:

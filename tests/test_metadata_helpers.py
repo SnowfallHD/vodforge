@@ -1303,6 +1303,24 @@ def test_source_analysis_retry_does_not_retry_nontransient_http_failure():
     assert calls == 1
 
 
+def test_nonfinite_http_status_preserves_the_original_provider_failure():
+    original = RuntimeError("original provider failure")
+    original.status = float("inf")
+    calls = 0
+
+    def operation() -> None:
+        nonlocal calls
+        calls += 1
+        raise original
+
+    assert app_module.transient_network_error_status(original) is None
+    with pytest.raises(RuntimeError, match="original provider failure") as caught:
+        app_module.run_with_bounded_transient_retries(operation, max_attempts=1)
+
+    assert caught.value is original
+    assert calls == 1
+
+
 def test_source_analysis_retry_stops_at_the_bounded_attempt_limit():
     calls = 0
     receipts: list[int] = []
@@ -2669,6 +2687,23 @@ def test_format_duration_uses_readable_hours_minutes_seconds():
     assert format_duration(None) == "—"
     assert format_duration(65) == "1:05"
     assert format_duration(3661) == "1:01:01"
+    assert format_duration(float("nan")) == "—"
+    assert format_duration(float("inf")) == "—"
+    assert format_duration(float("-inf")) == "—"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_provider_numbers_use_display_fallbacks(value: float):
+    row = video_list_row_values(
+        {"playlist_index": value, "duration": value},
+        fallback_index=7,
+    )
+
+    assert row[0] == "007"
+    assert row[2] == "—"
+    assert app_module._format_fractional_fps(value) == "Unknown"
+    assert app_module._format_bytes(value) == "Not available"
+    assert app_module._format_kbps(value) == "Unknown"
 
 
 def test_video_list_row_values_preserves_full_long_title_and_identifiers():
@@ -5361,6 +5396,36 @@ def test_progress_hook_coalesces_high_frequency_updates(monkeypatch):
     events = list(app.events.queue)
     assert len(events) == 6
     assert sum(kind == "progress" for kind, _payload in events) == 2
+
+
+@pytest.mark.parametrize("speed", ["not-a-number", float("nan"), float("inf")])
+def test_progress_hook_tolerates_malformed_provider_numbers(monkeypatch, speed):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: 10.0)
+
+    app._progress_hook(
+        {
+            "status": "downloading",
+            "downloaded_bytes": float("nan"),
+            "total_bytes": float("inf"),
+            "total_bytes_estimate": 100,
+            "speed": speed,
+            "eta": 1,
+            "filename": None,
+        }
+    )
+
+    events = list(app.events.queue)
+    assert any(
+        kind == "status" and "?/s" in payload
+        for kind, payload in events
+    )
 
 
 def test_queued_preview_worker_serializes_preview_fetches(tmp_path: Path):

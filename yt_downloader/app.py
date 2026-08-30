@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import math
 import os
 import queue
 import re
@@ -1226,6 +1227,22 @@ def _network_exception_chain(error: BaseException) -> list[BaseException]:
     return result
 
 
+def _finite_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _first_finite_float(*values: Any, default: float = 0.0) -> float:
+    for value in values:
+        number = _finite_float(value)
+        if number is not None:
+            return number
+    return default
+
+
 def transient_network_error_status(error: BaseException) -> int | None:
     for current in _network_exception_chain(error):
         response = getattr(current, "response", None)
@@ -1235,9 +1252,11 @@ def transient_network_error_status(error: BaseException) -> int | None:
             getattr(response, "status", None),
             getattr(response, "code", None),
         ):
+            if value is None:
+                continue
             try:
                 status_code = int(value)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue
             if 100 <= status_code <= 599:
                 return status_code
@@ -1276,9 +1295,8 @@ def _retry_after_seconds(error: BaseException) -> float | None:
         response = getattr(current, "response", None)
         for headers in (getattr(current, "headers", None), getattr(response, "headers", None)):
             retry_after = headers.get("Retry-After") if headers is not None and hasattr(headers, "get") else None
-            try:
-                seconds = float(retry_after)
-            except (TypeError, ValueError):
+            seconds = _finite_float(retry_after)
+            if seconds is None:
                 continue
             if 0 <= seconds <= NETWORK_RETRY_MAX_DELAY_SECONDS:
                 return seconds
@@ -1473,10 +1491,10 @@ def build_description_display_text(info: dict[str, Any]) -> str:
 
 
 def format_duration(seconds: Any) -> str:
-    try:
-        total = int(float(seconds))
-    except (TypeError, ValueError):
+    number = _finite_float(seconds)
+    if number is None:
         return "—"
+    total = int(number)
     if total < 0:
         return "—"
     hours, remainder = divmod(total, 3600)
@@ -1523,9 +1541,8 @@ def mark_metadata_output_type(info: dict[str, Any], output_type: OutputType | st
 
 
 def _float_or_none(value: Any) -> float | None:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
+    number = _finite_float(value)
+    if number is None:
         return None
     return number if number > 0 else None
 
@@ -1534,7 +1551,7 @@ def video_list_row_values(info: dict[str, Any], fallback_index: int) -> tuple[st
     raw_index = info.get("playlist_index") or fallback_index
     try:
         index = f"{int(raw_index):03d}"
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         index = f"{fallback_index:03d}"
     title = str(info.get("title") or info.get("id") or "Untitled video").strip()
     uploader = str(info.get("uploader") or info.get("channel") or "—").strip() or "—"
@@ -1549,9 +1566,8 @@ def _display_value(value: Any, fallback: str = "Unknown") -> str:
 
 
 def _format_kbps(value: Any, fallback: str = "Unknown") -> str:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
+    number = _finite_float(value)
+    if number is None:
         return fallback
     if number <= 0:
         return fallback
@@ -1559,19 +1575,18 @@ def _format_kbps(value: Any, fallback: str = "Unknown") -> str:
 
 
 def _format_bits_per_second_as_kbps(value: Any, fallback: str = "Unknown") -> str:
-    try:
-        number = float(value) / 1000
-    except (TypeError, ValueError):
+    raw_number = _finite_float(value)
+    if raw_number is None:
         return fallback
+    number = raw_number / 1000
     if number <= 0:
         return fallback
     return f"{number:.0f} kbps"
 
 
 def _format_bytes(value: Any, fallback: str = "Not available") -> str:
-    try:
-        size = float(value)
-    except (TypeError, ValueError):
+    size = _finite_float(value)
+    if size is None:
         return fallback
     if size <= 0:
         return fallback
@@ -1594,7 +1609,7 @@ def _format_fractional_fps(value: Any, fallback: str = "Unknown") -> str:
             fps = float(text)
     except (TypeError, ValueError, ZeroDivisionError):
         return fallback
-    if fps <= 0:
+    if not math.isfinite(fps) or fps <= 0:
         return fallback
     return f"{fps:.2f} fps" if abs(fps - round(fps)) > 0.01 else f"{fps:.0f} fps"
 
@@ -12126,8 +12141,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if status == "downloading":
             now = time.monotonic()
             last_event_at = getattr(self, "_last_progress_event_at", 0.0)
-            downloaded = data.get("downloaded_bytes") or 0
-            total = data.get("total_bytes") or data.get("total_bytes_estimate") or 0
+            downloaded = _first_finite_float(data.get("downloaded_bytes"))
+            total = _first_finite_float(
+                data.get("total_bytes"),
+                data.get("total_bytes_estimate"),
+            )
             if now - last_event_at < PROGRESS_EVENT_INTERVAL_SECONDS and not (total and downloaded >= total):
                 return
             self._last_progress_event_at = now
@@ -12143,7 +12161,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     self.events.put(("progress", pct))
             speed = data.get("speed")
             eta = data.get("eta")
-            filename = Path(data.get("filename", "")).name
+            filename = Path(str(data.get("filename") or "")).name
             self.events.put(("status", f"Downloading {filename} — {self._fmt_bytes(speed)}/s ETA {eta or '?'}s"))
         elif status == "finished":
             context = self._active_progress_context
@@ -12253,7 +12271,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _fmt_bytes(value: Any) -> str:
         if not value:
             return "?"
-        size = float(value)
+        size = _finite_float(value)
+        if size is None:
+            return "?"
         for unit in ["B", "KB", "MB", "GB"]:
             if size < 1024:
                 return f"{size:.1f}{unit}"

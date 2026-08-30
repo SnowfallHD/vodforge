@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .models import (
@@ -127,9 +128,21 @@ def _num(value: Any, default: float = 0.0) -> float:
     try:
         if value is None or value == "":
             return default
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return default
+    return number if math.isfinite(number) else default
+
+
+def _source_numeric_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return text
+    return text if math.isfinite(number) else None
 
 
 def _is_none_codec(value: Any) -> bool:
@@ -467,13 +480,9 @@ def build_mp3_export_plan(
     effective_audio_kbps = source_audio_kbps * audio_codec_multiplier(
         audio.get("acodec")
     )
-    source_sample_rate = str(audio.get("asr") or "").strip() or None
+    source_sample_rate = _source_numeric_text(audio.get("asr"))
     source_channels_value = audio.get("audio_channels") or audio.get("channels")
-    source_channels = (
-        str(source_channels_value).strip()
-        if source_channels_value not in (None, "")
-        else None
-    )
+    source_channels = _source_numeric_text(source_channels_value)
     quality_note = (
         "The 320 kbps setting minimizes additional MP3 encoding loss"
         if settings.bitrate_kbps == 320
