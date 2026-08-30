@@ -19,6 +19,8 @@ from yt_downloader.history import (
     history_output_type,
     load_history,
     save_history,
+    sanitize_durable_text,
+    sanitize_durable_url,
     sanitize_history_record,
     upsert_history,
 )
@@ -74,6 +76,57 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_pa
     assert "cookiefile" not in record
     assert "http_headers" not in record
     assert "password" not in record
+
+
+def test_durable_url_sanitizer_strips_credentials_query_and_fragment_but_keeps_identity():
+    canary = "TOPSECRET"
+
+    assert sanitize_durable_url(
+        f"https://user:pass@example.invalid/media?id=1&token={canary}#private",
+        preserve_youtube_context=True,
+    ) == "https://example.invalid/media"
+    assert sanitize_durable_url(
+        f"https://user:pass@youtu.be/abc123?list=PLsafe&token={canary}#private",
+        preserve_youtube_context=True,
+    ) == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
+    assert sanitize_durable_url(
+        f"https://example.invalid:invalid/media?token={canary}",
+        preserve_youtube_context=True,
+    ) is None
+
+
+def test_durable_text_sanitizer_handles_multiple_embedded_and_malformed_urls():
+    canary = "TOPSECRET"
+    text = sanitize_durable_text(
+        "first "
+        f"https://user:pass@example.invalid/media?id=1&token={canary}#private, "
+        "second https://www.youtube.com/watch?v=abc123&list=PLsafe&auth=hidden. "
+        f"bad https://example.invalid:invalid/media?token={canary}"
+    )
+
+    assert "first https://example.invalid/media," in text
+    assert "second https://www.youtube.com/watch?v=abc123&list=PLsafe." in text
+    assert "bad [redacted invalid URL]" in text
+    assert canary not in text
+    assert "user:pass" not in text
+
+
+def test_history_sanitizes_embedded_urls_before_bounding_run_activity(tmp_path: Path):
+    canary = "TOPSECRET"
+    record = sanitize_history_record(
+        {
+            "id": "abc123",
+            "title": "Example",
+            "vodforge_run_activity": [
+                f"Normalized URL: https://user:pass@example.invalid/media?token={canary}#private"
+            ],
+        },
+        tmp_path / "downloads" / "Example",
+    )
+
+    assert record["vodforge_run_activity"] == [
+        "Normalized URL: https://example.invalid/media"
+    ]
 
 
 def test_history_round_trip_and_redownload_deduplication(tmp_path: Path):

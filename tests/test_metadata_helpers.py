@@ -173,6 +173,45 @@ def test_diagnostics_writer_reuses_and_resets_its_line_buffered_sink(monkeypatch
         app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
 
 
+def test_diagnostic_and_activity_sinks_sanitize_embedded_url_secrets(monkeypatch, tmp_path: Path):
+    diagnostic = tmp_path / "latest.log"
+    activity = tmp_path / "activity.log"
+    canary = "TOPSECRET"
+    raw_url = f"https://user:pass@example.invalid/media?id=1&token={canary}#private"
+    monkeypatch.setattr(app_module, "DIAGNOSTICS_LOG_PATH", diagnostic)
+
+    app_module.write_diagnostic(f"URL received: {raw_url}")
+    app_module.append_activity_log(f"Normalized URL: {raw_url}", activity)
+    with app_module._DIAGNOSTICS_LOG_LOCK:
+        app_module._DIAGNOSTICS_LOG_HANDLE.close()
+        app_module._DIAGNOSTICS_LOG_HANDLE = None
+        app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+
+    for text in (
+        diagnostic.read_text(encoding="utf-8"),
+        activity.read_text(encoding="utf-8"),
+    ):
+        assert "https://example.invalid/media" in text
+        assert canary not in text
+        assert "user:pass" not in text
+
+
+def test_prepare_activity_log_sanitizes_preexisting_url_secrets(tmp_path: Path):
+    activity = tmp_path / "activity.log"
+    activity.write_text(
+        "Prior failure: https://user:pass@example.invalid/media?token=TOPSECRET#private\n",
+        encoding="utf-8",
+    )
+
+    app_module.prepare_activity_log(activity)
+
+    assert activity.read_text(encoding="utf-8") == (
+        "Prior failure: https://example.invalid/media\n"
+    )
+
+
 def test_persistent_activity_log_survives_reopen_and_stays_bounded(monkeypatch, tmp_path: Path):
     log_path = tmp_path / "activity.log"
     monkeypatch.setattr(app_module, "ACTIVITY_LOG_MAX_BYTES", 120)
@@ -1013,11 +1052,18 @@ def test_compact_video_metadata_keeps_only_useful_tag_and_thumbnail_fields():
     info = {
         "id": "abc123",
         "title": "Example",
-        "webpage_url": "https://youtube.com/watch?v=abc123",
+        "webpage_url": "https://user:pass@youtube.com/watch?v=abc123&token=secret#private",
         "tags": ["one", "two"],
         "categories": ["Education"],
-        "thumbnail": "https://i.ytimg.com/example.jpg",
-        "thumbnails": [{"url": "small"}, {"url": "large", "width": 1280}],
+        "thumbnail": "https://user:pass@i.ytimg.com/example.jpg?token=secret#private",
+        "thumbnails": [
+            {"url": "https://i.ytimg.com/small.jpg?token=secret"},
+            {
+                "url": "https://i.ytimg.com/large.jpg?token=secret",
+                "width": 1280,
+                "filepath": "/private/output/.vfstage/run-id/large.jpg",
+            },
+        ],
         "formats": [1, 2, 3],
         "automatic_captions": {"en": []},
     }
@@ -1027,12 +1073,12 @@ def test_compact_video_metadata_keeps_only_useful_tag_and_thumbnail_fields():
     assert compact == {
         "id": "abc123",
         "title": "Example",
-        "webpage_url": "https://youtube.com/watch?v=abc123",
+        "webpage_url": "https://www.youtube.com/watch?v=abc123",
         "tags": ["one", "two"],
         "extra_tags": ["extra"],
         "categories": ["Education"],
         "thumbnail": "https://i.ytimg.com/example.jpg",
-        "best_thumbnail": {"url": "large", "width": 1280},
+        "best_thumbnail": {"url": "https://i.ytimg.com/large.jpg", "width": 1280},
         "vodforge_output_type": "MP4",
     }
 
@@ -3621,6 +3667,23 @@ def test_append_batch_failure_report_writes_each_failed_url_and_issue(tmp_path: 
     assert "https://www.youtube.com/playlist?list=PL" in text
     assert "one playlist item failed" in text
     assert text.count("URL:") == 2
+
+
+def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(tmp_path: Path):
+    report = tmp_path / "batch-url-failures.txt"
+    canary = "TOPSECRET"
+    raw_url = f"https://user:pass@example.invalid/media?id=1&token={canary}#private"
+
+    append_batch_failure_report(
+        report,
+        raw_url,
+        RuntimeError(f"provider failed while requesting {raw_url}"),
+    )
+
+    text = report.read_text(encoding="utf-8")
+    assert text.count("https://example.invalid/media") == 2
+    assert canary not in text
+    assert "user:pass" not in text
 
 
 def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monkeypatch, tmp_path: Path):

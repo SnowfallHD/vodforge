@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import ntpath
 import os
+import re
 import stat
 import sys
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
-
 
 APP_NAME = "VODForge"
 HISTORY_SCHEMA_VERSION = 1
@@ -109,17 +109,18 @@ def _safe_url_identifier(value: Any) -> str:
     return text
 
 
-def _sanitize_history_url(value: Any, *, preserve_youtube_context: bool) -> str | None:
-    """Retain a usable public URL without credentials, fragments, or arbitrary query data."""
+def sanitize_durable_url(value: Any, *, preserve_youtube_context: bool) -> str | None:
+    """Retain useful URL identity without credentials, fragments, or untrusted query data."""
     text = str(value or "").strip()
-    if not text:
+    if not text or len(text) > 8192 or any(ord(character) < 32 or ord(character) == 127 for character in text):
         return None
     try:
         parsed = urllib.parse.urlsplit(text)
         port = parsed.port
     except ValueError:
         return None
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+    scheme = parsed.scheme.casefold()
+    if scheme not in {"http", "https"} or not parsed.hostname:
         return None
 
     hostname = parsed.hostname.casefold()
@@ -143,15 +144,35 @@ def _sanitize_history_url(value: Any, *, preserve_youtube_context: bool) -> str 
     safe_host = parsed.hostname
     if ":" in safe_host and not safe_host.startswith("["):
         safe_host = f"[{safe_host}]"
-    default_port = (parsed.scheme == "http" and port == 80) or (parsed.scheme == "https" and port == 443)
+    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
     netloc = safe_host if port is None or default_port else f"{safe_host}:{port}"
     return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path or "/", "", ""))
 
 
-def _sanitize_thumbnail_record(value: Any) -> dict[str, Any] | None:
+_DURABLE_URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
+_TRAILING_URL_PUNCTUATION = ".,;:!?)]}"
+
+
+def sanitize_durable_text(value: Any) -> str:
+    """Sanitize every embedded HTTP(S) URL while preserving surrounding diagnostic text."""
+    text = str(value or "")
+
+    def replace_url(match: re.Match[str]) -> str:
+        candidate = match.group(0)
+        trailing = ""
+        while candidate and candidate[-1] in _TRAILING_URL_PUNCTUATION:
+            trailing = candidate[-1] + trailing
+            candidate = candidate[:-1]
+        safe = sanitize_durable_url(candidate, preserve_youtube_context=True)
+        return (safe or "[redacted invalid URL]") + trailing
+
+    return _DURABLE_URL_PATTERN.sub(replace_url, text)
+
+
+def sanitize_durable_thumbnail_record(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
-    url = _sanitize_history_url(value.get("url"), preserve_youtube_context=False)
+    url = sanitize_durable_url(value.get("url"), preserve_youtube_context=False)
     if not url:
         return None
     result: dict[str, Any] = {"url": url}
@@ -172,6 +193,7 @@ def sanitize_run_activity(value: Any) -> list[str]:
         line = str(item).replace("\x00", "").replace("\r", "").rstrip()
         if not line:
             continue
+        line = sanitize_durable_text(line)
         line = line[:MAX_RUN_ACTIVITY_LINE_CHARS]
         remaining = MAX_RUN_ACTIVITY_CHARS - total_chars
         if remaining <= 0:
@@ -299,11 +321,11 @@ def sanitize_history_record(
         elif key == "vodforge_run_id":
             value = str(value or "").strip()[:128]
         elif key in {"webpage_url", "original_url"}:
-            value = _sanitize_history_url(value, preserve_youtube_context=True)
+            value = sanitize_durable_url(value, preserve_youtube_context=True)
         elif key == "thumbnail":
-            value = _sanitize_history_url(value, preserve_youtube_context=False)
+            value = sanitize_durable_url(value, preserve_youtube_context=False)
         elif key == "best_thumbnail":
-            value = _sanitize_thumbnail_record(value)
+            value = sanitize_durable_thumbnail_record(value)
         else:
             value = _json_safe(value)
         if value not in (None, "", [], {}):

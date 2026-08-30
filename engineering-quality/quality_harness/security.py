@@ -529,25 +529,49 @@ def url_secret_persistence_probe(
         case_dir / "output",
     )
     report = case_dir / "batch-url-failures.txt"
-    app_module.append_batch_failure_report(report, url, "injected failure")
+    app_module.append_batch_failure_report(report, url, f"injected failure while requesting {url}")
+    activity = case_dir / "activity.log"
+    app_module.append_activity_log(f"Normalized URL: {url}", activity)
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+    metadata = app_module.write_compact_video_metadata(
+        case_dir / "metadata",
+        {
+            "id": "secret-case",
+            "title": "Secret case",
+            "webpage_url": url,
+            "thumbnail": url,
+        },
+        [],
+    )
     diagnostic = case_dir / "diagnostics.log"
     prior = app_module.DIAGNOSTICS_LOG_PATH
     try:
         app_module.DIAGNOSTICS_LOG_PATH = diagnostic
         app_module.write_diagnostic(f"URL received: {url}")
     finally:
+        with app_module._DIAGNOSTICS_LOG_LOCK:
+            if app_module._DIAGNOSTICS_LOG_HANDLE is not None:
+                app_module._DIAGNOSTICS_LOG_HANDLE.close()
+            app_module._DIAGNOSTICS_LOG_HANDLE = None
+            app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
         app_module.DIAGNOSTICS_LOG_PATH = prior
-    persisted = {
-        "history_activity": secret in str(record.get("vodforge_run_activity")),
-        "history_url": secret in str(record.get("webpage_url")),
-        "batch_failure": secret in report.read_text(encoding="utf-8"),
-        "diagnostic": secret in diagnostic.read_text(encoding="utf-8"),
+    durable_text = {
+        "history_activity": str(record.get("vodforge_run_activity")),
+        "history_url": str(record.get("webpage_url")),
+        "persistent_activity": activity.read_text(encoding="utf-8"),
+        "batch_failure": report.read_text(encoding="utf-8"),
+        "diagnostic": diagnostic.read_text(encoding="utf-8"),
+        "compact_metadata": metadata.read_text(encoding="utf-8"),
     }
+    safe_identity = "https://example.invalid/media"
+    persisted = {name: secret in text or "user:pass" in text for name, text in durable_text.items()}
     diagnostic_mode = stat.S_IMODE(diagnostic.stat().st_mode)
     leaked_areas = [name for name, leaked in persisted.items() if leaked]
-    failed = bool(leaked_areas) or diagnostic_mode & 0o077 != 0
+    missing_identity_areas = [name for name, text in durable_text.items() if safe_identity not in text]
+    failed = bool(leaked_areas or missing_identity_areas) or diagnostic_mode & 0o077 != 0
     findings: list[dict[str, Any]] = []
-    if leaked_areas:
+    if leaked_areas or missing_identity_areas:
         findings.append(
             _finding(
                 "SEC-URL-SECRET-PERSISTENCE-001",
@@ -558,10 +582,11 @@ def url_secret_persistence_probe(
                 [
                     "Use a credential/query-secret URL with a unique canary.",
                     "Pass it through production diagnostic, batch-failure, and history sanitation paths.",
-                    "Search durable outputs for the canary.",
+                    "Search durable outputs for the canary and require useful safe URL identity to remain.",
                 ],
                 [
                     f"Canary persisted in: {leaked_areas}",
+                    f"Safe URL identity missing from: {missing_identity_areas}",
                     f"History canonical webpage URL retained canary: {persisted['history_url']}",
                 ],
                 "Use one canonical log-safe URL formatter that removes userinfo, sensitive query fields, and fragments; sanitize run activity before persistence.",
@@ -593,13 +618,15 @@ def url_secret_persistence_probe(
         "duration_seconds": 0.0,
         "metrics": {
             "leaked_area_count": len(leaked_areas),
+            "safe_identity_missing_area_count": len(missing_identity_areas),
             "diagnostic_mode_octal": oct(diagnostic_mode),
         },
         "evidence": [
             f"Unique canary persisted in: {leaked_areas}",
+            f"Safe URL identity missing from: {missing_identity_areas}",
             f"Diagnostics mode: {oct(diagnostic_mode)}",
         ],
-        "artifacts": [str(report), str(diagnostic)],
+        "artifacts": [str(report), str(activity), str(diagnostic), str(metadata)],
         "error": None,
     }
     return scenario, findings

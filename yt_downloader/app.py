@@ -46,6 +46,9 @@ from .history import (
     history_identity,
     history_output_dir,
     load_history,
+    sanitize_durable_text,
+    sanitize_durable_thumbnail_record,
+    sanitize_durable_url,
     sanitize_run_activity,
     save_history,
     upsert_history,
@@ -919,7 +922,7 @@ def write_diagnostic(message: str) -> None:
                 )
                 _DIAGNOSTICS_LOG_HANDLE_PATH = DIAGNOSTICS_LOG_PATH
             timestamp = datetime.now().isoformat(timespec="milliseconds")
-            _DIAGNOSTICS_LOG_HANDLE.write(f"[{timestamp}] {message}\n")
+            _DIAGNOSTICS_LOG_HANDLE.write(f"[{timestamp}] {sanitize_durable_text(message)}\n")
     except Exception:
         pass
 
@@ -963,6 +966,22 @@ def _compact_activity_log_locked(path: Path, *, retain_bytes: int | None = None)
     temporary.replace(path)
 
 
+def _sanitize_existing_activity_log_locked(path: Path) -> None:
+    if not path.exists() or path.stat().st_size <= 0:
+        return
+    original = path.read_text(encoding="utf-8", errors="replace")
+    sanitized = "\n".join(sanitize_durable_text(line) for line in original.splitlines())
+    if original.endswith("\n"):
+        sanitized += "\n"
+    if sanitized == original:
+        return
+    temporary = path.with_name(f".{path.name}.sanitize.tmp")
+    temporary.write_text(sanitized, encoding="utf-8")
+    if os.name != "nt":
+        temporary.chmod(0o600)
+    temporary.replace(path)
+
+
 def prepare_activity_log(path: Path | None = None) -> None:
     """Create and bound the persistent, local-only user-facing activity log."""
     target = ACTIVITY_LOG_PATH if path is None else path
@@ -975,6 +994,7 @@ def prepare_activity_log(path: Path | None = None) -> None:
             if os.name != "nt":
                 target.chmod(0o600)
             _compact_activity_log_locked(target)
+            _sanitize_existing_activity_log_locked(target)
     except Exception:
         pass
 
@@ -992,6 +1012,7 @@ def append_activity_log(line: str, path: Path | None = None) -> None:
             persistent_line = line.replace("\x00", "").rstrip()
             if persistent_line.startswith("Loaded YouTube cookies file:"):
                 persistent_line = "Loaded YouTube cookies file."
+            persistent_line = sanitize_durable_text(persistent_line)
             _ACTIVITY_LOG_HANDLE.write(persistent_line + "\n")
             if _ACTIVITY_LOG_HANDLE.tell() >= ACTIVITY_LOG_MAX_BYTES:
                 _close_activity_log_locked()
@@ -1029,9 +1050,10 @@ def reset_batch_failure_report(path: Path = BATCH_FAILURE_REPORT_PATH) -> None:
 def append_batch_failure_report(path: Path, url: str, issue: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().isoformat(timespec="seconds")
-    issue_text = str(issue).strip() or type(issue).__name__
+    safe_url = sanitize_durable_url(url, preserve_youtube_context=True) or "[redacted invalid URL]"
+    issue_text = sanitize_durable_text(str(issue).strip() or type(issue).__name__)
     with path.open("a", encoding="utf-8") as report:
-        report.write(f"[{timestamp}]\nURL: {url}\nIssue: {issue_text}\n\n")
+        report.write(f"[{timestamp}]\nURL: {safe_url}\nIssue: {issue_text}\n\n")
 
 
 def _loggable(value: Any) -> Any:
@@ -3101,13 +3123,19 @@ def compact_video_metadata(info: dict[str, Any], extra_tags: list[str]) -> dict[
     compact: dict[str, Any] = {
         "id": info.get("id"),
         "title": info.get("title"),
-        "webpage_url": info.get("webpage_url") or info.get("original_url"),
+        "webpage_url": sanitize_durable_url(
+            info.get("webpage_url") or info.get("original_url"),
+            preserve_youtube_context=True,
+        ),
         "description": build_description_display_text(info),
         "tags": _clean_list(info.get("tags")),
         "extra_tags": _clean_list(extra_tags),
         "categories": _clean_list(info.get("categories")),
-        "thumbnail": info.get("thumbnail") or (thumb or {}).get("url"),
-        "best_thumbnail": thumb,
+        "thumbnail": sanitize_durable_url(
+            info.get("thumbnail") or (thumb or {}).get("url"),
+            preserve_youtube_context=False,
+        ),
+        "best_thumbnail": sanitize_durable_thumbnail_record(thumb),
         "vodforge_output_type": metadata_output_type(info).value,
         "vodforge_encoding_summary": info.get("vodforge_encoding_summary"),
     }
