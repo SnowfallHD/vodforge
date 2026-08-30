@@ -1035,6 +1035,145 @@ def test_cancellable_blocking_step_reports_waiting_status_before_timeout():
     assert notices
 
 
+class _RetryResponse:
+    def __init__(self, status: int, retry_after: str | None = "0") -> None:
+        self.status = status
+        self.headers = {} if retry_after is None else {"Retry-After": retry_after}
+
+
+class _RetryHttpError(Exception):
+    def __init__(self, status: int, retry_after: str | None = "0") -> None:
+        super().__init__(f"HTTP Error {status}")
+        self.response = _RetryResponse(status, retry_after)
+
+
+class _RetryDownloadError(Exception):
+    def __init__(self, cause: BaseException) -> None:
+        super().__init__(str(cause))
+        self.exc_info = (type(cause), cause, None)
+
+
+def test_source_analysis_retry_recovers_after_structured_503_failures():
+    calls = 0
+    receipts: list[tuple[int, int, float, int | None]] = []
+
+    def operation() -> str:
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            raise _RetryDownloadError(_RetryHttpError(503))
+        return "metadata"
+
+    result = app_module.run_with_bounded_transient_retries(
+        operation,
+        max_attempts=6,
+        on_retry=lambda attempt, maximum, delay, exc: receipts.append(
+            (attempt, maximum, delay, app_module.transient_network_error_status(exc))
+        ),
+    )
+
+    assert result == "metadata"
+    assert calls == 3
+    assert receipts == [(1, 6, 0.0, 503), (2, 6, 0.0, 503)]
+
+
+def test_source_analysis_retry_does_not_retry_nontransient_http_failure():
+    calls = 0
+
+    def operation() -> None:
+        nonlocal calls
+        calls += 1
+        raise _RetryDownloadError(_RetryHttpError(404))
+
+    with pytest.raises(_RetryDownloadError, match="404"):
+        app_module.run_with_bounded_transient_retries(operation, max_attempts=6)
+
+    assert calls == 1
+
+
+def test_source_analysis_retry_stops_at_the_bounded_attempt_limit():
+    calls = 0
+    receipts: list[int] = []
+
+    def operation() -> None:
+        nonlocal calls
+        calls += 1
+        raise _RetryDownloadError(_RetryHttpError(503))
+
+    with pytest.raises(_RetryDownloadError, match="503"):
+        app_module.run_with_bounded_transient_retries(
+            operation,
+            max_attempts=3,
+            on_retry=lambda attempt, _maximum, _delay, _exc: receipts.append(attempt),
+        )
+
+    assert calls == 3
+    assert receipts == [1, 2]
+
+
+def test_source_analysis_retry_recognizes_wrapped_ytdlp_transport_error():
+    transport_error_type = type(
+        "TransportError",
+        (Exception,),
+        {"__module__": "yt_dlp.networking.exceptions"},
+    )
+    calls = 0
+
+    def operation() -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise _RetryDownloadError(transport_error_type("connection reset"))
+        return "metadata"
+
+    assert app_module.run_with_bounded_transient_retries(operation, max_attempts=2) == "metadata"
+    assert calls == 2
+
+
+def test_source_analysis_retry_honors_cancellation_during_backoff():
+    calls = 0
+    cancelled = False
+
+    def operation() -> None:
+        nonlocal calls
+        calls += 1
+        raise _RetryDownloadError(_RetryHttpError(503, retry_after=None))
+
+    def on_retry(attempt: int, _maximum: int, _delay: float, _exc: Exception) -> None:
+        nonlocal cancelled
+        if attempt == 2:
+            cancelled = True
+
+    def control_check() -> None:
+        if cancelled:
+            raise RuntimeError("cancelled")
+
+    with pytest.raises(RuntimeError, match="cancelled"):
+        app_module.run_with_bounded_transient_retries(
+            operation,
+            max_attempts=6,
+            control_check=control_check,
+            on_retry=on_retry,
+        )
+
+    assert calls == 2
+
+
+def test_ytdlp_retry_policy_has_one_generic_authority_per_phase():
+    source = app_module.apply_ytdlp_network_retry_policy({}, source_analysis=True)
+    download = app_module.apply_ytdlp_network_retry_policy({}, source_analysis=False)
+
+    assert source["retries"] == 0
+    assert source["fragment_retries"] == 0
+    assert source["extractor_retries"] == app_module.SOURCE_ANALYSIS_RETRIES
+    assert set(source["retry_sleep_functions"]) == {"extractor"}
+    assert download["retries"] == app_module.DOWNLOAD_HTTP_RETRIES
+    assert download["fragment_retries"] == app_module.DOWNLOAD_FRAGMENT_RETRIES
+    assert download["extractor_retries"] == app_module.DOWNLOAD_EXTRACTOR_RETRIES
+    assert set(download["retry_sleep_functions"]) == {"http", "fragment", "extractor"}
+    assert download["retry_sleep_functions"]["http"](n=2) == 4.0
+
+
 def test_build_description_display_text_uses_description_field():
     assert build_description_display_text({"description": "Line 1\nLine 2"}) == "Line 1\nLine 2"
 

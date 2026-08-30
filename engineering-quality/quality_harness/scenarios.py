@@ -464,8 +464,16 @@ def reliability_retry(
     failures = int(after["statuses"].get("503", 0)) - int(
         before["statuses"].get("503", 0)
     )
+    diagnostics = str(result.get("diagnostic_excerpt") or "")
+    retry_receipts = [
+        line
+        for line in diagnostics.splitlines()
+        if "source analysis transient network failure on attempt" in line
+        and "retrying attempt" in line
+    ]
     passed = (
-        failures >= 1
+        failures >= 2
+        and len(retry_receipts) >= 2
         and result.get("error") is None
         and result.get("media_output_count") == 1
         and not result.get("staging_entries_after")
@@ -473,6 +481,8 @@ def reliability_retry(
     )
     evidence = [
         f"Injected HTTP 503 responses observed: {failures}",
+        f"Observable bounded source-analysis retry receipts: {len(retry_receipts)}",
+        *(retry_receipts[:3] or ["No source-analysis retry receipt was recorded"]),
         f"Final pipeline error: {result.get('error')}",
         f"Validated media output count: {result.get('media_output_count')}",
         f"Staging entries after retry case: {result.get('staging_entries_after')}",
@@ -483,7 +493,10 @@ def reliability_retry(
         result=result,
         passed=passed,
         evidence=evidence,
-        metrics={"injected_503_responses": failures},
+        metrics={
+            "injected_503_responses": failures,
+            "source_analysis_retry_receipts": len(retry_receipts),
+        },
     )
     findings = (
         []

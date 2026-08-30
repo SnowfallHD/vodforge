@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -121,6 +122,11 @@ WINDOWS_SAFE_PATH_LIMIT = 240
 ANALYSIS_TIMEOUT_SECONDS = 1800
 ANALYSIS_POLL_SECONDS = 0.1
 ANALYSIS_STATUS_SECONDS = 5
+SOURCE_ANALYSIS_RETRIES = 5
+DOWNLOAD_HTTP_RETRIES = 15
+DOWNLOAD_FRAGMENT_RETRIES = 15
+DOWNLOAD_EXTRACTOR_RETRIES = 5
+NETWORK_RETRY_MAX_DELAY_SECONDS = 15.0
 VIDEO_TARGET_BITRATE = "10M"
 AUDIO_BITRATE = "320k"
 AUDIO_SAMPLE_RATE = "48000"
@@ -1136,6 +1142,173 @@ def run_cancellable_blocking_step(
         if kind == "error":
             raise payload
         return payload
+
+
+TRANSIENT_HTTP_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def _network_exception_chain(error: BaseException) -> list[BaseException]:
+    pending = [error]
+    seen: set[int] = set()
+    result: list[BaseException] = []
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        result.append(current)
+        for nested in (
+            getattr(current, "__cause__", None),
+            getattr(current, "__context__", None),
+            getattr(current, "cause", None),
+            getattr(current, "reason", None),
+        ):
+            if isinstance(nested, BaseException):
+                pending.append(nested)
+        exc_info = getattr(current, "exc_info", None)
+        if isinstance(exc_info, tuple) and len(exc_info) > 1 and isinstance(exc_info[1], BaseException):
+            pending.append(exc_info[1])
+    return result
+
+
+def transient_network_error_status(error: BaseException) -> int | None:
+    for current in _network_exception_chain(error):
+        response = getattr(current, "response", None)
+        for value in (
+            getattr(current, "status", None),
+            getattr(current, "code", None),
+            getattr(response, "status", None),
+            getattr(response, "code", None),
+        ):
+            try:
+                status_code = int(value)
+            except (TypeError, ValueError):
+                continue
+            if 100 <= status_code <= 599:
+                return status_code
+        match = re.search(r"\bHTTP (?:Error )?(\d{3})\b", str(current), re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def is_transient_network_error(error: BaseException) -> bool:
+    status_code = transient_network_error_status(error)
+    if status_code is not None:
+        return status_code in TRANSIENT_HTTP_STATUS_CODES
+    for current in _network_exception_chain(error):
+        if isinstance(current, (TimeoutError, ConnectionError, urllib.error.URLError)):
+            return True
+        current_type = type(current)
+        if current_type.__module__.startswith("yt_dlp.networking") and current_type.__name__ in {
+            "RequestError",
+            "TransportError",
+        }:
+            return True
+    return False
+
+
+def ytdlp_retry_sleep_seconds(n: float) -> float:
+    try:
+        retry = max(0.0, float(n))
+    except (TypeError, ValueError):
+        retry = 0.0
+    return min(2.0 * retry, NETWORK_RETRY_MAX_DELAY_SECONDS)
+
+
+def _retry_after_seconds(error: BaseException) -> float | None:
+    for current in _network_exception_chain(error):
+        response = getattr(current, "response", None)
+        for headers in (getattr(current, "headers", None), getattr(response, "headers", None)):
+            retry_after = headers.get("Retry-After") if headers is not None and hasattr(headers, "get") else None
+            try:
+                seconds = float(retry_after)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= seconds <= NETWORK_RETRY_MAX_DELAY_SECONDS:
+                return seconds
+    return None
+
+
+def run_with_bounded_transient_retries(
+    operation: Callable[[], Any],
+    *,
+    max_attempts: int = SOURCE_ANALYSIS_RETRIES + 1,
+    control_check: Callable[[], None] | None = None,
+    on_retry: Callable[[int, int, float, Exception], None] | None = None,
+) -> Any:
+    """Retry one source-analysis authority only for bounded transient failures."""
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least one")
+    for attempt in range(1, max_attempts + 1):
+        if control_check is not None:
+            control_check()
+        try:
+            return operation()
+        except Exception as exc:  # noqa: BLE001 - classify provider exceptions, then re-raise nontransient ones
+            if attempt >= max_attempts or not is_transient_network_error(exc):
+                raise
+            delay = _retry_after_seconds(exc)
+            if delay is None:
+                # Match yt-dlp's retry callback numbering: the first retry is
+                # numbered zero and is immediate, then backoff is bounded.
+                delay = ytdlp_retry_sleep_seconds(attempt - 1)
+            if on_retry is not None:
+                on_retry(attempt, max_attempts, delay, exc)
+            deadline = time.monotonic() + delay
+            while True:
+                if control_check is not None:
+                    control_check()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(ANALYSIS_POLL_SECONDS, remaining))
+    raise AssertionError("bounded retry loop exhausted without returning or raising")
+
+
+def apply_ytdlp_network_retry_policy(options: dict[str, Any], *, source_analysis: bool) -> dict[str, Any]:
+    """Give source analysis or media transfer exactly one retry authority."""
+    if source_analysis:
+        # The outer source-analysis retry re-creates YoutubeDL for generic
+        # transport/HTTP failures. Preserve extractor-declared recovery for
+        # known extractor operations, but disable overlapping request and
+        # fragment retry loops during metadata-only analysis.
+        options.update(
+            {
+                "retries": 0,
+                "fragment_retries": 0,
+                "extractor_retries": SOURCE_ANALYSIS_RETRIES,
+                "retry_sleep_functions": {"extractor": ytdlp_retry_sleep_seconds},
+            }
+        )
+        return options
+    options.update(
+        {
+            "retries": DOWNLOAD_HTTP_RETRIES,
+            "fragment_retries": DOWNLOAD_FRAGMENT_RETRIES,
+            "extractor_retries": DOWNLOAD_EXTRACTOR_RETRIES,
+            "retry_sleep_functions": {
+                "http": ytdlp_retry_sleep_seconds,
+                "fragment": ytdlp_retry_sleep_seconds,
+                "extractor": ytdlp_retry_sleep_seconds,
+            },
+        }
+    )
+    return options
+
+
+def source_analysis_retry_message(
+    stage: str,
+    failed_attempt: int,
+    max_attempts: int,
+    delay_seconds: float,
+    error: Exception,
+) -> str:
+    return (
+        f"{stage} transient network failure on attempt {failed_attempt}/{max_attempts}; "
+        f"retrying attempt {failed_attempt + 1}/{max_attempts} in {delay_seconds:.3f}s: "
+        f"{type(error).__name__}: {error}"
+    )
 
 
 class ProviderNetworkCoordinator:
@@ -9852,9 +10025,8 @@ class DownloaderApp(tk.Tk):
                 "extract_flat": False,
                 "logger": QueueLogger(self.events),
                 "socket_timeout": 15,
-                "retries": 2,
-                "extractor_retries": 2,
             }
+            apply_ytdlp_network_retry_policy(opts, source_analysis=True)
             use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
             apply_ytdlp_cookie_options(
                 opts,
@@ -9876,9 +10048,21 @@ class DownloaderApp(tk.Tk):
                     if self.__dict__.get("_closing", False):
                         raise RuntimeError("Metadata preview cancelled during application close")
 
-                return run_tracked_ytdlp_operation(
-                    extract,
+                return run_with_bounded_transient_retries(
+                    lambda: run_tracked_ytdlp_operation(
+                        extract,
+                        control_check=control_check,
+                    ),
                     control_check=control_check,
+                    on_retry=lambda attempt, maximum, delay, exc: write_diagnostic(
+                        source_analysis_retry_message(
+                            "metadata preview",
+                            attempt,
+                            maximum,
+                            delay,
+                            exc,
+                        )
+                    ),
                 )
 
             ran, info = self._provider_network_coordinator().run_preview(
@@ -9940,9 +10124,8 @@ class DownloaderApp(tk.Tk):
                 "ignore_no_formats_error": True,
                 "logger": QueueLogger(None, diagnostic_prefix="queue preview yt-dlp"),
                 "socket_timeout": 15,
-                "retries": 2,
-                "extractor_retries": 2,
             }
+            apply_ytdlp_network_retry_policy(opts, source_analysis=True)
             apply_ytdlp_cookie_options(
                 opts,
                 use_cookies=job.use_cookies,
@@ -9964,7 +10147,22 @@ class DownloaderApp(tk.Tk):
                     ):
                         raise RuntimeError("Queued preview is no longer needed")
 
-                extracted = run_tracked_ytdlp_operation(extract, control_check=control_check)
+                extracted = run_with_bounded_transient_retries(
+                    lambda: run_tracked_ytdlp_operation(
+                        extract,
+                        control_check=control_check,
+                    ),
+                    control_check=control_check,
+                    on_retry=lambda attempt, maximum, delay, exc: write_diagnostic(
+                        source_analysis_retry_message(
+                            "queued metadata preview",
+                            attempt,
+                            maximum,
+                            delay,
+                            exc,
+                        )
+                    ),
+                )
                 if not isinstance(extracted, dict):
                     return None
                 items = iter_video_infos(mark_metadata_output_type(extracted, job.output_type))
@@ -11588,11 +11786,9 @@ class DownloaderApp(tk.Tk):
                     "extract_flat": "in_playlist",
                     "logger": QueueLogger(None, diagnostic_prefix="playlist yt-dlp"),
                     "socket_timeout": 30,
-                    "retries": 5,
-                    "fragment_retries": 5,
-                    "extractor_retries": 5,
                     "ignore_no_formats_error": True,
                 }
+                apply_ytdlp_network_retry_policy(playlist_opts, source_analysis=True)
                 apply_ytdlp_cookie_options(playlist_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
                 apply_youtube_runtime_options(playlist_opts, deno_path=self._find_deno())
                 log_options("playlist detection", playlist_opts)
@@ -11604,9 +11800,24 @@ class DownloaderApp(tk.Tk):
                             extracted = ydl.extract_info(job.url, download=False)
                             return extracted, snapshot_ytdlp_session_cookies(ydl)
 
-                    extracted, session_cookies = run_tracked_ytdlp_operation(
-                        extract,
+                    def report_retry(attempt: int, maximum: int, delay: float, exc: Exception) -> None:
+                        message = source_analysis_retry_message(
+                            "playlist detection",
+                            attempt,
+                            maximum,
+                            delay,
+                            exc,
+                        )
+                        write_diagnostic(message)
+                        self._emit_job_log(job, message)
+
+                    extracted, session_cookies = run_with_bounded_transient_retries(
+                        lambda: run_tracked_ytdlp_operation(
+                            extract,
+                            control_check=raise_for_control_requests,
+                        ),
                         control_check=raise_for_control_requests,
+                        on_retry=report_retry,
                     )
                     write_diagnostic("playlist extraction completed")
                     return (extracted if isinstance(extracted, dict) else None, session_cookies)
@@ -11691,11 +11902,9 @@ class DownloaderApp(tk.Tk):
                         "extract_flat": False,
                         "logger": QueueLogger(None, diagnostic_prefix="preflight yt-dlp"),
                         "socket_timeout": 30,
-                        "retries": 5,
-                        "fragment_retries": 5,
-                        "extractor_retries": 5,
                         "ignore_no_formats_error": True,
                     }
+                    apply_ytdlp_network_retry_policy(preflight_opts, source_analysis=True)
                     apply_ytdlp_cookie_options(preflight_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
                     if cookie_source_loaded:
                         preflight_opts.pop("cookiefile", None)
@@ -11722,9 +11931,30 @@ class DownloaderApp(tk.Tk):
                                 extracted = ydl.extract_info(video_url, download=False)
                                 return extracted, snapshot_ytdlp_session_cookies(ydl)
 
-                        extracted, session_cookies = run_tracked_ytdlp_operation(
-                            extract,
+                        def report_retry(
+                            attempt: int,
+                            maximum: int,
+                            delay: float,
+                            exc: Exception,
+                            stage_label: str = label,
+                        ) -> None:
+                            message = source_analysis_retry_message(
+                                f"{stage_label} source analysis",
+                                attempt,
+                                maximum,
+                                delay,
+                                exc,
+                            )
+                            write_diagnostic(message)
+                            self._emit_job_log(job, message)
+
+                        extracted, session_cookies = run_with_bounded_transient_retries(
+                            lambda: run_tracked_ytdlp_operation(
+                                extract,
+                                control_check=raise_for_control_requests,
+                            ),
                             control_check=raise_for_control_requests,
+                            on_retry=report_retry,
                         )
                         write_diagnostic(f"{label} analysis completed elapsed_seconds={time.monotonic() - analysis_started:.3f}")
                         return (extracted if isinstance(extracted, dict) else None, session_cookies)
@@ -12214,12 +12444,9 @@ class DownloaderApp(tk.Tk):
             "embed_infojson": False,
             "postprocessor_args": postprocessor_args,
             "concurrent_fragment_downloads": 1,
-            "retries": 15,
-            "fragment_retries": 15,
-            "extractor_retries": 5,
-            "retry_sleep_functions": {"http": lambda n: min(2 * n, 15), "fragment": lambda n: min(2 * n, 15)},
             "ignore_no_formats_error": True,
         }
+        apply_ytdlp_network_retry_policy(opts, source_analysis=False)
         if job.output_type == OutputType.MP4:
             opts["merge_output_format"] = "mp4"
         ffmpeg = self._find_ffmpeg()
@@ -12634,9 +12861,8 @@ def debug_preflight(url: str) -> int:
         "extract_flat": False,
         "logger": QueueLogger(None, diagnostic_prefix="debug-preflight yt-dlp"),
         "socket_timeout": 30,
-        "retries": 2,
-        "fragment_retries": 2,
     }
+    apply_ytdlp_network_retry_policy(opts, source_analysis=True)
     ffmpeg = DownloaderApp._find_ffmpeg()
     if ffmpeg:
         opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
@@ -12656,7 +12882,18 @@ def debug_preflight(url: str) -> int:
             with ytdlp_module.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(normalized_url, download=False)
 
-        extracted = run_tracked_ytdlp_operation(extract)
+        extracted = run_with_bounded_transient_retries(
+            lambda: run_tracked_ytdlp_operation(extract),
+            on_retry=lambda attempt, maximum, delay, exc: write_diagnostic(
+                source_analysis_retry_message(
+                    "debug-preflight source analysis",
+                    attempt,
+                    maximum,
+                    delay,
+                    exc,
+                )
+            ),
+        )
         write_diagnostic("debug-preflight analysis completed")
         return extracted if isinstance(extracted, dict) else None
 
