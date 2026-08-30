@@ -7,7 +7,6 @@ import os
 import queue
 import re
 import shutil
-import stat
 import subprocess
 import sys
 import threading
@@ -55,10 +54,10 @@ from .history import (
     save_history,
     upsert_history,
 )
+from .private_files import open_private_text_file, write_private_bytes
 from .safe_output import (
     commit_file_beneath,
     create_private_staging_directory,
-    is_symlink_or_reparse,
 )
 from .updates import (
     MacUpdatePlan,
@@ -930,75 +929,6 @@ _THUMBNAIL_CACHE_LOCKS = tuple(threading.RLock() for _ in range(64))
 _YTDLP_SUBPROCESS_TRACKING_LOCK = threading.RLock()
 
 
-def _open_private_file_descriptor(
-    path: Path,
-    *,
-    append: bool,
-    truncate: bool = False,
-) -> int:
-    """Open one private regular file without following an existing redirect."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
-    if append:
-        flags |= os.O_APPEND
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
-    except FileExistsError:
-        existing = path.lstat()
-        if is_symlink_or_reparse(existing) or not stat.S_ISREG(existing.st_mode):
-            raise OSError(f"Refusing to open non-regular private file: {path}")
-        descriptor = os.open(path, flags | nofollow)
-    try:
-        descriptor_stat = os.fstat(descriptor)
-        current = path.lstat()
-        if (
-            is_symlink_or_reparse(current)
-            or not stat.S_ISREG(descriptor_stat.st_mode)
-            or not os.path.samestat(current, descriptor_stat)
-        ):
-            raise OSError(f"Private file changed or redirects elsewhere: {path}")
-        if os.name != "nt":
-            os.fchmod(descriptor, 0o600)
-            if stat.S_IMODE(os.fstat(descriptor).st_mode) != 0o600:
-                raise PermissionError(f"Private file permissions could not be restricted: {path}")
-        if truncate:
-            os.ftruncate(descriptor, 0)
-        return descriptor
-    except Exception:
-        os.close(descriptor)
-        raise
-
-
-def _open_private_text_file(path: Path, *, truncate: bool = False) -> Any:
-    descriptor = _open_private_file_descriptor(
-        path,
-        append=not truncate,
-        truncate=truncate,
-    )
-    try:
-        return os.fdopen(
-            descriptor,
-            "a" if not truncate else "w",
-            encoding="utf-8",
-            buffering=1,
-        )
-    except Exception:
-        os.close(descriptor)
-        raise
-
-
-def _write_private_bytes(path: Path, payload: bytes) -> None:
-    descriptor = _open_private_file_descriptor(path, append=False, truncate=True)
-    try:
-        with os.fdopen(descriptor, "wb") as destination:
-            descriptor = -1
-            destination.write(payload)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-
-
 def write_diagnostic(message: str) -> None:
     global _DIAGNOSTICS_LOG_HANDLE, _DIAGNOSTICS_LOG_HANDLE_PATH
     try:
@@ -1006,7 +936,7 @@ def write_diagnostic(message: str) -> None:
             if _DIAGNOSTICS_LOG_HANDLE is None or _DIAGNOSTICS_LOG_HANDLE_PATH != DIAGNOSTICS_LOG_PATH:
                 if _DIAGNOSTICS_LOG_HANDLE is not None:
                     _DIAGNOSTICS_LOG_HANDLE.close()
-                _DIAGNOSTICS_LOG_HANDLE = _open_private_text_file(DIAGNOSTICS_LOG_PATH)
+                _DIAGNOSTICS_LOG_HANDLE = open_private_text_file(DIAGNOSTICS_LOG_PATH)
                 _DIAGNOSTICS_LOG_HANDLE_PATH = DIAGNOSTICS_LOG_PATH
             timestamp = datetime.now().isoformat(timespec="milliseconds")
             _DIAGNOSTICS_LOG_HANDLE.write(f"[{timestamp}] {sanitize_durable_text(message)}\n")
@@ -1022,7 +952,7 @@ def reset_diagnostics_log() -> None:
                 _DIAGNOSTICS_LOG_HANDLE.close()
             _DIAGNOSTICS_LOG_HANDLE = None
             _DIAGNOSTICS_LOG_HANDLE_PATH = None
-            with _open_private_text_file(DIAGNOSTICS_LOG_PATH, truncate=True):
+            with open_private_text_file(DIAGNOSTICS_LOG_PATH, truncate=True):
                 pass
     except Exception:
         pass
@@ -1047,7 +977,7 @@ def _compact_activity_log_locked(path: Path, *, retain_bytes: int | None = None)
     if newline >= 0:
         retained = retained[newline + 1 :]
     temporary = path.with_name(f".{path.name}.tmp")
-    _write_private_bytes(temporary, retained)
+    write_private_bytes(temporary, retained)
     temporary.replace(path)
 
 
@@ -1061,7 +991,7 @@ def _sanitize_existing_activity_log_locked(path: Path) -> None:
     if sanitized == original:
         return
     temporary = path.with_name(f".{path.name}.sanitize.tmp")
-    _write_private_bytes(temporary, sanitized.encode("utf-8"))
+    write_private_bytes(temporary, sanitized.encode("utf-8"))
     temporary.replace(path)
 
 
@@ -1072,7 +1002,7 @@ def prepare_activity_log(path: Path | None = None) -> None:
         with _ACTIVITY_LOG_LOCK:
             if _ACTIVITY_LOG_HANDLE_PATH == target:
                 _close_activity_log_locked()
-            with _open_private_text_file(target):
+            with open_private_text_file(target):
                 pass
             _compact_activity_log_locked(target)
             _sanitize_existing_activity_log_locked(target)
@@ -1087,7 +1017,7 @@ def append_activity_log(line: str, path: Path | None = None) -> None:
         with _ACTIVITY_LOG_LOCK:
             if _ACTIVITY_LOG_HANDLE is None or _ACTIVITY_LOG_HANDLE_PATH != target:
                 _close_activity_log_locked()
-                _ACTIVITY_LOG_HANDLE = _open_private_text_file(target)
+                _ACTIVITY_LOG_HANDLE = open_private_text_file(target)
                 _ACTIVITY_LOG_HANDLE_PATH = target
             persistent_line = line.replace("\x00", "").rstrip()
             if persistent_line.startswith("Loaded YouTube cookies file:"):
@@ -1131,7 +1061,7 @@ def append_batch_failure_report(path: Path, url: str, issue: Any) -> None:
     timestamp = datetime.now().isoformat(timespec="seconds")
     safe_url = sanitize_durable_url(url, preserve_youtube_context=True) or "[redacted invalid URL]"
     issue_text = sanitize_durable_text(str(issue).strip() or type(issue).__name__)
-    with _open_private_text_file(path) as report:
+    with open_private_text_file(path) as report:
         report.write(f"[{timestamp}]\nURL: {safe_url}\nIssue: {issue_text}\n\n")
 
 
