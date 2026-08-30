@@ -9,6 +9,7 @@ import time
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from PIL import Image
@@ -2040,7 +2041,7 @@ def test_thumbnail_download_rejects_non_http_and_oversized_responses(monkeypatch
         download_bounded_url_bytes("file:///private/data")
 
     class Response:
-        headers = {"Content-Length": "1001"}
+        headers: ClassVar[dict[str, str]] = {"Content-Length": "1001"}
 
         def __enter__(self):
             return self
@@ -2069,7 +2070,7 @@ def test_thumbnail_download_rejects_non_http_and_oversized_responses(monkeypatch
 
 def test_thumbnail_download_enforces_bound_for_chunked_response(monkeypatch):
     class Response:
-        headers = {}
+        headers: ClassVar[dict[str, str]] = {}
 
         def __init__(self):
             self.buffer = BytesIO(b"x" * 1001)

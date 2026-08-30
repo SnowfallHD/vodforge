@@ -176,6 +176,7 @@ from .ui_widgets import (
     _focus_library_table_item,
     bind_smooth_vertical_wheel,
     reveal_toplevel,
+    set_user_scroll_locked,
 )
 from .updates import (
     MacUpdatePlan,
@@ -218,7 +219,7 @@ touchpad_scroll_deltas = _ui_widgets.touchpad_scroll_deltas
 
 try:
     from PIL import Image, ImageDraw, ImageOps, ImageTk
-except Exception:  # pragma: no cover - thumbnail preview becomes unavailable
+except Exception:  # noqa: BLE001  # pragma: no cover - optional rendering boundary
     Image = None
     ImageDraw = None
     ImageOps = None
@@ -241,7 +242,7 @@ def load_yt_dlp() -> Any | None:
         try:
             yt_dlp = importlib.import_module("yt_dlp")
             YTDLP_IMPORT_ERROR = None
-        except Exception as exc:  # pragma: no cover - handled at runtime
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - optional provider boundary
             YTDLP_IMPORT_ERROR = exc
             yt_dlp = None
         finally:
@@ -463,7 +464,9 @@ def write_diagnostic(message: str) -> None:
                     _DIAGNOSTICS_LOG_HANDLE.close()
                 _DIAGNOSTICS_LOG_HANDLE = open_private_text_file(DIAGNOSTICS_LOG_PATH)
                 _DIAGNOSTICS_LOG_HANDLE_PATH = DIAGNOSTICS_LOG_PATH
-            timestamp = datetime.now().isoformat(timespec="milliseconds")
+            timestamp = datetime.now().isoformat(  # noqa: DTZ005 - local wall-clock receipt
+                timespec="milliseconds"
+            )
             _DIAGNOSTICS_LOG_HANDLE.write(f"[{timestamp}] {sanitize_durable_text(message)}\n")
     except Exception:  # noqa: BLE001 - a diagnostic sink cannot report through itself
         return
@@ -586,7 +589,7 @@ def load_activity_log_tail(path: Path | None = None, *, max_chars: int = ACTIVIT
             if not target.exists():
                 return ""
             text = target.read_text(encoding="utf-8", errors="replace")
-    except Exception:
+    except OSError:
         return ""
     if len(text) > max_chars:
         text = text[-max_chars:]
@@ -609,7 +612,9 @@ def reset_batch_failure_report(path: Path | None = None) -> None:
 
 
 def append_batch_failure_report(path: Path, url: str, issue: Any) -> None:
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    timestamp = datetime.now().isoformat(  # noqa: DTZ005 - local wall-clock receipt
+        timespec="seconds"
+    )
     safe_url = sanitize_durable_url(url, preserve_youtube_context=True) or "[redacted invalid URL]"
     issue_text = sanitize_durable_text(str(issue).strip() or type(issue).__name__)
     with open_private_text_file(path) as report:
@@ -629,7 +634,7 @@ def _loggable(value: Any) -> Any:
 def log_options(stage: str, opts: dict[str, Any]) -> None:
     try:
         write_diagnostic(f"{stage} options: {json.dumps(_loggable(opts), indent=2, sort_keys=True, default=str)}")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not alter job behavior
         write_diagnostic(f"{stage} options logging failed: {exc}")
 
 
@@ -668,7 +673,7 @@ def run_cancellable_blocking_step(
     def runner() -> None:
         try:
             results.put(("ok", step()))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - preserve arbitrary step failure for caller
             results.put(("error", exc))
         finally:
             _BLOCKING_ANALYSIS_SLOTS.release()
@@ -2351,7 +2356,9 @@ def run_ffprobe_json(
         )
     data = json.loads(result.stdout or "{}")
     if not isinstance(data, dict):
-        raise RuntimeError("ffprobe returned an invalid top-level result")
+        raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
+            "ffprobe returned an invalid top-level result"
+        )
     return data
 
 
@@ -2405,7 +2412,7 @@ def terminate_and_reap_process(process: Any, *, timeout_seconds: float = PROCESS
             return
         try:
             process.terminate()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - process adapters may raise provider-specific errors
             write_diagnostic(
                 f"child process terminate request failed: {type(exc).__name__}"
             )
@@ -2416,7 +2423,7 @@ def terminate_and_reap_process(process: Any, *, timeout_seconds: float = PROCESS
             pass
         try:
             process.kill()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - process adapters may raise provider-specific errors
             write_diagnostic(
                 f"child process kill request failed: {type(exc).__name__}"
             )
@@ -2454,7 +2461,7 @@ def finalize_active_child_process(process: Any, *, confirmed_exited: bool = Fals
         return True
     try:
         terminate_and_reap_process(process)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - cleanup retains unconfirmed child ownership
         write_diagnostic(f"active child process remains live after cleanup attempt: {type(exc).__name__}: {exc}")
     if child_process_has_exited(process):
         unregister_active_child_process(process)
@@ -2476,7 +2483,7 @@ def terminate_all_active_child_processes(*, deadline_monotonic: float | None = N
             timeout_seconds = max(0.01, min(timeout_seconds, remaining / 2))
         try:
             terminate_and_reap_process(process, timeout_seconds=timeout_seconds)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - shutdown must continue across child adapters
             write_diagnostic(f"active child process cleanup failed: {type(exc).__name__}: {exc}")
         finally:
             poll = getattr(process, "poll", None)
@@ -2524,13 +2531,15 @@ def run_tracked_ytdlp_operation(step: Callable[[], Any], *, control_check: Any |
     """Run one serialized yt-dlp operation with all of its imported Popen aliases tracked."""
     with _YTDLP_SUBPROCESS_TRACKING_LOCK:
         utils_module = importlib.import_module("yt_dlp.utils")
-        original_class = getattr(utils_module, "Popen")
+        original_class = utils_module.Popen
         tracked_class = tracked_ytdlp_popen_class(original_class, control_check)
         for module_name, module in tuple(sys.modules.items()):
             if module is None or not (module_name == "yt_dlp" or module_name.startswith("yt_dlp.")):
                 continue
             if getattr(module, "Popen", None) is original_class:
-                setattr(module, "Popen", tracked_class)
+                setattr(  # noqa: B010 - module alias patching preserves child tracking
+                    module, "Popen", tracked_class
+                )
         try:
             if control_check is not None:
                 control_check()
@@ -2542,7 +2551,9 @@ def run_tracked_ytdlp_operation(step: Callable[[], Any], *, control_check: Any |
                 if module is None or not (module_name == "yt_dlp" or module_name.startswith("yt_dlp.")):
                     continue
                 if getattr(module, "Popen", None) is tracked_class:
-                    setattr(module, "Popen", original_class)
+                    setattr(  # noqa: B010 - module alias restoration preserves child tracking
+                        module, "Popen", original_class
+                    )
 
 
 def _extract_playlist_source_step(
@@ -3090,7 +3101,7 @@ def save_cached_thumbnail_image(
                     cached_image.close()
                 path.touch(exist_ok=True)
                 return path
-        except Exception:
+        except (OSError, RuntimeError):
             try:
                 path.unlink(missing_ok=True)
             except OSError:
@@ -3908,7 +3919,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if previous_activity:
             self._set_text(self.log, previous_activity, disabled=True)
         self._persist_activity = True
-        self._append_log(f"—— Session started {datetime.now().isoformat(timespec='seconds')} ——")
+        self._append_log(
+            f"—— Session started {datetime.now().isoformat(timespec='seconds')} ——"  # noqa: DTZ005 - local wall-clock receipt
+        )
         self._load_download_history()
         self._check_runtime()
         self.after(100, self._pump_events)
@@ -4036,7 +4049,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             with Image.open(icon_asset) as source:
                 icon = render_monochrome_icon(source, size, color)
             rendered = ImageTk.PhotoImage(icon)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional icon rendering falls back cleanly
             write_diagnostic(f"in-app icon could not be loaded ({name}): {exc}")
             return None
         cache[key] = rendered
@@ -4112,7 +4125,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self._focus_brand_nav_image = ImageTk.PhotoImage(icon.resize((20, 20), resampling.LANCZOS))
                 tile_icon = rounded_contain_image(icon, youtube_thumbnail_size(152), 10, THEME["surface"])
                 self._focus_brand_tile_image = ImageTk.PhotoImage(tile_icon)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional brand rendering falls back cleanly
                 write_diagnostic(f"in-app brand mark could not be loaded: {exc}")
         if self._focus_brand_image is not None:
             ttk.Label(brand, image=self._focus_brand_image, style="TLabel").pack(side="left", padx=(0, 10))
@@ -4822,7 +4835,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if name == "activity":
             activity_log = self.__dict__.get("log")
             if activity_log is not None:
-                setattr(activity_log, "_vodforge_user_scroll_locked", False)
+                set_user_scroll_locked(activity_log, False)
 
                 def show_latest_activity() -> None:
                     try:
@@ -5206,7 +5219,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             opened = webbrowser.open(destination)
             if not opened:
                 write_diagnostic("Cloud early-access page was handed to the OS but no browser confirmed opening")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - OS browser adapters raise platform-specific errors
             write_diagnostic(f"Cloud early-access page could not be opened: {exc}")
 
     def _focus_settings_bindings(self) -> FocusSettingsBindings:
@@ -5568,7 +5581,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             except (AttributeError, TypeError, ValueError, tk.TclError):
                 pass
         else:
-            setattr(widget, "_vodforge_user_scroll_locked", False)
+            set_user_scroll_locked(widget, False)
             try:
                 widget.see("end")
             except (AttributeError, TypeError, ValueError, tk.TclError):
@@ -6302,7 +6315,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if direct_image is not None:
             try:
                 return direct_image.convert("RGBA").copy()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - untrusted image objects may raise library-specific errors
                 write_diagnostic(
                     "in-memory run thumbnail conversion failed: "
                     f"{type(exc).__name__}; trying persisted artwork"
@@ -6332,7 +6345,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if path.is_file():
                     with Image.open(path) as source:
                         return source.convert("RGBA").copy()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - persisted images may raise decoder-specific errors
                 write_diagnostic(f"run thumbnail could not be loaded ({path}): {exc}")
         if str(record.get("kind")) == "active" and self._focus_active_thumbnail_source_image is not None:
             return self._focus_active_thumbnail_source_image
@@ -6353,7 +6366,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 else rounded_fit_image(source, size, radius)
             )
             return ImageTk.PhotoImage(rendered)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional image rendering falls back cleanly
             write_diagnostic(f"thumbnail surface could not be rendered: {exc}")
             return None
 
@@ -6725,7 +6738,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _update_check_worker(self) -> None:
         try:
             self.events.put(("update_check_result", fetch_latest_release()))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - worker reports any update-provider failure
             self.events.put(("update_check_error", str(exc)))
 
     def _show_update_result(self, release: ReleaseInfo) -> None:
@@ -6776,7 +6789,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             elif is_windows():
                 verify_windows_authenticode(path)
             self.events.put(("update_ready", payload))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - worker reports any verified-update failure
             self.events.put(("update_check_error", str(exc)))
 
     def _install_downloaded_update(self, update: Path | MacUpdatePlan) -> None:
@@ -6784,7 +6797,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if isinstance(update, MacUpdatePlan):
             try:
                 launch_macos_update(update)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - platform launcher failures stay user-visible
                 messagebox.showerror(APP_NAME, f"The verified macOS update could not be started:\n\n{exc}")
                 self.status_var.set("The macOS update could not be started.")
                 return
@@ -7056,7 +7069,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         try:
             urls = read_url_list_file(Path(path))
-        except Exception as exc:
+        except (OSError, UnicodeError) as exc:
             messagebox.showerror(APP_NAME, f"Could not read URL list file:\n{exc}")
             return
         if not urls:
@@ -7193,7 +7206,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.events.put(("metadata", info))
             else:
                 self.events.put(("metadata_error", "Metadata preview returned no usable item."))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - worker converts provider failures into UI events
             self.events.put(("metadata_error", f"Metadata fetch failed: {format_ytdlp_user_error(exc)}"))
         finally:
             self.events.put(("metadata_fetch_done", None))
@@ -7303,7 +7316,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if not ran or not isinstance(preview, dict) or not pending():
                 return
             self.events.put(job_info_event("queued_preview", job, preview))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - queued preview failure is intentionally nonfatal
             write_diagnostic(f"queued run preview unavailable for {job.url}: {type(exc).__name__}: {exc}")
 
     def _copy_tags(self) -> bool:
@@ -7469,7 +7482,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 try:
                     with Image.open(local_thumbnail_path) as source:
                         job.preview_thumbnail_image = source.convert("RGBA").copy()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - optional deck artwork may fail by decoder
                     write_diagnostic(f"active run thumbnail could not be cached for its deck card: {exc}")
             elif thumbnail_url:
                 self._load_thumbnail_preview(
@@ -8090,7 +8103,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
             self.thumbnail_label.config(image=self.thumbnail_image, text="")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional saved-artwork preview remains nonfatal
             target_label.config(text=f"Saved thumbnail preview failed:\n{exc}\n\n{path}")
 
     def _load_thumbnail_preview(
@@ -8161,7 +8174,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     cache_info,
                     source_url,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - worker reports arbitrary thumbnail failures
                 self.events.put(
                     thumbnail_preview_event(
                         request_id,
@@ -8205,7 +8218,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if cache_info:
             try:
                 save_cached_thumbnail_bytes(cache_info, data)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional cache writes must not fail the preview
                 write_diagnostic(f"remote thumbnail cache write failed: {type(exc).__name__}: {exc}")
         self.events.put(
             thumbnail_preview_event(
@@ -8257,7 +8270,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             image.thumbnail((260, 150))
             self.thumbnail_image = ImageTk.PhotoImage(image)
             self.thumbnail_label.config(image=self.thumbnail_image, text="")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional preview rendering keeps UI responsive
             if target.startswith("run:") or (target == "active" and owner_run_id and owner_run_id != selected_run_id):
                 write_diagnostic(f"run thumbnail decode failed: run_id={owner_run_id} error={exc}")
                 if self.__dict__.get("focus_run_deck") is not None:
@@ -8766,7 +8779,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 ))
             else:
                 self.events.put(("done", f"Batch complete — {batch_outcome.success_count} valid output(s) from {len(urls)} URL(s)."))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
             self._active_progress_context = None
             issue = format_ytdlp_user_error(exc)
             write_diagnostic(f"batch download worker error: {type(exc).__name__}: {exc}")
@@ -8855,7 +8868,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
             if cached_thumbnail is not None:
                 self._emit_job_log(job, f"{label}: refreshed private Library artwork cache")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
             reuse_outcome = reuse_outcome.combined_with(
                 DownloadOutcome(sidecar_failure_count=1)
             )
@@ -8866,7 +8879,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if job.write_info_json:
             try:
                 write_compact_video_metadata(existing_path.parent, reused_info, job.tags)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -8881,7 +8894,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     reused_info,
                     source_url=job.url,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -9081,7 +9094,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job,
                     f"{label}: cached {artwork_source} privately for Forge and Library",
                 )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
             outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
             write_diagnostic(
                 f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}"
@@ -9108,7 +9121,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job,
                     f"{label}: saved compact video metadata {metadata_path}",
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -9128,7 +9141,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
                 if thumb_path:
                     self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -9437,7 +9450,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             on_wait=report_analysis_wait,
         )
         if not isinstance(preflight_info, dict):
-            raise RuntimeError(
+            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
                 f"{item.label}: YouTube source analysis did not return metadata"
             )
         preflight_info = mark_metadata_output_type(
@@ -9529,7 +9542,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._active_progress_context = None
         control_check()
         if not isinstance(info, dict):
-            raise RuntimeError(f"{item.label}: download did not return metadata")
+            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
+                f"{item.label}: download did not return metadata"
+            )
         info = mark_metadata_output_type(
             apply_playlist_context(
                 info,
@@ -9979,7 +9994,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             bundled = imageio_ffmpeg.get_ffmpeg_exe()
             if bundled and Path(bundled).exists():
                 return str(bundled)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - optional runtime discovery remains nonfatal
             write_diagnostic(
                 f"optional imageio FFmpeg fallback unavailable: {type(exc).__name__}"
             )
@@ -10207,7 +10222,7 @@ def debug_preflight(url: str) -> int:
             label="YouTube source analysis",
             on_wait=lambda elapsed: write_diagnostic(f"debug-preflight analysis still running after {elapsed:.0f}s"),
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - debug preflight reports the full provider boundary
         write_diagnostic(f"debug-preflight failed: {type(exc).__name__}: {exc}")
         print(f"DEBUG_PREFLIGHT_FAILED: {type(exc).__name__}: {exc}")
         print(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
@@ -10220,7 +10235,7 @@ def debug_preflight(url: str) -> int:
     for video_info in video_infos:
         try:
             plan = build_auto_export_plan(video_info, mode=ExportMode.AUTO_CBR, max_height=DEFAULT_MAX_HEIGHT)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - debug probe reports each provider failure
             print(f"DEBUG_PREFLIGHT_SELECTION_FAILED id={video_info.get('id') or 'unknown'}: {type(exc).__name__}: {exc}")
             continue
         exposed_heights = [
@@ -10237,7 +10252,7 @@ def debug_preflight(url: str) -> int:
         )
         try:
             audio_plan = build_mp3_export_plan(video_info)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - debug probe reports each provider failure
             print(f"DEBUG_PREFLIGHT_AUDIO_FAILED id={video_info.get('id') or 'unknown'}: {type(exc).__name__}: {exc}")
         else:
             print(
@@ -10312,14 +10327,14 @@ def runtime_smoke() -> int:
             continue
         try:
             version = probe_runtime_version(name, path)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - smoke probe must receipt any runtime failure
             _runtime_smoke_output(f"{name}={path} execution_failed={type(exc).__name__}: {exc}")
             failures.append(name)
         else:
             _runtime_smoke_output(f"{name}={path} version={version}")
     try:
         ytdlp_version, ejs_version, solver_resources = _smoke_ytdlp_stack()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - smoke probe must receipt any provider-stack failure
         _runtime_smoke_output(f"yt-dlp-stack=failed error={type(exc).__name__}: {exc}")
         failures.append("yt-dlp-stack")
     else:

@@ -59,6 +59,11 @@ class _VerticalScroller(Protocol):
     tk: Any
 
 
+def set_user_scroll_locked(scroller: Any, locked: bool) -> None:
+    """Record whether a live log reader has taken viewport ownership."""
+    scroller._vodforge_user_scroll_locked = locked
+
+
 def touchpad_scroll_deltas(
     widget: tk.Misc | _VerticalScroller,
     packed_delta: float,
@@ -91,7 +96,7 @@ def bind_smooth_vertical_wheel(
         # Record the reader's intent before moving the viewport so a writer
         # cannot mistake a near-tail position for permission to snap back.
         if pixels < 0:
-            setattr(scroller, "_vodforge_user_scroll_locked", True)  # noqa: B010
+            set_user_scroll_locked(scroller, True)
         if mode == "rows":
             rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
             if rows:
@@ -100,7 +105,7 @@ def bind_smooth_vertical_wheel(
                 try:
                     _first, last = scroller.yview()
                     if float(last) >= 0.995:
-                        setattr(scroller, "_vodforge_user_scroll_locked", False)  # noqa: B010
+                        set_user_scroll_locked(scroller, False)
                 except (AttributeError, TypeError, ValueError, tk.TclError):
                     pass
             return "break"
@@ -132,7 +137,7 @@ def bind_smooth_vertical_wheel(
                 try:
                     _first, last = scroller.yview()
                     if float(last) >= 0.995:
-                        setattr(scroller, "_vodforge_user_scroll_locked", False)  # noqa: B010
+                        set_user_scroll_locked(scroller, False)
                 except (AttributeError, TypeError, ValueError, tk.TclError):
                     pass
             return "break"
@@ -146,7 +151,7 @@ def bind_smooth_vertical_wheel(
             try:
                 _first, last = scroller.yview()
                 if float(last) >= 0.995:
-                    setattr(scroller, "_vodforge_user_scroll_locked", False)  # noqa: B010
+                    set_user_scroll_locked(scroller, False)
             except (AttributeError, TypeError, ValueError, tk.TclError):
                 pass
         return "break"

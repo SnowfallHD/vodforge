@@ -162,7 +162,9 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("GitHub returned an unreadable release response.") from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("GitHub returned an invalid release response.")
+        raise RuntimeError(  # noqa: TRY004 - remote protocol failures use RuntimeError
+            "GitHub returned an invalid release response."
+        )
     return parse_release_payload(payload)
 
 
