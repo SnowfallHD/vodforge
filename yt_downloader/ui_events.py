@@ -380,84 +380,109 @@ class UiEventHandlersMixin:
         payload: Any,
     ) -> bool:
         if kind == "metadata":
-            if isinstance(payload, dict):
-                self._display_metadata(payload, preview_complete=True)
+            UiEventHandlersMixin._handle_metadata(self, payload)
         elif kind == "job_metadata":
-            if (
-                isinstance(payload, dict)
-                and isinstance(payload.get("job"), DownloadJob)
-                and isinstance(payload.get("info"), dict)
-            ):
-                metadata_job = payload["job"]
-                active_metadata_job = self._active_run_for_metadata_event(metadata_job)
-                if active_metadata_job is not None:
-                    self._display_metadata(
-                        payload["info"], active_job=active_metadata_job
-                    )
-                else:
-                    self._event_write_diagnostic(
-                        f"ignored stale run metadata event for run_id={metadata_job.run_id}"
-                    )
+            UiEventHandlersMixin._handle_job_metadata(self, payload)
         elif kind == "thumbnail_preview_result":
-            if isinstance(payload, dict):
-                self._display_thumbnail_preview_result(payload)
+            UiEventHandlersMixin._handle_thumbnail_preview_result(self, payload)
         elif kind == "queued_preview":
-            if (
-                isinstance(payload, dict)
-                and isinstance(payload.get("job"), DownloadJob)
-                and isinstance(payload.get("info"), dict)
-            ):
-                queued_job = payload["job"]
-                if any(item is queued_job for item in self.pending_jobs):
-                    queued_job.preview_info = dict(payload["info"])
-                    if hasattr(self, "focus_run_deck"):
-                        self._refresh_focus_run_deck()
-                    if self._focus_selected_run_id == queued_job.run_id:
-                        record = next(
-                            (
-                                candidate
-                                for candidate in self._focus_run_records()
-                                if candidate.get("run_id") == queued_job.run_id
-                            ),
-                            None,
-                        )
-                        if record is not None:
-                            self._display_focus_queued_job_snapshot(record, queued_job)
+            UiEventHandlersMixin._handle_queued_preview(self, payload)
         elif kind == "history_record":
-            if isinstance(payload, dict) and isinstance(payload.get("info"), dict):
-                output_dir = str(payload.get("output_dir") or "").strip()
-                if output_dir:
-                    history_job = payload.get("job")
-                    if isinstance(
-                        history_job, DownloadJob
-                    ) and self._library_run_is_suppressed(history_job):
-                        self._event_write_diagnostic(
-                            "ignored history event for Library-removed "
-                            f"run_id={history_job.run_id}"
-                        )
-                        return True
-                    owning_job = (
-                        self._active_run_for_metadata_event(history_job)
-                        if isinstance(history_job, DownloadJob)
-                        else None
-                    )
-                    self._record_download_history(
-                        payload["info"],
-                        Path(output_dir),
-                        owning_job=owning_job,
-                    )
+            UiEventHandlersMixin._handle_history_record(self, payload)
         elif kind == "item_terminal":
-            if (
-                isinstance(payload, dict)
-                and isinstance(payload.get("job"), DownloadJob)
-                and isinstance(payload.get("info"), dict)
-            ):
-                terminal_job = payload["job"]
-                if not self._library_run_is_suppressed(terminal_job):
-                    self._archive_item_terminal_job(terminal_job, payload["info"])
+            UiEventHandlersMixin._handle_item_terminal(self, payload)
         else:
             return False
         return True
+
+    def _handle_metadata(self: _UiEventHost, payload: Any) -> None:
+        if isinstance(payload, dict):
+            self._display_metadata(payload, preview_complete=True)
+
+    def _handle_job_metadata(self: _UiEventHost, payload: Any) -> None:
+        if not (
+            isinstance(payload, dict)
+            and isinstance(payload.get("job"), DownloadJob)
+            and isinstance(payload.get("info"), dict)
+        ):
+            return
+        metadata_job = payload["job"]
+        active_metadata_job = self._active_run_for_metadata_event(metadata_job)
+        if active_metadata_job is not None:
+            self._display_metadata(payload["info"], active_job=active_metadata_job)
+        else:
+            self._event_write_diagnostic(
+                f"ignored stale run metadata event for run_id={metadata_job.run_id}"
+            )
+
+    def _handle_thumbnail_preview_result(
+        self: _UiEventHost,
+        payload: Any,
+    ) -> None:
+        if isinstance(payload, dict):
+            self._display_thumbnail_preview_result(payload)
+
+    def _handle_queued_preview(self: _UiEventHost, payload: Any) -> None:
+        if not (
+            isinstance(payload, dict)
+            and isinstance(payload.get("job"), DownloadJob)
+            and isinstance(payload.get("info"), dict)
+        ):
+            return
+        queued_job = payload["job"]
+        if not any(item is queued_job for item in self.pending_jobs):
+            return
+        queued_job.preview_info = dict(payload["info"])
+        if hasattr(self, "focus_run_deck"):
+            self._refresh_focus_run_deck()
+        if self._focus_selected_run_id != queued_job.run_id:
+            return
+        record = next(
+            (
+                candidate
+                for candidate in self._focus_run_records()
+                if candidate.get("run_id") == queued_job.run_id
+            ),
+            None,
+        )
+        if record is not None:
+            self._display_focus_queued_job_snapshot(record, queued_job)
+
+    def _handle_history_record(self: _UiEventHost, payload: Any) -> None:
+        if not (isinstance(payload, dict) and isinstance(payload.get("info"), dict)):
+            return
+        output_dir = str(payload.get("output_dir") or "").strip()
+        if not output_dir:
+            return
+        history_job = payload.get("job")
+        if isinstance(history_job, DownloadJob) and self._library_run_is_suppressed(
+            history_job
+        ):
+            self._event_write_diagnostic(
+                f"ignored history event for Library-removed run_id={history_job.run_id}"
+            )
+            return
+        owning_job = (
+            self._active_run_for_metadata_event(history_job)
+            if isinstance(history_job, DownloadJob)
+            else None
+        )
+        self._record_download_history(
+            payload["info"],
+            Path(output_dir),
+            owning_job=owning_job,
+        )
+
+    def _handle_item_terminal(self: _UiEventHost, payload: Any) -> None:
+        if not (
+            isinstance(payload, dict)
+            and isinstance(payload.get("job"), DownloadJob)
+            and isinstance(payload.get("info"), dict)
+        ):
+            return
+        terminal_job = payload["job"]
+        if not self._library_run_is_suppressed(terminal_job):
+            self._archive_item_terminal_job(terminal_job, payload["info"])
 
     def _handle_runtime_event(
         self: _UiEventHost,
@@ -465,106 +490,135 @@ class UiEventHandlersMixin:
         payload: Any,
     ) -> bool:
         if kind == "metadata_fetch_done":
-            if hasattr(self, "preview_metadata_button"):
-                self.preview_metadata_button.config(state="normal")
+            UiEventHandlersMixin._handle_metadata_fetch_done(self)
         elif kind == "metadata_error":
-            if self.__dict__.get("_closing", False):
-                self._append_log(
-                    f"Metadata preview ended during application close: {payload}"
-                )
-            else:
-                preview_request = self.__dict__.get("_metadata_preview_request")
-                if isinstance(preview_request, dict):
-                    preview_request.update(
-                        {
-                            "title": "Preview failed",
-                            "status": "Preview failed  •  "
-                            f"{preview_request.get('output_type') or 'MP4'}",
-                            "kind": "preview_failed",
-                            "message": str(payload),
-                        }
-                    )
-                    self._refresh_focus_run_deck()
-                    if self.__dict__.get(
-                        "_focus_selected_run_id"
-                    ) == preview_request.get("run_id"):
-                        self._display_metadata_preview_request(preview_request)
-                self.status_var.set("Metadata preview failed")
-                self._append_log(f"ERROR: {payload}")
-                messagebox.showerror(self._event_app_name, str(payload))
+            UiEventHandlersMixin._handle_metadata_error(self, payload)
         elif kind == "runtime_error":
-            self._append_log(f"ERROR: {payload}")
-            self.download_button.config(state="disabled")
+            UiEventHandlersMixin._handle_runtime_error(self, payload)
         elif kind == "download_folders":
-            if isinstance(payload, list):
-                self.last_output_dirs = [Path(path) for path in payload]
+            UiEventHandlersMixin._handle_download_folders(self, payload)
         elif kind == "update_check_result":
-            if not self.__dict__.get("_closing", False) and isinstance(
-                payload, ReleaseInfo
-            ):
-                self._show_update_result(payload)
+            UiEventHandlersMixin._handle_update_check_result(self, payload)
         elif kind == "update_ready":
-            if not self.__dict__.get("_closing", False) and isinstance(
-                payload, (Path, MacUpdatePlan)
-            ):
-                self._install_downloaded_update(payload)
+            UiEventHandlersMixin._handle_update_ready(self, payload)
         elif kind == "update_check_error":
-            if self.__dict__.get("_closing", False):
-                self._event_write_diagnostic(
-                    f"update check ended during application close: {payload}"
-                )
-                return True
-            silent = self.update_check_silent
-            self.update_check_silent = False
-            self._schedule_auto_update_check()
-            self.update_button.config(state="normal")
-            self._set_focus_update_state("Check updates", self._event_subtle_color)
-            if silent:
-                self._event_write_diagnostic(
-                    f"automatic update check failed: {payload}"
-                )
-            else:
-                self.status_var.set("Could not check for updates.")
-                messagebox.showinfo(self._event_app_name, str(payload))
+            UiEventHandlersMixin._handle_update_check_error(self, payload)
         elif kind == "cloud_seen_result":
-            if isinstance(payload, dict) and payload.get("success") is True:
-                state = self.installation_state
-                install_id = str(payload.get("install_id") or "")
-                if state is not None and install_id == state.install_id:
-                    try:
-                        self.installation_state = mark_cloud_seen_confirmed(
-                            self.installation_state_path,
-                            install_id,
-                        )
-                        self._event_write_diagnostic(
-                            "Cloud early-access impression confirmed once for this installation"
-                        )
-                    except (InstallationIdentityError, OSError) as exc:
-                        self._event_write_diagnostic(
-                            "Cloud impression was accepted but local confirmation "
-                            f"could not be saved: {exc}"
-                        )
+            UiEventHandlersMixin._handle_cloud_seen_result(self, payload)
         elif kind == "first_launch_result":
-            if isinstance(payload, dict) and payload.get("success") is True:
-                state = self.installation_state
-                install_id = str(payload.get("install_id") or "")
-                if state is not None and install_id == state.install_id:
-                    try:
-                        self.installation_state = mark_first_launch_confirmed(
-                            self.installation_state_path,
-                            install_id,
-                        )
-                        self._event_write_diagnostic(
-                            "first successful launch confirmed once for this installation"
-                        )
-                    except (InstallationIdentityError, OSError) as exc:
-                        self._event_write_diagnostic(
-                            "first launch was accepted but local confirmation "
-                            f"could not be saved: {exc}"
-                        )
+            UiEventHandlersMixin._handle_first_launch_result(self, payload)
         else:
             return False
         return True
+
+    def _handle_metadata_fetch_done(self: _UiEventHost) -> None:
+        if hasattr(self, "preview_metadata_button"):
+            self.preview_metadata_button.config(state="normal")
+
+    def _handle_metadata_error(self: _UiEventHost, payload: Any) -> None:
+        if self.__dict__.get("_closing", False):
+            self._append_log(
+                f"Metadata preview ended during application close: {payload}"
+            )
+            return
+        preview_request = self.__dict__.get("_metadata_preview_request")
+        if isinstance(preview_request, dict):
+            preview_request.update(
+                {
+                    "title": "Preview failed",
+                    "status": "Preview failed  •  "
+                    f"{preview_request.get('output_type') or 'MP4'}",
+                    "kind": "preview_failed",
+                    "message": str(payload),
+                }
+            )
+            self._refresh_focus_run_deck()
+            if self.__dict__.get("_focus_selected_run_id") == preview_request.get(
+                "run_id"
+            ):
+                self._display_metadata_preview_request(preview_request)
+        self.status_var.set("Metadata preview failed")
+        self._append_log(f"ERROR: {payload}")
+        messagebox.showerror(self._event_app_name, str(payload))
+
+    def _handle_runtime_error(self: _UiEventHost, payload: Any) -> None:
+        self._append_log(f"ERROR: {payload}")
+        self.download_button.config(state="disabled")
+
+    def _handle_download_folders(self: _UiEventHost, payload: Any) -> None:
+        if isinstance(payload, list):
+            self.last_output_dirs = [Path(path) for path in payload]
+
+    def _handle_update_check_result(self: _UiEventHost, payload: Any) -> None:
+        if not self.__dict__.get("_closing", False) and isinstance(
+            payload, ReleaseInfo
+        ):
+            self._show_update_result(payload)
+
+    def _handle_update_ready(self: _UiEventHost, payload: Any) -> None:
+        if not self.__dict__.get("_closing", False) and isinstance(
+            payload, (Path, MacUpdatePlan)
+        ):
+            self._install_downloaded_update(payload)
+
+    def _handle_update_check_error(self: _UiEventHost, payload: Any) -> None:
+        if self.__dict__.get("_closing", False):
+            self._event_write_diagnostic(
+                f"update check ended during application close: {payload}"
+            )
+            return
+        silent = self.update_check_silent
+        self.update_check_silent = False
+        self._schedule_auto_update_check()
+        self.update_button.config(state="normal")
+        self._set_focus_update_state("Check updates", self._event_subtle_color)
+        if silent:
+            self._event_write_diagnostic(f"automatic update check failed: {payload}")
+        else:
+            self.status_var.set("Could not check for updates.")
+            messagebox.showinfo(self._event_app_name, str(payload))
+
+    def _handle_cloud_seen_result(self: _UiEventHost, payload: Any) -> None:
+        if not (isinstance(payload, dict) and payload.get("success") is True):
+            return
+        state = self.installation_state
+        install_id = str(payload.get("install_id") or "")
+        if state is None or install_id != state.install_id:
+            return
+        try:
+            self.installation_state = mark_cloud_seen_confirmed(
+                self.installation_state_path,
+                install_id,
+            )
+            self._event_write_diagnostic(
+                "Cloud early-access impression confirmed once for this installation"
+            )
+        except (InstallationIdentityError, OSError) as exc:
+            self._event_write_diagnostic(
+                "Cloud impression was accepted but local confirmation "
+                f"could not be saved: {exc}"
+            )
+
+    def _handle_first_launch_result(self: _UiEventHost, payload: Any) -> None:
+        if not (isinstance(payload, dict) and payload.get("success") is True):
+            return
+        state = self.installation_state
+        install_id = str(payload.get("install_id") or "")
+        if state is None or install_id != state.install_id:
+            return
+        try:
+            self.installation_state = mark_first_launch_confirmed(
+                self.installation_state_path,
+                install_id,
+            )
+            self._event_write_diagnostic(
+                "first successful launch confirmed once for this installation"
+            )
+        except (InstallationIdentityError, OSError) as exc:
+            self._event_write_diagnostic(
+                "first launch was accepted but local confirmation "
+                f"could not be saved: {exc}"
+            )
 
     def _handle_terminal_event(
         self: _UiEventHost,
@@ -572,65 +626,75 @@ class UiEventHandlersMixin:
         payload: Any,
     ) -> bool:
         if kind == "done":
-            self._finish_run_ui(
-                str(payload),
-                "Completed",
-                "Complete  /  Ready to open in Library",
-                progress=100,
-            )
+            UiEventHandlersMixin._handle_done_terminal(self, payload)
         elif kind == "partial":
-            self._finish_run_ui(
-                str(payload),
-                "Partial",
-                "Completed with issues  /  Valid files are in Library",
-                progress=100,
-            )
+            UiEventHandlersMixin._handle_partial_terminal(self, payload)
         elif kind == "stopped":
-            self._finish_run_ui(
-                str(payload),
-                "Stopped",
-                "Stopped  /  No incomplete output was committed",
-            )
+            UiEventHandlersMixin._handle_stopped_terminal(self, payload)
         elif kind == "error":
-            if self.__dict__.get("_closing", False):
-                self._append_log(f"ERROR during application close: {payload}")
-                return True
-            failed_job = self.active_job
-            if self._library_run_is_suppressed(failed_job):
-                self._finish_run_ui(
-                    "Removed from Library; the run was stopped.",
-                    "Stopped",
-                    "Stopped  /  Removed from Library",
-                )
-                return True
-            if failed_job is not None:
-                self._append_job_log(failed_job, f"ERROR: {payload}")
-            else:
-                self._append_log(f"ERROR: {payload}")
-            self._archive_active_terminal_job("Failed", str(payload))
-            self.progress_var.set(0)
-            self.status_var.set("Failed")
-            messagebox.showerror(self._event_app_name, str(payload))
-            self.download_button.config(state="normal")
-            self.cancel_button.config(state="disabled")
-            self.skip_video_button.config(state="disabled")
-            self.skip_url_button.config(state="disabled")
-            if hasattr(self, "focus_transfer_var"):
-                if self._focus_follows_active_run():
-                    self.focus_transfer_var.set(
-                        "Run failed  /  Review Activity for details"
-                    )
-                self.focus_run_status_var.set("Failed")
-                if self._focus_follows_active_run():
-                    self.focus_percent_var.set("Failed")
-                self._refresh_focus_run_deck()
-            if not self._launch_next_pending_job() and hasattr(
-                self, "focus_transfer_var"
-            ):
-                self._set_focus_run_controls_visible(False)
-                self._refresh_focus_run_deck()
-            if failed_job is not None:
-                self._focus_terminal_job(failed_job)
+            UiEventHandlersMixin._handle_error_terminal(self, payload)
         else:
             return False
         return True
+
+    def _handle_done_terminal(self: _UiEventHost, payload: Any) -> None:
+        self._finish_run_ui(
+            str(payload),
+            "Completed",
+            "Complete  /  Ready to open in Library",
+            progress=100,
+        )
+
+    def _handle_partial_terminal(self: _UiEventHost, payload: Any) -> None:
+        self._finish_run_ui(
+            str(payload),
+            "Partial",
+            "Completed with issues  /  Valid files are in Library",
+            progress=100,
+        )
+
+    def _handle_stopped_terminal(self: _UiEventHost, payload: Any) -> None:
+        self._finish_run_ui(
+            str(payload),
+            "Stopped",
+            "Stopped  /  No incomplete output was committed",
+        )
+
+    def _handle_error_terminal(self: _UiEventHost, payload: Any) -> None:
+        if self.__dict__.get("_closing", False):
+            self._append_log(f"ERROR during application close: {payload}")
+            return
+        failed_job = self.active_job
+        if self._library_run_is_suppressed(failed_job):
+            self._finish_run_ui(
+                "Removed from Library; the run was stopped.",
+                "Stopped",
+                "Stopped  /  Removed from Library",
+            )
+            return
+        if failed_job is not None:
+            self._append_job_log(failed_job, f"ERROR: {payload}")
+        else:
+            self._append_log(f"ERROR: {payload}")
+        self._archive_active_terminal_job("Failed", str(payload))
+        self.progress_var.set(0)
+        self.status_var.set("Failed")
+        messagebox.showerror(self._event_app_name, str(payload))
+        self.download_button.config(state="normal")
+        self.cancel_button.config(state="disabled")
+        self.skip_video_button.config(state="disabled")
+        self.skip_url_button.config(state="disabled")
+        if hasattr(self, "focus_transfer_var"):
+            if self._focus_follows_active_run():
+                self.focus_transfer_var.set(
+                    "Run failed  /  Review Activity for details"
+                )
+            self.focus_run_status_var.set("Failed")
+            if self._focus_follows_active_run():
+                self.focus_percent_var.set("Failed")
+            self._refresh_focus_run_deck()
+        if not self._launch_next_pending_job() and hasattr(self, "focus_transfer_var"):
+            self._set_focus_run_controls_visible(False)
+            self._refresh_focus_run_deck()
+        if failed_job is not None:
+            self._focus_terminal_job(failed_job)
