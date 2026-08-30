@@ -73,7 +73,6 @@ from .history import (
     history_file_path,
     history_identity,
     history_output_dir,
-    history_output_type,
     load_history,
     sanitize_durable_text,
     sanitize_durable_thumbnail_record,
@@ -81,6 +80,16 @@ from .history import (
     sanitize_run_activity,
     save_history,
     upsert_history,
+)
+from .library_state import (
+    ACTIVE_METADATA_RUN_ID_KEY,
+    claim_active_metadata_row,
+    format_duration,
+    is_metadata_preview,
+    merge_library_metadata_items,
+    metadata_output_type,
+    metadata_run_key,
+    persisted_run_deck_records,
 )
 from .models import (
     AUDIO_CHANNELS,
@@ -975,24 +984,6 @@ def build_description_display_text(info: dict[str, Any]) -> str:
     return str(info.get("description") or "").strip()
 
 
-def format_duration(seconds: Any) -> str:
-    number = _finite_float(seconds)
-    if number is None:
-        return "—"
-    total = int(number)
-    if total < 0:
-        return "—"
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
-
-
-def metadata_output_type(info: dict[str, Any]) -> OutputType:
-    return OutputType(history_output_type(info))
-
-
 def metadata_indices_for_output_type(
     items: list[dict[str, Any]],
     output_type: OutputType | str,
@@ -1247,29 +1238,6 @@ def build_terminal_item_metadata(
     enriched["vodforge_terminal_message"] = message
     enriched["vodforge_terminal_run_id"] = run_id
     return enriched
-
-
-ACTIVE_METADATA_RUN_ID_KEY = "vodforge_active_run_id"
-_ACTIVE_METADATA_STALE_KEYS = (
-    "vodforge_preview_complete",
-    "vodforge_preview_run_id",
-    "vodforge_terminal_status",
-    "vodforge_terminal_message",
-    "vodforge_terminal_run_id",
-)
-
-
-def claim_active_metadata_row(
-    row: dict[str, Any],
-    incoming: dict[str, Any],
-    run_id: str,
-) -> dict[str, Any]:
-    """Give one ephemeral Library row to an exact active run authority."""
-    row.update(incoming)
-    for key in _ACTIVE_METADATA_STALE_KEYS:
-        row.pop(key, None)
-    row[ACTIVE_METADATA_RUN_ID_KEY] = str(run_id)
-    return row
 
 
 def _planned_output_summary(plan: ExportPlan | AudioExportPlan, output_path: Path | None = None) -> dict[str, str]:
@@ -3385,14 +3353,6 @@ def download_job_display_title(job: DownloadJob, *, queued: bool = False) -> str
     return f"{state} {media} run"
 
 
-def metadata_run_key(info: dict[str, Any]) -> tuple[str, str] | None:
-    """Identify in-memory metadata that belongs to one provider item and output type."""
-    video_id = str(info.get("id") or "").strip()
-    if not video_id:
-        return None
-    return video_id, metadata_output_type(info).value
-
-
 def focus_metadata_profile_text(info: dict[str, Any], record_kind: str) -> str:
     """Describe saved output or a completed preview without redundant placeholders."""
     output_type = metadata_output_type(info)
@@ -3419,16 +3379,6 @@ def preview_output_summary_display() -> str:
             "Output file path: Not produced",
             "Next action: Start download in Forge",
         )
-    )
-
-
-def is_metadata_preview(info: dict[str, Any] | None) -> bool:
-    """Return true only for a metadata-only item, never a terminal or saved run."""
-    return bool(
-        isinstance(info, dict)
-        and info.get("vodforge_preview_complete") is True
-        and history_output_dir(info) is None
-        and not str(info.get("vodforge_terminal_status") or "").strip()
     )
 
 
@@ -5999,60 +5949,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         for job in self.pending_jobs:
             if self._library_run_is_suppressed(job):
                 continue
-            preview_info = job.preview_info or {}
-            preview_path = str(preview_info.get("preview_thumbnail_path") or "").strip()
-            records.append(
-                {
-                    "title": download_job_display_title(job, queued=True),
-                    "detail": str(preview_info.get("uploader") or preview_info.get("channel") or self._focus_profile_text(
-                            job.output_type,
-                            mp3_settings=job.mp3_settings,
-                            quality_label=job.quality_label,
-                            export_mode=job.export_mode,
-                        )),
-                    "status": f"Queued  •  {job.output_type.value}",
-                    "progress": 0,
-                    "kind": "queued",
-                    "output_type": job.output_type.value,
-                    "run_id": job.run_id,
-                    "job": job,
-                    "preview_thumbnail_path": preview_path,
-                    "preview_thumbnail_image": job.preview_thumbnail_image,
-                }
-            )
+            records.append(self._focus_queued_run_record(job))
         for terminal_job in self._terminal_jobs:
             if self._library_run_is_suppressed(terminal_job):
                 continue
-            terminal_preview = terminal_job.preview_info or {}
-            terminal_metadata_index = next(
-                (
-                    index
-                    for index, item in enumerate(self.metadata_items)
-                    if str(item.get("vodforge_terminal_run_id") or "") == terminal_job.run_id
-                ),
-                None,
-            )
-            terminal_status = terminal_job.terminal_status or "Stopped"
-            records.append(
-                {
-                    "title": download_job_display_title(terminal_job),
-                    "detail": str(
-                        terminal_preview.get("uploader")
-                        or terminal_preview.get("channel")
-                        or terminal_job.terminal_message
-                        or "Run did not produce an output"
-                    ),
-                    "status": f"{terminal_status}  •  {terminal_job.output_type.value}",
-                    "progress": 0,
-                    "kind": terminal_status.lower(),
-                    "output_type": terminal_job.output_type.value,
-                    "run_id": terminal_job.run_id,
-                    "job": terminal_job,
-                    "metadata_index": terminal_metadata_index,
-                    "preview_thumbnail_path": str(terminal_preview.get("preview_thumbnail_path") or "").strip(),
-                    "preview_thumbnail_image": terminal_job.preview_thumbnail_image,
-                }
-            )
+            records.append(self._focus_terminal_run_record(terminal_job))
         active_keys = self.active_job.metadata_keys if self.active_job is not None else set()
         active_history_identities = (
             self.active_job.history_identities if self.active_job is not None else set()
@@ -6062,53 +5963,73 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             for terminal_job in self._terminal_jobs
             for key in terminal_job.metadata_keys
         }
-        completed_jobs_by_identity: dict[tuple[str, str, str], DownloadJob] = {}
-        for completed_job in self.__dict__.get("_completed_jobs", []):
-            for identity in completed_job.history_identities:
-                # Completed jobs are newest-first. The first owner is the
-                # canonical owner; an older repeated run must not overwrite it.
-                completed_jobs_by_identity.setdefault(identity, completed_job)
-        for index, item in enumerate(self.metadata_items):
-            item_key = metadata_run_key(item)
-            item_history_identity = history_identity(item) if history_output_dir(item) is not None else None
-            if (
-                history_output_dir(item) is None
-                and item_key is not None
-                and (item_key in active_keys or item_key in terminal_keys)
-            ):
-                continue
-            if item_history_identity is not None and item_history_identity in active_history_identities:
-                continue
-            saved = history_output_dir(item)
-            if saved is None and not is_metadata_preview(item):
-                continue
-            output_type = metadata_output_type(item)
-            completed_job = (
-                completed_jobs_by_identity.get(item_history_identity)
-                if item_history_identity is not None
-                else None
+        records.extend(
+            persisted_run_deck_records(
+                self.metadata_items,
+                active_metadata_keys=active_keys,
+                terminal_metadata_keys=terminal_keys,
+                active_history_identities=active_history_identities,
+                completed_jobs=self.__dict__.get("_completed_jobs", []),
             )
-            records.append(
-                {
-                    "title": str(item.get("title") or item.get("id") or "Untitled media"),
-                    "detail": str(item.get("uploader") or item.get("channel") or format_duration(item.get("duration"))),
-                    "status": f"{'Completed' if saved is not None else 'Preview complete'}  •  {output_type.value}",
-                    "progress": 100,
-                    "kind": "completed" if saved is not None else "preview",
-                    "metadata_index": index,
-                    "output_type": output_type.value,
-                    "run_id": (
-                        completed_job.run_id
-                        if completed_job is not None
-                        else str(item.get("vodforge_preview_run_id") or f"history:{index}")
-                    ),
-                    "job": completed_job,
-                    "preview_thumbnail_image": (
-                        completed_job.preview_thumbnail_image if completed_job is not None else None
-                    ),
-                }
-            )
+        )
         return records
+
+    def _focus_queued_run_record(self, job: DownloadJob) -> dict[str, Any]:
+        preview = job.preview_info or {}
+        detail = preview.get("uploader") or preview.get("channel")
+        if not detail:
+            detail = self._focus_profile_text(
+                job.output_type,
+                mp3_settings=job.mp3_settings,
+                quality_label=job.quality_label,
+                export_mode=job.export_mode,
+            )
+        return {
+            "title": download_job_display_title(job, queued=True),
+            "detail": str(detail),
+            "status": f"Queued  •  {job.output_type.value}",
+            "progress": 0,
+            "kind": "queued",
+            "output_type": job.output_type.value,
+            "run_id": job.run_id,
+            "job": job,
+            "preview_thumbnail_path": str(
+                preview.get("preview_thumbnail_path") or ""
+            ).strip(),
+            "preview_thumbnail_image": job.preview_thumbnail_image,
+        }
+
+    def _focus_terminal_run_record(self, job: DownloadJob) -> dict[str, Any]:
+        preview = job.preview_info or {}
+        metadata_index = next(
+            (
+                index
+                for index, item in enumerate(self.metadata_items)
+                if str(item.get("vodforge_terminal_run_id") or "") == job.run_id
+            ),
+            None,
+        )
+        status = job.terminal_status or "Stopped"
+        return {
+            "title": download_job_display_title(job),
+            "detail": str(
+                preview.get("uploader")
+                or preview.get("channel")
+                or job.terminal_message
+                or "Run did not produce an output"
+            ),
+            "status": f"{status}  •  {job.output_type.value}",
+            "progress": 0,
+            "kind": status.lower(),
+            "output_type": job.output_type.value,
+            "run_id": job.run_id,
+            "job": job,
+            "metadata_index": metadata_index,
+            "preview_thumbnail_path": str(
+                preview.get("preview_thumbnail_path") or ""
+            ).strip(),
+            "preview_thumbnail_image": job.preview_thumbnail_image,
+        }
 
     def _schedule_focus_run_deck_geometry_refresh(self, event: tk.Event[Any]) -> None:
         """Reconcile the deck immediately when its discrete capacity changes.
@@ -7381,43 +7302,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if isinstance(preview_request, dict)
             else ""
         )
-        incoming_items = [dict(item) for item in iter_video_infos(info)]
-        new_items: list[dict[str, Any]] = []
-        for incoming in incoming_items:
-            if active_job is not None:
-                incoming = claim_active_metadata_row({}, incoming, active_job.run_id)
-            elif preview_complete:
-                incoming["vodforge_preview_complete"] = True
-                if preview_run_id:
-                    incoming["vodforge_preview_run_id"] = preview_run_id
-            else:
-                incoming.pop("vodforge_preview_complete", None)
-                incoming.pop("vodforge_preview_run_id", None)
-            video_id = str(incoming.get("id") or "")
-            output_type = metadata_output_type(incoming)
-            matching = next(
-                (
-                    item
-                    for item in [*new_items, *self.metadata_items]
-                    if video_id
-                    and str(item.get("id") or "") == video_id
-                    and metadata_output_type(item) == output_type
-                    and not (active_job is not None and history_output_dir(item) is not None)
-                ),
-                None,
-            )
-            if matching is not None:
-                if active_job is not None:
-                    claim_active_metadata_row(matching, incoming, active_job.run_id)
-                else:
-                    matching.update(incoming)
-                if not preview_complete and active_job is None:
-                    matching.pop("vodforge_preview_complete", None)
-                    matching.pop("vodforge_preview_run_id", None)
-            else:
-                new_items.append(incoming)
-        if new_items:
-            self.metadata_items = [*new_items, *self.metadata_items]
+        merged = merge_library_metadata_items(
+            self.metadata_items,
+            iter_video_infos(info),
+            active_run_id=active_job.run_id if active_job is not None else None,
+            preview_complete=preview_complete,
+            preview_run_id=preview_run_id,
+        )
+        self.metadata_items = merged.items
+        incoming_items = merged.incoming_items
         if preview_complete:
             self._metadata_preview_request = None
         self._rebuild_output_dir_index()
