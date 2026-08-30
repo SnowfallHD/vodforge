@@ -179,8 +179,12 @@ def symlink_and_temp_probe(
     mode_root = case_dir / "mode-output"
     mode_root.mkdir()
     staging = create_staging_dir(mode_root)
-    mode = stat.S_IMODE(staging.stat().st_mode)
-    private = mode & 0o077 == 0
+    staging_root_mode = stat.S_IMODE(staging.parent.stat().st_mode)
+    staging_mode = stat.S_IMODE(staging.stat().st_mode)
+    posix_mode_contract = os.name != "nt"
+    private = not posix_mode_contract or (
+        staging_root_mode == 0o700 and staging_mode == 0o700
+    )
     findings: list[dict[str, Any]] = []
     scenario_id = "security.symlink_containment_and_staging_permissions"
     if not safely_rejected:
@@ -221,8 +225,9 @@ def symlink_and_temp_probe(
                     "Inspect its permission bits.",
                 ],
                 [
-                    f"Observed staging mode: {oct(mode)}",
-                    "Expected group/other permission bits: 0",
+                    f"Observed staging root mode: {oct(staging_root_mode)}",
+                    f"Observed per-run staging mode: {oct(staging_mode)}",
+                    "Expected POSIX modes: 0700 for both directories",
                 ],
                 "Create the staging root and run directory with mode 0700 and verify the effective mode before writing media.",
                 scenario_id,
@@ -239,7 +244,9 @@ def symlink_and_temp_probe(
             "unsafe_symlink_rejected": rejected,
             "staged_file_preserved": staged_preserved,
             "outside_entry_count": len(outside_entries),
-            "staging_mode_octal": oct(mode),
+            "staging_root_mode_octal": oct(staging_root_mode),
+            "staging_mode_octal": oct(staging_mode),
+            "posix_mode_contract_applicable": posix_mode_contract,
         },
         "evidence": [
             f"Selected output root: {output_root}",
@@ -248,7 +255,8 @@ def symlink_and_temp_probe(
             f"Unsafe descendant symlink rejection: {rejection_evidence or 'missing'}",
             f"Staged file preserved after rejection: {staged_preserved}",
             f"Entries written outside selected root: {[str(path) for path in outside_entries]}",
-            f"Per-run staging permissions: {oct(mode)}",
+            f"Staging root permissions: {oct(staging_root_mode)}",
+            f"Per-run staging permissions: {oct(staging_mode)}",
         ],
         "artifacts": [str(path) for path in packaged],
         "error": None,
@@ -567,9 +575,16 @@ def url_secret_persistence_probe(
     safe_identity = "https://example.invalid/media"
     persisted = {name: secret in text or "user:pass" in text for name, text in durable_text.items()}
     diagnostic_mode = stat.S_IMODE(diagnostic.stat().st_mode)
+    activity_mode = stat.S_IMODE(activity.stat().st_mode)
+    failure_report_mode = stat.S_IMODE(report.stat().st_mode)
+    posix_mode_contract = os.name != "nt"
+    private_log_modes = not posix_mode_contract or all(
+        mode == 0o600
+        for mode in (diagnostic_mode, activity_mode, failure_report_mode)
+    )
     leaked_areas = [name for name, leaked in persisted.items() if leaked]
     missing_identity_areas = [name for name, text in durable_text.items() if safe_identity not in text]
-    failed = bool(leaked_areas or missing_identity_areas) or diagnostic_mode & 0o077 != 0
+    failed = bool(leaked_areas or missing_identity_areas) or not private_log_modes
     findings: list[dict[str, Any]] = []
     if leaked_areas or missing_identity_areas:
         findings.append(
@@ -593,20 +608,24 @@ def url_secret_persistence_probe(
                 "security.url_secret_persistence",
             )
         )
-    if diagnostic_mode & 0o077:
+    if not private_log_modes:
         findings.append(
             _finding(
                 "SEC-DIAGNOSTIC-MODE-001",
-                "Diagnostics file is readable beyond the current user",
+                "Durable local logs are readable beyond the current user",
                 "security defect",
                 "low",
-                "yt_downloader/app.py write_diagnostic/reset_diagnostics_log",
+                "yt_downloader/app.py diagnostics, activity, and batch-failure sinks",
                 [
                     "Write a diagnostic file under the effective harness umask.",
                     "Inspect permission bits.",
                 ],
-                [f"Observed mode: {oct(diagnostic_mode)}"],
-                "Create and chmod diagnostics to 0600 before writing, including existing files.",
+                [
+                    f"Observed diagnostics mode: {oct(diagnostic_mode)}",
+                    f"Observed activity mode: {oct(activity_mode)}",
+                    f"Observed batch-failure mode: {oct(failure_report_mode)}",
+                ],
+                "Open durable private logs without following redirects and restrict new or existing files to 0600 before writing.",
                 "security.url_secret_persistence",
             )
         )
@@ -620,11 +639,16 @@ def url_secret_persistence_probe(
             "leaked_area_count": len(leaked_areas),
             "safe_identity_missing_area_count": len(missing_identity_areas),
             "diagnostic_mode_octal": oct(diagnostic_mode),
+            "activity_mode_octal": oct(activity_mode),
+            "failure_report_mode_octal": oct(failure_report_mode),
+            "posix_mode_contract_applicable": posix_mode_contract,
         },
         "evidence": [
             f"Unique canary persisted in: {leaked_areas}",
             f"Safe URL identity missing from: {missing_identity_areas}",
             f"Diagnostics mode: {oct(diagnostic_mode)}",
+            f"Activity mode: {oct(activity_mode)}",
+            f"Batch-failure mode: {oct(failure_report_mode)}",
         ],
         "artifacts": [str(report), str(activity), str(diagnostic), str(metadata)],
         "error": None,

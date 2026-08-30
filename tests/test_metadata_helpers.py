@@ -1,6 +1,8 @@
 import json
 import inspect
+import os
 import queue
+import stat
 import threading
 import time
 from io import BytesIO
@@ -11,6 +13,7 @@ from PIL import Image
 
 import yt_downloader.app as app_module
 from yt_downloader.history import history_output_dir, sanitize_history_record, upsert_history
+from yt_downloader.safe_output import UnsafeOutputPathError
 from yt_downloader.app import (
     AudioExportPlan,
     CookieSource,
@@ -171,6 +174,60 @@ def test_diagnostics_writer_reuses_and_resets_its_line_buffered_sink(monkeypatch
         app_module._DIAGNOSTICS_LOG_HANDLE.close()
         app_module._DIAGNOSTICS_LOG_HANDLE = None
         app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
+
+
+def test_private_log_sinks_harden_preexisting_permissions(monkeypatch, tmp_path: Path):
+    diagnostic = tmp_path / "latest.log"
+    activity = tmp_path / "activity.log"
+    failure_report = tmp_path / "batch-url-failures.txt"
+    for path in (diagnostic, activity, failure_report):
+        path.write_text("existing\n", encoding="utf-8")
+        if os.name != "nt":
+            path.chmod(0o644)
+
+    monkeypatch.setattr(app_module, "DIAGNOSTICS_LOG_PATH", diagnostic)
+    app_module.write_diagnostic("private diagnostic")
+    app_module.reset_diagnostics_log()
+    app_module.append_activity_log("private activity", activity)
+    app_module.append_batch_failure_report(
+        failure_report,
+        "https://example.invalid/media",
+        "private failure",
+    )
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+
+    assert diagnostic.read_text(encoding="utf-8") == ""
+    assert "private activity" in activity.read_text(encoding="utf-8")
+    assert "private failure" in failure_report.read_text(encoding="utf-8")
+    if os.name != "nt":
+        assert [stat.S_IMODE(path.stat().st_mode) for path in (diagnostic, activity, failure_report)] == [
+            0o600,
+            0o600,
+            0o600,
+        ]
+
+
+def test_diagnostics_writer_does_not_follow_existing_symlink(monkeypatch, tmp_path: Path):
+    target = tmp_path / "target.txt"
+    diagnostic = tmp_path / "latest.log"
+    target.write_text("must remain unchanged", encoding="utf-8")
+    try:
+        diagnostic.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"file symlinks are unavailable on this host: {exc}")
+    monkeypatch.setattr(app_module, "DIAGNOSTICS_LOG_PATH", diagnostic)
+    with app_module._DIAGNOSTICS_LOG_LOCK:
+        if app_module._DIAGNOSTICS_LOG_HANDLE is not None:
+            app_module._DIAGNOSTICS_LOG_HANDLE.close()
+        app_module._DIAGNOSTICS_LOG_HANDLE = None
+        app_module._DIAGNOSTICS_LOG_HANDLE_PATH = None
+
+    app_module.write_diagnostic("must not reach target")
+
+    assert target.read_text(encoding="utf-8") == "must remain unchanged"
+    assert diagnostic.is_symlink()
+    assert app_module._DIAGNOSTICS_LOG_HANDLE is None
 
 
 def test_diagnostic_and_activity_sinks_sanitize_embedded_url_secrets(monkeypatch, tmp_path: Path):
@@ -1662,6 +1719,63 @@ def test_short_same_volume_staging_fits_when_the_previous_layout_would_exhaust_w
     assert len(staging.name) == 8
     assert app_module._path_would_exceed_windows_safe_limit(actual_artifact) is False
     assert app_module._path_would_exceed_windows_safe_limit(previous_artifact) is True
+
+
+def test_staging_root_and_run_directory_are_private(tmp_path: Path):
+    output_root = tmp_path / "output"
+    output_root.mkdir()
+
+    staging = create_staging_dir(output_root)
+
+    assert staging.parent == output_root.resolve() / ".vfstage"
+    if os.name != "nt":
+        assert stat.S_IMODE(staging.parent.stat().st_mode) == 0o700
+        assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+
+
+def test_staging_hardens_preexisting_loose_root_permissions(tmp_path: Path):
+    output_root = tmp_path / "output"
+    staging_root = output_root / ".vfstage"
+    staging_root.mkdir(parents=True)
+    if os.name != "nt":
+        staging_root.chmod(0o755)
+
+    staging = create_staging_dir(output_root)
+
+    if os.name != "nt":
+        assert stat.S_IMODE(staging_root.stat().st_mode) == 0o700
+        assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+
+
+def test_staging_rejects_symlink_root_without_touching_target(tmp_path: Path):
+    output_root = tmp_path / "output"
+    outside = tmp_path / "outside"
+    output_root.mkdir()
+    outside.mkdir()
+    try:
+        (output_root / ".vfstage").symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks are unavailable on this host: {exc}")
+
+    with pytest.raises(UnsafeOutputPathError):
+        create_staging_dir(output_root)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_staging_allows_an_explicitly_selected_symlink_output_root(tmp_path: Path):
+    actual_output = tmp_path / "actual-output"
+    selected_output = tmp_path / "selected-output"
+    actual_output.mkdir()
+    try:
+        selected_output.symlink_to(actual_output, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks are unavailable on this host: {exc}")
+
+    staging = create_staging_dir(selected_output)
+
+    assert staging.parent == actual_output.resolve() / ".vfstage"
+    assert staging.is_dir()
 
 
 def test_download_reuses_preflight_result_without_mutating_it():

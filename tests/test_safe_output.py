@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from yt_downloader.app import package_downloaded_media_from_staging
-from yt_downloader.safe_output import UnsafeOutputPathError, _is_symlink_or_reparse
+from yt_downloader.safe_output import UnsafeOutputPathError, is_symlink_or_reparse
 
 
 def _symlink_directory_or_skip(link: Path, target: Path) -> None:
@@ -171,4 +171,4 @@ def test_windows_reparse_attribute_is_treated_as_redirect():
         st_file_attributes=getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400),
     )
 
-    assert _is_symlink_or_reparse(fake_stat)
+    assert is_symlink_or_reparse(fake_stat)
