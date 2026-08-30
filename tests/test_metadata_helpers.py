@@ -4256,6 +4256,83 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
     )
 
 
+def test_committed_media_sidecar_failures_preserve_history_and_media(monkeypatch, tmp_path: Path):
+    output_dir = tmp_path / "Creator" / "videos - no playlist" / "Item [abc123]"
+    output_dir.mkdir(parents=True)
+    primary_output = output_dir / "Item.mp4"
+    primary_output.write_bytes(b"validated committed media")
+    info = {
+        "id": "abc123",
+        "title": "Item",
+        "_vodforge_output_dir": str(output_dir),
+    }
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=abc123",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=True,
+        embed_metadata=False,
+        write_info_json=True,
+        tags=[],
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    diagnostics: list[str] = []
+    monkeypatch.setattr(
+        app_module,
+        "save_cached_thumbnail_image",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("cache failed")),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "write_compact_video_metadata",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("metadata failed")),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "save_thumbnail_image",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("thumbnail failed")),
+    )
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
+
+    outcome = app._record_committed_media_and_write_sidecars(
+        job,
+        info,
+        primary_output,
+        label="Video 1 of 1",
+        custom_cover_for_cache=None,
+    )
+
+    assert outcome == DownloadOutcome(sidecar_failure_count=3)
+    assert primary_output.read_bytes() == b"validated committed media"
+    events = list(app.events.queue)
+    history_events = [payload for kind, payload in events if kind == "history_record"]
+    assert history_events == [
+        {
+            "job": job,
+            "info": info,
+            "output_dir": str(output_dir),
+        }
+    ]
+    warning_lines = [
+        payload["line"]
+        for kind, payload in events
+        if kind == "job_log" and str(payload["line"]).startswith("WARNING:")
+    ]
+    assert len(warning_lines) == 3
+    assert any("Library artwork" in line for line in warning_lines)
+    assert any("compact metadata" in line for line in warning_lines)
+    assert any("separate thumbnail" in line for line in warning_lines)
+    assert len(diagnostics) == 3
+
+
 def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch, tmp_path: Path):
     source_url = "https://www.youtube.com/watch?v=abc123&list=PLreal&index=4"
     preflight = {

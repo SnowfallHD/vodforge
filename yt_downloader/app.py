@@ -11948,6 +11948,95 @@ class DownloaderApp(tk.Tk):
             success_count=len(output_paths),
         )
 
+    def _record_committed_media_and_write_sidecars(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        primary_output: Path,
+        *,
+        label: str,
+        custom_cover_for_cache: Path | None,
+    ) -> DownloadOutcome:
+        outcome = DownloadOutcome()
+        try:
+            cached_thumbnail = (
+                save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
+                if job.output_type == OutputType.MP3
+                and custom_cover_for_cache is not None
+                else save_cached_thumbnail_image(info)
+            )
+            if cached_thumbnail is not None:
+                artwork_source = (
+                    "custom cover"
+                    if custom_cover_for_cache is not None
+                    else "YouTube thumbnail"
+                )
+                self._emit_job_log(
+                    job,
+                    f"{label}: cached {artwork_source} privately for Forge and Library",
+                )
+        except Exception as exc:
+            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
+            write_diagnostic(
+                f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}"
+            )
+            self._emit_job_log(
+                job,
+                f"WARNING: {label}: the media is complete, but its Library artwork could not be cached.",
+            )
+        self.events.put(
+            (
+                "history_record",
+                {
+                    "job": job,
+                    "info": info,
+                    "output_dir": str(primary_output.parent),
+                },
+            )
+        )
+        if job.write_info_json:
+            try:
+                metadata_path = write_compact_video_metadata(
+                    resolved_video_output_dir(job.output_dir, info),
+                    info,
+                    job.tags,
+                )
+                self._emit_job_log(
+                    job,
+                    f"{label}: saved compact video metadata {metadata_path}",
+                )
+            except Exception as exc:
+                outcome = outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                write_diagnostic(
+                    f"{label} compact metadata write failed: {type(exc).__name__}: {exc}"
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}",
+                )
+        if job.write_thumbnail:
+            try:
+                thumb_path = save_thumbnail_image(
+                    resolved_video_output_dir(job.output_dir, info),
+                    info,
+                )
+                if thumb_path:
+                    self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
+            except Exception as exc:
+                outcome = outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                write_diagnostic(
+                    f"{label} thumbnail write failed: {type(exc).__name__}: {exc}"
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}",
+                )
+        return outcome
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -12418,47 +12507,15 @@ class DownloaderApp(tk.Tk):
                         outcome = outcome.combined_with(
                             DownloadOutcome(success_count=committed_media.success_count)
                         )
-                        try:
-                            cached_thumbnail = (
-                                save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
-                                if job.output_type == OutputType.MP3 and custom_cover_for_cache is not None
-                                else save_cached_thumbnail_image(info)
+                        outcome = outcome.combined_with(
+                            self._record_committed_media_and_write_sidecars(
+                                job,
+                                info,
+                                primary_output,
+                                label=label,
+                                custom_cover_for_cache=custom_cover_for_cache,
                             )
-                            if cached_thumbnail is not None:
-                                artwork_source = "custom cover" if custom_cover_for_cache is not None else "YouTube thumbnail"
-                                self._emit_job_log(job, f"{label}: cached {artwork_source} privately for Forge and Library")
-                        except Exception as exc:
-                            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                            write_diagnostic(f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}")
-                            self._emit_job_log(job, f"WARNING: {label}: the media is complete, but its Library artwork could not be cached.")
-                        if primary_output is not None:
-                            self.events.put(
-                                (
-                                    "history_record",
-                                    {
-                                        "job": job,
-                                        "info": info,
-                                        "output_dir": str(primary_output.parent),
-                                    },
-                                )
-                            )
-                        if job.write_info_json:
-                            try:
-                                metadata_path = write_compact_video_metadata(resolved_video_output_dir(job.output_dir, info), info, job.tags)
-                                self._emit_job_log(job, f"{label}: saved compact video metadata {metadata_path}")
-                            except Exception as exc:
-                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                                write_diagnostic(f"{label} compact metadata write failed: {type(exc).__name__}: {exc}")
-                                self._emit_job_log(job, f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}")
-                        if job.write_thumbnail:
-                            try:
-                                thumb_path = save_thumbnail_image(resolved_video_output_dir(job.output_dir, info), info)
-                                if thumb_path:
-                                    self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
-                            except Exception as exc:
-                                outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-                                write_diagnostic(f"{label} thumbnail write failed: {type(exc).__name__}: {exc}")
-                                self._emit_job_log(job, f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}")
+                        )
                         put_stage_progress(video_index, total_videos, 0.90, 0.10, 1.0)
                         result_label = "MP3 audio" if job.output_type == OutputType.MP3 else "MP4 video"
                         self.events.put(("status", f"{label} complete — {result_label}"))
