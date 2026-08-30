@@ -71,6 +71,7 @@ from .output_validation import (
     output_artifact_plan_mismatches as _output_artifact_plan_mismatches,
 )
 from .output_validation import validate_output_artifact as _validate_output_artifact
+from .platform_services import open_path as open_system_path
 from .private_files import open_private_text_file, write_private_bytes
 from .safe_output import (
     commit_file_beneath,
@@ -9700,13 +9701,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     @staticmethod
     def _open_path(path: Path) -> None:
-        path.mkdir(parents=True, exist_ok=True)
-        if sys.platform.startswith("win"):
-            os.startfile(path)  # type: ignore[attr-defined]
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(path)])
-        else:
-            subprocess.Popen(["xdg-open", str(path)])
+        open_system_path(path)
 
     def _folder_to_open(self) -> Path:
         saved = self._selected_saved_folder()
