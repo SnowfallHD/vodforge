@@ -1,0 +1,8 @@
+.runs/
+.cache/
+reports/*/
+reports/latest
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://getvodforge.com/schemas/engineering-quality-run-1.0.0.json",
+  "title": "VODForge engineering-quality run",
+  "type": "object",
+  "required": ["schema_version", "run_id", "profile", "started_at", "completed_at", "machine", "summary", "scenarios", "findings"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "profile": {"enum": ["normal", "deep"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "duration_seconds": {"type": "number", "minimum": 0},
+    "machine": {"type": "object", "additionalProperties": true},
+    "repository": {"type": "object", "additionalProperties": true},
+    "tool_versions": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+    "summary": {
+      "type": "object",
+      "required": ["scenarios_attempted", "passed", "failed", "errors", "skipped", "jobs_attempted", "jobs_completed", "jobs_failed", "jobs_cancelled"],
+      "properties": {
+        "scenarios_attempted": {"type": "integer", "minimum": 0},
+        "passed": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "errors": {"type": "integer", "minimum": 0},
+        "skipped": {"type": "integer", "minimum": 0},
+        "jobs_attempted": {"type": "integer", "minimum": 0},
+        "jobs_completed": {"type": "integer", "minimum": 0},
+        "jobs_failed": {"type": "integer", "minimum": 0},
+        "jobs_cancelled": {"type": "integer", "minimum": 0},
+        "crash_count": {"type": "integer", "minimum": 0},
+        "corrupted_output_count": {"type": "integer", "minimum": 0},
+        "leaked_process_count": {"type": "integer", "minimum": 0},
+        "zombie_process_signal_count": {"type": "integer", "minimum": 0},
+        "leaked_temp_file_count": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "aggregate_metrics": {"type": "object", "additionalProperties": true},
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "evidence_tier", "status", "duration_seconds", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "category": {"type": "string"},
+          "evidence_tier": {"enum": ["unit_static", "headless_production_pipeline", "packaged_app_e2e"]},
+          "status": {"enum": ["passed", "failed", "error", "skipped"]},
+          "duration_seconds": {"type": "number", "minimum": 0},
+          "metrics": {"type": "object", "additionalProperties": true},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "artifacts": {"type": "array", "items": {"type": "string"}},
+          "error": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "classification", "severity", "area", "reproduction", "evidence", "suggested_fix"],
+        "properties": {
+          "id": {"type": "string"},
+          "title": {"type": "string"},
+          "classification": {"enum": ["correctness defect", "reliability defect", "security defect", "performance defect", "maintainability risk", "code smell", "stylistic preference"]},
+          "severity": {"enum": ["critical", "high", "medium", "low", "informational"]},
+          "area": {"type": "string"},
+          "reproduction": {"type": "array", "items": {"type": "string"}},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "suggested_fix": {"type": "string"},
+          "scenario_id": {"type": ["string", "null"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

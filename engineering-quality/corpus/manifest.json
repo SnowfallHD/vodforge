@@ -1,0 +1,304 @@
+{
+  "schema_version": "1.0.0",
+  "policy": {
+    "purpose": "Automated VODForge engineering-quality testing only",
+    "rules": [
+      "Use generated fixtures, public-domain media, explicit Creative Commons media, or media intentionally published for testing.",
+      "Do not use cookies, browser profiles, authenticated media, DRM, commercial music, or random creator uploads.",
+      "External properties are observations unless the manifest marks them as stable assertions.",
+      "Never use an exact media hash as a cross-run assertion unless the source publisher provides an immutable artifact."
+    ]
+  },
+  "items": [
+    {
+      "id": "generated-short-av",
+      "url": "fixture://short-av",
+      "type": "video",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Generated locally by the harness from FFmpeg testsrc2 and sine filters; no third-party creative work.",
+      "expected_behavior": "MP4 and MP3 jobs complete through the real VODForge pipeline.",
+      "expected_characteristics": {
+        "duration_seconds": 6,
+        "video": true,
+        "audio": true,
+        "source_width": 640,
+        "source_height": 360,
+        "metadata_rich": true,
+        "thumbnail": true
+      },
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "generated-slow-cancel",
+      "url": "fixture://slow/long-av",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Generated locally by the harness from FFmpeg filters and served by a throttled fault server.",
+      "expected_behavior": "Cancellation produces no committed output and removes the current run staging directory.",
+      "expected_characteristics": {
+        "duration_seconds": 24,
+        "video": true,
+        "audio": true,
+        "fault": "slow network"
+      },
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "generated-multi-quality",
+      "url": "fixture://page/multi",
+      "type": "video",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Generated locally from two FFmpeg testsrc2 and sine variants in one HLS master; no third-party creative work.",
+      "expected_behavior": "The 360p request selects the 360p variant and the 720p request selects the best eligible 540p variant, with source and generated-output properties reported separately.",
+      "expected_characteristics": {
+        "duration_seconds": 6,
+        "video": true,
+        "audio": true,
+        "source_heights": [360, 540],
+        "source_selection": true
+      },
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "generated-unicode-title",
+      "url": "fixture://page/unicode",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Generated locally; the title and metadata are synthetic Unicode and punctuation stress data.",
+      "expected_behavior": "The final path remains inside the selected output root and preserves a readable sanitized title.",
+      "expected_characteristics": {
+        "unicode_title": true,
+        "punctuation_heavy": true,
+        "long_title": true,
+        "description": true,
+        "tags": true,
+        "thumbnail": true
+      },
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "w3c-sintel-test-trailer-mp4",
+      "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
+      "type": "video",
+      "source_kind": "public",
+      "copyright_license_verified": true,
+      "platform_automation_status": "explicit-test-media",
+      "default_media_download": true,
+      "attribution_required": true,
+      "license_or_reason_safe": "W3C explicitly published this media for HTML media testing; Sintel is available under Creative Commons Attribution 3.0.",
+      "license_url": "https://lists.w3.org/Archives/Public/public-html-testsuite/2010May/0011.html",
+      "expected_behavior": "Either a validated MP4 result or an explicit unsupported-generic-source rejection; never a crash, corrupted commit, or staging residue.",
+      "expected_characteristics": {
+        "video": true,
+        "audio": true,
+        "container": "mp4",
+        "stable_assertions": ["nonzero source", "clean commit or clean rejection"]
+      },
+      "profiles": ["normal-public", "deep"]
+    },
+    {
+      "id": "w3c-big-buck-bunny-audio-mp4",
+      "url": "https://media.w3.org/2010/07/bunny/04-Death_Becomes_Fur.mp4",
+      "type": "audio-oriented",
+      "source_kind": "public",
+      "copyright_license_verified": true,
+      "platform_automation_status": "explicit-test-media",
+      "default_media_download": true,
+      "attribution_required": true,
+      "license_or_reason_safe": "W3C hosts this Big Buck Bunny-derived audio asset for HTML audio testing; the Blender open movie is CC BY 3.0.",
+      "license_url": "https://www.w3.org/html/wiki/Elements/audio",
+      "expected_behavior": "MP3 mode may succeed; MP4 video mode must reject the audio-only source cleanly.",
+      "expected_characteristics": {
+        "audio": true,
+        "video": false,
+        "stable_assertions": ["nonzero source", "clean commit or clean rejection"]
+      },
+      "profiles": ["deep"]
+    },
+    {
+      "id": "mdn-cc0-flower-mp4",
+      "url": "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+      "type": "video",
+      "source_kind": "public",
+      "copyright_license_verified": true,
+      "platform_automation_status": "intentional-test-media",
+      "default_media_download": true,
+      "license_or_reason_safe": "Hosted by MDN in its cc0-videos test-media collection; retained as a video-only negative/compatibility case, not assumed to contain audio.",
+      "license_url": "https://github.com/mdn/interactive-examples/tree/main/live-examples/media/cc0-videos",
+      "expected_behavior": "Source analysis succeeds; if no audio is present, VODForge must fail clearly rather than claim a valid MP4 output.",
+      "expected_characteristics": {
+        "short": true,
+        "video": true,
+        "audio_may_be_absent": true,
+        "stable_assertions": ["readable source", "clean failure or validated output"]
+      },
+      "profiles": ["deep"]
+    },
+    {
+      "id": "blender-sintel-trailer-480p",
+      "url": "https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4",
+      "type": "video",
+      "source_kind": "public",
+      "copyright_license_verified": true,
+      "platform_automation_status": "publisher-direct-download",
+      "default_media_download": true,
+      "attribution_required": true,
+      "license_or_reason_safe": "Official Blender Open Movie download. Sintel is published under Creative Commons Attribution 3.0.",
+      "license_url": "https://durian.blender.org/about/",
+      "expected_behavior": "A public direct-media MP4 job completes and validates without cookies or authenticated state.",
+      "expected_characteristics": {
+        "video": true,
+        "audio": true,
+        "resolution_class": "low",
+        "stable_assertions": ["nonzero duration", "video stream", "audio stream"]
+      },
+      "profiles": ["deep"]
+    },
+    {
+      "id": "blender-big-buck-bunny-320x180",
+      "url": "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_320x180.mp4",
+      "type": "video",
+      "source_kind": "public",
+      "copyright_license_verified": true,
+      "platform_automation_status": "publisher-direct-download",
+      "default_media_download": true,
+      "attribution_required": true,
+      "license_or_reason_safe": "Official Blender Open Movie download. Big Buck Bunny is published under Creative Commons Attribution 3.0.",
+      "license_url": "https://peach.blender.org/about/",
+      "expected_behavior": "A longer low-resolution public job exercises sustained download/transcode and validates.",
+      "expected_characteristics": {
+        "long": true,
+        "video": true,
+        "audio": true,
+        "resolution_class": "low",
+        "stable_assertions": ["nonzero duration", "video stream", "audio stream"]
+      },
+      "profiles": ["deep"]
+    },
+    {
+      "id": "youtube-cc-creative-commons-explainer",
+      "url": "https://www.youtube.com/watch?v=dPZTh2NKTm4",
+      "type": "video",
+      "source_kind": "platform-candidate",
+      "copyright_license_verified": true,
+      "platform_automation_status": "needs-review",
+      "default_media_download": false,
+      "attribution_required": true,
+      "license_or_reason_safe": "Current provider metadata reports Creative Commons licensing and Creative Commons links this explainer from its official video page. Content rights and platform automation authorization are recorded separately.",
+      "license_url": "https://creativecommons.org/about/videos/",
+      "platform_terms_url": "https://www.youtube.com/t/terms",
+      "expected_behavior": "Metadata-only by default. If explicitly enabled under an authorized environment, capture the current inventory and verify selected height does not exceed the requested cap.",
+      "expected_characteristics": {
+        "short": true,
+        "high_resolution": true,
+        "multiple_audio_qualities": true,
+        "thumbnail": true,
+        "metadata_rich": true
+      },
+      "profiles": ["metadata-only"]
+    },
+    {
+      "id": "youtube-cc-big-buck-bunny",
+      "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+      "type": "video",
+      "source_kind": "platform-candidate",
+      "copyright_license_verified": true,
+      "platform_automation_status": "needs-review",
+      "default_media_download": false,
+      "attribution_required": true,
+      "license_or_reason_safe": "Official Blender Open Movie content is CC BY 3.0; current provider metadata reports Creative Commons Attribution. Platform automation authorization remains a separate prerequisite.",
+      "license_url": "https://peach.blender.org/about/",
+      "platform_terms_url": "https://www.youtube.com/t/terms",
+      "expected_behavior": "Metadata-only by default; authorized deep runs can exercise long duration, 4K/source selection, audio qualities, thumbnail, and transcode scaling.",
+      "expected_characteristics": {
+        "long": true,
+        "high_resolution": true,
+        "multiple_audio_qualities": true,
+        "thumbnail": true
+      },
+      "profiles": ["metadata-only"]
+    },
+    {
+      "id": "youtube-cc-unicode-title",
+      "url": "https://www.youtube.com/watch?v=pKmSdY56VtY",
+      "type": "edge-case",
+      "source_kind": "platform-candidate",
+      "copyright_license_verified": true,
+      "platform_automation_status": "needs-review",
+      "default_media_download": false,
+      "attribution_required": true,
+      "license_or_reason_safe": "Official Blender Grease Pencil showcase; current provider metadata reports Creative Commons Attribution. The real en dash stresses non-ASCII title handling.",
+      "license_url": "https://www.youtube.com/watch?v=pKmSdY56VtY",
+      "platform_terms_url": "https://www.youtube.com/t/terms",
+      "expected_behavior": "Metadata-only by default; if authorized, preserve a readable Unicode title without path escape.",
+      "expected_characteristics": {"unicode_title": true, "thumbnail": true, "tags": true},
+      "profiles": ["metadata-only"]
+    },
+    {
+      "id": "youtube-blender-playlist-metadata",
+      "url": "https://www.youtube.com/playlist?list=PL6B3937A5D230E335",
+      "type": "playlist",
+      "source_kind": "platform-candidate",
+      "copyright_license_verified": false,
+      "platform_automation_status": "needs-review",
+      "default_media_download": false,
+      "attribution_required": true,
+      "license_or_reason_safe": "Official Blender playlist suitable for metadata enumeration only. Individual entries have differing licenses, so each selected item needs separate rights review before download.",
+      "license_url": "https://studio.blender.org/blog/agent-327-film-file-released-as-cc-by-nd/",
+      "platform_terms_url": "https://www.youtube.com/t/terms",
+      "expected_behavior": "Metadata enumeration only; count and order are mutable and never pinned as deterministic assertions.",
+      "expected_characteristics": {"playlist": true, "mutable": true},
+      "profiles": ["metadata-only"]
+    },
+    {
+      "id": "local-retry-503",
+      "url": "fixture://fault/retry/page",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Synthetic local HTTP fault endpoint.",
+      "expected_behavior": "Transient server failures either recover through configured retries or fail with reproducible evidence and no corrupted output.",
+      "expected_characteristics": {"fault": "HTTP 503 then recovery"},
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "local-http-404",
+      "url": "fixture://status/404",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Synthetic local HTTP failure endpoint.",
+      "expected_behavior": "The job fails clearly and leaves no committed or staged media.",
+      "expected_characteristics": {"fault": "HTTP 404"},
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "local-network-interruption",
+      "url": "fixture://fault/interrupt/page",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Synthetic local HLS fixture whose first media response is intentionally terminated after partial transfer.",
+      "expected_behavior": "The real transfer retry path recovers and commits one validated file without partial or staging residue.",
+      "expected_characteristics": {"fault": "TCP response interruption", "retryable": true},
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "malformed-url",
+      "url": "not a URL://[]",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Synthetic malformed input.",
+      "expected_behavior": "Rejected without a crash, child-process leak, or output mutation.",
+      "expected_characteristics": {"malformed": true},
+      "profiles": ["normal", "deep"]
+    },
+    {
+      "id": "duplicate-generated-url",
+      "url": "fixture://page/unicode",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "References the harness-owned generated fixture twice.",
+      "expected_behavior": "Duplicate execution must not corrupt the valid committed artifact or leave staging state.",
+      "expected_characteristics": {"duplicate_of": "generated-unicode-title"},
+      "profiles": ["deep"]
+    }
+  ]
+}

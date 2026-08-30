@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+HARNESS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$HARNESS_DIR/.." && pwd)
+PYTHON=${VODFORGE_QUALITY_PYTHON:-"$REPO_ROOT/.venv/bin/python"}
+
+if [ ! -x "$PYTHON" ]; then
+  PYTHON=${VODFORGE_QUALITY_PYTHON:-python3}
+fi
+
+cd "$REPO_ROOT"
+PYTHONPATH="$HARNESS_DIR:$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+  exec "$PYTHON" -m quality_harness.cli "$@"

@@ -1,0 +1,178 @@
+# VODForge engineering-quality harness
+
+This directory is an isolated adversarial test system for answering a bounded question with receipts:
+
+> Is VODForge actually well engineered, performant, reliable, secure, and maintainable under the scenarios we executed?
+
+The harness is intentionally not another downloader. Its high-volume integration layer constructs a real production `DownloadJob` and calls the existing `DownloaderApp._download_worker_single` seam without constructing Tk. From that point onward VODForge performs its own yt-dlp preflight/download, export planning, `.vfstage` ownership, FFmpeg post-processing/transcode, ffprobe validation, atomic final commit, metadata/thumbnail sidecars, and worker events.
+
+## Evidence tiers
+
+Every scenario has one of three non-interchangeable evidence tiers:
+
+1. `unit_static` — existing/unit/property tests plus direct production-helper contracts, lint, type, security, dependency, dead-code, complexity, mutation, and change-surface signals. These scenarios do not claim to execute the complete worker.
+2. `headless_production_pipeline` — real VODForge worker orchestration with real yt-dlp, FFmpeg, ffprobe, files, local HTTP faults, and process/resource measurement, but no Tk UI.
+3. `packaged_app_e2e` — an exact packaged artifact driven through its visible UI, real worker, yt-dlp/FFmpeg, final media, shutdown/restart behavior, and independent artifact/output receipts.
+
+A headless pass is never reported as full-application proof. If the packaged tier did not run, the report says `skipped` and leaves UI/settings/queue/lifecycle integration unproven.
+
+## Setup
+
+From a clean checkout:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt -r engineering-quality/requirements.txt
+```
+
+Production dependencies remain in the repository's existing requirements files. Harness-only tools are isolated in `engineering-quality/requirements.txt`.
+
+A complete FFmpeg installation containing both `ffmpeg` and `ffprobe` must be on `PATH` for headless runs. `imageio-ffmpeg` alone is insufficient because it does not supply the independent `ffprobe` executable. On macOS, Homebrew's `ffmpeg` package satisfies both. Verify the environment before spending time on a run:
+
+```sh
+./engineering-quality/run doctor
+```
+
+The packaged tier additionally needs an existing VODForge artifact. Use a locally built exact-checkpoint artifact or an independently checksum-verified release extraction; the harness does not silently build or download one and then treat it as the artifact under test.
+
+## Commands
+
+Normal adversarial run (generated local corpus, real pipeline, faults, short soak, concurrency attack, security probes, repository tests, a bounded mutation campaign, and static signals):
+
+```sh
+./engineering-quality/run normal
+```
+
+Deeper run (longer fixtures/soak plus the first default-download W3C public boundary; the larger manifest remains an explicit candidate set rather than implied coverage):
+
+```sh
+./engineering-quality/run deep
+```
+
+Add the W3C public-media boundary to a normal run:
+
+```sh
+./engineering-quality/run normal --include-public
+```
+
+Run one exact scenario:
+
+```sh
+./engineering-quality/run normal --scenario reliability.cancel_during_slow_download
+```
+
+Compare with a prior machine-readable result:
+
+```sh
+./engineering-quality/run normal --compare engineering-quality/reports/<baseline>/results.json
+```
+
+Start a full packaged-app session:
+
+```sh
+./engineering-quality/run packaged-e2e --profile smoke --artifact dist/VODForge.app
+```
+
+That command verifies the bundle identity/signature/staple/Gatekeeper receipts, creates an isolated `HOME` and output root, launches the actual app executable, starts the loopback fixture/fault origin, and writes `session.json`. A visible UI driver performs the journey. Record each event with the versioned recorder rather than hand-editing JSON:
+
+```sh
+./engineering-quality/run record-e2e-event \
+  --session engineering-quality/reports/<e2e-run>/session.json \
+  --event app_visible \
+  --screenshot /path/to/current-vodforge-window.png
+```
+
+If a UI surface cannot be reached, keep it missing and use `--allow-gap` only
+when recording the next later event. The recorder adds the skipped event names
+to the receipt; it never turns the gap into a pass.
+
+Normal shutdown finalizes `e2e-result.json`. It passes only when ordered timezone-aware UI events, screenshot existence and hashes, exact artifact identity, real production stage diagnostics, output readability using the artifact's own bundled `ffprobe`, two clean launches, history/output hash persistence, cleanup, and process exit all agree. See [the driver protocol](runners/README.md).
+
+Include a completed packaged receipt in a normal/deep comparison:
+
+```sh
+./engineering-quality/run normal --e2e-result engineering-quality/reports/<e2e-run>/e2e-result.json
+```
+
+## Full-app driver protocol
+
+`packaged-e2e` writes exact paths and URLs to `session.json`. The required first journey is:
+
+1. observe the packaged window;
+2. enter the provided loopback URL in the visible URL field;
+3. open and observe/change real Settings;
+4. start Forge through the UI;
+5. observe progress produced by the real worker;
+6. observe truthful completion;
+7. inspect the committed item in Library;
+8. request normal app shutdown.
+
+Each observation is a structured event in `driver-events.json`: `app_visible`, `url_entered`, `settings_observed`, `forge_started`, `progress_observed`, `completion_observed`, `library_observed`, `shutdown_requested`, `restart_requested`, and `restart_observed`. The recorder copies screenshots under the session's `ui/` directory, hashes them, timestamps the event, and rejects duplicates or wrong order. The `control.json` action `relaunch` makes the session reopen the same exact artifact with the same isolated app data so restart/history and media hashes can be checked before the final quit.
+
+The deeper packaged profile is first-class rather than an implied consequence of the smoke journey:
+
+```sh
+./engineering-quality/run packaged-e2e --profile deep --artifact dist/VODForge.app
+```
+
+It additionally requires visible receipts for a throttled active run, a second run queued through the UI, cancellation requested through the UI, a clean cancelled state, the queued job advancing, and that queued job reaching completion. A smoke pass therefore proves only the happy path plus restart and does not claim queue/cancellation coverage.
+
+The UI driver is observation/control only. It does not call production Python helpers, forge outputs, or synthesize worker events. The current macOS implementation is automation-assisted because VODForge's custom Tk navigation is not consistently exposed through accessibility. This is an explicit benchmark limitation: missing Library evidence fails the tier as an E2E testability gap instead of being replaced by headless evidence.
+
+## Corpus policy
+
+The tracked [manifest](corpus/manifest.json) separates generated, default-download public, external-boundary, and optional platform candidates.
+
+- Generated fixtures come only from FFmpeg `testsrc2` and `sine` filters.
+- W3C media was explicitly published for HTML media testing and is the preferred public default-download boundary.
+- Blender-hosted open-movie files carry explicit Creative Commons terms.
+- YouTube Creative Commons candidates separate copyright permission from platform automation authorization. They are metadata-only/download-disabled by default; a Creative Commons label alone is not treated as unconditional authorization to automate YouTube.
+- Cookies, browser profiles, authenticated/private media, DRM, commercial music, and random creator uploads are out of scope.
+
+External format IDs, exact bitrates, item counts, and hashes are not pinned unless the publisher supplies an immutable artifact. Source properties and generated-output properties are stored separately and compared from evidence captured in the same run.
+
+## Fault and measurement model
+
+The loopback origin injects HTTP errors, retryable failures, throttled transfer, connection interruption, metadata/thumbnail stress, Unicode, punctuation, and long titles. Other probes use controlled unwritable paths, symlinks, deliberately wrong ffprobe contracts, child failures, cancellation, repeated jobs, and simultaneous unsupported worker attacks.
+
+The harness records:
+
+- source-analysis/job-initialization, download/post-process, transcode, validation, commit, cleanup, and total time where available;
+- progress bytes, effective throughput, CPU, process-tree RSS, child count, zombies, file descriptors, threads, output bytes, peak disk, and staging residue;
+- independent ffprobe container/stream/codec/bitrate/duration evidence;
+- scenario status, raw evidence paths, classified findings, and suggested fixes;
+- machine, load, disk, Git SHA/dirtiness, tool versions, and optional baseline deltas.
+
+Performance values are not universal pass/fail constants. Compare like-for-like machines and corpus conditions; comparison refuses metric deltas when profiles or scenario/tier sets differ and reports commit/machine equality separately. A short soak records memory/FD trends but does not convert a single machine's arbitrary byte threshold into a leak conclusion.
+
+## Result contract
+
+Each run writes:
+
+```text
+engineering-quality/reports/<run-id>/
+  results.json
+  summary.md
+```
+
+Raw case diagnostics and media stay in ignored `engineering-quality/.runs/<run-id>/`. The JSON contract is defined in [run-result.schema.json](schemas/run-result.schema.json). Every negative finding includes an area, reproduction, evidence, severity, classification, and suggested fix. Findings use only these requested classifications:
+
+- correctness defect
+- reliability defect
+- security defect
+- performance defect
+- maintainability risk
+- code smell
+- stylistic preference
+
+Static-tool output is a signal, not proof. A security issue is reported only when a safe reproducer demonstrates the broken property and its preconditions are stated.
+
+## Maintainability change probes
+
+[change-probes.json](maintainability/change-probes.json) measures the current reference/test surface for adding an output mode, changing filename organization, adding metadata, altering playlist behavior, and extending the downloader backend. These probes do not pretend to be completed changes; they identify coupling and protection surfaces. Deep evolution benchmarks should apply each change in a repository-owned temporary worktree, run the full relevant gates, record actual files touched/regressions, and then remove the worktree only after clean containment verification.
+
+## Current first-version boundaries
+
+The first version makes real local MP4/MP3 output, same-run source-quality selection, HTTP 404/503, connection interruption, slow transfer, download and transcode cancellation, unwritable destinations, FFmpeg dependency failure, fresh-output validation, symlink/path, URL-secret, soak, defensive simultaneous-worker attack, static/test, bounded history mutation, maintainability, and packaged happy-path/restart journeys runnable. The packaged deep protocol includes queue and cancellation but still needs a stable repository-owned native UI automation engine.
+
+Highest-value additions are forced process-kill/restart with stale-stage accounting, low-disk volumes, real provider playlist scaling, duplicate/queue mutation through packaged UI, active-run updater shutdown, blocked-analysis slot exhaustion, multi-hour soak, actual temporary-worktree change implementations, and a wider mutation campaign.

@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "probes": [
+    {
+      "id": "add-output-mode",
+      "description": "Add a new supported output mode while retaining existing MP4 and MP3 behavior.",
+      "anchors": ["OutputType", "output_type", "_build_ydl_options", "validate_output_artifact"],
+      "questions": ["How many production and test files know the enum?", "Are selection, export, validation, history, and UI concerns separable?"]
+    },
+    {
+      "id": "change-filename-organization",
+      "description": "Change channel/playlist/title folder organization without weakening path safety or history recovery.",
+      "anchors": ["video_output_dir", "resolved_video_output_dir", "resolved_video_output_target", "existing_output_candidate_dirs"],
+      "questions": ["Are path policy and persistence identity coupled?", "Which tests protect old-history compatibility?"]
+    },
+    {
+      "id": "add-metadata-option",
+      "description": "Add one new user-selectable metadata option through job ownership, yt-dlp/FFmpeg, sidecars, and history.",
+      "anchors": ["DownloadJob", "embed_metadata", "write_info_json", "compact_video_metadata"],
+      "questions": ["How many constructors and UI paths must change?", "Does the option remain owned by a run?"]
+    },
+    {
+      "id": "alter-playlist-handling",
+      "description": "Change playlist item filtering and invalid-entry continuation semantics.",
+      "anchors": ["playlist_context_from_extraction", "apply_playlist_context", "iter_video_infos", "_download_worker_single"],
+      "questions": ["Can playlist policy be tested without Tk?", "Are per-item and whole-source cancellation distinct?"]
+    },
+    {
+      "id": "extend-downloader-backend",
+      "description": "Extend or wrap downloader backend behavior without copying VODForge export and commit logic.",
+      "anchors": ["load_yt_dlp", "YoutubeDL", "process_download_from_preflight", "run_tracked_ytdlp_operation"],
+      "questions": ["Is provider extraction isolated from export/validation?", "Would a backend extension require editing UI and state authority code?"]
+    }
+  ]
+}
