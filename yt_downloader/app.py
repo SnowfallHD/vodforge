@@ -2469,7 +2469,7 @@ def terminate_all_active_child_processes(*, deadline_monotonic: float | None = N
     with _ACTIVE_CHILD_PROCESS_LOCK:
         active = tuple(_ACTIVE_CHILD_PROCESSES)
     for process in active:
-        timeout_seconds = PROCESS_TERMINATE_TIMEOUT_SECONDS
+        timeout_seconds: float = PROCESS_TERMINATE_TIMEOUT_SECONDS
         if deadline_monotonic is not None:
             remaining = deadline_monotonic - time.monotonic()
             if remaining <= 0:
@@ -3781,6 +3781,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     _event_app_name = APP_NAME
     _event_subtle_color = THEME["subtle"]
     video_tree: PixelScrollTable
+    _focus_icon_images: dict[tuple[str, int, str], Any]
+    _focus_run_list_close_after_id: str | None
+    _focus_run_list_window: tk.Frame | None
+    _focus_run_list_cleanup: Callable[[], None] | None
 
     def _event_write_diagnostic(self, message: str) -> None:
         write_diagnostic(message)
@@ -4049,7 +4053,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._completed_jobs: list[DownloadJob] = []
         self._library_suppressed_run_ids: set[str] = set()
         self._thumbnail_preview_request_ids = {"active": 0, "library": 0}
-        self._focus_icon_images: dict[tuple[str, int, str], Any] = {}
+        self._focus_icon_images = {}
+        self._focus_run_list_close_after_id = None
+        self._focus_run_list_window = None
+        self._focus_run_list_cleanup = None
 
         self.focus_active_title_var = tk.StringVar(value="Ready for a new run")
         self.focus_active_detail_var = tk.StringVar(value="Paste a YouTube URL above, then press Return to begin.")
@@ -4181,7 +4188,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 compound="left",
                 style="FocusNav.TButton",
                 takefocus=True,
-                command=lambda name=view_name: self._select_focus_view(name),
+                command=partial(self._select_focus_view, view_name),
             )
             button.pack(fill="x")
             underline = tk.Frame(item, height=2, bg=THEME["bg"], bd=0, highlightthickness=0)
@@ -4824,7 +4831,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 except (AttributeError, tk.TclError):
                     show_latest_activity()
 
-    def _activate_focus_view_shortcut(self, name: str) -> str:
+    def _activate_focus_view_shortcut(
+        self,
+        name: str,
+        _event: tk.Event[Any] | None = None,
+    ) -> str:
         self._select_focus_view(name)
         return "break"
 
@@ -4832,7 +4843,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         for sequence, view_name in focus_view_shortcut_bindings():
             self.bind(
                 sequence,
-                lambda _event, name=view_name: self._activate_focus_view_shortcut(name),
+                partial(self._activate_focus_view_shortcut, view_name),
                 add="+",
             )
 
@@ -5345,6 +5356,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         popup = tk.Frame(self, bg=THEME["border"], bd=0, highlightthickness=0)
         self._focus_run_list_window = popup
 
+        def close_drop_up() -> None:
+            self._cancel_focus_run_menu_close()
+            if self.__dict__.get("_focus_run_list_cleanup") is close_drop_up:
+                self._focus_run_list_cleanup = None
+            self._focus_run_list_window = None
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+
         root = tk.Frame(popup, bg=THEME["surface"], bd=0, highlightthickness=0)
         root.pack(fill="both", expand=True, padx=1, pady=1)
         root.columnconfigure(0, weight=1)
@@ -5380,6 +5401,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         row_rectangles: list[int] = []
         if records:
             for index, record in enumerate(records):
+                def choose_run(
+                    _event: tk.Event[Any],
+                    item: dict[str, Any] = record,
+                ) -> None:
+                    self._focus_select_run_record(item)
+                    close_drop_up()
+
                 title = str(record.get("title") or "Untitled run")
                 status = str(record.get("status") or "Ready")
                 row_tag = f"run-row-{index}"
@@ -5409,7 +5437,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 run_list.tag_bind(
                     row_tag,
                     "<Button-1>",
-                    lambda _event, item=record: choose_run(item),
+                    choose_run,
                 )
 
                 def show_hover(_event: Any, *, item_index: int = index, item_rectangle: int = rectangle) -> None:
@@ -5435,21 +5463,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         run_list.bind("<Configure>", resize_rows, add="+")
 
-        def close_drop_up() -> None:
-            self._cancel_focus_run_menu_close()
-            if self.__dict__.get("_focus_run_list_cleanup") is close_drop_up:
-                self._focus_run_list_cleanup = None
-            self._focus_run_list_window = None
-            try:
-                popup.destroy()
-            except tk.TclError:
-                pass
-
         self._focus_run_list_cleanup = close_drop_up
-
-        def choose_run(record: dict[str, Any]) -> None:
-            self._focus_select_run_record(record)
-            close_drop_up()
 
         run_list.bind("<Escape>", lambda _event: close_drop_up())
         bind_smooth_vertical_wheel(
@@ -5886,7 +5900,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         image = getattr(self, "thumbnail_image", None) or self._focus_brand_tile_image
         if image is not None:
             preview.configure(image=image, text="")
-            preview.image = image
+            preview.__dict__["image"] = image
         ttk.Label(root, text="TAGS", style="FocusEyebrow.TLabel").grid(row=3, column=0, sticky="w", pady=(0, 4))
         tags = tk.Text(root, height=3, width=1, wrap="word", bg=THEME["surface"], fg=THEME["text"], relief="flat", bd=0, highlightthickness=0, padx=10, pady=8, font=FONT_UI)
         tags.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
@@ -6127,11 +6141,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 else:
                     bar = SleekProgressbar(tile, maximum=100, value=value, mode="determinate", height=4, track_color=THEME["border"])
                 bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(7, 0))
-            widgets = [tile, title_label, status_label]
+            widgets: list[tk.Widget] = [tile, title_label, status_label]
             if thumbnail is not None:
                 widgets.append(image_label)
             hover_widgets = list(widgets)
-            if record_kind in {"failed", "skipped", "stopped"} and isinstance(record.get("job"), DownloadJob):
+            retry_job = record.get("job")
+            if record_kind in {"failed", "skipped", "stopped"} and isinstance(
+                retry_job, DownloadJob
+            ):
+                verified_retry_job = retry_job
+
+                def retry_from_tile(
+                    _event: tk.Event[Any],
+                    job: DownloadJob = verified_retry_job,
+                ) -> None:
+                    self._retry_terminal_job(job)
+
                 retry_button = tk.Canvas(
                     tile,
                     width=30,
@@ -6145,12 +6170,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 retry_button.create_text(15, 14, text="↻", fill=THEME["text"], font=(FONT_UI[0], 15, "bold"))
                 retry_button.bind(
                     "<Button-1>",
-                    lambda _event, job=record["job"]: self._retry_terminal_job(job),
+                    retry_from_tile,
                 )
                 overlay_parent = image_label if thumbnail is not None else tile
                 retry_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
                 hover_widgets.append(retry_button)
             elif record_kind == "preview" and record.get("metadata_index") is not None:
+                def start_preview_from_tile(
+                    _event: tk.Event[Any],
+                    item: dict[str, Any] = record,
+                ) -> None:
+                    self._start_preview_record(item)
+
                 play_button = tk.Canvas(
                     tile,
                     width=30,
@@ -6166,15 +6197,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     play_button.create_image(15, 15, image=play_icon)
                 play_button.bind(
                     "<Button-1>",
-                    lambda _event, item=record: self._start_preview_record(item),
+                    start_preview_from_tile,
                 )
                 play_button.bind(
                     "<Button-2>",
-                    lambda event, item=record: self._show_focus_run_actions_menu(item, event),
+                    partial(self._show_focus_run_actions_menu, record),
                 )
                 play_button.bind(
                     "<Button-3>",
-                    lambda event, item=record: self._show_focus_run_actions_menu(item, event),
+                    partial(self._show_focus_run_actions_menu, record),
                 )
                 overlay_parent = image_label if thumbnail is not None else tile
                 play_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
@@ -6196,16 +6227,33 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     )
                     background = THEME["surface"] if inside else THEME["bg"]
                     for card_widget in card_widgets:
-                        card_widget.configure(bg=background)
+                        card_widget.configure({"bg": background})
                 except tk.TclError:
                     return
 
+            def schedule_tile_hover(
+                _event: tk.Event[Any],
+                *,
+                card: tk.Frame = tile,
+                callback: Callable[[], None] = sync_tile_hover,
+            ) -> None:
+                card.after_idle(callback)
+
             for widget in widgets:
-                widget.bind("<Button-1>", lambda event, item=record: self._focus_activate_run_record(item, event))
-                widget.bind("<Button-2>", lambda event, item=record: self._show_focus_run_actions_menu(item, event))
-                widget.bind("<Button-3>", lambda event, item=record: self._show_focus_run_actions_menu(item, event))
-                widget.bind("<Enter>", lambda _event, card=tile, sync=sync_tile_hover: card.after_idle(sync), add="+")
-                widget.bind("<Leave>", lambda _event, card=tile, sync=sync_tile_hover: card.after_idle(sync), add="+")
+                widget.bind(
+                    "<Button-1>",
+                    partial(self._focus_activate_run_record, record),
+                )
+                widget.bind(
+                    "<Button-2>",
+                    partial(self._show_focus_run_actions_menu, record),
+                )
+                widget.bind(
+                    "<Button-3>",
+                    partial(self._show_focus_run_actions_menu, record),
+                )
+                widget.bind("<Enter>", schedule_tile_hover, add="+")
+                widget.bind("<Leave>", schedule_tile_hover, add="+")
 
         completed = sum(1 for record in records if record.get("kind") == "completed")
         failed = sum(1 for record in records if record.get("kind") == "failed")
@@ -6301,33 +6349,47 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             menu.add_separator()
         terminal_job = record.get("job")
         if str(record.get("kind")) == "preview":
-            menu.add_command(label="Start download in Forge", command=lambda: self._start_preview_record(record))
+            menu.add_command(
+                label="Start download in Forge",
+                command=partial(self._start_preview_record, record),
+            )
             menu.add_separator()
         elif str(record.get("kind")) in {"failed", "skipped", "stopped"} and isinstance(terminal_job, DownloadJob):
-            menu.add_command(label="Retry run", command=lambda job=terminal_job: self._retry_terminal_job(job))
+            menu.add_command(
+                label="Retry run",
+                command=partial(self._retry_terminal_job, terminal_job),
+            )
             menu.add_separator()
         metadata_index = record.get("metadata_index")
         if metadata_index is not None:
-            menu.add_command(label="View in Library", command=lambda: (self._select_record_in_library(record), self._select_focus_view("library")))
+            def view_in_library() -> None:
+                self._select_record_in_library(record)
+                self._select_focus_view("library")
+
+            menu.add_command(label="View in Library", command=view_in_library)
             try:
                 saved = history_output_dir(self.metadata_items[int(metadata_index)])
             except (IndexError, TypeError, ValueError):
                 saved = None
             if saved is not None:
+                def open_saved_location() -> None:
+                    self._select_record_in_library(record)
+                    self._open_selected_saved_location()
+
                 menu.add_command(
                     label="Open saved location",
-                    command=lambda item=record: (
-                        self._select_record_in_library(item),
-                        self._open_selected_saved_location(),
-                    ),
+                    command=open_saved_location,
                 )
         youtube_url = self._youtube_url_for_run_record(record)
         if youtube_url:
             menu.add_command(
                 label="Copy YouTube URL",
-                command=lambda url=youtube_url: self._copy_youtube_url_value(url),
+                command=partial(self._copy_youtube_url_value, youtube_url),
             )
-        menu.add_command(label="View Activity", command=lambda: self._select_focus_view("activity"))
+        menu.add_command(
+            label="View Activity",
+            command=partial(self._select_focus_view, "activity"),
+        )
         x = event.x_root if event is not None else self.winfo_pointerx()
         y = event.y_root if event is not None else self.winfo_pointery()
         try:
@@ -6938,7 +7000,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         return Path(self.output_var.get()).expanduser()
 
     def _selected_saved_folder(self) -> Path | None:
-        selection = getattr(self, "video_tree", None).selection() if hasattr(self, "video_tree") else ()
+        video_tree = getattr(self, "video_tree", None)
+        if video_tree is None:
+            return None
+        selection = video_tree.selection()
         if selection:
             try:
                 info = self.metadata_items[int(selection[0])]
@@ -7471,7 +7536,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 or ("Preview complete" if is_metadata_preview(item) else "Not downloaded")
             )
             retry_available = terminal_status in {"Skipped", "Failed"} and bool(item.get("vodforge_terminal_run_id"))
-            values = (*video_list_row_values(item, fallback_index=visible_position), location)
+            values: tuple[Any, ...] = (
+                *video_list_row_values(item, fallback_index=visible_position),
+                location,
+            )
             if "action" in self.video_tree["columns"]:
                 values = (*values, "↻" if retry_available else "")
             rows.append((str(metadata_index), values))
@@ -7558,7 +7626,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             menu.add_command(label="Open saved location", command=self._open_selected_saved_location)
             menu.add_separator()
         if isinstance(info, dict) and canonical_youtube_url(info):
-            menu.add_command(label="Copy YouTube URL", command=lambda item=info: self._copy_youtube_url(item))
+            menu.add_command(
+                label="Copy YouTube URL",
+                command=partial(self._copy_youtube_url, info),
+            )
             menu.add_separator()
         menu.add_command(label="Remove from Library…", command=self._remove_selected_library_item)
         try:
@@ -9209,6 +9280,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             emit_log=partial(self._emit_job_log, job),
         )
 
+        def report_playlist_wait(elapsed: float) -> None:
+            write_diagnostic(
+                f"playlist detection still running after {elapsed:.0f}s"
+            )
+            self.events.put(
+                (
+                    "status",
+                    f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available.",
+                )
+            )
+
         provider_network.begin_primary(control_check)
         try:
             playlist_result = run_cancellable_blocking_step(
@@ -9217,17 +9299,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
                 poll_seconds=ANALYSIS_POLL_SECONDS,
                 label="Playlist detection",
-                on_wait=lambda elapsed: (
-                    write_diagnostic(
-                        f"playlist detection still running after {elapsed:.0f}s"
-                    ),
-                    self.events.put(
-                        (
-                            "status",
-                            f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available.",
-                        )
-                    ),
-                ),
+                on_wait=report_playlist_wait,
             )
         finally:
             provider_network.end_primary()
@@ -9302,23 +9374,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             control_check=control_check,
             emit_log=partial(self._emit_job_log, job),
         )
+        def report_analysis_wait(elapsed: float) -> None:
+            write_diagnostic(
+                f"{item.label} analysis still running after {elapsed:.0f}s"
+            )
+            self.events.put(
+                (
+                    "status",
+                    f"{item.label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available.",
+                )
+            )
+
         preflight_info, updated_session_cookies = run_cancellable_blocking_step(
             partial(provider_network.run_primary, analysis_step),
             blocking_step_cancelled,
             timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
             poll_seconds=ANALYSIS_POLL_SECONDS,
             label=f"{item.label} source analysis",
-            on_wait=lambda elapsed: (
-                write_diagnostic(
-                    f"{item.label} analysis still running after {elapsed:.0f}s"
-                ),
-                self.events.put(
-                    (
-                        "status",
-                        f"{item.label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available.",
-                    )
-                ),
-            ),
+            on_wait=report_analysis_wait,
         )
         if not isinstance(preflight_info, dict):
             raise RuntimeError(
@@ -10108,9 +10181,11 @@ def debug_preflight(url: str) -> int:
             print(f"DEBUG_PREFLIGHT_SELECTION_FAILED id={video_info.get('id') or 'unknown'}: {type(exc).__name__}: {exc}")
             continue
         exposed_heights = [
-            fmt.get("height")
+            height
             for fmt in video_info.get("formats") or []
-            if isinstance(fmt, dict) and isinstance(fmt.get("height"), int) and not _is_none_codec(fmt.get("vcodec"))
+            if isinstance(fmt, dict)
+            and isinstance(height := fmt.get("height"), int)
+            and not _is_none_codec(fmt.get("vcodec"))
         ]
         print(
             f"DEBUG_PREFLIGHT_SELECTION id={video_info.get('id') or 'unknown'} "

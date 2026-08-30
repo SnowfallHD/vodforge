@@ -58,21 +58,6 @@ else:
 class _VerticalScroller(Protocol):
     tk: Any
 
-    def bind(
-        self,
-        sequence: str | None = None,
-        func: Callable[[tk.Event[Any]], object] | None = None,
-        add: Literal["", "+"] | bool | None = None,
-    ) -> str: ...
-
-    def winfo_height(self) -> int: ...
-
-    def yview(self) -> tuple[float, float]: ...
-
-    def yview_moveto(self, fraction: float) -> Any: ...
-
-    def yview_scroll(self, number: int, what: str) -> Any: ...
-
 
 def touchpad_scroll_deltas(
     widget: tk.Misc | _VerticalScroller,
@@ -87,7 +72,7 @@ def touchpad_scroll_deltas(
 
 
 def bind_smooth_vertical_wheel(
-    scroller: _VerticalScroller,
+    scroller: tk.Text | tk.Canvas,
     *targets: tk.Misc,
     mode: str = "pixels",
     row_pixels: int = 30,

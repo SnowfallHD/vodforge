@@ -4,7 +4,7 @@ import math
 from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeGuard
 
 from .history import history_identity, history_output_dir, history_output_type
 from .models import DownloadJob, OutputType
@@ -51,7 +51,7 @@ def metadata_run_key(info: dict[str, Any]) -> MetadataRunKey | None:
     return video_id, metadata_output_type(info).value
 
 
-def is_metadata_preview(info: dict[str, Any] | None) -> bool:
+def is_metadata_preview(info: object) -> TypeGuard[dict[str, Any]]:
     """Return true only for a metadata-only item, never a terminal or saved run."""
     return bool(
         isinstance(info, dict)
