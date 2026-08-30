@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-os.environ.setdefault("VODFORGE_LEGACY_UI", "0")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from yt_downloader.app import (
     COOKIE_BROWSER_OPTIONS,
     COOKIE_SOURCE_OPTIONS,
-    DownloadJob,
     DownloaderApp,
+    DownloadJob,
     ExportMode,
     ManualExportSettings,
     Mp3ExportSettings,

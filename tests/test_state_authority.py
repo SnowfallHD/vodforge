@@ -1056,16 +1056,25 @@ def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surfa
 
 
 def test_all_resizable_popouts_enforce_content_appropriate_minimums():
-    compact_source = inspect.getsource(DownloaderApp._build_ui)
     settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
     output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
-    assert "popup.minsize(popup_width, popup_height)" in compact_source
     assert "popup.minsize(700, 540)" in settings_source
     assert "popup.minsize(480, 300)" in output_source
     assert "popup.minsize(560, 520)" in selected_source
     assert "height=135" in selected_source
+
+
+def test_ui_builder_has_one_focus_ui_authority(monkeypatch):
+    app = DownloaderApp.__new__(DownloaderApp)
+    built: list[str] = []
+    app._build_focus_ui = lambda: built.append("focus")
+    monkeypatch.setenv("VODFORGE_LEGACY_UI", "1")
+
+    app._build_ui()
+
+    assert built == ["focus"]
 
 
 def test_focus_settings_keep_manual_controls_in_the_mp4_flow_and_release_combo_selection():
@@ -1455,9 +1464,7 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "self._body.bind(\"<Configure>\", lambda _event: self._schedule_redraw()" in pixel_table_source
     assert "_schedule_redraw" not in report_yview_source
     assert "Every supported scroll entry point already schedules a redraw" in report_yview_source
-    assert 'replace_rows = getattr(self.video_tree, "replace_rows", None)' in render_source
-    assert "children = replace_rows(rows, selected=target)" in render_source
-    assert "if callable(replace_rows):" in render_source
+    assert "children = self.video_tree.replace_rows(rows, selected=target)" in render_source
     assert "video_tree.layout_column(" in layout_source
     assert 'xscrollincrement=1' in pixel_table_source
 
@@ -1494,12 +1501,6 @@ def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
     app_module._focus_library_table_item(pixel_table, "row")
     assert pixel_table.focus_item() == "row"
     assert pixel_table.focus_item("missing") == "row"
-
-    legacy_tree = app_module.ttk.Treeview.__new__(app_module.ttk.Treeview)
-    legacy_focus_calls = []
-    legacy_tree.focus = legacy_focus_calls.append
-    app_module._focus_library_table_item(legacy_tree, "legacy-row")
-    assert legacy_focus_calls == ["legacy-row"]
 
 
 def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():
@@ -1903,12 +1904,11 @@ def test_metadata_preview_focuses_once_and_completion_respects_manual_selection(
 
 
 def test_custom_popouts_are_positioned_before_they_become_visible():
-    compact_source = inspect.getsource(DownloaderApp._build_ui)
     settings_source = inspect.getsource(DownloaderApp._show_focus_settings)
     output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
-    for source in (compact_source, settings_source, output_source, selected_source):
+    for source in (settings_source, output_source, selected_source):
         assert "popup.withdraw()" in source
         assert "reveal_toplevel(popup," in source
         assert source.index("popup.withdraw()") < source.index("reveal_toplevel(popup,")

@@ -33,7 +33,6 @@ from yt_downloader.app import (
     Mp3ExportSettings,
     OutputType,
     QUALITY_OPTIONS,
-    VIDEO_TARGET_BITRATE,
     ManualExportSettings,
     apply_playlist_context,
     apply_manual_export_settings,
@@ -86,7 +85,6 @@ from yt_downloader.app import (
     download_bounded_url_bytes,
     download_job_display_title,
     bounded_window_size,
-    download_layout_mode,
     bundled_asset_path,
     configure_windows_app_identity,
     flatten_alpha_image,
@@ -111,7 +109,6 @@ from yt_downloader.app import (
     rounded_cover_image,
     rounded_fit_image,
     runtime_window_icon_asset,
-    metadata_layout_mode,
     metadata_indices_for_output_type,
     metadata_output_type,
     metadata_run_key,
@@ -456,14 +453,6 @@ def test_initial_window_geometry_is_centered_and_dock_safe():
     assert initial_window_geometry(1920, 1080, platform_name="win32") == "1180x900+370+90"
 
 
-def test_download_layout_uses_inline_details_whenever_they_fit():
-    assert download_layout_mode(1120, 480) == "wide-expanded"
-    assert download_layout_mode(1120, 430) == "wide-expanded"
-    assert download_layout_mode(1120, 380) == "wide-compact"
-    assert download_layout_mode(900, 700) == "stacked-expanded"
-    assert download_layout_mode(900, 560) == "stacked-compact"
-
-
 def test_unresolved_run_titles_never_expose_the_raw_source_url(tmp_path: Path):
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=private-source-token",
@@ -633,19 +622,6 @@ def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(tm
     assert retry_job.tags == ["producer"]
     assert retry_job.metadata_keys == set()
     assert retry_job.terminal_status is None
-
-
-def test_manual_override_requires_room_for_all_inline_fields():
-    assert download_layout_mode(1120, 560, manual_override=True) == "wide-compact"
-    assert download_layout_mode(1120, 600, manual_override=True) == "wide-expanded"
-    assert download_layout_mode(900, 760, manual_override=True) == "stacked-compact"
-    assert download_layout_mode(900, 840, manual_override=True) == "stacked-expanded"
-
-
-def test_metadata_layout_keeps_all_surfaces_visible_at_each_width():
-    assert metadata_layout_mode(1120) == "three-column"
-    assert metadata_layout_mode(700) == "three-column"
-    assert metadata_layout_mode(699) == "two-column"
 
 
 def test_focus_layout_collapses_before_live_details_are_clipped():

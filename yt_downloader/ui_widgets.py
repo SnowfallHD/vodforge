@@ -4,7 +4,6 @@ import tkinter as tk
 import tkinter.font as tkfont
 from collections.abc import Callable, Iterable, Mapping
 from functools import partial
-from tkinter import ttk
 from typing import Any, Literal, Protocol, cast
 
 from .models import OutputType
@@ -1164,14 +1163,11 @@ class PixelScrollTable(tk.Frame):
 
 
 def _focus_library_table_item(
-    table: ttk.Treeview | PixelScrollTable,
+    table: PixelScrollTable,
     item: str,
 ) -> None:
-    """Set row focus through the concrete table contract in use."""
-    if isinstance(table, PixelScrollTable):
-        table.focus_item(item)
-    else:
-        table.focus(item)
+    """Set logical row focus through the Library table contract."""
+    table.focus_item(item)
 
 
 class SleekScrollbar(tk.Canvas):
