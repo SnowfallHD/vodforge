@@ -933,12 +933,17 @@ BATCH_FAILURE_REPORT_PATH = diagnostics_dir() / "batch-url-failures.txt"
 ACTIVITY_LOG_MAX_BYTES = 5 * 1024 * 1024
 ACTIVITY_LOG_COMPACT_BYTES = 4 * 1024 * 1024
 ACTIVITY_LOG_RENDER_CHARS = 500_000
+ACTIVITY_LOG_FAILURE_DIAGNOSTIC = (
+    "Persistent Activity storage is unavailable. Current-session activity remains visible, "
+    "but Activity history may not survive an app restart."
+)
 _DIAGNOSTICS_LOG_LOCK = threading.RLock()
 _DIAGNOSTICS_LOG_HANDLE: Any | None = None
 _DIAGNOSTICS_LOG_HANDLE_PATH: Path | None = None
 _ACTIVITY_LOG_LOCK = threading.RLock()
 _ACTIVITY_LOG_HANDLE: Any | None = None
 _ACTIVITY_LOG_HANDLE_PATH: Path | None = None
+_ACTIVITY_LOG_FAILURE_REPORTED = False
 _ACTIVE_CHILD_PROCESSES: set[Any] = set()
 _ACTIVE_CHILD_PROCESS_LOCK = threading.RLock()
 _CHILD_TERMINATION_LOCK = threading.RLock()
@@ -977,10 +982,30 @@ def reset_diagnostics_log() -> None:
 
 def _close_activity_log_locked() -> None:
     global _ACTIVITY_LOG_HANDLE, _ACTIVITY_LOG_HANDLE_PATH
-    if _ACTIVITY_LOG_HANDLE is not None:
-        _ACTIVITY_LOG_HANDLE.close()
+    handle = _ACTIVITY_LOG_HANDLE
     _ACTIVITY_LOG_HANDLE = None
     _ACTIVITY_LOG_HANDLE_PATH = None
+    if handle is not None:
+        handle.close()
+
+
+def _record_activity_log_failure() -> None:
+    """Detach a failed sink and emit one secret-free receipt per failure episode."""
+    global _ACTIVITY_LOG_FAILURE_REPORTED, _ACTIVITY_LOG_HANDLE, _ACTIVITY_LOG_HANDLE_PATH
+    should_report = False
+    with _ACTIVITY_LOG_LOCK:
+        try:
+            _close_activity_log_locked()
+        except (OSError, ValueError):
+            # `_close_activity_log_locked` clears first; repeat that invariant
+            # explicitly for unusual file wrappers whose close operation fails.
+            _ACTIVITY_LOG_HANDLE = None
+            _ACTIVITY_LOG_HANDLE_PATH = None
+        if not _ACTIVITY_LOG_FAILURE_REPORTED:
+            _ACTIVITY_LOG_FAILURE_REPORTED = True
+            should_report = True
+    if should_report:
+        write_diagnostic(ACTIVITY_LOG_FAILURE_DIAGNOSTIC)
 
 
 def _compact_activity_log_locked(path: Path, *, retain_bytes: int | None = None) -> None:
@@ -1014,6 +1039,7 @@ def _sanitize_existing_activity_log_locked(path: Path) -> None:
 
 def prepare_activity_log(path: Path | None = None) -> None:
     """Create and bound the persistent, local-only user-facing activity log."""
+    global _ACTIVITY_LOG_FAILURE_REPORTED
     target = ACTIVITY_LOG_PATH if path is None else path
     try:
         with _ACTIVITY_LOG_LOCK:
@@ -1023,12 +1049,13 @@ def prepare_activity_log(path: Path | None = None) -> None:
                 pass
             _compact_activity_log_locked(target)
             _sanitize_existing_activity_log_locked(target)
-    except Exception:
-        pass
+            _ACTIVITY_LOG_FAILURE_REPORTED = False
+    except Exception:  # noqa: BLE001 - optional activity persistence must not crash the app
+        _record_activity_log_failure()
 
 
 def append_activity_log(line: str, path: Path | None = None) -> None:
-    global _ACTIVITY_LOG_HANDLE, _ACTIVITY_LOG_HANDLE_PATH
+    global _ACTIVITY_LOG_FAILURE_REPORTED, _ACTIVITY_LOG_HANDLE, _ACTIVITY_LOG_HANDLE_PATH
     target = ACTIVITY_LOG_PATH if path is None else path
     try:
         with _ACTIVITY_LOG_LOCK:
@@ -1044,8 +1071,9 @@ def append_activity_log(line: str, path: Path | None = None) -> None:
             if _ACTIVITY_LOG_HANDLE.tell() >= ACTIVITY_LOG_MAX_BYTES:
                 _close_activity_log_locked()
                 _compact_activity_log_locked(target)
-    except Exception:
-        pass
+            _ACTIVITY_LOG_FAILURE_REPORTED = False
+    except Exception:  # noqa: BLE001 - optional activity persistence must not crash the app
+        _record_activity_log_failure()
 
 
 def load_activity_log_tail(path: Path | None = None, *, max_chars: int = ACTIVITY_LOG_RENDER_CHARS) -> str:

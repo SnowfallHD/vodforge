@@ -303,6 +303,109 @@ def test_persistent_activity_log_does_not_store_cookie_file_path(tmp_path: Path)
     assert "/Users/example/private/cookies.txt" not in log_path.read_text(encoding="utf-8")
 
 
+def test_activity_log_failure_receipt_is_secret_free_rate_limited_and_recovers(
+    monkeypatch,
+    tmp_path: Path,
+):
+    first_bad_target = tmp_path / "first-private-canary"
+    second_bad_target = tmp_path / "second-private-canary"
+    first_bad_target.mkdir()
+    second_bad_target.mkdir()
+    recovered_target = tmp_path / "activity.log"
+    receipts: list[str] = []
+    monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_FAILURE_REPORTED", False)
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+
+    app_module.prepare_activity_log(first_bad_target)
+    app_module.append_activity_log(
+        "https://user:pass@example.invalid/media?token=TOPSECRET#private",
+        first_bad_target,
+    )
+
+    assert receipts == [app_module.ACTIVITY_LOG_FAILURE_DIAGNOSTIC]
+    assert "TOPSECRET" not in receipts[0]
+    assert str(first_bad_target) not in receipts[0]
+    assert app_module._ACTIVITY_LOG_HANDLE is None
+    assert app_module._ACTIVITY_LOG_HANDLE_PATH is None
+
+    app_module.append_activity_log("durable activity recovered", recovered_target)
+    with app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
+    assert recovered_target.read_text(encoding="utf-8") == "durable activity recovered\n"
+
+    app_module.append_activity_log("another private canary", second_bad_target)
+
+    assert receipts == [
+        app_module.ACTIVITY_LOG_FAILURE_DIAGNOSTIC,
+        app_module.ACTIVITY_LOG_FAILURE_DIAGNOSTIC,
+    ]
+    assert str(second_bad_target) not in receipts[-1]
+
+
+def test_activity_log_write_failure_detaches_poisoned_handle(monkeypatch, tmp_path: Path):
+    class FailingHandle:
+        closed = False
+
+        def write(self, _text: str) -> None:
+            raise OSError("injected write failure")
+
+        def close(self) -> None:
+            self.closed = True
+
+    target = tmp_path / "activity.log"
+    handle = FailingHandle()
+    receipts: list[str] = []
+    monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_FAILURE_REPORTED", False)
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE", handle)
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE_PATH", target)
+
+    app_module.append_activity_log("must remain visible in the current session", target)
+
+    assert handle.closed
+    assert app_module._ACTIVITY_LOG_HANDLE is None
+    assert app_module._ACTIVITY_LOG_HANDLE_PATH is None
+    assert receipts == [app_module.ACTIVITY_LOG_FAILURE_DIAGNOSTIC]
+
+
+def test_activity_log_close_failure_still_clears_cached_handle(monkeypatch, tmp_path: Path):
+    class FailingCloser:
+        def close(self) -> None:
+            raise OSError("injected close failure")
+
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE", FailingCloser())
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE_PATH", tmp_path / "activity.log")
+
+    with pytest.raises(OSError, match="injected close failure"):
+        with app_module._ACTIVITY_LOG_LOCK:
+            app_module._close_activity_log_locked()
+
+    assert app_module._ACTIVITY_LOG_HANDLE is None
+    assert app_module._ACTIVITY_LOG_HANDLE_PATH is None
+
+
+def test_live_activity_remains_visible_when_durable_sink_is_unavailable(
+    monkeypatch,
+    tmp_path: Path,
+):
+    bad_target = tmp_path / "activity.log"
+    bad_target.mkdir()
+    visible_lines: list[str] = []
+    dummy = type("ActivityView", (), {})()
+    dummy.log = object()
+    dummy._persist_activity = True
+    dummy._append_log_widget = lambda _widget, line: visible_lines.append(line)
+    monkeypatch.setattr(app_module, "ACTIVITY_LOG_PATH", bad_target)
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_FAILURE_REPORTED", False)
+
+    app_module.DownloaderApp._append_log(dummy, "visible current-session line")
+
+    assert visible_lines == ["visible current-session line"]
+
+
 def test_platform_fonts_use_macos_and_windows_system_families():
     assert platform_font_families("darwin") == ("Helvetica Neue", "Menlo")
     assert platform_font_families("win32") == ("Segoe UI", "Cascadia Mono")

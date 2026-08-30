@@ -11,9 +11,27 @@ from quality_harness.packaged_e2e import (
     SMOKE_REQUIRED_UI_EVENTS,
 )
 from quality_harness.pipeline import _diagnostic_timing
+from quality_harness.reliability_static import activity_log_failure_receipt_probe
 from quality_harness.report import TIER_LABELS, comparison, markdown_report, summarize
 
 HARNESS_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_activity_log_failure_probe_proves_receipt_deduplication_and_recovery(
+    tmp_path: Path,
+) -> None:
+    scenario, findings = activity_log_failure_receipt_probe(tmp_path)
+
+    assert scenario["status"] == "passed"
+    assert scenario["evidence_tier"] == "unit_static"
+    assert scenario["metrics"] == {
+        "first_failure_receipt_count": 1,
+        "recovered": True,
+        "new_failure_total_receipt_count": 2,
+        "secret_free_receipts": True,
+        "failed_handle_detached": True,
+    }
+    assert findings == []
 
 
 def test_manifest_separates_content_rights_from_platform_automation() -> None:

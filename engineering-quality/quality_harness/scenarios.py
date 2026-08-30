@@ -16,6 +16,7 @@ from .maintainability import change_surface_probe
 from .mutation import run_bounded_mutation_campaign
 from .pipeline import HeadlessPipelineRunner, active_child_snapshot
 from .reliability import batch_failure_report_reset_probe
+from .reliability_static import activity_log_failure_receipt_probe
 from .security import (
     fresh_output_contract_probe,
     path_and_subprocess_probe,
@@ -1475,6 +1476,12 @@ def run_scenarios(
             "reliability.batch_failure_report_reset",
             lambda: batch_failure_report_reset_probe(
                 run_root / "cases" / "reliability-batch-report-reset"
+            ),
+        ),
+        (
+            "unit_static.activity_log_failure_receipt",
+            lambda: activity_log_failure_receipt_probe(
+                run_root / "cases" / "activity-log-failure-receipt"
             ),
         ),
         ("reliability.malformed_url", lambda: reliability_malformed(runner)),
