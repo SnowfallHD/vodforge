@@ -4855,9 +4855,13 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
         ],
     }
     validation_options: list[dict[str, object]] = []
+    cancel_during_existing_validation = False
 
     def validate_fresh_output(*_args, **kwargs):
         validation_options.append(kwargs)
+        if cancel_during_existing_validation:
+            app.cancel_requested = True
+            kwargs["control_check"]()
         return probe
 
     monkeypatch.setattr(app_module, "validate_output_artifact", validate_fresh_output)
@@ -4967,6 +4971,37 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
     assert any(
         index > terminal_status_index and kind == "done"
         for index, (kind, _payload) in enumerate(reuse_events)
+    )
+
+    # A control request raised while probing the final bounded legacy candidate
+    # must not be misreported as an invalid file or advance into staging.
+    last_candidate = (
+        existing_output_candidate_dirs(tmp_path, preflight, expected.name)[-1]
+        / expected.name
+    )
+    last_candidate.parent.mkdir(parents=True, exist_ok=True)
+    expected.replace(last_candidate)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    cancel_during_existing_validation = True
+    diagnostics: list[str] = []
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
+
+    cancelled_outcome = app._download_worker_single(job)
+
+    cancellation_events = list(app.events.queue)
+    assert cancelled_outcome == DownloadOutcome()
+    assert calls == {"extract": 3, "process": 1}
+    assert last_candidate.read_bytes() == b"downloaded media"
+    assert not (tmp_path / ".vfstage").exists()
+    assert not any("existing output rejected" in line for line in diagnostics)
+    assert not any(
+        kind == "status" and "downloading" in str(payload).lower()
+        for kind, payload in cancellation_events
+    )
+    assert any(
+        kind == "stopped" and "cancelled" in str(payload).lower()
+        for kind, payload in cancellation_events
     )
 
 

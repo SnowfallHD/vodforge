@@ -1909,7 +1909,11 @@ def find_valid_existing_output(
                     ),
                     control_check=control_check,
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - any invalid candidate must fail closed
+                # Validation is cancellable, so distinguish a live control request
+                # from an invalid artifact before recording a rejection or scanning on.
+                if control_check is not None:
+                    control_check()
                 write_diagnostic(f"existing output rejected: path={path} reason={type(exc).__name__}: {exc}")
                 continue
             if plan is not None and not output_artifact_matches_plan(
