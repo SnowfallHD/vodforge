@@ -1234,33 +1234,46 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+    library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
     deck_resize_source = inspect.getsource(DownloaderApp._schedule_focus_run_deck_geometry_refresh)
     root_resize_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
 
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
-    assert 'video_tree.layout_column("creator", width=120, minwidth=90' in layout_source
-    assert 'video_tree.layout_column("location", width=140, minwidth=100' in layout_source
-    assert 'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
-    assert 'width=0, minwidth=0' not in layout_source
+    assert 'video_tree.layout_column("creator", width=120, minwidth=90' in library_layout_source
+    assert 'video_tree.layout_column("location", width=140, minwidth=100' in library_layout_source
+    assert (
+        'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)'
+        in library_layout_source
+    )
+    assert 'width=0, minwidth=0' not in library_layout_source
     assert 'library_vertical_mode = focus_library_vertical_layout_mode(height)' in layout_source
     assert 'library_mode = "compact" if compact or library_vertical_mode == "compact" else focus_library_layout_mode(width)' in layout_source
-    assert "focus_library_action_layout_mode(" not in layout_source
-    assert "self.focus_library_action_buttons" not in layout_source
-    assert 'if not self.focus_library_menu_button.winfo_manager():' in layout_source
+    assert "focus_library_action_layout_mode(" not in library_layout_source
+    assert "self.focus_library_action_buttons" not in library_layout_source
+    assert 'if not self.focus_library_menu_button.winfo_manager():' in library_layout_source
     assert "library_mode," in layout_source
     assert "library_vertical_mode," in layout_source
-    assert 'if library_mode == "compact":' in layout_source
-    assert "library_actions_collapsed" not in layout_source
-    assert 'video_tree.layout_column("index", width=44, minwidth=38, stretch=True)' in layout_source
-    assert 'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
-    assert 'video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)' in layout_source
-    assert 'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)' in layout_source
-    assert 'video_tree.layout_column("id", width=90, minwidth=72, stretch=True)' in layout_source
-    assert 'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)' in layout_source
-    assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in layout_source
-    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)' in layout_source
-    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in layout_source
+    assert "library_mode=library_mode," in layout_source
+    assert "vertical_mode=library_vertical_mode," in layout_source
+    assert 'if library_mode == "compact":' in library_layout_source
+    assert "library_actions_collapsed" not in library_layout_source
+    assert 'video_tree.layout_column("index", width=44, minwidth=38, stretch=True)' in library_layout_source
+    assert (
+        'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)'
+        in library_layout_source
+    )
+    assert 'video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)' in library_layout_source
+    assert 'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)' in library_layout_source
+    assert 'video_tree.layout_column("id", width=90, minwidth=72, stretch=True)' in library_layout_source
+    assert 'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)' in library_layout_source
+    assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in library_layout_source
+    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)' in library_layout_source
+    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in library_layout_source
+    library_layout_call = layout_source.index("self._apply_focus_library_layout(")
+    destination_sync = layout_source.index("self._sync_focus_destination()")
+    deck_refresh = layout_source.index("self._refresh_focus_run_deck()")
+    assert library_layout_call < destination_sync < deck_refresh
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
     assert "for column in range(4):" in deck_source
     assert "self._render_focus_run_deck_tile(" in deck_source
@@ -1549,14 +1562,15 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
 def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is_native():
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+    library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
 
     assert "details.configure(width=410, height=360)" in library_source
     assert "details.rowconfigure(3, weight=2, minsize=96)" in library_source
     assert "details.rowconfigure(4, weight=3, minsize=120)" in library_source
     assert "focus_library_vertical_layout_mode(height)" in layout_source
-    assert "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)" in layout_source
-    assert "self.focus_library_view.rowconfigure(1, weight=2, minsize=360)" in layout_source
+    assert "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)" in library_layout_source
+    assert "self.focus_library_view.rowconfigure(1, weight=2, minsize=360)" in library_layout_source
     assert "bind_smooth_vertical_wheel(text_widget, mode=\"pixels\")" in library_source
     assert "rounded_canvas_rectangle_points" in forge_source
     assert 'Image.new("RGBA", (width * scale, height * scale)' not in forge_source
@@ -1566,7 +1580,7 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
     column_layout_source = inspect.getsource(app_module.PixelScrollTable._layout_columns)
     report_yview_source = inspect.getsource(app_module.PixelScrollTable._report_yview)
-    layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
+    library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
     render_source = inspect.getsource(DownloaderApp._render_metadata_tree)
 
     assert 'self._header.bind("<ButtonPress-1>", self._begin_column_resize' in pixel_table_source
@@ -1594,7 +1608,7 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "_schedule_redraw" not in report_yview_source
     assert "Every supported scroll entry point already schedules a redraw" in report_yview_source
     assert "children = self.video_tree.replace_rows(rows, selected=target)" in render_source
-    assert "video_tree.layout_column(" in layout_source
+    assert "video_tree.layout_column(" in library_layout_source
     assert 'xscrollincrement=1' in pixel_table_source
 
 

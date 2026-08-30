@@ -6580,6 +6580,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         else:
             self.focus_deck_header.grid_remove()
 
+        self._apply_focus_library_layout(
+            video_tree,
+            library_mode=library_mode,
+            vertical_mode=library_vertical_mode,
+        )
+        self._sync_focus_destination()
+        self._refresh_focus_run_deck()
+
+    def _apply_focus_library_layout(
+        self,
+        video_tree: PixelScrollTable,
+        *,
+        library_mode: str,
+        vertical_mode: str,
+    ) -> None:
+        """Apply the Library-only mutations for the selected responsive modes."""
+
         # Library actions intentionally stay behind one stable menu at every
         # size. Only the Selected details launcher follows rail visibility.
         if not self.focus_library_menu_button.winfo_manager():
@@ -6607,7 +6624,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             video_tree.layout_column("id", width=90, minwidth=72, stretch=True)
             video_tree.layout_column("location", width=140, minwidth=100, stretch=True)
         else:
-            if library_vertical_mode == "balanced":
+            if vertical_mode == "balanced":
                 # Reduced-height windows give the independently scrollable
                 # source/output panes less room before sacrificing metadata.
                 self.focus_library_view.rowconfigure(1, weight=4, minsize=360)
@@ -6637,8 +6654,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
                 video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=560)
-        self._sync_focus_destination()
-        self._refresh_focus_run_deck()
 
     def _check_runtime(self) -> None:
         if _YTDLP_IMPORT_ATTEMPTED and YTDLP_IMPORT_ERROR is not None:
