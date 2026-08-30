@@ -119,7 +119,16 @@ from .safe_output import (
     create_private_staging_directory,
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
-from .ui_events import UiEventHandlersMixin
+from .ui_events import (
+    UiEvent,
+    UiEventHandlersMixin,
+    UiEventSink,
+    history_record_event,
+    installation_result_event,
+    job_info_event,
+    job_log_event,
+    thumbnail_preview_event,
+)
 from .updates import (
     MacUpdatePlan,
     ReleaseInfo,
@@ -5293,7 +5302,12 @@ class SegmentedSelector(tk.Frame):
 
 
 class QueueLogger:
-    def __init__(self, events: queue.Queue[tuple[str, Any]] | None = None, *, diagnostic_prefix: str = "yt-dlp"):
+    def __init__(
+        self,
+        events: UiEventSink | None = None,
+        *,
+        diagnostic_prefix: str = "yt-dlp",
+    ) -> None:
         self.events = events
         self.diagnostic_prefix = diagnostic_prefix
 
@@ -5475,7 +5489,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.pack_propagate(False)
         self.configure(bg=THEME["bg"])
 
-        self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self.events: queue.Queue[UiEvent] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.active_job: DownloadJob | None = None
         self.pending_jobs: list[DownloadJob] = []
@@ -7400,7 +7414,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         def worker() -> None:
             success = record_cloud_seen(state, app_version=__version__)
-            self.events.put(("cloud_seen_result", {"success": success, "install_id": state.install_id}))
+            self.events.put(
+                installation_result_event(
+                    "cloud_seen_result",
+                    success,
+                    state.install_id,
+                )
+            )
 
         self._cloud_seen_worker = threading.Thread(target=worker, daemon=True)
         self._cloud_seen_worker.start()
@@ -7415,7 +7435,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         def worker() -> None:
             success = record_first_launch(state, app_version=__version__)
-            self.events.put(("first_launch_result", {"success": success, "install_id": state.install_id}))
+            self.events.put(
+                installation_result_event(
+                    "first_launch_result",
+                    success,
+                    state.install_id,
+                )
+            )
 
         self._first_launch_worker = threading.Thread(target=worker, daemon=True)
         self._first_launch_worker.start()
@@ -9701,7 +9727,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
             if not ran or not isinstance(preview, dict) or not pending():
                 return
-            self.events.put(("queued_preview", {"job": job, "info": preview}))
+            self.events.put(job_info_event("queued_preview", job, preview))
         except Exception as exc:
             write_diagnostic(f"queued run preview unavailable for {job.url}: {type(exc).__name__}: {exc}")
 
@@ -10595,10 +10621,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     source_url,
                 )
             except Exception as exc:
-                self.events.put((
-                    "thumbnail_preview_result",
-                    {"id": request_id, "url": url, "error": str(exc), "target": target, "run_id": owner_run_id},
-                ))
+                self.events.put(
+                    thumbnail_preview_event(
+                        request_id,
+                        url,
+                        target,
+                        owner_run_id,
+                        error=str(exc),
+                    )
+                )
             finally:
                 request_queue.task_done()
 
@@ -10635,10 +10666,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 save_cached_thumbnail_bytes(cache_info, data)
             except Exception as exc:
                 write_diagnostic(f"remote thumbnail cache write failed: {type(exc).__name__}: {exc}")
-        self.events.put((
-            "thumbnail_preview_result",
-            {"id": request_id, "url": url, "data": data, "target": target, "run_id": owner_run_id},
-        ))
+        self.events.put(
+            thumbnail_preview_event(
+                request_id,
+                url,
+                target,
+                owner_run_id,
+                data=data,
+            )
+        )
 
     def _display_thumbnail_preview_result(self, payload: dict[str, Any]) -> None:
         target = str(payload.get("target") or "library")
@@ -11254,15 +11290,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ffprobe_data=existing_probe,
             validation_status="Validated existing output",
         )
-        self.events.put(("job_metadata", {"job": job, "info": reused_info}))
+        self.events.put(job_info_event("job_metadata", job, reused_info))
         self.events.put(
-            (
-                "history_record",
-                {
-                    "job": job,
-                    "info": reused_info,
-                    "output_dir": str(existing_path.parent),
-                },
+            history_record_event(
+                job,
+                reused_info,
+                str(existing_path.parent),
             )
         )
         all_output_dirs.append(existing_path.parent)
@@ -11471,7 +11504,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ffprobe_data=ffprobe_data,
             validation_status="Validated",
         )
-        self.events.put(("job_metadata", {"job": job, "info": committed_info}))
+        self.events.put(job_info_event("job_metadata", job, committed_info))
         return _CommittedMedia(
             metadata=committed_info,
             primary_output=primary_output,
@@ -11515,13 +11548,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 f"WARNING: {label}: the media is complete, but its Library artwork could not be cached.",
             )
         self.events.put(
-            (
-                "history_record",
-                {
-                    "job": job,
-                    "info": info,
-                    "output_dir": str(primary_output.parent),
-                },
+            history_record_event(
+                job,
+                info,
+                str(primary_output.parent),
             )
         )
         if job.write_info_json:
@@ -11649,9 +11679,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             terminal_message=message,
             item_terminal_emitted=True,
         )
-        self.events.put(
-            ("item_terminal", {"job": terminal_job, "info": terminal_info})
-        )
+        self.events.put(job_info_event("item_terminal", terminal_job, terminal_info))
 
     def _finish_download_run_outcome(
         self,
@@ -11879,7 +11907,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             max_height=max_height,
         )
         display_info = build_encoding_summary_metadata(preflight_info, plan)
-        self.events.put(("job_metadata", {"job": job, "info": display_info}))
+        self.events.put(job_info_event("job_metadata", job, display_info))
         for line in _download_item_plan_log_lines(job, item.label, plan):
             self._emit_job_log(job, line)
         progress_callback(1.0)
@@ -11966,7 +11994,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         encoding_summary = analyzed_item.display_info.get("vodforge_encoding_summary")
         if encoding_summary:
             info["vodforge_encoding_summary"] = encoding_summary
-        self.events.put(("job_metadata", {"job": job, "info": info}))
+        self.events.put(job_info_event("job_metadata", job, info))
         progress_callback(1.0)
         return _DownloadedStagingItem(
             metadata=info,
@@ -12245,10 +12273,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     if total_videos <= 1 and "video skipped" not in issue.lower():
                         raise
                     if current_video_info is not None:
-                        self.events.put((
-                            "job_metadata",
-                            {"job": job, "info": build_failed_encoding_summary_metadata(current_video_info, current_plan, issue)},
-                        ))
+                        self.events.put(
+                            job_info_event(
+                                "job_metadata",
+                                job,
+                                build_failed_encoding_summary_metadata(
+                                    current_video_info,
+                                    current_plan,
+                                    issue,
+                                ),
+                            )
+                        )
                     write_diagnostic(f"{label} failed but playlist will continue: {type(exc).__name__}: {exc}")
                     if "video skipped" in issue.lower():
                         outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
@@ -12287,17 +12322,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except Exception as exc:
             self._active_progress_context = None
             if current_video_info is not None:
-                self.events.put((
-                    "job_metadata",
-                    {
-                        "job": job,
-                        "info": build_failed_encoding_summary_metadata(
+                self.events.put(
+                    job_info_event(
+                        "job_metadata",
+                        job,
+                        build_failed_encoding_summary_metadata(
                             current_video_info,
                             current_plan,
                             format_ytdlp_user_error(exc),
                         ),
-                    },
-                ))
+                    )
+                )
             user_error = format_ytdlp_user_error(exc)
             write_diagnostic(f"download worker error: {type(exc).__name__}: {exc}")
             if "cancelled" in user_error.lower() and not re_raise:
@@ -12462,19 +12497,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _pump_events(self) -> None:
         try:
             while True:
-                kind, payload = self.events.get_nowait()
-                if (
-                    kind in {"progress_indeterminate_start", "progress_indeterminate_stop", "progress_determinate", "progress", "status"}
-                    and self._library_run_is_suppressed(self.active_job)
-                ):
-                    continue
-                if self._handle_transfer_event(kind, payload):
-                    continue
-                if self._handle_metadata_event(kind, payload):
-                    continue
-                if self._handle_runtime_event(kind, payload):
-                    continue
-                self._handle_terminal_event(kind, payload)
+                self._dispatch_ui_event(self.events.get_nowait())
         except queue.Empty:
             pass
         self.after(100, self._pump_events)
@@ -12521,7 +12544,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             append_activity_log(line)
 
     def _emit_job_log(self, job: DownloadJob, line: str) -> None:
-        self.events.put(("job_log", {"job": job, "line": line}))
+        self.events.put(job_log_event(job, line))
 
     def _append_job_log(self, event_job: DownloadJob, line: str) -> None:
         self._append_log(line)

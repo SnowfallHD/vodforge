@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from tkinter import messagebox
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, TypeAlias, TypedDict
 
 from .cloud_funnel import (
     InstallationIdentityError,
@@ -13,6 +13,142 @@ from .cloud_funnel import (
 )
 from .models import DownloadJob
 from .updates import MacUpdatePlan, ReleaseInfo
+
+
+class JobLogPayload(TypedDict):
+    job: DownloadJob
+    line: str
+
+
+class JobInfoPayload(TypedDict):
+    job: DownloadJob
+    info: dict[str, Any]
+
+
+class HistoryRecordPayload(JobInfoPayload):
+    output_dir: str
+
+
+class ThumbnailPreviewPayload(TypedDict, total=False):
+    id: int
+    url: str
+    target: str
+    run_id: str
+    data: bytes
+    error: str
+
+
+class InstallationResultPayload(TypedDict):
+    success: bool
+    install_id: str
+
+
+JobInfoEventName: TypeAlias = Literal[
+    "job_metadata",
+    "queued_preview",
+    "item_terminal",
+]
+
+
+TransferUiEvent: TypeAlias = (
+    tuple[Literal["log", "status"], str]
+    | tuple[Literal["job_log"], JobLogPayload]
+    | tuple[Literal["progress"], int | float]
+    | tuple[Literal["progress_determinate"], int | float | None]
+    | tuple[
+        Literal["progress_indeterminate_start", "progress_indeterminate_stop"],
+        None,
+    ]
+)
+MetadataUiEvent: TypeAlias = (
+    tuple[Literal["metadata"], dict[str, Any]]
+    | tuple[Literal["job_metadata", "queued_preview", "item_terminal"], JobInfoPayload]
+    | tuple[Literal["history_record"], HistoryRecordPayload]
+    | tuple[Literal["thumbnail_preview_result"], ThumbnailPreviewPayload]
+)
+RuntimeUiEvent: TypeAlias = (
+    tuple[Literal["metadata_fetch_done"], None]
+    | tuple[Literal["metadata_error", "runtime_error", "update_check_error"], str]
+    | tuple[Literal["download_folders"], list[Path]]
+    | tuple[Literal["update_check_result"], ReleaseInfo]
+    | tuple[Literal["update_ready"], Path | MacUpdatePlan]
+    | tuple[
+        Literal["cloud_seen_result", "first_launch_result"],
+        InstallationResultPayload,
+    ]
+)
+TerminalUiEvent: TypeAlias = tuple[
+    Literal["done", "partial", "stopped", "error"],
+    str,
+]
+UiEvent: TypeAlias = (
+    TransferUiEvent | MetadataUiEvent | RuntimeUiEvent | TerminalUiEvent
+)
+
+
+def job_log_event(
+    job: DownloadJob, line: str
+) -> tuple[Literal["job_log"], JobLogPayload]:
+    return "job_log", {"job": job, "line": line}
+
+
+def job_info_event(
+    name: JobInfoEventName,
+    job: DownloadJob,
+    info: dict[str, Any],
+) -> tuple[JobInfoEventName, JobInfoPayload]:
+    return name, {"job": job, "info": info}
+
+
+def history_record_event(
+    job: DownloadJob,
+    info: dict[str, Any],
+    output_dir: str,
+) -> tuple[Literal["history_record"], HistoryRecordPayload]:
+    return "history_record", {
+        "job": job,
+        "info": info,
+        "output_dir": output_dir,
+    }
+
+
+def thumbnail_preview_event(
+    request_id: int,
+    url: str,
+    target: str,
+    run_id: str,
+    *,
+    data: bytes | None = None,
+    error: str | None = None,
+) -> tuple[Literal["thumbnail_preview_result"], ThumbnailPreviewPayload]:
+    payload: ThumbnailPreviewPayload = {
+        "id": request_id,
+        "url": url,
+        "target": target,
+        "run_id": run_id,
+    }
+    if data is not None:
+        payload["data"] = data
+    if error is not None:
+        payload["error"] = error
+    return "thumbnail_preview_result", payload
+
+
+def installation_result_event(
+    name: Literal["cloud_seen_result", "first_launch_result"],
+    success: bool,
+    install_id: str,
+) -> tuple[
+    Literal["cloud_seen_result", "first_launch_result"],
+    InstallationResultPayload,
+]:
+    return name, {"success": success, "install_id": install_id}
+
+
+class UiEventSink(Protocol):
+    """Minimal FIFO producer contract shared by Queue and harness tracing sinks."""
+
+    def put(self, event: UiEvent) -> None: ...
 
 
 class _FloatVariable(Protocol):
@@ -84,6 +220,14 @@ class _UiEventHost(Protocol):
     def focus_percent_var(self) -> _StringVariable: ...
 
     def _event_write_diagnostic(self, message: str) -> None: ...
+
+    def _handle_transfer_event(self, kind: str, payload: Any) -> bool: ...
+
+    def _handle_metadata_event(self, kind: str, payload: Any) -> bool: ...
+
+    def _handle_runtime_event(self, kind: str, payload: Any) -> bool: ...
+
+    def _handle_terminal_event(self, kind: str, payload: Any) -> bool: ...
 
     def _append_log(self, line: str) -> None: ...
 
@@ -169,6 +313,25 @@ class UiEventHandlersMixin:
 
     def _event_write_diagnostic(self, message: str) -> None:
         raise NotImplementedError
+
+    def _dispatch_ui_event(self: _UiEventHost, event: UiEvent) -> None:
+        """Dispatch one FIFO event while preserving worker-to-UI ownership rules."""
+        kind, payload = event
+        if kind in {
+            "progress_indeterminate_start",
+            "progress_indeterminate_stop",
+            "progress_determinate",
+            "progress",
+            "status",
+        } and self._library_run_is_suppressed(self.active_job):
+            return
+        if self._handle_transfer_event(kind, payload):
+            return
+        if self._handle_metadata_event(kind, payload):
+            return
+        if self._handle_runtime_event(kind, payload):
+            return
+        self._handle_terminal_event(kind, payload)
 
     def _handle_transfer_event(
         self: _UiEventHost,
