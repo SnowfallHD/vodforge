@@ -106,6 +106,26 @@ class FixtureHTTPServer:
                         send_body=send_body,
                     )
                     return
+                if route == "/redirect/thumbnail":
+                    target = urllib.parse.parse_qs(
+                        urllib.parse.urlsplit(self.path).query
+                    ).get("to", [""])[0]
+                    if not target:
+                        self._bytes_response(
+                            b"missing redirect target\n",
+                            "text/plain; charset=utf-8",
+                            status=400,
+                            send_body=send_body,
+                        )
+                        return
+                    self._bytes_response(
+                        b"",
+                        "text/plain; charset=utf-8",
+                        status=302,
+                        headers={"Location": target},
+                        send_body=send_body,
+                    )
+                    return
                 if route == "/fault/retry/page":
                     with state.lock:
                         should_fail = state.retry_failures_remaining > 0

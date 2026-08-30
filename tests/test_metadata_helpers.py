@@ -5,6 +5,7 @@ import queue
 import stat
 import threading
 import time
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
@@ -1823,21 +1824,11 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
     Image.new("RGB", (4, 4), "red").save(buf, format="WEBP")
     payload = buf.getvalue()
 
-    class Response:
-        def __init__(self):
-            self.buffer = BytesIO(payload)
-            self.headers = {}
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def read(self, size=-1):
-            return self.buffer.read(size)
-
-    monkeypatch.setattr("yt_downloader.app.urllib.request.urlopen", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr(
+        app_module,
+        "download_bounded_url_bytes",
+        lambda *_args, **_kwargs: payload,
+    )
 
     path = save_thumbnail_image(tmp_path, {"thumbnail": "https://i.ytimg.com/example.webp"})
 
@@ -1863,7 +1854,17 @@ def test_thumbnail_download_rejects_non_http_and_oversized_responses(monkeypatch
         def read(self, _size=-1):
             raise AssertionError("an oversized declared response must not be read")
 
-    monkeypatch.setattr(app_module.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+        def geturl(self):
+            return "https://i.ytimg.com/oversized.jpg"
+
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(
+        "yt_downloader.thumbnail_network.urllib.request.build_opener",
+        lambda *_handlers: Opener(),
+    )
 
     with pytest.raises(RuntimeError, match="safety limit"):
         download_bounded_url_bytes("https://i.ytimg.com/oversized.jpg", max_bytes=1000)
@@ -1885,7 +1886,17 @@ def test_thumbnail_download_enforces_bound_for_chunked_response(monkeypatch):
         def read(self, size=-1):
             return self.buffer.read(size)
 
-    monkeypatch.setattr(app_module.urllib.request, "urlopen", lambda *_args, **_kwargs: Response())
+        def geturl(self):
+            return "https://i.ytimg.com/chunked.jpg"
+
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(
+        "yt_downloader.thumbnail_network.urllib.request.build_opener",
+        lambda *_handlers: Opener(),
+    )
 
     with pytest.raises(RuntimeError, match="safety limit"):
         download_bounded_url_bytes("https://i.ytimg.com/chunked.jpg", max_bytes=1000)
@@ -1983,7 +1994,8 @@ def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(monk
     info = {"id": "beat123", "thumbnail": "https://i.ytimg.com/beat123.jpg"}
     destinations: list[Path] = []
 
-    def fake_save(output_dir, _info, *, filename):
+    def fake_save(output_dir, _info, *, filename, source_url=None):
+        assert source_url is None
         destination = output_dir / filename
         destinations.append(destination)
         time.sleep(0.02)
@@ -2403,25 +2415,11 @@ def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch
     payload = buf.getvalue()
     requested_urls: list[str] = []
 
-    class Response:
-        def __init__(self):
-            self.buffer = BytesIO(payload)
-            self.headers = {}
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return False
-
-        def read(self, size=-1):
-            return self.buffer.read(size)
-
-    def fake_urlopen(url, **_kwargs):
+    def fake_download(url, **_kwargs):
         requested_urls.append(url)
-        return Response()
+        return payload
 
-    monkeypatch.setattr("yt_downloader.app.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(app_module, "download_bounded_url_bytes", fake_download)
 
     path = save_thumbnail_image(
         tmp_path,
@@ -2430,6 +2428,7 @@ def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch
                 {"url": "https://example.invalid/huge.png", "width": 2200, "height": 1600},
             ]
         },
+        source_url="https://example.invalid/video",
     )
 
     assert requested_urls == ["https://example.invalid/huge.png"]
@@ -2437,6 +2436,31 @@ def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch
     assert path.stat().st_size <= app_module.THUMBNAIL_MAX_BYTES
     with Image.open(path) as image:
         assert image.format == "JPEG"
+
+
+def test_embedded_thumbnail_sources_reject_untrusted_provider_metadata() -> None:
+    with pytest.raises(RuntimeError, match="not trusted"):
+        app_module.validate_embedded_thumbnail_sources(
+            {
+                "thumbnail": "https://i.ytimg.com/vi/abc123/default.jpg",
+                "thumbnails": [
+                    {"url": "http://169.254.169.254/latest/meta-data"},
+                ],
+            },
+            source_url="https://www.youtube.com/watch?v=abc123",
+        )
+
+
+def test_embedded_thumbnail_sources_allow_explicit_same_origin_fixture() -> None:
+    app_module.validate_embedded_thumbnail_sources(
+        {
+            "thumbnail": "http://127.0.0.1:48123/thumbnail.jpg",
+            "thumbnails": [
+                {"url": "http://127.0.0.1:48123/thumbnail-large.jpg"},
+            ],
+        },
+        source_url="http://127.0.0.1:48123/page/video",
+    )
 
 
 def test_format_duration_uses_readable_hours_minutes_seconds():
@@ -5071,6 +5095,53 @@ def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selecte
     assert opts["writethumbnail"] is False
     assert not any(processor["key"] == "EmbedThumbnail" for processor in opts["postprocessors"])
     assert opts["postprocessors"][-1]["key"] == "FFmpegMetadata"
+
+
+def test_mp4_separate_thumbnail_uses_policy_fetch_instead_of_ytdlp(
+    monkeypatch, tmp_path: Path
+):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=beat",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=True,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    separate_only = app._build_ydl_options(
+        job,
+        tmp_path / "separate-staging",
+        format_selector="137+251",
+    )
+    embedded = app._build_ydl_options(
+        replace(job, embed_thumbnail=True),
+        tmp_path / "embedded-staging",
+        format_selector="137+251",
+    )
+
+    assert separate_only["writethumbnail"] is False
+    assert not any(
+        processor["key"] == "EmbedThumbnail"
+        for processor in separate_only["postprocessors"]
+    )
+    assert embedded["writethumbnail"] is True
+    assert any(
+        processor["key"] == "EmbedThumbnail"
+        for processor in embedded["postprocessors"]
+    )
 
 
 # ---------------------------------------------------------------------------

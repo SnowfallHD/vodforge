@@ -3,8 +3,11 @@ from __future__ import annotations
 import ast
 import os
 import stat
+import urllib.parse
 from pathlib import Path
 from typing import Any
+
+from .fault_server import FixtureHTTPServer
 
 
 def _finding(
@@ -654,3 +657,106 @@ def url_secret_persistence_probe(
         "error": None,
     }
     return scenario, findings
+
+
+def thumbnail_network_authority_probe(
+    case_dir: Path,
+    source_server: FixtureHTTPServer,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    from yt_downloader.thumbnail_network import download_bounded_url_bytes
+
+    case_dir.mkdir(parents=True, exist_ok=True)
+    source_url = source_server.url("/page/normal")
+    same_origin_url = source_server.url("/thumbnail.jpg")
+    same_origin_payload = download_bounded_url_bytes(
+        same_origin_url,
+        source_url=source_url,
+        timeout_seconds=5,
+    )
+
+    with FixtureHTTPServer(source_server.fixture_dir) as target_server:
+        target_url = target_server.url("/thumbnail.jpg")
+        direct_rejection = ""
+        try:
+            download_bounded_url_bytes(
+                target_url,
+                source_url=source_url,
+                timeout_seconds=5,
+            )
+        except RuntimeError as exc:
+            direct_rejection = f"{type(exc).__name__}: {exc}"
+
+        redirect_url = source_server.url(
+            "/redirect/thumbnail?to=" + urllib.parse.quote(target_url, safe="")
+        )
+        redirect_rejection = ""
+        try:
+            download_bounded_url_bytes(
+                redirect_url,
+                source_url=source_url,
+                timeout_seconds=5,
+            )
+        except RuntimeError as exc:
+            redirect_rejection = f"{type(exc).__name__}: {exc}"
+
+        target_snapshot = target_server.state.snapshot()
+
+    source_snapshot = source_server.state.snapshot()
+    same_origin_succeeded = bool(same_origin_payload)
+    direct_rejected = "not trusted" in direct_rejection
+    redirect_rejected = "not trusted" in redirect_rejection
+    target_requests = int(target_snapshot.get("total_requests") or 0)
+    redirect_first_hop_requests = int(
+        (source_snapshot.get("requests") or {}).get("/redirect/thumbnail", 0)
+    )
+    passed = (
+        same_origin_succeeded
+        and direct_rejected
+        and redirect_rejected
+        and target_requests == 0
+        and redirect_first_hop_requests >= 1
+    )
+    evidence = [
+        f"Explicit same-origin fixture thumbnail succeeded: {same_origin_succeeded}",
+        f"Direct cross-origin metadata URL rejection: {direct_rejection or 'missing'}",
+        f"Allowed first hop to cross-origin redirect rejection: {redirect_rejection or 'missing'}",
+        f"Forbidden target-origin request count: {target_requests}",
+        f"Source-origin redirect first-hop request count: {redirect_first_hop_requests}",
+    ]
+    scenario_id = "security.thumbnail_network_authority"
+    scenario = {
+        "id": scenario_id,
+        "evidence_tier": "unit_static",
+        "category": "security",
+        "status": "passed" if passed else "failed",
+        "duration_seconds": 0.0,
+        "metrics": {
+            "same_origin_fetch_succeeded": same_origin_succeeded,
+            "direct_cross_origin_rejected": direct_rejected,
+            "cross_origin_redirect_rejected": redirect_rejected,
+            "forbidden_target_request_count": target_requests,
+            "redirect_first_hop_request_count": redirect_first_hop_requests,
+        },
+        "evidence": evidence,
+        "artifacts": [],
+        "error": None,
+    }
+    if passed:
+        return scenario, []
+    return scenario, [
+        _finding(
+            "SEC-THUMBNAIL-SSRF-001",
+            "Untrusted thumbnail metadata can escape its source network authority",
+            "security defect",
+            "high",
+            "yt_downloader thumbnail fetch and redirect handling",
+            [
+                "Run ./engineering-quality/run normal --scenario security.thumbnail_network_authority.",
+                "Use one explicit loopback source origin and point its thumbnail directly or by redirect at a second loopback origin.",
+                "Require the second origin to receive zero requests while a same-origin thumbnail remains usable.",
+            ],
+            evidence,
+            "Bind thumbnail fetches to reviewed YouTube HTTPS authorities or the exact explicitly submitted source origin, and validate every redirect before following it.",
+            scenario_id,
+        )
+    ]

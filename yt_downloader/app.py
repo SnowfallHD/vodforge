@@ -16,7 +16,6 @@ import tkinter.font as tkfont
 import unicodedata
 import urllib.error
 import urllib.parse
-import urllib.request
 import uuid
 import warnings
 import webbrowser
@@ -77,6 +76,7 @@ from .safe_output import (
     commit_file_beneath,
     create_private_staging_directory,
 )
+from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .ui_events import UiEventHandlersMixin
 from .updates import (
     MacUpdatePlan,
@@ -155,8 +155,6 @@ AUDIO_BITRATE = "320k"
 MP3_IN_MP4_BITRATES_KBPS = (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
 DEFAULT_MAX_HEIGHT = 1080
 THUMBNAIL_MAX_BYTES = 300 * 1024
-THUMBNAIL_DOWNLOAD_MAX_BYTES = 10 * 1024 * 1024
-THUMBNAIL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 THUMBNAIL_MAX_PIXELS = 16_000_000
 THUMBNAIL_MAX_DIMENSION = 8192
 FFPROBE_TIMEOUT_SECONDS = 30
@@ -2483,6 +2481,37 @@ def best_thumbnail_for_download(info: dict[str, Any], max_bytes: int = THUMBNAIL
     return max(pool, key=lambda thumb: ((thumb.get("width") or 0) * (thumb.get("height") or 1), thumb.get("width") or 0))
 
 
+def validate_embedded_thumbnail_sources(
+    info: dict[str, Any],
+    *,
+    source_url: str,
+) -> None:
+    """Reject any provider thumbnail URL that yt-dlp could fetch for embedding."""
+    policy = ThumbnailUrlPolicy.for_source(source_url)
+    candidates: list[Any] = [info.get("thumbnail")]
+    candidates.extend(
+        thumb.get("url")
+        for thumb in info.get("thumbnails") or []
+        if isinstance(thumb, dict)
+    )
+    checked: set[str] = set()
+    for candidate in candidates:
+        url = str(candidate or "")
+        if not url.strip() or url in checked:
+            continue
+        policy.validate(url)
+        checked.add(url)
+
+
+def job_embeds_provider_thumbnail(job: DownloadJob) -> bool:
+    if job.output_type == OutputType.MP3:
+        return bool(
+            job.mp3_settings.embed_cover_art
+            and job.mp3_settings.custom_cover_art_path is None
+        )
+    return bool(job.embed_thumbnail)
+
+
 def _clean_windows_component_text(value: Any, fallback: str) -> str:
     text = str(value or fallback).strip()
     # Remove hidden/control formatting characters such as zero-width spaces that
@@ -3838,36 +3867,6 @@ def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX
     path.write_bytes(best_data)
 
 
-def download_bounded_url_bytes(
-    url: str,
-    *,
-    timeout_seconds: float = 30,
-    max_bytes: int = THUMBNAIL_DOWNLOAD_MAX_BYTES,
-) -> bytes:
-    """Read an HTTP(S) asset with a hard memory bound, including chunked responses."""
-    parsed = urllib.parse.urlparse(str(url))
-    if parsed.scheme.lower() not in {"http", "https"}:
-        raise RuntimeError("Thumbnail URLs must use HTTP or HTTPS")
-    with urllib.request.urlopen(url, timeout=timeout_seconds) as response:
-        headers = getattr(response, "headers", None)
-        content_length = headers.get("Content-Length") if headers is not None else None
-        if content_length:
-            try:
-                if int(content_length) > max_bytes:
-                    raise RuntimeError(f"Thumbnail response exceeds the {max_bytes}-byte safety limit")
-            except ValueError:
-                pass
-        payload = bytearray()
-        while True:
-            chunk = response.read(min(THUMBNAIL_DOWNLOAD_CHUNK_BYTES, max_bytes + 1 - len(payload)))
-            if not chunk:
-                break
-            payload.extend(chunk)
-            if len(payload) > max_bytes:
-                raise RuntimeError(f"Thumbnail response exceeds the {max_bytes}-byte safety limit")
-        return bytes(payload)
-
-
 def decode_bounded_thumbnail(data: bytes) -> Any:
     """Decode remote thumbnail bytes without allowing compressed pixel bombs."""
     if Image is None:
@@ -3898,14 +3897,20 @@ def decode_bounded_thumbnail(data: bytes) -> Any:
         raise RuntimeError(f"Thumbnail image is invalid or unsafe: {exc}") from exc
 
 
-def save_thumbnail_image(output_dir: Path, info: dict[str, Any], *, filename: str = "thumbnail.jpeg") -> Path | None:
+def save_thumbnail_image(
+    output_dir: Path,
+    info: dict[str, Any],
+    *,
+    filename: str = "thumbnail.jpeg",
+    source_url: str | None = None,
+) -> Path | None:
     thumb = best_thumbnail_for_download(info)
     url = str((thumb or {}).get("url") or "")
     if not url:
         return None
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / filename
-    data = download_bounded_url_bytes(url)
+    data = download_bounded_url_bytes(url, source_url=source_url)
     if Image is None:
         if len(data) > THUMBNAIL_MAX_BYTES:
             raise RuntimeError("Pillow is required to enforce the 300 KB thumbnail limit")
@@ -4032,7 +4037,12 @@ def thumbnail_cache_lock(path: Path) -> threading.RLock:
     return _THUMBNAIL_CACHE_LOCKS[slot % len(_THUMBNAIL_CACHE_LOCKS)]
 
 
-def save_cached_thumbnail_image(info: dict[str, Any], *, data_dir: Path | None = None) -> Path | None:
+def save_cached_thumbnail_image(
+    info: dict[str, Any],
+    *,
+    data_dir: Path | None = None,
+    source_url: str | None = None,
+) -> Path | None:
     path = cached_thumbnail_path(info, data_dir=data_dir)
     if path is None:
         return None
@@ -4052,7 +4062,12 @@ def save_cached_thumbnail_image(info: dict[str, Any], *, data_dir: Path | None =
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.tmp")
         try:
-            saved = save_thumbnail_image(temporary.parent, info, filename=temporary.name)
+            saved = save_thumbnail_image(
+                temporary.parent,
+                info,
+                filename=temporary.name,
+                source_url=source_url,
+            )
             if saved is None:
                 return None
             if Image is not None:
@@ -9961,7 +9976,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 cached = (
                     save_custom_cached_thumbnail_image(preview, job.mp3_settings.custom_cover_art_path)
                     if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None
-                    else save_cached_thumbnail_image(preview)
+                    else save_cached_thumbnail_image(preview, source_url=job.url)
                 )
                 if cached is not None:
                     preview["preview_thumbnail_path"] = str(cached)
@@ -10177,6 +10192,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     target=f"run:{job.run_id}",
                     owner_run_id=job.run_id,
                     cache_info=info,
+                    source_url=job.url,
                 )
             self._refresh_focus_run_deck()
             return
@@ -10217,6 +10233,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 target="active",
                 owner_run_id=job.run_id,
                 cache_info=info,
+                source_url=job.url,
             )
         else:
             self._reset_active_thumbnail()
@@ -10806,6 +10823,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         target: str,
         owner_run_id: str = "",
         cache_info: dict[str, Any] | None = None,
+        source_url: str | None = None,
     ) -> None:
         target_label = self._thumbnail_label_for_target(target)
         if Image is None or ImageTk is None:
@@ -10818,7 +10836,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if request_queue is None:
             request_queue = queue.Queue(maxsize=2)
             self._thumbnail_preview_requests = request_queue
-        retained: list[tuple[int, str, str, str, dict[str, Any] | None]] = []
+        retained: list[
+            tuple[int, str, str, str, dict[str, Any] | None, str | None]
+        ] = []
         while True:
             try:
                 pending = request_queue.get_nowait()
@@ -10829,7 +10849,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 retained.append(pending)
         for pending in retained[-1:]:
             request_queue.put_nowait(pending)
-        request_queue.put_nowait((request_id, url, request_target, owner_run_id, dict(cache_info) if cache_info else None))
+        request_queue.put_nowait(
+            (
+                request_id,
+                url,
+                request_target,
+                owner_run_id,
+                dict(cache_info) if cache_info else None,
+                source_url,
+            )
+        )
         if worker is None or not worker.is_alive():
             worker = threading.Thread(target=self._thumbnail_preview_loop, daemon=True)
             self._thumbnail_preview_thread = worker
@@ -10838,13 +10867,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             target_label.config(text="Loading thumbnail…")
 
     def _thumbnail_preview_loop(self) -> None:
-        request_queue: queue.Queue[tuple[int, str, str, str, dict[str, Any] | None]] = self._thumbnail_preview_requests
+        request_queue: queue.Queue[
+            tuple[int, str, str, str, dict[str, Any] | None, str | None]
+        ] = self._thumbnail_preview_requests
         while True:
             request = request_queue.get()
             request_id, url, target, owner_run_id = request[:4]
             cache_info = request[4] if len(request) > 4 else None
+            source_url = request[5] if len(request) > 5 else None
             try:
-                self._fetch_thumbnail_preview_request(request_id, url, target, owner_run_id, cache_info)
+                self._fetch_thumbnail_preview_request(
+                    request_id,
+                    url,
+                    target,
+                    owner_run_id,
+                    cache_info,
+                    source_url,
+                )
             except Exception as exc:
                 self.events.put((
                     "thumbnail_preview_result",
@@ -10860,6 +10899,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         target: str,
         owner_run_id: str,
         cache_info: dict[str, Any] | None = None,
+        source_url: str | None = None,
     ) -> None:
         if (
             bool(self.__dict__.get("_closing", False))
@@ -10870,7 +10910,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         # response size, timeout, and decoded pixel count. They do not use the
         # yt-dlp provider session, so delaying them behind the entire primary
         # media operation only leaves a placeholder visible for most of a run.
-        data = download_bounded_url_bytes(url, timeout_seconds=15)
+        data = download_bounded_url_bytes(
+            url,
+            source_url=source_url,
+            timeout_seconds=15,
+        )
         if (
             bool(self.__dict__.get("_closing", False))
             or request_id != self._thumbnail_request_ids().get(target, 0)
@@ -11519,7 +11563,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             f"{label}: already downloaded and valid; reused {existing_path}.",
         )
         try:
-            cached_thumbnail = save_cached_thumbnail_image(reused_info)
+            cached_thumbnail = save_cached_thumbnail_image(
+                reused_info,
+                source_url=job.url,
+            )
             if cached_thumbnail is not None:
                 self._emit_job_log(job, f"{label}: refreshed private Library artwork cache")
         except Exception as exc:
@@ -11543,7 +11590,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
         if job.write_thumbnail:
             try:
-                save_thumbnail_image(existing_path.parent, reused_info)
+                save_thumbnail_image(
+                    existing_path.parent,
+                    reused_info,
+                    source_url=job.url,
+                )
             except Exception as exc:
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -11717,7 +11768,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
                 if job.output_type == OutputType.MP3
                 and custom_cover_for_cache is not None
-                else save_cached_thumbnail_image(info)
+                else save_cached_thumbnail_image(info, source_url=job.url)
             )
             if cached_thumbnail is not None:
                 artwork_source = (
@@ -11775,6 +11826,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 thumb_path = save_thumbnail_image(
                     resolved_video_output_dir(job.output_dir, info),
                     info,
+                    source_url=job.url,
                 )
                 if thumb_path:
                     self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
@@ -12128,6 +12180,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                                 else f"H.264 / {plan.output_audio_codec.value} MP4 video"
                             )
                             raise RuntimeError(f"FFmpeg is required to create the {required_output} output.")
+                        if job_embeds_provider_thumbnail(job):
+                            validate_embedded_thumbnail_sources(
+                                preflight_info,
+                                source_url=video_url,
+                            )
                         ydl_opts = self._build_ydl_options(job, staging_dir=staging_dir, format_selector=plan.format_selector)
                         ydl_opts["noplaylist"] = True
                         # Preflight already loaded the selected cookie source. Reuse
@@ -12349,10 +12406,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _build_ydl_options(self, job: DownloadJob, staging_dir: Path, format_selector: str | None = None) -> dict[str, Any]:
         if job.output_type == OutputType.MP3:
-            use_youtube_cover = (
-                job.mp3_settings.embed_cover_art
-                and job.mp3_settings.custom_cover_art_path is None
-            )
+            use_youtube_cover = job_embeds_provider_thumbnail(job)
             postprocessors: list[dict[str, Any]] = [
                 {
                     "key": "FFmpegExtractAudio",
@@ -12383,7 +12437,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if job.embed_thumbnail:
                 postprocessors.append({"key": "EmbedThumbnail", "already_have_thumbnail": False})
             selected_format = (format_selector or QUALITY_OPTIONS[job.quality_label]) + "/best"
-            write_thumbnail = job.write_thumbnail or job.embed_thumbnail
+            # A separate thumbnail is fetched through VODForge's bounded,
+            # redirect-aware authority policy after the media commit. yt-dlp
+            # needs thumbnail network authority only when it must embed one.
+            write_thumbnail = job_embeds_provider_thumbnail(job)
             postprocessor_args = self._metadata_args(job.tags)
 
         outtmpl = staging_output_template(staging_dir)

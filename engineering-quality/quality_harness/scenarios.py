@@ -19,6 +19,7 @@ from .security import (
     fresh_output_contract_probe,
     path_and_subprocess_probe,
     symlink_and_temp_probe,
+    thumbnail_network_authority_probe,
     url_secret_persistence_probe,
 )
 from .static_analysis import run_static_suite
@@ -1361,6 +1362,13 @@ def run_scenarios(
             "security.url_secret_persistence",
             lambda: url_secret_persistence_probe(
                 run_root / "cases" / "security-url-secret"
+            ),
+        ),
+        (
+            "security.thumbnail_network_authority",
+            lambda: thumbnail_network_authority_probe(
+                run_root / "cases" / "security-thumbnail-network",
+                server,
             ),
         ),
         (
