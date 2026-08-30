@@ -6070,6 +6070,177 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except tk.TclError:
             return
 
+    def _render_focus_run_deck_tile(
+        self,
+        record: dict[str, Any],
+        *,
+        column: int,
+        visible_count: int,
+    ) -> None:
+        tile_bg = THEME["bg"]
+        tile = tk.Frame(self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2")
+        left_pad = 9 if column == 0 else 5
+        right_pad = 5 if column < visible_count - 1 else 9
+        tile.grid(row=0, column=column, sticky="nsew", padx=(left_pad, right_pad), pady=6 if self._focus_layout == "compact" else 9)
+        tile.columnconfigure(1, weight=1)
+        source = self._focus_thumbnail_source_for_record(record)
+        thumbnail_size = youtube_thumbnail_size(64 if self._focus_layout == "compact" else 80)
+        thumbnail = self._focus_photo_from_source(source, thumbnail_size, 6 if self._focus_layout == "compact" else 7)
+        if thumbnail is not None:
+            self._focus_run_thumbnail_images.append(thumbnail)
+            image_label = tk.Label(tile, image=thumbnail, bg=tile_bg, bd=0, highlightthickness=0)
+            image_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 9))
+        title = str(record.get("title") or "Untitled run")
+        status = str(record.get("status") or "Ready")
+        title_label = tk.Label(
+            tile,
+            text=title[:27] + ("..." if len(title) > 27 else ""),
+            bg=tile_bg,
+            fg=THEME["text"],
+            anchor="w",
+            font=FONT_UI_SMALL_MEDIUM,
+            bd=0,
+        )
+        title_label.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+        record_kind = str(record.get("kind"))
+        status_color = (
+            THEME["success"]
+            if record_kind == "completed"
+            else THEME["danger"]
+            if record_kind == "failed"
+            else THEME["warning"]
+            if record_kind == "skipped"
+            else THEME["accent"]
+            if record_kind in {"active", "preview_loading"}
+            else THEME["muted"]
+        )
+        status_label = tk.Label(tile, text=status, bg=tile_bg, fg=status_color, font=FONT_UI_SMALL, bd=0, anchor="w")
+        is_primary_active = column == 0 and str(record.get("kind")) == "active"
+        if is_primary_active:
+            status_label.configure(textvariable=self.focus_run_status_var)
+        status_label.grid(row=1, column=1, sticky="w", pady=(3, 0))
+        value = max(0.0, min(100.0, float(record.get("progress") or 0)))
+        bar: SleekProgressbar | None = None
+        if is_primary_active or 0 < value < 100:
+            if is_primary_active:
+                bar = SleekProgressbar(tile, maximum=100, variable=self.progress_var, mode="determinate", height=4, track_color=THEME["border"])
+            else:
+                bar = SleekProgressbar(tile, maximum=100, value=value, mode="determinate", height=4, track_color=THEME["border"])
+            bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(7, 0))
+        widgets: list[tk.Widget] = [tile, title_label, status_label]
+        if thumbnail is not None:
+            widgets.append(image_label)
+        hover_widgets = list(widgets)
+        retry_job = record.get("job")
+        if record_kind in {"failed", "skipped", "stopped"} and isinstance(
+            retry_job, DownloadJob
+        ):
+            verified_retry_job = retry_job
+
+            def retry_from_tile(
+                _event: tk.Event[Any],
+                job: DownloadJob = verified_retry_job,
+            ) -> None:
+                self._retry_terminal_job(job)
+
+            retry_button = tk.Canvas(
+                tile,
+                width=30,
+                height=30,
+                bg=tile_bg,
+                bd=0,
+                highlightthickness=0,
+                cursor="hand2",
+            )
+            retry_button.create_oval(2, 2, 28, 28, fill=THEME["surface"], outline=THEME["border"], width=1)
+            retry_button.create_text(15, 14, text="↻", fill=THEME["text"], font=(FONT_UI[0], 15, "bold"))
+            retry_button.bind(
+                "<Button-1>",
+                retry_from_tile,
+            )
+            overlay_parent = image_label if thumbnail is not None else tile
+            retry_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
+            hover_widgets.append(retry_button)
+        elif record_kind == "preview" and record.get("metadata_index") is not None:
+            def start_preview_from_tile(
+                _event: tk.Event[Any],
+                item: dict[str, Any] = record,
+            ) -> None:
+                self._start_preview_record(item)
+
+            play_button = tk.Canvas(
+                tile,
+                width=30,
+                height=30,
+                bg=tile_bg,
+                bd=0,
+                highlightthickness=0,
+                cursor="hand2",
+            )
+            play_button.create_oval(2, 2, 28, 28, fill=THEME["accent"], outline=THEME["border"], width=1)
+            play_icon = self._load_focus_icon("send-filled", 20, "#ffffff")
+            if play_icon is not None:
+                play_button.create_image(15, 15, image=play_icon)
+            play_button.bind(
+                "<Button-1>",
+                start_preview_from_tile,
+            )
+            play_button.bind(
+                "<Button-2>",
+                partial(self._show_focus_run_actions_menu, record),
+            )
+            play_button.bind(
+                "<Button-3>",
+                partial(self._show_focus_run_actions_menu, record),
+            )
+            overlay_parent = image_label if thumbnail is not None else tile
+            play_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
+            hover_widgets.append(play_button)
+        if bar is not None:
+            widgets.append(bar)
+
+        def sync_tile_hover(
+            *,
+            card: tk.Frame = tile,
+            card_widgets: tuple[tk.Widget, ...] = tuple(hover_widgets),
+        ) -> None:
+            try:
+                pointer_x = self.winfo_pointerx()
+                pointer_y = self.winfo_pointery()
+                inside = (
+                    card.winfo_rootx() <= pointer_x < card.winfo_rootx() + card.winfo_width()
+                    and card.winfo_rooty() <= pointer_y < card.winfo_rooty() + card.winfo_height()
+                )
+                background = THEME["surface"] if inside else THEME["bg"]
+                for card_widget in card_widgets:
+                    card_widget.configure({"bg": background})
+            except tk.TclError:
+                return
+
+        def schedule_tile_hover(
+            _event: tk.Event[Any],
+            *,
+            card: tk.Frame = tile,
+            callback: Callable[[], None] = sync_tile_hover,
+        ) -> None:
+            card.after_idle(callback)
+
+        for widget in widgets:
+            widget.bind(
+                "<Button-1>",
+                partial(self._focus_activate_run_record, record),
+            )
+            widget.bind(
+                "<Button-2>",
+                partial(self._show_focus_run_actions_menu, record),
+            )
+            widget.bind(
+                "<Button-3>",
+                partial(self._show_focus_run_actions_menu, record),
+            )
+            widget.bind("<Enter>", schedule_tile_hover, add="+")
+            widget.bind("<Leave>", schedule_tile_hover, add="+")
+
     def _refresh_focus_run_deck(self) -> None:
         if not hasattr(self, "focus_run_deck"):
             return
@@ -6098,169 +6269,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         for column in range(limit):
             self.focus_run_deck.columnconfigure(column, weight=1, uniform="focus-run")
         for column, record in enumerate(visible):
-            tile_bg = THEME["bg"]
-            tile = tk.Frame(self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2")
-            left_pad = 9 if column == 0 else 5
-            right_pad = 5 if column < len(visible) - 1 else 9
-            tile.grid(row=0, column=column, sticky="nsew", padx=(left_pad, right_pad), pady=6 if self._focus_layout == "compact" else 9)
-            tile.columnconfigure(1, weight=1)
-            source = self._focus_thumbnail_source_for_record(record)
-            thumbnail_size = youtube_thumbnail_size(64 if self._focus_layout == "compact" else 80)
-            thumbnail = self._focus_photo_from_source(source, thumbnail_size, 6 if self._focus_layout == "compact" else 7)
-            if thumbnail is not None:
-                self._focus_run_thumbnail_images.append(thumbnail)
-                image_label = tk.Label(tile, image=thumbnail, bg=tile_bg, bd=0, highlightthickness=0)
-                image_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 9))
-            title = str(record.get("title") or "Untitled run")
-            status = str(record.get("status") or "Ready")
-            title_label = tk.Label(
-                tile,
-                text=title[:27] + ("..." if len(title) > 27 else ""),
-                bg=tile_bg,
-                fg=THEME["text"],
-                anchor="w",
-                font=FONT_UI_SMALL_MEDIUM,
-                bd=0,
+            self._render_focus_run_deck_tile(
+                record,
+                column=column,
+                visible_count=len(visible),
             )
-            title_label.grid(row=0, column=1, sticky="ew", padx=(0, 4))
-            record_kind = str(record.get("kind"))
-            status_color = (
-                THEME["success"]
-                if record_kind == "completed"
-                else THEME["danger"]
-                if record_kind == "failed"
-                else THEME["warning"]
-                if record_kind == "skipped"
-                else THEME["accent"]
-                if record_kind in {"active", "preview_loading"}
-                else THEME["muted"]
-            )
-            status_label = tk.Label(tile, text=status, bg=tile_bg, fg=status_color, font=FONT_UI_SMALL, bd=0, anchor="w")
-            is_primary_active = column == 0 and str(record.get("kind")) == "active"
-            if is_primary_active:
-                status_label.configure(textvariable=self.focus_run_status_var)
-            status_label.grid(row=1, column=1, sticky="w", pady=(3, 0))
-            value = max(0.0, min(100.0, float(record.get("progress") or 0)))
-            bar: SleekProgressbar | None = None
-            if is_primary_active or 0 < value < 100:
-                if is_primary_active:
-                    bar = SleekProgressbar(tile, maximum=100, variable=self.progress_var, mode="determinate", height=4, track_color=THEME["border"])
-                else:
-                    bar = SleekProgressbar(tile, maximum=100, value=value, mode="determinate", height=4, track_color=THEME["border"])
-                bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(7, 0))
-            widgets: list[tk.Widget] = [tile, title_label, status_label]
-            if thumbnail is not None:
-                widgets.append(image_label)
-            hover_widgets = list(widgets)
-            retry_job = record.get("job")
-            if record_kind in {"failed", "skipped", "stopped"} and isinstance(
-                retry_job, DownloadJob
-            ):
-                verified_retry_job = retry_job
-
-                def retry_from_tile(
-                    _event: tk.Event[Any],
-                    job: DownloadJob = verified_retry_job,
-                ) -> None:
-                    self._retry_terminal_job(job)
-
-                retry_button = tk.Canvas(
-                    tile,
-                    width=30,
-                    height=30,
-                    bg=tile_bg,
-                    bd=0,
-                    highlightthickness=0,
-                    cursor="hand2",
-                )
-                retry_button.create_oval(2, 2, 28, 28, fill=THEME["surface"], outline=THEME["border"], width=1)
-                retry_button.create_text(15, 14, text="↻", fill=THEME["text"], font=(FONT_UI[0], 15, "bold"))
-                retry_button.bind(
-                    "<Button-1>",
-                    retry_from_tile,
-                )
-                overlay_parent = image_label if thumbnail is not None else tile
-                retry_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
-                hover_widgets.append(retry_button)
-            elif record_kind == "preview" and record.get("metadata_index") is not None:
-                def start_preview_from_tile(
-                    _event: tk.Event[Any],
-                    item: dict[str, Any] = record,
-                ) -> None:
-                    self._start_preview_record(item)
-
-                play_button = tk.Canvas(
-                    tile,
-                    width=30,
-                    height=30,
-                    bg=tile_bg,
-                    bd=0,
-                    highlightthickness=0,
-                    cursor="hand2",
-                )
-                play_button.create_oval(2, 2, 28, 28, fill=THEME["accent"], outline=THEME["border"], width=1)
-                play_icon = self._load_focus_icon("send-filled", 20, "#ffffff")
-                if play_icon is not None:
-                    play_button.create_image(15, 15, image=play_icon)
-                play_button.bind(
-                    "<Button-1>",
-                    start_preview_from_tile,
-                )
-                play_button.bind(
-                    "<Button-2>",
-                    partial(self._show_focus_run_actions_menu, record),
-                )
-                play_button.bind(
-                    "<Button-3>",
-                    partial(self._show_focus_run_actions_menu, record),
-                )
-                overlay_parent = image_label if thumbnail is not None else tile
-                play_button.place(in_=overlay_parent, relx=0.5, rely=0.5, anchor="center")
-                hover_widgets.append(play_button)
-            if bar is not None:
-                widgets.append(bar)
-
-            def sync_tile_hover(
-                *,
-                card: tk.Frame = tile,
-                card_widgets: tuple[tk.Widget, ...] = tuple(hover_widgets),
-            ) -> None:
-                try:
-                    pointer_x = self.winfo_pointerx()
-                    pointer_y = self.winfo_pointery()
-                    inside = (
-                        card.winfo_rootx() <= pointer_x < card.winfo_rootx() + card.winfo_width()
-                        and card.winfo_rooty() <= pointer_y < card.winfo_rooty() + card.winfo_height()
-                    )
-                    background = THEME["surface"] if inside else THEME["bg"]
-                    for card_widget in card_widgets:
-                        card_widget.configure({"bg": background})
-                except tk.TclError:
-                    return
-
-            def schedule_tile_hover(
-                _event: tk.Event[Any],
-                *,
-                card: tk.Frame = tile,
-                callback: Callable[[], None] = sync_tile_hover,
-            ) -> None:
-                card.after_idle(callback)
-
-            for widget in widgets:
-                widget.bind(
-                    "<Button-1>",
-                    partial(self._focus_activate_run_record, record),
-                )
-                widget.bind(
-                    "<Button-2>",
-                    partial(self._show_focus_run_actions_menu, record),
-                )
-                widget.bind(
-                    "<Button-3>",
-                    partial(self._show_focus_run_actions_menu, record),
-                )
-                widget.bind("<Enter>", schedule_tile_hover, add="+")
-                widget.bind("<Leave>", schedule_tile_hover, add="+")
 
         completed = sum(1 for record in records if record.get("kind") == "completed")
         failed = sum(1 for record in records if record.get("kind") == "failed")

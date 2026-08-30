@@ -1232,6 +1232,7 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
+    tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
     deck_resize_source = inspect.getsource(DownloaderApp._schedule_focus_run_deck_geometry_refresh)
     root_resize_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
@@ -1262,6 +1263,9 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in layout_source
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
     assert "for column in range(4):" in deck_source
+    assert "self._render_focus_run_deck_tile(" in deck_source
+    assert "visible_count=len(visible)" in deck_source
+    assert 'right_pad = 5 if column < visible_count - 1 else 9' in tile_source
     assert 'deck.bind("<Configure>", self._schedule_focus_run_deck_geometry_refresh' in forge_source
     assert 'capacity == self.__dict__.get("_focus_run_deck_rendered_capacity")' in deck_resize_source
     assert "self.focus_run_overflow_button.grid()" in deck_source
@@ -1469,6 +1473,37 @@ def test_run_deck_capacity_crossing_refreshes_synchronously_once():
     DownloaderApp._schedule_focus_run_deck_geometry_refresh(probe, event)
 
     assert probe.refreshes == 1
+
+
+def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
+    deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
+    tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
+
+    assert 'status_label.configure(textvariable=self.focus_run_status_var)' in tile_source
+    assert 'variable=self.progress_var' in tile_source
+    assert 'job: DownloadJob = verified_retry_job' in tile_source
+    assert 'item: dict[str, Any] = record' in tile_source
+    assert 'card_widgets: tuple[tk.Widget, ...] = tuple(hover_widgets)' in tile_source
+    assert 'hover_widgets.append(retry_button)' in tile_source
+    assert 'hover_widgets.append(play_button)' in tile_source
+    assert all(
+        line.strip() not in {'widgets.append(retry_button)', 'widgets.append(play_button)'}
+        for line in tile_source.splitlines()
+    )
+    assert tile_source.index(
+        'source = self._focus_thumbnail_source_for_record(record)'
+    ) < tile_source.index('self._focus_run_thumbnail_images.append(thumbnail)')
+    assert tile_source.index(
+        'play_button.bind(\n                "<Button-1>",'
+    ) < tile_source.index('hover_widgets.append(play_button)')
+    render_index = deck_source.index('self._render_focus_run_deck_tile(')
+    aggregate_index = deck_source.index('completed = sum(')
+    count_index = deck_source.index('self.focus_run_count_var.set(', aggregate_index)
+    overflow_index = deck_source.index(
+        'self.focus_run_overflow_button.grid()',
+        count_index,
+    )
+    assert render_index < aggregate_index < count_index < overflow_index
 
 
 def test_library_actions_remain_one_stable_menu_at_every_width():
@@ -1754,12 +1789,14 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
     assert submitted == [(built_job, False)]
 
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
+    tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
     library_menu_source = inspect.getsource(DownloaderApp._show_library_row_menu)
     compact_menu_source = inspect.getsource(DownloaderApp._show_library_actions_menu)
-    assert 'record_kind == "preview"' in deck_source
-    assert 'self._start_preview_record(item)' in deck_source
-    assert "hover_widgets.append(play_button)" in deck_source
-    assert all(line.strip() != "widgets.append(play_button)" for line in deck_source.splitlines())
+    assert "self._render_focus_run_deck_tile(" in deck_source
+    assert 'record_kind == "preview"' in tile_source
+    assert 'self._start_preview_record(item)' in tile_source
+    assert "hover_widgets.append(play_button)" in tile_source
+    assert all(line.strip() != "widgets.append(play_button)" for line in tile_source.splitlines())
     assert 'label="Start download in Forge"' in library_menu_source
     assert 'label="Start download in Forge"' in compact_menu_source
 
