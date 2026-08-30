@@ -282,3 +282,93 @@ def test_sidecar_contract_remains_opt_in_for_fresh_validation(tmp_path: Path) ->
         )
         is probe
     )
+
+
+def test_plan_mismatch_aggregation_order_remains_deterministic() -> None:
+    probe = {
+        "format": {"format_name": "mov,mp4", "duration": "60.0"},
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "vp9",
+                "width": 320,
+                "height": 180,
+                "profile": "Baseline",
+                "pix_fmt": "yuv444p",
+                "bit_rate": "100000",
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "opus",
+                "sample_rate": "44100",
+                "channels": 1,
+                "bit_rate": "32000",
+            },
+        ],
+    }
+
+    assert output_artifact_plan_mismatches(
+        probe,
+        _mp4_plan(),
+        embed_metadata=True,
+        embed_cover_art=True,
+        expected_tags=["Alpha"],
+        require_sidecar=True,
+    ) == [
+        "the requested embedded artwork is missing",
+        "the requested embedded metadata is missing",
+        "the embedded keywords are missing requested tags: alpha",
+        "the VODForge output contract is missing",
+        "the saved video rate-control mode does not match",
+        "the saved target video bitrate does not match",
+        "the saved target audio bitrate does not match",
+        "the output video codec is not H.264",
+        "the output audio codec is not AAC",
+        "the output pixel format is not yuv420p",
+        "the output H.264 profile is not High",
+        "the output width does not match 640",
+        "the output height does not match 360",
+        "the measured video bitrate does not match 1500 kbps",
+        "the measured audio bitrate does not match 320 kbps",
+        "the audio sample rate does not match 48000 Hz",
+        "the audio channel count does not match 2",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("output_type", "plan", "message"),
+    [
+        (
+            OutputType.MP3,
+            _mp4_plan(),
+            "MP3 output was validated against an incompatible MP4 export plan",
+        ),
+        (
+            OutputType.MP4,
+            _audio_plan(embed_metadata=False, embed_cover_art=False),
+            "MP4 output was validated against an incompatible audio export plan",
+        ),
+    ],
+)
+def test_incompatible_plan_rejection_precedes_container_and_stream_errors(
+    tmp_path: Path,
+    output_type: OutputType,
+    plan: ExportPlan | AudioExportPlan,
+    message: str,
+) -> None:
+    output = tmp_path / f"candidate.{output_type.value.lower()}"
+    output.write_bytes(b"candidate")
+    malformed_probe = {
+        "format": {"format_name": "wrong", "duration": "60.0"},
+        "streams": [],
+    }
+
+    with pytest.raises(RuntimeError, match=message):
+        validate_output_artifact(
+            output,
+            output_type,
+            "ffprobe",
+            probe_reader=lambda *_args, **_kwargs: {},
+            plan=plan,
+            ffprobe_data=malformed_probe,
+        )
