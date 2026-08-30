@@ -1697,7 +1697,7 @@ def test_terminal_focus_uses_retry_restart_actions_and_outcome_colors(tmp_path: 
     assert 'if "bar_color" in kwargs:' in progress_source
 
 
-def test_terminal_outcomes_become_the_explicit_forge_focus(tmp_path: Path):
+def test_terminal_outcomes_become_the_explicit_forge_focus(monkeypatch, tmp_path: Path):
     terminal = make_job(tmp_path, video_id="terminal")
     terminal.terminal_status = "Failed"
     record = {"kind": "failed", "run_id": terminal.run_id, "job": terminal}
@@ -1716,10 +1716,34 @@ def test_terminal_outcomes_become_the_explicit_forge_focus(tmp_path: Path):
     assert selected_views == ["forge"]
     assert selected_records == [record]
 
-    pump_source = inspect.getsource(DownloaderApp._pump_events)
+    dispatched_focus: list[DownloadJob] = []
+    dispatch_app = DownloaderApp.__new__(DownloaderApp)
+    dispatch_app._closing = False
+    dispatch_app.active_job = terminal
+    dispatch_app._library_run_is_suppressed = lambda _job: False
+    dispatch_app._append_job_log = lambda *_args: None
+    dispatch_app._archive_active_terminal_job = lambda *_args: None
+    dispatch_app.progress_var = Value(100)
+    dispatch_app.status_var = Value("")
+    dispatch_app.download_button = Control()
+    dispatch_app.cancel_button = Control()
+    dispatch_app.skip_video_button = Control()
+    dispatch_app.skip_url_button = Control()
+    dispatch_app.focus_transfer_var = Value("")
+    dispatch_app.focus_run_status_var = Value("")
+    dispatch_app.focus_percent_var = Value("")
+    dispatch_app._focus_follows_active_run = lambda: True
+    dispatch_app._refresh_focus_run_deck = lambda: None
+    dispatch_app._set_focus_run_controls_visible = lambda _visible: None
+    dispatch_app._launch_next_pending_job = lambda: False
+    dispatch_app._focus_terminal_job = dispatched_focus.append
+    monkeypatch.setattr(app_module.messagebox, "showerror", lambda *_args: None)
+
+    assert dispatch_app._handle_terminal_event("error", "download failed") is True
+    assert dispatched_focus == [terminal]
+
     finish_source = inspect.getsource(DownloaderApp._finish_run_ui)
     archive_source = inspect.getsource(DownloaderApp._archive_item_terminal_job)
-    assert "self._focus_terminal_job(failed_job)" in pump_source
     assert "self._focus_terminal_job(finished_job)" in finish_source
     assert "self._focus_terminal_job(job)" in archive_source
 
@@ -2086,13 +2110,17 @@ def test_late_worker_events_cannot_resurrect_a_library_removed_run(tmp_path: Pat
     app.events = queue.Queue()
     app.events.put(("history_record", {"job": replace(active), "info": dict(active.preview_info), "output_dir": str(tmp_path / "late")}))
     app.events.put(("item_terminal", {"job": child, "info": dict(active.preview_info)}))
+    app.events.put(("log", "later event still drained"))
     app._record_download_history = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("late history resurrected"))
     app._archive_item_terminal_job = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("late terminal resurrected"))
+    logs: list[str] = []
+    app._append_log = logs.append
     app.after = lambda *_args, **_kwargs: None
 
     app._pump_events()
 
     assert app.pending_jobs == [unrelated]
+    assert logs == ["later event still drained"]
 
 
 def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, tmp_path: Path):
