@@ -115,7 +115,7 @@ def mp3_sample_rate_display(
     *,
     source_label: str,
 ) -> str:
-    if sample_rate in {None, ""}:
+    if sample_rate is None or sample_rate == "":
         return source_label
     try:
         return f"{int(sample_rate) / 1000:g} kHz"

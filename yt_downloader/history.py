@@ -217,8 +217,12 @@ def history_output_type(record: dict[str, Any]) -> str:
     raw = str(record.get("vodforge_output_type") or "").strip().upper()
     if raw in {"MP4", "MP3"}:
         return raw
-    summary = record.get("vodforge_encoding_summary") if isinstance(record.get("vodforge_encoding_summary"), dict) else {}
-    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+    summary = record.get("vodforge_encoding_summary")
+    if not isinstance(summary, dict):
+        summary = {}
+    output = summary.get("output")
+    if not isinstance(output, dict):
+        output = {}
     output_path = str(output.get("Output file path") or "").strip().lower()
     container = str(output.get("Output container") or "").strip().lower()
     return "MP3" if output_path.endswith(".mp3") or container == "mp3" else "MP4"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from yt_downloader import app, export_planning
 from yt_downloader.models import ExportMode
 
@@ -15,6 +17,29 @@ def test_app_preserves_export_planning_compatibility_exports() -> None:
     assert app.choose_best_video_format is export_planning.choose_best_video_format
     assert app.choose_best_audio_format is export_planning.choose_best_audio_format
     assert app.choose_audio_bitrate_kbps is export_planning.choose_audio_bitrate_kbps
+
+
+@pytest.mark.parametrize(
+    ("sample_rate", "expected"),
+    [
+        (None, "Preserve source"),
+        ("", "Preserve source"),
+        ("44100", "44.1 kHz"),
+        (48000, "48 kHz"),
+        ("automatic", "automatic"),
+    ],
+)
+def test_mp3_sample_rate_display_handles_preserved_numeric_and_unknown_values(
+    sample_rate: str | int | None,
+    expected: str,
+) -> None:
+    assert (
+        export_planning.mp3_sample_rate_display(
+            sample_rate,
+            source_label="Preserve source",
+        )
+        == expected
+    )
 
 
 def test_source_limited_plan_keeps_truthful_lower_resolution() -> None:

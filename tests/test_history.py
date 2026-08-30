@@ -6,11 +6,10 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import pytest
 
 import yt_downloader.history as history_module
-
 from yt_downloader.history import (
-    HistoryError,
     MAX_RUN_ACTIVITY_CHARS,
     MAX_RUN_ACTIVITY_LINES,
+    HistoryError,
     application_data_dir,
     history_identity,
     history_media_file_exists,
@@ -18,10 +17,10 @@ from yt_downloader.history import (
     history_output_dir,
     history_output_type,
     load_history,
-    save_history,
     sanitize_durable_text,
     sanitize_durable_url,
     sanitize_history_record,
+    save_history,
     upsert_history,
 )
 
@@ -32,6 +31,35 @@ def test_application_data_dir_uses_platform_conventions(tmp_path: Path):
         "C:/Users/Test/AppData/Local/VODForge"
     )
     assert application_data_dir(platform_name="linux", home=tmp_path, xdg_data_home=None) == tmp_path / ".local" / "share" / "vodforge"
+
+
+@pytest.mark.parametrize(
+    ("record", "expected"),
+    [
+        ({}, "MP4"),
+        ({"vodforge_output_type": "mp3"}, "MP3"),
+        ({"vodforge_encoding_summary": None}, "MP4"),
+        ({"vodforge_encoding_summary": "malformed"}, "MP4"),
+        ({"vodforge_encoding_summary": {"output": None}}, "MP4"),
+        (
+            {
+                "vodforge_encoding_summary": {
+                    "output": {"Output file path": "/saved/example.MP3"}
+                }
+            },
+            "MP3",
+        ),
+        (
+            {"vodforge_encoding_summary": {"output": {"Output container": "mp3"}}},
+            "MP3",
+        ),
+    ],
+)
+def test_history_output_type_handles_explicit_and_malformed_legacy_shapes(
+    record: dict[str, object],
+    expected: str,
+) -> None:
+    assert history_output_type(record) == expected
 
 
 def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_path: Path):
