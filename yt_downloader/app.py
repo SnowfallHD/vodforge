@@ -3854,6 +3854,25 @@ def _download_entry_url(entry: dict[str, Any], fallback_url: str) -> str:
     return fallback_url
 
 
+def _global_download_progress(
+    video_index: int,
+    total_videos: int,
+    stage_start: float,
+    stage_weight: float,
+    stage_fraction: float = 0.0,
+) -> float:
+    total_videos = max(total_videos, 1)
+    stage_fraction = max(0.0, min(1.0, stage_fraction))
+    video_fraction = (stage_start + stage_weight * stage_fraction) / total_videos
+    return max(
+        0.0,
+        min(
+            100.0,
+            ((video_index - 1) / total_videos + video_fraction) * 100.0,
+        ),
+    )
+
+
 def _normalize_download_source_result(
     extracted_info: dict[str, Any] | None,
     source_url: str,
@@ -11549,6 +11568,138 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
         return outcome
 
+    def _put_download_stage_progress(
+        self,
+        item: _DownloadItemContext,
+        stage_start: float,
+        stage_weight: float,
+        stage_fraction: float = 0.0,
+    ) -> None:
+        self.events.put(
+            (
+                "progress",
+                _global_download_progress(
+                    item.index,
+                    item.total,
+                    stage_start,
+                    stage_weight,
+                    stage_fraction,
+                ),
+            )
+        )
+
+    def _raise_for_download_control_requests(self) -> None:
+        if self.cancel_requested:
+            raise RuntimeError("Download cancelled by user")
+        if self.skip_url_requested:
+            raise RuntimeError("URL skipped by user")
+        if self.skip_video_requested:
+            raise RuntimeError("Video skipped by user")
+
+    def _playlist_blocking_step_cancelled(self) -> bool:
+        if self.skip_url_requested:
+            raise RuntimeError("URL skipped by user")
+        return self.cancel_requested
+
+    def _video_blocking_step_cancelled(self) -> bool:
+        if self.skip_url_requested:
+            raise RuntimeError("URL skipped by user")
+        if self.skip_video_requested:
+            raise RuntimeError("Video skipped by user")
+        return self.cancel_requested
+
+    def _emit_download_item_terminal(
+        self,
+        job: DownloadJob,
+        status: str,
+        message: str,
+        info: dict[str, Any] | None,
+        plan: ExportPlan | AudioExportPlan | None,
+        video_url: str,
+    ) -> None:
+        if not isinstance(info, dict):
+            return
+        terminal_run_id = uuid.uuid4().hex
+        terminal_info = build_terminal_item_metadata(
+            info,
+            plan,
+            status,
+            message,
+            terminal_run_id,
+        )
+        retry_url = retry_url_for_item(terminal_info, video_url)
+        job.item_terminal_emitted = True
+        terminal_job = replace(
+            job,
+            url=retry_url,
+            urls=[retry_url],
+            single_video_only=True,
+            batch_mode=False,
+            preview_info=terminal_info,
+            run_id=terminal_run_id,
+            origin_run_id=job.run_id,
+            metadata_keys=(
+                {key}
+                if (key := metadata_run_key(terminal_info)) is not None
+                else set()
+            ),
+            history_identities=set(),
+            activity_lines=[message],
+            terminal_status=status,
+            terminal_message=message,
+            item_terminal_emitted=True,
+        )
+        self.events.put(
+            ("item_terminal", {"job": terminal_job, "info": terminal_info})
+        )
+
+    def _finish_download_run_outcome(
+        self,
+        job: DownloadJob,
+        outcome: DownloadOutcome,
+        *,
+        emit_done: bool,
+    ) -> DownloadOutcome:
+        if outcome.success_count == 0:
+            if outcome.failure_count:
+                raise RuntimeError(
+                    f"No valid {job.output_type.value} output was produced; "
+                    f"{outcome.failure_count} item(s) failed. Failure report: "
+                    f"{BATCH_FAILURE_REPORT_PATH}"
+                )
+            if emit_done:
+                self.events.put(
+                    (
+                        "stopped",
+                        f"{job.output_type.value} run stopped without producing an output.",
+                    )
+                )
+            return outcome
+        if emit_done:
+            if (
+                outcome.failure_count
+                or outcome.skipped_count
+                or outcome.sidecar_failure_count
+            ):
+                self.events.put(
+                    (
+                        "partial",
+                        f"{job.output_type.value} completed with issues — "
+                        f"{outcome.success_count} valid output(s), "
+                        f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
+                        f"{outcome.sidecar_failure_count} optional sidecar failure(s).",
+                    )
+                )
+            else:
+                self.events.put(
+                    (
+                        "done",
+                        f"{job.output_type.value} download complete — "
+                        f"{outcome.success_count} valid output(s).",
+                    )
+                )
+        return outcome
+
     def _expand_download_source(
         self,
         job: DownloadJob,
@@ -11881,72 +12032,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ytdlp_module = load_yt_dlp()
         if ytdlp_module is None:
             raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
-
-        def global_progress(video_index: int, total_videos: int, stage_start: float, stage_weight: float, stage_fraction: float = 0.0) -> float:
-            total_videos = max(total_videos, 1)
-            stage_fraction = max(0.0, min(1.0, stage_fraction))
-            video_fraction = (stage_start + stage_weight * stage_fraction) / total_videos
-            return max(0.0, min(100.0, ((video_index - 1) / total_videos + video_fraction) * 100.0))
-
-        def put_stage_progress(video_index: int, total_videos: int, stage_start: float, stage_weight: float, stage_fraction: float = 0.0) -> None:
-            self.events.put(("progress", global_progress(video_index, total_videos, stage_start, stage_weight, stage_fraction)))
-
-        def raise_for_control_requests() -> None:
-            if self.cancel_requested:
-                raise RuntimeError("Download cancelled by user")
-            if self.skip_url_requested:
-                raise RuntimeError("URL skipped by user")
-            if self.skip_video_requested:
-                raise RuntimeError("Video skipped by user")
-
-        def playlist_blocking_step_cancelled() -> bool:
-            if self.skip_url_requested:
-                raise RuntimeError("URL skipped by user")
-            return self.cancel_requested
-
-        def video_blocking_step_cancelled() -> bool:
-            if self.skip_url_requested:
-                raise RuntimeError("URL skipped by user")
-            if self.skip_video_requested:
-                raise RuntimeError("Video skipped by user")
-            return self.cancel_requested
-
-        def emit_item_terminal(
-            status: str,
-            message: str,
-            info: dict[str, Any] | None,
-            plan: ExportPlan | AudioExportPlan | None,
-            video_url: str,
-        ) -> None:
-            if not isinstance(info, dict):
-                return
-            terminal_run_id = uuid.uuid4().hex
-            terminal_info = build_terminal_item_metadata(
-                info,
-                plan,
-                status,
-                message,
-                terminal_run_id,
-            )
-            retry_url = retry_url_for_item(terminal_info, video_url)
-            job.item_terminal_emitted = True
-            terminal_job = replace(
-                job,
-                url=retry_url,
-                urls=[retry_url],
-                single_video_only=True,
-                batch_mode=False,
-                preview_info=terminal_info,
-                run_id=terminal_run_id,
-                origin_run_id=job.run_id,
-                metadata_keys={key} if (key := metadata_run_key(terminal_info)) is not None else set(),
-                history_identities=set(),
-                activity_lines=[message],
-                terminal_status=status,
-                terminal_message=message,
-                item_terminal_emitted=True,
-            )
-            self.events.put(("item_terminal", {"job": terminal_job, "info": terminal_info}))
+        raise_for_control_requests = self._raise_for_download_control_requests
+        playlist_blocking_step_cancelled = self._playlist_blocking_step_cancelled
+        video_blocking_step_cancelled = self._video_blocking_step_cancelled
 
         current_video_info: dict[str, Any] | None = None
         current_plan: ExportPlan | AudioExportPlan | None = None
@@ -12009,12 +12097,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         cookie_source_loaded,
                         control_check=raise_for_control_requests,
                         blocking_step_cancelled=video_blocking_step_cancelled,
-                        progress_callback=lambda fraction: put_stage_progress(
-                            video_index,
-                            total_videos,
+                        progress_callback=partial(
+                            self._put_download_stage_progress,
+                            item,
                             0.0,
                             0.10,
-                            fraction,
                         ),
                     )
                     current_video_info = analyzed_item.display_info
@@ -12034,7 +12121,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     if existing_reuse is not None:
                         current_video_info = existing_reuse.metadata
                         outcome = outcome.combined_with(existing_reuse.outcome)
-                        put_stage_progress(video_index, total_videos, 0.10, 0.90, 1.0)
+                        self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
                         self.events.put(("status", f"{label} complete — existing valid output"))
                         continue
 
@@ -12049,12 +12136,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             analyzed_item,
                             staging_dir,
                             control_check=raise_for_control_requests,
-                            progress_callback=lambda fraction: put_stage_progress(
-                                video_index,
-                                total_videos,
+                            progress_callback=partial(
+                                self._put_download_stage_progress,
+                                item,
                                 0.10,
                                 0.40,
-                                fraction,
                             ),
                         )
                         job_session_cookies = downloaded_item.session_cookies
@@ -12077,12 +12163,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             prepared_item.staged_media,
                             prepared_item.ffmpeg,
                             label=label,
-                            progress_callback=lambda fraction, video_index=video_index, total_videos=total_videos: put_stage_progress(
-                                video_index,
-                                total_videos,
+                            progress_callback=partial(
+                                self._put_download_stage_progress,
+                                item,
                                 0.50,
                                 0.40,
-                                fraction,
                             ),
                             control_check=raise_for_control_requests,
                         )
@@ -12096,12 +12181,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             validated_staged,
                             label=label,
                             all_output_dirs=all_output_dirs,
-                            progress_callback=lambda fraction, video_index=video_index, total_videos=total_videos: put_stage_progress(
-                                video_index,
-                                total_videos,
+                            progress_callback=partial(
+                                self._put_download_stage_progress,
+                                item,
                                 0.50,
                                 0.40,
-                                fraction,
                             ),
                             control_check=raise_for_control_requests,
                         )
@@ -12120,7 +12204,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                                 custom_cover_for_cache=prepared_item.custom_cover_for_cache,
                             )
                         )
-                        put_stage_progress(video_index, total_videos, 0.90, 0.10, 1.0)
+                        self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
                         result_label = "MP3 audio" if job.output_type == OutputType.MP3 else "MP4 video"
                         self.events.put(("status", f"{label} complete — {result_label}"))
                         self._emit_job_log(job, f"{label} complete — {result_label}")
@@ -12148,7 +12232,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         self.skip_url_requested = False
                         self.skip_video_requested = False
                         outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
-                        emit_item_terminal("Skipped", "URL skipped by user", current_video_info, current_plan, video_url)
+                        self._emit_download_item_terminal(
+                            job,
+                            "Skipped",
+                            "URL skipped by user",
+                            current_video_info,
+                            current_plan,
+                            video_url,
+                        )
                         self._emit_job_log(job, f"{label}: skipped URL by user.")
                         break
                     if total_videos <= 1 and "video skipped" not in issue.lower():
@@ -12161,11 +12252,25 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     write_diagnostic(f"{label} failed but playlist will continue: {type(exc).__name__}: {exc}")
                     if "video skipped" in issue.lower():
                         outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
-                        emit_item_terminal("Skipped", "Video skipped by user", current_video_info, current_plan, video_url)
+                        self._emit_download_item_terminal(
+                            job,
+                            "Skipped",
+                            "Video skipped by user",
+                            current_video_info,
+                            current_plan,
+                            video_url,
+                        )
                         self._emit_job_log(job, f"{label}: skipped by user; continuing to next video.")
                     else:
                         outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
-                        emit_item_terminal("Failed", issue, current_video_info, current_plan, video_url)
+                        self._emit_download_item_terminal(
+                            job,
+                            "Failed",
+                            issue,
+                            current_video_info,
+                            current_plan,
+                            video_url,
+                        )
                         append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, video_url, issue)
                         self._emit_job_log(job, f"WARNING: {label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}")
                     self.skip_video_requested = False
@@ -12174,26 +12279,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     if primary_intent_active:
                         provider_network.end_primary()
 
-            if outcome.success_count == 0:
-                if outcome.failure_count:
-                    raise RuntimeError(
-                        f"No valid {job.output_type.value} output was produced; "
-                        f"{outcome.failure_count} item(s) failed. Failure report: {BATCH_FAILURE_REPORT_PATH}"
-                    )
-                if emit_done:
-                    self.events.put(("stopped", f"{job.output_type.value} run stopped without producing an output."))
-                return outcome
-            if emit_done:
-                if outcome.failure_count or outcome.skipped_count or outcome.sidecar_failure_count:
-                    self.events.put((
-                        "partial",
-                        f"{job.output_type.value} completed with issues — {outcome.success_count} valid output(s), "
-                        f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
-                        f"{outcome.sidecar_failure_count} optional sidecar failure(s).",
-                    ))
-                else:
-                    self.events.put(("done", f"{job.output_type.value} download complete — {outcome.success_count} valid output(s)."))
-            return outcome
+            return self._finish_download_run_outcome(
+                job,
+                outcome,
+                emit_done=emit_done,
+            )
         except Exception as exc:
             self._active_progress_context = None
             if current_video_info is not None:
