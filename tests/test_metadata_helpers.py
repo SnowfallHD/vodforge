@@ -3411,6 +3411,44 @@ def test_output_validator_accepts_expected_mp4_and_mp3_streams(tmp_path: Path):
     assert validate_output_artifact(mp3, OutputType.MP3, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp3_probe) is mp3_probe
 
 
+def test_output_validator_routes_probe_through_the_app_process_runner(
+    monkeypatch,
+    tmp_path: Path,
+):
+    output = tmp_path / "audio.mp3"
+    output.write_bytes(b"mp3 bytes")
+    probe = {
+        "format": {"format_name": "mp3", "duration": "60.0"},
+        "streams": [{"codec_type": "audio", "codec_name": "mp3"}],
+    }
+    seen: dict[str, object] = {}
+
+    def control_check():
+        return None
+
+    def fake_probe_reader(ffprobe, path, *, control_check=None):
+        seen.update(
+            ffprobe=ffprobe,
+            path=path,
+            control_check=control_check,
+        )
+        return probe
+
+    monkeypatch.setattr(app_module, "run_ffprobe_json", fake_probe_reader)
+
+    assert validate_output_artifact(
+        output,
+        OutputType.MP3,
+        "/artifact/bin/ffprobe",
+        control_check=control_check,
+    ) is probe
+    assert seen == {
+        "ffprobe": "/artifact/bin/ffprobe",
+        "path": output,
+        "control_check": control_check,
+    }
+
+
 def test_output_validator_honors_the_selected_manual_mp4_audio_codec(tmp_path: Path):
     output = tmp_path / "video.mp4"
     output.write_bytes(b"mp4 bytes")
