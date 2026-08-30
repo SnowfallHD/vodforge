@@ -76,9 +76,17 @@ def _trusted_github_page(url: str) -> str:
     return url
 
 
-def _trusted_github_download(url: str) -> str:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in {"github.com", "www.github.com"}:
+def _trusted_github_download(
+    url: str,
+    *,
+    tag_name: str,
+    asset_name: str,
+) -> str:
+    expected_url = (
+        f"https://github.com/{GITHUB_REPOSITORY}/releases/download/"
+        f"{urllib.parse.quote(tag_name, safe='')}/{urllib.parse.quote(asset_name, safe='')}"
+    )
+    if url != expected_url:
         raise ValueError("GitHub returned an invalid release download URL.")
     return url
 
@@ -105,7 +113,17 @@ def parse_release_payload(payload: dict[str, Any]) -> ReleaseInfo:
             size = 0
         if not name or not download_url:
             continue
-        assets.append(ReleaseAsset(name=name, download_url=_trusted_github_download(download_url), size=size))
+        assets.append(
+            ReleaseAsset(
+                name=name,
+                download_url=_trusted_github_download(
+                    download_url,
+                    tag_name=tag_name,
+                    asset_name=name,
+                ),
+                size=size,
+            )
+        )
     return ReleaseInfo(
         version=version,
         tag_name=tag_name,
@@ -203,7 +221,20 @@ def download_verified_update(
     checksum_asset = next((item for item in release.assets if item.name == "SHA256SUMS.txt"), None)
     if checksum_asset is None:
         raise RuntimeError("This release is missing its SHA-256 checksum manifest.")
-    expected_hash = parse_sha256sums(_fetch_small_text(checksum_asset.download_url, timeout=timeout)).get(asset.name)
+    try:
+        checksum_url = _trusted_github_download(
+            checksum_asset.download_url,
+            tag_name=release.tag_name,
+            asset_name=checksum_asset.name,
+        )
+        asset_url = _trusted_github_download(
+            asset.download_url,
+            tag_name=release.tag_name,
+            asset_name=asset.name,
+        )
+    except ValueError as exc:
+        raise RuntimeError("This release contains an invalid download URL.") from exc
+    expected_hash = parse_sha256sums(_fetch_small_text(checksum_url, timeout=timeout)).get(asset.name)
     if not expected_hash:
         raise RuntimeError("This release is missing the update file's SHA-256 checksum.")
 
@@ -212,7 +243,7 @@ def download_verified_update(
     temporary = destination.with_suffix(destination.suffix + ".part")
     digest = hashlib.sha256()
     downloaded = 0
-    request = urllib.request.Request(asset.download_url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"})
+    request = urllib.request.Request(asset_url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response, temporary.open("wb") as output:
             while True:

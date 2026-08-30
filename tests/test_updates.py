@@ -29,6 +29,10 @@ from yt_downloader.updates import (
 from yt_downloader.version import DEFAULT_VERSION, read_app_version
 
 
+def _release_download_url(tag_name: str, asset_name: str) -> str:
+    return f"https://github.com/SnowfallHD/vodforge/releases/download/{tag_name}/{asset_name}"
+
+
 def test_semantic_versions_treat_stable_release_as_newer_than_dev_build():
     assert semantic_version_key("v1.2.3") > semantic_version_key("1.2.3-dev")
     assert is_newer_release("0.1.0-dev", "v0.1.0")
@@ -113,8 +117,12 @@ def test_verified_update_requires_matching_checksum(monkeypatch: pytest.MonkeyPa
         html_url="https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
         notes="",
         assets=(
-            ReleaseAsset(asset_name, "https://github.com/example/update", len(update_bytes)),
-            ReleaseAsset("SHA256SUMS.txt", "https://github.com/example/checksums", 80),
+            ReleaseAsset(asset_name, _release_download_url("v1.2.3", asset_name), len(update_bytes)),
+            ReleaseAsset(
+                "SHA256SUMS.txt",
+                _release_download_url("v1.2.3", "SHA256SUMS.txt"),
+                80,
+            ),
         ),
     )
 
@@ -127,7 +135,7 @@ def test_verified_update_requires_matching_checksum(monkeypatch: pytest.MonkeyPa
 
     def fake_urlopen(request, timeout=0):
         assert timeout == 60
-        if request.full_url.endswith("checksums"):
+        if request.full_url.endswith("SHA256SUMS.txt"):
             return FakeResponse(f"{digest}  {asset_name}\n".encode())
         return FakeResponse(update_bytes)
 
@@ -147,8 +155,12 @@ def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.Monke
         html_url="https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
         notes="",
         assets=(
-            ReleaseAsset(asset_name, "https://github.com/example/update", 8),
-            ReleaseAsset("SHA256SUMS.txt", "https://github.com/example/checksums", 80),
+            ReleaseAsset(asset_name, _release_download_url("v1.2.3", asset_name), 8),
+            ReleaseAsset(
+                "SHA256SUMS.txt",
+                _release_download_url("v1.2.3", "SHA256SUMS.txt"),
+                80,
+            ),
         ),
     )
 
@@ -167,6 +179,95 @@ def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.Monke
 
     assert not (tmp_path / asset_name).exists()
     assert not (tmp_path / f"{asset_name}.part").exists()
+
+
+@pytest.mark.parametrize(
+    ("url_role", "untrusted_url"),
+    [
+        ("checksum", "file:///private/etc/hosts"),
+        ("checksum", "https://evil.example/SHA256SUMS.txt"),
+        (
+            "checksum",
+            "https://github.com/other/repository/releases/download/v1.2.3/SHA256SUMS.txt",
+        ),
+        (
+            "checksum",
+            "https://github.com.evil.example/SnowfallHD/vodforge/releases/download/"
+            "v1.2.3/SHA256SUMS.txt",
+        ),
+        (
+            "payload",
+            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/other.exe",
+        ),
+        (
+            "payload",
+            "https://github.com/SnowfallHD/vodforge/releases/download/v9.9.9/"
+            "VODForge-Windows-Setup-v1.2.3.exe",
+        ),
+        (
+            "payload",
+            "https://token@github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+            "VODForge-Windows-Setup-v1.2.3.exe",
+        ),
+        (
+            "payload",
+            "https://github.com:443/SnowfallHD/vodforge/releases/download/v1.2.3/"
+            "VODForge-Windows-Setup-v1.2.3.exe",
+        ),
+        (
+            "payload",
+            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+            "VODForge-Windows-Setup-v1.2.3.exe?token=secret",
+        ),
+        (
+            "payload",
+            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+            "VODForge-Windows-Setup-v1.2.3.exe#unexpected",
+        ),
+        (
+            "payload",
+            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+            "VODForge-Windows-Setup-v1.2.3.exe;token=secret",
+        ),
+    ],
+)
+def test_verified_update_revalidates_asset_urls_before_network_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    url_role: str,
+    untrusted_url: str,
+):
+    asset_name = "VODForge-Windows-Setup-v1.2.3.exe"
+    payload_url = _release_download_url("v1.2.3", asset_name)
+    checksum_url = _release_download_url("v1.2.3", "SHA256SUMS.txt")
+    if url_role == "payload":
+        payload_url = untrusted_url
+    else:
+        checksum_url = untrusted_url
+    release = ReleaseInfo(
+        version="1.2.3",
+        tag_name="v1.2.3",
+        name="VODForge 1.2.3",
+        html_url="https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
+        notes="",
+        assets=(
+            ReleaseAsset(asset_name, payload_url, 8),
+            ReleaseAsset("SHA256SUMS.txt", checksum_url, 80),
+        ),
+    )
+    network_calls: list[str] = []
+
+    def unexpected_urlopen(request, **_kwargs):
+        network_calls.append(request.full_url)
+        raise AssertionError("untrusted release data reached the network boundary")
+
+    monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen)
+
+    with pytest.raises(RuntimeError, match="invalid download URL"):
+        download_verified_update(release, tmp_path, platform_name="win32", machine="AMD64")
+
+    assert network_calls == []
+    assert list(tmp_path.iterdir()) == []
 
 
 def _write_mac_app(app_path: Path, *, bundle_id: str = "com.snowfallhd.vodforge") -> None:
