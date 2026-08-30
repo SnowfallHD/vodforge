@@ -73,6 +73,7 @@ def run_static_suite(
                 "--ignore-missing-imports",
                 "--follow-imports=skip",
                 "yt_downloader",
+                "tests/typecheck",
             ),
             300,
         ),

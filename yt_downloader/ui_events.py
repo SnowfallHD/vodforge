@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from tkinter import messagebox
-from typing import Any
+from typing import Any, Protocol
 
 from .cloud_funnel import (
     InstallationIdentityError,
+    InstallationState,
     mark_cloud_seen_confirmed,
     mark_first_launch_confirmed,
 )
@@ -13,20 +15,172 @@ from .models import DownloadJob
 from .updates import MacUpdatePlan, ReleaseInfo
 
 
+class _FloatVariable(Protocol):
+    def get(self) -> float: ...
+
+    def set(self, value: float) -> None: ...
+
+
+class _StringVariable(Protocol):
+    def get(self) -> str: ...
+
+    def set(self, value: str) -> None: ...
+
+
+class _ConfigurableControl(Protocol):
+    @property
+    def config(self) -> Callable[..., Any]: ...
+
+
+class _UiEventHost(Protocol):
+    """Structural host surface required by the UI event dispatcher."""
+
+    _event_app_name: str
+    _event_subtle_color: str
+    last_output_dirs: list[Path]
+    update_check_silent: bool
+    installation_state: InstallationState | None
+
+    @property
+    def progress_var(self) -> _FloatVariable: ...
+
+    @property
+    def status_var(self) -> _StringVariable: ...
+
+    @property
+    def pending_jobs(self) -> Sequence[DownloadJob]: ...
+
+    @property
+    def active_job(self) -> DownloadJob | None: ...
+
+    @property
+    def installation_state_path(self) -> Path: ...
+
+    @property
+    def download_button(self) -> _ConfigurableControl: ...
+
+    @property
+    def cancel_button(self) -> _ConfigurableControl: ...
+
+    @property
+    def skip_video_button(self) -> _ConfigurableControl: ...
+
+    @property
+    def skip_url_button(self) -> _ConfigurableControl: ...
+
+    @property
+    def update_button(self) -> _ConfigurableControl: ...
+
+    @property
+    def _focus_selected_run_id(self) -> str | None: ...
+
+    @property
+    def focus_transfer_var(self) -> _StringVariable: ...
+
+    @property
+    def focus_run_status_var(self) -> _StringVariable: ...
+
+    @property
+    def focus_percent_var(self) -> _StringVariable: ...
+
+    def _event_write_diagnostic(self, message: str) -> None: ...
+
+    def _append_log(self, line: str) -> None: ...
+
+    def _append_job_log(self, event_job: DownloadJob, line: str) -> None: ...
+
+    def _display_metadata(
+        self,
+        info: dict[str, Any],
+        *,
+        active_job: DownloadJob | None = None,
+        preview_complete: bool = False,
+    ) -> None: ...
+
+    def _active_run_for_metadata_event(
+        self,
+        event_job: DownloadJob,
+    ) -> DownloadJob | None: ...
+
+    def _display_thumbnail_preview_result(self, payload: dict[str, Any]) -> None: ...
+
+    def _refresh_focus_run_deck(self) -> None: ...
+
+    def _focus_run_records(self) -> list[dict[str, Any]]: ...
+
+    def _display_focus_queued_job_snapshot(
+        self,
+        record: dict[str, Any],
+        job: DownloadJob,
+    ) -> None: ...
+
+    def _library_run_is_suppressed(self, job: DownloadJob | None) -> bool: ...
+
+    def _record_download_history(
+        self,
+        info: dict[str, Any],
+        output_dir: Path,
+        *,
+        owning_job: DownloadJob | None = None,
+    ) -> None: ...
+
+    def _archive_item_terminal_job(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+    ) -> None: ...
+
+    def _display_metadata_preview_request(self, record: dict[str, Any]) -> None: ...
+
+    def _show_update_result(self, release: ReleaseInfo) -> None: ...
+
+    def _install_downloaded_update(self, update: Path | MacUpdatePlan) -> None: ...
+
+    def _schedule_auto_update_check(self, delay_ms: int = ...) -> None: ...
+
+    def _set_focus_update_state(self, text: str, color: str) -> None: ...
+
+    def _finish_run_ui(
+        self,
+        message: str,
+        run_status: str,
+        transfer_text: str,
+        *,
+        progress: float | None = None,
+    ) -> None: ...
+
+    def _archive_active_terminal_job(self, status: str, message: str) -> None: ...
+
+    def _focus_follows_active_run(self) -> bool: ...
+
+    def _launch_next_pending_job(self) -> bool: ...
+
+    def _set_focus_run_controls_visible(self, visible: bool) -> None: ...
+
+    def _focus_terminal_job(self, job: DownloadJob) -> None: ...
+
+
 class UiEventHandlersMixin:
     """UI-thread handlers for worker and application lifecycle events."""
 
     _event_app_name: str
     _event_subtle_color: str
+    installation_state: InstallationState | None
 
     def _event_write_diagnostic(self, message: str) -> None:
         raise NotImplementedError
 
-    def _handle_transfer_event(self, kind: str, payload: Any) -> bool:
+    def _handle_transfer_event(
+        self: _UiEventHost,
+        kind: str,
+        payload: Any,
+    ) -> bool:
         if kind == "log":
             self._append_log(str(payload))
         elif kind == "job_log":
-            if isinstance(payload, dict) and isinstance(payload.get("job"), DownloadJob):
+            if isinstance(payload, dict) and isinstance(
+                payload.get("job"), DownloadJob
+            ):
                 self._append_job_log(payload["job"], str(payload.get("line") or ""))
         elif kind == "progress_indeterminate_start":
             if hasattr(self, "progress_bar"):
@@ -57,7 +211,11 @@ class UiEventHandlersMixin:
             return False
         return True
 
-    def _handle_metadata_event(self, kind: str, payload: Any) -> bool:
+    def _handle_metadata_event(
+        self: _UiEventHost,
+        kind: str,
+        payload: Any,
+    ) -> bool:
         if kind == "metadata":
             if isinstance(payload, dict):
                 self._display_metadata(payload, preview_complete=True)
@@ -70,7 +228,9 @@ class UiEventHandlersMixin:
                 metadata_job = payload["job"]
                 active_metadata_job = self._active_run_for_metadata_event(metadata_job)
                 if active_metadata_job is not None:
-                    self._display_metadata(payload["info"], active_job=active_metadata_job)
+                    self._display_metadata(
+                        payload["info"], active_job=active_metadata_job
+                    )
                 else:
                     self._event_write_diagnostic(
                         f"ignored stale run metadata event for run_id={metadata_job.run_id}"
@@ -136,7 +296,11 @@ class UiEventHandlersMixin:
             return False
         return True
 
-    def _handle_runtime_event(self, kind: str, payload: Any) -> bool:
+    def _handle_runtime_event(
+        self: _UiEventHost,
+        kind: str,
+        payload: Any,
+    ) -> bool:
         if kind == "metadata_fetch_done":
             if hasattr(self, "preview_metadata_button"):
                 self.preview_metadata_button.config(state="normal")
@@ -239,7 +403,11 @@ class UiEventHandlersMixin:
             return False
         return True
 
-    def _handle_terminal_event(self, kind: str, payload: Any) -> bool:
+    def _handle_terminal_event(
+        self: _UiEventHost,
+        kind: str,
+        payload: Any,
+    ) -> bool:
         if kind == "done":
             self._finish_run_ui(
                 str(payload),
