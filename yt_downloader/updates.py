@@ -213,6 +213,14 @@ def download_verified_update(
     machine: str | None = None,
     timeout: float = 60,
 ) -> Path:
+    version_match = SEMVER_RE.fullmatch(str(release.tag_name).strip())
+    normalized_tag_version = (
+        ".".join(version_match.group(index) for index in range(1, 4))
+        if version_match is not None and not version_match.group(4)
+        else None
+    )
+    if normalized_tag_version != release.version:
+        raise RuntimeError("This release contains invalid version metadata.")
     asset = release_asset_for_platform(release, platform_name=platform_name, machine=machine)
     if asset is None:
         raise RuntimeError("This release does not include an update for this computer.")

@@ -63,6 +63,30 @@ def test_release_payload_accepts_only_public_stable_github_release():
     assert release.assets[0].size == 123
 
 
+def test_release_payload_rejects_asset_outside_the_canonical_release_path():
+    with pytest.raises(ValueError, match="invalid release download URL"):
+        parse_release_payload(
+            {
+                "tag_name": "v1.2.3",
+                "name": "VODForge 1.2.3",
+                "html_url": "https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
+                "body": "Release notes",
+                "draft": False,
+                "prerelease": False,
+                "assets": [
+                    {
+                        "name": "VODForge-Windows-Setup-v1.2.3.exe",
+                        "browser_download_url": (
+                            "https://github.com/other/repository/releases/download/v1.2.3/"
+                            "VODForge-Windows-Setup-v1.2.3.exe"
+                        ),
+                        "size": 123,
+                    }
+                ],
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -263,11 +287,48 @@ def test_verified_update_revalidates_asset_urls_before_network_access(
 
     monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen)
 
+    destination = tmp_path / "updates"
     with pytest.raises(RuntimeError, match="invalid download URL"):
-        download_verified_update(release, tmp_path, platform_name="win32", machine="AMD64")
+        download_verified_update(release, destination, platform_name="win32", machine="AMD64")
 
     assert network_calls == []
-    assert list(tmp_path.iterdir()) == []
+    assert not destination.exists()
+
+
+def test_verified_update_rejects_incoherent_release_version_before_network_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    asset_name = "VODForge-Windows-Setup-v1.2.3.exe"
+    release = ReleaseInfo(
+        version="1.2.3",
+        tag_name="v9.9.9",
+        name="VODForge 1.2.3",
+        html_url="https://github.com/SnowfallHD/vodforge/releases/tag/v9.9.9",
+        notes="",
+        assets=(
+            ReleaseAsset(asset_name, _release_download_url("v9.9.9", asset_name), 8),
+            ReleaseAsset(
+                "SHA256SUMS.txt",
+                _release_download_url("v9.9.9", "SHA256SUMS.txt"),
+                80,
+            ),
+        ),
+    )
+    network_calls: list[str] = []
+
+    def unexpected_urlopen(request, **_kwargs):
+        network_calls.append(request.full_url)
+        raise AssertionError("incoherent release identity reached the network boundary")
+
+    monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen)
+    destination = tmp_path / "updates"
+
+    with pytest.raises(RuntimeError, match="invalid version metadata"):
+        download_verified_update(release, destination, platform_name="win32", machine="AMD64")
+
+    assert network_calls == []
+    assert not destination.exists()
 
 
 def _write_mac_app(app_path: Path, *, bundle_id: str = "com.snowfallhd.vodforge") -> None:
