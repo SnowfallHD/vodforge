@@ -809,7 +809,7 @@ def test_preview_and_completed_profiles_omit_redundant_media_placeholders():
         "vodforge_output_type": "MP3",
         "vodforge_encoding_summary": {
             "output": {
-                "Resolution": "Audio only",
+                "Output resolution": "Audio only",
                 "Output rate-control mode": "CBR",
             }
         },
@@ -818,7 +818,16 @@ def test_preview_and_completed_profiles_omit_redundant_media_placeholders():
         "vodforge_output_type": "MP4",
         "vodforge_encoding_summary": {
             "output": {
-                "Resolution": "1920x1080",
+                "Output resolution": "1920x1080",
+                "Output rate-control mode": "CBR",
+            }
+        },
+    }
+    legacy_mp4_completed = {
+        "vodforge_output_type": "MP4",
+        "vodforge_encoding_summary": {
+            "output": {
+                "Resolution": "1280x720",
                 "Output rate-control mode": "CBR",
             }
         },
@@ -827,6 +836,7 @@ def test_preview_and_completed_profiles_omit_redundant_media_placeholders():
     assert focus_metadata_profile_text(mp4_preview, "preview") == "MP4  •  Preview complete"
     assert focus_metadata_profile_text(mp3_completed, "completed") == "MP3  •  CBR"
     assert focus_metadata_profile_text(mp4_completed, "completed") == "MP4  •  1920x1080  •  CBR"
+    assert focus_metadata_profile_text(legacy_mp4_completed, "completed") == "MP4  •  1280x720  •  CBR"
     assert focus_metadata_profile_text({"vodforge_output_type": "MP4"}, "failed") == "MP4"
     assert preview_output_summary_display() == (
         "Output status: Preview complete\n"
@@ -2912,6 +2922,16 @@ def test_encoding_summary_metadata_includes_source_and_planned_output():
     assert output["Validation status"] == "Pending"
 
 
+def test_completed_profile_reads_the_canonical_generated_output_resolution():
+    info = _summary_test_info()
+    plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
+
+    enriched = build_encoding_summary_metadata(info, plan, validation_status="Validated")
+
+    assert enriched["vodforge_encoding_summary"]["output"]["Output resolution"] == "1920x1080"
+    assert focus_metadata_profile_text(enriched, "completed") == "MP4  •  1920x1080  •  Auto CBR"
+
+
 def test_encoding_summary_metadata_includes_final_ffprobe_output_values():
     info = _summary_test_info()
     plan = build_auto_export_plan(info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080)
@@ -3014,6 +3034,38 @@ def test_encoding_summary_display_switches_per_selected_video_and_handles_missin
     assert "Format selector:" not in output_two
     assert "Video format ID:" not in output_two
     assert "Audio format ID:" not in output_two
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        None,
+        "invalid",
+        [],
+        {"source": None, "output": "invalid", "warnings": "invalid"},
+    ],
+)
+def test_encoding_summary_consumers_normalize_malformed_persisted_sections(summary):
+    info = {"id": "malformed", "vodforge_encoding_summary": summary}
+
+    source_text, output_text = build_encoding_summary_display(info)
+
+    assert metadata_output_type(info) == OutputType.MP4
+    assert focus_metadata_profile_text(info, "completed") == "MP4  •  Completed"
+    assert "None" not in source_text + output_text
+    assert "Output file path: Not produced" in output_text
+
+
+@pytest.mark.parametrize("format_section", [None, "invalid", []])
+def test_ffprobe_output_summary_normalizes_malformed_format_sections(format_section):
+    summary = app_module._ffprobe_output_summary(
+        {"format": format_section, "streams": []},
+        Path("saved.mp4"),
+    )
+
+    assert summary["Output file path"] == "saved.mp4"
+    assert summary["Output container"] == "mp4"
+    assert summary["Output duration"] == "—"
 
 
 def test_encoding_summary_comparison_labels_use_stable_restrained_colors():

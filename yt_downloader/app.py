@@ -65,6 +65,7 @@ from .history import (
     history_file_path,
     history_identity,
     history_output_dir,
+    history_output_type,
     load_history,
     sanitize_durable_text,
     sanitize_durable_thumbnail_record,
@@ -1481,6 +1482,23 @@ def _clean_list(values: Any) -> list[str]:
     return cleaned
 
 
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    """Normalize untrusted persisted/provider sections to a plain mapping."""
+    return value if isinstance(value, dict) else {}
+
+
+def _encoding_summary_sections(
+    info: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], list[Any]]:
+    """Read each optional encoding-summary section once and normalize its shape."""
+    summary = _dict_or_empty(info.get("vodforge_encoding_summary"))
+    source = _dict_or_empty(summary.get("source"))
+    output = _dict_or_empty(summary.get("output"))
+    raw_warnings = summary.get("warnings")
+    warnings = raw_warnings if isinstance(raw_warnings, list) else []
+    return source, output, warnings
+
+
 def build_tags_display_text(info: dict[str, Any]) -> str:
     """Return YouTube tags comma-separated so the GUI copy action is compact."""
     return ", ".join(_clean_list(info.get("tags")))
@@ -1505,16 +1523,7 @@ def format_duration(seconds: Any) -> str:
 
 
 def metadata_output_type(info: dict[str, Any]) -> OutputType:
-    raw = str(info.get("vodforge_output_type") or "").strip().upper()
-    if raw in {item.value for item in OutputType}:
-        return OutputType(raw)
-    summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
-    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
-    output_path = str(output.get("Output file path") or "").strip().lower()
-    container = str(output.get("Output container") or "").strip().lower()
-    if output_path.endswith(".mp3") or container == "mp3":
-        return OutputType.MP3
-    return OutputType.MP4
+    return OutputType(history_output_type(info))
 
 
 def metadata_indices_for_output_type(
@@ -1855,7 +1864,7 @@ def _ffprobe_output_summary(ffprobe_data: dict[str, Any], output_path: Path | No
     streams = [stream for stream in ffprobe_data.get("streams") or [] if isinstance(stream, dict)]
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), {})
     audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), {})
-    fmt = ffprobe_data.get("format") if isinstance(ffprobe_data.get("format"), dict) else {}
+    fmt = _dict_or_empty(ffprobe_data.get("format"))
     width = video.get("width")
     height = video.get("height")
     return {
@@ -1940,10 +1949,7 @@ def summary_label_color(label: str) -> str:
 
 
 def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
-    summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
-    source = summary.get("source") if isinstance(summary.get("source"), dict) else {}
-    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
-    warnings = summary.get("warnings") if isinstance(summary.get("warnings"), list) else []
+    source, output, warnings = _encoding_summary_sections(info)
     source_lines: list[str] = []
     output_lines: list[str] = []
     rows = AUDIO_SUMMARY_COMPARISON_ROWS if metadata_output_type(info) == OutputType.MP3 else SUMMARY_COMPARISON_ROWS
@@ -3895,10 +3901,9 @@ def metadata_run_key(info: dict[str, Any]) -> tuple[str, str] | None:
 def focus_metadata_profile_text(info: dict[str, Any], record_kind: str) -> str:
     """Describe saved output or a completed preview without redundant placeholders."""
     output_type = metadata_output_type(info)
-    summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
-    output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+    _source, output, _warnings = _encoding_summary_sections(info)
     tokens = [output_type.value]
-    resolution = str(output.get("Resolution") or "").strip()
+    resolution = str(output.get("Output resolution") or output.get("Resolution") or "").strip()
     if resolution.casefold() not in {"", "unknown", "not available", "mp4", "audio only"}:
         tokens.append(resolution)
     mode = str(output.get("Output rate-control mode") or output.get("Target audio bitrate") or "").strip()
@@ -9834,8 +9839,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_active_detail_var.set(creator)
         duration = format_duration(info.get("duration"))
         self.focus_active_duration_var.set("" if duration == "—" else duration)
-        summary = info.get("vodforge_encoding_summary") if isinstance(info.get("vodforge_encoding_summary"), dict) else {}
-        output = summary.get("output") if isinstance(summary.get("output"), dict) else {}
+        _source, output, _warnings = _encoding_summary_sections(info)
         if job.output_type == OutputType.MP3:
             bitrate = _display_value(output.get("Target audio bitrate"), f"{job.mp3_settings.bitrate_kbps} kbps")
             sample_rate = _display_value(output.get("Audio sample rate"), "Source rate")
