@@ -3828,6 +3828,22 @@ class _AnalyzedDownloadItem:
     cookie_source_loaded: bool
 
 
+@dataclass(frozen=True)
+class _DownloadedStagingItem:
+    metadata: dict[str, Any]
+    session_cookies: tuple[Any, ...]
+    ffmpeg: str
+
+
+@dataclass(frozen=True)
+class _PreparedStagingItem:
+    metadata: dict[str, Any]
+    staged_media: list[tuple[dict[str, Any], Path]]
+    expected_extension: str
+    ffmpeg: str
+    custom_cover_for_cache: Path | None
+
+
 def _download_entry_url(entry: dict[str, Any], fallback_url: str) -> str:
     url = str(entry.get("webpage_url") or entry.get("url") or "").strip()
     if url.startswith("http://") or url.startswith("https://"):
@@ -11724,6 +11740,137 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             cookie_source_loaded=job.use_cookies,
         )
 
+    def _download_item_to_staging(
+        self,
+        job: DownloadJob,
+        ytdlp_module: Any,
+        provider_network: ProviderNetworkCoordinator,
+        item: _DownloadItemContext,
+        playlist_info: dict[str, Any],
+        analyzed_item: _AnalyzedDownloadItem,
+        staging_dir: Path,
+        *,
+        control_check: Callable[[], None],
+        progress_callback: Callable[[float], None],
+    ) -> _DownloadedStagingItem:
+        """Transfer one analyzed item while the caller owns the provider lease."""
+        plan = analyzed_item.plan
+        ffmpeg = self._find_ffmpeg()
+        if not ffmpeg:
+            required_output = (
+                "MP3 audio"
+                if isinstance(plan, AudioExportPlan)
+                else f"H.264 / {plan.output_audio_codec.value} MP4 video"
+            )
+            raise RuntimeError(
+                f"FFmpeg is required to create the {required_output} output."
+            )
+        if job_embeds_provider_thumbnail(job):
+            validate_embedded_thumbnail_sources(
+                analyzed_item.preflight_info,
+                source_url=item.video_url,
+            )
+        options = self._build_ydl_options(
+            job,
+            staging_dir=staging_dir,
+            format_selector=plan.format_selector,
+        )
+        options["noplaylist"] = True
+        # Preflight already loaded the selected cookie source. Reuse its
+        # in-memory session jar instead of reopening a browser profile or file.
+        options.pop("cookiefile", None)
+        options.pop("cookiesfrombrowser", None)
+        log_options(f"{item.label} download", options)
+        self._active_progress_context = (item.index, item.total, 0.10, 0.40)
+        self.events.put(("status", f"{item.label} — downloading"))
+        self._emit_job_log(job, f"{item.label}: downloading")
+        download_started = time.monotonic()
+        download_step = partial(
+            _download_preflight_result_step,
+            ytdlp_module,
+            options,
+            analyzed_item.preflight_info,
+            tuple(analyzed_item.session_cookies),
+            control_check=control_check,
+        )
+        info, session_cookies = provider_network.run_primary(download_step)
+        write_diagnostic(
+            f"{item.label} download and yt-dlp post-processing "
+            f"elapsed_seconds={time.monotonic() - download_started:.3f}"
+        )
+        self._active_progress_context = None
+        control_check()
+        if not isinstance(info, dict):
+            raise RuntimeError(f"{item.label}: download did not return metadata")
+        info = mark_metadata_output_type(
+            apply_playlist_context(
+                info,
+                item.entry,
+                playlist_info,
+                job.url,
+                item.index,
+            ),
+            job.output_type,
+        )
+        encoding_summary = analyzed_item.display_info.get("vodforge_encoding_summary")
+        if encoding_summary:
+            info["vodforge_encoding_summary"] = encoding_summary
+        self.events.put(("job_metadata", {"job": job, "info": info}))
+        progress_callback(1.0)
+        return _DownloadedStagingItem(
+            metadata=info,
+            session_cookies=session_cookies,
+            ffmpeg=ffmpeg,
+        )
+
+    def _prepare_staged_download_item(
+        self,
+        job: DownloadJob,
+        item: _DownloadItemContext,
+        downloaded_item: _DownloadedStagingItem,
+        staging_dir: Path,
+        *,
+        control_check: Callable[[], None],
+    ) -> _PreparedStagingItem:
+        """Bind expected staged media and optional cover art before validation."""
+        expected_extension = ".mp3" if job.output_type == OutputType.MP3 else ".mp4"
+        staged_media = collect_staged_media_files(
+            staging_dir,
+            downloaded_item.metadata,
+            expected_extension=expected_extension,
+        )
+        if not staged_media:
+            raise RuntimeError(
+                f"{item.label}: yt-dlp completed without producing the expected "
+                f"{expected_extension} file."
+            )
+
+        custom_cover_for_cache: Path | None = None
+        custom_cover_path = job.mp3_settings.custom_cover_art_path
+        if job.output_type == OutputType.MP3 and custom_cover_path is not None:
+            control_check()
+            prepared_cover = prepare_custom_cover_art(custom_cover_path, staging_dir)
+            for _staged_info, staged_mp3 in staged_media:
+                embed_custom_mp3_cover_art(
+                    staged_mp3,
+                    prepared_cover,
+                    downloaded_item.ffmpeg,
+                    control_check=control_check,
+                )
+            control_check()
+            custom_cover_for_cache = prepared_cover
+            self._emit_job_log(
+                job,
+                f"{item.label}: embedded custom cover art ({custom_cover_path.name})",
+            )
+        return _PreparedStagingItem(
+            metadata=downloaded_item.metadata,
+            staged_media=staged_media,
+            expected_extension=expected_extension,
+            ffmpeg=downloaded_item.ffmpeg,
+            custom_cover_for_cache=custom_cover_for_cache,
+        )
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -11839,7 +11986,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 try:
                     current_video_info = None
                     current_plan = None
-                    custom_cover_for_cache: Path | None = None
                     video_url = _download_entry_url(entry, job.url)
                     label = f"Video {video_index} of {total_videos}"
                     item = _DownloadItemContext(
@@ -11871,7 +12017,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             fraction,
                         ),
                     )
-                    preflight_info = analyzed_item.preflight_info
                     current_video_info = analyzed_item.display_info
                     current_plan = analyzed_item.plan
                     plan = analyzed_item.plan
@@ -11895,92 +12040,42 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
                     staging_dir = create_staging_dir(job.output_dir)
                     try:
-                        ffmpeg = self._find_ffmpeg()
-                        if not ffmpeg:
-                            if isinstance(plan, AudioExportPlan):
-                                required_output = "MP3 audio"
-                            else:
-                                required_output = (
-                                    f"H.264 / {plan.output_audio_codec.value} MP4 video"
-                                )
-                            raise RuntimeError(f"FFmpeg is required to create the {required_output} output.")
-                        if job_embeds_provider_thumbnail(job):
-                            validate_embedded_thumbnail_sources(
-                                preflight_info,
-                                source_url=video_url,
-                            )
-                        ydl_opts = self._build_ydl_options(job, staging_dir=staging_dir, format_selector=plan.format_selector)
-                        ydl_opts["noplaylist"] = True
-                        # Preflight already loaded the selected cookie source. Reuse
-                        # its in-memory session jar instead of reopening a browser
-                        # profile or cookies.txt for the immediately following run.
-                        ydl_opts.pop("cookiefile", None)
-                        ydl_opts.pop("cookiesfrombrowser", None)
-                        log_options(f"{label} download", ydl_opts)
-                        self._active_progress_context = (video_index, total_videos, 0.10, 0.40)
-                        self.events.put(("status", f"{label} — downloading"))
-                        self._emit_job_log(job, f"{label}: downloading")
-                        download_started = time.monotonic()
-
-                        download_step = partial(
-                            _download_preflight_result_step,
+                        downloaded_item = self._download_item_to_staging(
+                            job,
                             ytdlp_module,
-                            ydl_opts,
-                            preflight_info,
-                            tuple(job_session_cookies),
+                            provider_network,
+                            item,
+                            playlist_info,
+                            analyzed_item,
+                            staging_dir,
                             control_check=raise_for_control_requests,
+                            progress_callback=lambda fraction: put_stage_progress(
+                                video_index,
+                                total_videos,
+                                0.10,
+                                0.40,
+                                fraction,
+                            ),
                         )
-                        info, job_session_cookies = provider_network.run_primary(
-                            download_step
-                        )
+                        job_session_cookies = downloaded_item.session_cookies
                         provider_network.end_primary()
                         primary_intent_active = False
-                        write_diagnostic(f"{label} download and yt-dlp post-processing elapsed_seconds={time.monotonic() - download_started:.3f}")
-                        self._active_progress_context = None
-                        raise_for_control_requests()
-                        if not isinstance(info, dict):
-                            raise RuntimeError(f"{label}: download did not return metadata")
-                        info = mark_metadata_output_type(
-                            apply_playlist_context(info, entry, playlist_info, job.url, video_index),
-                            job.output_type,
-                        )
-                        if current_video_info and current_video_info.get("vodforge_encoding_summary"):
-                            info["vodforge_encoding_summary"] = current_video_info["vodforge_encoding_summary"]
-                        current_video_info = info
-                        self.events.put(("job_metadata", {"job": job, "info": info}))
-                        put_stage_progress(video_index, total_videos, 0.10, 0.40, 1.0)
-
-                        expected_extension = ".mp3" if job.output_type == OutputType.MP3 else ".mp4"
-                        staged_media = collect_staged_media_files(
+                        prepared_item = self._prepare_staged_download_item(
+                            job,
+                            item,
+                            downloaded_item,
                             staging_dir,
-                            info,
-                            expected_extension=expected_extension,
+                            control_check=raise_for_control_requests,
                         )
-                        if not staged_media:
-                            raise RuntimeError(
-                                f"{label}: yt-dlp completed without producing the expected {expected_extension} file."
-                            )
-
-                        if job.output_type == OutputType.MP3 and job.mp3_settings.custom_cover_art_path is not None:
-                            raise_for_control_requests()
-                            prepared_cover = prepare_custom_cover_art(job.mp3_settings.custom_cover_art_path, staging_dir)
-                            for _staged_info, staged_mp3 in staged_media:
-                                embed_custom_mp3_cover_art(
-                                    staged_mp3,
-                                    prepared_cover,
-                                    ffmpeg,
-                                    control_check=raise_for_control_requests,
-                                )
-                            raise_for_control_requests()
-                            custom_cover_for_cache = prepared_cover
-                            self._emit_job_log(job, f"{label}: embedded custom cover art ({job.mp3_settings.custom_cover_art_path.name})")
+                        info = prepared_item.metadata
+                        current_video_info = info
 
                         validated_staged = self._transcode_and_validate_staged_media(
                             job,
                             info,
                             plan,
-                            staged_media,
-                            ffmpeg,
+                            prepared_item.staged_media,
+                            prepared_item.ffmpeg,
                             label=label,
                             progress_callback=lambda fraction, video_index=video_index, total_videos=total_videos: put_stage_progress(
                                 video_index,
@@ -11997,7 +12092,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             info,
                             plan,
                             staging_dir,
-                            expected_extension,
+                            prepared_item.expected_extension,
                             validated_staged,
                             label=label,
                             all_output_dirs=all_output_dirs,
@@ -12022,7 +12117,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                                 info,
                                 primary_output,
                                 label=label,
-                                custom_cover_for_cache=custom_cover_for_cache,
+                                custom_cover_for_cache=prepared_item.custom_cover_for_cache,
                             )
                         )
                         put_stage_progress(video_index, total_videos, 0.90, 0.10, 1.0)
