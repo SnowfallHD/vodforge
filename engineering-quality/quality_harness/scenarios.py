@@ -15,6 +15,7 @@ from .fault_server import FixtureHTTPServer
 from .maintainability import change_surface_probe
 from .mutation import run_bounded_mutation_campaign
 from .pipeline import HeadlessPipelineRunner, active_child_snapshot
+from .reliability import batch_failure_report_reset_probe
 from .security import (
     fresh_output_contract_probe,
     path_and_subprocess_probe,
@@ -1338,6 +1339,12 @@ def run_scenarios(
         (
             "reliability.ffmpeg_child_failure",
             lambda: reliability_ffmpeg_failure(runner, server),
+        ),
+        (
+            "reliability.batch_failure_report_reset",
+            lambda: batch_failure_report_reset_probe(
+                run_root / "cases" / "reliability-batch-report-reset"
+            ),
         ),
         ("reliability.malformed_url", lambda: reliability_malformed(runner)),
         (

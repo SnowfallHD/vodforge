@@ -4003,6 +4003,7 @@ def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(tmp_pa
 
 def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monkeypatch, tmp_path: Path):
     report = tmp_path / "batch-url-failures.txt"
+    report.write_text("STALE FAILURE FROM AN EARLIER RUN\n", encoding="utf-8")
     monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
@@ -4039,11 +4040,64 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
 
     assert processed == job.urls
     report_text = report.read_text(encoding="utf-8")
+    assert "STALE FAILURE" not in report_text
     assert "https://www.youtube.com/watch?v=bad" in report_text
     assert "bad video unavailable" in report_text
     partial_messages = [payload for kind, payload in list(app.events.queue) if kind == "partial"]
     assert any("2 valid output(s)" in str(message) and "1 failed" in str(message) for message in partial_messages)
     assert not any(kind == "done" for kind, _payload in list(app.events.queue))
+
+
+def test_batch_worker_aborts_before_media_when_failure_report_cannot_reset(
+    monkeypatch,
+    tmp_path: Path,
+):
+    report = tmp_path / "batch-url-failures.txt"
+    old_contents = "failure from the previous batch\n"
+    report.write_text(old_contents, encoding="utf-8")
+    monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
+    original_unlink = Path.unlink
+
+    def deny_report_unlink(path: Path, *args, **kwargs):
+        if path == report:
+            raise PermissionError("injected report lock")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", deny_report_unlink)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app._active_progress_context = None
+    processed: list[str] = []
+    app._download_worker_single = lambda job, **_kwargs: processed.append(job.url)
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=one",
+        urls=[
+            "https://www.youtube.com/watch?v=one",
+            "https://www.youtube.com/watch?v=two",
+        ],
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    app._download_worker(job)
+
+    assert processed == []
+    assert report.read_text(encoding="utf-8") == old_contents
+    errors = [payload for kind, payload in app.events.queue if kind == "error"]
+    assert len(errors) == 1
+    assert "could not reset the batch failure report" in str(errors[0]).lower()
 
 
 def test_batch_worker_never_reports_completion_when_every_url_fails(monkeypatch, tmp_path: Path):

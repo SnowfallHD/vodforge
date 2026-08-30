@@ -1061,13 +1061,16 @@ def load_activity_log_tail(path: Path | None = None, *, max_chars: int = ACTIVIT
     return text.rstrip()
 
 
-def reset_batch_failure_report(path: Path = BATCH_FAILURE_REPORT_PATH) -> None:
+def reset_batch_failure_report(path: Path | None = None) -> None:
+    target = BATCH_FAILURE_REPORT_PATH if path is None else path
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            path.unlink()
-    except Exception:
-        pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.unlink(missing_ok=True)
+    except OSError as exc:
+        raise RuntimeError(
+            f"VODForge could not reset the batch failure report at {target}. "
+            "Close any program using that file or choose a writable app-data location, then try again."
+        ) from exc
 
 
 def append_batch_failure_report(path: Path, url: str, issue: Any) -> None:
