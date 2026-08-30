@@ -1394,6 +1394,33 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert 'xscrollincrement=1' in pixel_table_source
 
 
+def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():
+    class InconsistentTree:
+        def selection(self):
+            return ()
+
+        def replace_rows(self, rows, *, selected):
+            assert rows == []
+            assert selected is None
+            return ("orphaned-widget-row",)
+
+        def focus(self, _target):
+            raise AssertionError("an orphaned widget row must not become Library authority")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = InconsistentTree()
+    app.metadata_items = []
+    app.library_output_type_var = Value("MP4")
+    cleared: list[bool] = []
+    app._clear_library_selection = lambda: cleared.append(True)
+    app.focus_run_deck = object()
+    app._refresh_focus_run_deck = lambda: None
+
+    app._render_metadata_tree()
+
+    assert cleared == [True]
+
+
 def test_manual_column_width_keeps_responsive_stretch_authority():
     class ColumnProbe:
         def __init__(self):

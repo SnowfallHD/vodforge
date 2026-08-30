@@ -2541,6 +2541,20 @@ def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch
         assert image.format == "JPEG"
 
 
+def test_thumbnail_compression_limit_failure_is_explicit(tmp_path: Path):
+    Image = pytest.importorskip("PIL.Image")
+    destination = tmp_path / "thumbnail.jpeg"
+
+    with pytest.raises(RuntimeError, match="Unable to compress thumbnail below 0 bytes"):
+        app_module._save_jpeg_under_size(
+            Image.new("RGB", (16, 16), "red"),
+            destination,
+            max_bytes=0,
+        )
+
+    assert not destination.exists()
+
+
 def test_embedded_thumbnail_sources_reject_untrusted_provider_metadata() -> None:
     with pytest.raises(RuntimeError, match="not trusted"):
         app_module.validate_embedded_thumbnail_sources(
@@ -3190,6 +3204,40 @@ def test_transcode_atomic_replace_failure_preserves_downloaded_source(monkeypatc
     with pytest.raises(RuntimeError, match="commit failed"):
         transcode_to_vod_streaming_settings(source, "ffmpeg")
 
+    assert source.read_bytes() == b"downloaded source"
+    assert not (tmp_path / "__vodforge-tmp.mp4").exists()
+
+
+def test_transcode_missing_captured_output_fails_cleanly_and_reaps_child(
+    monkeypatch,
+    tmp_path: Path,
+):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+
+    class MissingOutputPopen:
+        stdout = None
+
+        def __init__(self, *_args, **_kwargs):
+            self.terminated = False
+
+        def poll(self):
+            return -15 if self.terminated else None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return -15
+
+    process = MissingOutputPopen()
+    monkeypatch.setattr(app_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+
+    with pytest.raises(RuntimeError, match="did not expose a captured output stream"):
+        transcode_to_vod_streaming_settings(source, "ffmpeg")
+
+    assert process.terminated is True
+    assert process not in app_module._ACTIVE_CHILD_PROCESSES
     assert source.read_bytes() == b"downloaded source"
     assert not (tmp_path / "__vodforge-tmp.mp4").exists()
 

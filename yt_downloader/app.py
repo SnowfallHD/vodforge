@@ -3287,12 +3287,17 @@ def transcode_to_vod_streaming_settings(
         )
         register_active_child_process(process)
         output_lines: list[str] = []
-        assert process.stdout is not None
+        encoder_output = process.stdout
+        if encoder_output is None:
+            raise RuntimeError(
+                f"VODForge H.264/{audio_codec_label} CBR transcode failed: "
+                "FFmpeg did not expose a captured output stream"
+            )
         output_queue: queue.Queue[str | None] = queue.Queue()
 
         def read_encoder_output() -> None:
             try:
-                for output_line in process.stdout:
+                for output_line in encoder_output:
                     output_queue.put(output_line)
             finally:
                 output_queue.put(None)
@@ -3357,7 +3362,6 @@ def transcode_to_vod_streaming_settings(
 
 def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX_BYTES) -> None:
     rgb = image.convert("RGB")
-    best_data: bytes | None = None
 
     def encode(candidate: Any, quality: int) -> bytes:
         from io import BytesIO
@@ -3366,9 +3370,14 @@ def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX
         candidate.save(buf, format="JPEG", quality=quality, optimize=True, progressive=True)
         return buf.getvalue()
 
-    for quality in (92, 88, 84, 80, 76, 72, 68, 64, 60, 55, 50, 45):
+    quality_steps = (92, 88, 84, 80, 76, 72, 68, 64, 60, 55, 50, 45)
+    best_data = encode(rgb, quality_steps[0])
+    if len(best_data) <= max_bytes:
+        path.write_bytes(best_data)
+        return
+    for quality in quality_steps[1:]:
         data = encode(rgb, quality)
-        if best_data is None or len(data) < len(best_data):
+        if len(data) < len(best_data):
             best_data = data
         if len(data) <= max_bytes:
             path.write_bytes(data)
@@ -3376,7 +3385,6 @@ def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX
 
     working = rgb
     while min(working.size) > 16:
-        assert best_data is not None
         shrink = max(0.50, min(0.90, (max_bytes / len(best_data)) ** 0.5 * 0.95))
         new_size = (max(16, int(working.size[0] * shrink)), max(16, int(working.size[1] * shrink)))
         if new_size == working.size:
@@ -3385,13 +3393,12 @@ def _save_jpeg_under_size(image: Any, path: Path, max_bytes: int = THUMBNAIL_MAX
         working = working.resize(new_size, resample)
         for quality in (82, 76, 70, 64, 58, 52, 46, 40, 34, 28, 20, 12, 5):
             data = encode(working, quality)
-            if best_data is None or len(data) < len(best_data):
+            if len(data) < len(best_data):
                 best_data = data
             if len(data) <= max_bytes:
                 path.write_bytes(data)
                 return
 
-    assert best_data is not None
     if len(best_data) > max_bytes:
         raise RuntimeError(f"Unable to compress thumbnail below {max_bytes} bytes")
     path.write_bytes(best_data)
@@ -9838,8 +9845,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             children = self.video_tree.get_children()
             if target is not None:
                 self.video_tree.selection_set(target)
-        if children:
-            assert target is not None
+        if children and target is not None:
             self.video_tree.focus(target)
             self._display_selected_metadata(int(target))
         else:
