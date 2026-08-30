@@ -7,12 +7,12 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .history import application_data_dir
-
 
 CLOUD_ORIGIN = "https://getvodforge.com"
 CLOUD_PAGE_URL = f"{CLOUD_ORIGIN}/cloud"

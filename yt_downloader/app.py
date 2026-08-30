@@ -29,6 +29,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
+from . import export_planning as _export_planning
 from . import platform_services as _platform_services
 from . import ui_layout as _ui_layout
 from . import ui_widgets as _ui_widgets
@@ -56,11 +57,6 @@ from .export_planning import (
     export_mode_from_display_name,
     mp3_sample_rate_display,
 )
-from .export_planning import (
-    choose_audio_bitrate_kbps as choose_audio_bitrate_kbps,
-)
-from .export_planning import choose_best_audio_format as choose_best_audio_format
-from .export_planning import choose_best_video_format as choose_best_video_format
 from .focus_settings import (
     FocusSettingsActions,
     FocusSettingsBindings,
@@ -112,9 +108,7 @@ from .output_validation import (
 )
 from .output_validation import validate_output_artifact as _validate_output_artifact
 from .platform_services import (
-    RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
     choose_output_directory,
-    choose_windows_output_directory,
     configure_windows_app_identity,
     diagnostics_dir,
     find_runtime_executable,
@@ -124,8 +118,6 @@ from .platform_services import (
     is_windows,
     output_directory_failure_guidance,
     probe_runtime_version,
-    runtime_executable_candidates,
-    runtime_version_command,
     runtime_window_icon_asset,
 )
 from .platform_services import (
@@ -211,6 +203,13 @@ resized_table_column_width = _ui_layout.resized_table_column_width
 responsive_table_stretch_indices = _ui_layout.responsive_table_stretch_indices
 stretched_table_column_widths = _ui_layout.stretched_table_column_widths
 platform_font_families = _platform_services.platform_font_families
+choose_audio_bitrate_kbps = _export_planning.choose_audio_bitrate_kbps
+choose_best_audio_format = _export_planning.choose_best_audio_format
+choose_best_video_format = _export_planning.choose_best_video_format
+RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS = _platform_services.RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS
+choose_windows_output_directory = _platform_services.choose_windows_output_directory
+runtime_executable_candidates = _platform_services.runtime_executable_candidates
+runtime_version_command = _platform_services.runtime_version_command
 TOOLTIP_DELAY_MS = _ui_widgets.TOOLTIP_DELAY_MS
 TOOLTIP_POINTER_POLL_MS = _ui_widgets.TOOLTIP_POINTER_POLL_MS
 _TooltipController = _ui_widgets._TooltipController
@@ -817,7 +816,7 @@ def run_with_bounded_transient_retries(
             control_check()
         try:
             return operation()
-        except Exception as exc:  # noqa: BLE001 - classify provider exceptions, then re-raise nontransient ones
+        except Exception as exc:
             if attempt >= max_attempts or not is_transient_network_error(exc):
                 raise
             delay = _retry_after_seconds(exc)
@@ -1961,7 +1960,7 @@ def parse_url_list_text(text: str) -> list[str]:
             parts = line.split(maxsplit=1)
             if parts:
                 line = parts[0].strip()
-        if line.startswith("http://") or line.startswith("https://"):
+        if line.startswith(("http://", "https://")):
             urls.append(line)
     return urls
 
@@ -2335,8 +2334,7 @@ def run_ffprobe_json(
         result = subprocess.run(  # nosec B603
             command,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -2512,7 +2510,7 @@ def tracked_ytdlp_popen_class(base_class: type, control_check: Any | None = None
                 if child_process_has_exited(self):
                     unregister_active_child_process(self)
 
-        def __exit__(self, *args: Any, **kwargs: Any) -> Any:
+        def __exit__(self, *args: object, **kwargs: Any) -> Any:
             try:
                 return super().__exit__(*args, **kwargs)
             finally:
@@ -3373,12 +3371,10 @@ def focus_metadata_profile_text(info: dict[str, Any], record_kind: str) -> str:
 
 def preview_output_summary_display() -> str:
     """Explain the boundary between metadata preview and produced media."""
-    return "\n".join(
-        (
-            "Output status: Preview complete",
-            "Output file path: Not produced",
-            "Next action: Start download in Forge",
-        )
+    return (
+        "Output status: Preview complete\n"
+        "Output file path: Not produced\n"
+        "Next action: Start download in Forge"
     )
 
 
@@ -3441,7 +3437,7 @@ class _PreparedStagingItem:
 
 def _download_entry_url(entry: dict[str, Any], fallback_url: str) -> str:
     url = str(entry.get("webpage_url") or entry.get("url") or "").strip()
-    if url.startswith("http://") or url.startswith("https://"):
+    if url.startswith(("http://", "https://")):
         return url
     video_id = str(entry.get("id") or url).strip()
     if video_id:
@@ -3752,10 +3748,14 @@ def _download_item_plan_log_lines(
     if isinstance(plan, AudioExportPlan):
         lines.extend(
             (
-                f"{label}: selected highest-quality audio source {plan.audio_codec} "
-                f"~{plan.source_audio_kbps:.0f} kbps.",
-                f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art "
-                f"{'embedded' if plan.embed_cover_art else 'not embedded'}.",
+                (
+                    f"{label}: selected highest-quality audio source {plan.audio_codec} "
+                    f"~{plan.source_audio_kbps:.0f} kbps."
+                ),
+                (
+                    f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art "
+                    f"{'embedded' if plan.embed_cover_art else 'not embedded'}."
+                ),
             )
         )
     else:
@@ -3766,11 +3766,15 @@ def _download_item_plan_log_lines(
         )
         lines.extend(
             (
-                f"{label}: selected video {plan.output_height}p {plan.video_codec} "
-                f"~{plan.source_video_kbps:.0f} kbps; selected audio {plan.audio_codec} "
-                f"~{plan.source_audio_kbps:.0f} kbps.",
-                f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + "
-                f"{plan.audio_bitrate_kbps} kbps audio.",
+                (
+                    f"{label}: selected video {plan.output_height}p {plan.video_codec} "
+                    f"~{plan.source_video_kbps:.0f} kbps; selected audio {plan.audio_codec} "
+                    f"~{plan.source_audio_kbps:.0f} kbps."
+                ),
+                (
+                    f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + "
+                    f"{plan.audio_bitrate_kbps} kbps audio."
+                ),
             )
         )
     lines.extend(f"WARNING: {label}: {warning}" for warning in plan.warnings)
@@ -4954,10 +4958,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if mode not in MP3_COVER_ART_OPTIONS:
             self.mp3_cover_art_mode_var.set("No Art")
             return
-        if mode == "Custom art" and self.mp3_custom_cover_art_path is None:
-            if not self._choose_mp3_custom_cover_art():
-                self.mp3_cover_art_mode_var.set("No Art")
-                return
+        if (
+            mode == "Custom art"
+            and self.mp3_custom_cover_art_path is None
+            and not self._choose_mp3_custom_cover_art()
+        ):
+            self.mp3_cover_art_mode_var.set("No Art")
+            return
         descriptions = {
             "No Art": "No image is embedded in the MP3. VODForge still keeps the YouTube thumbnail privately for Forge and Library.",
             "YouTube art": "Embeds the video's YouTube thumbnail in the MP3 and also uses it inside VODForge.",
@@ -7258,7 +7265,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     preview["preview_thumbnail_path"] = str(cached)
                 return preview
 
-            pending = lambda: any(item is job for item in self.pending_jobs)
+            def pending() -> bool:
+                return any(item is job for item in self.pending_jobs)
+
             ran, preview = self._provider_network_coordinator().run_preview(
                 fetch_preview,
                 should_abort=lambda: bool(self.__dict__.get("_closing", False)) or not pending(),
@@ -8737,8 +8746,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if batch_outcome.success_count:
                     self.events.put((
                         "partial",
-                        f"Batch cancelled — {batch_outcome.success_count} valid output(s) completed before cancellation. "
-                        "No incomplete output was committed.",
+                        (
+                            f"Batch cancelled — {batch_outcome.success_count} valid output(s) completed before cancellation. "
+                            "No incomplete output was committed."
+                        ),
                     ))
                 else:
                     self.events.put(("stopped", "Batch cancelled. No incomplete output was committed."))
@@ -9216,18 +9227,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.events.put(
                     (
                         "partial",
-                        f"{job.output_type.value} completed with issues — "
-                        f"{outcome.success_count} valid output(s), "
-                        f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
-                        f"{outcome.sidecar_failure_count} optional sidecar failure(s).",
+                        (
+                            f"{job.output_type.value} completed with issues — "
+                            f"{outcome.success_count} valid output(s), "
+                            f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
+                            f"{outcome.sidecar_failure_count} optional sidecar failure(s)."
+                        ),
                     )
                 )
             else:
                 self.events.put(
                     (
                         "done",
-                        f"{job.output_type.value} download complete — "
-                        f"{outcome.success_count} valid output(s).",
+                        (
+                            f"{job.output_type.value} download complete — "
+                            f"{outcome.success_count} valid output(s)."
+                        ),
                     )
                 )
         return outcome

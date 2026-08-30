@@ -1,5 +1,5 @@
-import json
 import inspect
+import json
 import os
 import queue
 import re
@@ -14,135 +14,139 @@ import pytest
 from PIL import Image
 
 import yt_downloader.app as app_module
-from yt_downloader.history import history_output_dir, sanitize_history_record, upsert_history
-from yt_downloader.safe_output import UnsafeOutputPathError
 from yt_downloader.app import (
-    AudioExportPlan,
-    CookieSource,
-    DEFAULT_IGNORE_PLAYLISTS,
-    RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
     AUDIO_BITRATE,
     AUDIO_SAMPLE_RATE,
+    DEFAULT_IGNORE_PLAYLISTS,
+    EXPORT_MODES,
+    QUALITY_OPTIONS,
+    RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS,
+    AudioExportPlan,
+    CookieSource,
+    DownloaderApp,
     DownloadJob,
     DownloadOutcome,
-    DownloaderApp,
-    ExportPlan,
     ExportMode,
+    ExportPlan,
     ManualAudioCodec,
-    EXPORT_MODES,
+    ManualExportSettings,
     Mp3ExportSettings,
     OutputType,
-    QUALITY_OPTIONS,
-    ManualExportSettings,
-    apply_playlist_context,
+    accumulated_row_scroll,
+    append_batch_failure_report,
     apply_manual_export_settings,
+    apply_playlist_context,
+    apply_youtube_runtime_options,
+    apply_ytdlp_cookie_options,
+    best_thumbnail_for_download,
+    bounded_window_size,
     build_auto_export_plan,
-    export_mode_description,
-    export_mode_display_name,
-    export_mode_from_display_name,
-    build_mp3_export_plan,
+    build_description_display_text,
     build_encoding_summary_display,
     build_encoding_summary_metadata,
     build_failed_encoding_summary_metadata,
-    summary_label_color,
-    build_description_display_text,
-    clean_single_video_url,
-    canonical_youtube_url,
-    cookie_inputs_for_source,
-    center_alpha_content,
-    cached_thumbnail_path,
-    existing_cached_thumbnail_path,
-    legacy_cached_thumbnail_path,
-    embed_custom_mp3_cover_art,
-    existing_output_candidate_dirs,
-    find_valid_existing_output,
-    output_artifact_matches_plan,
-    playlist_context_from_extraction,
-    pointer_inside_widget_bounds,
-    retry_url_for_item,
-    single_video_url_requires_video_id_error,
+    build_mp3_export_plan,
     build_tags_display_text,
     build_vod_ffmpeg_command,
+    bundled_asset_path,
+    cached_thumbnail_path,
+    canonical_youtube_url,
+    center_alpha_content,
     choose_audio_bitrate_kbps,
     choose_best_audio_format,
     choose_best_video_format,
     choose_windows_output_directory,
+    clean_single_video_url,
     cleanup_legacy_encode_sidecars,
     compact_video_metadata,
+    configure_windows_app_identity,
+    cookie_inputs_for_source,
     create_staging_dir,
-    run_cancellable_blocking_step,
-    format_duration,
-    iter_video_infos,
-    load_yt_dlp,
-    package_downloaded_media_from_staging,
-    append_batch_failure_report,
-    apply_youtube_runtime_options,
-    apply_ytdlp_cookie_options,
-    best_thumbnail_for_download,
-    format_ytdlp_user_error,
-    parse_url_list_text,
     diagnostics_dir,
     download_bounded_url_bytes,
     download_job_display_title,
-    bounded_window_size,
-    bundled_asset_path,
-    configure_windows_app_identity,
+    embed_custom_mp3_cover_art,
+    existing_cached_thumbnail_path,
+    existing_output_candidate_dirs,
+    export_mode_description,
+    export_mode_display_name,
+    export_mode_from_display_name,
+    find_valid_existing_output,
     flatten_alpha_image,
-    focus_icon_color_variant,
     focus_hero_thumbnail_visible,
+    focus_icon_color_variant,
+    focus_layout_mode,
+    focus_library_horizontal_padding,
     focus_library_layout_mode,
     focus_library_vertical_layout_mode,
-    focus_library_horizontal_padding,
-    pixel_table_visible_row_window,
     focus_metadata_profile_text,
-    focus_layout_mode,
     focus_run_deck_capacity,
     focus_wheel_pixels,
-    pixel_scroll_target,
+    format_duration,
+    format_ytdlp_user_error,
     initial_window_geometry,
     is_metadata_preview,
-    accumulated_row_scroll,
+    iter_video_infos,
+    legacy_cached_thumbnail_path,
     library_thumbnail_size,
-    thumbnail_size_within,
-    render_monochrome_icon,
-    rounded_contain_image,
-    rounded_cover_image,
-    rounded_fit_image,
-    runtime_window_icon_asset,
+    load_yt_dlp,
     metadata_indices_for_output_type,
     metadata_output_type,
     metadata_run_key,
-    preview_output_summary_display,
-    responsive_table_stretch_indices,
-    resized_table_column_width,
-    stretched_table_column_widths,
-    resolved_video_output_target,
+    output_artifact_matches_plan,
+    package_downloaded_media_from_staging,
+    parse_url_list_text,
+    pixel_scroll_target,
+    pixel_table_visible_row_window,
     platform_font_families,
+    playlist_context_from_extraction,
+    playlist_folder_name,
+    pointer_inside_widget_bounds,
     prepare_batch_item_url,
     prepare_custom_cover_art,
-    playlist_folder_name,
+    preview_output_summary_display,
     process_download_from_preflight,
+    render_monochrome_icon,
+    resized_table_column_width,
+    resolved_video_output_target,
+    responsive_table_stretch_indices,
+    retry_url_for_item,
+    rounded_contain_image,
+    rounded_cover_image,
+    rounded_fit_image,
+    run_cancellable_blocking_step,
     run_ffprobe_json,
+    runtime_executable_candidates,
     runtime_version_command,
-    save_thumbnail_image,
+    runtime_window_icon_asset,
     save_cached_thumbnail_image,
     save_custom_cached_thumbnail_image,
+    save_thumbnail_image,
+    single_video_url_requires_video_id_error,
     staging_output_template,
+    stretched_table_column_widths,
+    summary_label_color,
+    terminate_and_reap_process,
+    thumbnail_size_within,
     transcode_temp_paths,
     transcode_to_vod_streaming_settings,
-    terminate_and_reap_process,
-    runtime_executable_candidates,
-    video_list_row_values,
+    validate_output_artifact,
+    validate_output_directory_access,
     video_file_name,
+    video_list_row_values,
     video_output_dir,
+    write_compact_video_metadata,
     youtube_thumbnail_size,
     youtube_url_playlist_id,
     youtube_url_video_id,
     ytdlp_ffmpeg_location,
-    validate_output_artifact,
-    validate_output_directory_access,
-    write_compact_video_metadata,
 )
+from yt_downloader.history import (
+    history_output_dir,
+    sanitize_history_record,
+    upsert_history,
+)
+from yt_downloader.safe_output import UnsafeOutputPathError
 
 
 def test_platform_diagnostics_paths_follow_native_conventions(tmp_path: Path):
@@ -376,9 +380,8 @@ def test_activity_log_close_failure_still_clears_cached_handle(monkeypatch, tmp_
     monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE", FailingCloser())
     monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE_PATH", tmp_path / "activity.log")
 
-    with pytest.raises(OSError, match="injected close failure"):
-        with app_module._ACTIVITY_LOG_LOCK:
-            app_module._close_activity_log_locked()
+    with pytest.raises(OSError, match="injected close failure"), app_module._ACTIVITY_LOG_LOCK:
+        app_module._close_activity_log_locked()
 
     assert app_module._ACTIVITY_LOG_HANDLE is None
     assert app_module._ACTIVITY_LOG_HANDLE_PATH is None
@@ -2023,8 +2026,10 @@ def test_run_thumbnail_conversion_failure_uses_persisted_artwork_with_safe_recei
     assert result.mode == "RGBA"
     assert result.getpixel((0, 0)) == (255, 0, 0, 255)
     assert receipts == [
-        "in-memory run thumbnail conversion failed: RuntimeError; "
-        "trying persisted artwork",
+        (
+            "in-memory run thumbnail conversion failed: RuntimeError; "
+            "trying persisted artwork"
+        ),
     ]
     assert "canary" not in receipts[0]
     assert "password" not in receipts[0]
@@ -3602,6 +3607,7 @@ def test_cancelled_yt_dlp_operation_cannot_spawn_an_unowned_child():
 def test_tracked_ytdlp_operation_restores_popen_alias_imported_mid_operation():
     import sys
     import types
+
     import yt_dlp.utils as ytdlp_utils
 
     original_class = ytdlp_utils.Popen

@@ -7,9 +7,9 @@ import shutil
 # This service accepts only a fixed or resolved executable and never invokes a shell.
 import subprocess  # nosec B404
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
+from typing import Any
 
 APPLICATION_NAME = "VODForge"
 RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS = 60

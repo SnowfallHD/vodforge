@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -16,21 +16,21 @@ from yt_downloader.cloud_funnel import (
     installation_platform,
     installation_state_path,
     load_or_create_installation_state,
-    mark_first_launch_confirmed,
     mark_cloud_seen_confirmed,
+    mark_first_launch_confirmed,
     record_cloud_click,
-    record_first_launch,
     record_cloud_seen,
+    record_first_launch,
 )
 
 
 class JsonResponse:
     status = 200
 
-    def __enter__(self) -> "JsonResponse":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *_args: Any) -> None:
+    def __exit__(self, *_args: object) -> None:
         return None
 
     def read(self, _limit: int) -> bytes:

@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 
 from yt_downloader.updates import (
+    MacUpdatePlan,
     ReleaseAsset,
     ReleaseInfo,
-    MacUpdatePlan,
     download_verified_update,
     is_newer_release,
     launch_macos_update,
@@ -216,8 +216,10 @@ def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.Monke
         ),
         (
             "checksum",
-            "https://github.com.evil.example/SnowfallHD/vodforge/releases/download/"
-            "v1.2.3/SHA256SUMS.txt",
+            (
+                "https://github.com.evil.example/SnowfallHD/vodforge/releases/download/"
+                "v1.2.3/SHA256SUMS.txt"
+            ),
         ),
         (
             "payload",
@@ -225,33 +227,45 @@ def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.Monke
         ),
         (
             "payload",
-            "https://github.com/SnowfallHD/vodforge/releases/download/v9.9.9/"
-            "VODForge-Windows-Setup-v1.2.3.exe",
+            (
+                "https://github.com/SnowfallHD/vodforge/releases/download/v9.9.9/"
+                "VODForge-Windows-Setup-v1.2.3.exe"
+            ),
         ),
         (
             "payload",
-            "https://token@github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
-            "VODForge-Windows-Setup-v1.2.3.exe",
+            (
+                "https://token@github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+                "VODForge-Windows-Setup-v1.2.3.exe"
+            ),
         ),
         (
             "payload",
-            "https://github.com:443/SnowfallHD/vodforge/releases/download/v1.2.3/"
-            "VODForge-Windows-Setup-v1.2.3.exe",
+            (
+                "https://github.com:443/SnowfallHD/vodforge/releases/download/v1.2.3/"
+                "VODForge-Windows-Setup-v1.2.3.exe"
+            ),
         ),
         (
             "payload",
-            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
-            "VODForge-Windows-Setup-v1.2.3.exe?token=secret",
+            (
+                "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+                "VODForge-Windows-Setup-v1.2.3.exe?token=secret"
+            ),
         ),
         (
             "payload",
-            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
-            "VODForge-Windows-Setup-v1.2.3.exe#unexpected",
+            (
+                "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+                "VODForge-Windows-Setup-v1.2.3.exe#unexpected"
+            ),
         ),
         (
             "payload",
-            "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
-            "VODForge-Windows-Setup-v1.2.3.exe;token=secret",
+            (
+                "https://github.com/SnowfallHD/vodforge/releases/download/v1.2.3/"
+                "VODForge-Windows-Setup-v1.2.3.exe;token=secret"
+            ),
         ),
     ],
 )

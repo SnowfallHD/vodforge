@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import platform
 import plistlib
 import re
 import shutil
+
 # Update verification uses fixed executables or injected argv-only runners, never a shell.
 import subprocess  # nosec B404
 import sys
@@ -15,10 +16,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence
-
+from typing import Any
 
 GITHUB_REPOSITORY = "SnowfallHD/vodforge"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"

@@ -6,17 +6,16 @@ selection owns Library inspection; worker events may enrich only their run ID;
 and each thumbnail surface owns its own asynchronous request generation.
 """
 
-from dataclasses import replace
 import inspect
-from pathlib import Path
 import queue
+from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import yt_downloader.app as app_module
-
 from yt_downloader.app import (
-    DownloadJob,
     DownloaderApp,
+    DownloadJob,
     ExportMode,
     ManualAudioCodec,
     ManualExportSettings,
@@ -89,7 +88,6 @@ class Control:
 
     def config(self, **kwargs):
         self.configured.append(dict(kwargs))
-        return None
 
     configure = config
 
@@ -367,7 +365,7 @@ def test_next_run_output_toggle_cannot_rewrite_a_selected_forge_run():
     assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /completed/run.mp4"
 
     app.focus_run_deck = object()
-    app._focus_run_records = lambda: []
+    app._focus_run_records = list
     app._set_focus_preview_start_action = lambda *_args: None
     app._set_focus_progress_color = lambda *_args: None
     app.focus_active_title_var = Value("Selected title")
@@ -384,14 +382,12 @@ def test_next_run_output_toggle_cannot_rewrite_a_selected_forge_run():
     assert app._focus_selected_run_id is None
     assert app.focus_active_profile_var.get() == "MP3  •  320 kbps  •  Source rate"
     assert app.focus_transfer_var.get() == "Audio-only MP3  /  best YouTube audio source"
-    assert app.focus_summary_text.value == "\n".join(
-        (
-            "Format        MP3",
-            "Audio         Best YouTube source",
-            "Output mode   Maximum — 320 kbps CBR",
-            "Sample rate   Preserve source",
-            "Save to       /next/run",
-        )
+    assert app.focus_summary_text.value == (
+        "Format        MP3\n"
+        "Audio         Best YouTube source\n"
+        "Output mode   Maximum — 320 kbps CBR\n"
+        "Sample rate   Preserve source\n"
+        "Save to       /next/run"
     )
 
 
@@ -462,7 +458,7 @@ def test_library_suppressed_active_run_cannot_reclaim_the_neutral_forge_hero(tmp
     app._launch_next_pending_job = lambda: False
     app._set_focus_run_controls_visible = lambda *_args: None
     app.focus_run_deck = object()
-    app._focus_run_records = lambda: []
+    app._focus_run_records = list
     app._reconcile_focus_after_library_removal = lambda *_args: None
 
     app._finish_run_ui(
@@ -1576,7 +1572,9 @@ def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
             self.calls.append((sequence, callback, add))
             return "body-binding"
 
-    callback = lambda _event: None
+    def callback(_event: object) -> None:
+        return None
+
     body = BodyProbe()
     bind_probe = SimpleNamespace(_body=body)
 

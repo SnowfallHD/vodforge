@@ -4,7 +4,6 @@ import re
 import sys
 from pathlib import Path
 
-
 DEFAULT_VERSION = "0.1.0-dev"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 
