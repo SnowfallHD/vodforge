@@ -11,6 +11,8 @@ import subprocess
 import sys
 import threading
 import time
+import tkinter as tk
+import tkinter.font as tkfont
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -18,14 +20,12 @@ import urllib.request
 import uuid
 import warnings
 import webbrowser
-from datetime import datetime
 from dataclasses import dataclass, replace
+from datetime import datetime
+from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Iterable
-
-import tkinter as tk
-import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, ttk
+from typing import Any, Callable, Iterable
 
 from .cloud_funnel import (
     InstallationIdentityError,
@@ -34,8 +34,8 @@ from .cloud_funnel import (
     installation_state_path,
     load_or_create_installation_state,
     record_cloud_click,
-    record_first_launch,
     record_cloud_seen,
+    record_first_launch,
 )
 from .history import (
     HistoryError,
@@ -51,7 +51,6 @@ from .history import (
     save_history,
     upsert_history,
 )
-from .private_files import open_private_text_file, write_private_bytes
 from .models import (
     AUDIO_CHANNELS,
     AUDIO_SAMPLE_RATE,
@@ -72,6 +71,7 @@ from .output_validation import (
     output_artifact_plan_mismatches as _output_artifact_plan_mismatches,
 )
 from .output_validation import validate_output_artifact as _validate_output_artifact
+from .private_files import open_private_text_file, write_private_bytes
 from .safe_output import (
     commit_file_beneath,
     create_private_staging_directory,
@@ -3531,6 +3531,60 @@ def run_tracked_ytdlp_operation(step: Callable[[], Any], *, control_check: Any |
                     continue
                 if getattr(module, "Popen", None) is tracked_class:
                     setattr(module, "Popen", original_class)
+
+
+def _analyze_source_formats_step(
+    ytdlp_module: Any,
+    preflight_options: dict[str, Any],
+    session_cookies: tuple[Any, ...],
+    video_url: str,
+    label: str,
+    *,
+    control_check: Callable[[], None],
+    emit_log: Callable[[str], None],
+) -> tuple[dict[str, Any] | None, tuple[Any, ...]]:
+    """Analyze one playlist item using only its immutable iteration inputs."""
+    write_diagnostic(f"{label} analysis start")
+    analysis_started = time.monotonic()
+
+    def extract() -> tuple[Any, tuple[Any, ...]]:
+        with ytdlp_module.YoutubeDL(preflight_options) as ydl:
+            seed_ytdlp_session_cookies(ydl, session_cookies)
+            extracted = ydl.extract_info(video_url, download=False)
+            return extracted, snapshot_ytdlp_session_cookies(ydl)
+
+    def report_retry(
+        attempt: int,
+        maximum: int,
+        delay: float,
+        exc: Exception,
+    ) -> None:
+        message = source_analysis_retry_message(
+            f"{label} source analysis",
+            attempt,
+            maximum,
+            delay,
+            exc,
+        )
+        write_diagnostic(message)
+        emit_log(message)
+
+    extracted, updated_session_cookies = run_with_bounded_transient_retries(
+        lambda: run_tracked_ytdlp_operation(
+            extract,
+            control_check=control_check,
+        ),
+        control_check=control_check,
+        on_retry=report_retry,
+    )
+    write_diagnostic(
+        f"{label} analysis completed "
+        f"elapsed_seconds={time.monotonic() - analysis_started:.3f}"
+    )
+    return (
+        extracted if isinstance(extracted, dict) else None,
+        updated_session_cookies,
+    )
 
 
 def run_cancellable_process_capture(
@@ -11980,45 +12034,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         write_diagnostic(f"{label} preflight Deno/EJS disabled: no deno runtime found")
                     log_options(f"{label} preflight", preflight_opts)
 
-                    def analyze_source_formats() -> tuple[dict[str, Any] | None, tuple[Any, ...]]:
-                        write_diagnostic(f"{label} analysis start")
-                        analysis_started = time.monotonic()
-                        def extract() -> tuple[Any, tuple[Any, ...]]:
-                            with ytdlp_module.YoutubeDL(preflight_opts) as ydl:
-                                seed_ytdlp_session_cookies(ydl, job_session_cookies)
-                                extracted = ydl.extract_info(video_url, download=False)
-                                return extracted, snapshot_ytdlp_session_cookies(ydl)
-
-                        def report_retry(
-                            attempt: int,
-                            maximum: int,
-                            delay: float,
-                            exc: Exception,
-                            stage_label: str = label,
-                        ) -> None:
-                            message = source_analysis_retry_message(
-                                f"{stage_label} source analysis",
-                                attempt,
-                                maximum,
-                                delay,
-                                exc,
-                            )
-                            write_diagnostic(message)
-                            self._emit_job_log(job, message)
-
-                        extracted, session_cookies = run_with_bounded_transient_retries(
-                            lambda: run_tracked_ytdlp_operation(
-                                extract,
-                                control_check=raise_for_control_requests,
-                            ),
-                            control_check=raise_for_control_requests,
-                            on_retry=report_retry,
-                        )
-                        write_diagnostic(f"{label} analysis completed elapsed_seconds={time.monotonic() - analysis_started:.3f}")
-                        return (extracted if isinstance(extracted, dict) else None, session_cookies)
+                    analysis_step = partial(
+                        _analyze_source_formats_step,
+                        ytdlp_module,
+                        dict(preflight_opts),
+                        tuple(job_session_cookies),
+                        video_url,
+                        label,
+                        control_check=raise_for_control_requests,
+                        emit_log=partial(self._emit_job_log, job),
+                    )
 
                     preflight_result = run_cancellable_blocking_step(
-                        lambda: provider_network.run_primary(analyze_source_formats),
+                        partial(provider_network.run_primary, analysis_step),
                         video_blocking_step_cancelled,
                         timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
                         poll_seconds=ANALYSIS_POLL_SECONDS,

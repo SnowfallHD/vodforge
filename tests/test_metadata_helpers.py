@@ -4530,6 +4530,112 @@ def test_ytdlp_format_probes_use_the_per_run_staging_directory(monkeypatch, tmp_
         assert Path(ydl.get_output_path("temp")) == staging_dir
 
 
+def test_delayed_playlist_analysis_keeps_the_skipped_items_inputs(
+    monkeypatch,
+    tmp_path: Path,
+):
+    first_url = "https://www.youtube.com/watch?v=one"
+    second_url = "https://www.youtube.com/watch?v=two"
+    captured_steps = []
+    captured_results = []
+    analysis_receipts: list[dict[str, object]] = []
+    diagnostics: list[str] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+            self.cookiejar = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, url, *, download):
+            assert download is False
+            if self.opts.get("extract_flat") == "in_playlist":
+                return {
+                    "id": "playlist",
+                    "title": "Playlist",
+                    "entries": [
+                        {"id": "one", "webpage_url": first_url},
+                        {"id": "two", "webpage_url": second_url},
+                    ],
+                }
+            analysis_receipts.append(
+                {
+                    "url": url,
+                    "ffmpeg_location": self.opts.get("ffmpeg_location"),
+                }
+            )
+            video_id = "two" if url == second_url else "one"
+            return {"id": video_id, "title": f"Video {video_id}"}
+
+    class FakeYtDlp:
+        YoutubeDL = FakeYoutubeDL
+
+    def delayed_blocking_step(step, _cancel_requested, *, label, **_kwargs):
+        if label == "Playlist detection":
+            return step()
+        if label == "Video 1 of 2 source analysis":
+            captured_steps.append(step)
+            raise RuntimeError("Video skipped by user")
+        if label == "Video 2 of 2 source analysis":
+            captured_results.append(captured_steps[0]())
+            raise RuntimeError("Video skipped by user")
+        raise AssertionError(f"unexpected blocking step: {label}")
+
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
+    monkeypatch.setattr(
+        app_module,
+        "run_cancellable_blocking_step",
+        delayed_blocking_step,
+    )
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    ffmpeg_paths = iter(("/tools/first/ffmpeg", "/tools/second/ffmpeg"))
+    app._find_ffmpeg = lambda: next(ffmpeg_paths)
+    app._find_ffprobe = lambda: "ffprobe"
+    app._find_deno = lambda: None
+    job = DownloadJob(
+        url="https://www.youtube.com/playlist?list=playlist",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    outcome = app._download_worker_single(job)
+
+    assert outcome == DownloadOutcome(skipped_count=2)
+    assert captured_results[0][0]["id"] == "one"
+    assert analysis_receipts == [
+        {
+            "url": first_url,
+            "ffmpeg_location": "/tools/first",
+        }
+    ]
+    assert [line for line in diagnostics if line.endswith(" analysis start")] == [
+        "Video 1 of 2 analysis start"
+    ]
+
+
 def test_playlist_loads_cookie_source_once_and_reuses_memory_session(monkeypatch, tmp_path: Path):
     cookie_file = tmp_path / "cookies.txt"
     cookie_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
