@@ -147,9 +147,21 @@ def correctness_mp4(
         case_id="correctness-local-mp4",
         url=server.url("/page/unicode"),
         output_type="MP4",
+        embed_thumbnail=True,
     )
     media, streams = _media_streams(result)
-    video = [stream for stream in streams if stream.get("codec_type") == "video"]
+    attached_art = [
+        stream
+        for stream in streams
+        if stream.get("codec_type") == "video"
+        and int((stream.get("disposition") or {}).get("attached_pic") or 0)
+    ]
+    video = [
+        stream
+        for stream in streams
+        if stream.get("codec_type") == "video"
+        and not int((stream.get("disposition") or {}).get("attached_pic") or 0)
+    ]
     audio = [stream for stream in streams if stream.get("codec_type") == "audio"]
     metadata_files = [
         entry
@@ -168,6 +180,17 @@ def correctness_mp4(
     )
     metadata_text = json.dumps(metadata_payload, ensure_ascii=False)
     expected_tags = ["vodforge-quality", "synthetic-fixture", "unicode-Δ"]
+    media_format = (
+        (media[0].get("ffprobe") or {}).get("format") if media else {}
+    )
+    embedded_tags = (
+        media_format.get("tags") if isinstance(media_format, dict) else {}
+    )
+    embedded_keywords = str((embedded_tags or {}).get("keywords") or "").casefold()
+    embedded_metadata_valid = bool(
+        str((embedded_tags or {}).get("title") or "").strip()
+        and all(tag.casefold() in embedded_keywords for tag in expected_tags)
+    )
     metadata_fields_valid = (
         "Δοκιμή_日本語" in str(metadata_payload.get("title") or "")
         and "Synthetic metadata-rich" in str(metadata_payload.get("description") or "")
@@ -191,6 +214,8 @@ def correctness_mp4(
         and readable
         and any(str(stream.get("codec_name")).lower() == "h264" for stream in video)
         and any(str(stream.get("codec_name")).lower() == "aac" for stream in audio)
+        and len(attached_art) == 1
+        and embedded_metadata_valid
         and bool(metadata_files)
         and not result.get("staging_entries_after")
         and _worker_cleanup_is_clean(result)
@@ -204,6 +229,8 @@ def correctness_mp4(
         f"Committed media outputs: {len(media)}; independently ffprobe-readable: {readable}",
         f"Video codecs: {[stream.get('codec_name') for stream in video]}",
         f"Audio codecs: {[stream.get('codec_name') for stream in audio]}",
+        f"Requested embedded thumbnail; attached-picture streams committed: {len(attached_art)}",
+        f"Embedded title and requested keyword tags retained: {embedded_metadata_valid}",
         f"Compact metadata sidecars: {len(metadata_files)}; separate thumbnails: {len(thumbnail_files)}",
         f"Metadata title/description/tags/thumbnail fields valid: {metadata_fields_valid}",
         f"Output hierarchy contained and descriptive: {output_paths_contained and descriptive_hierarchy}",
@@ -220,6 +247,8 @@ def correctness_mp4(
             "metadata_sidecar_count": len(metadata_files),
             "thumbnail_sidecar_count": len(thumbnail_files),
             "metadata_fields_valid": metadata_fields_valid,
+            "attached_picture_streams": len(attached_art),
+            "embedded_metadata_valid": embedded_metadata_valid,
             "stale_staging_metadata_references": int(stale_staging_reference),
             "output_paths_contained": output_paths_contained,
             "descriptive_hierarchy": descriptive_hierarchy,
@@ -273,6 +302,84 @@ def _audio_bitrate_kbps(streams: list[dict[str, Any]]) -> float | None:
     return max(values) if values else None
 
 
+def correctness_mp4_embedding_disabled(
+    runner: HeadlessPipelineRunner, server: FixtureHTTPServer
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    result = runner.run_job(
+        case_id="correctness-local-mp4-embedding-disabled",
+        url=server.url("/page/unicode"),
+        output_type="MP4",
+        embed_metadata=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        write_info_json=False,
+    )
+    media, streams = _media_streams(result)
+    attached_art = [
+        stream
+        for stream in streams
+        if stream.get("codec_type") == "video"
+        and int((stream.get("disposition") or {}).get("attached_pic") or 0)
+    ]
+    format_data = (media[0].get("ffprobe") or {}).get("format") if media else {}
+    raw_tags = format_data.get("tags") if isinstance(format_data, dict) else {}
+    embedded_tag_keys = {
+        str(key).casefold() for key in raw_tags if isinstance(raw_tags, dict)
+    }
+    user_metadata_keys = {
+        "title",
+        "artist",
+        "album",
+        "album_artist",
+        "comment",
+        "description",
+        "synopsis",
+        "keywords",
+    }
+    embedded_user_metadata = sorted(embedded_tag_keys & user_metadata_keys)
+    passed = (
+        result.get("error") is None
+        and len(media) == 1
+        and all(entry.get("readable") for entry in media)
+        and not attached_art
+        and not embedded_user_metadata
+        and not result.get("staging_entries_after")
+        and _worker_cleanup_is_clean(result)
+    )
+    scenario = _scenario_from_pipeline(
+        scenario_id="correctness.local_mp4_embedding_disabled",
+        category="correctness",
+        result=result,
+        passed=passed,
+        evidence=[
+            "Drove the real worker with MP4 metadata and thumbnail embedding disabled.",
+            f"Committed attached-picture streams: {len(attached_art)}",
+            f"Committed user metadata keys: {embedded_user_metadata}",
+            f"Readable committed media outputs: {sum(bool(entry.get('readable')) for entry in media)}",
+            f"Staging entries after completion: {result.get('staging_entries_after')}",
+        ],
+        metrics={
+            "attached_picture_streams": len(attached_art),
+            "embedded_user_metadata_keys": embedded_user_metadata,
+        },
+    )
+    findings = (
+        []
+        if passed
+        else [
+            _finding_for_failed_scenario(
+                scenario,
+                "Metadata-disabled MP4 did not honor its output contract",
+                "correctness defect",
+                "medium",
+                "MP4 FFmpeg transcode and fresh-output validation",
+                "Make the production transcode explicitly drop metadata/artwork when disabled and keep the fresh validator fail-closed.",
+            )
+        ]
+    )
+    return scenario, findings
+
+
 def correctness_mp3(
     runner: HeadlessPipelineRunner, server: FixtureHTTPServer
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -285,6 +392,20 @@ def correctness_mp3(
     )
     media, streams = _media_streams(result)
     bitrate = _audio_bitrate_kbps(streams)
+    attached_art = [
+        stream
+        for stream in streams
+        if stream.get("codec_type") == "video"
+        and int((stream.get("disposition") or {}).get("attached_pic") or 0)
+    ]
+    format_data = (media[0].get("ffprobe") or {}).get("format") if media else {}
+    raw_tags = format_data.get("tags") if isinstance(format_data, dict) else {}
+    expected_tags = ["vodforge-quality", "synthetic-fixture", "unicode-Δ"]
+    keywords = str((raw_tags or {}).get("keywords") or "").casefold()
+    embedded_metadata_valid = bool(
+        str((raw_tags or {}).get("title") or "").strip()
+        and all(tag.casefold() in keywords for tag in expected_tags)
+    )
     bitrate_matches = (
         bitrate is not None and requested * 0.85 <= bitrate <= requested * 1.15
     )
@@ -299,6 +420,8 @@ def correctness_mp3(
         and all(entry.get("readable") for entry in media)
         and any(str(stream.get("codec_name")).lower() == "mp3" for stream in streams)
         and bitrate_matches
+        and len(attached_art) == 1
+        and embedded_metadata_valid
         and bool(metadata_files)
         and not result.get("staging_entries_after")
         and _worker_cleanup_is_clean(result)
@@ -306,6 +429,8 @@ def correctness_mp3(
     evidence = [
         f"Requested MP3 bitrate: {requested} kbps; independent ffprobe stream bitrate: {bitrate} kbps",
         f"Bitrate within ±15%: {bitrate_matches}",
+        f"Requested embedded cover; attached-picture streams committed: {len(attached_art)}",
+        f"Embedded title and requested keyword tags retained: {embedded_metadata_valid}",
         f"Committed media outputs: {len(media)}; metadata sidecars: {len(metadata_files)}",
         f"Staging entries after completion: {result.get('staging_entries_after')}",
     ]
@@ -319,6 +444,8 @@ def correctness_mp3(
             "requested_mp3_bitrate_kbps": requested,
             "observed_mp3_bitrate_kbps": bitrate,
             "bitrate_matches": bitrate_matches,
+            "attached_picture_streams": len(attached_art),
+            "embedded_metadata_valid": embedded_metadata_valid,
         },
     )
     findings = (
@@ -1290,6 +1417,10 @@ def run_scenarios(
         (
             "correctness.local_mp3_bitrate_real_pipeline",
             lambda: correctness_mp3(runner, server),
+        ),
+        (
+            "correctness.local_mp4_embedding_disabled",
+            lambda: correctness_mp4_embedding_disabled(runner, server),
         ),
         (
             "correctness.source_quality_selection_360p",

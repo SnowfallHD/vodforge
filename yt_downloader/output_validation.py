@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .models import AudioExportPlan, ExportPlan, ManualAudioCodec, OutputType
 
@@ -10,14 +11,19 @@ def output_artifact_plan_mismatches(
     probe_data: dict[str, Any],
     plan: ExportPlan | AudioExportPlan,
     *,
+    embed_metadata: bool | None = None,
+    embed_cover_art: bool | None = None,
+    expected_tags: list[str] | None = None,
     sidecar_summary: dict[str, Any] | None = None,
     require_sidecar: bool = False,
 ) -> list[str]:
-    """Return concrete reasons an artifact does not satisfy its resolved export plan.
+    """Return concrete reasons an artifact does not satisfy its export contract.
 
     The resolved plan contains source-selected dimensions and encoder targets,
     so comparing against it enforces the actual encoder contract without
     assuming every source can reach the quality ceiling requested in the UI.
+    Audio plans also own their metadata and cover-art choices. MP4 plans do not,
+    so callers provide those optional expectations from the corresponding job.
     """
     streams = [
         stream for stream in probe_data.get("streams") or [] if isinstance(stream, dict)
@@ -37,6 +43,61 @@ def output_artifact_plan_mismatches(
         (stream for stream in streams if stream.get("codec_type") == "audio"), {}
     )
     mismatches: list[str] = []
+
+    if isinstance(plan, AudioExportPlan):
+        embed_metadata = plan.embed_metadata
+        embed_cover_art = plan.embed_cover_art
+
+    attached_art = any(
+        stream.get("codec_type") == "video"
+        and int((stream.get("disposition") or {}).get("attached_pic") or 0)
+        for stream in streams
+    )
+    if embed_cover_art is not None and attached_art != embed_cover_art:
+        if embed_cover_art:
+            mismatches.append("the requested embedded artwork is missing")
+        else:
+            mismatches.append("the output contains unexpected embedded artwork")
+
+    raw_tags = fmt.get("tags")
+    tags = raw_tags if isinstance(raw_tags, dict) else {}
+    normalized_tags = {str(key).casefold(): str(value) for key, value in tags.items()}
+    user_metadata_keys = {
+        "title",
+        "artist",
+        "album",
+        "album_artist",
+        "comment",
+        "description",
+        "synopsis",
+        "keywords",
+    }
+    has_user_metadata = any(
+        key in user_metadata_keys and value.strip()
+        for key, value in normalized_tags.items()
+    )
+    if embed_metadata is True and not has_user_metadata:
+        mismatches.append("the requested embedded metadata is missing")
+    elif embed_metadata is False and has_user_metadata:
+        mismatches.append("the output contains unexpected embedded metadata")
+
+    requested_tags = [
+        tag.strip().casefold()
+        for tag in (expected_tags or [])
+        if embed_metadata is True and tag.strip()
+    ]
+    if requested_tags:
+        stored_keywords = {
+            tag.strip().casefold()
+            for tag in normalized_tags.get("keywords", "").split(",")
+            if tag.strip()
+        }
+        missing_tags = [tag for tag in requested_tags if tag not in stored_keywords]
+        if missing_tags:
+            mismatches.append(
+                "the embedded keywords are missing requested tags: "
+                + ", ".join(missing_tags)
+            )
 
     def close_numeric(
         actual: Any,
@@ -219,6 +280,9 @@ def validate_output_artifact(
     require_audio: bool = True,
     expected_audio_codec: str = "aac",
     plan: ExportPlan | AudioExportPlan | None = None,
+    embed_metadata: bool | None = None,
+    embed_cover_art: bool | None = None,
+    expected_tags: list[str] | None = None,
     ffprobe_data: dict[str, Any] | None = None,
     control_check: Any | None = None,
 ) -> dict[str, Any]:
@@ -283,7 +347,13 @@ def validate_output_artifact(
                 "the MP3 output does not contain a valid MP3 audio stream"
             )
         if plan is not None:
-            mismatches = output_artifact_plan_mismatches(data, plan)
+            mismatches = output_artifact_plan_mismatches(
+                data,
+                plan,
+                embed_metadata=embed_metadata,
+                embed_cover_art=embed_cover_art,
+                expected_tags=expected_tags,
+            )
             if mismatches:
                 raise RuntimeError(
                     "the MP3 output does not match its export plan: "
@@ -321,7 +391,13 @@ def validate_output_artifact(
             f"the MP4 output does not contain the required {expected_codec.upper()} audio stream"
         )
     if plan is not None:
-        mismatches = output_artifact_plan_mismatches(data, plan)
+        mismatches = output_artifact_plan_mismatches(
+            data,
+            plan,
+            embed_metadata=embed_metadata,
+            embed_cover_art=embed_cover_art,
+            expected_tags=expected_tags,
+        )
         if mismatches:
             raise RuntimeError(
                 "the MP4 output does not match its export plan: "

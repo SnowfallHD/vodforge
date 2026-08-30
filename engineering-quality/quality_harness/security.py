@@ -270,6 +270,8 @@ def symlink_and_temp_probe(
 def fresh_output_contract_probe(
     case_dir: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    from dataclasses import replace
+
     from yt_downloader.app import (
         AudioExportPlan,
         ExportMode,
@@ -390,6 +392,40 @@ def fresh_output_contract_probe(
             },
         ],
     }
+    expected_tags = ["alpha", "unicode-Δ"]
+    attached_art = {
+        "codec_type": "video",
+        "codec_name": "mjpeg",
+        "width": 640,
+        "height": 360,
+        "disposition": {"attached_pic": 1},
+    }
+    embedded_format_tags = {
+        "title": "Synthetic fixture",
+        "keywords": ",".join(expected_tags),
+    }
+    embedded_mp3_plan = replace(
+        mp3_plan,
+        embed_metadata=True,
+        embed_cover_art=True,
+        cover_art_source="Synthetic fixture artwork",
+    )
+    valid_embedded_mp3_probe = {
+        **valid_mp3_probe,
+        "format": {
+            **valid_mp3_probe["format"],
+            "tags": embedded_format_tags,
+        },
+        "streams": [valid_mp3_probe["streams"][0], attached_art],
+    }
+    valid_embedded_mp4_probe = {
+        **valid_mp4_probe,
+        "format": {
+            **valid_mp4_probe["format"],
+            "tags": embedded_format_tags,
+        },
+        "streams": [*valid_mp4_probe["streams"], attached_art],
+    }
     mp3_stream = valid_mp3_probe["streams"][0]
     mp4_video = valid_mp4_probe["streams"][0]
     mp4_audio = valid_mp4_probe["streams"][1]
@@ -468,9 +504,143 @@ def fresh_output_contract_probe(
             accepted.append(f"{label} mismatch was accepted despite the resolved export plan")
         except (OSError, RuntimeError, ValueError):
             pass
-    for label, path, output_type, plan, probe in (
-        ("matching MP3 plan", weak_mp3, OutputType.MP3, mp3_plan, valid_mp3_probe),
-        ("matching source-limited MP4 plan", weak_mp4, OutputType.MP4, mp4_plan, valid_mp4_probe),
+    embedding_invalid_probes = [
+        (
+            "MP3 requested metadata",
+            weak_mp3,
+            OutputType.MP3,
+            embedded_mp3_plan,
+            {
+                **valid_embedded_mp3_probe,
+                "format": {**valid_embedded_mp3_probe["format"], "tags": {}},
+            },
+            {"expected_tags": expected_tags},
+        ),
+        (
+            "MP3 requested artwork",
+            weak_mp3,
+            OutputType.MP3,
+            embedded_mp3_plan,
+            {**valid_embedded_mp3_probe, "streams": [valid_mp3_probe["streams"][0]]},
+            {"expected_tags": expected_tags},
+        ),
+        (
+            "MP3 requested keyword tag",
+            weak_mp3,
+            OutputType.MP3,
+            embedded_mp3_plan,
+            {
+                **valid_embedded_mp3_probe,
+                "format": {
+                    **valid_embedded_mp3_probe["format"],
+                    "tags": {"title": "Synthetic fixture", "keywords": "alpha"},
+                },
+            },
+            {"expected_tags": expected_tags},
+        ),
+        (
+            "MP4 requested metadata",
+            weak_mp4,
+            OutputType.MP4,
+            mp4_plan,
+            {
+                **valid_embedded_mp4_probe,
+                "format": {**valid_embedded_mp4_probe["format"], "tags": {}},
+            },
+            {
+                "embed_metadata": True,
+                "embed_cover_art": True,
+                "expected_tags": expected_tags,
+            },
+        ),
+        (
+            "MP4 requested artwork",
+            weak_mp4,
+            OutputType.MP4,
+            mp4_plan,
+            valid_mp4_probe,
+            {
+                "embed_metadata": False,
+                "embed_cover_art": True,
+                "expected_tags": [],
+            },
+        ),
+        (
+            "MP4 requested keyword tag",
+            weak_mp4,
+            OutputType.MP4,
+            mp4_plan,
+            {
+                **valid_embedded_mp4_probe,
+                "format": {
+                    **valid_embedded_mp4_probe["format"],
+                    "tags": {"title": "Synthetic fixture", "keywords": "alpha"},
+                },
+            },
+            {
+                "embed_metadata": True,
+                "embed_cover_art": True,
+                "expected_tags": expected_tags,
+            },
+        ),
+    ]
+    for label, path, output_type, plan, probe, expectations in embedding_invalid_probes:
+        try:
+            validate_output_artifact(
+                path,
+                output_type,
+                "unused",
+                expected_duration_seconds=6,
+                plan=plan,
+                ffprobe_data=probe,
+                **expectations,
+            )
+            accepted.append(
+                f"{label} mismatch was accepted despite the requested output contract"
+            )
+        except (OSError, RuntimeError, ValueError):
+            pass
+    for label, path, output_type, plan, probe, expectations in (
+        (
+            "matching MP3 plan",
+            weak_mp3,
+            OutputType.MP3,
+            mp3_plan,
+            valid_mp3_probe,
+            {"expected_tags": ["ignored-when-metadata-disabled"]},
+        ),
+        (
+            "matching source-limited MP4 plan",
+            weak_mp4,
+            OutputType.MP4,
+            mp4_plan,
+            valid_mp4_probe,
+            {
+                "embed_metadata": False,
+                "embed_cover_art": False,
+                "expected_tags": ["ignored-when-metadata-disabled"],
+            },
+        ),
+        (
+            "matching embedded MP3 plan",
+            weak_mp3,
+            OutputType.MP3,
+            embedded_mp3_plan,
+            valid_embedded_mp3_probe,
+            {"expected_tags": expected_tags},
+        ),
+        (
+            "matching embedded MP4 plan",
+            weak_mp4,
+            OutputType.MP4,
+            mp4_plan,
+            valid_embedded_mp4_probe,
+            {
+                "embed_metadata": True,
+                "embed_cover_art": True,
+                "expected_tags": expected_tags,
+            },
+        ),
     ):
         try:
             validate_output_artifact(
@@ -480,6 +650,7 @@ def fresh_output_contract_probe(
                 expected_duration_seconds=6,
                 plan=plan,
                 ffprobe_data=probe,
+                **expectations,
             )
         except (OSError, RuntimeError, ValueError) as exc:
             valid_rejections.append(f"{label} was rejected: {type(exc).__name__}: {exc}")
@@ -490,7 +661,7 @@ def fresh_output_contract_probe(
         "medium",
         "yt_downloader/app.py validate_output_artifact and _download_worker_single",
         [
-            "Provide nonempty ffprobe data with the correct container/codec/duration but materially wrong bitrate, resolution, pixel format, profile, sample rate, or channel count.",
+            "Provide nonempty ffprobe data with the correct container/codec/duration but materially wrong bitrate, resolution, pixel format, profile, sample rate, channel count, metadata, artwork, or keyword tags.",
             "Call the same validate_output_artifact function used before a fresh atomic commit.",
             "Observe whether any single plan invariant is accepted despite the resolved plan being passed.",
         ],
@@ -512,8 +683,8 @@ def fresh_output_contract_probe(
         "evidence": accepted
         + valid_rejections
         or [
-            "Both wrong-contract artifacts were rejected.",
-            "Matching MP3 and source-limited MP4 artifacts were accepted.",
+            "Every injected plan/metadata/artwork/tag mismatch was rejected.",
+            "Matching MP3, embedded MP3, source-limited MP4, and embedded MP4 artifacts were accepted.",
         ],
         "artifacts": [str(weak_mp3), str(weak_mp4)],
         "error": None,

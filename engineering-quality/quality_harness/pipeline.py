@@ -99,6 +99,7 @@ def build_job(
     write_info_json: bool = True,
     embed_metadata: bool = True,
     embed_cover_art: bool = True,
+    embed_thumbnail: bool = False,
     single_video_only: bool = True,
     tags: list[str] | None = None,
 ) -> Any:
@@ -126,7 +127,7 @@ def build_job(
         ),
         single_video_only=single_video_only,
         use_nvenc=False,
-        embed_thumbnail=False,
+        embed_thumbnail=embed_thumbnail if selected_type == OutputType.MP4 else False,
         write_thumbnail=write_thumbnail,
         embed_metadata=embed_metadata,
         write_info_json=write_info_json,
@@ -232,6 +233,7 @@ class HeadlessPipelineRunner:
         write_info_json: bool = True,
         embed_metadata: bool = True,
         embed_cover_art: bool = True,
+        embed_thumbnail: bool = False,
         output_dir: Path | None = None,
         cancel_when: Callable[[TracingQueue, Any], bool] | None = None,
         cancel_timeout_seconds: float = 15,
@@ -278,6 +280,7 @@ class HeadlessPipelineRunner:
             write_info_json=write_info_json,
             embed_metadata=embed_metadata,
             embed_cover_art=embed_cover_art,
+            embed_thumbnail=embed_thumbnail,
         )
         diagnostic_path = Path(app_module.DIAGNOSTICS_LOG_PATH)
         marker = f"QUALITY CASE {case_id} {job.run_id}"
@@ -380,6 +383,8 @@ class HeadlessPipelineRunner:
                 "url": url,
                 "output_type": output_type.upper(),
                 "quality_label": quality_label,
+                "embed_thumbnail": job.embed_thumbnail,
+                "embed_metadata": job.embed_metadata,
                 "requested_mp3_bitrate_kbps": mp3_bitrate_kbps
                 if output_type.upper() == "MP3"
                 else None,

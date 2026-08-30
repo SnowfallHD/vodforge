@@ -2546,6 +2546,51 @@ def test_vod_ffmpeg_command_uses_manual_override_audio_and_preset(tmp_path: Path
     assert "-c:a aac -b:a 256k -ar 44100 -ac 1" in joined
 
 
+def test_vod_ffmpeg_command_preserves_only_attached_artwork_when_requested(
+    tmp_path: Path,
+):
+    command = build_vod_ffmpeg_command(
+        "ffmpeg",
+        tmp_path / "source.mp4",
+        tmp_path / "output.mp4",
+        preserve_attached_picture=True,
+    )
+    pairs = [command[index : index + 2] for index in range(len(command) - 1)]
+
+    assert ["-map", "0:V:0"] in pairs
+    assert ["-map", "0:a:0?"] in pairs
+    assert ["-map", "0:v:disp:attached_pic:0?"] in pairs
+    assert ["-c:v:0", "libx264"] in pairs
+    assert ["-profile:v:0", "high"] in pairs
+    assert ["-c:v:1", "copy"] in pairs
+    assert ["-disposition:v:0", "default"] in pairs
+    assert ["-disposition:v:1", "attached_pic"] in pairs
+    assert ["-metadata:s:v:1", "title=Album cover"] in pairs
+    assert ["-metadata:s:v:1", "comment=Cover (front)"] in pairs
+    assert ["-map", "0:v:1?"] not in pairs
+
+
+@pytest.mark.parametrize(
+    ("preserve_metadata", "expected_map"),
+    [(True, "0"), (False, "-1")],
+)
+def test_vod_ffmpeg_command_explicitly_owns_metadata_mapping(
+    tmp_path: Path,
+    preserve_metadata: bool,
+    expected_map: str,
+):
+    command = build_vod_ffmpeg_command(
+        "ffmpeg",
+        tmp_path / "source.mp4",
+        tmp_path / "output.mp4",
+        preserve_metadata=preserve_metadata,
+    )
+
+    assert ["-map_metadata", expected_map] in [
+        command[index : index + 2] for index in range(len(command) - 1)
+    ]
+
+
 def test_manual_override_can_encode_mp3_audio_inside_the_mp4_container(tmp_path: Path):
     command = build_vod_ffmpeg_command(
         "ffmpeg",
@@ -4240,9 +4285,19 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
         YoutubeDL = FakeYoutubeDL
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
-    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", lambda path, *_args, **_kwargs: path)
+    transcode_options: list[dict[str, object]] = []
+
+    def fake_transcode(path, *_args, **kwargs):
+        transcode_options.append(kwargs)
+        return path
+
+    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", fake_transcode)
     probe = {
-        "format": {"format_name": "mov,mp4,m4a", "duration": "30"},
+        "format": {
+            "format_name": "mov,mp4,m4a",
+            "duration": "30",
+            "tags": {"title": "Fast Path", "keywords": "alpha"},
+        },
         "streams": [
             {
                 "codec_type": "video",
@@ -4260,12 +4315,17 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
                 "sample_rate": "48000",
                 "channels": 2,
             },
+            {
+                "codec_type": "video",
+                "codec_name": "mjpeg",
+                "disposition": {"attached_pic": 1},
+            },
         ],
     }
-    validated_plans = []
+    validation_options: list[dict[str, object]] = []
 
     def validate_fresh_output(*_args, **kwargs):
-        validated_plans.append(kwargs.get("plan"))
+        validation_options.append(kwargs)
         return probe
 
     monkeypatch.setattr(app_module, "validate_output_artifact", validate_fresh_output)
@@ -4289,21 +4349,27 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
         mp3_settings=Mp3ExportSettings(),
         single_video_only=True,
         use_nvenc=False,
-        embed_thumbnail=False,
+        embed_thumbnail=True,
         write_thumbnail=False,
-        embed_metadata=False,
+        embed_metadata=True,
         write_info_json=True,
-        tags=[],
+        tags=["alpha"],
     )
 
     outcome = app._download_worker_single(job)
 
     expected = tmp_path / "Creator" / "videos - no playlist" / "Fast Path [abc123]" / "Fast Path.mp4"
     assert calls == {"extract": 1, "process": 1}
-    assert len(validated_plans) == 1
-    assert isinstance(validated_plans[0], ExportPlan)
-    assert validated_plans[0].output_width == 1920
-    assert validated_plans[0].output_height == 1080
+    assert len(validation_options) == 1
+    assert isinstance(validation_options[0]["plan"], ExportPlan)
+    assert validation_options[0]["plan"].output_width == 1920
+    assert validation_options[0]["plan"].output_height == 1080
+    assert validation_options[0]["embed_metadata"] is True
+    assert validation_options[0]["embed_cover_art"] is True
+    assert validation_options[0]["expected_tags"] == ["alpha"]
+    assert len(transcode_options) == 1
+    assert transcode_options[0]["preserve_attached_picture"] is True
+    assert transcode_options[0]["preserve_metadata"] is True
     assert outcome == DownloadOutcome(success_count=1)
     assert expected.read_bytes() == b"downloaded media"
     emitted_events = list(app.events.queue)

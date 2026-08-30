@@ -2977,33 +2977,12 @@ def output_artifact_matches_plan(
         # ffprobe can prove that artwork exists, but not that it is the exact
         # user-selected image. Rebuild instead of silently reusing stale art.
         return False
-    streams = [stream for stream in probe_data.get("streams") or [] if isinstance(stream, dict)]
-    attached_art = any(
-        stream.get("codec_type") == "video"
-        and int((stream.get("disposition") or {}).get("attached_pic") or 0)
-        for stream in streams
-    )
-    if embed_cover_art is not None and attached_art != embed_cover_art:
-        return False
-
-    fmt = probe_data.get("format") if isinstance(probe_data.get("format"), dict) else {}
-    tags = fmt.get("tags") if isinstance(fmt.get("tags"), dict) else {}
-    normalized_tag_keys = {str(key).lower() for key in tags}
-    user_metadata_keys = {"title", "artist", "album", "album_artist", "comment", "description", "synopsis", "keywords"}
-    has_user_metadata = bool(normalized_tag_keys & user_metadata_keys)
-    if embed_metadata is True and not has_user_metadata:
-        return False
-    if embed_metadata is False and has_user_metadata:
-        return False
-    requested_tags = [tag.strip().casefold() for tag in (expected_tags or []) if tag.strip()]
-    if requested_tags:
-        stored_keywords = str(tags.get("keywords") or tags.get("KEYWORDS") or "").casefold()
-        if not all(tag in stored_keywords for tag in requested_tags):
-            return False
-
     return not _output_artifact_plan_mismatches(
         probe_data,
         plan,
+        embed_metadata=embed_metadata,
+        embed_cover_art=embed_cover_art,
+        expected_tags=expected_tags,
         sidecar_summary=sidecar_summary,
         require_sidecar=True,
     )
@@ -3276,42 +3255,79 @@ def build_vod_ffmpeg_command(
     audio_codec: ManualAudioCodec = ManualAudioCodec.AAC,
     x264_preset: str = "medium",
     use_nvenc: bool = False,
+    preserve_attached_picture: bool = False,
+    preserve_metadata: bool | None = None,
 ) -> list[str]:
     """Return the constrained-CBR command for one calculated MP4 export plan."""
     video_bitrate = f"{int(video_bitrate_kbps)}k"
     audio_bitrate = f"{int(audio_bitrate_kbps)}k"
     buffer_size = f"{int(video_bitrate_kbps) * 2}k"
+    codec_option = "-c:v:0" if preserve_attached_picture else "-c:v"
+    preset_option = "-preset:v:0" if preserve_attached_picture else "-preset"
+    rate_control_option = "-rc:v:0" if preserve_attached_picture else "-rc"
+    bitrate_option = "-b:v:0" if preserve_attached_picture else "-b:v"
+    minrate_option = "-minrate:v:0" if preserve_attached_picture else "-minrate"
+    maxrate_option = "-maxrate:v:0" if preserve_attached_picture else "-maxrate"
+    buffer_option = "-bufsize:v:0" if preserve_attached_picture else "-bufsize"
+    pixel_format_option = "-pix_fmt:v:0" if preserve_attached_picture else "-pix_fmt"
+    profile_option = "-profile:v:0" if preserve_attached_picture else "-profile:v"
+    x264_params_option = (
+        "-x264-params:v:0" if preserve_attached_picture else "-x264-params"
+    )
     video_args = [
-        "-c:v", "h264_nvenc",
-        "-preset", "p4",
-        "-rc", "cbr",
-        "-b:v", video_bitrate,
-        "-minrate", video_bitrate,
-        "-maxrate", video_bitrate,
-        "-bufsize", buffer_size,
-        "-pix_fmt", "yuv420p",
-        "-profile:v", "high",
+        codec_option, "h264_nvenc",
+        preset_option, "p4",
+        rate_control_option, "cbr",
+        bitrate_option, video_bitrate,
+        minrate_option, video_bitrate,
+        maxrate_option, video_bitrate,
+        buffer_option, buffer_size,
+        pixel_format_option, "yuv420p",
+        profile_option, "high",
     ] if use_nvenc else [
-        "-c:v", "libx264",
-        "-preset", x264_preset,
-        "-b:v", video_bitrate,
-        "-minrate", video_bitrate,
-        "-maxrate", video_bitrate,
-        "-bufsize", buffer_size,
-        "-pix_fmt", "yuv420p",
-        "-profile:v", "high",
-        "-x264-params", "nal-hrd=cbr:force-cfr=1",
+        codec_option, "libx264",
+        preset_option, x264_preset,
+        bitrate_option, video_bitrate,
+        minrate_option, video_bitrate,
+        maxrate_option, video_bitrate,
+        buffer_option, buffer_size,
+        pixel_format_option, "yuv420p",
+        profile_option, "high",
+        x264_params_option, "nal-hrd=cbr:force-cfr=1",
     ]
+    primary_video_map = "0:V:0" if preserve_attached_picture else "0:v:0"
+    map_args = ["-map", primary_video_map, "-map", "0:a:0?"]
+    artwork_args: list[str] = []
+    if preserve_attached_picture:
+        map_args.extend(("-map", "0:v:disp:attached_pic:0?"))
+        artwork_args.extend(
+            (
+                "-c:v:1",
+                "copy",
+                "-disposition:v:0",
+                "default",
+                "-disposition:v:1",
+                "attached_pic",
+                "-metadata:s:v:1",
+                "title=Album cover",
+                "-metadata:s:v:1",
+                "comment=Cover (front)",
+            )
+        )
+    metadata_args: list[str] = []
+    if preserve_metadata is not None:
+        metadata_args.extend(("-map_metadata", "0" if preserve_metadata else "-1"))
     return [
         ffmpeg, "-y", "-nostdin", "-hide_banner", "-loglevel", "warning", "-i", str(source),
-        "-map", "0:v:0",
-        "-map", "0:a:0?",
+        *map_args,
         *video_args,
         "-movflags", "+faststart",
         "-c:a", audio_codec.ffmpeg_encoder,
         "-b:a", audio_bitrate,
         "-ar", str(audio_sample_rate),
         "-ac", str(audio_channels),
+        *metadata_args,
+        *artwork_args,
         "-nostats",
         "-progress", "pipe:1",
         str(output),
@@ -3405,6 +3421,9 @@ def validate_output_artifact(
     require_audio: bool = True,
     expected_audio_codec: str = "aac",
     plan: ExportPlan | AudioExportPlan | None = None,
+    embed_metadata: bool | None = None,
+    embed_cover_art: bool | None = None,
+    expected_tags: list[str] | None = None,
     ffprobe_data: dict[str, Any] | None = None,
     control_check: Any | None = None,
 ) -> dict[str, Any]:
@@ -3417,6 +3436,9 @@ def validate_output_artifact(
         require_audio=require_audio,
         expected_audio_codec=expected_audio_codec,
         plan=plan,
+        embed_metadata=embed_metadata,
+        embed_cover_art=embed_cover_art,
+        expected_tags=expected_tags,
         ffprobe_data=ffprobe_data,
         control_check=control_check,
     )
@@ -3706,6 +3728,8 @@ def transcode_to_vod_streaming_settings(
     duration_seconds: float | None = None,
     progress_callback: Any | None = None,
     use_nvenc: bool = False,
+    preserve_attached_picture: bool = False,
+    preserve_metadata: bool | None = None,
     control_check: Any | None = None,
 ) -> Path:
     """Re-encode an MP4 to the selected VODForge delivery plan."""
@@ -3747,6 +3771,8 @@ def transcode_to_vod_streaming_settings(
             audio_codec=audio_codec,
             x264_preset=x264_preset,
             use_nvenc=use_nvenc,
+            preserve_attached_picture=preserve_attached_picture,
+            preserve_metadata=preserve_metadata,
         )
         process = subprocess.Popen(
             command,
@@ -11642,7 +11668,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
                 write_diagnostic(
                     f"{label} ffmpeg command: "
-                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}"
+                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata)}"
                 )
                 progress_callback((encode_index - 1) / total_mp4)
                 transcode_started = time.monotonic()
@@ -11657,6 +11683,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         ((encode_index - 1) + fraction) / total_mp4
                     ),
                     use_nvenc=job.use_nvenc,
+                    preserve_attached_picture=job.embed_thumbnail,
+                    preserve_metadata=job.embed_metadata,
                     control_check=control_check,
                 )
                 write_diagnostic(
@@ -11669,6 +11697,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.events.put(("status", f"{label} — validating output"))
         validation_started = time.monotonic()
         validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
+        embed_metadata = (
+            plan.embed_metadata
+            if isinstance(plan, AudioExportPlan)
+            else job.embed_metadata
+        )
+        embed_cover_art = (
+            plan.embed_cover_art
+            if isinstance(plan, AudioExportPlan)
+            else job.embed_thumbnail
+        )
         for staged_info, staged_path in staged_media:
             control_check()
             probe_data = validate_output_artifact(
@@ -11680,6 +11718,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 ),
                 require_audio=True,
                 plan=plan,
+                embed_metadata=embed_metadata,
+                embed_cover_art=embed_cover_art,
+                expected_tags=job.tags if embed_metadata else None,
                 control_check=control_check,
             )
             validated_staged.append((staged_info, staged_path, probe_data))
