@@ -1129,6 +1129,31 @@ def test_runtime_smoke_timeout_allows_bounded_rosetta_cold_translation():
     assert RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS == 60
 
 
+def test_optional_imageio_ffmpeg_failure_emits_a_secret_free_receipt(monkeypatch):
+    secret = "https://user:password@example.invalid/runtime?token=canary#fragment"
+    receipts: list[str] = []
+
+    class BrokenImageioFfmpeg:
+        @staticmethod
+        def get_ffmpeg_exe():
+            raise RuntimeError(f"private path /tmp/canary; source={secret}")
+
+    monkeypatch.setattr(app_module, "find_runtime_executable", lambda _name: None)
+    monkeypatch.setitem(
+        app_module.sys.modules,
+        "imageio_ffmpeg",
+        BrokenImageioFfmpeg(),
+    )
+    monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
+
+    assert DownloaderApp._find_ffmpeg() is None
+    assert receipts == [
+        "optional imageio FFmpeg fallback unavailable: RuntimeError",
+    ]
+    assert "canary" not in receipts[0]
+    assert "password" not in receipts[0]
+
+
 def test_build_tags_display_text_uses_comma_space_for_copying():
     info = {"tags": ["zebra", "alpha", "alpha", "  spaced  ", ""]}
 
@@ -1939,6 +1964,40 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
     assert sorted(p.name for p in tmp_path.iterdir()) == ["thumbnail.jpeg"]
     with Image.open(path) as image:
         assert image.format == "JPEG"
+
+
+def test_run_thumbnail_conversion_failure_uses_persisted_artwork_with_safe_receipt(
+    monkeypatch,
+    tmp_path: Path,
+):
+    persisted = tmp_path / "persisted-thumbnail.png"
+    Image.new("RGB", (4, 4), "red").save(persisted)
+    secret = "https://user:password@example.invalid/art?token=canary#fragment"
+    receipts: list[str] = []
+
+    class BrokenInMemoryImage:
+        def convert(self, _mode):
+            raise RuntimeError(f"private path /tmp/canary; source={secret}")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
+
+    result = app._focus_thumbnail_source_for_record(
+        {
+            "preview_thumbnail_image": BrokenInMemoryImage(),
+            "preview_thumbnail_path": str(persisted),
+        }
+    )
+
+    assert result is not None
+    assert result.mode == "RGBA"
+    assert result.getpixel((0, 0)) == (255, 0, 0, 255)
+    assert receipts == [
+        "in-memory run thumbnail conversion failed: RuntimeError; "
+        "trying persisted artwork",
+    ]
+    assert "canary" not in receipts[0]
+    assert "password" not in receipts[0]
 
 
 def test_thumbnail_download_rejects_non_http_and_oversized_responses(monkeypatch):

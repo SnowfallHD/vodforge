@@ -8553,8 +8553,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if direct_image is not None:
             try:
                 return direct_image.convert("RGBA").copy()
-            except Exception:
-                pass
+            except Exception as exc:
+                write_diagnostic(
+                    "in-memory run thumbnail conversion failed: "
+                    f"{type(exc).__name__}; trying persisted artwork"
+                )
         candidates: list[Path] = []
         direct = str(record.get("preview_thumbnail_path") or "").strip()
         if direct:
@@ -12041,8 +12044,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             bundled = imageio_ffmpeg.get_ffmpeg_exe()
             if bundled and Path(bundled).exists():
                 return str(bundled)
-        except Exception:
-            pass
+        except Exception as exc:
+            write_diagnostic(
+                f"optional imageio FFmpeg fallback unavailable: {type(exc).__name__}"
+            )
         return None
 
     @staticmethod
