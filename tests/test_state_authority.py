@@ -1049,7 +1049,11 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     assert "hovered is button or inside_popup" in close_source
     assert "self.after(40, close_if_pointer_left)" in close_source
     assert 'selected_run_id = str(self._focus_selected_run_id or "").strip()' in run_list_source
-    assert "if selected_run_id and record_run_id == selected_run_id:" in run_list_source
+    assert "selected_index = next(" in run_list_source
+    assert 'str(record.get("run_id") or "").strip() == selected_run_id' in run_list_source
+    assert run_list_source.index("selected_index = next(") < run_list_source.index(
+        "for index, record in enumerate(records):"
+    )
 
 
 def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():

@@ -3587,6 +3587,25 @@ def _analyze_source_formats_step(
     )
 
 
+def _download_preflight_result_step(
+    ytdlp_module: Any,
+    ydl_options: dict[str, Any],
+    preflight_info: dict[str, Any],
+    session_cookies: tuple[Any, ...],
+    *,
+    control_check: Callable[[], None],
+) -> tuple[Any, tuple[Any, ...]]:
+    """Download one analyzed item using only its bound iteration inputs."""
+    with ytdlp_module.YoutubeDL(ydl_options) as ydl:
+        downloaded_info = process_download_from_preflight(
+            ydl,
+            preflight_info,
+            session_cookies=session_cookies,
+            control_check=control_check,
+        )
+        return downloaded_info, snapshot_ytdlp_session_cookies(ydl)
+
+
 def run_cancellable_process_capture(
     command: list[str],
     *,
@@ -8081,16 +8100,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)
         run_scroll.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=10)
 
-        selected_index = -1
         selected_run_id = str(self._focus_selected_run_id or "").strip()
+        selected_index = next(
+            (
+                index
+                for index, record in enumerate(records)
+                if selected_run_id
+                and str(record.get("run_id") or "").strip() == selected_run_id
+            ),
+            -1,
+        )
         row_rectangles: list[int] = []
         if records:
             for index, record in enumerate(records):
                 title = str(record.get("title") or "Untitled run")
                 status = str(record.get("status") or "Ready")
-                record_run_id = str(record.get("run_id") or "").strip()
-                if selected_run_id and record_run_id == selected_run_id:
-                    selected_index = index
                 row_tag = f"run-row-{index}"
                 top = index * row_height
                 rectangle = run_list.create_rectangle(
@@ -12122,17 +12146,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         self._emit_job_log(job, f"{label}: downloading")
                         download_started = time.monotonic()
 
-                        def download_preflight_result() -> tuple[Any, tuple[Any, ...]]:
-                            with ytdlp_module.YoutubeDL(ydl_opts) as ydl:
-                                downloaded_info = process_download_from_preflight(
-                                    ydl,
-                                    preflight_info,
-                                    session_cookies=preflight_session_cookies,
-                                    control_check=raise_for_control_requests,
-                                )
-                                return downloaded_info, snapshot_ytdlp_session_cookies(ydl)
-
-                        info, job_session_cookies = provider_network.run_primary(download_preflight_result)
+                        download_step = partial(
+                            _download_preflight_result_step,
+                            ytdlp_module,
+                            ydl_opts,
+                            preflight_info,
+                            tuple(preflight_session_cookies),
+                            control_check=raise_for_control_requests,
+                        )
+                        info, job_session_cookies = provider_network.run_primary(
+                            download_step
+                        )
                         provider_network.end_primary()
                         primary_intent_active = False
                         write_diagnostic(f"{label} download and yt-dlp post-processing elapsed_seconds={time.monotonic() - download_started:.3f}")
