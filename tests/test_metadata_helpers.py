@@ -1406,7 +1406,11 @@ def test_atomic_package_failure_preserves_existing_valid_output(monkeypatch, tmp
     target.parent.mkdir(parents=True)
     target.write_bytes(b"known good output")
 
-    monkeypatch.setattr(app_module.os, "replace", lambda _source, _target: (_ for _ in ()).throw(OSError("disk unavailable")))
+    monkeypatch.setattr(
+        app_module.os,
+        "replace",
+        lambda _source, _target, **_kwargs: (_ for _ in ()).throw(OSError("disk unavailable")),
+    )
 
     with pytest.raises(OSError, match="disk unavailable"):
         package_downloaded_media_from_staging(staging_dir, output_dir, info)

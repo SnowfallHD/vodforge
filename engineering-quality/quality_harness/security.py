@@ -135,6 +135,7 @@ def symlink_and_temp_probe(
         create_staging_dir,
         package_downloaded_media_from_staging,
     )
+    from yt_downloader.safe_output import UnsafeOutputPathError
 
     case_dir.mkdir(parents=True, exist_ok=True)
     output_root = case_dir / "chosen-output"
@@ -151,19 +152,29 @@ def symlink_and_temp_probe(
         "uploader": "Creator",
         "webpage_url": "https://example.invalid/watch?v=id123",
     }
-    packaged = package_downloaded_media_from_staging(
-        case_dir / "staged",
-        output_root,
-        info,
-        expected_extension=".mp4",
-        staged_media=[(info, staging_source)],
-    )
+    rejected = False
+    rejection_evidence = ""
+    packaged: list[Path] = []
+    try:
+        packaged = package_downloaded_media_from_staging(
+            case_dir / "staged",
+            output_root,
+            info,
+            expected_extension=".mp4",
+            staged_media=[(info, staging_source)],
+        )
+    except UnsafeOutputPathError as exc:
+        rejected = True
+        rejection_evidence = f"{type(exc).__name__}: {exc}"
     resolved_targets = [path.resolve(strict=False) for path in packaged]
     escaped = any(
         os.path.commonpath([str(output_root.resolve()), str(path)])
         != str(output_root.resolve())
         for path in resolved_targets
     )
+    outside_entries = list(outside.rglob("*"))
+    staged_preserved = staging_source.is_file()
+    safely_rejected = rejected and staged_preserved and not outside_entries
 
     mode_root = case_dir / "mode-output"
     mode_root.mkdir()
@@ -172,7 +183,7 @@ def symlink_and_temp_probe(
     private = mode & 0o077 == 0
     findings: list[dict[str, Any]] = []
     scenario_id = "security.symlink_containment_and_staging_permissions"
-    if escaped:
+    if not safely_rejected:
         findings.append(
             _finding(
                 "SEC-SYMLINK-OUTPUT-001",
@@ -188,7 +199,10 @@ def symlink_and_temp_probe(
                 [
                     f"Committed targets: {[str(path) for path in packaged]}",
                     f"Resolved targets: {[str(path) for path in resolved_targets]}",
-                    "Containment check: escaped=True",
+                    f"Unsafe path rejected with exact production error: {rejected}",
+                    f"Staged file preserved: {staged_preserved}",
+                    f"Outside entries: {[str(path) for path in outside_entries]}",
+                    f"Containment check: escaped={escaped}",
                 ],
                 "Reject symlink components beneath the output root and commit through directory handles/no-follow semantics after rechecking containment.",
                 scenario_id,
@@ -218,13 +232,22 @@ def symlink_and_temp_probe(
         "id": scenario_id,
         "evidence_tier": "unit_static",
         "category": "security",
-        "status": "failed" if escaped or not private else "passed",
+        "status": "failed" if not safely_rejected or not private else "passed",
         "duration_seconds": 0.0,
-        "metrics": {"escaped_output_root": escaped, "staging_mode_octal": oct(mode)},
+        "metrics": {
+            "escaped_output_root": escaped,
+            "unsafe_symlink_rejected": rejected,
+            "staged_file_preserved": staged_preserved,
+            "outside_entry_count": len(outside_entries),
+            "staging_mode_octal": oct(mode),
+        },
         "evidence": [
             f"Selected output root: {output_root}",
             f"Resolved committed target(s): {[str(path) for path in resolved_targets]}",
             f"Symlink escape reproduced: {escaped}",
+            f"Unsafe descendant symlink rejection: {rejection_evidence or 'missing'}",
+            f"Staged file preserved after rejection: {staged_preserved}",
+            f"Entries written outside selected root: {[str(path) for path in outside_entries]}",
             f"Per-run staging permissions: {oct(mode)}",
         ],
         "artifacts": [str(path) for path in packaged],

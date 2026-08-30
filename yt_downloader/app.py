@@ -50,6 +50,7 @@ from .history import (
     save_history,
     upsert_history,
 )
+from .safe_output import commit_file_beneath
 from .updates import (
     MacUpdatePlan,
     ReleaseInfo,
@@ -3218,14 +3219,17 @@ def package_downloaded_media_from_staging(
     for video, staged in staged_media:
         ext = expected_extension.lower() if expected_extension else staged.suffix.lower()
         target_dir, target_file_name = resolved_video_output_target(output_dir, video, ext)
-        target_dir.mkdir(parents=True, exist_ok=True)
-        remember_video_output_dir(video, target_dir)
         target = target_dir / target_file_name
-        if control_check is not None:
-            control_check()
-        # Staging lives below output_dir, so this is a same-volume atomic commit.
-        # os.replace preserves an existing valid target if the commit itself fails.
-        os.replace(staged, target)
+        # Commit relative to a freshly verified directory handle so metadata-
+        # derived path components cannot follow a pre-existing symlink outside
+        # the selected destination. Existing output remains intact on failure.
+        commit_file_beneath(
+            staged,
+            output_dir,
+            target,
+            control_check=control_check,
+        )
+        remember_video_output_dir(video, target_dir)
         packaged.append(target)
     return packaged
 
