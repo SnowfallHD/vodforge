@@ -7,7 +7,8 @@ import os
 import queue
 import re
 import shutil
-import subprocess
+# Reviewed subprocess call sites use fixed argv lists and never invoke a shell.
+import subprocess  # nosec B404
 import sys
 import threading
 import time
@@ -910,7 +911,8 @@ def probe_runtime_version(tool_name: str, executable: str) -> str:
         startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    result = subprocess.run(
+    # The resolved local executable and one fixed version flag remain separate argv entries.
+    result = subprocess.run(  # nosec B603
         runtime_version_command(tool_name, executable),
         check=True,
         stdout=subprocess.PIPE,
@@ -962,8 +964,8 @@ def write_diagnostic(message: str) -> None:
                 _DIAGNOSTICS_LOG_HANDLE_PATH = DIAGNOSTICS_LOG_PATH
             timestamp = datetime.now().isoformat(timespec="milliseconds")
             _DIAGNOSTICS_LOG_HANDLE.write(f"[{timestamp}] {sanitize_durable_text(message)}\n")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - a diagnostic sink cannot report through itself
+        return
 
 
 def reset_diagnostics_log() -> None:
@@ -976,8 +978,8 @@ def reset_diagnostics_log() -> None:
             _DIAGNOSTICS_LOG_HANDLE_PATH = None
             with open_private_text_file(DIAGNOSTICS_LOG_PATH, truncate=True):
                 pass
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - reset cannot report through its own sink
+        return
 
 
 def _close_activity_log_locked() -> None:
@@ -2876,7 +2878,8 @@ def run_ffprobe_json(
         str(path),
     ]
     if control_check is None:
-        result = subprocess.run(
+        # The media path is one argv entry; no provider metadata becomes a command string.
+        result = subprocess.run(  # nosec B603
             command,
             check=True,
             stdout=subprocess.PIPE,
@@ -3177,7 +3180,8 @@ def run_cancellable_process_capture(
     creationflags: int = 0,
 ) -> subprocess.CompletedProcess[str]:
     """Capture a bounded child process while polling app cancellation."""
-    process = subprocess.Popen(
+    # Internal callers pass argv lists for ffprobe/FFmpeg; shell execution is never used.
+    process = subprocess.Popen(  # nosec B603
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
@@ -3279,7 +3283,8 @@ def transcode_to_vod_streaming_settings(
             preserve_attached_picture=preserve_attached_picture,
             preserve_metadata=preserve_metadata,
         )
-        process = subprocess.Popen(
+        # build_vod_ffmpeg_command returns fixed options with paths as single argv entries.
+        process = subprocess.Popen(  # nosec B603
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -9018,7 +9023,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._open_path(path.parent)
             return
         try:
-            subprocess.Popen(
+            # This path was checksum/Authenticode verified before the update_ready event.
+            subprocess.Popen(  # nosec B603
                 [str(path), "/SP-", "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"],
                 close_fds=True,
             )

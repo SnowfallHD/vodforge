@@ -1125,6 +1125,31 @@ def test_runtime_version_commands_use_each_tool_cli_contract():
     assert runtime_version_command("deno", "/bundle/deno") == ["/bundle/deno", "--version"]
 
 
+def test_runtime_version_probe_keeps_executable_as_one_argv_entry_without_shell(
+    monkeypatch,
+):
+    executable = "/bundle with spaces/ffmpeg;$(touch SHOULD_NOT_EXIST)"
+    seen: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        seen["command"] = command
+        seen["kwargs"] = kwargs
+        return app_module.subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="ffmpeg version test\n",
+            stderr=None,
+        )
+
+    monkeypatch.setattr(app_module.subprocess, "run", fake_run)
+
+    assert app_module.probe_runtime_version("ffmpeg", executable) == "ffmpeg version test"
+    assert seen["command"] == [executable, "-version"]
+    assert "shell" not in seen["kwargs"]
+    assert seen["kwargs"]["check"] is True
+    assert seen["kwargs"]["timeout"] == RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS
+
+
 def test_runtime_smoke_timeout_allows_bounded_rosetta_cold_translation():
     assert RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS == 60
 
@@ -3243,6 +3268,41 @@ def test_transcode_uses_short_backend_temp_names_to_preserve_user_facing_title(m
     assert Path(seen["command"][-1]).name == "__vodforge-tmp.mp4"
     assert seen["kwargs"]["encoding"] == "utf-8"
     assert seen["kwargs"]["errors"] == "replace"
+    assert "shell" not in seen["kwargs"]
+
+
+def test_cancellable_process_capture_keeps_each_argument_separate_without_shell(
+    monkeypatch,
+):
+    command = ["ffprobe", "/media/odd name;$(touch SHOULD_NOT_EXIST).mp4"]
+    seen: dict[str, object] = {}
+
+    class Process:
+        returncode = 0
+
+        def communicate(self, *, timeout):
+            seen["timeout"] = timeout
+            return ("captured", "")
+
+    process = Process()
+
+    def fake_popen(argv, **kwargs):
+        seen["command"] = argv
+        seen["kwargs"] = kwargs
+        return process
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", fake_popen)
+
+    result = app_module.run_cancellable_process_capture(
+        command,
+        timeout_seconds=1.0,
+        check=True,
+    )
+
+    assert result.stdout == "captured"
+    assert seen["command"] == command
+    assert "shell" not in seen["kwargs"]
+    assert process not in app_module._ACTIVE_CHILD_PROCESSES
 
 
 def test_transcode_atomic_replace_failure_preserves_downloaded_source(monkeypatch, tmp_path: Path):
@@ -3691,6 +3751,7 @@ def test_ffprobe_json_uses_unicode_safe_decoding(monkeypatch, tmp_path: Path):
     assert seen["kwargs"]["encoding"] == "utf-8"
     assert seen["kwargs"]["errors"] == "replace"
     assert seen["kwargs"]["timeout"] == app_module.FFPROBE_TIMEOUT_SECONDS
+    assert "shell" not in seen["kwargs"]
     assert "-show_entries" in seen["command"]
     assert "-show_streams" not in seen["command"]
     show_entries = seen["command"][seen["command"].index("-show_entries") + 1]

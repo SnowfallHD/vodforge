@@ -98,3 +98,83 @@ def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path
     assert scheduled[0][0] == 250
     scheduled[0][1]()
     assert destroyed == [True]
+
+
+def test_windows_update_worker_verifies_installer_before_ready_event(
+    monkeypatch,
+    tmp_path: Path,
+):
+    app = _app_stub()
+    sequence: list[object] = []
+
+    class EventSink:
+        def put(self, event) -> None:
+            sequence.append(("event", event))
+
+    installer = tmp_path / "verified update.exe"
+    installer.write_bytes(b"signed installer fixture")
+    app.events = EventSink()
+
+    def fake_download(_release_info, _destination):
+        sequence.append(("download", installer))
+        return installer
+
+    monkeypatch.setattr(app_module.sys, "platform", "win32")
+    monkeypatch.setattr(app_module, "application_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        app_module,
+        "download_verified_update",
+        fake_download,
+    )
+    monkeypatch.setattr(
+        app_module,
+        "verify_windows_authenticode",
+        lambda path: sequence.append(("verify", path)),
+    )
+
+    app._update_download_worker(_release("1.2.4"))
+
+    assert sequence == [
+        ("download", installer),
+        ("verify", installer),
+        ("event", ("update_ready", installer)),
+    ]
+
+
+def test_verified_windows_installer_handoff_uses_fixed_argv_without_shell(
+    monkeypatch,
+    tmp_path: Path,
+):
+    app = _app_stub()
+    installer = tmp_path / "VODForge verified;$(touch SHOULD_NOT_EXIST).exe"
+    installer.write_bytes(b"signed installer fixture")
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    class Process:
+        pass
+
+    def fake_popen(command, **kwargs):
+        calls.append((command, kwargs))
+        return Process()
+
+    monkeypatch.setattr(app_module.sys, "platform", "win32")
+    monkeypatch.setattr(app_module.subprocess, "Popen", fake_popen)
+
+    app._install_downloaded_update(installer)
+
+    assert calls == [
+        (
+            [
+                str(installer),
+                "/SP-",
+                "/SILENT",
+                "/CLOSEAPPLICATIONS",
+                "/RESTARTAPPLICATIONS",
+            ],
+            {"close_fds": True},
+        )
+    ]
+    assert "shell" not in calls[0][1]
+    assert app.status_var.value == (
+        "Verified updater started. VODForge will close and reopen when installation completes."
+    )
