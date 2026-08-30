@@ -1135,9 +1135,9 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
 
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
-    assert 'self.video_tree.layout_column("creator", width=120, minwidth=90' in layout_source
-    assert 'self.video_tree.layout_column("location", width=140, minwidth=100' in layout_source
-    assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
+    assert 'video_tree.layout_column("creator", width=120, minwidth=90' in layout_source
+    assert 'video_tree.layout_column("location", width=140, minwidth=100' in layout_source
+    assert 'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
     assert 'width=0, minwidth=0' not in layout_source
     assert 'library_vertical_mode = focus_library_vertical_layout_mode(height)' in layout_source
     assert 'library_mode = "compact" if compact or library_vertical_mode == "compact" else focus_library_layout_mode(width)' in layout_source
@@ -1148,12 +1148,12 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "library_vertical_mode," in layout_source
     assert 'if library_mode == "compact":' in layout_source
     assert "library_actions_collapsed" not in layout_source
-    assert 'self.video_tree.layout_column("index", width=44, minwidth=38, stretch=True)' in layout_source
-    assert 'self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
-    assert 'self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)' in layout_source
-    assert 'self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)' in layout_source
-    assert 'self.video_tree.layout_column("id", width=90, minwidth=72, stretch=True)' in layout_source
-    assert 'self.video_tree.layout_column("location", width=140, minwidth=100, stretch=True)' in layout_source
+    assert 'video_tree.layout_column("index", width=44, minwidth=38, stretch=True)' in layout_source
+    assert 'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)' in layout_source
+    assert 'video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)' in layout_source
+    assert 'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)' in layout_source
+    assert 'video_tree.layout_column("id", width=90, minwidth=72, stretch=True)' in layout_source
+    assert 'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)' in layout_source
     assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in layout_source
     assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)' in layout_source
     assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in layout_source
@@ -1458,8 +1458,48 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert 'replace_rows = getattr(self.video_tree, "replace_rows", None)' in render_source
     assert "children = replace_rows(rows, selected=target)" in render_source
     assert "if callable(replace_rows):" in render_source
-    assert "self.video_tree.layout_column(" in layout_source
+    assert "video_tree.layout_column(" in layout_source
     assert 'xscrollincrement=1' in pixel_table_source
+
+
+def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
+    class BodyProbe:
+        def __init__(self):
+            self.calls = []
+
+        def bind(self, sequence, callback, add):
+            self.calls.append((sequence, callback, add))
+            return "body-binding"
+
+    callback = lambda _event: None
+    body = BodyProbe()
+    bind_probe = SimpleNamespace(_body=body)
+
+    assert app_module.PixelScrollTable.bind is app_module.tk.Misc.bind
+    assert app_module.PixelScrollTable.focus is app_module.tk.Misc.focus
+    assert (
+        app_module.PixelScrollTable.bind_body_event(
+            bind_probe,
+            "<Button-1>",
+            callback,
+            "+",
+        )
+        == "body-binding"
+    )
+    assert body.calls == [("<Button-1>", callback, "+")]
+
+    pixel_table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    pixel_table._items = {"row": ()}
+    pixel_table._focus_item = None
+    app_module._focus_library_table_item(pixel_table, "row")
+    assert pixel_table.focus_item() == "row"
+    assert pixel_table.focus_item("missing") == "row"
+
+    legacy_tree = app_module.ttk.Treeview.__new__(app_module.ttk.Treeview)
+    legacy_focus_calls = []
+    legacy_tree.focus = legacy_focus_calls.append
+    app_module._focus_library_table_item(legacy_tree, "legacy-row")
+    assert legacy_focus_calls == ["legacy-row"]
 
 
 def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():

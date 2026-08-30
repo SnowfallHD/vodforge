@@ -28,7 +28,7 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Any
+from typing import Any, Literal
 
 from .cloud_funnel import (
     InstallationIdentityError,
@@ -4446,10 +4446,14 @@ class PixelScrollTable(tk.Frame):
 
     config = configure
 
-    def bind(self, sequence: str | None = None, func: Callable[..., Any] | None = None, add: str | bool | None = None) -> str:
-        if sequence in {"<<TreeviewSelect>>", "<Button-1>", "<Button-2>", "<Button-3>"}:
-            return self._body.bind(sequence, func, add)
-        return super().bind(sequence, func, add)
+    def bind_body_event(
+        self,
+        sequence: str,
+        func: Callable[[tk.Event[Any]], object],
+        add: Literal["", "+"] | bool | None = None,
+    ) -> str:
+        """Bind one table-content event to the inner scrolling Canvas."""
+        return self._body.bind(sequence, func, add)
 
     def heading(self, column: str, *, text: str = "", anchor: str | None = None) -> None:
         self._headings[column] = text
@@ -4538,7 +4542,8 @@ class PixelScrollTable(tk.Frame):
         if changed:
             self._body.event_generate("<<TreeviewSelect>>", when="tail")
 
-    def focus(self, item: str | None = None) -> str:
+    def focus_item(self, item: str | None = None) -> str:
+        """Get or set the logical row focus without shadowing Tk widget focus."""
         if item is None:
             return self._focus_item or ""
         if str(item) in self._items:
@@ -4853,6 +4858,17 @@ class PixelScrollTable(tk.Frame):
             target.bind("<TouchpadScroll>", on_touchpad, add="+")
         except tk.TclError:
             pass
+
+
+def _focus_library_table_item(
+    table: ttk.Treeview | PixelScrollTable,
+    item: str,
+) -> None:
+    """Set row focus through the concrete table contract in use."""
+    if isinstance(table, PixelScrollTable):
+        table.focus_item(item)
+    else:
+        table.focus(item)
 
 
 class SleekScrollbar(tk.Canvas):
@@ -5331,6 +5347,7 @@ class QueueLogger:
 class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     _event_app_name = APP_NAME
     _event_subtle_color = THEME["subtle"]
+    video_tree: ttk.Treeview | PixelScrollTable
 
     def _event_write_diagnostic(self, message: str) -> None:
         write_diagnostic(message)
@@ -6724,29 +6741,30 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             columns=("index", "title", "duration", "creator", "id", "location", "action"),
             selectmode="browse",
         )
+        video_tree = self.video_tree
         for column, label in (("index", "#"), ("title", "Title"), ("duration", "Length"), ("creator", "Creator"), ("id", "ID"), ("location", "Saved location"), ("action", "")):
-            self.video_tree.heading(
+            video_tree.heading(
                 column,
                 text=label,
                 anchor="w" if column == "duration" else None,
             )
-        self.video_tree.column("index", width=44, minwidth=38, stretch=False, anchor="center")
-        self.video_tree.column("title", width=360, minwidth=220, stretch=True, stretchmax=560, anchor="w")
-        self.video_tree.column("duration", width=72, minwidth=62, stretch=False, anchor="center")
-        self.video_tree.column("creator", width=140, minwidth=90, stretch=False, anchor="w")
-        self.video_tree.column("id", width=100, minwidth=72, stretch=False, anchor="w")
-        self.video_tree.column("location", width=140, minwidth=90, stretch=False, anchor="w")
-        self.video_tree.column("action", width=42, minwidth=42, stretch=False, anchor="center")
-        tree_scroll = SleekScrollbar(queue_panel, command=self.video_tree.yview)
-        tree_x_scroll = SleekScrollbar(queue_panel, command=self.video_tree.xview, orient="horizontal")
-        self.video_tree.configure(yscrollcommand=tree_scroll.set, xscrollcommand=tree_x_scroll.set)
-        self.video_tree.grid(row=1, column=0, sticky="nsew")
+        video_tree.column("index", width=44, minwidth=38, stretch=False, anchor="center")
+        video_tree.column("title", width=360, minwidth=220, stretch=True, stretchmax=560, anchor="w")
+        video_tree.column("duration", width=72, minwidth=62, stretch=False, anchor="center")
+        video_tree.column("creator", width=140, minwidth=90, stretch=False, anchor="w")
+        video_tree.column("id", width=100, minwidth=72, stretch=False, anchor="w")
+        video_tree.column("location", width=140, minwidth=90, stretch=False, anchor="w")
+        video_tree.column("action", width=42, minwidth=42, stretch=False, anchor="center")
+        tree_scroll = SleekScrollbar(queue_panel, command=video_tree.yview)
+        tree_x_scroll = SleekScrollbar(queue_panel, command=video_tree.xview, orient="horizontal")
+        video_tree.configure(yscrollcommand=tree_scroll.set, xscrollcommand=tree_x_scroll.set)
+        video_tree.grid(row=1, column=0, sticky="nsew")
         tree_scroll.grid(row=1, column=1, sticky="ns", padx=(6, 0))
         tree_x_scroll.grid(row=2, column=0, sticky="ew", pady=(6, 0))
-        self.video_tree.bind("<<TreeviewSelect>>", self._on_video_selected)
-        self.video_tree.bind("<Button-1>", self._on_library_tree_click, add="+")
-        self.video_tree.bind("<Button-2>", self._show_library_row_menu)
-        self.video_tree.bind("<Button-3>", self._show_library_row_menu)
+        video_tree.bind_body_event("<<TreeviewSelect>>", self._on_video_selected)
+        video_tree.bind_body_event("<Button-1>", self._on_library_tree_click, add="+")
+        video_tree.bind_body_event("<Button-2>", self._show_library_row_menu)
+        video_tree.bind_body_event("<Button-3>", self._show_library_row_menu)
         self.focus_queue_panel = queue_panel
 
         details = ttk.Frame(metadata_content, style="FocusShell.TFrame")
@@ -7978,7 +7996,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._render_metadata_tree(selected_index=index)
         if iid in self.video_tree.get_children():
             self.video_tree.selection_set(iid)
-            self.video_tree.focus(iid)
+            _focus_library_table_item(self.video_tree, iid)
         self._display_selected_metadata(index)
 
     def _start_preview_record(self, record: dict[str, Any]) -> None:
@@ -8804,6 +8822,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> None:
         if event is not None and event.widget is not self:
             return
+        video_tree = self.video_tree
+        if not isinstance(video_tree, PixelScrollTable):
+            return
         width = max(1, int(width)) if width is not None else max(1, self.winfo_width())
         height = max(1, int(height)) if height is not None else max(1, self.winfo_height())
         mode = focus_layout_mode(width, height)
@@ -8897,12 +8918,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             # Keep the canonical table intact at small widths. The sleek
             # horizontal scrollbar makes every field reachable without
             # squeezing columns to zero or changing what the table means.
-            self.video_tree.layout_column("index", width=44, minwidth=38, stretch=True)
-            self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)
-            self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)
-            self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)
-            self.video_tree.layout_column("id", width=90, minwidth=72, stretch=True)
-            self.video_tree.layout_column("location", width=140, minwidth=100, stretch=True)
+            video_tree.layout_column("index", width=44, minwidth=38, stretch=True)
+            video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)
+            video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)
+            video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)
+            video_tree.layout_column("id", width=90, minwidth=72, stretch=True)
+            video_tree.layout_column("location", width=140, minwidth=100, stretch=True)
         else:
             if library_vertical_mode == "balanced":
                 # Reduced-height windows give the independently scrollable
@@ -8918,22 +8939,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)
                 self.focus_library_details.configure(width=330)
-                self.video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
-                self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=False)
-                self.video_tree.layout_column("creator", width=110, minwidth=90, stretch=False)
-                self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
-                self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
-                self.video_tree.layout_column("title", width=320, minwidth=200, stretch=False)
+                video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
+                video_tree.layout_column("duration", width=72, minwidth=62, stretch=False)
+                video_tree.layout_column("creator", width=110, minwidth=90, stretch=False)
+                video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
+                video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
+                video_tree.layout_column("title", width=320, minwidth=200, stretch=False)
             else:
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)
                 self.focus_library_details.configure(width=410)
-                self.video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
-                self.video_tree.layout_column("duration", width=72, minwidth=62, stretch=False)
-                self.video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
-                self.video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
-                self.video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
-                self.video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=560)
+                video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
+                video_tree.layout_column("duration", width=72, minwidth=62, stretch=False)
+                video_tree.layout_column("creator", width=120, minwidth=90, stretch=False)
+                video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
+                video_tree.layout_column("location", width=120, minwidth=90, stretch=False)
+                video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=560)
         self._sync_focus_destination()
         self._refresh_focus_run_deck()
 
@@ -9917,7 +9938,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if target is not None:
                 self.video_tree.selection_set(target)
         if children and target is not None:
-            self.video_tree.focus(target)
+            _focus_library_table_item(self.video_tree, target)
             self._display_selected_metadata(int(target))
         else:
             self._clear_library_selection()
@@ -9976,7 +9997,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         row = self.video_tree.identify_row(event.y)
         if row:
             self.video_tree.selection_set(row)
-            self.video_tree.focus(row)
+            _focus_library_table_item(self.video_tree, row)
             self._display_selected_metadata(int(row))
         menu = tk.Menu(self, tearoff=False, bg=THEME["surface"], fg=THEME["text"], activebackground=THEME["accent_dark"], activeforeground="#ffffff")
         info = None
