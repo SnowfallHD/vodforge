@@ -2953,8 +2953,10 @@ def terminate_and_reap_process(process: Any, *, timeout_seconds: float = PROCESS
             return
         try:
             process.terminate()
-        except Exception:
-            pass
+        except Exception as exc:
+            write_diagnostic(
+                f"child process terminate request failed: {type(exc).__name__}"
+            )
         try:
             process.wait(timeout=timeout_seconds)
             return
@@ -2962,8 +2964,10 @@ def terminate_and_reap_process(process: Any, *, timeout_seconds: float = PROCESS
             pass
         try:
             process.kill()
-        except Exception:
-            pass
+        except Exception as exc:
+            write_diagnostic(
+                f"child process kill request failed: {type(exc).__name__}"
+            )
         try:
             process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:

@@ -3269,6 +3269,35 @@ def test_terminate_and_reap_escalates_from_terminate_to_kill():
     assert calls == ["terminate", ("wait", 0.01), "kill", ("wait", 0.01)]
 
 
+def test_terminate_and_kill_request_failures_emit_secret_free_receipts(monkeypatch):
+    secret = "https://user:password@example.invalid/media?token=canary#secret"
+    receipts: list[str] = []
+    monkeypatch.setattr(app_module, "write_diagnostic", receipts.append)
+
+    class Process:
+        def poll(self):
+            return None
+
+        def terminate(self):
+            raise RuntimeError(secret)
+
+        def kill(self):
+            raise OSError(f"private path /tmp/canary; source={secret}")
+
+        def wait(self, *, timeout):
+            raise app_module.subprocess.TimeoutExpired("ffmpeg", timeout)
+
+    with pytest.raises(RuntimeError, match="did not stop"):
+        terminate_and_reap_process(Process(), timeout_seconds=0.01)
+
+    assert receipts == [
+        "child process terminate request failed: RuntimeError",
+        "child process kill request failed: OSError",
+    ]
+    assert "canary" not in "\n".join(receipts)
+    assert "password" not in "\n".join(receipts)
+
+
 def test_live_child_stays_registered_when_exit_cannot_be_confirmed():
     class Process:
         def poll(self):
