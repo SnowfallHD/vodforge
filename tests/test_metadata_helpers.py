@@ -3130,6 +3130,184 @@ def test_output_validator_honors_the_selected_manual_mp4_audio_codec(tmp_path: P
         validate_output_artifact(output, OutputType.MP4, "ffprobe", ffprobe_data=probe)
 
 
+def test_output_validator_enforces_the_resolved_mp3_plan(tmp_path: Path):
+    output = tmp_path / "audio.mp3"
+    output.write_bytes(b"mp3 bytes")
+    plan = AudioExportPlan(
+        output_type=OutputType.MP3,
+        audio_format_id="251",
+        format_selector="251",
+        source_audio_kbps=130,
+        effective_audio_kbps=130,
+        audio_bitrate_kbps=320,
+        source_sample_rate="48000",
+        output_sample_rate="48000",
+        source_channels="2",
+        output_channels="2",
+        audio_codec="opus",
+        embed_metadata=False,
+        embed_cover_art=False,
+        cover_art_source="No Art",
+    )
+    matching_stream = {
+        "codec_type": "audio",
+        "codec_name": "mp3",
+        "bit_rate": "320000",
+        "sample_rate": "48000",
+        "channels": 2,
+    }
+    matching_probe = {
+        "format": {"format_name": "mp3", "duration": "60.0"},
+        "streams": [matching_stream],
+    }
+
+    assert validate_output_artifact(
+        output,
+        OutputType.MP3,
+        "ffprobe",
+        plan=plan,
+        ffprobe_data=matching_probe,
+    ) is matching_probe
+
+    for changed_field, wrong_value in (
+        ("bit_rate", "64000"),
+        ("sample_rate", "22050"),
+        ("channels", 1),
+    ):
+        wrong_probe = {
+            **matching_probe,
+            "streams": [{**matching_stream, changed_field: wrong_value}],
+        }
+        with pytest.raises(RuntimeError, match="does not match its export plan"):
+            validate_output_artifact(
+                output,
+                OutputType.MP3,
+                "ffprobe",
+                plan=plan,
+                ffprobe_data=wrong_probe,
+            )
+
+
+def test_output_validator_enforces_source_limited_mp4_plan(tmp_path: Path):
+    output = tmp_path / "video.mp4"
+    output.write_bytes(b"mp4 bytes")
+    plan = ExportPlan(
+        mode=ExportMode.AUTO_CBR,
+        video_format_id="18",
+        audio_format_id="18",
+        format_selector="18",
+        output_width=640,
+        output_height=360,
+        source_video_kbps=1200,
+        effective_video_kbps=1200,
+        video_bitrate_kbps=1500,
+        source_audio_kbps=192,
+        effective_audio_kbps=192,
+        audio_bitrate_kbps=320,
+        audio_sample_rate="48000",
+        audio_channels="2",
+    )
+    video_stream = {
+        "codec_type": "video",
+        "codec_name": "h264",
+        "width": 640,
+        "height": 360,
+        "profile": "High",
+        "pix_fmt": "yuv420p",
+        "bit_rate": "1580000",
+    }
+    audio_stream = {
+        "codec_type": "audio",
+        "codec_name": "aac",
+        "sample_rate": "48000",
+        "channels": 2,
+        # The native AAC encoder can legitimately undershoot its target for
+        # low-complexity audio even when FFmpeg received the requested -b:a.
+        "bit_rate": "160000",
+    }
+    matching_probe = {
+        "format": {"format_name": "mov,mp4", "duration": "60.0"},
+        "streams": [video_stream, audio_stream],
+    }
+
+    assert validate_output_artifact(
+        output,
+        OutputType.MP4,
+        "ffprobe",
+        plan=plan,
+        ffprobe_data=matching_probe,
+    ) is matching_probe
+
+    wrong_streams = (
+        ({**video_stream, "width": 320}, audio_stream),
+        ({**video_stream, "height": 240}, audio_stream),
+        ({**video_stream, "profile": "Baseline"}, audio_stream),
+        ({**video_stream, "pix_fmt": "yuv444p"}, audio_stream),
+        ({**video_stream, "bit_rate": "100000"}, audio_stream),
+        (video_stream, {**audio_stream, "bit_rate": "32000"}),
+        (video_stream, {**audio_stream, "sample_rate": "22050"}),
+        (video_stream, {**audio_stream, "channels": 1}),
+    )
+    for wrong_video, wrong_audio in wrong_streams:
+        with pytest.raises(RuntimeError, match="does not match its export plan"):
+            validate_output_artifact(
+                output,
+                OutputType.MP4,
+                "ffprobe",
+                plan=plan,
+                ffprobe_data={**matching_probe, "streams": [wrong_video, wrong_audio]},
+            )
+
+
+def test_output_validator_derives_manual_mp4_audio_codec_from_plan(tmp_path: Path):
+    output = tmp_path / "video.mp4"
+    output.write_bytes(b"mp4 bytes")
+    plan = ExportPlan(
+        mode=ExportMode.MANUAL_OVERRIDE,
+        video_format_id="137",
+        audio_format_id="251",
+        format_selector="137+251",
+        output_width=1920,
+        output_height=1080,
+        source_video_kbps=3000,
+        effective_video_kbps=3000,
+        video_bitrate_kbps=2000,
+        source_audio_kbps=192,
+        effective_audio_kbps=192,
+        audio_bitrate_kbps=192,
+        output_audio_codec=ManualAudioCodec.MP3,
+    )
+    probe = {
+        "format": {"format_name": "mov,mp4", "duration": "60.0"},
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "2000000",
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "sample_rate": "48000",
+                "channels": 2,
+                "bit_rate": "192000",
+            },
+        ],
+    }
+
+    assert validate_output_artifact(
+        output,
+        OutputType.MP4,
+        "ffprobe",
+        plan=plan,
+        ffprobe_data=probe,
+    ) is probe
+
+
 @pytest.mark.parametrize(
     ("probe", "message"),
     [
@@ -3634,7 +3812,13 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
             {"codec_type": "audio", "codec_name": "aac"},
         ],
     }
-    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    validated_plans = []
+
+    def validate_fresh_output(*_args, **kwargs):
+        validated_plans.append(kwargs.get("plan"))
+        return probe
+
+    monkeypatch.setattr(app_module, "validate_output_artifact", validate_fresh_output)
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
     app.cancel_requested = False
@@ -3666,6 +3850,10 @@ def test_default_single_video_pipeline_uses_one_extractor_pass(monkeypatch, tmp_
 
     expected = tmp_path / "Creator" / "videos - no playlist" / "Fast Path [abc123]" / "Fast Path.mp4"
     assert calls == {"extract": 1, "process": 1}
+    assert len(validated_plans) == 1
+    assert isinstance(validated_plans[0], ExportPlan)
+    assert validated_plans[0].output_width == 1920
+    assert validated_plans[0].output_height == 1080
     assert outcome == DownloadOutcome(success_count=1)
     assert expected.read_bytes() == b"downloaded media"
     emitted_events = list(app.events.queue)

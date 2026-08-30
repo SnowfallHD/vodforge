@@ -236,7 +236,13 @@ def symlink_and_temp_probe(
 def fresh_output_contract_probe(
     case_dir: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    from yt_downloader.app import OutputType, validate_output_artifact
+    from yt_downloader.app import (
+        AudioExportPlan,
+        ExportMode,
+        ExportPlan,
+        OutputType,
+        validate_output_artifact,
+    )
 
     case_dir.mkdir(parents=True, exist_ok=True)
     weak_mp3 = case_dir / "wrong-64k.mp3"
@@ -284,33 +290,165 @@ def fresh_output_contract_probe(
             },
         ],
     }
+    mp3_plan = AudioExportPlan(
+        output_type=OutputType.MP3,
+        audio_format_id="fixture-audio",
+        format_selector="fixture-audio",
+        source_audio_kbps=192,
+        effective_audio_kbps=192,
+        audio_bitrate_kbps=320,
+        source_sample_rate="48000",
+        output_sample_rate="48000",
+        source_channels="2",
+        output_channels="2",
+        audio_codec="opus",
+        embed_metadata=False,
+        embed_cover_art=False,
+        cover_art_source="No Art",
+    )
+    mp4_plan = ExportPlan(
+        mode=ExportMode.AUTO_CBR,
+        video_format_id="fixture-video",
+        audio_format_id="fixture-audio",
+        format_selector="fixture-video+fixture-audio",
+        # This is deliberately below a typical 1080p UI ceiling: the resolved
+        # plan records what the selected source can actually produce.
+        output_width=640,
+        output_height=360,
+        source_video_kbps=1500,
+        effective_video_kbps=1500,
+        video_bitrate_kbps=1500,
+        source_audio_kbps=192,
+        effective_audio_kbps=192,
+        audio_bitrate_kbps=320,
+    )
     accepted: list[str] = []
-    try:
-        validate_output_artifact(
+    valid_rejections: list[str] = []
+    valid_mp3_probe = {
+        **mp3_probe,
+        "streams": [
+            {
+                **mp3_probe["streams"][0],
+                "bit_rate": "320000",
+                "sample_rate": "48000",
+                "channels": 2,
+            }
+        ],
+    }
+    valid_mp4_probe = {
+        **mp4_probe,
+        "streams": [
+            {
+                **mp4_probe["streams"][0],
+                "width": 640,
+                "height": 360,
+                "profile": "High",
+                "pix_fmt": "yuv420p",
+                "bit_rate": "1580000",
+            },
+            {
+                **mp4_probe["streams"][1],
+                "sample_rate": "48000",
+                "channels": 2,
+                # A real low-complexity AAC fixture can measure near half its
+                # requested encoder target even though FFmpeg received -b:a.
+                "bit_rate": "160000",
+            },
+        ],
+    }
+    mp3_stream = valid_mp3_probe["streams"][0]
+    mp4_video = valid_mp4_probe["streams"][0]
+    mp4_audio = valid_mp4_probe["streams"][1]
+    invalid_probes = [
+        (
+            "MP3 bitrate",
             weak_mp3,
             OutputType.MP3,
-            "unused",
-            expected_duration_seconds=6,
-            ffprobe_data=mp3_probe,
+            mp3_plan,
+            {**valid_mp3_probe, "streams": [{**mp3_stream, "bit_rate": "64000"}]},
+        ),
+        (
+            "MP3 sample rate",
+            weak_mp3,
+            OutputType.MP3,
+            mp3_plan,
+            {**valid_mp3_probe, "streams": [{**mp3_stream, "sample_rate": "22050"}]},
+        ),
+        (
+            "MP3 channels",
+            weak_mp3,
+            OutputType.MP3,
+            mp3_plan,
+            {**valid_mp3_probe, "streams": [{**mp3_stream, "channels": 1}]},
+        ),
+        (
+            "MP3 codec",
+            weak_mp3,
+            OutputType.MP3,
+            mp3_plan,
+            {**valid_mp3_probe, "streams": [{**mp3_stream, "codec_name": "aac"}]},
+        ),
+    ]
+    for label, field, value in (
+        ("MP4 width", "width", 320),
+        ("MP4 height", "height", 240),
+        ("MP4 video codec", "codec_name", "vp9"),
+        ("MP4 pixel format", "pix_fmt", "yuv444p"),
+        ("MP4 H.264 profile", "profile", "Baseline"),
+        ("MP4 video bitrate", "bit_rate", "100000"),
+    ):
+        invalid_probes.append(
+            (
+                label,
+                weak_mp4,
+                OutputType.MP4,
+                mp4_plan,
+                {**valid_mp4_probe, "streams": [{**mp4_video, field: value}, mp4_audio]},
+            )
         )
-        accepted.append(
-            "64 kbps/22.05 kHz mono MP3 accepted despite a representative 320 kbps request"
+    for label, field, value in (
+        ("MP4 audio codec", "codec_name", "opus"),
+        ("MP4 audio bitrate", "bit_rate", "32000"),
+        ("MP4 audio sample rate", "sample_rate", "22050"),
+        ("MP4 audio channels", "channels", 1),
+    ):
+        invalid_probes.append(
+            (
+                label,
+                weak_mp4,
+                OutputType.MP4,
+                mp4_plan,
+                {**valid_mp4_probe, "streams": [mp4_video, {**mp4_audio, field: value}]},
+            )
         )
-    except (OSError, RuntimeError, ValueError):
-        pass
-    try:
-        validate_output_artifact(
-            weak_mp4,
-            OutputType.MP4,
-            "unused",
-            expected_duration_seconds=6,
-            ffprobe_data=mp4_probe,
-        )
-        accepted.append(
-            "100 kbps Baseline/yuv444p 320x240 MP4 accepted without matching a representative export plan"
-        )
-    except (OSError, RuntimeError, ValueError):
-        pass
+    for label, path, output_type, plan, probe in invalid_probes:
+        try:
+            validate_output_artifact(
+                path,
+                output_type,
+                "unused",
+                expected_duration_seconds=6,
+                plan=plan,
+                ffprobe_data=probe,
+            )
+            accepted.append(f"{label} mismatch was accepted despite the resolved export plan")
+        except (OSError, RuntimeError, ValueError):
+            pass
+    for label, path, output_type, plan, probe in (
+        ("matching MP3 plan", weak_mp3, OutputType.MP3, mp3_plan, valid_mp3_probe),
+        ("matching source-limited MP4 plan", weak_mp4, OutputType.MP4, mp4_plan, valid_mp4_probe),
+    ):
+        try:
+            validate_output_artifact(
+                path,
+                output_type,
+                "unused",
+                expected_duration_seconds=6,
+                plan=plan,
+                ffprobe_data=probe,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            valid_rejections.append(f"{label} was rejected: {type(exc).__name__}: {exc}")
     finding = _finding(
         "CORR-FRESH-OUTPUT-PLAN-001",
         "Fresh-output validation does not enforce the requested export plan",
@@ -320,13 +458,13 @@ def fresh_output_contract_probe(
         [
             "Provide nonempty ffprobe data with the correct container/codec/duration but materially wrong bitrate, resolution, pixel format, profile, sample rate, or channel count.",
             "Call the same validate_output_artifact function used before a fresh atomic commit.",
-            "Observe that the artifact is accepted because no plan expectations are passed.",
+            "Observe whether any single plan invariant is accepted despite the resolved plan being passed.",
         ],
-        accepted,
+        accepted + valid_rejections,
         "Validate fresh outputs against the ExportPlan/AudioExportPlan before commit, reusing one canonical plan-matching contract for both new and existing artifacts.",
         "correctness.fresh_output_plan_validation",
     )
-    failed = bool(accepted)
+    failed = bool(accepted or valid_rejections)
     scenario = {
         "id": "correctness.fresh_output_plan_validation",
         "evidence_tier": "unit_static",
@@ -334,10 +472,15 @@ def fresh_output_contract_probe(
         "status": "failed" if failed else "passed",
         "duration_seconds": 0.0,
         "metrics": {
-            "validator_contract_weaknesses": len(accepted),
+            "validator_contract_weaknesses": len(accepted) + len(valid_rejections),
             "corrupted_final_outputs": 0,
         },
-        "evidence": accepted or ["Both wrong-contract artifacts were rejected."],
+        "evidence": accepted
+        + valid_rejections
+        or [
+            "Both wrong-contract artifacts were rejected.",
+            "Matching MP3 and source-limited MP4 artifacts were accepted.",
+        ],
         "artifacts": [str(weak_mp3), str(weak_mp4)],
         "error": None,
     }
