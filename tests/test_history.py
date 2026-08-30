@@ -50,6 +50,7 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_pa
                 "url": "https://i.ytimg.com/vi/abc123/maxresdefault.jpg?auth=secret",
                 "width": 1280,
                 "height": 720,
+                "filepath": "/private/output/.vfstage/run-id/maxresdefault.jpg",
                 "http_headers": {"Authorization": "secret"},
             },
             "cookiefile": "/private/cookies.txt",
