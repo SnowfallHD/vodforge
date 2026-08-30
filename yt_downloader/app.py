@@ -4611,6 +4611,13 @@ class _ExistingOutputReuse:
     outcome: DownloadOutcome
 
 
+@dataclass(frozen=True)
+class _CommittedMedia:
+    metadata: dict[str, Any]
+    primary_output: Path
+    success_count: int
+
+
 def browser_cookie_value(label_or_value: str | None) -> str | None:
     text = str(label_or_value or "").strip()
     if not text or text.lower() in {"none", COOKIE_BROWSER_PLACEHOLDER.lower()}:
@@ -11874,6 +11881,73 @@ class DownloaderApp(tk.Tk):
         )
         return validated_staged
 
+    def _commit_validated_staged_media(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        plan: ExportPlan | AudioExportPlan,
+        staging_dir: Path,
+        expected_extension: str,
+        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]],
+        *,
+        label: str,
+        all_output_dirs: list[Path],
+        progress_callback: Callable[[float], None],
+        control_check: Callable[[], None],
+    ) -> _CommittedMedia:
+        commit_started = time.monotonic()
+        packaged_paths = package_downloaded_media_from_staging(
+            staging_dir,
+            job.output_dir,
+            info,
+            expected_extension=expected_extension,
+            staged_media=[
+                (staged_info, staged_path)
+                for staged_info, staged_path, _probe in validated_staged
+            ],
+            control_check=control_check,
+        )
+        write_diagnostic(
+            f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}"
+        )
+        output_dirs = sorted({path.parent for path in packaged_paths})
+        all_output_dirs.extend(output_dirs)
+        self.events.put(("download_folders", sorted(set(all_output_dirs))))
+        for packaged_path in packaged_paths:
+            self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
+        output_paths = [
+            path for path in packaged_paths if path.suffix.lower() == expected_extension
+        ]
+        primary_output = output_paths[0] if output_paths else None
+        if primary_output is None:
+            raise RuntimeError(
+                f"{label}: validated output could not be committed to the destination."
+            )
+        ffprobe_data = validated_staged[0][2]
+        if isinstance(plan, AudioExportPlan):
+            self._emit_job_log(
+                job,
+                f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}",
+            )
+        progress_callback(1.0)
+        self._emit_job_log(
+            job,
+            f"{label}: validated {primary_output.name} before atomic commit",
+        )
+        committed_info = build_encoding_summary_metadata(
+            info,
+            plan,
+            output_path=primary_output,
+            ffprobe_data=ffprobe_data,
+            validation_status="Validated",
+        )
+        self.events.put(("job_metadata", {"job": job, "info": committed_info}))
+        return _CommittedMedia(
+            metadata=committed_info,
+            primary_output=primary_output,
+            success_count=len(output_paths),
+        )
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -12320,42 +12394,30 @@ class DownloaderApp(tk.Tk):
                             control_check=raise_for_control_requests,
                         )
 
-                        commit_started = time.monotonic()
-                        packaged_paths = package_downloaded_media_from_staging(
-                            staging_dir,
-                            job.output_dir,
-                            info,
-                            expected_extension=expected_extension,
-                            staged_media=[(staged_info, staged_path) for staged_info, staged_path, _probe in validated_staged],
-                            control_check=raise_for_control_requests,
-                        )
-                        write_diagnostic(f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}")
-                        output_dirs = sorted({path.parent for path in packaged_paths})
-                        all_output_dirs.extend(output_dirs)
-                        self.events.put(("download_folders", sorted(set(all_output_dirs))))
-                        for packaged_path in packaged_paths:
-                            self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
-                        output_paths = [path for path in packaged_paths if path.suffix.lower() == expected_extension]
-                        primary_output = output_paths[0] if output_paths else None
-                        if primary_output is None:
-                            raise RuntimeError(
-                                f"{label}: validated output could not be committed to the destination."
-                            )
-                        ffprobe_data = validated_staged[0][2]
-                        if isinstance(plan, AudioExportPlan):
-                            self._emit_job_log(job, f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}")
-                        put_stage_progress(video_index, total_videos, 0.50, 0.40, 1.0)
-                        self._emit_job_log(job, f"{label}: validated {primary_output.name} before atomic commit")
-                        info = build_encoding_summary_metadata(
+                        committed_media = self._commit_validated_staged_media(
+                            job,
                             info,
                             plan,
-                            output_path=primary_output,
-                            ffprobe_data=ffprobe_data,
-                            validation_status="Validated",
+                            staging_dir,
+                            expected_extension,
+                            validated_staged,
+                            label=label,
+                            all_output_dirs=all_output_dirs,
+                            progress_callback=lambda fraction, video_index=video_index, total_videos=total_videos: put_stage_progress(
+                                video_index,
+                                total_videos,
+                                0.50,
+                                0.40,
+                                fraction,
+                            ),
+                            control_check=raise_for_control_requests,
                         )
+                        info = committed_media.metadata
+                        primary_output = committed_media.primary_output
                         current_video_info = info
-                        self.events.put(("job_metadata", {"job": job, "info": info}))
-                        outcome = outcome.combined_with(DownloadOutcome(success_count=len(output_paths)))
+                        outcome = outcome.combined_with(
+                            DownloadOutcome(success_count=committed_media.success_count)
+                        )
                         try:
                             cached_thumbnail = (
                                 save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
