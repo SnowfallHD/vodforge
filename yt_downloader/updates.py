@@ -284,9 +284,9 @@ def download_verified_update(
     try:
         # asset_url was exact-canonicalized immediately above, before any network access.
         with (
-            urllib.request.urlopen(request, timeout=timeout) as response,
+            urllib.request.urlopen(request, timeout=timeout) as response,  # nosec B310
             temporary.open("wb") as output,
-        ):  # nosec B310
+        ):
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
