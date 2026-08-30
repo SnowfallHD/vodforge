@@ -61,7 +61,9 @@ def test_packaging_rejects_symlink_at_every_output_directory_depth(
     assert "_vodforge_output_dir" not in info
 
 
-def test_packaging_rejects_descendant_symlink_even_when_it_points_inside_root(tmp_path: Path):
+def test_packaging_rejects_descendant_symlink_even_when_it_points_inside_root(
+    tmp_path: Path,
+):
     output_root = tmp_path / "chosen-output"
     inside_target = output_root / "safe-real-directory"
     output_root.mkdir()
@@ -119,7 +121,9 @@ def test_packaging_rejects_preexisting_symlink_output_file(tmp_path: Path):
     outside.mkdir()
     staging_dir, staged = _staged_media(tmp_path)
     info = {"id": "id123", "title": "Title", "uploader": "Creator"}
-    target = output_root / "Creator" / "videos - no playlist" / "Title [id123]" / "Title.mp4"
+    target = (
+        output_root / "Creator" / "videos - no playlist" / "Title [id123]" / "Title.mp4"
+    )
     target.parent.mkdir(parents=True)
     outside_file = outside / "existing.mp4"
     outside_file.write_bytes(b"outside bytes")
@@ -158,7 +162,13 @@ def test_user_selected_symlink_root_remains_a_valid_anchor(tmp_path: Path):
         staged_media=[(info, staged)],
     )
 
-    expected = selected_output / "Creator" / "videos - no playlist" / "Title [id123]" / "Title.mp4"
+    expected = (
+        selected_output
+        / "Creator"
+        / "videos - no playlist"
+        / "Title [id123]"
+        / "Title.mp4"
+    )
     assert packaged == [expected]
     assert expected.read_bytes() == b"synthetic staged media"
     assert expected.resolve().is_relative_to(real_output.resolve())

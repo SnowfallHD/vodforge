@@ -16,7 +16,9 @@ def _release_notes_module():
 
 
 def test_release_workflow_signs_before_packaging_windows_portable_archive():
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
 
     app_sign = workflow.index("name: Sign packaged Windows application")
     installer_build = workflow.index("name: Build Windows installer")
@@ -30,7 +32,9 @@ def test_release_workflow_signs_before_packaging_windows_portable_archive():
 
 
 def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "vodforge-macos-${{ matrix.architecture }}-unsigned" in workflow
     assert 'VODFORGE_UNSIGNED_REVIEW: "1"' in workflow
@@ -39,11 +43,13 @@ def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
 
 
 def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
-    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "if ! brew install python@3.13 python-tk@3.13 ffmpeg deno; then" in workflow
     assert 'brew list --versions "$formula"' in workflow
-    assert 'brew --prefix python@3.13' in workflow
+    assert "brew --prefix python@3.13" in workflow
 
 
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
@@ -69,20 +75,26 @@ def test_packaged_apps_receive_the_requested_operating_system_version_metadata()
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
 
-    assert "for version_key in CFBundleShortVersionString CFBundleVersion" in macos_build
-    assert 'Set :$version_key $bundle_version' in macos_build
-    assert 'Add :$version_key string $bundle_version' in macos_build
-    assert 'StringStruct(\'FileVersion\', \'$displayVersion\')' in windows_build
-    assert 'StringStruct(\'ProductVersion\', \'$displayVersion\')' in windows_build
+    assert (
+        "for version_key in CFBundleShortVersionString CFBundleVersion" in macos_build
+    )
+    assert "Set :$version_key $bundle_version" in macos_build
+    assert "Add :$version_key string $bundle_version" in macos_build
+    assert "StringStruct('FileVersion', '$displayVersion')" in windows_build
+    assert "StringStruct('ProductVersion', '$displayVersion')" in windows_build
     assert '"--version-file", $versionResourceFile' in windows_build
 
 
 def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
 
-    version_mutation = macos_build.index('Set :$version_key $bundle_version')
-    local_signing = macos_build.index('/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"')
-    strict_verification = macos_build.index('/usr/bin/codesign --verify --deep --strict "dist/VODForge.app"')
+    version_mutation = macos_build.index("Set :$version_key $bundle_version")
+    local_signing = macos_build.index(
+        '/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"'
+    )
+    strict_verification = macos_build.index(
+        '/usr/bin/codesign --verify --deep --strict "dist/VODForge.app"'
+    )
     runtime_smoke = macos_build.index('"$app_binary" --runtime-smoke')
     assert version_mutation < local_signing < strict_verification < runtime_smoke
 
@@ -95,7 +107,10 @@ def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
     assert "--collect-all yt_dlp" in macos_build
     assert "--collect-all yt_dlp" in windows_build
     assert '"$app_binary" --runtime-smoke' in macos_build
-    assert 'Start-Process -FilePath $appBinary -ArgumentList "--runtime-smoke" -Wait -PassThru' in windows_build
+    assert (
+        'Start-Process -FilePath $appBinary -ArgumentList "--runtime-smoke" -Wait -PassThru'
+        in windows_build
+    )
     assert 'resources_module.files("yt_dlp_ejs.yt.solver")' in app_source
     assert 'YTDLP_EJS_SOLVER_RESOURCES = ("core.min.js", "lib.min.js")' in app_source
 
@@ -109,8 +124,8 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
     assert "Print :CFBundleIconFile" in macos_build
     assert 'cmp -s "$icon_file" "$bundle_icon"' in macos_build
     assert '"--icon", $iconFile' in windows_build
-    assert 'assets/icons/lucide' in macos_build
-    assert 'assets/icons/lucide' in windows_build
+    assert "assets/icons/lucide" in macos_build
+    assert "assets/icons/lucide" in windows_build
     assert "SetupIconFile=assets\\VODForge.ico" in installer
     assert (ROOT / "assets" / "VODForge.png").is_file()
     assert (ROOT / "assets" / "VODForge.ico").is_file()
@@ -128,12 +143,24 @@ def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
     assert (ROOT / "assets" / "icons" / "lucide" / "send-filled.png").is_file()
     assert (ROOT / "assets" / "icons" / "lucide" / "MATERIAL_LICENSE").is_file()
     assert (ROOT / "assets" / "icons" / "lucide" / "LICENSE").is_file()
-    for icon_name in ("activity", "folder", "library", "link-2", "settings", "sliders-horizontal", "send-filled"):
-        with Image.open(ROOT / "assets" / "icons" / "lucide" / f"{icon_name}.png") as icon:
+    for icon_name in (
+        "activity",
+        "folder",
+        "library",
+        "link-2",
+        "settings",
+        "sliders-horizontal",
+        "send-filled",
+    ):
+        with Image.open(
+            ROOT / "assets" / "icons" / "lucide" / f"{icon_name}.png"
+        ) as icon:
             assert icon.size == (512, 512)
             assert "A" in icon.getbands()
         assert (ROOT / "assets" / "icons" / "lucide" / f"{icon_name}-20.svg").is_file()
-        with Image.open(ROOT / "assets" / "icons" / "lucide" / f"{icon_name}-20.png") as icon:
+        with Image.open(
+            ROOT / "assets" / "icons" / "lucide" / f"{icon_name}-20.png"
+        ) as icon:
             assert icon.size == (20, 20)
             assert "A" in icon.getbands()
     for vector_variant in (

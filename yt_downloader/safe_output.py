@@ -31,18 +31,24 @@ def _resolved_beneath(path: Path, root: Path) -> bool:
     return True
 
 
-def _lexical_destination_parts(root: Path, destination: Path) -> tuple[Path, Path, tuple[str, ...], str]:
+def _lexical_destination_parts(
+    root: Path, destination: Path
+) -> tuple[Path, Path, tuple[str, ...], str]:
     root_absolute = Path(os.path.abspath(os.fspath(root)))
     destination_absolute = Path(os.path.abspath(os.fspath(destination)))
     try:
         relative = destination_absolute.relative_to(root_absolute)
     except ValueError as exc:
-        raise UnsafeOutputPathError("The final output path is outside the selected destination.") from exc
+        raise UnsafeOutputPathError(
+            "The final output path is outside the selected destination."
+        ) from exc
     if not relative.parts or relative.name in {"", ".", ".."}:
         raise UnsafeOutputPathError("The final output filename is invalid.")
     parent_parts = tuple(relative.parts[:-1])
     if any(part in {"", ".", ".."} for part in parent_parts):
-        raise UnsafeOutputPathError("The final output path contains an unsafe directory component.")
+        raise UnsafeOutputPathError(
+            "The final output path contains an unsafe directory component."
+        )
     return root_absolute, destination_absolute, parent_parts, relative.name
 
 
@@ -53,7 +59,9 @@ def _directory_open_flags() -> int:
     return flags
 
 
-def _open_directory_at(parent_fd: int, name: str, *, purpose: str = "final output") -> int:
+def _open_directory_at(
+    parent_fd: int, name: str, *, purpose: str = "final output"
+) -> int:
     try:
         descriptor = os.open(name, _directory_open_flags(), dir_fd=parent_fd)
     except OSError as exc:
@@ -104,20 +112,26 @@ def _restrict_private_directory_fd(descriptor: int, label: str) -> None:
         raise UnsafeOutputPathError(f"The {label} is not a directory.")
     os.fchmod(descriptor, 0o700)
     if stat.S_IMODE(os.fstat(descriptor).st_mode) != 0o700:
-        raise PermissionError(f"The {label} permissions could not be restricted to 0700.")
+        raise PermissionError(
+            f"The {label} permissions could not be restricted to 0700."
+        )
 
 
 def _create_private_staging_posix(root_real: Path, *, attempts: int) -> Path:
     try:
         root_fd = os.open(root_real, _directory_open_flags())
     except OSError as exc:
-        raise UnsafeOutputPathError("The selected output root could not be opened safely for staging.") from exc
+        raise UnsafeOutputPathError(
+            "The selected output root could not be opened safely for staging."
+        ) from exc
     try:
         try:
             os.mkdir(".vfstage", mode=0o700, dir_fd=root_fd)
         except FileExistsError:
             pass
-        staging_root_fd = _open_directory_at(root_fd, ".vfstage", purpose="VODForge staging")
+        staging_root_fd = _open_directory_at(
+            root_fd, ".vfstage", purpose="VODForge staging"
+        )
         try:
             _restrict_private_directory_fd(staging_root_fd, "VODForge staging root")
             for _attempt in range(attempts):
@@ -133,7 +147,9 @@ def _create_private_staging_posix(root_real: Path, *, attempts: int) -> Path:
                         token,
                         purpose="VODForge staging",
                     )
-                    _restrict_private_directory_fd(child_fd, "VODForge run staging directory")
+                    _restrict_private_directory_fd(
+                        child_fd, "VODForge run staging directory"
+                    )
                     return root_real / ".vfstage" / token
                 except Exception:
                     try:
@@ -159,11 +175,15 @@ def _create_private_staging_portable(root_real: Path, *, attempts: int) -> Path:
         pass
     root_stat = staging_root.lstat()
     if is_symlink_or_reparse(root_stat) or not stat.S_ISDIR(root_stat.st_mode):
-        raise UnsafeOutputPathError("The VODForge staging root redirects or is not a directory.")
+        raise UnsafeOutputPathError(
+            "The VODForge staging root redirects or is not a directory."
+        )
     if os.name != "nt":
         staging_root.chmod(0o700)
         if stat.S_IMODE(staging_root.stat().st_mode) != 0o700:
-            raise PermissionError("The VODForge staging root permissions could not be restricted to 0700.")
+            raise PermissionError(
+                "The VODForge staging root permissions could not be restricted to 0700."
+            )
     for _attempt in range(attempts):
         staging = staging_root / uuid.uuid4().hex[:8]
         try:
@@ -171,12 +191,18 @@ def _create_private_staging_portable(root_real: Path, *, attempts: int) -> Path:
         except FileExistsError:
             continue
         staging_stat = staging.lstat()
-        if is_symlink_or_reparse(staging_stat) or not stat.S_ISDIR(staging_stat.st_mode):
-            raise UnsafeOutputPathError("The VODForge run staging directory redirects or is not a directory.")
+        if is_symlink_or_reparse(staging_stat) or not stat.S_ISDIR(
+            staging_stat.st_mode
+        ):
+            raise UnsafeOutputPathError(
+                "The VODForge run staging directory redirects or is not a directory."
+            )
         if os.name != "nt":
             staging.chmod(0o700)
             if stat.S_IMODE(staging.stat().st_mode) != 0o700:
-                raise PermissionError("The VODForge run staging permissions could not be restricted to 0700.")
+                raise PermissionError(
+                    "The VODForge run staging permissions could not be restricted to 0700."
+                )
         return staging
     raise RuntimeError("VODForge could not allocate a unique staging directory.")
 
@@ -188,7 +214,9 @@ def create_private_staging_directory(output_root: Path, *, attempts: int = 16) -
     try:
         root_real = root_absolute.resolve(strict=True)
     except OSError as exc:
-        raise UnsafeOutputPathError("The selected output root could not be resolved for staging.") from exc
+        raise UnsafeOutputPathError(
+            "The selected output root could not be resolved for staging."
+        ) from exc
     if not root_real.is_dir():
         raise UnsafeOutputPathError("The selected output root is not a directory.")
     supports_secure_dir_fds = (
@@ -209,7 +237,9 @@ def _reject_unsafe_leaf_at(parent_fd: int, name: str) -> None:
     except FileNotFoundError:
         return
     if is_symlink_or_reparse(leaf_stat) or not stat.S_ISREG(leaf_stat.st_mode):
-        raise UnsafeOutputPathError("The final output filename already redirects or is not a regular file.")
+        raise UnsafeOutputPathError(
+            "The final output filename already redirects or is not a regular file."
+        )
 
 
 def _commit_posix(
@@ -223,7 +253,9 @@ def _commit_posix(
     try:
         root_fd = os.open(root_real, _directory_open_flags())
     except OSError as exc:
-        raise UnsafeOutputPathError("The selected output root could not be opened safely.") from exc
+        raise UnsafeOutputPathError(
+            "The selected output root could not be opened safely."
+        ) from exc
     try:
         root_path_stat = os.stat(root_real, follow_symlinks=False)
         root_descriptor_stat = os.fstat(root_fd)
@@ -232,7 +264,9 @@ def _commit_posix(
             or not stat.S_ISDIR(root_path_stat.st_mode)
             or not _same_file(root_path_stat, root_descriptor_stat)
         ):
-            raise UnsafeOutputPathError("The selected output root changed while it was being opened.")
+            raise UnsafeOutputPathError(
+                "The selected output root changed while it was being opened."
+            )
 
         created_parent_fd = _walk_directory_fds(root_fd, parent_parts, create=True)
         os.close(created_parent_fd)
@@ -245,11 +279,17 @@ def _commit_posix(
             # prove it still names the exact directory opened through root_fd.
             resolved_parent = destination_absolute.parent.resolve(strict=True)
             if not _resolved_beneath(resolved_parent, root_real):
-                raise UnsafeOutputPathError("The final output directory resolves outside the selected destination.")
+                raise UnsafeOutputPathError(
+                    "The final output directory resolves outside the selected destination."
+                )
             resolved_stat = os.stat(resolved_parent, follow_symlinks=False)
             parent_stat = os.fstat(parent_fd)
-            if is_symlink_or_reparse(resolved_stat) or not _same_file(resolved_stat, parent_stat):
-                raise UnsafeOutputPathError("The final output directory changed before commit.")
+            if is_symlink_or_reparse(resolved_stat) or not _same_file(
+                resolved_stat, parent_stat
+            ):
+                raise UnsafeOutputPathError(
+                    "The final output directory changed before commit."
+                )
             _reject_unsafe_leaf_at(parent_fd, leaf_name)
             os.replace(source, leaf_name, dst_dir_fd=parent_fd)
         finally:
@@ -279,7 +319,9 @@ def _verify_windows_directory_chain(
             raise UnsafeOutputPathError(
                 f"The final output directory component {part!r} could not be verified."
             ) from exc
-        if is_symlink_or_reparse(current_stat) or not stat.S_ISDIR(current_stat.st_mode):
+        if is_symlink_or_reparse(current_stat) or not stat.S_ISDIR(
+            current_stat.st_mode
+        ):
             raise UnsafeOutputPathError(
                 f"The final output directory component {part!r} redirects or is not a directory."
             )
@@ -290,7 +332,9 @@ def _verify_windows_directory_chain(
                 f"The final output directory component {part!r} could not be resolved."
             ) from exc
         if not _resolved_beneath(resolved, root_real):
-            raise UnsafeOutputPathError("The final output directory resolves outside the selected destination.")
+            raise UnsafeOutputPathError(
+                "The final output directory resolves outside the selected destination."
+            )
     return current
 
 
@@ -306,10 +350,14 @@ def _commit_windows(
     _verify_windows_directory_chain(root_absolute, root_real, parent_parts, create=True)
     if control_check is not None:
         control_check()
-    parent = _verify_windows_directory_chain(root_absolute, root_real, parent_parts, create=False)
+    parent = _verify_windows_directory_chain(
+        root_absolute, root_real, parent_parts, create=False
+    )
     resolved_parent = parent.resolve(strict=True)
     if not _resolved_beneath(resolved_parent, root_real):
-        raise UnsafeOutputPathError("The final output directory resolves outside the selected destination.")
+        raise UnsafeOutputPathError(
+            "The final output directory resolves outside the selected destination."
+        )
     leaf = parent / leaf_name
     try:
         leaf_stat = leaf.lstat()
@@ -317,7 +365,9 @@ def _commit_windows(
         pass
     else:
         if is_symlink_or_reparse(leaf_stat) or not stat.S_ISREG(leaf_stat.st_mode):
-            raise UnsafeOutputPathError("The final output filename already redirects or is not a regular file.")
+            raise UnsafeOutputPathError(
+                "The final output filename already redirects or is not a regular file."
+            )
     # Windows does not expose an os.replace directory-handle variant. The
     # immediately preceding reparse and resolved-containment checks are the
     # strongest portable boundary available here.
@@ -337,19 +387,25 @@ def commit_file_beneath(
     descendant component is created and verified without following symlinks or
     Windows reparse points, then checked again immediately before commit.
     """
-    root_absolute, destination_absolute, parent_parts, leaf_name = _lexical_destination_parts(
-        root,
-        destination,
+    root_absolute, destination_absolute, parent_parts, leaf_name = (
+        _lexical_destination_parts(
+            root,
+            destination,
+        )
     )
     root_absolute.mkdir(parents=True, exist_ok=True)
     try:
         root_real = root_absolute.resolve(strict=True)
     except OSError as exc:
-        raise UnsafeOutputPathError("The selected output root could not be resolved.") from exc
+        raise UnsafeOutputPathError(
+            "The selected output root could not be resolved."
+        ) from exc
     try:
         root_stat = root_real.stat()
     except OSError as exc:
-        raise UnsafeOutputPathError("The selected output root could not be inspected.") from exc
+        raise UnsafeOutputPathError(
+            "The selected output root could not be inspected."
+        ) from exc
     if not stat.S_ISDIR(root_stat.st_mode):
         raise UnsafeOutputPathError("The selected output root is not a directory.")
 

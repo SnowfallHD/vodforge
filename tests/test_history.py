@@ -26,11 +26,19 @@ from yt_downloader.history import (
 
 
 def test_application_data_dir_uses_platform_conventions(tmp_path: Path):
-    assert application_data_dir(platform_name="darwin", home=tmp_path) == tmp_path / "Library" / "Application Support" / "VODForge"
-    assert application_data_dir(platform_name="win32", home=tmp_path, local_app_data="C:/Users/Test/AppData/Local") == Path(
-        "C:/Users/Test/AppData/Local/VODForge"
+    assert (
+        application_data_dir(platform_name="darwin", home=tmp_path)
+        == tmp_path / "Library" / "Application Support" / "VODForge"
     )
-    assert application_data_dir(platform_name="linux", home=tmp_path, xdg_data_home=None) == tmp_path / ".local" / "share" / "vodforge"
+    assert application_data_dir(
+        platform_name="win32",
+        home=tmp_path,
+        local_app_data="C:/Users/Test/AppData/Local",
+    ) == Path("C:/Users/Test/AppData/Local/VODForge")
+    assert (
+        application_data_dir(platform_name="linux", home=tmp_path, xdg_data_home=None)
+        == tmp_path / ".local" / "share" / "vodforge"
+    )
 
 
 @pytest.mark.parametrize(
@@ -62,7 +70,9 @@ def test_history_output_type_handles_explicit_and_malformed_legacy_shapes(
     assert history_output_type(record) == expected
 
 
-def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_path: Path):
+def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(
+    tmp_path: Path,
+):
     record = sanitize_history_record(
         {
             "id": "abc123",
@@ -110,18 +120,27 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(tmp_pa
 def test_durable_url_sanitizer_strips_credentials_query_and_fragment_but_keeps_identity():
     canary = "TOPSECRET"
 
-    assert sanitize_durable_url(
-        f"https://user:pass@example.invalid/media?id=1&token={canary}#private",
-        preserve_youtube_context=True,
-    ) == "https://example.invalid/media"
-    assert sanitize_durable_url(
-        f"https://user:pass@youtu.be/abc123?list=PLsafe&token={canary}#private",
-        preserve_youtube_context=True,
-    ) == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
-    assert sanitize_durable_url(
-        f"https://example.invalid:invalid/media?token={canary}",
-        preserve_youtube_context=True,
-    ) is None
+    assert (
+        sanitize_durable_url(
+            f"https://user:pass@example.invalid/media?id=1&token={canary}#private",
+            preserve_youtube_context=True,
+        )
+        == "https://example.invalid/media"
+    )
+    assert (
+        sanitize_durable_url(
+            f"https://user:pass@youtu.be/abc123?list=PLsafe&token={canary}#private",
+            preserve_youtube_context=True,
+        )
+        == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
+    )
+    assert (
+        sanitize_durable_url(
+            f"https://example.invalid:invalid/media?token={canary}",
+            preserve_youtube_context=True,
+        )
+        is None
+    )
 
 
 def test_durable_text_sanitizer_handles_multiple_embedded_and_malformed_urls():
@@ -160,9 +179,24 @@ def test_history_sanitizes_embedded_urls_before_bounding_run_activity(tmp_path: 
 
 def test_history_round_trip_and_redownload_deduplication(tmp_path: Path):
     location = tmp_path / "downloads" / "Example"
-    history = upsert_history([], {"id": "abc123", "title": "Original"}, location, recorded_at="2026-08-05T12:00:00+00:00")
-    history = upsert_history(history, {"id": "abc123", "title": "Updated"}, location, recorded_at="2026-08-05T13:00:00+00:00")
-    history = upsert_history(history, {"id": "xyz789", "title": "Second"}, tmp_path / "other", recorded_at="2026-08-05T14:00:00+00:00")
+    history = upsert_history(
+        [],
+        {"id": "abc123", "title": "Original"},
+        location,
+        recorded_at="2026-08-05T12:00:00+00:00",
+    )
+    history = upsert_history(
+        history,
+        {"id": "abc123", "title": "Updated"},
+        location,
+        recorded_at="2026-08-05T13:00:00+00:00",
+    )
+    history = upsert_history(
+        history,
+        {"id": "xyz789", "title": "Second"},
+        tmp_path / "other",
+        recorded_at="2026-08-05T14:00:00+00:00",
+    )
 
     assert [item["id"] for item in history] == ["xyz789", "abc123"]
     assert history[1]["title"] == "Updated"
@@ -195,12 +229,17 @@ def test_history_round_trip_preserves_bounded_per_run_activity(tmp_path: Path):
 
     assert loaded[0]["vodforge_run_id"] == "run-authority-123"
     assert loaded[0]["vodforge_run_activity"] == activity[:MAX_RUN_ACTIVITY_LINES]
-    assert sum(len(line) for line in loaded[0]["vodforge_run_activity"]) <= MAX_RUN_ACTIVITY_CHARS
+    assert (
+        sum(len(line) for line in loaded[0]["vodforge_run_activity"])
+        <= MAX_RUN_ACTIVITY_CHARS
+    )
 
 
 def test_history_keeps_same_video_downloaded_to_two_locations(tmp_path: Path):
     first = upsert_history([], {"id": "abc123", "title": "Example"}, tmp_path / "one")
-    second = upsert_history(first, {"id": "abc123", "title": "Example"}, tmp_path / "two")
+    second = upsert_history(
+        first, {"id": "abc123", "title": "Example"}, tmp_path / "two"
+    )
 
     assert len(second) == 2
     assert history_output_dir(second[0]) != history_output_dir(second[1])
@@ -342,18 +381,27 @@ def test_redownload_preserves_same_item_history_when_prior_folder_cannot_be_read
 
 
 def test_external_storage_roots_are_recognized_cross_platform():
-    assert history_module._external_storage_root(
-        PurePosixPath("/Volumes/Archive/Videos/Example"),
-        platform_name="darwin",
-    ) == "/Volumes/Archive"
-    assert history_module._external_storage_root(
-        PurePosixPath("/mnt/archive/Videos/Example"),
-        platform_name="linux",
-    ) == "/mnt/archive"
-    assert history_module._external_storage_root(
-        PureWindowsPath(r"E:\Videos\Example"),
-        platform_name="win32",
-    ) == "E:\\"
+    assert (
+        history_module._external_storage_root(
+            PurePosixPath("/Volumes/Archive/Videos/Example"),
+            platform_name="darwin",
+        )
+        == "/Volumes/Archive"
+    )
+    assert (
+        history_module._external_storage_root(
+            PurePosixPath("/mnt/archive/Videos/Example"),
+            platform_name="linux",
+        )
+        == "/mnt/archive"
+    )
+    assert (
+        history_module._external_storage_root(
+            PureWindowsPath(r"E:\Videos\Example"),
+            platform_name="win32",
+        )
+        == "E:\\"
+    )
 
 
 def test_history_keeps_mp4_and_mp3_for_same_video_and_location(tmp_path: Path):

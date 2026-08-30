@@ -73,7 +73,10 @@ def is_newer_release(current_version: str, release_version: str) -> bool:
 
 def _trusted_github_page(url: str) -> str:
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in {"github.com", "www.github.com"}:
+    if parsed.scheme != "https" or parsed.hostname not in {
+        "github.com",
+        "www.github.com",
+    }:
         raise ValueError("GitHub returned an invalid release page URL.")
     return url
 
@@ -151,10 +154,16 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            raise RuntimeError("No packaged VODForge release is available yet.") from exc
-        raise RuntimeError(f"GitHub could not check for updates (HTTP {exc.code}).") from exc
+            raise RuntimeError(
+                "No packaged VODForge release is available yet."
+            ) from exc
+        raise RuntimeError(
+            f"GitHub could not check for updates (HTTP {exc.code})."
+        ) from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError("VODForge could not reach GitHub to check for updates.") from exc
+        raise RuntimeError(
+            "VODForge could not reach GitHub to check for updates."
+        ) from exc
     if len(raw) > MAX_RELEASE_RESPONSE_BYTES:
         raise RuntimeError("GitHub returned an unexpectedly large release response.")
     try:
@@ -196,13 +205,17 @@ def parse_sha256sums(text: str) -> dict[str, str]:
 
 
 def _fetch_small_text(url: str, *, timeout: float) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"})
+    request = urllib.request.Request(
+        url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"}
+    )
     try:
         # The only caller passes an exact URL returned by _trusted_github_download.
         with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except (urllib.error.HTTPError, urllib.error.URLError) as exc:
-        raise RuntimeError("VODForge could not download the release checksums.") from exc
+        raise RuntimeError(
+            "VODForge could not download the release checksums."
+        ) from exc
     if len(raw) > MAX_RELEASE_RESPONSE_BYTES:
         raise RuntimeError("The release checksum file is unexpectedly large.")
     try:
@@ -227,12 +240,16 @@ def download_verified_update(
     )
     if normalized_tag_version != release.version:
         raise RuntimeError("This release contains invalid version metadata.")
-    asset = release_asset_for_platform(release, platform_name=platform_name, machine=machine)
+    asset = release_asset_for_platform(
+        release, platform_name=platform_name, machine=machine
+    )
     if asset is None:
         raise RuntimeError("This release does not include an update for this computer.")
     if asset.size <= 0 or asset.size > MAX_UPDATE_ASSET_BYTES:
         raise RuntimeError("The release update has an invalid file size.")
-    checksum_asset = next((item for item in release.assets if item.name == "SHA256SUMS.txt"), None)
+    checksum_asset = next(
+        (item for item in release.assets if item.name == "SHA256SUMS.txt"), None
+    )
     if checksum_asset is None:
         raise RuntimeError("This release is missing its SHA-256 checksum manifest.")
     try:
@@ -248,32 +265,47 @@ def download_verified_update(
         )
     except ValueError as exc:
         raise RuntimeError("This release contains an invalid download URL.") from exc
-    expected_hash = parse_sha256sums(_fetch_small_text(checksum_url, timeout=timeout)).get(asset.name)
+    expected_hash = parse_sha256sums(
+        _fetch_small_text(checksum_url, timeout=timeout)
+    ).get(asset.name)
     if not expected_hash:
-        raise RuntimeError("This release is missing the update file's SHA-256 checksum.")
+        raise RuntimeError(
+            "This release is missing the update file's SHA-256 checksum."
+        )
 
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination = destination_dir / asset.name
     temporary = destination.with_suffix(destination.suffix + ".part")
     digest = hashlib.sha256()
     downloaded = 0
-    request = urllib.request.Request(asset_url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"})
+    request = urllib.request.Request(
+        asset_url, headers={"User-Agent": f"VODForge updater ({GITHUB_REPOSITORY})"}
+    )
     try:
         # asset_url was exact-canonicalized immediately above, before any network access.
-        with urllib.request.urlopen(request, timeout=timeout) as response, temporary.open("wb") as output:  # nosec B310
+        with (
+            urllib.request.urlopen(request, timeout=timeout) as response,
+            temporary.open("wb") as output,
+        ):  # nosec B310
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
                 downloaded += len(chunk)
                 if downloaded > asset.size or downloaded > MAX_UPDATE_ASSET_BYTES:
-                    raise RuntimeError("The release update exceeded its declared file size.")
+                    raise RuntimeError(
+                        "The release update exceeded its declared file size."
+                    )
                 digest.update(chunk)
                 output.write(chunk)
         if downloaded != asset.size:
-            raise RuntimeError("The release update did not match its declared file size.")
+            raise RuntimeError(
+                "The release update did not match its declared file size."
+            )
         if digest.hexdigest().lower() != expected_hash:
-            raise RuntimeError("The release update failed SHA-256 verification and was not opened.")
+            raise RuntimeError(
+                "The release update failed SHA-256 verification and was not opened."
+            )
         temporary.replace(destination)
         if os.name != "nt":
             destination.chmod(0o700)
@@ -316,28 +348,54 @@ def verify_macos_app(
     """Require the exact signed, notarized VODForge application identity."""
     app_path = Path(app_path)
     if not app_path.is_dir() or app_path.is_symlink():
-        raise RuntimeError("The macOS update did not contain a regular VODForge.app bundle.")
+        raise RuntimeError(
+            "The macOS update did not contain a regular VODForge.app bundle."
+        )
     plist_path = app_path / "Contents" / "Info.plist"
     try:
         with plist_path.open("rb") as handle:
             bundle_id = str(plistlib.load(handle).get("CFBundleIdentifier") or "")
     except (OSError, plistlib.InvalidFileException, TypeError, ValueError) as exc:
-        raise RuntimeError("The macOS update has an unreadable application identity.") from exc
+        raise RuntimeError(
+            "The macOS update has an unreadable application identity."
+        ) from exc
     if bundle_id != MACOS_BUNDLE_ID:
         raise RuntimeError("The macOS update has the wrong application identifier.")
 
-    _run_checked(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app_path)], runner=runner)
-    details = _run_checked(["/usr/bin/codesign", "-d", "--verbose=4", str(app_path)], runner=runner)
+    _run_checked(
+        ["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app_path)],
+        runner=runner,
+    )
+    details = _run_checked(
+        ["/usr/bin/codesign", "-d", "--verbose=4", str(app_path)], runner=runner
+    )
     signing_details = f"{details.stdout}\n{details.stderr}"
     fields = {}
     for line in signing_details.splitlines():
         key, separator, value = line.partition("=")
         if separator:
             fields[key.strip()] = value.strip()
-    if fields.get("Identifier") != MACOS_BUNDLE_ID or fields.get("TeamIdentifier") != MACOS_TEAM_ID:
-        raise RuntimeError("The macOS update is not signed for VODForge by Kryden Ventures.")
-    _run_checked(["/usr/bin/xcrun", "stapler", "validate", str(app_path)], runner=runner)
-    _run_checked(["/usr/sbin/spctl", "--assess", "--type", "execute", "--verbose=2", str(app_path)], runner=runner)
+    if (
+        fields.get("Identifier") != MACOS_BUNDLE_ID
+        or fields.get("TeamIdentifier") != MACOS_TEAM_ID
+    ):
+        raise RuntimeError(
+            "The macOS update is not signed for VODForge by Kryden Ventures."
+        )
+    _run_checked(
+        ["/usr/bin/xcrun", "stapler", "validate", str(app_path)], runner=runner
+    )
+    _run_checked(
+        [
+            "/usr/sbin/spctl",
+            "--assess",
+            "--type",
+            "execute",
+            "--verbose=2",
+            str(app_path),
+        ],
+        runner=runner,
+    )
 
 
 def prepare_macos_update(
@@ -351,21 +409,34 @@ def prepare_macos_update(
     target_app = Path(target_app)
     if archive_path.suffix.lower() != ".zip":
         raise RuntimeError("The macOS update is not a ZIP archive.")
-    if target_app.suffix.lower() != ".app" or not target_app.is_dir() or target_app.is_symlink():
-        raise RuntimeError("VODForge must be running from an installed application bundle to update itself.")
+    if (
+        target_app.suffix.lower() != ".app"
+        or not target_app.is_dir()
+        or target_app.is_symlink()
+    ):
+        raise RuntimeError(
+            "VODForge must be running from an installed application bundle to update itself."
+        )
     if not os.access(target_app.parent, os.W_OK):
-        raise RuntimeError("VODForge cannot replace the installed app at its current location.")
+        raise RuntimeError(
+            "VODForge cannot replace the installed app at its current location."
+        )
 
     staging_root = archive_path.parent / f"{MACOS_STAGING_PREFIX}{uuid.uuid4().hex}"
     staging_root.mkdir(mode=0o700, parents=False, exist_ok=False)
     try:
-        _run_checked(["/usr/bin/ditto", "-x", "-k", str(archive_path), str(staging_root)], runner=runner)
+        _run_checked(
+            ["/usr/bin/ditto", "-x", "-k", str(archive_path), str(staging_root)],
+            runner=runner,
+        )
         source_app = staging_root / "VODForge.app"
         verify_macos_app(source_app, runner=runner)
     except Exception:
         shutil.rmtree(staging_root, ignore_errors=True)
         raise
-    return MacUpdatePlan(source_app=source_app, target_app=target_app, staging_root=staging_root)
+    return MacUpdatePlan(
+        source_app=source_app, target_app=target_app, staging_root=staging_root
+    )
 
 
 def cleanup_stale_macos_updates(update_root: Path, *, keep: Path | None = None) -> None:
@@ -375,7 +446,11 @@ def cleanup_stale_macos_updates(update_root: Path, *, keep: Path | None = None) 
         return
     keep = keep.resolve() if keep is not None else None
     for child in update_root.iterdir():
-        if not child.name.startswith(MACOS_STAGING_PREFIX) or not child.is_dir() or child.is_symlink():
+        if (
+            not child.name.startswith(MACOS_STAGING_PREFIX)
+            or not child.is_dir()
+            or child.is_symlink()
+        ):
             continue
         if keep is not None and child.resolve() == keep:
             continue
@@ -500,11 +575,18 @@ def verify_windows_authenticode(
     try:
         payload = json.loads(result.stdout)
     except (TypeError, json.JSONDecodeError) as exc:
-        raise RuntimeError("Windows could not read the update's publisher signature.") from exc
+        raise RuntimeError(
+            "Windows could not read the update's publisher signature."
+        ) from exc
     subject = str(payload.get("Subject") or "")
     if str(payload.get("Status") or "") != "Valid":
         raise RuntimeError("Windows rejected the update's Authenticode signature.")
-    if f'CN="{WINDOWS_PUBLISHER}"' not in subject or f'O="{WINDOWS_PUBLISHER}"' not in subject:
-        raise RuntimeError("The Windows update was not published by Kryden Ventures, LLC.")
+    if (
+        f'CN="{WINDOWS_PUBLISHER}"' not in subject
+        or f'O="{WINDOWS_PUBLISHER}"' not in subject
+    ):
+        raise RuntimeError(
+            "The Windows update was not published by Kryden Ventures, LLC."
+        )
     if not str(payload.get("Timestamp") or "").strip():
         raise RuntimeError("The Windows update is missing its trusted timestamp.")

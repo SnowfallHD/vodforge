@@ -90,13 +90,35 @@ def test_release_payload_rejects_asset_outside_the_canonical_release_path():
 @pytest.mark.parametrize(
     "payload",
     [
-        {"tag_name": "v1.2.3", "html_url": "https://evil.example/release", "draft": False, "prerelease": False},
-        {"tag_name": "latest", "html_url": "https://github.com/SnowfallHD/vodforge/releases/latest", "draft": False, "prerelease": False},
-        {"tag_name": "v1.2.3-beta.1", "html_url": "https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3-beta.1", "draft": False, "prerelease": False},
-        {"tag_name": "v1.2.3", "html_url": "https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3", "draft": True, "prerelease": False},
+        {
+            "tag_name": "v1.2.3",
+            "html_url": "https://evil.example/release",
+            "draft": False,
+            "prerelease": False,
+        },
+        {
+            "tag_name": "latest",
+            "html_url": "https://github.com/SnowfallHD/vodforge/releases/latest",
+            "draft": False,
+            "prerelease": False,
+        },
+        {
+            "tag_name": "v1.2.3-beta.1",
+            "html_url": "https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3-beta.1",
+            "draft": False,
+            "prerelease": False,
+        },
+        {
+            "tag_name": "v1.2.3",
+            "html_url": "https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
+            "draft": True,
+            "prerelease": False,
+        },
     ],
 )
-def test_release_payload_rejects_untrusted_or_nonstable_data(payload: dict[str, object]):
+def test_release_payload_rejects_untrusted_or_nonstable_data(
+    payload: dict[str, object],
+):
     with pytest.raises(ValueError):
         parse_release_payload(payload)
 
@@ -118,19 +140,48 @@ def test_platform_asset_selection_is_exact():
         html_url="https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
         notes="",
         assets=(
-            ReleaseAsset("VODForge-Windows-Setup-v1.2.3.exe", "https://github.com/example/windows", 10),
-            ReleaseAsset("VODForge-macOS-arm64-v1.2.3.zip", "https://github.com/example/mac-arm", 10),
-            ReleaseAsset("VODForge-macOS-x64-v1.2.3.zip", "https://github.com/example/mac-x64", 10),
+            ReleaseAsset(
+                "VODForge-Windows-Setup-v1.2.3.exe",
+                "https://github.com/example/windows",
+                10,
+            ),
+            ReleaseAsset(
+                "VODForge-macOS-arm64-v1.2.3.zip",
+                "https://github.com/example/mac-arm",
+                10,
+            ),
+            ReleaseAsset(
+                "VODForge-macOS-x64-v1.2.3.zip",
+                "https://github.com/example/mac-x64",
+                10,
+            ),
         ),
     )
 
-    assert release_asset_for_platform(release, platform_name="win32", machine="AMD64").name.endswith(".exe")
-    assert release_asset_for_platform(release, platform_name="darwin", machine="arm64").name == "VODForge-macOS-arm64-v1.2.3.zip"
-    assert release_asset_for_platform(release, platform_name="darwin", machine="x86_64").name == "VODForge-macOS-x64-v1.2.3.zip"
-    assert release_asset_for_platform(release, platform_name="linux", machine="x86_64") is None
+    assert release_asset_for_platform(
+        release, platform_name="win32", machine="AMD64"
+    ).name.endswith(".exe")
+    assert (
+        release_asset_for_platform(
+            release, platform_name="darwin", machine="arm64"
+        ).name
+        == "VODForge-macOS-arm64-v1.2.3.zip"
+    )
+    assert (
+        release_asset_for_platform(
+            release, platform_name="darwin", machine="x86_64"
+        ).name
+        == "VODForge-macOS-x64-v1.2.3.zip"
+    )
+    assert (
+        release_asset_for_platform(release, platform_name="linux", machine="x86_64")
+        is None
+    )
 
 
-def test_verified_update_requires_matching_checksum(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def test_verified_update_requires_matching_checksum(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
     update_bytes = b"verified installer bytes"
     digest = hashlib.sha256(update_bytes).hexdigest()
     asset_name = "VODForge-Windows-Setup-v1.2.3.exe"
@@ -141,7 +192,11 @@ def test_verified_update_requires_matching_checksum(monkeypatch: pytest.MonkeyPa
         html_url="https://github.com/SnowfallHD/vodforge/releases/tag/v1.2.3",
         notes="",
         assets=(
-            ReleaseAsset(asset_name, _release_download_url("v1.2.3", asset_name), len(update_bytes)),
+            ReleaseAsset(
+                asset_name,
+                _release_download_url("v1.2.3", asset_name),
+                len(update_bytes),
+            ),
             ReleaseAsset(
                 "SHA256SUMS.txt",
                 _release_download_url("v1.2.3", "SHA256SUMS.txt"),
@@ -164,13 +219,17 @@ def test_verified_update_requires_matching_checksum(monkeypatch: pytest.MonkeyPa
         return FakeResponse(update_bytes)
 
     monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", fake_urlopen)
-    output = download_verified_update(release, tmp_path, platform_name="win32", machine="AMD64")
+    output = download_verified_update(
+        release, tmp_path, platform_name="win32", machine="AMD64"
+    )
 
     assert output.read_bytes() == update_bytes
     assert parse_sha256sums(f"{digest}  {asset_name}\n") == {asset_name: digest}
 
 
-def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def test_verified_update_deletes_tampered_partial_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
     asset_name = "VODForge-Windows-Setup-v1.2.3.exe"
     release = ReleaseInfo(
         version="1.2.3",
@@ -195,11 +254,21 @@ def test_verified_update_deletes_tampered_partial_file(monkeypatch: pytest.Monke
         def __exit__(self, *_args):
             self.close()
 
-    responses = iter([FakeResponse(f"{'0' * 64}  {asset_name}\n".encode()), FakeResponse(b"tampered")])
-    monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", lambda *_args, **_kwargs: next(responses))
+    responses = iter(
+        [
+            FakeResponse(f"{'0' * 64}  {asset_name}\n".encode()),
+            FakeResponse(b"tampered"),
+        ]
+    )
+    monkeypatch.setattr(
+        "yt_downloader.updates.urllib.request.urlopen",
+        lambda *_args, **_kwargs: next(responses),
+    )
 
     with pytest.raises(RuntimeError, match="SHA-256 verification"):
-        download_verified_update(release, tmp_path, platform_name="win32", machine="AMD64")
+        download_verified_update(
+            release, tmp_path, platform_name="win32", machine="AMD64"
+        )
 
     assert not (tmp_path / asset_name).exists()
     assert not (tmp_path / f"{asset_name}.part").exists()
@@ -299,11 +368,15 @@ def test_verified_update_revalidates_asset_urls_before_network_access(
         network_calls.append(request.full_url)
         raise AssertionError("untrusted release data reached the network boundary")
 
-    monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen)
+    monkeypatch.setattr(
+        "yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen
+    )
 
     destination = tmp_path / "updates"
     with pytest.raises(RuntimeError, match="invalid download URL"):
-        download_verified_update(release, destination, platform_name="win32", machine="AMD64")
+        download_verified_update(
+            release, destination, platform_name="win32", machine="AMD64"
+        )
 
     assert network_calls == []
     assert not destination.exists()
@@ -335,17 +408,23 @@ def test_verified_update_rejects_incoherent_release_version_before_network_acces
         network_calls.append(request.full_url)
         raise AssertionError("incoherent release identity reached the network boundary")
 
-    monkeypatch.setattr("yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen)
+    monkeypatch.setattr(
+        "yt_downloader.updates.urllib.request.urlopen", unexpected_urlopen
+    )
     destination = tmp_path / "updates"
 
     with pytest.raises(RuntimeError, match="invalid version metadata"):
-        download_verified_update(release, destination, platform_name="win32", machine="AMD64")
+        download_verified_update(
+            release, destination, platform_name="win32", machine="AMD64"
+        )
 
     assert network_calls == []
     assert not destination.exists()
 
 
-def _write_mac_app(app_path: Path, *, bundle_id: str = "com.snowfallhd.vodforge") -> None:
+def _write_mac_app(
+    app_path: Path, *, bundle_id: str = "com.snowfallhd.vodforge"
+) -> None:
     contents = app_path / "Contents"
     contents.mkdir(parents=True, exist_ok=True)
     with (contents / "Info.plist").open("wb") as handle:
@@ -432,7 +511,9 @@ def test_launch_macos_update_uses_detached_argument_safe_handoff(tmp_path: Path)
         calls.append((command, kwargs))
         return Process()
 
-    launch_macos_update(plan, parent_pid=123, runner=_mac_verification_runner(), popen=popen)
+    launch_macos_update(
+        plan, parent_pid=123, runner=_mac_verification_runner(), popen=popen
+    )
     command, kwargs = calls[0]
     assert command[0] == "/bin/bash"
     assert command[2:] == ["123", str(source), str(target), str(staging)]

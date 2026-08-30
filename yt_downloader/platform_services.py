@@ -36,7 +36,11 @@ def diagnostics_dir(
     """Return the platform's conventional per-user diagnostics directory."""
     home = Path.home() if home is None else home
     if is_windows(platform_name):
-        base = local_app_data if local_app_data is not None else os.environ.get("LOCALAPPDATA")
+        base = (
+            local_app_data
+            if local_app_data is not None
+            else os.environ.get("LOCALAPPDATA")
+        )
         if base:
             return Path(base) / APPLICATION_NAME / "logs"
     if is_macos(platform_name):
@@ -99,7 +103,11 @@ def runtime_executable_candidates(
     raw_meipass = getattr(sys, "_MEIPASS", None) if meipass is None else meipass
     meipass = Path(raw_meipass) if raw_meipass else None
     repo_root = Path(__file__).resolve().parents[1] if repo_root is None else repo_root
-    names = [f"{tool_name}.exe", tool_name] if is_windows(platform_name) else [tool_name, f"{tool_name}.exe"]
+    names = (
+        [f"{tool_name}.exe", tool_name]
+        if is_windows(platform_name)
+        else [tool_name, f"{tool_name}.exe"]
+    )
 
     directories: list[Path] = []
     if frozen:
@@ -220,7 +228,9 @@ def output_directory_failure_guidance(platform_name: str | None = None) -> str:
 
 
 def runtime_version_command(tool_name: str, executable: str) -> list[str]:
-    return [executable, "--version"] if tool_name == "deno" else [executable, "-version"]
+    return (
+        [executable, "--version"] if tool_name == "deno" else [executable, "-version"]
+    )
 
 
 def probe_runtime_version(

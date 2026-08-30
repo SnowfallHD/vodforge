@@ -8,6 +8,7 @@ and each thumbnail surface owns its own asynchronous request generation.
 
 import inspect
 import queue
+import re
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -170,8 +171,12 @@ def test_queued_run_selection_resolves_only_the_matching_pending_job(tmp_path: P
     app.pending_jobs = [other_job, queued_job]
     app.metadata_items = []
     displayed: list[tuple[dict, DownloadJob]] = []
-    app._display_focus_queued_job_snapshot = lambda record, job: displayed.append((record, job))
-    app._display_focus_job_snapshot = lambda _job: (_ for _ in ()).throw(AssertionError("active run leaked"))
+    app._display_focus_queued_job_snapshot = lambda record, job: displayed.append(
+        (record, job)
+    )
+    app._display_focus_job_snapshot = lambda _job: (_ for _ in ()).throw(
+        AssertionError("active run leaked")
+    )
 
     record = {"kind": "queued", "run_id": queued_job.run_id}
     app._focus_select_run_record(record)
@@ -305,7 +310,9 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     app._set_text = lambda *_args, **_kwargs: None
     app._set_encoding_summary_text = lambda *_args, **_kwargs: None
     thumbnail_requests: list[tuple[str, str]] = []
-    app._load_thumbnail_preview = lambda url, *, target="both", **_kwargs: thumbnail_requests.append((url, target))
+    app._load_thumbnail_preview = lambda url, *, target="both", **_kwargs: (
+        thumbnail_requests.append((url, target))
+    )
 
     app._display_selected_metadata(0)
 
@@ -314,7 +321,9 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     assert app.focus_active_duration_var.get() == "9:59"
     assert app.focus_active_profile_var.get() == "Forge-owned profile"
     assert app.status_var.get() == "Ready"
-    assert thumbnail_requests == [("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")]
+    assert thumbnail_requests == [
+        ("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")
+    ]
     assert app.selected_title_var.get() == "Library selection"
     assert "MP4 • Library creator" in app.selected_meta_var.get()
     assert app.selected_location_var.get() == "Not downloaded in this history"
@@ -344,7 +353,9 @@ def test_next_run_output_toggle_cannot_rewrite_a_selected_forge_run():
     app.focus_active_detail_var = Value("Selected creator")
     app.focus_transfer_var = Value("Complete  /  Ready to open in Library")
     app.focus_summary_text = TextBuffer()
-    app.focus_summary_text.insert("1.0", "Container/ext: mp4\nSave to       /completed/run.mp4")
+    app.focus_summary_text.insert(
+        "1.0", "Container/ext: mp4\nSave to       /completed/run.mp4"
+    )
     app.output_var = Value("/next/run")
     app.focus_output_display_var = Value("")
     app._focus_layout = "wide"
@@ -357,12 +368,18 @@ def test_next_run_output_toggle_cannot_rewrite_a_selected_forge_run():
     assert refreshed == [True]
     assert app.focus_active_profile_var.get() == "MP4  •  Auto CBR"
     assert app.focus_transfer_var.get() == "Complete  /  Ready to open in Library"
-    assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /completed/run.mp4"
+    assert (
+        app.focus_summary_text.value
+        == "Container/ext: mp4\nSave to       /completed/run.mp4"
+    )
 
     app._sync_focus_destination()
 
     assert app.focus_output_display_var.get() == "/next/run"
-    assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /completed/run.mp4"
+    assert (
+        app.focus_summary_text.value
+        == "Container/ext: mp4\nSave to       /completed/run.mp4"
+    )
 
     app.focus_run_deck = object()
     app._focus_run_records = list
@@ -381,7 +398,9 @@ def test_next_run_output_toggle_cannot_rewrite_a_selected_forge_run():
 
     assert app._focus_selected_run_id is None
     assert app.focus_active_profile_var.get() == "MP3  •  320 kbps  •  Source rate"
-    assert app.focus_transfer_var.get() == "Audio-only MP3  /  best YouTube audio source"
+    assert (
+        app.focus_transfer_var.get() == "Audio-only MP3  /  best YouTube audio source"
+    )
     assert app.focus_summary_text.value == (
         "Format        MP3\n"
         "Audio         Best YouTube source\n"
@@ -399,16 +418,23 @@ def test_next_run_destination_cannot_rewrite_the_selected_active_run():
     app.output_var = Value("/next/run")
     app.focus_output_display_var = Value("")
     app.focus_summary_text = TextBuffer()
-    app.focus_summary_text.insert("1.0", "Container/ext: mp4\nSave to       /active/run.mp4")
+    app.focus_summary_text.insert(
+        "1.0", "Container/ext: mp4\nSave to       /active/run.mp4"
+    )
     app._focus_layout = "wide"
 
     app._sync_focus_destination()
 
     assert app.focus_output_display_var.get() == "/next/run"
-    assert app.focus_summary_text.value == "Container/ext: mp4\nSave to       /active/run.mp4"
+    assert (
+        app.focus_summary_text.value
+        == "Container/ext: mp4\nSave to       /active/run.mp4"
+    )
 
 
-def test_library_suppressed_active_run_cannot_reclaim_the_neutral_forge_hero(tmp_path: Path):
+def test_library_suppressed_active_run_cannot_reclaim_the_neutral_forge_hero(
+    tmp_path: Path,
+):
     active = make_job(tmp_path, video_id="removed-active")
     app = DownloaderApp.__new__(DownloaderApp)
     app.active_job = active
@@ -432,7 +458,9 @@ def test_library_suppressed_active_run_cannot_reclaim_the_neutral_forge_hero(tmp
     app.focus_active_detail_var = Value("Ready")
     app.focus_transfer_var = Value("Active MP4 run")
     app.focus_summary_text = TextBuffer()
-    app.focus_summary_text.insert("1.0", "Container/ext: mp4\nSave to       /removed/run.mp4")
+    app.focus_summary_text.insert(
+        "1.0", "Container/ext: mp4\nSave to       /removed/run.mp4"
+    )
 
     app._sync_focus_settings_summary()
 
@@ -495,7 +523,11 @@ def test_neutral_manual_mp4_summary_and_transfer_follow_the_selected_audio_codec
     assert "Audio         MP3" in app.focus_summary_text.value
     assert "Output mode   Manual Override" in app.focus_summary_text.value
     focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
-    assert 'self.manual_audio_codec_var.trace_add("write", lambda *_args: self._sync_focus_settings_summary())' in focus_ui_source
+    assert re.search(
+        r'self\.manual_audio_codec_var\.trace_add\(\s*"write",\s*'
+        r"lambda \*_args: self\._sync_focus_settings_summary\(\)\s*\)",
+        focus_ui_source,
+    )
 
 
 def test_run_log_updates_activity_and_only_the_selected_active_run(tmp_path: Path):
@@ -625,9 +657,7 @@ def test_primary_view_shortcuts_route_through_canonical_view_authority():
     ]
     assert all(add == "+" for _sequence, _callback, add in bindings)
     library_callback = next(
-        callback
-        for sequence, callback, _add in bindings
-        if sequence.endswith("Key-2>")
+        callback for sequence, callback, _add in bindings if sequence.endswith("Key-2>")
     )
     assert callable(library_callback)
     assert library_callback(object()) == "break"
@@ -637,17 +667,23 @@ def test_primary_view_shortcuts_route_through_canonical_view_authority():
 def test_primary_navigation_buttons_remain_keyboard_focusable():
     focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
 
-    assert 'style="FocusNav.TButton",\n                takefocus=True,' in focus_ui_source
+    assert (
+        'style="FocusNav.TButton",\n                takefocus=True,' in focus_ui_source
+    )
     assert "self._bind_focus_view_shortcuts()" in focus_ui_source
 
 
 def test_compact_layout_does_not_schedule_a_forced_activity_tail_jump():
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
 
-    assert 'focus_log.after_idle(lambda: self.focus_log.see("end"))' not in layout_source
+    assert (
+        'focus_log.after_idle(lambda: self.focus_log.see("end"))' not in layout_source
+    )
 
 
-def test_completed_selection_freezes_detail_progress_while_active_run_advances(tmp_path: Path):
+def test_completed_selection_freezes_detail_progress_while_active_run_advances(
+    tmp_path: Path,
+):
     active_job = make_job(tmp_path, video_id="active")
     completed_info = {
         "id": "completed",
@@ -704,7 +740,9 @@ def test_completed_run_thumbnail_selection_uses_each_records_own_image(tmp_path:
     second.touch()
     app = DownloaderApp.__new__(DownloaderApp)
     loaded: list[tuple[Path, str, str]] = []
-    app._load_thumbnail_file = lambda path, *, target, owner_run_id="": loaded.append((path, target, owner_run_id))
+    app._load_thumbnail_file = lambda path, *, target, owner_run_id="": loaded.append(
+        (path, target, owner_run_id)
+    )
 
     app._display_focus_record_thumbnail(
         {"run_id": "first-run"},
@@ -726,10 +764,17 @@ def test_bounded_thumbnail_fetch_is_not_serialized_behind_media_provider(monkeyp
     app._closing = False
     app._thumbnail_preview_request_ids = {"active": 7, "library": 0}
     app.events = queue.Queue()
-    monkeypatch.setattr("yt_downloader.app.download_bounded_url_bytes", lambda *_args, **_kwargs: b"image")
-    app._provider_network_coordinator = lambda: (_ for _ in ()).throw(AssertionError("provider gate used"))
+    monkeypatch.setattr(
+        "yt_downloader.app.download_bounded_url_bytes",
+        lambda *_args, **_kwargs: b"image",
+    )
+    app._provider_network_coordinator = lambda: (_ for _ in ()).throw(
+        AssertionError("provider gate used")
+    )
 
-    app._fetch_thumbnail_preview_request(7, "https://example.test/thumb.jpg", "active", "run-7")
+    app._fetch_thumbnail_preview_request(
+        7, "https://example.test/thumb.jpg", "active", "run-7"
+    )
 
     kind, payload = app.events.get_nowait()
     assert kind == "thumbnail_preview_result"
@@ -750,8 +795,12 @@ def test_thumbnail_request_generations_are_independent_by_surface():
 
 
 def test_thumbnail_loading_requires_an_explicit_single_surface_owner():
-    file_target = inspect.signature(DownloaderApp._load_thumbnail_file).parameters["target"]
-    url_target = inspect.signature(DownloaderApp._load_thumbnail_preview).parameters["target"]
+    file_target = inspect.signature(DownloaderApp._load_thumbnail_file).parameters[
+        "target"
+    ]
+    url_target = inspect.signature(DownloaderApp._load_thumbnail_preview).parameters[
+        "target"
+    ]
 
     assert file_target.default is inspect.Parameter.empty
     assert url_target.default is inspect.Parameter.empty
@@ -763,7 +812,9 @@ def test_thumbnail_loading_requires_an_explicit_single_surface_owner():
         except ValueError:
             pass
         else:
-            raise AssertionError(f"ambiguous thumbnail owner {invalid_target!r} was accepted")
+            raise AssertionError(
+                f"ambiguous thumbnail owner {invalid_target!r} was accepted"
+            )
 
 
 def test_thumbnail_errors_render_only_on_the_owning_surface():
@@ -780,7 +831,12 @@ def test_thumbnail_errors_render_only_on_the_owning_surface():
     app.thumbnail_label = Label()
 
     app._display_thumbnail_preview_result(
-        {"id": 4, "url": "https://example.invalid/active.jpg", "target": "active", "error": "active failed"}
+        {
+            "id": 4,
+            "url": "https://example.invalid/active.jpg",
+            "target": "active",
+            "error": "active failed",
+        }
     )
 
     assert "active failed" in app.focus_active_thumbnail_label.text
@@ -849,7 +905,9 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     assert launched[0].terminal_status is None
 
 
-def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(tmp_path: Path):
+def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(
+    tmp_path: Path,
+):
     failed_job = make_job(tmp_path)
     failed_job.url = "https://youtu.be/authority-id"
     failed_job.terminal_status = "Failed"
@@ -870,7 +928,10 @@ def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(tmp_
     app._retry_terminal_job(failed_job)
 
     assert len(launched) == 1
-    assert launched[0].url == "https://www.youtube.com/watch?v=authority-id&list=PLauthority"
+    assert (
+        launched[0].url
+        == "https://www.youtube.com/watch?v=authority-id&list=PLauthority"
+    )
     assert launched[0].urls == [launched[0].url]
     assert app.metadata_items == []
 
@@ -930,7 +991,9 @@ def test_retry_joins_latest_queue_position_with_fresh_authority(tmp_path: Path):
     assert app.pending_jobs[1].url == failed.url
 
 
-def test_newest_completed_run_remains_owner_of_a_repeated_history_identity(tmp_path: Path):
+def test_newest_completed_run_remains_owner_of_a_repeated_history_identity(
+    tmp_path: Path,
+):
     info = {"id": "same", "title": "Same item", "vodforge_output_type": "MP4"}
     saved = upsert_history([], info, tmp_path)[0]
     identity = history_identity(saved)
@@ -966,7 +1029,9 @@ def test_one_item_skip_does_not_archive_a_second_parent_terminal_card(tmp_path: 
     app = DownloaderApp.__new__(DownloaderApp)
     app.active_job = parent
     app._append_job_log = lambda *_args: None
-    app._archive_active_terminal_job = lambda *_args: (_ for _ in ()).throw(AssertionError("duplicate parent terminal"))
+    app._archive_active_terminal_job = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("duplicate parent terminal")
+    )
     app.progress_var = Value(0)
     app.status_var = Value("")
     app.download_button = Control()
@@ -980,7 +1045,9 @@ def test_one_item_skip_does_not_archive_a_second_parent_terminal_card(tmp_path: 
     assert app.status_var.get() == "Stopped after skip"
 
 
-def test_single_url_worker_mutates_the_active_authority_not_a_private_copy(tmp_path: Path):
+def test_single_url_worker_mutates_the_active_authority_not_a_private_copy(
+    tmp_path: Path,
+):
     active = make_job(tmp_path)
     app = DownloaderApp.__new__(DownloaderApp)
 
@@ -1003,24 +1070,32 @@ def test_background_run_thumbnail_error_cannot_replace_selected_run_surface():
             self.text = str(kwargs.get("text") or "")
 
     app = DownloaderApp.__new__(DownloaderApp)
-    app._thumbnail_preview_request_ids = {"active": 0, "library": 0, "run:active-run": 3}
+    app._thumbnail_preview_request_ids = {
+        "active": 0,
+        "library": 0,
+        "run:active-run": 3,
+    }
     app._focus_selected_run_id = "completed-run"
     app.focus_active_thumbnail_label = Label()
     app.thumbnail_label = Label()
     app._refresh_focus_run_deck = lambda: None
 
-    app._display_thumbnail_preview_result({
-        "id": 3,
-        "url": "https://example.invalid/thumb.jpg",
-        "target": "run:active-run",
-        "run_id": "active-run",
-        "error": "network failed",
-    })
+    app._display_thumbnail_preview_result(
+        {
+            "id": 3,
+            "url": "https://example.invalid/thumb.jpg",
+            "target": "run:active-run",
+            "run_id": "active-run",
+            "error": "network failed",
+        }
+    )
 
     assert app.focus_active_thumbnail_label.text == "selected thumbnail"
 
 
-def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surface(monkeypatch):
+def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surface(
+    monkeypatch,
+):
     class Label:
         def __init__(self):
             self.text = "selected thumbnail"
@@ -1029,7 +1104,11 @@ def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surfa
             self.text = str(kwargs.get("text") or "")
 
     app = DownloaderApp.__new__(DownloaderApp)
-    app._thumbnail_preview_request_ids = {"active": 0, "library": 0, "run:active-run": 3}
+    app._thumbnail_preview_request_ids = {
+        "active": 0,
+        "library": 0,
+        "run:active-run": 3,
+    }
     app._focus_selected_run_id = "completed-run"
     app.focus_active_thumbnail_label = Label()
     app.thumbnail_label = Label()
@@ -1041,13 +1120,15 @@ def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surfa
         lambda _data: (_ for _ in ()).throw(ValueError("invalid pixels")),
     )
 
-    app._display_thumbnail_preview_result({
-        "id": 3,
-        "url": "https://example.invalid/thumb.jpg",
-        "target": "run:active-run",
-        "run_id": "active-run",
-        "data": b"not an image",
-    })
+    app._display_thumbnail_preview_result(
+        {
+            "id": 3,
+            "url": "https://example.invalid/thumb.jpg",
+            "target": "run:active-run",
+            "run_id": "active-run",
+            "data": b"not an image",
+        }
+    )
 
     assert app.thumbnail_label.text == "selected thumbnail"
 
@@ -1204,24 +1285,36 @@ def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
     assert "tk.Canvas(" in run_list_source
     assert "yscrollincrement=1" in run_list_source
     assert "SleekScrollbar(root, command=run_list.yview)" in run_list_source
-    assert 'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)' in run_list_source
+    assert (
+        'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)'
+        in run_list_source
+    )
     assert "bind_smooth_vertical_wheel(" in run_list_source
     assert 'mode="increments"' in run_list_source
     assert "button.winfo_rooty() - self.winfo_rooty() - height + 1" in run_list_source
     assert "popup.place(x=x, y=y, width=width, height=height)" in run_list_source
     assert "width = min(440" in run_list_source
     assert "height = min(184" in run_list_source
-    assert 'focus_run_overflow_button.bind("<Enter>"' in forge_source
-    assert 'focus_run_overflow_button.bind("<Leave>"' in forge_source
+    assert re.search(
+        r'self\.focus_run_overflow_button\.bind\(\s*"<Enter>"', forge_source
+    )
+    assert re.search(
+        r'self\.focus_run_overflow_button\.bind\(\s*"<Leave>"', forge_source
+    )
     assert "self._cancel_focus_run_menu_close()" in run_list_source
     assert "existing.destroy()" not in run_list_source
-    assert 'popup.bind("<Enter>"' in run_list_source
-    assert 'popup.bind("<Leave>"' in run_list_source
+    assert re.search(r'popup\.bind\(\s*"<Enter>"', run_list_source)
+    assert re.search(r'popup\.bind\(\s*"<Leave>"', run_list_source)
     assert "hovered is button or inside_popup" in close_source
     assert "self.after(40, close_if_pointer_left)" in close_source
-    assert 'selected_run_id = str(self._focus_selected_run_id or "").strip()' in run_list_source
+    assert (
+        'selected_run_id = str(self._focus_selected_run_id or "").strip()'
+        in run_list_source
+    )
     assert "selected_index = next(" in run_list_source
-    assert 'str(record.get("run_id") or "").strip() == selected_run_id' in run_list_source
+    assert (
+        'str(record.get("run_id") or "").strip() == selected_run_id' in run_list_source
+    )
     assert run_list_source.index("selected_index = next(") < run_list_source.index(
         "for index, record in enumerate(records):"
     )
@@ -1235,41 +1328,82 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
     library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
-    deck_resize_source = inspect.getsource(DownloaderApp._schedule_focus_run_deck_geometry_refresh)
+    deck_resize_source = inspect.getsource(
+        DownloaderApp._schedule_focus_run_deck_geometry_refresh
+    )
     root_resize_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
 
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
-    assert 'video_tree.layout_column("creator", width=120, minwidth=90' in library_layout_source
-    assert 'video_tree.layout_column("location", width=140, minwidth=100' in library_layout_source
     assert (
-        'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)'
+        'video_tree.layout_column("creator", width=120, minwidth=90'
         in library_layout_source
     )
-    assert 'width=0, minwidth=0' not in library_layout_source
-    assert 'library_vertical_mode = focus_library_vertical_layout_mode(height)' in layout_source
-    assert 'library_mode = "compact" if compact or library_vertical_mode == "compact" else focus_library_layout_mode(width)' in layout_source
+    assert (
+        'video_tree.layout_column("location", width=140, minwidth=100'
+        in library_layout_source
+    )
+    title_column_pattern = (
+        r'video_tree\.layout_column\(\s*"title",\s*width=360,\s*minwidth=220,'
+        r"\s*stretch=True,\s*stretchmax=None\s*\)"
+    )
+    assert re.search(title_column_pattern, library_layout_source)
+    assert "width=0, minwidth=0" not in library_layout_source
+    assert (
+        "library_vertical_mode = focus_library_vertical_layout_mode(height)"
+        in layout_source
+    )
+    assert re.search(
+        r'library_mode\s*=\s*\(\s*"compact"\s*if compact or '
+        r'library_vertical_mode == "compact"\s*else '
+        r"focus_library_layout_mode\(width\)\s*\)",
+        layout_source,
+    )
     assert "focus_library_action_layout_mode(" not in library_layout_source
     assert "self.focus_library_action_buttons" not in library_layout_source
-    assert 'if not self.focus_library_menu_button.winfo_manager():' in library_layout_source
+    assert (
+        "if not self.focus_library_menu_button.winfo_manager():"
+        in library_layout_source
+    )
     assert "library_mode," in layout_source
     assert "library_vertical_mode," in layout_source
     assert "library_mode=library_mode," in layout_source
     assert "vertical_mode=library_vertical_mode," in layout_source
     assert 'if library_mode == "compact":' in library_layout_source
     assert "library_actions_collapsed" not in library_layout_source
-    assert 'video_tree.layout_column("index", width=44, minwidth=38, stretch=True)' in library_layout_source
     assert (
-        'video_tree.layout_column("title", width=360, minwidth=220, stretch=True, stretchmax=None)'
+        'video_tree.layout_column("index", width=44, minwidth=38, stretch=True)'
         in library_layout_source
     )
-    assert 'video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)' in library_layout_source
-    assert 'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)' in library_layout_source
-    assert 'video_tree.layout_column("id", width=90, minwidth=72, stretch=True)' in library_layout_source
-    assert 'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)' in library_layout_source
-    assert 'self.focus_metadata_content.columnconfigure(0, weight=1)' in library_layout_source
-    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)' in library_layout_source
-    assert 'self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)' in library_layout_source
+    assert re.search(title_column_pattern, library_layout_source)
+    assert (
+        'video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)'
+        in library_layout_source
+    )
+    assert (
+        'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)'
+        in library_layout_source
+    )
+    assert (
+        'video_tree.layout_column("id", width=90, minwidth=72, stretch=True)'
+        in library_layout_source
+    )
+    assert (
+        'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)'
+        in library_layout_source
+    )
+    assert (
+        "self.focus_metadata_content.columnconfigure(0, weight=1)"
+        in library_layout_source
+    )
+    assert (
+        "self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)"
+        in library_layout_source
+    )
+    assert (
+        "self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)"
+        in library_layout_source
+    )
     library_layout_call = layout_source.index("self._apply_focus_library_layout(")
     destination_sync = layout_source.index("self._sync_focus_destination()")
     deck_refresh = layout_source.index("self._refresh_focus_run_deck()")
@@ -1278,9 +1412,16 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "for column in range(4):" in deck_source
     assert "self._render_focus_run_deck_tile(" in deck_source
     assert "visible_count=len(visible)" in deck_source
-    assert 'right_pad = 5 if column < visible_count - 1 else 9' in tile_source
-    assert 'deck.bind("<Configure>", self._schedule_focus_run_deck_geometry_refresh' in forge_source
-    assert 'capacity == self.__dict__.get("_focus_run_deck_rendered_capacity")' in deck_resize_source
+    assert "right_pad = 5 if column < visible_count - 1 else 9" in tile_source
+    assert re.search(
+        r'deck\.bind\(\s*"<Configure>",\s*'
+        r"self\._schedule_focus_run_deck_geometry_refresh",
+        forge_source,
+    )
+    assert (
+        'capacity == self.__dict__.get("_focus_run_deck_rendered_capacity")'
+        in deck_resize_source
+    )
     assert "self.focus_run_overflow_button.grid()" in deck_source
     assert "if self._focus_run_records():" in layout_source
     assert "ttk.Sizegrip(self" in focus_ui_source
@@ -1331,12 +1472,17 @@ def test_native_window_dimensions_do_not_propagate_from_responsive_children():
 def test_library_padding_scheduler_runs_before_unchanged_layout_short_circuit():
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
 
-    padding_index = layout_source.index("self._schedule_focus_library_padding(library_padding)")
-    signature_guard_index = layout_source.index(
-        'if layout_signature == self.__dict__.get("_focus_layout_signature") and not force'
+    padding_index = layout_source.index(
+        "self._schedule_focus_library_padding(library_padding)"
+    )
+    signature_guard = re.search(
+        r"if\s*\(\s*layout_signature == self\.__dict__\.get\("
+        r'"_focus_layout_signature"\)\s*and not force\s*\)',
+        layout_source,
     )
 
-    assert padding_index < signature_guard_index
+    assert signature_guard is not None
+    assert padding_index < signature_guard.start()
 
 
 def test_slow_native_resize_coalesces_cosmetic_library_centering():
@@ -1348,7 +1494,9 @@ def test_slow_native_resize_coalesces_cosmetic_library_centering():
             self.padding.append(kwargs["padx"])
 
     class PaddingProbe:
-        _apply_pending_focus_library_padding = DownloaderApp._apply_pending_focus_library_padding
+        _apply_pending_focus_library_padding = (
+            DownloaderApp._apply_pending_focus_library_padding
+        )
         _set_focus_library_padding = DownloaderApp._set_focus_library_padding
 
         def __init__(self):
@@ -1393,7 +1541,9 @@ def test_slow_native_resize_coalesces_cosmetic_library_centering():
 
 def test_returning_to_applied_library_padding_cancels_stale_resize_work():
     class PaddingProbe:
-        _apply_pending_focus_library_padding = DownloaderApp._apply_pending_focus_library_padding
+        _apply_pending_focus_library_padding = (
+            DownloaderApp._apply_pending_focus_library_padding
+        )
         _set_focus_library_padding = DownloaderApp._set_focus_library_padding
 
         def __init__(self):
@@ -1428,7 +1578,9 @@ def test_ultrawide_resize_burst_releases_large_live_padding_once():
             self.padding.append(kwargs["padx"])
 
     class PaddingProbe:
-        _apply_pending_focus_library_padding = DownloaderApp._apply_pending_focus_library_padding
+        _apply_pending_focus_library_padding = (
+            DownloaderApp._apply_pending_focus_library_padding
+        )
         _set_focus_library_padding = DownloaderApp._set_focus_library_padding
 
         def __init__(self):
@@ -1492,28 +1644,31 @@ def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
 
-    assert 'status_label.configure(textvariable=self.focus_run_status_var)' in tile_source
-    assert 'variable=self.progress_var' in tile_source
-    assert 'job: DownloadJob = verified_retry_job' in tile_source
-    assert 'item: dict[str, Any] = record' in tile_source
-    assert 'card_widgets: tuple[tk.Widget, ...] = tuple(hover_widgets)' in tile_source
-    assert 'hover_widgets.append(retry_button)' in tile_source
-    assert 'hover_widgets.append(play_button)' in tile_source
+    assert (
+        "status_label.configure(textvariable=self.focus_run_status_var)" in tile_source
+    )
+    assert "variable=self.progress_var" in tile_source
+    assert "job: DownloadJob = verified_retry_job" in tile_source
+    assert "item: dict[str, Any] = record" in tile_source
+    assert "card_widgets: tuple[tk.Widget, ...] = tuple(hover_widgets)" in tile_source
+    assert "hover_widgets.append(retry_button)" in tile_source
+    assert "hover_widgets.append(play_button)" in tile_source
     assert all(
-        line.strip() not in {'widgets.append(retry_button)', 'widgets.append(play_button)'}
+        line.strip()
+        not in {"widgets.append(retry_button)", "widgets.append(play_button)"}
         for line in tile_source.splitlines()
     )
     assert tile_source.index(
-        'source = self._focus_thumbnail_source_for_record(record)'
-    ) < tile_source.index('self._focus_run_thumbnail_images.append(thumbnail)')
+        "source = self._focus_thumbnail_source_for_record(record)"
+    ) < tile_source.index("self._focus_run_thumbnail_images.append(thumbnail)")
     assert tile_source.index(
         'play_button.bind(\n                "<Button-1>",'
-    ) < tile_source.index('hover_widgets.append(play_button)')
-    render_index = deck_source.index('self._render_focus_run_deck_tile(')
-    aggregate_index = deck_source.index('completed = sum(')
-    count_index = deck_source.index('self.focus_run_count_var.set(', aggregate_index)
+    ) < tile_source.index("hover_widgets.append(play_button)")
+    render_index = deck_source.index("self._render_focus_run_deck_tile(")
+    aggregate_index = deck_source.index("completed = sum(")
+    count_index = deck_source.index("self.focus_run_count_var.set(", aggregate_index)
     overflow_index = deck_source.index(
-        'self.focus_run_overflow_button.grid()',
+        "self.focus_run_overflow_button.grid()",
         count_index,
     )
     assert render_index < aggregate_index < count_index < overflow_index
@@ -1530,9 +1685,20 @@ def test_library_actions_remain_one_stable_menu_at_every_width():
     assert "width=7" in library_source
     assert "focus_library_action_buttons" not in library_source
     assert "focus_library_copy_buttons" not in library_source
-    for label in ("Copy tags", "Copy description", "Copy thumbnail URL", "Copy YouTube URL", "Open saved location"):
+    for label in (
+        "Copy tags",
+        "Copy description",
+        "Copy thumbnail URL",
+        "Copy YouTube URL",
+        "Open saved location",
+    ):
         assert label in compact_actions_source
-    for source in (compact_actions_source, row_actions_source, popup_source, forge_actions_source):
+    for source in (
+        compact_actions_source,
+        row_actions_source,
+        popup_source,
+        forge_actions_source,
+    ):
         assert "Copy YouTube URL" in source
     assert compact_actions_source.count("_run_library_copy_action") == 4
 
@@ -1546,9 +1712,11 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
 
     assert "self.video_tree = PixelScrollTable(" in library_source
     assert 'target.bind("<TouchpadScroll>"' in pixel_table_source
-    assert "tk::PreciseScrollDeltas" in inspect.getsource(app_module.touchpad_scroll_deltas)
+    assert "tk::PreciseScrollDeltas" in inspect.getsource(
+        app_module.touchpad_scroll_deltas
+    )
     assert "yview_moveto" in pixel_table_source
-    assert "xview(\"moveto\"" in pixel_table_source
+    assert 'xview("moveto"' in pixel_table_source
     assert 'target.bind("<TouchpadScroll>"' in wheel_binding_source
     assert "pixel_scroll_target" in wheel_binding_source
     assert 'scroller.yview_scroll(pixels, "pixels")' in wheel_binding_source
@@ -1569,23 +1737,40 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
     assert "details.rowconfigure(3, weight=2, minsize=96)" in library_source
     assert "details.rowconfigure(4, weight=3, minsize=120)" in library_source
     assert "focus_library_vertical_layout_mode(height)" in layout_source
-    assert "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)" in library_layout_source
-    assert "self.focus_library_view.rowconfigure(1, weight=2, minsize=360)" in library_layout_source
-    assert "bind_smooth_vertical_wheel(text_widget, mode=\"pixels\")" in library_source
+    assert (
+        "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)"
+        in library_layout_source
+    )
+    assert (
+        "self.focus_library_view.rowconfigure(1, weight=2, minsize=360)"
+        in library_layout_source
+    )
+    assert 'bind_smooth_vertical_wheel(text_widget, mode="pixels")' in library_source
     assert "rounded_canvas_rectangle_points" in forge_source
     assert 'Image.new("RGBA", (width * scale, height * scale)' not in forge_source
 
 
 def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
-    column_layout_source = inspect.getsource(app_module.PixelScrollTable._layout_columns)
+    column_layout_source = inspect.getsource(
+        app_module.PixelScrollTable._layout_columns
+    )
     report_yview_source = inspect.getsource(app_module.PixelScrollTable._report_yview)
     library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
     render_source = inspect.getsource(DownloaderApp._render_metadata_tree)
 
-    assert 'self._header.bind("<ButtonPress-1>", self._begin_column_resize' in pixel_table_source
-    assert 'self._header.bind("<B1-Motion>", self._drag_column_resize' in pixel_table_source
-    assert 'self._header.bind("<ButtonRelease-1>", self._end_column_resize' in pixel_table_source
+    assert (
+        'self._header.bind("<ButtonPress-1>", self._begin_column_resize'
+        in pixel_table_source
+    )
+    assert (
+        'self._header.bind("<B1-Motion>", self._drag_column_resize'
+        in pixel_table_source
+    )
+    assert (
+        'self._header.bind("<ButtonRelease-1>", self._end_column_resize'
+        in pixel_table_source
+    )
     assert "rendered_width = next(" in pixel_table_source
     assert "layout[:-1]" in pixel_table_source
     assert "self._resize_margin = 8" in pixel_table_source
@@ -1595,21 +1780,35 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "self._manually_resized_columns.add(column)" in pixel_table_source
     assert "self._last_manually_resized_column = column" in pixel_table_source
     assert "responsive_table_stretch_indices" in column_layout_source
-    assert "heading_anchor = self._heading_anchors.get(column) or anchor" in pixel_table_source
-    assert 'anchor="w" if column == "duration" else None' in inspect.getsource(DownloaderApp._build_focus_library_view)
+    assert (
+        "heading_anchor = self._heading_anchors.get(column) or anchor"
+        in pixel_table_source
+    )
+    assert 'anchor="w" if column == "duration" else None' in inspect.getsource(
+        DownloaderApp._build_focus_library_view
+    )
     assert "def layout_column" in pixel_table_source
     assert "stretched_table_column_widths" in column_layout_source
     assert "stretch_limits" in column_layout_source
     assert "def replace_rows" in pixel_table_source
-    assert "self._body.delete(\"all\")" in pixel_table_source
+    assert 'self._body.delete("all")' in pixel_table_source
     assert "pixel_table_visible_row_window(" in pixel_table_source
     assert "for row_index in range(first_row, last_row):" in pixel_table_source
-    assert "self._body.bind(\"<Configure>\", lambda _event: self._schedule_redraw()" in pixel_table_source
+    assert (
+        'self._body.bind("<Configure>", lambda _event: self._schedule_redraw()'
+        in pixel_table_source
+    )
     assert "_schedule_redraw" not in report_yview_source
-    assert "Every supported scroll entry point already schedules a redraw" in report_yview_source
-    assert "children = self.video_tree.replace_rows(rows, selected=target)" in render_source
+    assert (
+        "Every supported scroll entry point already schedules a redraw"
+        in report_yview_source
+    )
+    assert (
+        "children = self.video_tree.replace_rows(rows, selected=target)"
+        in render_source
+    )
     assert "video_tree.layout_column(" in library_layout_source
-    assert 'xscrollincrement=1' in pixel_table_source
+    assert "xscrollincrement=1" in pixel_table_source
 
 
 def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
@@ -1659,7 +1858,9 @@ def test_library_render_clears_an_inconsistent_widget_without_a_selection_target
             return ("orphaned-widget-row",)
 
         def focus(self, _target):
-            raise AssertionError("an orphaned widget row must not become Library authority")
+            raise AssertionError(
+                "an orphaned widget row must not become Library authority"
+            )
 
     app = DownloaderApp.__new__(DownloaderApp)
     app.video_tree = InconsistentTree()
@@ -1753,7 +1954,9 @@ def test_column_release_does_not_rebase_untouched_columns():
     assert probe.redraws == 1
 
 
-def test_preview_items_expose_fresh_forge_start_actions_without_library_ownership(tmp_path: Path):
+def test_preview_items_expose_fresh_forge_start_actions_without_library_ownership(
+    tmp_path: Path,
+):
     app = DownloaderApp.__new__(DownloaderApp)
     preview = {
         "id": "preview-id",
@@ -1774,14 +1977,20 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
         build_calls.append((list(urls), dict(kwargs))) or built_job
     )
     app._select_focus_view = selected_views.append
-    app._start_or_queue_download_job = lambda job, *, clear_source: submitted.append((job, clear_source))
+    app._start_or_queue_download_job = lambda job, *, clear_source: submitted.append(
+        (job, clear_source)
+    )
 
     app._start_preview_download(preview)
 
     assert build_calls == [
         (
             ["https://www.youtube.com/watch?v=preview-id&list=PLpreview"],
-            {"output_type": OutputType.MP3, "single_video_only": True, "batch_mode": False},
+            {
+                "output_type": OutputType.MP3,
+                "single_video_only": True,
+                "batch_mode": False,
+            },
         )
     ]
     assert built_job.preview_info == {
@@ -1808,9 +2017,12 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
     compact_menu_source = inspect.getsource(DownloaderApp._show_library_actions_menu)
     assert "self._render_focus_run_deck_tile(" in deck_source
     assert 'record_kind == "preview"' in tile_source
-    assert 'self._start_preview_record(item)' in tile_source
+    assert "self._start_preview_record(item)" in tile_source
     assert "hover_widgets.append(play_button)" in tile_source
-    assert all(line.strip() != "widgets.append(play_button)" for line in tile_source.splitlines())
+    assert all(
+        line.strip() != "widgets.append(play_button)"
+        for line in tile_source.splitlines()
+    )
     assert 'label="Start download in Forge"' in library_menu_source
     assert 'label="Start download in Forge"' in compact_menu_source
 
@@ -1858,11 +2070,13 @@ def test_submitting_a_previewed_url_adopts_it_into_one_fresh_active_run(tmp_path
 
     records = app._focus_run_records()
 
-    assert [(record["kind"], record["run_id"]) for record in records] == [("active", job.run_id)]
+    assert [(record["kind"], record["run_id"]) for record in records] == [
+        ("active", job.run_id)
+    ]
     start_source = inspect.getsource(DownloaderApp._start_download)
-    assert start_source.index("self._adopt_matching_preview_for_download_job(job)") < start_source.index(
-        "self._start_or_queue_download_job(job, clear_source=True)"
-    )
+    assert start_source.index(
+        "self._adopt_matching_preview_for_download_job(job)"
+    ) < start_source.index("self._start_or_queue_download_job(job, clear_source=True)")
 
 
 def test_preview_hero_replaces_large_status_with_start_download_action(tmp_path: Path):
@@ -2041,12 +2255,17 @@ def test_metadata_preview_focuses_once_and_completion_respects_manual_selection(
     completion_source = inspect.getsource(DownloaderApp._display_metadata)
 
     assert "if self.actions.preview_metadata():" in settings_source
-    assert settings_source.index("if self.actions.preview_metadata():") < settings_source.index("self.close()")
+    assert settings_source.index(
+        "if self.actions.preview_metadata():"
+    ) < settings_source.index("self.close()")
     assert '"kind": "preview_loading"' in fetch_source
     assert "self._focus_selected_run_id = preview_run_id" in fetch_source
     assert "self._display_metadata_preview_request(preview_record)" in fetch_source
     assert "self._focus_selected_run_id = preview_run_id" not in completion_source
-    assert 'self.__dict__.get("_focus_selected_run_id") == preview_run_id' in completion_source
+    assert (
+        'self.__dict__.get("_focus_selected_run_id") == preview_run_id'
+        in completion_source
+    )
 
 
 def test_custom_popouts_are_positioned_before_they_become_visible():
@@ -2057,19 +2276,26 @@ def test_custom_popouts_are_positioned_before_they_become_visible():
 
     assert "popup.withdraw()" in settings_init_source
     assert "reveal_toplevel(" in settings_show_source
-    assert "self.owner.after_idle(self.actions.record_cloud_cta_seen)" in settings_show_source
+    assert (
+        "self.owner.after_idle(self.actions.record_cloud_cta_seen)"
+        in settings_show_source
+    )
     for source in (output_source, selected_source):
         assert "popup.withdraw()" in source
         assert "reveal_toplevel(popup," in source
         assert source.index("popup.withdraw()") < source.index("reveal_toplevel(popup,")
 
-    assert "centered_toplevel_geometry(self.owner, width, height)" in settings_show_source
+    assert (
+        "centered_toplevel_geometry(self.owner, width, height)" in settings_show_source
+    )
     assert "centered_toplevel_geometry(self, 560, 360)" in output_source
     assert "centered_toplevel_geometry(self, 680, 620)" in selected_source
 
 
 def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path: Path):
-    output_dir = tmp_path / "Creator" / "playlists" / "Playlist" / "Video [authority-id]"
+    output_dir = (
+        tmp_path / "Creator" / "playlists" / "Playlist" / "Video [authority-id]"
+    )
     output_dir.mkdir(parents=True)
     media = output_dir / "Video.mp4"
     media.write_bytes(b"keep me")
@@ -2084,7 +2310,9 @@ def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path:
     app._completed_jobs = []
     app.status_var = Value("")
     app._render_metadata_tree = lambda: None
-    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
 
     app._remove_selected_library_item()
 
@@ -2094,7 +2322,9 @@ def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path:
     assert "not deleted" in app.status_var.get()
 
 
-def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monkeypatch, tmp_path: Path):
+def test_remove_active_library_item_stops_and_tombstones_only_its_execution(
+    monkeypatch, tmp_path: Path
+):
     info = {
         "id": "active-item",
         "title": "Active item",
@@ -2135,8 +2365,12 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monk
     reconciled: list[set[str]] = []
     app._cancel = lambda: cancellations.append(active.run_id)
     app._render_metadata_tree = lambda: None
-    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(set(run_ids))
-    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(
+        set(run_ids)
+    )
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
 
     app._remove_selected_library_item()
 
@@ -2164,7 +2398,9 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(monk
     assert app.metadata_items == []
 
 
-def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(monkeypatch, tmp_path: Path):
+def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(
+    monkeypatch, tmp_path: Path
+):
     preview = {
         "id": "same-video",
         "title": "Claimed preview",
@@ -2179,7 +2415,9 @@ def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(monkey
         "vodforge_output_type": "MP4",
     }
     claimed_queue.metadata_keys.add(("same-video", "MP4"))
-    app_module.claim_active_metadata_row(preview, claimed_queue.preview_info, claimed_queue.run_id)
+    app_module.claim_active_metadata_row(
+        preview, claimed_queue.preview_info, claimed_queue.run_id
+    )
 
     other_same_video = make_job(tmp_path, video_id="same-video")
     other_same_video.preview_info = {
@@ -2203,8 +2441,12 @@ def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(monkey
     app.status_var = Value("")
     reconciled: list[set[str]] = []
     app._render_metadata_tree = lambda: None
-    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(set(run_ids))
-    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(
+        set(run_ids)
+    )
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
 
     app._remove_selected_library_item()
 
@@ -2214,7 +2456,9 @@ def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(monkey
     assert reconciled == [{claimed_queue.run_id, "history:0"}]
 
 
-def test_remove_active_library_item_after_history_commit_still_stops_its_exact_run(monkeypatch, tmp_path: Path):
+def test_remove_active_library_item_after_history_commit_still_stops_its_exact_run(
+    monkeypatch, tmp_path: Path
+):
     active = make_job(tmp_path, video_id="active-item")
     older_terminal = make_job(tmp_path, video_id="active-item")
     older_terminal.terminal_status = "Failed"
@@ -2224,7 +2468,9 @@ def test_remove_active_library_item_after_history_commit_still_stops_its_exact_r
         "vodforge_output_type": "MP4",
     }
     older_terminal.metadata_keys.add(("active-item", "MP4"))
-    output_dir = tmp_path / "Creator" / "videos - no playlist" / "Active item [active-item]"
+    output_dir = (
+        tmp_path / "Creator" / "videos - no playlist" / "Active item [active-item]"
+    )
     output_dir.mkdir(parents=True)
     (output_dir / "Active item.mp4").write_bytes(b"committed output")
     saved = upsert_history(
@@ -2254,8 +2500,12 @@ def test_remove_active_library_item_after_history_commit_still_stops_its_exact_r
     app._cancel = lambda: cancellations.append(active.run_id)
     app._render_metadata_tree = lambda: None
     app._rebuild_output_dir_index = lambda: None
-    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(set(run_ids))
-    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(
+        set(run_ids)
+    )
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
 
     app._remove_selected_library_item()
 
@@ -2292,7 +2542,9 @@ def test_manual_mp3_in_mp4_rejects_unsupported_bitrate_before_launch():
     assert settings.audio_bitrate_kbps == 256
 
 
-def test_hidden_manual_values_cannot_block_auto_or_strict_mp4_runs(monkeypatch, tmp_path: Path):
+def test_hidden_manual_values_cannot_block_auto_or_strict_mp4_runs(
+    monkeypatch, tmp_path: Path
+):
     app = DownloaderApp.__new__(DownloaderApp)
     app.output_var = Value(str(tmp_path))
     app.tags_var = Value("")
@@ -2308,7 +2560,9 @@ def test_hidden_manual_values_cannot_block_auto_or_strict_mp4_runs(monkeypatch, 
         AssertionError("hidden Manual settings were parsed")
     )
     app._mp3_export_settings = lambda: Mp3ExportSettings()
-    monkeypatch.setattr(app_module, "validate_output_directory_access", lambda _path: None)
+    monkeypatch.setattr(
+        app_module, "validate_output_directory_access", lambda _path: None
+    )
 
     for mode in (ExportMode.AUTO_CBR, ExportMode.STRICT_COMPLIANCE):
         app.export_mode_var = Value(mode.value)
@@ -2324,7 +2578,9 @@ def test_hidden_manual_values_cannot_block_auto_or_strict_mp4_runs(monkeypatch, 
         assert job.manual_settings == ManualExportSettings()
 
 
-def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(monkeypatch, tmp_path: Path):
+def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(
+    monkeypatch, tmp_path: Path
+):
     terminal = make_job(tmp_path, video_id="same-item")
     terminal.terminal_status = "Failed"
     terminal.preview_info = {
@@ -2349,7 +2605,11 @@ def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(
     app._display_active_job_metadata = lambda *_args, **_kwargs: None
 
     app._display_metadata(
-        {"id": "same-item", "title": "Fresh active attempt", "vodforge_output_type": "MP4"},
+        {
+            "id": "same-item",
+            "title": "Fresh active attempt",
+            "vodforge_output_type": "MP4",
+        },
         active_job=active,
     )
 
@@ -2369,7 +2629,9 @@ def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(
     cancellations: list[str] = []
     app._cancel = lambda: cancellations.append(active.run_id)
     app._reconcile_focus_after_library_removal = lambda _run_ids: None
-    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
 
     app._remove_selected_library_item()
 
@@ -2397,11 +2659,24 @@ def test_late_worker_events_cannot_resurrect_a_library_removed_run(tmp_path: Pat
     app.pending_jobs = [unrelated]
     app._library_suppressed_run_ids = {active.run_id}
     app.events = queue.Queue()
-    app.events.put(("history_record", {"job": replace(active), "info": dict(active.preview_info), "output_dir": str(tmp_path / "late")}))
+    app.events.put(
+        (
+            "history_record",
+            {
+                "job": replace(active),
+                "info": dict(active.preview_info),
+                "output_dir": str(tmp_path / "late"),
+            },
+        )
+    )
     app.events.put(("item_terminal", {"job": child, "info": dict(active.preview_info)}))
     app.events.put(("log", "later event still drained"))
-    app._record_download_history = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("late history resurrected"))
-    app._archive_item_terminal_job = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("late terminal resurrected"))
+    app._record_download_history = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("late history resurrected")
+    )
+    app._archive_item_terminal_job = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("late terminal resurrected")
+    )
     logs: list[str] = []
     app._append_log = logs.append
     app.after = lambda *_args, **_kwargs: None
@@ -2412,7 +2687,9 @@ def test_late_worker_events_cannot_resurrect_a_library_removed_run(tmp_path: Pat
     assert logs == ["later event still drained"]
 
 
-def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, tmp_path: Path):
+def test_remove_from_library_clears_matching_stopped_forge_recent(
+    monkeypatch, tmp_path: Path
+):
     stopped = make_job(tmp_path, video_id="stopped-item")
     stopped.output_type = OutputType.MP4
     stopped.terminal_status = "Stopped"
@@ -2454,7 +2731,9 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
     app._focus_select_run_record = selected_records.append
     refreshes: list[bool] = []
     app._refresh_focus_run_deck = lambda: refreshes.append(True)
-    monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
 
     app._remove_selected_library_item()
 
@@ -2466,13 +2745,17 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(monkeypatch, t
     assert refreshes == [True]
     assert "Library and Forge recents" in app.status_var.get()
 
-    removal_source = inspect.getsource(DownloaderApp._remove_library_item_from_forge_recents)
+    removal_source = inspect.getsource(
+        DownloaderApp._remove_library_item_from_forge_recents
+    )
     assert "without deleting media files" in removal_source
     assert "active_job" not in removal_source
     assert "pending_jobs" not in removal_source
 
 
-def test_cancelled_active_run_links_its_library_row_to_the_terminal_recent(tmp_path: Path):
+def test_cancelled_active_run_links_its_library_row_to_the_terminal_recent(
+    tmp_path: Path,
+):
     stopped = make_job(tmp_path, video_id="stopped-item")
     stopped.preview_info = {
         "id": "stopped-item",

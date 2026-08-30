@@ -28,9 +28,15 @@ def test_hidden_window_subprocess_policy_is_shared_on_windows(
     class StartupInfo:
         dwFlags = 4
 
-    monkeypatch.setattr(platform_module.subprocess, "STARTUPINFO", StartupInfo, raising=False)
-    monkeypatch.setattr(platform_module.subprocess, "STARTF_USESHOWWINDOW", 8, raising=False)
-    monkeypatch.setattr(platform_module.subprocess, "CREATE_NO_WINDOW", 16, raising=False)
+    monkeypatch.setattr(
+        platform_module.subprocess, "STARTUPINFO", StartupInfo, raising=False
+    )
+    monkeypatch.setattr(
+        platform_module.subprocess, "STARTF_USESHOWWINDOW", 8, raising=False
+    )
+    monkeypatch.setattr(
+        platform_module.subprocess, "CREATE_NO_WINDOW", 16, raising=False
+    )
 
     options = hidden_window_subprocess_kwargs("win32")
 
@@ -42,18 +48,28 @@ def test_hidden_window_subprocess_policy_is_shared_on_windows(
 def test_output_picker_routes_to_one_platform_owner():
     calls: list[tuple[str, str]] = []
 
-    assert choose_output_directory(
-        "/initial",
-        platform_name="linux",
-        standard_picker=lambda path: calls.append(("standard", path)) or "/standard",
-        windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
-    ) == "/standard"
-    assert choose_output_directory(
-        "/initial",
-        platform_name="win32",
-        standard_picker=lambda path: calls.append(("standard", path)) or "/standard",
-        windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
-    ) == "/windows"
+    assert (
+        choose_output_directory(
+            "/initial",
+            platform_name="linux",
+            standard_picker=lambda path: (
+                calls.append(("standard", path)) or "/standard"
+            ),
+            windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
+        )
+        == "/standard"
+    )
+    assert (
+        choose_output_directory(
+            "/initial",
+            platform_name="win32",
+            standard_picker=lambda path: (
+                calls.append(("standard", path)) or "/standard"
+            ),
+            windows_picker=lambda path: calls.append(("windows", path)) or "/windows",
+        )
+        == "/windows"
+    )
     assert calls == [("standard", "/initial"), ("windows", "/initial")]
 
 

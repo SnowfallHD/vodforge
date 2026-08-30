@@ -62,14 +62,22 @@ def application_data_dir(
     platform_name = sys.platform if platform_name is None else platform_name
     home = Path.home() if home is None else home
     if platform_name.startswith("win"):
-        base = local_app_data if local_app_data is not None else os.environ.get("LOCALAPPDATA")
+        base = (
+            local_app_data
+            if local_app_data is not None
+            else os.environ.get("LOCALAPPDATA")
+        )
         if base:
             return Path(base) / APP_NAME
         return home / "AppData" / "Local" / APP_NAME
     if platform_name == "darwin":
         return home / "Library" / "Application Support" / APP_NAME
-    base = xdg_data_home if xdg_data_home is not None else os.environ.get("XDG_DATA_HOME")
-    return (Path(base).expanduser() if base else home / ".local" / "share") / APP_NAME.lower()
+    base = (
+        xdg_data_home if xdg_data_home is not None else os.environ.get("XDG_DATA_HOME")
+    )
+    return (
+        Path(base).expanduser() if base else home / ".local" / "share"
+    ) / APP_NAME.lower()
 
 
 def history_file_path(**kwargs: Any) -> Path:
@@ -104,7 +112,15 @@ def _json_safe(value: Any) -> Any:
 
 def _safe_url_identifier(value: Any) -> str:
     text = str(value or "").strip()
-    if not text or len(text) > 128 or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in text):
+    if (
+        not text
+        or len(text) > 128
+        or any(
+            character
+            not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+            for character in text
+        )
+    ):
         return ""
     return text
 
@@ -112,7 +128,11 @@ def _safe_url_identifier(value: Any) -> str:
 def sanitize_durable_url(value: Any, *, preserve_youtube_context: bool) -> str | None:
     """Retain useful URL identity without credentials, fragments, or untrusted query data."""
     text = str(value or "").strip()
-    if not text or len(text) > 8192 or any(ord(character) < 32 or ord(character) == 127 for character in text):
+    if (
+        not text
+        or len(text) > 8192
+        or any(ord(character) < 32 or ord(character) == 127 for character in text)
+    ):
         return None
     try:
         parsed = urllib.parse.urlsplit(text)
@@ -125,7 +145,11 @@ def sanitize_durable_url(value: Any, *, preserve_youtube_context: bool) -> str |
 
     hostname = parsed.hostname.casefold()
     youtube_host = hostname.removeprefix("www.")
-    if preserve_youtube_context and youtube_host in {"youtube.com", "m.youtube.com", "youtu.be"}:
+    if preserve_youtube_context and youtube_host in {
+        "youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+    }:
         query = urllib.parse.parse_qs(parsed.query)
         video_id = ""
         if youtube_host == "youtu.be":
@@ -137,14 +161,20 @@ def sanitize_durable_url(value: Any, *, preserve_youtube_context: bool) -> str |
             canonical_query = {"v": video_id}
             if playlist_id:
                 canonical_query["list"] = playlist_id
-            return "https://www.youtube.com/watch?" + urllib.parse.urlencode(canonical_query)
+            return "https://www.youtube.com/watch?" + urllib.parse.urlencode(
+                canonical_query
+            )
         if playlist_id:
-            return "https://www.youtube.com/playlist?" + urllib.parse.urlencode({"list": playlist_id})
+            return "https://www.youtube.com/playlist?" + urllib.parse.urlencode(
+                {"list": playlist_id}
+            )
 
     safe_host = parsed.hostname
     if ":" in safe_host and not safe_host.startswith("["):
         safe_host = f"[{safe_host}]"
-    default_port = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    default_port = (scheme == "http" and port == 80) or (
+        scheme == "https" and port == 443
+    )
     netloc = safe_host if port is None or default_port else f"{safe_host}:{port}"
     return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path or "/", "", ""))
 
@@ -178,7 +208,11 @@ def sanitize_durable_thumbnail_record(value: Any) -> dict[str, Any] | None:
     result: dict[str, Any] = {"url": url}
     for key in ("width", "height", "filesize", "filesize_approx"):
         metric = value.get(key)
-        if isinstance(metric, (int, float)) and not isinstance(metric, bool) and metric >= 0:
+        if (
+            isinstance(metric, (int, float))
+            and not isinstance(metric, bool)
+            and metric >= 0
+        ):
             result[key] = metric
     return result
 
@@ -231,10 +265,16 @@ def history_output_type(record: dict[str, Any]) -> str:
 def history_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     video_id = str(record.get("id") or "").strip()
     output_dir = history_output_dir(record)
-    normalized_dir = os.path.normcase(os.path.abspath(str(output_dir))) if output_dir else ""
+    normalized_dir = (
+        os.path.normcase(os.path.abspath(str(output_dir))) if output_dir else ""
+    )
     if video_id:
         return video_id, normalized_dir, history_output_type(record)
-    return str(record.get("title") or "").strip(), normalized_dir, history_output_type(record)
+    return (
+        str(record.get("title") or "").strip(),
+        normalized_dir,
+        history_output_type(record),
+    )
 
 
 def history_media_identity(record: dict[str, Any]) -> tuple[str, str, str]:
@@ -245,7 +285,9 @@ def history_media_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     return source, playlist_id, history_output_type(record)
 
 
-def _external_storage_root(path: Path, *, platform_name: str | None = None) -> str | None:
+def _external_storage_root(
+    path: Path, *, platform_name: str | None = None
+) -> str | None:
     """Return a removable/network storage root whose absence is inconclusive."""
     platform_name = sys.platform if platform_name is None else platform_name
     raw_path = str(path)
@@ -342,7 +384,9 @@ def sanitize_history_record(
         path = Path(os.path.abspath(str(path)))
     record["vodforge_output_dir"] = str(path)
     record["vodforge_output_type"] = history_output_type(record or info)
-    record["vodforge_recorded_at"] = recorded_at or datetime.now(timezone.utc).isoformat()
+    record["vodforge_recorded_at"] = (
+        recorded_at or datetime.now(timezone.utc).isoformat()
+    )
     return record
 
 
@@ -378,7 +422,9 @@ def save_history(path: Path, records: list[dict[str, Any]]) -> None:
     }
     temporary = path.with_name(f".{path.name}.tmp")
     try:
-        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
         if os.name != "nt":
             temporary.chmod(0o600)
         temporary.replace(path)
@@ -395,11 +441,16 @@ def load_history(path: Path) -> list[dict[str, Any]]:
         return []
     try:
         if path.stat().st_size > MAX_HISTORY_FILE_BYTES:
-            raise HistoryError("VODForge found an unexpectedly large download-history file.")
+            raise HistoryError(
+                "VODForge found an unexpectedly large download-history file."
+            )
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HistoryError(f"VODForge could not read download history: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != HISTORY_SCHEMA_VERSION:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != HISTORY_SCHEMA_VERSION
+    ):
         raise HistoryError("VODForge found an unsupported download-history file.")
     raw_items = payload.get("items")
     if not isinstance(raw_items, list):

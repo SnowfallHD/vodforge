@@ -32,9 +32,21 @@ def _release(version: str) -> ReleaseInfo:
         html_url=f"https://github.com/SnowfallHD/vodforge/releases/tag/{tag}",
         notes="",
         assets=(
-            ReleaseAsset(f"VODForge-Windows-Setup-v{version}.exe", "https://github.com/example/windows", 10),
-            ReleaseAsset(f"VODForge-macOS-arm64-v{version}.zip", "https://github.com/example/mac-arm", 10),
-            ReleaseAsset(f"VODForge-macOS-x64-v{version}.zip", "https://github.com/example/mac-x64", 10),
+            ReleaseAsset(
+                f"VODForge-Windows-Setup-v{version}.exe",
+                "https://github.com/example/windows",
+                10,
+            ),
+            ReleaseAsset(
+                f"VODForge-macOS-arm64-v{version}.zip",
+                "https://github.com/example/mac-arm",
+                10,
+            ),
+            ReleaseAsset(
+                f"VODForge-macOS-x64-v{version}.zip",
+                "https://github.com/example/mac-x64",
+                10,
+            ),
         ),
     )
 
@@ -53,7 +65,9 @@ def test_silent_current_version_check_does_not_interrupt_user(monkeypatch):
     app.update_check_silent = True
     monkeypatch.setattr(app_module, "__version__", "1.2.3")
     shown = []
-    monkeypatch.setattr(app_module.messagebox, "showinfo", lambda *args: shown.append(args))
+    monkeypatch.setattr(
+        app_module.messagebox, "showinfo", lambda *args: shown.append(args)
+    )
 
     app._show_update_result(_release("1.2.3"))
 
@@ -67,7 +81,9 @@ def test_automatic_check_prompts_for_new_signed_platform_asset(monkeypatch):
     app.update_check_silent = True
     monkeypatch.setattr(app_module, "__version__", "1.2.3")
     monkeypatch.setattr(app_module.messagebox, "askyesno", lambda *_args: True)
-    monkeypatch.setattr(app_module, "release_asset_for_platform", lambda release: release.assets[0])
+    monkeypatch.setattr(
+        app_module, "release_asset_for_platform", lambda release: release.assets[0]
+    )
     started = []
     app._start_update_download = lambda release: started.append(release.tag_name)
 
@@ -84,7 +100,9 @@ def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path
     app.destroy = lambda: destroyed.append(True)
     app.after = lambda delay, callback: scheduled.append((delay, callback))
     launched = []
-    monkeypatch.setattr(app_module, "launch_macos_update", lambda plan: launched.append(plan))
+    monkeypatch.setattr(
+        app_module, "launch_macos_update", lambda plan: launched.append(plan)
+    )
     plan = MacUpdatePlan(
         source_app=tmp_path / "staged-test" / "VODForge.app",
         target_app=tmp_path / "Applications" / "VODForge.app",
@@ -94,7 +112,10 @@ def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path
     app._install_downloaded_update(plan)
 
     assert launched == [plan]
-    assert app.update_button.values == {"state": "disabled", "text": "Installing update…"}
+    assert app.update_button.values == {
+        "state": "disabled",
+        "text": "Installing update…",
+    }
     assert scheduled[0][0] == 250
     scheduled[0][1]()
     assert destroyed == [True]

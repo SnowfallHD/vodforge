@@ -151,14 +151,24 @@ from yt_downloader.safe_output import UnsafeOutputPathError
 
 
 def test_platform_diagnostics_paths_follow_native_conventions(tmp_path: Path):
-    assert diagnostics_dir(platform_name="darwin", home=tmp_path) == tmp_path / "Library" / "Logs" / "VODForge"
-    assert diagnostics_dir(platform_name="linux", home=tmp_path) == tmp_path / ".vodforge" / "logs"
-    assert diagnostics_dir(platform_name="win32", home=tmp_path, local_app_data="C:/Users/Test/AppData/Local") == (
-        Path("C:/Users/Test/AppData/Local") / "VODForge" / "logs"
+    assert (
+        diagnostics_dir(platform_name="darwin", home=tmp_path)
+        == tmp_path / "Library" / "Logs" / "VODForge"
     )
+    assert (
+        diagnostics_dir(platform_name="linux", home=tmp_path)
+        == tmp_path / ".vodforge" / "logs"
+    )
+    assert diagnostics_dir(
+        platform_name="win32",
+        home=tmp_path,
+        local_app_data="C:/Users/Test/AppData/Local",
+    ) == (Path("C:/Users/Test/AppData/Local") / "VODForge" / "logs")
 
 
-def test_diagnostics_writer_reuses_and_resets_its_line_buffered_sink(monkeypatch, tmp_path: Path):
+def test_diagnostics_writer_reuses_and_resets_its_line_buffered_sink(
+    monkeypatch, tmp_path: Path
+):
     log_path = tmp_path / "latest.log"
     monkeypatch.setattr(app_module, "DIAGNOSTICS_LOG_PATH", log_path)
 
@@ -205,14 +215,19 @@ def test_private_log_sinks_harden_preexisting_permissions(monkeypatch, tmp_path:
     assert "private activity" in activity.read_text(encoding="utf-8")
     assert "private failure" in failure_report.read_text(encoding="utf-8")
     if os.name != "nt":
-        assert [stat.S_IMODE(path.stat().st_mode) for path in (diagnostic, activity, failure_report)] == [
+        assert [
+            stat.S_IMODE(path.stat().st_mode)
+            for path in (diagnostic, activity, failure_report)
+        ] == [
             0o600,
             0o600,
             0o600,
         ]
 
 
-def test_diagnostics_writer_does_not_follow_existing_symlink(monkeypatch, tmp_path: Path):
+def test_diagnostics_writer_does_not_follow_existing_symlink(
+    monkeypatch, tmp_path: Path
+):
     target = tmp_path / "target.txt"
     diagnostic = tmp_path / "latest.log"
     target.write_text("must remain unchanged", encoding="utf-8")
@@ -234,7 +249,9 @@ def test_diagnostics_writer_does_not_follow_existing_symlink(monkeypatch, tmp_pa
     assert app_module._DIAGNOSTICS_LOG_HANDLE is None
 
 
-def test_diagnostic_and_activity_sinks_sanitize_embedded_url_secrets(monkeypatch, tmp_path: Path):
+def test_diagnostic_and_activity_sinks_sanitize_embedded_url_secrets(
+    monkeypatch, tmp_path: Path
+):
     diagnostic = tmp_path / "latest.log"
     activity = tmp_path / "activity.log"
     canary = "TOPSECRET"
@@ -273,7 +290,9 @@ def test_prepare_activity_log_sanitizes_preexisting_url_secrets(tmp_path: Path):
     )
 
 
-def test_persistent_activity_log_survives_reopen_and_stays_bounded(monkeypatch, tmp_path: Path):
+def test_persistent_activity_log_survives_reopen_and_stays_bounded(
+    monkeypatch, tmp_path: Path
+):
     log_path = tmp_path / "activity.log"
     monkeypatch.setattr(app_module, "ACTIVITY_LOG_MAX_BYTES", 120)
     monkeypatch.setattr(app_module, "ACTIVITY_LOG_COMPACT_BYTES", 80)
@@ -303,7 +322,9 @@ def test_persistent_activity_log_does_not_store_cookie_file_path(tmp_path: Path)
         app_module._close_activity_log_locked()
 
     assert app_module.load_activity_log_tail(log_path) == "Loaded YouTube cookies file."
-    assert "/Users/example/private/cookies.txt" not in log_path.read_text(encoding="utf-8")
+    assert "/Users/example/private/cookies.txt" not in log_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_activity_log_failure_receipt_is_secret_free_rate_limited_and_recovers(
@@ -336,7 +357,9 @@ def test_activity_log_failure_receipt_is_secret_free_rate_limited_and_recovers(
     app_module.append_activity_log("durable activity recovered", recovered_target)
     with app_module._ACTIVITY_LOG_LOCK:
         app_module._close_activity_log_locked()
-    assert recovered_target.read_text(encoding="utf-8") == "durable activity recovered\n"
+    assert (
+        recovered_target.read_text(encoding="utf-8") == "durable activity recovered\n"
+    )
 
     app_module.append_activity_log("another private canary", second_bad_target)
 
@@ -347,7 +370,9 @@ def test_activity_log_failure_receipt_is_secret_free_rate_limited_and_recovers(
     assert str(second_bad_target) not in receipts[-1]
 
 
-def test_activity_log_write_failure_detaches_poisoned_handle(monkeypatch, tmp_path: Path):
+def test_activity_log_write_failure_detaches_poisoned_handle(
+    monkeypatch, tmp_path: Path
+):
     class FailingHandle:
         closed = False
 
@@ -373,15 +398,22 @@ def test_activity_log_write_failure_detaches_poisoned_handle(monkeypatch, tmp_pa
     assert receipts == [app_module.ACTIVITY_LOG_FAILURE_DIAGNOSTIC]
 
 
-def test_activity_log_close_failure_still_clears_cached_handle(monkeypatch, tmp_path: Path):
+def test_activity_log_close_failure_still_clears_cached_handle(
+    monkeypatch, tmp_path: Path
+):
     class FailingCloser:
         def close(self) -> None:
             raise OSError("injected close failure")
 
     monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE", FailingCloser())
-    monkeypatch.setattr(app_module, "_ACTIVITY_LOG_HANDLE_PATH", tmp_path / "activity.log")
+    monkeypatch.setattr(
+        app_module, "_ACTIVITY_LOG_HANDLE_PATH", tmp_path / "activity.log"
+    )
 
-    with pytest.raises(OSError, match="injected close failure"), app_module._ACTIVITY_LOG_LOCK:
+    with (
+        pytest.raises(OSError, match="injected close failure"),
+        app_module._ACTIVITY_LOG_LOCK,
+    ):
         app_module._close_activity_log_locked()
 
     assert app_module._ACTIVITY_LOG_HANDLE is None
@@ -453,8 +485,12 @@ def test_initial_window_size_leaves_room_for_screen_chrome():
 
 
 def test_initial_window_geometry_is_centered_and_dock_safe():
-    assert initial_window_geometry(1440, 900, platform_name="darwin") == "1180x780+130+28"
-    assert initial_window_geometry(1920, 1080, platform_name="win32") == "1180x900+370+90"
+    assert (
+        initial_window_geometry(1440, 900, platform_name="darwin") == "1180x780+130+28"
+    )
+    assert (
+        initial_window_geometry(1920, 1080, platform_name="win32") == "1180x900+370+90"
+    )
 
 
 def test_unresolved_run_titles_never_expose_the_raw_source_url(tmp_path: Path):
@@ -481,7 +517,9 @@ def test_unresolved_run_titles_never_expose_the_raw_source_url(tmp_path: Path):
     assert download_job_display_title(job) == "Resolved title"
 
 
-def test_focus_run_records_use_one_active_run_authority_without_preview_duplicate(tmp_path: Path):
+def test_focus_run_records_use_one_active_run_authority_without_preview_duplicate(
+    tmp_path: Path,
+):
     class Value:
         def __init__(self, value):
             self.value = value
@@ -489,7 +527,11 @@ def test_focus_run_records_use_one_active_run_authority_without_preview_duplicat
         def get(self):
             return self.value
 
-    active_info = {"id": "active-id", "title": "Current title", "vodforge_output_type": "MP4"}
+    active_info = {
+        "id": "active-id",
+        "title": "Current title",
+        "vodforge_output_type": "MP4",
+    }
     active_job = DownloadJob(
         url="https://www.youtube.com/watch?v=active-id",
         output_dir=tmp_path,
@@ -547,7 +589,11 @@ def test_failed_run_replaces_its_ephemeral_metadata_card(tmp_path: Path):
         def get(self):
             return self.value
 
-    failed_info = {"id": "failed-id", "title": "Resolved failure", "vodforge_output_type": "MP4"}
+    failed_info = {
+        "id": "failed-id",
+        "title": "Resolved failure",
+        "vodforge_output_type": "MP4",
+    }
     failed_job = DownloadJob(
         url="https://youtu.be/failed-id",
         output_dir=tmp_path,
@@ -586,7 +632,9 @@ def test_failed_run_replaces_its_ephemeral_metadata_card(tmp_path: Path):
     assert records[0]["job"] is failed_job
 
 
-def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(tmp_path: Path):
+def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(
+    tmp_path: Path,
+):
     failed_job = DownloadJob(
         url="https://youtu.be/retry-id",
         output_dir=tmp_path,
@@ -602,7 +650,11 @@ def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(tm
         embed_metadata=False,
         write_info_json=False,
         tags=["producer"],
-        preview_info={"id": "retry-id", "title": "Retry me", "vodforge_output_type": "MP3"},
+        preview_info={
+            "id": "retry-id",
+            "title": "Retry me",
+            "vodforge_output_type": "MP3",
+        },
         metadata_keys={("retry-id", "MP3")},
         terminal_status="Failed",
         terminal_message="Temporary failure",
@@ -714,10 +766,21 @@ def test_focus_library_vertical_layout_protects_description_before_it_can_collap
 
 
 def test_table_spare_width_expands_every_eligible_column_and_respects_limits():
-    assert stretched_table_column_widths([40, 100, 60], 260, {0: None, 1: None}) == [70, 130, 60]
-    assert stretched_table_column_widths([40, 100, 60], 300, {0: 50, 1: None}) == [50, 190, 60]
+    assert stretched_table_column_widths([40, 100, 60], 260, {0: None, 1: None}) == [
+        70,
+        130,
+        60,
+    ]
+    assert stretched_table_column_widths([40, 100, 60], 300, {0: 50, 1: None}) == [
+        50,
+        190,
+        60,
+    ]
     assert stretched_table_column_widths([40, 100, 60], 260, {}) == [40, 100, 60]
-    assert stretched_table_column_widths([80, 100], 120, {0: None, 1: None}) == [80, 100]
+    assert stretched_table_column_widths([80, 100], 120, {0: None, 1: None}) == [
+        80,
+        100,
+    ]
 
 
 def test_manual_table_widths_stay_exact_while_other_columns_fill_the_viewport():
@@ -761,8 +824,12 @@ def test_ultrawide_library_workspace_is_bounded_and_centered():
     assert focus_library_horizontal_padding(1180) == 18
     assert focus_library_horizontal_padding(1600) == 18
     assert focus_library_horizontal_padding(2560) == 480
-    assert focus_library_horizontal_padding(2000) == focus_library_horizontal_padding(2015)
-    assert focus_library_horizontal_padding(2016) > focus_library_horizontal_padding(2015)
+    assert focus_library_horizontal_padding(2000) == focus_library_horizontal_padding(
+        2015
+    )
+    assert focus_library_horizontal_padding(2016) > focus_library_horizontal_padding(
+        2015
+    )
 
 
 def test_virtual_table_clamps_a_stale_scroll_offset_after_filtering_to_fewer_rows():
@@ -813,11 +880,22 @@ def test_preview_and_completed_profiles_omit_redundant_media_placeholders():
         },
     }
 
-    assert focus_metadata_profile_text(mp4_preview, "preview") == "MP4  •  Preview complete"
+    assert (
+        focus_metadata_profile_text(mp4_preview, "preview")
+        == "MP4  •  Preview complete"
+    )
     assert focus_metadata_profile_text(mp3_completed, "completed") == "MP3  •  CBR"
-    assert focus_metadata_profile_text(mp4_completed, "completed") == "MP4  •  1920x1080  •  CBR"
-    assert focus_metadata_profile_text(legacy_mp4_completed, "completed") == "MP4  •  1280x720  •  CBR"
-    assert focus_metadata_profile_text({"vodforge_output_type": "MP4"}, "failed") == "MP4"
+    assert (
+        focus_metadata_profile_text(mp4_completed, "completed")
+        == "MP4  •  1920x1080  •  CBR"
+    )
+    assert (
+        focus_metadata_profile_text(legacy_mp4_completed, "completed")
+        == "MP4  •  1280x720  •  CBR"
+    )
+    assert (
+        focus_metadata_profile_text({"vodforge_output_type": "MP4"}, "failed") == "MP4"
+    )
     assert preview_output_summary_display() == (
         "Output status: Preview complete\n"
         "Output file path: Not produced\n"
@@ -845,8 +923,14 @@ def test_only_explicit_completed_metadata_is_a_preview():
 
 
 def test_bundled_asset_path_uses_packaged_or_source_asset_root(tmp_path: Path):
-    assert bundled_asset_path("VODForge.ico", meipass=tmp_path) == tmp_path / "assets" / "VODForge.ico"
-    assert bundled_asset_path("VODForge.png", meipass=None, repo_root=tmp_path) == tmp_path / "assets" / "VODForge.png"
+    assert (
+        bundled_asset_path("VODForge.ico", meipass=tmp_path)
+        == tmp_path / "assets" / "VODForge.ico"
+    )
+    assert (
+        bundled_asset_path("VODForge.png", meipass=None, repo_root=tmp_path)
+        == tmp_path / "assets" / "VODForge.png"
+    )
 
 
 def test_rounded_cover_image_fills_slot_and_keeps_only_rounded_corners_transparent():
@@ -857,7 +941,9 @@ def test_rounded_cover_image_fills_slot_and_keeps_only_rounded_corners_transpare
     assert rendered.size == (160, 90)
     assert rendered.mode == "RGBA"
     assert rendered.getpixel((0, 0))[3] == 0
-    assert any(0 < rendered.getpixel((x, y))[3] < 255 for x in range(10) for y in range(10))
+    assert any(
+        0 < rendered.getpixel((x, y))[3] < 255 for x in range(10) for y in range(10)
+    )
     assert rendered.getpixel((80, 45)) == (51, 102, 153, 255)
 
 
@@ -941,7 +1027,11 @@ def test_thumbnail_flattening_bakes_antialiased_edges_against_the_ui_background(
     assert rendered.size == (160, 90)
     assert rendered.getpixel((0, 0)) == (8, 9, 10, 255)
     assert rendered.getextrema()[3] == (255, 255)
-    assert any(rendered.getpixel((x, y))[:3] not in {(8, 9, 10), (51, 102, 153)} for x in range(10) for y in range(10))
+    assert any(
+        rendered.getpixel((x, y))[:3] not in {(8, 9, 10), (51, 102, 153)}
+        for x in range(10)
+        for y in range(10)
+    )
 
 
 def test_center_alpha_content_moves_visible_bounds_to_the_canvas_center():
@@ -1042,33 +1132,45 @@ def test_windows_app_identity_is_a_noop_on_other_platforms():
     assert configure_windows_app_identity("linux") is False
 
 
-def test_windows_output_picker_isolated_process_returns_network_path(monkeypatch: pytest.MonkeyPatch):
+def test_windows_output_picker_isolated_process_returns_network_path(
+    monkeypatch: pytest.MonkeyPatch,
+):
     class StartupInfo:
         dwFlags = 0
 
-    monkeypatch.setattr(app_module.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(
+        app_module.subprocess, "STARTUPINFO", StartupInfo, raising=False
+    )
     monkeypatch.setattr(app_module.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
     observed = {}
 
     def runner(command, **kwargs):
         observed["command"] = command
         observed["environment"] = kwargs["env"]
-        return app_module.subprocess.CompletedProcess(command, 0, '{"path":"\\\\\\\\nas\\\\vods"}', "")
+        return app_module.subprocess.CompletedProcess(
+            command, 0, '{"path":"\\\\\\\\nas\\\\vods"}', ""
+        )
 
     assert choose_windows_output_directory(r"Z:\\VODs", runner=runner) == r"\\nas\vods"
     assert observed["command"][:3] == ["powershell.exe", "-NoProfile", "-STA"]
     assert observed["environment"]["VODFORGE_INITIAL_OUTPUT_DIR"] == r"Z:\\VODs"
 
 
-def test_windows_output_picker_failure_is_reported_without_closing_app(monkeypatch: pytest.MonkeyPatch):
+def test_windows_output_picker_failure_is_reported_without_closing_app(
+    monkeypatch: pytest.MonkeyPatch,
+):
     class StartupInfo:
         dwFlags = 0
 
-    monkeypatch.setattr(app_module.subprocess, "STARTUPINFO", StartupInfo, raising=False)
+    monkeypatch.setattr(
+        app_module.subprocess, "STARTUPINFO", StartupInfo, raising=False
+    )
     monkeypatch.setattr(app_module.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
 
     def runner(command, **_kwargs):
-        return app_module.subprocess.CompletedProcess(command, 1, "", "network provider failed")
+        return app_module.subprocess.CompletedProcess(
+            command, 1, "", "network provider failed"
+        )
 
     with pytest.raises(RuntimeError, match="network provider failed"):
         choose_windows_output_directory(r"Z:\\VODs", runner=runner)
@@ -1111,9 +1213,18 @@ def test_ytdlp_ffmpeg_location_uses_parent_for_standard_executable_names():
 
 
 def test_runtime_version_commands_use_each_tool_cli_contract():
-    assert runtime_version_command("ffmpeg", "/bundle/ffmpeg") == ["/bundle/ffmpeg", "-version"]
-    assert runtime_version_command("ffprobe", "/bundle/ffprobe") == ["/bundle/ffprobe", "-version"]
-    assert runtime_version_command("deno", "/bundle/deno") == ["/bundle/deno", "--version"]
+    assert runtime_version_command("ffmpeg", "/bundle/ffmpeg") == [
+        "/bundle/ffmpeg",
+        "-version",
+    ]
+    assert runtime_version_command("ffprobe", "/bundle/ffprobe") == [
+        "/bundle/ffprobe",
+        "-version",
+    ]
+    assert runtime_version_command("deno", "/bundle/deno") == [
+        "/bundle/deno",
+        "--version",
+    ]
 
 
 def test_runtime_version_probe_keeps_executable_as_one_argv_entry_without_shell(
@@ -1134,7 +1245,9 @@ def test_runtime_version_probe_keeps_executable_as_one_argv_entry_without_shell(
 
     monkeypatch.setattr(app_module.subprocess, "run", fake_run)
 
-    assert app_module.probe_runtime_version("ffmpeg", executable) == "ffmpeg version test"
+    assert (
+        app_module.probe_runtime_version("ffmpeg", executable) == "ffmpeg version test"
+    )
     assert seen["command"] == [executable, "-version"]
     assert "shell" not in seen["kwargs"]
     assert seen["kwargs"]["check"] is True
@@ -1186,12 +1299,20 @@ def test_cancellable_blocking_step_returns_quickly_when_cancel_requested():
         release.wait(timeout=5)
         return "finished too late"
 
-    thread = threading.Thread(target=lambda: (started.wait(timeout=1), cancel.set()), daemon=True)
+    thread = threading.Thread(
+        target=lambda: (started.wait(timeout=1), cancel.set()), daemon=True
+    )
     thread.start()
     begin = time.monotonic()
 
     with pytest.raises(RuntimeError, match="cancelled"):
-        run_cancellable_blocking_step(slow_step, cancel.is_set, timeout_seconds=10, poll_seconds=0.01, label="analysis")
+        run_cancellable_blocking_step(
+            slow_step,
+            cancel.is_set,
+            timeout_seconds=10,
+            poll_seconds=0.01,
+            label="analysis",
+        )
 
     elapsed = time.monotonic() - begin
     release.set()
@@ -1207,7 +1328,13 @@ def test_cancellable_blocking_step_times_out_bounded_step():
 
     begin = time.monotonic()
     with pytest.raises(TimeoutError, match="timed out"):
-        run_cancellable_blocking_step(slow_step, lambda: False, timeout_seconds=0.05, poll_seconds=0.01, label="analysis")
+        run_cancellable_blocking_step(
+            slow_step,
+            lambda: False,
+            timeout_seconds=0.05,
+            poll_seconds=0.01,
+            label="analysis",
+        )
 
     elapsed = time.monotonic() - begin
     release.set()
@@ -1346,7 +1473,10 @@ def test_source_analysis_retry_recognizes_wrapped_ytdlp_transport_error():
             raise _RetryDownloadError(transport_error_type("connection reset"))
         return "metadata"
 
-    assert app_module.run_with_bounded_transient_retries(operation, max_attempts=2) == "metadata"
+    assert (
+        app_module.run_with_bounded_transient_retries(operation, max_attempts=2)
+        == "metadata"
+    )
     assert calls == 2
 
 
@@ -1395,7 +1525,10 @@ def test_ytdlp_retry_policy_has_one_generic_authority_per_phase():
 
 
 def test_build_description_display_text_uses_description_field():
-    assert build_description_display_text({"description": "Line 1\nLine 2"}) == "Line 1\nLine 2"
+    assert (
+        build_description_display_text({"description": "Line 1\nLine 2"})
+        == "Line 1\nLine 2"
+    )
 
 
 def test_quality_options_require_audio_and_never_fall_back_to_video_only():
@@ -1451,20 +1584,36 @@ def test_write_compact_video_metadata_uses_short_metadata_filename(tmp_path: Pat
     )
 
     text = out.read_text(encoding="utf-8")
-    assert "\n  \"tags\": [\n" in text
+    assert '\n  "tags": [\n' in text
     assert json.loads(text)["tags"] == ["one", "two"]
     assert out.name == "metadata.json"
 
 
 def test_playlist_folder_and_video_output_dir_are_windows_safe(tmp_path: Path):
     playlist = {"_type": "playlist", "title": "Cool: Playlist?", "id": "PL123"}
-    video = {"title": "Video / One", "id": "abc123", "playlist_index": 7, "playlist_title": "Cool: Playlist?", "playlist_id": "PL123", "uploader": "Creator: One"}
+    video = {
+        "title": "Video / One",
+        "id": "abc123",
+        "playlist_index": 7,
+        "playlist_title": "Cool: Playlist?",
+        "playlist_id": "PL123",
+        "uploader": "Creator: One",
+    }
 
     assert playlist_folder_name(playlist) == "Cool_ Playlist_"
-    assert video_output_dir(tmp_path, video) == tmp_path / "Creator_ One" / "playlists" / "Cool_ Playlist_" / "Video _ One [abc123]"
+    assert (
+        video_output_dir(tmp_path, video)
+        == tmp_path
+        / "Creator_ One"
+        / "playlists"
+        / "Cool_ Playlist_"
+        / "Video _ One [abc123]"
+    )
 
 
-def test_single_video_output_dir_uses_channel_parent_and_bounded_title_folder(tmp_path: Path):
+def test_single_video_output_dir_uses_channel_parent_and_bounded_title_folder(
+    tmp_path: Path,
+):
     long_title = "Very Long Video Title " * 20
     single = {"title": long_title, "id": "abc123", "channel": "Main Channel"}
 
@@ -1489,27 +1638,36 @@ def test_clean_single_video_url_removes_playlist_params_but_keeps_video_id():
 
 
 def test_canonical_youtube_url_keeps_item_and_proven_playlist_context_only():
-    assert canonical_youtube_url(
-        {
-            "id": "abc123",
-            "playlist_id": "PLsafe",
-            "webpage_url": "https://www.youtube.com/watch?v=abc123&list=PLsafe&index=4&t=10&token=secret",
-        }
-    ) == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
+    assert (
+        canonical_youtube_url(
+            {
+                "id": "abc123",
+                "playlist_id": "PLsafe",
+                "webpage_url": "https://www.youtube.com/watch?v=abc123&list=PLsafe&index=4&t=10&token=secret",
+            }
+        )
+        == "https://www.youtube.com/watch?v=abc123&list=PLsafe"
+    )
     assert canonical_youtube_url({}, "https://example.com/watch?v=abc123") is None
 
 
 def test_canonical_youtube_url_strips_untrusted_query_data_without_an_item_id():
-    assert canonical_youtube_url(
-        {
-            "playlist_id": "PLsafe",
-            "webpage_url": "https://www.youtube.com/playlist?list=PLsafe&si=tracking&token=secret",
-        }
-    ) == "https://www.youtube.com/playlist?list=PLsafe"
-    assert canonical_youtube_url(
-        {},
-        "https://www.youtube.com/@Creator/videos?si=tracking&token=secret#featured",
-    ) == "https://www.youtube.com/@Creator/videos"
+    assert (
+        canonical_youtube_url(
+            {
+                "playlist_id": "PLsafe",
+                "webpage_url": "https://www.youtube.com/playlist?list=PLsafe&si=tracking&token=secret",
+            }
+        )
+        == "https://www.youtube.com/playlist?list=PLsafe"
+    )
+    assert (
+        canonical_youtube_url(
+            {},
+            "https://www.youtube.com/@Creator/videos?si=tracking&token=secret#featured",
+        )
+        == "https://www.youtube.com/@Creator/videos"
+    )
 
 
 def test_single_video_toggle_blocks_playlist_url_without_video_id():
@@ -1522,8 +1680,16 @@ def test_single_video_toggle_blocks_playlist_url_without_video_id():
 
 
 def test_single_video_toggle_allows_watch_and_short_urls_with_video_id():
-    assert single_video_url_requires_video_id_error("https://www.youtube.com/watch?list=PL&v=abc&t=30s") is None
-    assert single_video_url_requires_video_id_error("https://youtu.be/abc?list=PL&t=30s") is None
+    assert (
+        single_video_url_requires_video_id_error(
+            "https://www.youtube.com/watch?list=PL&v=abc&t=30s"
+        )
+        is None
+    )
+    assert (
+        single_video_url_requires_video_id_error("https://youtu.be/abc?list=PL&t=30s")
+        is None
+    )
 
 
 def test_ignore_playlists_is_the_safe_default():
@@ -1541,7 +1707,9 @@ def test_batch_watch_urls_with_playlist_context_are_processed_as_single_videos()
     assert youtube_url_playlist_id(preserved_url) == "PLmix"
 
 
-def test_existing_playlist_output_candidates_include_canonical_and_legacy_paths(tmp_path: Path):
+def test_existing_playlist_output_candidates_include_canonical_and_legacy_paths(
+    tmp_path: Path,
+):
     info = {
         "id": "abc123",
         "title": "One song",
@@ -1552,11 +1720,19 @@ def test_existing_playlist_output_candidates_include_canonical_and_legacy_paths(
 
     candidates = existing_output_candidate_dirs(tmp_path, info, "One song.mp4")
 
-    assert candidates[0] == tmp_path / "Creator" / "playlists" / "The Mix" / "One song [abc123]"
-    assert tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]" in candidates
+    assert (
+        candidates[0]
+        == tmp_path / "Creator" / "playlists" / "The Mix" / "One song [abc123]"
+    )
+    assert (
+        tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]"
+        in candidates
+    )
 
 
-def test_valid_legacy_single_output_is_reused_by_later_playlist_run(monkeypatch, tmp_path: Path):
+def test_valid_legacy_single_output_is_reused_by_later_playlist_run(
+    monkeypatch, tmp_path: Path
+):
     info = {
         "id": "abc123",
         "title": "One song",
@@ -1564,7 +1740,13 @@ def test_valid_legacy_single_output_is_reused_by_later_playlist_run(monkeypatch,
         "playlist_id": "PLmix",
         "playlist_title": "The Mix",
     }
-    legacy = tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]" / "One song.mp4"
+    legacy = (
+        tmp_path
+        / "Creator"
+        / "videos - no playlist"
+        / "One song [abc123]"
+        / "One song.mp4"
+    )
     legacy.parent.mkdir(parents=True)
     legacy.write_bytes(b"valid-media")
     probe = {"format": {"duration": "30", "format_name": "mp4"}, "streams": []}
@@ -1582,10 +1764,15 @@ def test_valid_legacy_single_output_is_reused_by_later_playlist_run(monkeypatch,
     assert validated == [legacy]
 
 
-def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_new_allocation(monkeypatch, tmp_path: Path):
+def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_new_allocation(
+    monkeypatch, tmp_path: Path
+):
     output_root = tmp_path
     segment = 0
-    while len(str(output_root).encode("utf-16-le")) // 2 <= app_module.WINDOWS_SAFE_PATH_LIMIT:
+    while (
+        len(str(output_root).encode("utf-16-le")) // 2
+        <= app_module.WINDOWS_SAFE_PATH_LIMIT
+    ):
         output_root /= f"deep-{segment:02d}"
         segment += 1
     info = {"id": "abc123", "title": "One song", "uploader": "Creator"}
@@ -1593,7 +1780,9 @@ def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_n
     legacy.parent.mkdir(parents=True)
     legacy.write_bytes(b"valid legacy media")
     probe = {"format": {"duration": "30", "format_name": "mp4"}, "streams": []}
-    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    monkeypatch.setattr(
+        app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe
+    )
 
     found = find_valid_existing_output(output_root, info, OutputType.MP4, "ffprobe")
 
@@ -1602,9 +1791,17 @@ def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_n
         resolved_video_output_target(output_root, info, ".mp4")
 
 
-def test_invalid_existing_output_is_not_treated_as_downloaded(monkeypatch, tmp_path: Path):
+def test_invalid_existing_output_is_not_treated_as_downloaded(
+    monkeypatch, tmp_path: Path
+):
     info = {"id": "abc123", "title": "One song", "uploader": "Creator"}
-    candidate = tmp_path / "Creator" / "videos - no playlist" / "One song [abc123]" / "One song.mp4"
+    candidate = (
+        tmp_path
+        / "Creator"
+        / "videos - no playlist"
+        / "One song [abc123]"
+        / "One song.mp4"
+    )
     candidate.parent.mkdir(parents=True)
     candidate.write_bytes(b"corrupt")
     monkeypatch.setattr(
@@ -1642,22 +1839,37 @@ def test_iter_video_infos_handles_playlist_and_single_video():
     assert [item["id"] for item in iter_video_infos(single)] == ["solo"]
 
 
-def test_single_video_output_dir_is_video_folder_not_single_videos_parent(tmp_path: Path):
+def test_single_video_output_dir_is_video_folder_not_single_videos_parent(
+    tmp_path: Path,
+):
     single = {"title": "My Single Video", "id": "abc123", "uploader": "Creator"}
 
-    assert video_output_dir(tmp_path, single) == tmp_path / "Creator" / "videos - no playlist" / "My Single Video [abc123]"
+    assert (
+        video_output_dir(tmp_path, single)
+        == tmp_path / "Creator" / "videos - no playlist" / "My Single Video [abc123]"
+    )
 
 
 def test_same_title_videos_in_same_channel_get_distinct_video_folders(tmp_path: Path):
     first = {"title": "Same Title", "id": "one", "uploader": "Creator"}
     second = {"title": "Same Title", "id": "two", "uploader": "Creator"}
 
-    assert video_output_dir(tmp_path, first) == tmp_path / "Creator" / "videos - no playlist" / "Same Title [one]"
-    assert video_output_dir(tmp_path, second) == tmp_path / "Creator" / "videos - no playlist" / "Same Title [two]"
+    assert (
+        video_output_dir(tmp_path, first)
+        == tmp_path / "Creator" / "videos - no playlist" / "Same Title [one]"
+    )
+    assert (
+        video_output_dir(tmp_path, second)
+        == tmp_path / "Creator" / "videos - no playlist" / "Same Title [two]"
+    )
 
 
-def test_long_windows_paths_keep_full_media_filename_with_compact_title_folder(tmp_path: Path):
-    long_title = "John MacArthur, a Gifted Bible Teacher and Pastor, Goes Home to Heaven"
+def test_long_windows_paths_keep_full_media_filename_with_compact_title_folder(
+    tmp_path: Path,
+):
+    long_title = (
+        "John MacArthur, a Gifted Bible Teacher and Pastor, Goes Home to Heaven"
+    )
     info = {
         "title": long_title,
         "id": "Hi4j2pF4AAM",
@@ -1667,13 +1879,20 @@ def test_long_windows_paths_keep_full_media_filename_with_compact_title_folder(t
     }
     output_dir = Path("C:/Users/DequanBrown/Downloads")
 
-    target_dir = app_module.resolved_video_output_dir(output_dir, info, f"{long_title}.mp4")
+    target_dir = app_module.resolved_video_output_dir(
+        output_dir, info, f"{long_title}.mp4"
+    )
 
-    assert target_dir.parent == output_dir / "American Family Radio" / "playlists" / long_title
+    assert (
+        target_dir.parent
+        == output_dir / "American Family Radio" / "playlists" / long_title
+    )
     assert target_dir.name.startswith("John MacArthur")
     assert target_dir.name.endswith("[Hi4j2pF4AAM]")
     assert target_dir.name != f"{long_title} [Hi4j2pF4AAM]"
-    assert len(str(target_dir / f"{long_title}.mp4")) <= app_module.WINDOWS_SAFE_PATH_LIMIT
+    assert (
+        len(str(target_dir / f"{long_title}.mp4")) <= app_module.WINDOWS_SAFE_PATH_LIMIT
+    )
     assert (target_dir / f"{long_title}.mp4").name == f"{long_title}.mp4"
 
 
@@ -1694,17 +1913,24 @@ def test_path_budget_keeps_channel_playlist_and_truncated_title_instead_of_an_id
     assert "path-safe videos" not in target_dir.parts
     assert target_dir.name.endswith("[Hi4j2pF4AAM]")
     assert target_dir.name != "Hi4j2pF4AAM"
-    assert len(str(target_dir / target_name).encode("utf-16-le")) // 2 <= app_module.WINDOWS_SAFE_PATH_LIMIT
+    assert (
+        len(str(target_dir / target_name).encode("utf-16-le")) // 2
+        <= app_module.WINDOWS_SAFE_PATH_LIMIT
+    )
 
 
-def test_windows_reserved_device_names_are_never_used_as_raw_directories(tmp_path: Path):
+def test_windows_reserved_device_names_are_never_used_as_raw_directories(
+    tmp_path: Path,
+):
     output = video_output_dir(tmp_path, {"title": "NUL", "id": "abc", "channel": "CON"})
 
     assert output.parts[-3] == "_CON"
     assert output.name.startswith("_NUL")
 
 
-def test_package_downloaded_media_from_staging_only_moves_current_job_files(tmp_path: Path):
+def test_package_downloaded_media_from_staging_only_moves_current_job_files(
+    tmp_path: Path,
+):
     output_dir = tmp_path / "downloads"
     staging_dir = tmp_path / "staging"
     old_download = output_dir / "Old Video [old123]"
@@ -1718,7 +1944,9 @@ def test_package_downloaded_media_from_staging_only_moves_current_job_files(tmp_
     info = {"title": "My Single Video", "id": "abc123", "uploader": "Creator"}
 
     moved = package_downloaded_media_from_staging(staging_dir, output_dir, info)
-    expected_dir = output_dir / "Creator" / "videos - no playlist" / "My Single Video [abc123]"
+    expected_dir = (
+        output_dir / "Creator" / "videos - no playlist" / "My Single Video [abc123]"
+    )
 
     assert moved == [expected_dir / "My Single Video.mp4"]
     assert (expected_dir / "My Single Video.mp4").read_text() == "new video"
@@ -1727,7 +1955,9 @@ def test_package_downloaded_media_from_staging_only_moves_current_job_files(tmp_
     assert not any("Single Videos" in str(path) for path in output_dir.rglob("*"))
 
 
-def test_package_downloaded_media_from_staging_handles_playlist_without_touching_old_files(tmp_path: Path):
+def test_package_downloaded_media_from_staging_handles_playlist_without_touching_old_files(
+    tmp_path: Path,
+):
     output_dir = tmp_path / "downloads"
     staging_dir = tmp_path / "staging"
     old_download = output_dir / "Old Video [old123]"
@@ -1742,8 +1972,18 @@ def test_package_downloaded_media_from_staging_handles_playlist_without_touching
         "title": "Playlist Title",
         "id": "PL1",
         "entries": [
-            {"title": "First", "id": "one", "playlist_index": 1, "uploader": "Shared Channel"},
-            {"title": "Second", "id": "two", "playlist_index": 2, "uploader": "Shared Channel"},
+            {
+                "title": "First",
+                "id": "one",
+                "playlist_index": 1,
+                "uploader": "Shared Channel",
+            },
+            {
+                "title": "Second",
+                "id": "two",
+                "playlist_index": 2,
+                "uploader": "Shared Channel",
+            },
         ],
     }
 
@@ -1757,17 +1997,29 @@ def test_package_downloaded_media_from_staging_handles_playlist_without_touching
     assert len([path for path in output_dir.rglob("*.mp4")]) == 3
 
 
-def test_package_downloaded_media_uses_title_only_filename_with_sanitized_youtube_title(tmp_path: Path):
+def test_package_downloaded_media_uses_title_only_filename_with_sanitized_youtube_title(
+    tmp_path: Path,
+):
     output_dir = tmp_path / "downloads"
     staging_dir = tmp_path / "staging"
     current_stage = staging_dir / "abc123"
     current_stage.mkdir(parents=True)
     (current_stage / "video [abc123].mp4").write_text("new video")
-    info = {"title": "Video / One: The Real? Title*", "id": "abc123", "uploader": "Creator"}
+    info = {
+        "title": "Video / One: The Real? Title*",
+        "id": "abc123",
+        "uploader": "Creator",
+    }
 
     moved = package_downloaded_media_from_staging(staging_dir, output_dir, info)
 
-    assert moved == [output_dir / "Creator" / "videos - no playlist" / "Video _ One_ The Real_ Title_ [abc123]" / "Video _ One_ The Real_ Title_.mp4"]
+    assert moved == [
+        output_dir
+        / "Creator"
+        / "videos - no playlist"
+        / "Video _ One_ The Real_ Title_ [abc123]"
+        / "Video _ One_ The Real_ Title_.mp4"
+    ]
     assert "abc123" not in moved[0].name
     assert "video [" not in moved[0].name
 
@@ -1793,13 +2045,21 @@ def test_package_downloaded_mp3_moves_only_the_single_audio_result(tmp_path: Pat
         expected_extension=".mp3",
     )
 
-    expected = output_dir / "Beat Channel" / "videos - no playlist" / "Producer Beat [abc123]" / "Producer Beat.mp3"
+    expected = (
+        output_dir
+        / "Beat Channel"
+        / "videos - no playlist"
+        / "Producer Beat [abc123]"
+        / "Producer Beat.mp3"
+    )
     assert moved == [expected]
     assert expected.read_bytes() == b"mp3 audio"
     assert not list(output_dir.rglob("*.jpg"))
 
 
-def test_atomic_package_failure_preserves_existing_valid_output(monkeypatch, tmp_path: Path):
+def test_atomic_package_failure_preserves_existing_valid_output(
+    monkeypatch, tmp_path: Path
+):
     output_dir = tmp_path / "downloads"
     staging_dir = tmp_path / "staging"
     staged_dir = staging_dir / "abc123"
@@ -1807,14 +2067,18 @@ def test_atomic_package_failure_preserves_existing_valid_output(monkeypatch, tmp
     staged = staged_dir / "video [abc123].mp4"
     staged.write_bytes(b"new output")
     info = {"title": "Video", "id": "abc123", "uploader": "Creator"}
-    target = output_dir / "Creator" / "videos - no playlist" / "Video [abc123]" / "Video.mp4"
+    target = (
+        output_dir / "Creator" / "videos - no playlist" / "Video [abc123]" / "Video.mp4"
+    )
     target.parent.mkdir(parents=True)
     target.write_bytes(b"known good output")
 
     monkeypatch.setattr(
         app_module.os,
         "replace",
-        lambda _source, _target, **_kwargs: (_ for _ in ()).throw(OSError("disk unavailable")),
+        lambda _source, _target, **_kwargs: (_ for _ in ()).throw(
+            OSError("disk unavailable")
+        ),
     )
 
     with pytest.raises(OSError, match="disk unavailable"):
@@ -1824,7 +2088,9 @@ def test_atomic_package_failure_preserves_existing_valid_output(monkeypatch, tmp
     assert staged.read_bytes() == b"new output"
 
 
-def test_cancel_barrier_prevents_atomic_commit_and_preserves_existing_output(tmp_path: Path):
+def test_cancel_barrier_prevents_atomic_commit_and_preserves_existing_output(
+    tmp_path: Path,
+):
     output_dir = tmp_path / "downloads"
     staging_dir = tmp_path / "staging"
     staged_dir = staging_dir / "abc123"
@@ -1832,7 +2098,9 @@ def test_cancel_barrier_prevents_atomic_commit_and_preserves_existing_output(tmp
     staged = staged_dir / "video [abc123].mp4"
     staged.write_bytes(b"new output")
     info = {"title": "Video", "id": "abc123", "uploader": "Creator"}
-    target = output_dir / "Creator" / "videos - no playlist" / "Video [abc123]" / "Video.mp4"
+    target = (
+        output_dir / "Creator" / "videos - no playlist" / "Video [abc123]" / "Video.mp4"
+    )
     target.parent.mkdir(parents=True)
     target.write_bytes(b"known good output")
 
@@ -1857,7 +2125,9 @@ def test_staging_output_template_never_targets_real_final_folders(tmp_path: Path
     assert template.endswith("%(id)s.%(ext)s")
 
 
-def test_short_same_volume_staging_fits_when_the_previous_layout_would_exhaust_windows_path_budget(tmp_path: Path):
+def test_short_same_volume_staging_fits_when_the_previous_layout_would_exhaust_windows_path_budget(
+    tmp_path: Path,
+):
     output_root = tmp_path
     segment = 0
     while len(str(output_root).encode("utf-16-le")) // 2 < 180:
@@ -1965,7 +2235,16 @@ def test_download_reuses_preflight_result_without_mutating_it():
         def process_ie_result(self, info, *, download):
             assert download is True
             assert info["formats"] == [{"format_id": "137"}]
-            assert not ({"requested_downloads", "requested_formats", "filepath", "__files_to_move", "__postprocessors"} & info.keys())
+            assert not (
+                {
+                    "requested_downloads",
+                    "requested_formats",
+                    "filepath",
+                    "__files_to_move",
+                    "__postprocessors",
+                }
+                & info.keys()
+            )
             return {**info, "downloaded": True}
 
     session_cookie = object()
@@ -1992,7 +2271,9 @@ def test_save_thumbnail_image_writes_single_thumbnail_jpeg(monkeypatch, tmp_path
         lambda *_args, **_kwargs: payload,
     )
 
-    path = save_thumbnail_image(tmp_path, {"thumbnail": "https://i.ytimg.com/example.webp"})
+    path = save_thumbnail_image(
+        tmp_path, {"thumbnail": "https://i.ytimg.com/example.webp"}
+    )
 
     assert path == tmp_path / "thumbnail.jpeg"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["thumbnail.jpeg"]
@@ -2113,13 +2394,17 @@ def test_thumbnail_decoder_rejects_excessive_decoded_dimensions(monkeypatch):
         def verify(self):
             return None
 
-    monkeypatch.setattr(app_module.Image, "open", lambda *_args, **_kwargs: OversizedImage())
+    monkeypatch.setattr(
+        app_module.Image, "open", lambda *_args, **_kwargs: OversizedImage()
+    )
 
     with pytest.raises(RuntimeError, match="safe preview limit"):
         app_module.decode_bounded_thumbnail(b"compressed image")
 
 
-def test_private_thumbnail_cache_is_read_through_without_a_second_network_fetch(monkeypatch, tmp_path: Path):
+def test_private_thumbnail_cache_is_read_through_without_a_second_network_fetch(
+    monkeypatch, tmp_path: Path
+):
     info = {"id": "beat123", "thumbnail": "https://i.ytimg.com/beat123.jpg"}
     cached = cached_thumbnail_path(info, data_dir=tmp_path)
     assert cached is not None
@@ -2128,17 +2413,23 @@ def test_private_thumbnail_cache_is_read_through_without_a_second_network_fetch(
     monkeypatch.setattr(
         app_module,
         "save_thumbnail_image",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("cache miss unexpectedly fetched the network")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("cache miss unexpectedly fetched the network")
+        ),
     )
 
     assert save_cached_thumbnail_image(info, data_dir=tmp_path) == cached
 
 
-def test_thumbnail_cache_key_is_stable_when_history_keeps_a_different_thumbnail_variant(tmp_path: Path):
+def test_thumbnail_cache_key_is_stable_when_history_keeps_a_different_thumbnail_variant(
+    tmp_path: Path,
+):
     full = {
         "id": "beat123",
         "vodforge_output_type": "MP4",
-        "thumbnails": [{"url": "https://i.ytimg.com/beat123/maxres.jpg", "width": 1280}],
+        "thumbnails": [
+            {"url": "https://i.ytimg.com/beat123/maxres.jpg", "width": 1280}
+        ],
     }
     compact = {
         "id": "beat123",
@@ -2154,7 +2445,9 @@ def test_thumbnail_cache_key_is_stable_when_history_keeps_a_different_thumbnail_
     assert legacy_cached_thumbnail_path(full, data_dir=tmp_path) != canonical
 
 
-def test_v015_thumbnail_variant_is_found_and_migrated_after_a_cold_history_restart(tmp_path: Path):
+def test_v015_thumbnail_variant_is_found_and_migrated_after_a_cold_history_restart(
+    tmp_path: Path,
+):
     old_variant = "https://i.ytimg.com/vi/beat123/maxresdefault.jpg"
     history_variant = "https://i.ytimg.com/vi/beat123/default.jpg"
     old_cache = legacy_cached_thumbnail_path(
@@ -2188,7 +2481,9 @@ def test_v015_thumbnail_variant_is_found_and_migrated_after_a_cold_history_resta
     assert old_cache.is_file()
 
 
-def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(monkeypatch, tmp_path: Path):
+def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(
+    monkeypatch, tmp_path: Path
+):
     info = {"id": "beat123", "thumbnail": "https://i.ytimg.com/beat123.jpg"}
     destinations: list[Path] = []
 
@@ -2203,7 +2498,11 @@ def test_private_thumbnail_cache_deduplicates_concurrent_fetches_atomically(monk
     monkeypatch.setattr(app_module, "save_thumbnail_image", fake_save)
     results: list[Path | None] = []
     threads = [
-        threading.Thread(target=lambda: results.append(save_cached_thumbnail_image(info, data_dir=tmp_path)))
+        threading.Thread(
+            target=lambda: results.append(
+                save_cached_thumbnail_image(info, data_dir=tmp_path)
+            )
+        )
         for _ in range(2)
     ]
     for thread in threads:
@@ -2248,7 +2547,13 @@ def test_existing_mp4_must_match_the_requested_export_plan_not_only_container_an
                 "pix_fmt": "yuv420p",
                 "profile": "High",
             },
-            {"codec_type": "audio", "codec_name": "aac", "bit_rate": "194000", "sample_rate": "48000", "channels": 2},
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "bit_rate": "194000",
+                "sample_rate": "48000",
+                "channels": 2,
+            },
         ],
         "format": {"format_name": "mov,mp4", "tags": {}},
     }
@@ -2259,7 +2564,10 @@ def test_existing_mp4_must_match_the_requested_export_plan_not_only_container_an
     }
     stale_360p = {
         **matching,
-        "streams": [{**matching["streams"][0], "width": 640, "height": 360}, matching["streams"][1]],
+        "streams": [
+            {**matching["streams"][0], "width": 640, "height": 360},
+            matching["streams"][1],
+        ],
     }
 
     assert output_artifact_matches_plan(
@@ -2281,7 +2589,13 @@ def test_existing_mp4_must_match_the_requested_export_plan_not_only_container_an
         sidecar_summary=sidecar_summary,
     )
     assert not output_artifact_matches_plan(
-        {**matching, "streams": [{**matching["streams"][0], "profile": "Main"}, matching["streams"][1]]},
+        {
+            **matching,
+            "streams": [
+                {**matching["streams"][0], "profile": "Main"},
+                matching["streams"][1],
+            ],
+        },
         plan,
         embed_metadata=False,
         embed_cover_art=False,
@@ -2309,7 +2623,15 @@ def test_existing_mp3_rejects_stale_bitrate_and_custom_cover_request():
         cover_art_source="No Art",
     )
     probe = {
-        "streams": [{"codec_type": "audio", "codec_name": "mp3", "bit_rate": "128000", "sample_rate": "48000", "channels": 2}],
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "128000",
+                "sample_rate": "48000",
+                "channels": 2,
+            }
+        ],
         "format": {"format_name": "mp3", "tags": {}},
     }
     sidecar_summary = {
@@ -2344,10 +2666,17 @@ def test_retry_url_and_playlist_context_preserve_real_playlist_identity_only():
         "https://youtu.be/video123",
     )
     assert retry == "https://www.youtube.com/watch?v=video123&list=PLreal"
-    playlist = {"_type": "playlist", "id": "PLreal", "title": "Real playlist", "entries": []}
+    playlist = {
+        "_type": "playlist",
+        "id": "PLreal",
+        "title": "Real playlist",
+        "entries": [],
+    }
     ordinary_video = {"id": "video123", "title": "Ordinary video"}
     assert playlist_context_from_extraction(playlist, retry) is playlist
-    assert playlist_context_from_extraction(ordinary_video, retry) == {"webpage_url": retry}
+    assert playlist_context_from_extraction(ordinary_video, retry) == {
+        "webpage_url": retry
+    }
 
 
 def test_download_source_result_does_not_invent_a_playlist_for_plain_video():
@@ -2390,7 +2719,9 @@ def test_download_source_result_selects_requested_item_without_losing_playlist_i
     assert entries == [extracted["entries"][1]]
 
 
-def test_ignore_playlists_preserves_supplied_playlist_identity_for_canonical_output(tmp_path: Path):
+def test_ignore_playlists_preserves_supplied_playlist_identity_for_canonical_output(
+    tmp_path: Path,
+):
     source_url = "https://www.youtube.com/watch?v=video123&list=PLreal&index=4"
     info = {"id": "video123", "title": "Playlist item", "uploader": "Creator"}
     playlist = {
@@ -2400,21 +2731,31 @@ def test_ignore_playlists_preserves_supplied_playlist_identity_for_canonical_out
         "entries": [{"id": "video123", "playlist_index": 4}],
     }
 
-    contextual = apply_playlist_context(info, playlist["entries"][0], playlist, source_url, 1)
+    contextual = apply_playlist_context(
+        info, playlist["entries"][0], playlist, source_url, 1
+    )
 
     assert contextual["playlist_id"] == "PLreal"
     assert contextual["playlist_title"] == "Real playlist"
     assert contextual["playlist_index"] == 4
     assert video_output_dir(tmp_path, contextual) == (
-        tmp_path / "Creator" / "playlists" / "Real playlist" / "Playlist item [video123]"
+        tmp_path
+        / "Creator"
+        / "playlists"
+        / "Real playlist"
+        / "Playlist item [video123]"
     )
 
 
-def test_playlist_id_in_source_url_is_retained_when_flat_extraction_loses_playlist_root(tmp_path: Path):
+def test_playlist_id_in_source_url_is_retained_when_flat_extraction_loses_playlist_root(
+    tmp_path: Path,
+):
     source_url = "https://youtu.be/video123?list=PLfallback"
     info = {"id": "video123", "title": "Playlist item", "uploader": "Creator"}
 
-    contextual = apply_playlist_context(info, {"id": "video123"}, {"webpage_url": source_url}, source_url, 1)
+    contextual = apply_playlist_context(
+        info, {"id": "video123"}, {"webpage_url": source_url}, source_url, 1
+    )
 
     assert contextual["playlist_id"] == "PLfallback"
     assert contextual.get("playlist_title") is None
@@ -2427,7 +2768,9 @@ def test_plain_share_url_does_not_invent_playlist_authority(tmp_path: Path):
     source_url = "https://youtu.be/video123?si=share-token"
     info = {"id": "video123", "title": "Single item", "uploader": "Creator"}
 
-    contextual = apply_playlist_context(info, {"id": "video123"}, {"webpage_url": source_url}, source_url, 1)
+    contextual = apply_playlist_context(
+        info, {"id": "video123"}, {"webpage_url": source_url}, source_url, 1
+    )
 
     assert contextual.get("playlist_id") is None
     assert contextual.get("playlist_title") is None
@@ -2445,7 +2788,9 @@ def test_output_directory_access_probe_is_eager_and_leaves_no_temp_file(tmp_path
     assert list(output_dir.iterdir()) == []
 
 
-def test_removed_library_record_is_rediscovered_from_disk_and_readded_without_duplicate(monkeypatch, tmp_path: Path):
+def test_removed_library_record_is_rediscovered_from_disk_and_readded_without_duplicate(
+    monkeypatch, tmp_path: Path
+):
     info = {
         "id": "video123",
         "title": "Playlist item",
@@ -2486,14 +2831,28 @@ def test_removed_library_record_is_rediscovered_from_disk_and_readded_without_du
                 "pix_fmt": "yuv420p",
                 "profile": "High",
             },
-            {"codec_type": "audio", "codec_name": "aac", "bit_rate": "192000", "sample_rate": "48000", "channels": 2},
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "bit_rate": "192000",
+                "sample_rate": "48000",
+                "channels": 2,
+            },
         ],
         "format": {"format_name": "mov,mp4", "duration": "60", "tags": {}},
     }
-    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    monkeypatch.setattr(
+        app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe
+    )
     write_compact_video_metadata(
         target_dir,
-        build_encoding_summary_metadata(info, plan, output_path=target, ffprobe_data=probe, validation_status="Validated"),
+        build_encoding_summary_metadata(
+            info,
+            plan,
+            output_path=target,
+            ffprobe_data=probe,
+            validation_status="Validated",
+        ),
         [],
     )
 
@@ -2516,7 +2875,9 @@ def test_removed_library_record_is_rediscovered_from_disk_and_readded_without_du
     assert target.is_file()
 
 
-def test_moved_media_with_leftover_sidecars_redownloads_to_same_single_library_identity(tmp_path: Path):
+def test_moved_media_with_leftover_sidecars_redownloads_to_same_single_library_identity(
+    tmp_path: Path,
+):
     info = {
         "id": "video123",
         "title": "Playlist item",
@@ -2553,7 +2914,9 @@ def test_moved_media_with_leftover_sidecars_redownloads_to_same_single_library_i
     assert media.is_file()
 
 
-def test_moved_media_never_reuses_valid_vodforge_transcode_backups(monkeypatch, tmp_path: Path):
+def test_moved_media_never_reuses_valid_vodforge_transcode_backups(
+    monkeypatch, tmp_path: Path
+):
     info = {"id": "video123", "title": "Video", "uploader": "Creator"}
     item_dir = video_output_dir(tmp_path, info)
     item_dir.mkdir(parents=True)
@@ -2568,13 +2931,17 @@ def test_moved_media_never_reuses_valid_vodforge_transcode_backups(monkeypatch, 
     monkeypatch.setattr(
         app_module,
         "validate_output_artifact",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("transient backup must not be probed")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("transient backup must not be probed")
+        ),
     )
 
     assert find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe") is None
 
 
-def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(tmp_path: Path):
+def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(
+    tmp_path: Path,
+):
     source = tmp_path / "artist-cover.png"
     Image.new("RGB", (2000, 1200), (118, 78, 255)).save(source, format="PNG")
     staging = tmp_path / "staging"
@@ -2586,7 +2953,9 @@ def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(tmp_p
         "title": "Producer Beat",
         "thumbnail": "https://i.ytimg.com/vi/beat123/maxresdefault.jpg",
     }
-    cached = save_custom_cached_thumbnail_image(info, prepared, data_dir=tmp_path / "data")
+    cached = save_custom_cached_thumbnail_image(
+        info, prepared, data_dir=tmp_path / "data"
+    )
 
     assert prepared == staging / "__vodforge-custom-cover.jpeg"
     assert prepared.is_file()
@@ -2599,7 +2968,9 @@ def test_custom_mp3_cover_is_normalized_and_becomes_private_cached_artwork(tmp_p
         assert red > green and blue > green
 
 
-def test_custom_mp3_cover_embedding_is_atomic_and_marks_front_cover(monkeypatch, tmp_path: Path):
+def test_custom_mp3_cover_embedding_is_atomic_and_marks_front_cover(
+    monkeypatch, tmp_path: Path
+):
     mp3 = tmp_path / "beat.mp3"
     cover = tmp_path / "cover.jpeg"
     mp3.write_bytes(b"original mp3")
@@ -2625,8 +2996,17 @@ def test_custom_mp3_cover_embedding_is_atomic_and_marks_front_cover(monkeypatch,
     assert mp3.read_bytes() == b"mp3 with custom cover"
     assert len(commands) == 1
     command = commands[0]
-    assert command[:6] == ["/bundle/ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error"]
-    assert ["-map", "0:a:0"] in [command[index : index + 2] for index in range(len(command) - 1)]
+    assert command[:6] == [
+        "/bundle/ffmpeg",
+        "-y",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+    ]
+    assert ["-map", "0:a:0"] in [
+        command[index : index + 2] for index in range(len(command) - 1)
+    ]
     assert "attached_pic" in command
     assert "comment=Cover (front)" in command
     assert run_kwargs["timeout_seconds"] == app_module.FFMPEG_COVER_TIMEOUT_SECONDS
@@ -2645,7 +3025,9 @@ def test_best_thumbnail_for_download_prefers_largest_known_under_300kb():
     assert best_thumbnail_for_download(info)["url"] == "right"
 
 
-def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch, tmp_path: Path):
+def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(
+    monkeypatch, tmp_path: Path
+):
     Image = pytest.importorskip("PIL.Image")
     noisy = Image.effect_noise((2200, 1600), 100).convert("RGB")
     buf = BytesIO()
@@ -2663,7 +3045,11 @@ def test_save_thumbnail_image_compresses_large_thumbnail_below_300kb(monkeypatch
         tmp_path,
         {
             "thumbnails": [
-                {"url": "https://example.invalid/huge.png", "width": 2200, "height": 1600},
+                {
+                    "url": "https://example.invalid/huge.png",
+                    "width": 2200,
+                    "height": 1600,
+                },
             ]
         },
         source_url="https://example.invalid/video",
@@ -2680,7 +3066,9 @@ def test_thumbnail_compression_limit_failure_is_explicit(tmp_path: Path):
     Image = pytest.importorskip("PIL.Image")
     destination = tmp_path / "thumbnail.jpeg"
 
-    with pytest.raises(RuntimeError, match="Unable to compress thumbnail below 0 bytes"):
+    with pytest.raises(
+        RuntimeError, match="Unable to compress thumbnail below 0 bytes"
+    ):
         app_module._save_jpeg_under_size(
             Image.new("RGB", (16, 16), "red"),
             destination,
@@ -2740,7 +3128,13 @@ def test_nonfinite_provider_numbers_use_display_fallbacks(value: float):
 
 def test_video_list_row_values_preserves_full_long_title_and_identifiers():
     long_title = "A very long video title " * 8
-    item = {"playlist_index": 12, "title": long_title, "id": "abc123", "duration": 3661, "uploader": "Creator"}
+    item = {
+        "playlist_index": 12,
+        "title": long_title,
+        "id": "abc123",
+        "duration": 3661,
+        "uploader": "Creator",
+    }
 
     values = video_list_row_values(item, fallback_index=1)
 
@@ -2770,7 +3164,9 @@ def test_vod_ffmpeg_command_uses_nvenc_without_changing_bitrate_targets(tmp_path
     source = tmp_path / "source.mp4"
     output = tmp_path / "output.mp4"
 
-    command = build_vod_ffmpeg_command("ffmpeg", source, output, video_bitrate_kbps=10000, use_nvenc=True)
+    command = build_vod_ffmpeg_command(
+        "ffmpeg", source, output, video_bitrate_kbps=10000, use_nvenc=True
+    )
     joined = " ".join(command)
 
     assert "-c:v h264_nvenc" in joined
@@ -2793,6 +3189,7 @@ def test_vod_ffmpeg_command_keeps_cpu_encoder_by_default(tmp_path: Path):
 
     assert "-c:v libx264" in joined
     assert "-c:v h264_nvenc" not in joined
+
 
 def test_vod_ffmpeg_command_uses_manual_override_audio_and_preset(tmp_path: Path):
     source = tmp_path / "source.mp4"
@@ -2874,9 +3271,36 @@ def test_manual_override_can_encode_mp3_audio_inside_the_mp4_container(tmp_path:
 
 def test_auto_source_selection_prefers_true_1080p_h264_when_effective_quality_wins():
     formats = [
-        {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
-        {"format_id": "248", "height": 1080, "width": 1920, "ext": "webm", "vcodec": "vp9", "acodec": "none", "tbr": 754, "fps": 30},
-        {"format_id": "399", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "av01.0.08M.08", "acodec": "none", "tbr": 583, "fps": 30},
+        {
+            "format_id": "137",
+            "height": 1080,
+            "width": 1920,
+            "ext": "mp4",
+            "vcodec": "avc1.640028",
+            "acodec": "none",
+            "tbr": 1517,
+            "fps": 30,
+        },
+        {
+            "format_id": "248",
+            "height": 1080,
+            "width": 1920,
+            "ext": "webm",
+            "vcodec": "vp9",
+            "acodec": "none",
+            "tbr": 754,
+            "fps": 30,
+        },
+        {
+            "format_id": "399",
+            "height": 1080,
+            "width": 1920,
+            "ext": "mp4",
+            "vcodec": "av01.0.08M.08",
+            "acodec": "none",
+            "tbr": 583,
+            "fps": 30,
+        },
     ]
 
     selected = choose_best_video_format(formats, max_height=1080)
@@ -2887,17 +3311,46 @@ def test_auto_source_selection_prefers_true_1080p_h264_when_effective_quality_wi
 
 def test_video_source_prefers_direct_only_inside_existing_quality_window():
     formats = [
-        {"format_id": "hls-best", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "tbr": 3000, "fps": 30, "protocol": "m3u8_native"},
-        {"format_id": "direct-low", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "tbr": 2400, "fps": 30, "protocol": "https"},
+        {
+            "format_id": "hls-best",
+            "height": 1080,
+            "ext": "mp4",
+            "vcodec": "avc1",
+            "acodec": "none",
+            "tbr": 3000,
+            "fps": 30,
+            "protocol": "m3u8_native",
+        },
+        {
+            "format_id": "direct-low",
+            "height": 1080,
+            "ext": "mp4",
+            "vcodec": "avc1",
+            "acodec": "none",
+            "tbr": 2400,
+            "fps": 30,
+            "protocol": "https",
+        },
     ]
 
     assert choose_best_video_format(formats, max_height=1080)["format_id"] == "hls-best"
 
     formats[1]["tbr"] = 2700
     formats.append(
-        {"format_id": "dash-fragments", "height": 1080, "ext": "mp4", "vcodec": "avc1", "acodec": "none", "tbr": 2900, "fps": 30, "protocol": "http_dash_segments"}
+        {
+            "format_id": "dash-fragments",
+            "height": 1080,
+            "ext": "mp4",
+            "vcodec": "avc1",
+            "acodec": "none",
+            "tbr": 2900,
+            "fps": 30,
+            "protocol": "http_dash_segments",
+        }
     )
-    assert choose_best_video_format(formats, max_height=1080)["format_id"] == "direct-low"
+    assert (
+        choose_best_video_format(formats, max_height=1080)["format_id"] == "direct-low"
+    )
 
 
 def _summary_test_info() -> dict:
@@ -2917,7 +3370,16 @@ def _summary_test_info() -> dict:
                 "filesize_approx": 125000000,
                 "dynamic_range": "SDR",
             },
-            {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2, "filesize_approx": 14000000},
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 160,
+                "asr": 48000,
+                "audio_channels": 2,
+                "filesize_approx": 14000000,
+            },
         ],
     }
 
@@ -2926,7 +3388,9 @@ def test_encoding_summary_metadata_includes_source_and_planned_output():
     info = _summary_test_info()
     plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
 
-    enriched = build_encoding_summary_metadata(info, plan, output_path=Path("C:/Videos/video [abc123].mp4"))
+    enriched = build_encoding_summary_metadata(
+        info, plan, output_path=Path("C:/Videos/video [abc123].mp4")
+    )
     source = enriched["vodforge_encoding_summary"]["source"]
     output = enriched["vodforge_encoding_summary"]["output"]
 
@@ -2948,24 +3412,56 @@ def test_completed_profile_reads_the_canonical_generated_output_resolution():
     info = _summary_test_info()
     plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
 
-    enriched = build_encoding_summary_metadata(info, plan, validation_status="Validated")
+    enriched = build_encoding_summary_metadata(
+        info, plan, validation_status="Validated"
+    )
 
-    assert enriched["vodforge_encoding_summary"]["output"]["Output resolution"] == "1920x1080"
-    assert focus_metadata_profile_text(enriched, "completed") == "MP4  •  1920x1080  •  Auto CBR"
+    assert (
+        enriched["vodforge_encoding_summary"]["output"]["Output resolution"]
+        == "1920x1080"
+    )
+    assert (
+        focus_metadata_profile_text(enriched, "completed")
+        == "MP4  •  1920x1080  •  Auto CBR"
+    )
 
 
 def test_encoding_summary_metadata_includes_final_ffprobe_output_values():
     info = _summary_test_info()
-    plan = build_auto_export_plan(info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080)
+    plan = build_auto_export_plan(
+        info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080
+    )
     ffprobe = {
-        "format": {"filename": "C:/Videos/final.mp4", "format_name": "mov,mp4,m4a,3gp,3g2,mj2", "duration": "65.2", "size": "50000000"},
+        "format": {
+            "filename": "C:/Videos/final.mp4",
+            "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+            "duration": "65.2",
+            "size": "50000000",
+        },
         "streams": [
-            {"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080, "avg_frame_rate": "30000/1001", "bit_rate": "9800000", "pix_fmt": "yuv420p", "profile": "High"},
-            {"codec_type": "audio", "codec_name": "aac", "bit_rate": "318000", "sample_rate": "48000", "channels": 2},
+            {
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1920,
+                "height": 1080,
+                "avg_frame_rate": "30000/1001",
+                "bit_rate": "9800000",
+                "pix_fmt": "yuv420p",
+                "profile": "High",
+            },
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "bit_rate": "318000",
+                "sample_rate": "48000",
+                "channels": 2,
+            },
         ],
     }
 
-    enriched = build_encoding_summary_metadata(info, plan, output_path=Path("C:/Videos/final.mp4"), ffprobe_data=ffprobe)
+    enriched = build_encoding_summary_metadata(
+        info, plan, output_path=Path("C:/Videos/final.mp4"), ffprobe_data=ffprobe
+    )
     output = enriched["vodforge_encoding_summary"]["output"]
 
     assert output["Output file path"] == str(Path("C:/Videos/final.mp4"))
@@ -2985,14 +3481,41 @@ def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
     info = {
         "id": "beat123",
         "formats": [
-            {"format_id": "18", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a.40.2", "abr": 96, "protocol": "https"},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 128, "asr": 44100, "audio_channels": 2, "protocol": "https"},
-            {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2, "protocol": "m3u8_native"},
+            {
+                "format_id": "18",
+                "ext": "mp4",
+                "vcodec": "avc1",
+                "acodec": "mp4a.40.2",
+                "abr": 96,
+                "protocol": "https",
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 128,
+                "asr": 44100,
+                "audio_channels": 2,
+                "protocol": "https",
+            },
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 160,
+                "asr": 48000,
+                "audio_channels": 2,
+                "protocol": "m3u8_native",
+            },
         ],
     }
 
     plan = build_mp3_export_plan(info)
-    enriched = build_encoding_summary_metadata(info, plan, output_path=Path("Producer Beat.mp3"))
+    enriched = build_encoding_summary_metadata(
+        info, plan, output_path=Path("Producer Beat.mp3")
+    )
     source_text, output_text = build_encoding_summary_display(enriched)
 
     assert isinstance(plan, AudioExportPlan)
@@ -3014,13 +3537,36 @@ def test_mp3_summary_uses_measured_audio_values_without_video_rows():
     info = {
         "id": "beat123",
         "formats": [
-            {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 160,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ],
     }
-    plan = build_mp3_export_plan(info, Mp3ExportSettings(sample_rate="44100", channels="2"))
+    plan = build_mp3_export_plan(
+        info, Mp3ExportSettings(sample_rate="44100", channels="2")
+    )
     ffprobe = {
-        "format": {"filename": "Producer Beat.mp3", "format_name": "mp3", "duration": "60", "size": "2400000"},
-        "streams": [{"codec_type": "audio", "codec_name": "mp3", "bit_rate": "320000", "sample_rate": "44100", "channels": 2}],
+        "format": {
+            "filename": "Producer Beat.mp3",
+            "format_name": "mp3",
+            "duration": "60",
+            "size": "2400000",
+        },
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "mp3",
+                "bit_rate": "320000",
+                "sample_rate": "44100",
+                "channels": 2,
+            }
+        ],
     }
 
     enriched = build_encoding_summary_metadata(
@@ -3039,8 +3585,22 @@ def test_mp3_summary_uses_measured_audio_values_without_video_rows():
 
 
 def test_encoding_summary_display_switches_per_selected_video_and_handles_missing_fields():
-    one = {"id": "one", "vodforge_encoding_summary": {"source": {"Video format ID": "137"}, "output": {"Output file path": "one.mp4", "Validation status": "Validated"}, "warnings": []}}
-    two = {"id": "two", "vodforge_encoding_summary": {"source": {"Video format ID": "136"}, "output": {"Output file path": "two.mp4", "Validation status": "Pending"}, "warnings": ["source limited"]}}
+    one = {
+        "id": "one",
+        "vodforge_encoding_summary": {
+            "source": {"Video format ID": "137"},
+            "output": {"Output file path": "one.mp4", "Validation status": "Validated"},
+            "warnings": [],
+        },
+    }
+    two = {
+        "id": "two",
+        "vodforge_encoding_summary": {
+            "source": {"Video format ID": "136"},
+            "output": {"Output file path": "two.mp4", "Validation status": "Pending"},
+            "warnings": ["source limited"],
+        },
+    }
 
     source_one, output_one = build_encoding_summary_display(one)
     source_two, output_two = build_encoding_summary_display(two)
@@ -3131,21 +3691,48 @@ def test_playlist_results_preserve_per_video_encoding_metadata():
         info["id"] = video_id
         info["formats"][0]["format_id"] = format_id
         plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
-        playlist["entries"].append(build_encoding_summary_metadata(info, plan, output_path=Path(f"{video_id}.mp4")))
+        playlist["entries"].append(
+            build_encoding_summary_metadata(
+                info, plan, output_path=Path(f"{video_id}.mp4")
+            )
+        )
 
     entries = iter_video_infos(playlist)
 
     assert entries[0]["vodforge_encoding_summary"]["source"]["Video format ID"] == "137"
     assert entries[1]["vodforge_encoding_summary"]["source"]["Video format ID"] == "136"
-    assert entries[0]["vodforge_encoding_summary"]["output"]["Output file path"] == "one.mp4"
-    assert entries[1]["vodforge_encoding_summary"]["output"]["Output file path"] == "two.mp4"
+    assert (
+        entries[0]["vodforge_encoding_summary"]["output"]["Output file path"]
+        == "one.mp4"
+    )
+    assert (
+        entries[1]["vodforge_encoding_summary"]["output"]["Output file path"]
+        == "two.mp4"
+    )
 
 
 def test_auto_export_plan_calculates_source_aware_1080p_cbr_floor_and_audio():
     info = {
         "formats": [
-            {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
@@ -3163,9 +3750,15 @@ def test_auto_export_plan_calculates_source_aware_1080p_cbr_floor_and_audio():
 
 
 def test_export_mode_labels_mark_auto_recommended_without_changing_canonical_values():
-    assert EXPORT_MODES == ["Auto CBR (Recommended)", "Strict Compliance", "Manual Override"]
+    assert EXPORT_MODES == [
+        "Auto CBR (Recommended)",
+        "Strict Compliance",
+        "Manual Override",
+    ]
     assert export_mode_display_name(ExportMode.AUTO_CBR) == "Auto CBR (Recommended)"
-    assert export_mode_from_display_name("Auto CBR (Recommended)") == ExportMode.AUTO_CBR
+    assert (
+        export_mode_from_display_name("Auto CBR (Recommended)") == ExportMode.AUTO_CBR
+    )
     assert export_mode_from_display_name("Auto CBR") == ExportMode.AUTO_CBR
     assert ExportMode.AUTO_CBR.value == "Auto CBR"
     assert ExportMode.STRICT_COMPLIANCE.value == "Strict Compliance"
@@ -3181,21 +3774,49 @@ def test_export_mode_descriptions_state_the_actual_rate_control_behavior():
     assert "10 Mbps video" in strict
     assert "320 kbps audio" in strict
     assert "cannot add detail" in strict
-    assert "exact video bitrate, audio codec, audio bitrate, and encoding speed" in manual
+    assert (
+        "exact video bitrate, audio codec, audio bitrate, and encoding speed" in manual
+    )
 
 
 def test_manual_override_keeps_source_selection_but_replaces_encode_settings():
     info = {
         "formats": [
-            {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
-    plan = build_auto_export_plan(info, mode=ExportMode.MANUAL_OVERRIDE, max_height=1080)
+    plan = build_auto_export_plan(
+        info, mode=ExportMode.MANUAL_OVERRIDE, max_height=1080
+    )
     manual = apply_manual_export_settings(
         plan,
-        ManualExportSettings(video_bitrate_kbps=15000, audio_bitrate_kbps=256, audio_sample_rate="44100", audio_channels="1", audio_codec=ManualAudioCodec.MP3, x264_preset="fast"),
+        ManualExportSettings(
+            video_bitrate_kbps=15000,
+            audio_bitrate_kbps=256,
+            audio_sample_rate="44100",
+            audio_channels="1",
+            audio_codec=ManualAudioCodec.MP3,
+            x264_preset="fast",
+        ),
     )
 
     assert manual.format_selector == "137+140"
@@ -3212,8 +3833,25 @@ def test_manual_override_keeps_source_selection_but_replaces_encode_settings():
 def test_auto_export_plan_never_falls_back_to_video_only_selector():
     info = {
         "formats": [
-            {"format_id": "video-dynamic", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
-            {"format_id": "audio-dynamic", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 96, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "video-dynamic",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
+            {
+                "format_id": "audio-dynamic",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 96,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
@@ -3226,7 +3864,16 @@ def test_auto_export_plan_never_falls_back_to_video_only_selector():
 def test_auto_export_plan_requires_audio_instead_of_creating_video_only_output():
     info = {
         "formats": [
-            {"format_id": "video-only", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
+            {
+                "format_id": "video-only",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
         ]
     }
 
@@ -3237,8 +3884,25 @@ def test_auto_export_plan_requires_audio_instead_of_creating_video_only_output()
 def test_sanity_no_1080p_selects_720p_and_does_not_apply_1080p_floor():
     info = {
         "formats": [
-            {"format_id": "136", "height": 720, "width": 1280, "ext": "mp4", "vcodec": "avc1.64001f", "acodec": "none", "tbr": 1100, "fps": 30},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "136",
+                "height": 720,
+                "width": 1280,
+                "ext": "mp4",
+                "vcodec": "avc1.64001f",
+                "acodec": "none",
+                "tbr": 1100,
+                "fps": 30,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
@@ -3254,8 +3918,25 @@ def test_sanity_no_1080p_selects_720p_and_does_not_apply_1080p_floor():
 def test_sanity_high_quality_1080p_calculates_above_minimum_floor():
     info = {
         "formats": [
-            {"format_id": "hq1080", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 5200, "fps": 30},
-            {"format_id": "audio", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 192, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "hq1080",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 5200,
+                "fps": 30,
+            },
+            {
+                "format_id": "audio",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 192,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
@@ -3270,29 +3951,78 @@ def test_sanity_high_quality_1080p_calculates_above_minimum_floor():
 def test_strict_compliance_uses_fixed_requested_profile_with_source_limited_warnings():
     info = {
         "formats": [
-            {"format_id": "399", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "av01.0.08M.08", "acodec": "none", "tbr": 583, "fps": 30},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "399",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "av01.0.08M.08",
+                "acodec": "none",
+                "tbr": 583,
+                "fps": 30,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
-    plan = build_auto_export_plan(info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080)
+    plan = build_auto_export_plan(
+        info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080
+    )
 
     assert plan.video_bitrate_kbps == 10000
     assert plan.audio_bitrate_kbps == 320
-    assert any("Strict Compliance target is far above" in warning for warning in plan.warnings)
+    assert any(
+        "Strict Compliance target is far above" in warning for warning in plan.warnings
+    )
 
 
 def test_strict_compliance_uses_same_source_selection_as_auto_cbr():
     info = {
         "formats": [
-            {"format_id": "399", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "av01.0.08M.08", "acodec": "none", "tbr": 583, "fps": 30},
-            {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
-            {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "399",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "av01.0.08M.08",
+                "acodec": "none",
+                "tbr": 583,
+                "fps": 30,
+            },
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 160,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
     auto_plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
-    strict_plan = build_auto_export_plan(info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080)
+    strict_plan = build_auto_export_plan(
+        info, mode=ExportMode.STRICT_COMPLIANCE, max_height=1080
+    )
 
     assert auto_plan.video_format_id == "137"
     assert strict_plan.video_format_id == auto_plan.video_format_id
@@ -3305,9 +4035,36 @@ def test_strict_compliance_uses_same_source_selection_as_auto_cbr():
 def test_selector_does_not_combine_progressive_av_format_with_separate_audio_when_video_only_exists():
     info = {
         "formats": [
-            {"format_id": "22", "height": 720, "width": 1280, "ext": "mp4", "vcodec": "avc1.64001f", "acodec": "mp4a.40.2", "tbr": 1100, "abr": 128, "fps": 30},
-            {"format_id": "136", "height": 720, "width": 1280, "ext": "mp4", "vcodec": "avc1.4d401f", "acodec": "none", "tbr": 1000, "fps": 30},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "22",
+                "height": 720,
+                "width": 1280,
+                "ext": "mp4",
+                "vcodec": "avc1.64001f",
+                "acodec": "mp4a.40.2",
+                "tbr": 1100,
+                "abr": 128,
+                "fps": 30,
+            },
+            {
+                "format_id": "136",
+                "height": 720,
+                "width": 1280,
+                "ext": "mp4",
+                "vcodec": "avc1.4d401f",
+                "acodec": "none",
+                "tbr": 1000,
+                "fps": 30,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
@@ -3322,8 +4079,26 @@ def test_selector_does_not_combine_progressive_av_format_with_separate_audio_whe
 def test_selector_uses_progressive_av_format_directly_when_no_video_only_format_exists():
     info = {
         "formats": [
-            {"format_id": "22", "height": 720, "width": 1280, "ext": "mp4", "vcodec": "avc1.64001f", "acodec": "mp4a.40.2", "tbr": 1100, "abr": 128, "fps": 30},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "22",
+                "height": 720,
+                "width": 1280,
+                "ext": "mp4",
+                "vcodec": "avc1.64001f",
+                "acodec": "mp4a.40.2",
+                "tbr": 1100,
+                "abr": 128,
+                "fps": 30,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
 
@@ -3343,7 +4118,9 @@ def test_windows_safe_filenames_strip_hidden_format_chars_without_shortening_tit
     assert filename == "How to trust God @PastorNfluence.mp4"
 
 
-def test_transcode_uses_short_backend_temp_names_to_preserve_user_facing_title(monkeypatch, tmp_path: Path):
+def test_transcode_uses_short_backend_temp_names_to_preserve_user_facing_title(
+    monkeypatch, tmp_path: Path
+):
     title = "A Jurassic Adventure_ A T-Rex Hunt! 🦕 _ Dinosaur Videos with Sky and Finn"
     source = tmp_path / f"{title}.mp4"
     source.write_bytes(b"original")
@@ -3415,7 +4192,9 @@ def test_cancellable_process_capture_keeps_each_argument_separate_without_shell(
     assert process not in app_module._ACTIVE_CHILD_PROCESSES
 
 
-def test_transcode_atomic_replace_failure_preserves_downloaded_source(monkeypatch, tmp_path: Path):
+def test_transcode_atomic_replace_failure_preserves_downloaded_source(
+    monkeypatch, tmp_path: Path
+):
     source = tmp_path / "video.mp4"
     source.write_bytes(b"downloaded source")
 
@@ -3428,7 +4207,11 @@ def test_transcode_atomic_replace_failure_preserves_downloaded_source(monkeypatc
             return 0
 
     monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
-    monkeypatch.setattr(app_module.os, "replace", lambda *_args: (_ for _ in ()).throw(OSError("commit failed")))
+    monkeypatch.setattr(
+        app_module.os,
+        "replace",
+        lambda *_args: (_ for _ in ()).throw(OSError("commit failed")),
+    )
 
     with pytest.raises(RuntimeError, match="commit failed"):
         transcode_to_vod_streaming_settings(source, "ffmpeg")
@@ -3460,7 +4243,9 @@ def test_transcode_missing_captured_output_fails_cleanly_and_reaps_child(
             return -15
 
     process = MissingOutputPopen()
-    monkeypatch.setattr(app_module.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(
+        app_module.subprocess, "Popen", lambda *_args, **_kwargs: process
+    )
 
     with pytest.raises(RuntimeError, match="did not expose a captured output stream"):
         transcode_to_vod_streaming_settings(source, "ffmpeg")
@@ -3685,7 +4470,9 @@ def test_application_close_cancels_work_reaps_owned_child_then_destroys():
         assert process not in app_module._ACTIVE_CHILD_PROCESSES
 
 
-def test_application_close_deadline_destroys_window_without_claiming_cleanup(monkeypatch):
+def test_application_close_deadline_destroys_window_without_claiming_cleanup(
+    monkeypatch,
+):
     class AliveWorker:
         def is_alive(self):
             return True
@@ -3698,7 +4485,9 @@ def test_application_close_deadline_destroys_window_without_claiming_cleanup(mon
     app._close_deadline = 0.0
     app.destroy = lambda: destroyed.append(True)
     monkeypatch.setattr(app_module, "write_diagnostic", messages.append)
-    monkeypatch.setattr(app_module, "terminate_all_active_child_processes", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        app_module, "terminate_all_active_child_processes", lambda **_kwargs: None
+    )
 
     app._finish_application_close_when_idle()
 
@@ -3718,7 +4507,9 @@ def test_close_time_worker_error_is_logged_without_modal_or_new_queue_work(monke
     monkeypatch.setattr(
         app_module.messagebox,
         "showerror",
-        lambda *_args, **_kwargs: pytest.fail("close-time errors must not open a modal"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "close-time errors must not open a modal"
+        ),
     )
 
     app._pump_events()
@@ -3742,22 +4533,32 @@ def test_close_time_metadata_and_update_errors_do_not_open_modals(monkeypatch):
     monkeypatch.setattr(
         app_module.messagebox,
         "showerror",
-        lambda *_args, **_kwargs: pytest.fail("close-time metadata errors must not open a modal"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "close-time metadata errors must not open a modal"
+        ),
     )
     monkeypatch.setattr(
         app_module.messagebox,
         "showinfo",
-        lambda *_args, **_kwargs: pytest.fail("close-time update errors must not open a modal"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "close-time update errors must not open a modal"
+        ),
     )
 
     app._pump_events()
 
-    assert logged == ["Metadata preview ended during application close: provider unavailable"]
-    assert diagnostics == ["update check ended during application close: release host unavailable"]
+    assert logged == [
+        "Metadata preview ended during application close: provider unavailable"
+    ]
+    assert diagnostics == [
+        "update check ended during application close: release host unavailable"
+    ]
     assert len(scheduled) == 1
 
 
-def test_transcode_cancellation_is_checked_while_ffmpeg_is_quiet(monkeypatch, tmp_path: Path):
+def test_transcode_cancellation_is_checked_while_ffmpeg_is_quiet(
+    monkeypatch, tmp_path: Path
+):
     source = tmp_path / "video.mp4"
     source.write_bytes(b"downloaded source")
     terminated = threading.Event()
@@ -3804,7 +4605,9 @@ def test_transcode_cancellation_is_checked_while_ffmpeg_is_quiet(monkeypatch, tm
     assert source.read_bytes() == b"downloaded source"
 
 
-def test_transcode_rechecks_cancellation_after_encoder_output_closes(monkeypatch, tmp_path: Path):
+def test_transcode_rechecks_cancellation_after_encoder_output_closes(
+    monkeypatch, tmp_path: Path
+):
     source = tmp_path / "video.mp4"
     source.write_bytes(b"downloaded source")
 
@@ -3835,7 +4638,9 @@ def test_transcode_rechecks_cancellation_after_encoder_output_closes(monkeypatch
     monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
 
     with pytest.raises(RuntimeError, match="cancelled"):
-        transcode_to_vod_streaming_settings(source, "ffmpeg", control_check=control_check)
+        transcode_to_vod_streaming_settings(
+            source, "ffmpeg", control_check=control_check
+        )
 
     assert source.read_bytes() == b"downloaded source"
 
@@ -3887,8 +4692,26 @@ def test_output_validator_accepts_expected_mp4_and_mp3_streams(tmp_path: Path):
         "streams": [{"codec_type": "audio", "codec_name": "mp3"}],
     }
 
-    assert validate_output_artifact(mp4, OutputType.MP4, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp4_probe) is mp4_probe
-    assert validate_output_artifact(mp3, OutputType.MP3, "ffprobe", expected_duration_seconds=60, ffprobe_data=mp3_probe) is mp3_probe
+    assert (
+        validate_output_artifact(
+            mp4,
+            OutputType.MP4,
+            "ffprobe",
+            expected_duration_seconds=60,
+            ffprobe_data=mp4_probe,
+        )
+        is mp4_probe
+    )
+    assert (
+        validate_output_artifact(
+            mp3,
+            OutputType.MP3,
+            "ffprobe",
+            expected_duration_seconds=60,
+            ffprobe_data=mp3_probe,
+        )
+        is mp3_probe
+    )
 
 
 def test_output_validator_routes_probe_through_the_app_process_runner(
@@ -3916,12 +4739,15 @@ def test_output_validator_routes_probe_through_the_app_process_runner(
 
     monkeypatch.setattr(app_module, "run_ffprobe_json", fake_probe_reader)
 
-    assert validate_output_artifact(
-        output,
-        OutputType.MP3,
-        "/artifact/bin/ffprobe",
-        control_check=control_check,
-    ) is probe
+    assert (
+        validate_output_artifact(
+            output,
+            OutputType.MP3,
+            "/artifact/bin/ffprobe",
+            control_check=control_check,
+        )
+        is probe
+    )
     assert seen == {
         "ffprobe": "/artifact/bin/ffprobe",
         "path": output,
@@ -3940,13 +4766,16 @@ def test_output_validator_honors_the_selected_manual_mp4_audio_codec(tmp_path: P
         ],
     }
 
-    assert validate_output_artifact(
-        output,
-        OutputType.MP4,
-        "ffprobe",
-        expected_audio_codec="mp3",
-        ffprobe_data=probe,
-    ) is probe
+    assert (
+        validate_output_artifact(
+            output,
+            OutputType.MP4,
+            "ffprobe",
+            expected_audio_codec="mp3",
+            ffprobe_data=probe,
+        )
+        is probe
+    )
     with pytest.raises(RuntimeError, match="AAC audio"):
         validate_output_artifact(output, OutputType.MP4, "ffprobe", ffprobe_data=probe)
 
@@ -3982,13 +4811,16 @@ def test_output_validator_enforces_the_resolved_mp3_plan(tmp_path: Path):
         "streams": [matching_stream],
     }
 
-    assert validate_output_artifact(
-        output,
-        OutputType.MP3,
-        "ffprobe",
-        plan=plan,
-        ffprobe_data=matching_probe,
-    ) is matching_probe
+    assert (
+        validate_output_artifact(
+            output,
+            OutputType.MP3,
+            "ffprobe",
+            plan=plan,
+            ffprobe_data=matching_probe,
+        )
+        is matching_probe
+    )
 
     for changed_field, wrong_value in (
         ("bit_rate", "64000"),
@@ -4051,13 +4883,16 @@ def test_output_validator_enforces_source_limited_mp4_plan(tmp_path: Path):
         "streams": [video_stream, audio_stream],
     }
 
-    assert validate_output_artifact(
-        output,
-        OutputType.MP4,
-        "ffprobe",
-        plan=plan,
-        ffprobe_data=matching_probe,
-    ) is matching_probe
+    assert (
+        validate_output_artifact(
+            output,
+            OutputType.MP4,
+            "ffprobe",
+            plan=plan,
+            ffprobe_data=matching_probe,
+        )
+        is matching_probe
+    )
 
     wrong_streams = (
         ({**video_stream, "width": 320}, audio_stream),
@@ -4120,33 +4955,50 @@ def test_output_validator_derives_manual_mp4_audio_codec_from_plan(tmp_path: Pat
         ],
     }
 
-    assert validate_output_artifact(
-        output,
-        OutputType.MP4,
-        "ffprobe",
-        plan=plan,
-        ffprobe_data=probe,
-    ) is probe
+    assert (
+        validate_output_artifact(
+            output,
+            OutputType.MP4,
+            "ffprobe",
+            plan=plan,
+            ffprobe_data=probe,
+        )
+        is probe
+    )
 
 
 @pytest.mark.parametrize(
     ("probe", "message"),
     [
         (
-            {"format": {"format_name": "mov,mp4", "duration": "60"}, "streams": [{"codec_type": "video", "codec_name": "h264"}]},
+            {
+                "format": {"format_name": "mov,mp4", "duration": "60"},
+                "streams": [{"codec_type": "video", "codec_name": "h264"}],
+            },
             "AAC audio",
         ),
         (
-            {"format": {"format_name": "mov,mp4", "duration": "60"}, "streams": [{"codec_type": "audio", "codec_name": "aac"}]},
+            {
+                "format": {"format_name": "mov,mp4", "duration": "60"},
+                "streams": [{"codec_type": "audio", "codec_name": "aac"}],
+            },
             "H.264 video",
         ),
         (
-            {"format": {"format_name": "mov,mp4", "duration": "20"}, "streams": [{"codec_type": "video", "codec_name": "h264"}, {"codec_type": "audio", "codec_name": "aac"}]},
+            {
+                "format": {"format_name": "mov,mp4", "duration": "20"},
+                "streams": [
+                    {"codec_type": "video", "codec_name": "h264"},
+                    {"codec_type": "audio", "codec_name": "aac"},
+                ],
+            },
             "truncated",
         ),
     ],
 )
-def test_output_validator_rejects_invalid_or_truncated_mp4(tmp_path: Path, probe, message):
+def test_output_validator_rejects_invalid_or_truncated_mp4(
+    tmp_path: Path, probe, message
+):
     output = tmp_path / "video.mp4"
     output.write_bytes(b"candidate")
 
@@ -4187,20 +5039,42 @@ def test_cookiefile_option_is_only_added_when_user_enabled_cookies(tmp_path: Pat
     assert "cookiefile" not in disabled
 
 
-def test_cookie_source_selection_keeps_public_file_and_browser_modes_exclusive(tmp_path: Path):
+def test_cookie_source_selection_keeps_public_file_and_browser_modes_exclusive(
+    tmp_path: Path,
+):
     cookies = tmp_path / "cookies.txt"
 
-    assert cookie_inputs_for_source(CookieSource.PUBLIC, cookies, "Firefox") == (False, None, None)
-    assert cookie_inputs_for_source(CookieSource.FILE, cookies, "Firefox") == (True, cookies, None)
-    assert cookie_inputs_for_source(CookieSource.BROWSER, cookies, "Firefox") == (True, None, "firefox")
-    assert cookie_inputs_for_source("invalid", cookies, "Firefox") == (False, None, None)
+    assert cookie_inputs_for_source(CookieSource.PUBLIC, cookies, "Firefox") == (
+        False,
+        None,
+        None,
+    )
+    assert cookie_inputs_for_source(CookieSource.FILE, cookies, "Firefox") == (
+        True,
+        cookies,
+        None,
+    )
+    assert cookie_inputs_for_source(CookieSource.BROWSER, cookies, "Firefox") == (
+        True,
+        None,
+        "firefox",
+    )
+    assert cookie_inputs_for_source("invalid", cookies, "Firefox") == (
+        False,
+        None,
+        None,
+    )
 
 
 def test_browser_cookie_option_uses_selected_browser_without_cookie_file(monkeypatch):
     monkeypatch.setattr(app_module.sys, "platform", "linux")
 
-    enabled = apply_ytdlp_cookie_options({}, use_cookies=True, cookie_file=None, cookie_browser="chrome")
-    disabled = apply_ytdlp_cookie_options({}, use_cookies=False, cookie_file=None, cookie_browser="chrome")
+    enabled = apply_ytdlp_cookie_options(
+        {}, use_cookies=True, cookie_file=None, cookie_browser="chrome"
+    )
+    disabled = apply_ytdlp_cookie_options(
+        {}, use_cookies=False, cookie_file=None, cookie_browser="chrome"
+    )
 
     assert enabled["cookiesfrombrowser"] == ("chrome",)
     assert "cookiesfrombrowser" not in disabled
@@ -4210,7 +5084,9 @@ def test_cookie_file_takes_precedence_over_browser_cookie_import(tmp_path: Path)
     cookies = tmp_path / "cookies.txt"
     cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
 
-    opts = apply_ytdlp_cookie_options({}, use_cookies=True, cookie_file=cookies, cookie_browser="chrome")
+    opts = apply_ytdlp_cookie_options(
+        {}, use_cookies=True, cookie_file=cookies, cookie_browser="chrome"
+    )
 
     assert opts["cookiefile"] == str(cookies)
     assert "cookiesfrombrowser" not in opts
@@ -4220,20 +5096,28 @@ def test_windows_chromium_cookie_error_is_actionable(monkeypatch):
     monkeypatch.setattr(app_module.sys, "platform", "win32")
 
     with pytest.raises(RuntimeError, match="exported YouTube cookies.txt"):
-        apply_ytdlp_cookie_options({}, use_cookies=True, cookie_file=None, cookie_browser="Chrome")
+        apply_ytdlp_cookie_options(
+            {}, use_cookies=True, cookie_file=None, cookie_browser="Chrome"
+        )
 
 
 def test_windows_firefox_browser_cookie_import_remains_allowed(monkeypatch):
     monkeypatch.setattr(app_module.sys, "platform", "win32")
 
-    opts = apply_ytdlp_cookie_options({}, use_cookies=True, cookie_file=None, cookie_browser="Firefox")
+    opts = apply_ytdlp_cookie_options(
+        {}, use_cookies=True, cookie_file=None, cookie_browser="Firefox"
+    )
 
     assert opts["cookiesfrombrowser"] == ("firefox",)
 
 
 def test_ytdlp_cookie_and_503_errors_are_rewritten_for_users():
-    cookie_message = format_ytdlp_user_error("ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271 for more info")
-    unavailable_message = format_ytdlp_user_error("ERROR: [download] Got error HTTP Error 503: Service Unavailable. Giving up after 10 retries")
+    cookie_message = format_ytdlp_user_error(
+        "ERROR: Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271 for more info"
+    )
+    unavailable_message = format_ytdlp_user_error(
+        "ERROR: [download] Got error HTTP Error 503: Service Unavailable. Giving up after 10 retries"
+    )
 
     assert "exported YouTube cookies.txt" in cookie_message
     assert "Firefox browser cookies" in cookie_message
@@ -4241,21 +5125,54 @@ def test_ytdlp_cookie_and_503_errors_are_rewritten_for_users():
     assert "cookies.txt" in unavailable_message
 
 
-def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_aac(tmp_path: Path):
+def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_aac(
+    tmp_path: Path,
+):
     formats = [
-        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
-        {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "abr": 160, "asr": 48000, "audio_channels": 2},
+        {
+            "format_id": "140",
+            "ext": "m4a",
+            "vcodec": "none",
+            "acodec": "mp4a.40.2",
+            "abr": 129,
+            "asr": 48000,
+            "audio_channels": 2,
+        },
+        {
+            "format_id": "251",
+            "ext": "webm",
+            "vcodec": "none",
+            "acodec": "opus",
+            "abr": 160,
+            "asr": 48000,
+            "audio_channels": 2,
+        },
     ]
 
     selected = choose_best_audio_format(formats)
     info = {
         "formats": [
-            {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
             *formats,
         ]
     }
     plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)
-    command = build_vod_ffmpeg_command("ffmpeg", tmp_path / "source.mp4", tmp_path / "out.mp4", video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps)
+    command = build_vod_ffmpeg_command(
+        "ffmpeg",
+        tmp_path / "source.mp4",
+        tmp_path / "out.mp4",
+        video_bitrate_kbps=plan.video_bitrate_kbps,
+        audio_bitrate_kbps=plan.audio_bitrate_kbps,
+    )
     joined = " ".join(command)
 
     assert selected is not None
@@ -4270,8 +5187,22 @@ def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_a
 
 def test_mp4_audio_source_does_not_trade_material_quality_for_direct_transport():
     formats = [
-        {"format_id": "hls-best", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 160, "protocol": "m3u8_native"},
-        {"format_id": "direct-low", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 96, "protocol": "https"},
+        {
+            "format_id": "hls-best",
+            "ext": "m4a",
+            "vcodec": "none",
+            "acodec": "mp4a.40.2",
+            "abr": 160,
+            "protocol": "m3u8_native",
+        },
+        {
+            "format_id": "direct-low",
+            "ext": "m4a",
+            "vcodec": "none",
+            "acodec": "mp4a.40.2",
+            "abr": 96,
+            "protocol": "https",
+        },
     ]
 
     assert choose_best_audio_format(formats)["format_id"] == "hls-best"
@@ -4285,14 +5216,19 @@ def test_library_media_filter_keeps_original_metadata_indices():
         {"id": "old-defaults-to-mp4"},
         {"id": "audio", "vodforge_output_type": "MP3"},
         {"id": "video", "vodforge_output_type": "MP4"},
-        {"id": "inferred-audio", "vodforge_encoding_summary": {"output": {"Output file path": "beat.mp3"}}},
+        {
+            "id": "inferred-audio",
+            "vodforge_encoding_summary": {"output": {"Output file path": "beat.mp3"}},
+        },
     ]
 
     assert metadata_indices_for_output_type(items, OutputType.MP4) == [0, 2]
     assert metadata_indices_for_output_type(items, OutputType.MP3) == [1, 3]
 
 
-def test_thumbnail_cache_path_is_private_deterministic_and_filename_safe(tmp_path: Path):
+def test_thumbnail_cache_path_is_private_deterministic_and_filename_safe(
+    tmp_path: Path,
+):
     info = {
         "id": "../../private/video",
         "title": "Beat",
@@ -4313,7 +5249,16 @@ def test_thumbnail_cache_path_is_private_deterministic_and_filename_safe(tmp_pat
 def test_sanity_missing_audio_raises_instead_of_video_only_output():
     info = {
         "formats": [
-            {"format_id": "video-only", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 1517, "fps": 30},
+            {
+                "format_id": "video-only",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 1517,
+                "fps": 30,
+            },
         ]
     }
 
@@ -4325,7 +5270,9 @@ def test_vod_ffmpeg_command_accepts_per_file_cbr_bitrates(tmp_path: Path):
     source = tmp_path / "source.mp4"
     output = tmp_path / "output.mp4"
 
-    command = build_vod_ffmpeg_command("ffmpeg", source, output, video_bitrate_kbps=2000, audio_bitrate_kbps=192)
+    command = build_vod_ffmpeg_command(
+        "ffmpeg", source, output, video_bitrate_kbps=2000, audio_bitrate_kbps=192
+    )
     joined = " ".join(command)
 
     assert "-b:v 2000k -minrate 2000k -maxrate 2000k -bufsize 4000k" in joined
@@ -4339,7 +5286,9 @@ def test_vod_ffmpeg_command_accepts_per_file_cbr_bitrates(tmp_path: Path):
     assert "-pass" not in command
 
 
-def test_cleanup_legacy_encode_sidecars_removes_old_passlog_and_temp_files(tmp_path: Path):
+def test_cleanup_legacy_encode_sidecars_removes_old_passlog_and_temp_files(
+    tmp_path: Path,
+):
     video = tmp_path / "video [abc123].mp4"
     video.write_text("final")
     leftovers = [
@@ -4358,32 +5307,40 @@ def test_cleanup_legacy_encode_sidecars_removes_old_passlog_and_temp_files(tmp_p
     assert all(not path.exists() for path in leftovers)
 
 
-def test_transcode_rejects_nonzero_ffmpeg_exit_even_when_output_reaches_near_end(monkeypatch, tmp_path: Path):
+def test_transcode_rejects_nonzero_ffmpeg_exit_even_when_output_reaches_near_end(
+    monkeypatch, tmp_path: Path
+):
     source = tmp_path / "video.mp4"
     source.write_bytes(b"original")
 
     class FakePopen:
         def __init__(self, command, **_kwargs):
             Path(command[-1]).write_bytes(b"complete encoded output")
-            self.stdout = iter([
-                "out_time_ms=9900000\n",
-                "progress=continue\n",
-                "[h264] Late SEI is not implemented\n",
-            ])
+            self.stdout = iter(
+                [
+                    "out_time_ms=9900000\n",
+                    "progress=continue\n",
+                    "[h264] Late SEI is not implemented\n",
+                ]
+            )
 
         def wait(self):
             return 1
 
     monkeypatch.setattr("yt_downloader.app.subprocess.Popen", FakePopen)
     with pytest.raises(RuntimeError, match="ffmpeg exited with code 1"):
-        transcode_to_vod_streaming_settings(source, "ffmpeg", duration_seconds=10.0, use_nvenc=True)
+        transcode_to_vod_streaming_settings(
+            source, "ffmpeg", duration_seconds=10.0, use_nvenc=True
+        )
 
     assert source.read_bytes() == b"original"
     assert not (tmp_path / "video.vodforge-cbr-tmp.mp4").exists()
     assert not (tmp_path / "video.pre-vodforge.mp4").exists()
 
 
-def test_transcode_rejects_nonzero_output_when_temp_duration_is_incomplete(monkeypatch, tmp_path: Path):
+def test_transcode_rejects_nonzero_output_when_temp_duration_is_incomplete(
+    monkeypatch, tmp_path: Path
+):
     source = tmp_path / "video.mp4"
     source.write_bytes(b"original")
 
@@ -4396,14 +5353,21 @@ def test_transcode_rejects_nonzero_output_when_temp_duration_is_incomplete(monke
             return 1
 
     monkeypatch.setattr("yt_downloader.app.subprocess.Popen", FakePopen)
-    monkeypatch.setattr("yt_downloader.app._ffprobe_for_ffmpeg", lambda _ffmpeg: "ffprobe")
+    monkeypatch.setattr(
+        "yt_downloader.app._ffprobe_for_ffmpeg", lambda _ffmpeg: "ffprobe"
+    )
     monkeypatch.setattr(
         "yt_downloader.app.run_ffprobe_json",
-        lambda _ffprobe, _path: {"format": {"duration": "5.0"}, "streams": [{"codec_type": "video"}]},
+        lambda _ffprobe, _path: {
+            "format": {"duration": "5.0"},
+            "streams": [{"codec_type": "video"}],
+        },
     )
 
     with pytest.raises(RuntimeError, match="ffmpeg exited with code 1"):
-        transcode_to_vod_streaming_settings(source, "ffmpeg", duration_seconds=10.0, use_nvenc=True)
+        transcode_to_vod_streaming_settings(
+            source, "ffmpeg", duration_seconds=10.0, use_nvenc=True
+        )
 
     assert source.read_bytes() == b"original"
     assert not (tmp_path / "video.vodforge-cbr-tmp.mp4").exists()
@@ -4429,8 +5393,14 @@ def test_parse_url_list_text_reads_one_youtube_url_per_line_and_ignores_comments
 def test_append_batch_failure_report_writes_each_failed_url_and_issue(tmp_path: Path):
     report = tmp_path / "batch-url-failures.txt"
 
-    append_batch_failure_report(report, "https://www.youtube.com/watch?v=bad", "source analysis failed")
-    append_batch_failure_report(report, "https://www.youtube.com/playlist?list=PL", RuntimeError("one playlist item failed"))
+    append_batch_failure_report(
+        report, "https://www.youtube.com/watch?v=bad", "source analysis failed"
+    )
+    append_batch_failure_report(
+        report,
+        "https://www.youtube.com/playlist?list=PL",
+        RuntimeError("one playlist item failed"),
+    )
 
     text = report.read_text(encoding="utf-8")
     assert "https://www.youtube.com/watch?v=bad" in text
@@ -4440,7 +5410,9 @@ def test_append_batch_failure_report_writes_each_failed_url_and_issue(tmp_path: 
     assert text.count("URL:") == 2
 
 
-def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(tmp_path: Path):
+def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(
+    tmp_path: Path,
+):
     report = tmp_path / "batch-url-failures.txt"
     canary = "TOPSECRET"
     raw_url = f"https://user:pass@example.invalid/media?id=1&token={canary}#private"
@@ -4457,7 +5429,9 @@ def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(tmp_pa
     assert "user:pass" not in text
 
 
-def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monkeypatch, tmp_path: Path):
+def test_batch_worker_continues_after_failed_url_and_writes_failure_report(
+    monkeypatch, tmp_path: Path
+):
     report = tmp_path / "batch-url-failures.txt"
     report.write_text("STALE FAILURE FROM AN EARLIER RUN\n", encoding="utf-8")
     monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
@@ -4476,7 +5450,11 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
     app._download_worker_single = fake_single
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=ok1",
-        urls=["https://www.youtube.com/watch?v=ok1", "https://www.youtube.com/watch?v=bad", "https://www.youtube.com/watch?v=ok2"],
+        urls=[
+            "https://www.youtube.com/watch?v=ok1",
+            "https://www.youtube.com/watch?v=bad",
+            "https://www.youtube.com/watch?v=ok2",
+        ],
         output_dir=tmp_path,
         output_type=OutputType.MP4,
         quality_label="1080p Full HD",
@@ -4499,8 +5477,13 @@ def test_batch_worker_continues_after_failed_url_and_writes_failure_report(monke
     assert "STALE FAILURE" not in report_text
     assert "https://www.youtube.com/watch?v=bad" in report_text
     assert "bad video unavailable" in report_text
-    partial_messages = [payload for kind, payload in list(app.events.queue) if kind == "partial"]
-    assert any("2 valid output(s)" in str(message) and "1 failed" in str(message) for message in partial_messages)
+    partial_messages = [
+        payload for kind, payload in list(app.events.queue) if kind == "partial"
+    ]
+    assert any(
+        "2 valid output(s)" in str(message) and "1 failed" in str(message)
+        for message in partial_messages
+    )
     assert not any(kind == "done" for kind, _payload in list(app.events.queue))
 
 
@@ -4556,17 +5539,24 @@ def test_batch_worker_aborts_before_media_when_failure_report_cannot_reset(
     assert "could not reset the batch failure report" in str(errors[0]).lower()
 
 
-def test_batch_worker_never_reports_completion_when_every_url_fails(monkeypatch, tmp_path: Path):
+def test_batch_worker_never_reports_completion_when_every_url_fails(
+    monkeypatch, tmp_path: Path
+):
     report = tmp_path / "batch-url-failures.txt"
     monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", report)
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
     app.cancel_requested = False
     app._active_progress_context = None
-    app._download_worker_single = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("provider failure"))
+    app._download_worker_single = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        RuntimeError("provider failure")
+    )
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=bad1",
-        urls=["https://www.youtube.com/watch?v=bad1", "https://www.youtube.com/watch?v=bad2"],
+        urls=[
+            "https://www.youtube.com/watch?v=bad1",
+            "https://www.youtube.com/watch?v=bad2",
+        ],
         output_dir=tmp_path,
         output_type=OutputType.MP4,
         quality_label="1080p Full HD",
@@ -4585,13 +5575,20 @@ def test_batch_worker_never_reports_completion_when_every_url_fails(monkeypatch,
     app._download_worker(job)
 
     events = list(app.events.queue)
-    assert any(kind == "error" and "no valid output" in str(payload).lower() for kind, payload in events)
+    assert any(
+        kind == "error" and "no valid output" in str(payload).lower()
+        for kind, payload in events
+    )
     assert not any(kind in {"done", "partial"} for kind, _payload in events)
 
 
 @pytest.mark.parametrize("successes_before_cancel", [0, 1])
-def test_batch_cancellation_reports_stopped_or_partial_truthfully(monkeypatch, tmp_path: Path, successes_before_cancel: int):
-    monkeypatch.setattr(app_module, "BATCH_FAILURE_REPORT_PATH", tmp_path / "batch-url-failures.txt")
+def test_batch_cancellation_reports_stopped_or_partial_truthfully(
+    monkeypatch, tmp_path: Path, successes_before_cancel: int
+):
+    monkeypatch.setattr(
+        app_module, "BATCH_FAILURE_REPORT_PATH", tmp_path / "batch-url-failures.txt"
+    )
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
     app.cancel_requested = False
@@ -4608,7 +5605,10 @@ def test_batch_cancellation_reports_stopped_or_partial_truthfully(monkeypatch, t
     app._download_worker_single = fake_single
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=one",
-        urls=["https://www.youtube.com/watch?v=one", "https://www.youtube.com/watch?v=two"],
+        urls=[
+            "https://www.youtube.com/watch?v=one",
+            "https://www.youtube.com/watch?v=two",
+        ],
         output_dir=tmp_path,
         output_type=OutputType.MP4,
         quality_label="1080p Full HD",
@@ -4628,7 +5628,10 @@ def test_batch_cancellation_reports_stopped_or_partial_truthfully(monkeypatch, t
 
     events = list(app.events.queue)
     expected_kind = "partial" if successes_before_cancel else "stopped"
-    assert any(kind == expected_kind and "cancel" in str(payload).lower() for kind, payload in events)
+    assert any(
+        kind == expected_kind and "cancel" in str(payload).lower()
+        for kind, payload in events
+    )
     assert not any(kind in {"done", "error"} for kind, _payload in events)
 
 
@@ -4753,7 +5756,9 @@ def test_missing_ffmpeg_reports_the_actual_export_plan_without_downloading(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(monkeypatch, tmp_path: Path):
+def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
+    monkeypatch, tmp_path: Path
+):
     preflight = {
         "id": "abc123",
         "title": "Fast Path",
@@ -4823,7 +5828,9 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
         transcode_options.append(kwargs)
         return path
 
-    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", fake_transcode)
+    monkeypatch.setattr(
+        app_module, "transcode_to_vod_streaming_settings", fake_transcode
+    )
     probe = {
         "format": {
             "format_name": "mov,mp4,m4a",
@@ -4894,7 +5901,13 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
 
     outcome = app._download_worker_single(job)
 
-    expected = tmp_path / "Creator" / "videos - no playlist" / "Fast Path [abc123]" / "Fast Path.mp4"
+    expected = (
+        tmp_path
+        / "Creator"
+        / "videos - no playlist"
+        / "Fast Path [abc123]"
+        / "Fast Path.mp4"
+    )
     assert calls == {"extract": 1, "process": 1}
     assert len(validation_options) == 1
     assert isinstance(validation_options[0]["plan"], ExportPlan)
@@ -4911,7 +5924,9 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
     emitted_events = list(app.events.queue)
     assert any(kind == "done" for kind, _payload in emitted_events)
     assert any(
-        kind == "job_metadata" and payload["job"] is job and payload["info"]["id"] == "abc123"
+        kind == "job_metadata"
+        and payload["job"] is job
+        and payload["info"]["id"] == "abc123"
         for kind, payload in emitted_events
     )
     assert not any(kind == "metadata" for kind, _payload in emitted_events)
@@ -4920,7 +5935,9 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
     monkeypatch.setattr(
         app_module,
         "create_staging_dir",
-        lambda *_args, **_kwargs: pytest.fail("a valid existing output must bypass staging"),
+        lambda *_args, **_kwargs: pytest.fail(
+            "a valid existing output must bypass staging"
+        ),
     )
     second_outcome = app._download_worker_single(job)
 
@@ -5005,7 +6022,9 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(m
     )
 
 
-def test_committed_media_sidecar_failures_preserve_history_and_media(monkeypatch, tmp_path: Path):
+def test_committed_media_sidecar_failures_preserve_history_and_media(
+    monkeypatch, tmp_path: Path
+):
     output_dir = tmp_path / "Creator" / "videos - no playlist" / "Item [abc123]"
     output_dir.mkdir(parents=True)
     primary_output = output_dir / "Item.mp4"
@@ -5042,12 +6061,16 @@ def test_committed_media_sidecar_failures_preserve_history_and_media(monkeypatch
     monkeypatch.setattr(
         app_module,
         "write_compact_video_metadata",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("metadata failed")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("metadata failed")
+        ),
     )
     monkeypatch.setattr(
         app_module,
         "save_thumbnail_image",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("thumbnail failed")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("thumbnail failed")
+        ),
     )
     monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
 
@@ -5082,7 +6105,9 @@ def test_committed_media_sidecar_failures_preserve_history_and_media(monkeypatch
     assert len(diagnostics) == 3
 
 
-def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch, tmp_path: Path):
+def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(
+    monkeypatch, tmp_path: Path
+):
     source_url = "https://www.youtube.com/watch?v=abc123&list=PLreal&index=4"
     preflight = {
         "id": "abc123",
@@ -5159,7 +6184,11 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch
         YoutubeDL = FakeYoutubeDL
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
-    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", lambda path, *_args, **_kwargs: path)
+    monkeypatch.setattr(
+        app_module,
+        "transcode_to_vod_streaming_settings",
+        lambda path, *_args, **_kwargs: path,
+    )
     probe = {
         "format": {"format_name": "mov,mp4,m4a", "duration": "30"},
         "streams": [
@@ -5167,7 +6196,9 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch
             {"codec_type": "audio", "codec_name": "aac"},
         ],
     }
-    monkeypatch.setattr(app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe)
+    monkeypatch.setattr(
+        app_module, "validate_output_artifact", lambda *_args, **_kwargs: probe
+    )
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
     app.cancel_requested = False
@@ -5197,18 +6228,29 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(monkeypatch
 
     outcome = app._download_worker_single(job)
 
-    expected = tmp_path / "Creator" / "playlists" / "Real Playlist" / "Playlist Item [abc123]" / "Playlist Item.mp4"
+    expected = (
+        tmp_path
+        / "Creator"
+        / "playlists"
+        / "Real Playlist"
+        / "Playlist Item [abc123]"
+        / "Playlist Item.mp4"
+    )
     assert calls[0] == (source_url, True)
     assert outcome == DownloadOutcome(success_count=1)
     assert expected.read_bytes() == b"downloaded media"
-    emitted_metadata = [payload for kind, payload in app.events.queue if kind == "job_metadata"]
+    emitted_metadata = [
+        payload for kind, payload in app.events.queue if kind == "job_metadata"
+    ]
     assert emitted_metadata
     assert emitted_metadata[-1]["info"]["playlist_id"] == "PLreal"
     assert emitted_metadata[-1]["info"]["playlist_title"] == "Real Playlist"
 
 
 @pytest.mark.parametrize("output_type", [OutputType.MP4, OutputType.MP3])
-def test_ytdlp_format_probes_use_the_per_run_staging_directory(monkeypatch, tmp_path: Path, output_type: OutputType):
+def test_ytdlp_format_probes_use_the_per_run_staging_directory(
+    monkeypatch, tmp_path: Path, output_type: OutputType
+):
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
     app._find_ffmpeg = lambda: "ffmpeg"
@@ -5231,7 +6273,11 @@ def test_ytdlp_format_probes_use_the_per_run_staging_directory(monkeypatch, tmp_
         tags=[],
     )
 
-    opts = app._build_ydl_options(job, staging_dir, format_selector="251" if output_type == OutputType.MP3 else "137+251")
+    opts = app._build_ydl_options(
+        job,
+        staging_dir,
+        format_selector="251" if output_type == OutputType.MP3 else "137+251",
+    )
 
     assert opts["paths"] == {"home": str(staging_dir), "temp": str(staging_dir)}
     assert Path(opts["paths"]["temp"]).is_absolute()
@@ -5347,7 +6393,9 @@ def test_delayed_playlist_analysis_keeps_the_skipped_items_inputs(
     ]
 
 
-def test_playlist_loads_cookie_source_once_and_reuses_memory_session(monkeypatch, tmp_path: Path):
+def test_playlist_loads_cookie_source_once_and_reuses_memory_session(
+    monkeypatch, tmp_path: Path
+):
     cookie_file = tmp_path / "cookies.txt"
     cookie_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
     session_cookie = object()
@@ -5410,8 +6458,14 @@ def test_playlist_loads_cookie_source_once_and_reuses_memory_session(monkeypatch
                     "id": "playlist",
                     "title": "Playlist",
                     "entries": [
-                        {"id": "one", "webpage_url": "https://www.youtube.com/watch?v=one"},
-                        {"id": "two", "webpage_url": "https://www.youtube.com/watch?v=two"},
+                        {
+                            "id": "one",
+                            "webpage_url": "https://www.youtube.com/watch?v=one",
+                        },
+                        {
+                            "id": "two",
+                            "webpage_url": "https://www.youtube.com/watch?v=two",
+                        },
                     ],
                 }
             return video_info("two" if "two" in url else "one")
@@ -5432,7 +6486,11 @@ def test_playlist_loads_cookie_source_once_and_reuses_memory_session(monkeypatch
         YoutubeDL = FakeYoutubeDL
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
-    monkeypatch.setattr(app_module, "transcode_to_vod_streaming_settings", lambda path, *_args, **_kwargs: path)
+    monkeypatch.setattr(
+        app_module,
+        "transcode_to_vod_streaming_settings",
+        lambda path, *_args, **_kwargs: path,
+    )
     monkeypatch.setattr(
         app_module,
         "validate_output_artifact",
@@ -5532,10 +6590,7 @@ def test_progress_hook_tolerates_malformed_provider_numbers(monkeypatch, speed):
     )
 
     events = list(app.events.queue)
-    assert any(
-        kind == "status" and "?/s" in payload
-        for kind, payload in events
-    )
+    assert any(kind == "status" and "?/s" in payload for kind, payload in events)
 
 
 def test_queued_preview_worker_serializes_preview_fetches(tmp_path: Path):
@@ -5689,7 +6744,9 @@ def test_queued_preview_request_cap_drops_only_optional_preview(tmp_path: Path):
         write_info_json=False,
         tags=[],
     )
-    incoming = app_module.replace(existing, url="https://www.youtube.com/watch?v=incoming")
+    incoming = app_module.replace(
+        existing, url="https://www.youtube.com/watch?v=incoming"
+    )
     requests.put(existing)
     app._queued_preview_requests = requests
 
@@ -5705,10 +6762,14 @@ def test_queued_preview_request_cap_drops_only_optional_preview(tmp_path: Path):
     assert requests.get_nowait() is existing
 
 
-def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings(monkeypatch, tmp_path: Path):
+def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings(
+    monkeypatch, tmp_path: Path
+):
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
-    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(
+        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+    )
     monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=beat",
@@ -5740,18 +6801,34 @@ def test_mp3_ytdlp_options_extract_audio_embed_cover_and_apply_producer_settings
     assert opts["writethumbnail"] is True
     assert opts["writeinfojson"] is False
     assert opts["postprocessors"] == [
-        {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"},
+        {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "320",
+        },
         {"key": "FFmpegMetadata", "add_chapters": True, "add_metadata": True},
         {"key": "EmbedThumbnail", "already_have_thumbnail": False},
     ]
-    assert opts["postprocessor_args"]["extractaudio+ffmpeg_o"] == ["-ar", "44100", "-ac", "2"]
-    assert opts["postprocessor_args"]["metadata+ffmpeg_o"] == ["-metadata", "keywords=beat,producer"]
+    assert opts["postprocessor_args"]["extractaudio+ffmpeg_o"] == [
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+    ]
+    assert opts["postprocessor_args"]["metadata+ffmpeg_o"] == [
+        "-metadata",
+        "keywords=beat,producer",
+    ]
 
 
-def test_mp3_ytdlp_options_leave_no_cover_or_metadata_sidecars_when_disabled(monkeypatch, tmp_path: Path):
+def test_mp3_ytdlp_options_leave_no_cover_or_metadata_sidecars_when_disabled(
+    monkeypatch, tmp_path: Path
+):
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
-    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(
+        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+    )
     monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=beat",
@@ -5774,15 +6851,23 @@ def test_mp3_ytdlp_options_leave_no_cover_or_metadata_sidecars_when_disabled(mon
 
     assert opts["writethumbnail"] is False
     assert opts["postprocessors"] == [
-        {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"},
+        {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "320",
+        },
     ]
     assert opts["postprocessor_args"] == {}
 
 
-def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selected(monkeypatch, tmp_path: Path):
+def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selected(
+    monkeypatch, tmp_path: Path
+):
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
-    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(
+        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+    )
     monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
     custom_cover = tmp_path / "artist-cover.png"
     Image.new("RGB", (600, 600), "purple").save(custom_cover)
@@ -5810,7 +6895,9 @@ def test_mp3_ytdlp_options_do_not_fetch_youtube_art_when_custom_cover_is_selecte
     opts = app._build_ydl_options(job, tmp_path / "staging", format_selector="251")
 
     assert opts["writethumbnail"] is False
-    assert not any(processor["key"] == "EmbedThumbnail" for processor in opts["postprocessors"])
+    assert not any(
+        processor["key"] == "EmbedThumbnail" for processor in opts["postprocessors"]
+    )
     assert opts["postprocessors"][-1]["key"] == "FFmpegMetadata"
 
 
@@ -5819,7 +6906,9 @@ def test_mp4_separate_thumbnail_uses_policy_fetch_instead_of_ytdlp(
 ):
     app = DownloaderApp.__new__(DownloaderApp)
     app.events = queue.Queue()
-    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg"))
+    monkeypatch.setattr(
+        DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "/bundle/ffmpeg")
+    )
     monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
     job = DownloadJob(
         url="https://www.youtube.com/watch?v=beat",
@@ -5856,8 +6945,7 @@ def test_mp4_separate_thumbnail_uses_policy_fetch_instead_of_ytdlp(
     )
     assert embedded["writethumbnail"] is True
     assert any(
-        processor["key"] == "EmbedThumbnail"
-        for processor in embedded["postprocessors"]
+        processor["key"] == "EmbedThumbnail" for processor in embedded["postprocessors"]
     )
 
 
@@ -5892,8 +6980,24 @@ def test_apply_youtube_runtime_options_without_deno_leaves_defaults_untouched():
 def test_choose_best_video_format_relaxes_bitrate_requirement():
     """When no formats have bitrate metadata, still return a format instead of None."""
     formats = [
-        {"format_id": "137", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "fps": 30},
-        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+        {
+            "format_id": "137",
+            "height": 1080,
+            "width": 1920,
+            "ext": "mp4",
+            "vcodec": "avc1.640028",
+            "acodec": "none",
+            "fps": 30,
+        },
+        {
+            "format_id": "140",
+            "ext": "m4a",
+            "vcodec": "none",
+            "acodec": "mp4a.40.2",
+            "abr": 129,
+            "asr": 48000,
+            "audio_channels": 2,
+        },
     ]
     # No tbr/vbr/filesize on the video format — strict pass would reject it
     result = choose_best_video_format(formats, max_height=1080)
@@ -5904,8 +7008,26 @@ def test_choose_best_video_format_relaxes_bitrate_requirement():
 def test_choose_best_video_format_relaxes_hdr_filter():
     """When only HDR formats are available, still return one instead of None."""
     formats = [
-        {"format_id": "337", "height": 1080, "width": 1920, "ext": "mp4", "vcodec": "avc1.640028", "acodec": "none", "tbr": 5000, "fps": 30, "dynamic_range": "HDR"},
-        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+        {
+            "format_id": "337",
+            "height": 1080,
+            "width": 1920,
+            "ext": "mp4",
+            "vcodec": "avc1.640028",
+            "acodec": "none",
+            "tbr": 5000,
+            "fps": 30,
+            "dynamic_range": "HDR",
+        },
+        {
+            "format_id": "140",
+            "ext": "m4a",
+            "vcodec": "none",
+            "acodec": "mp4a.40.2",
+            "abr": 129,
+            "asr": 48000,
+            "audio_channels": 2,
+        },
     ]
     result = choose_best_video_format(formats, max_height=1080)
     assert result is not None
@@ -5915,7 +7037,14 @@ def test_choose_best_video_format_relaxes_hdr_filter():
 def test_choose_best_audio_format_relaxes_bitrate_requirement():
     """When no audio formats have bitrate metadata, still return one."""
     formats = [
-        {"format_id": "251", "ext": "webm", "vcodec": "none", "acodec": "opus", "asr": 48000, "audio_channels": 2},
+        {
+            "format_id": "251",
+            "ext": "webm",
+            "vcodec": "none",
+            "acodec": "opus",
+            "asr": 48000,
+            "audio_channels": 2,
+        },
     ]
     result = choose_best_audio_format(formats)
     assert result is not None
@@ -5927,8 +7056,24 @@ def test_build_auto_export_plan_falls_back_to_any_video_format():
     # A format with weird fps (>120) and no bitrate — all strict filters reject it
     info = {
         "formats": [
-            {"format_id": "999", "height": 720, "width": 1280, "ext": "mp4", "vcodec": "avc1.4d401f", "acodec": "none", "fps": 240},
-            {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 129, "asr": 48000, "audio_channels": 2},
+            {
+                "format_id": "999",
+                "height": 720,
+                "width": 1280,
+                "ext": "mp4",
+                "vcodec": "avc1.4d401f",
+                "acodec": "none",
+                "fps": 240,
+            },
+            {
+                "format_id": "140",
+                "ext": "m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 129,
+                "asr": 48000,
+                "audio_channels": 2,
+            },
         ]
     }
     plan = build_auto_export_plan(info, mode=ExportMode.AUTO_CBR, max_height=1080)

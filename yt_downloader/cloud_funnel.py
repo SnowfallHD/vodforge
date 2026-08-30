@@ -37,7 +37,9 @@ class InstallationState:
 
 
 def installation_state_path(*, data_dir: Path | None = None, **kwargs: Any) -> Path:
-    return (data_dir if data_dir is not None else application_data_dir(**kwargs)) / INSTALLATION_STATE_FILENAME
+    return (
+        data_dir if data_dir is not None else application_data_dir(**kwargs)
+    ) / INSTALLATION_STATE_FILENAME
 
 
 def _parse_install_id(value: Any) -> str:
@@ -58,8 +60,13 @@ def _read_state(path: Path) -> InstallationState:
     except InstallationIdentityError:
         raise
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise InstallationIdentityError(f"could not read installation state: {exc}") from exc
-    if not isinstance(payload, dict) or payload.get("schema_version") != INSTALLATION_STATE_SCHEMA_VERSION:
+        raise InstallationIdentityError(
+            f"could not read installation state: {exc}"
+        ) from exc
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != INSTALLATION_STATE_SCHEMA_VERSION
+    ):
         raise InstallationIdentityError("installation state has an unsupported schema")
     return InstallationState(
         install_id=_parse_install_id(payload.get("install_id")),
@@ -144,7 +151,9 @@ def mark_cloud_seen_confirmed(path: Path, install_id: str) -> InstallationState:
     state = _read_state(path)
     normalized = _parse_install_id(install_id)
     if state.install_id != normalized:
-        raise InstallationIdentityError("installation ID changed while recording Cloud state")
+        raise InstallationIdentityError(
+            "installation ID changed while recording Cloud state"
+        )
     if state.cloud_seen_confirmed:
         return state
     updated = replace(state, cloud_seen_confirmed=True)
@@ -156,7 +165,9 @@ def mark_first_launch_confirmed(path: Path, install_id: str) -> InstallationStat
     state = _read_state(path)
     normalized = _parse_install_id(install_id)
     if state.install_id != normalized:
-        raise InstallationIdentityError("installation ID changed while recording first launch")
+        raise InstallationIdentityError(
+            "installation ID changed while recording first launch"
+        )
     if state.first_launch_confirmed:
         return state
     updated = replace(state, first_launch_confirmed=True)

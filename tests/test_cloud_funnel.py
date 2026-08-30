@@ -37,7 +37,9 @@ class JsonResponse:
         return b'{"ok":true}'
 
 
-def test_installation_state_uses_normal_app_data_and_persists_across_reloads(tmp_path: Path):
+def test_installation_state_uses_normal_app_data_and_persists_across_reloads(
+    tmp_path: Path,
+):
     path = installation_state_path(data_dir=tmp_path / "VODForge")
     first = load_or_create_installation_state(path)
     second = load_or_create_installation_state(path)
@@ -46,7 +48,9 @@ def test_installation_state_uses_normal_app_data_and_persists_across_reloads(tmp
     assert second.install_id == first.install_id
     assert second.first_launch_confirmed is False
     assert second.cloud_seen_confirmed is False
-    assert json.loads(path.read_text(encoding="utf-8"))["install_id"] == first.install_id
+    assert (
+        json.loads(path.read_text(encoding="utf-8"))["install_id"] == first.install_id
+    )
 
 
 def test_marking_seen_preserves_install_id_across_restart(tmp_path: Path):
@@ -60,7 +64,9 @@ def test_marking_seen_preserves_install_id_across_restart(tmp_path: Path):
     assert restarted.cloud_seen_confirmed is True
 
 
-def test_marking_first_launch_persists_across_restart_and_version_changes(tmp_path: Path):
+def test_marking_first_launch_persists_across_restart_and_version_changes(
+    tmp_path: Path,
+):
     path = installation_state_path(data_dir=tmp_path)
     original = load_or_create_installation_state(path)
     marked = mark_first_launch_confirmed(path, original.install_id)
@@ -72,15 +78,19 @@ def test_marking_first_launch_persists_across_restart_and_version_changes(tmp_pa
     assert restarted.cloud_seen_confirmed is False
 
 
-def test_existing_installation_state_without_launch_flag_remains_compatible(tmp_path: Path):
+def test_existing_installation_state_without_launch_flag_remains_compatible(
+    tmp_path: Path,
+):
     path = installation_state_path(data_dir=tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({
-            "schema_version": 1,
-            "install_id": "f9c775b1-4c5a-47c4-87bb-81fe51881e54",
-            "cloud_seen_confirmed": True,
-        }),
+        json.dumps(
+            {
+                "schema_version": 1,
+                "install_id": "f9c775b1-4c5a-47c4-87bb-81fe51881e54",
+                "cloud_seen_confirmed": True,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -117,9 +127,16 @@ def test_seen_payload_reuses_same_id_when_app_version_changes():
         requests.append((request.full_url, json.loads(request.data.decode("utf-8"))))
         return JsonResponse()
 
-    assert record_cloud_seen(state, app_version="0.1.4", platform_name="darwin", opener=opener)
-    assert record_cloud_seen(state, app_version="0.2.0", platform_name="darwin", opener=opener)
-    assert [request[0] for request in requests] == [CLOUD_SEEN_ENDPOINT, CLOUD_SEEN_ENDPOINT]
+    assert record_cloud_seen(
+        state, app_version="0.1.4", platform_name="darwin", opener=opener
+    )
+    assert record_cloud_seen(
+        state, app_version="0.2.0", platform_name="darwin", opener=opener
+    )
+    assert [request[0] for request in requests] == [
+        CLOUD_SEEN_ENDPOINT,
+        CLOUD_SEEN_ENDPOINT,
+    ]
     assert {request[1]["install_id"] for request in requests} == {state.install_id}
     assert [request[1]["app_version"] for request in requests] == ["0.1.4", "0.2.0"]
 
@@ -129,10 +146,16 @@ def test_first_launch_payload_reuses_install_id_and_reports_platform_and_version
     captured: dict[str, Any] = {}
 
     def opener(request: Any, *, timeout: float) -> JsonResponse:
-        captured.update(url=request.full_url, payload=json.loads(request.data.decode("utf-8")), timeout=timeout)
+        captured.update(
+            url=request.full_url,
+            payload=json.loads(request.data.decode("utf-8")),
+            timeout=timeout,
+        )
         return JsonResponse()
 
-    assert record_first_launch(state, app_version="0.1.5", platform_name="win32", opener=opener)
+    assert record_first_launch(
+        state, app_version="0.1.5", platform_name="win32", opener=opener
+    )
     assert captured == {
         "url": CLOUD_LAUNCH_ENDPOINT,
         "payload": {
@@ -149,7 +172,11 @@ def test_click_payload_and_cloud_url_contain_only_random_install_id():
     captured: dict[str, Any] = {}
 
     def opener(request: Any, *, timeout: float) -> JsonResponse:
-        captured.update(url=request.full_url, payload=json.loads(request.data.decode("utf-8")), timeout=timeout)
+        captured.update(
+            url=request.full_url,
+            payload=json.loads(request.data.decode("utf-8")),
+            timeout=timeout,
+        )
         return JsonResponse()
 
     assert record_cloud_click(state, opener=opener)
@@ -158,5 +185,8 @@ def test_click_payload_and_cloud_url_contain_only_random_install_id():
         "payload": {"install_id": state.install_id},
         "timeout": 4.0,
     }
-    assert cloud_page_url(state.install_id) == f"https://getvodforge.com/cloud?iid={state.install_id}"
+    assert (
+        cloud_page_url(state.install_id)
+        == f"https://getvodforge.com/cloud?iid={state.install_id}"
+    )
     assert cloud_page_url(None) == "https://getvodforge.com/cloud"

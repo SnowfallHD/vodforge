@@ -103,7 +103,9 @@ def test_export_plans_treat_nonfinite_extractor_numbers_as_unknown(
     assert math.isfinite(video_plan.source_audio_kbps)
     assert audio_plan.source_sample_rate is None
     assert audio_plan.source_channels is None
-    assert summary["vodforge_encoding_summary"]["source"]["Source frame rate"] == "Unknown"
+    assert (
+        summary["vodforge_encoding_summary"]["source"]["Source frame rate"] == "Unknown"
+    )
 
 
 def test_source_limited_plan_keeps_truthful_lower_resolution() -> None:
