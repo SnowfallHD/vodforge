@@ -2368,6 +2368,46 @@ def test_retry_url_and_playlist_context_preserve_real_playlist_identity_only():
     assert playlist_context_from_extraction(ordinary_video, retry) == {"webpage_url": retry}
 
 
+def test_download_source_result_does_not_invent_a_playlist_for_plain_video():
+    source_url = "https://www.youtube.com/watch?v=video123"
+
+    playlist_info, entries = app_module._normalize_download_source_result(
+        {"id": "video123", "title": "Ordinary video"},
+        source_url,
+        single_video_only=False,
+    )
+
+    assert playlist_info == {"webpage_url": source_url}
+    assert entries == [
+        {
+            "webpage_url": source_url,
+            "id": "video123",
+            "title": "Ordinary video",
+        }
+    ]
+
+
+def test_download_source_result_selects_requested_item_without_losing_playlist_identity():
+    source_url = "https://www.youtube.com/watch?v=second&list=PLreal"
+    extracted = {
+        "id": "PLreal",
+        "title": "Real playlist",
+        "entries": [
+            {"id": "first", "webpage_url": "https://www.youtube.com/watch?v=first"},
+            {"id": "second", "webpage_url": "https://www.youtube.com/watch?v=second"},
+        ],
+    }
+
+    playlist_info, entries = app_module._normalize_download_source_result(
+        extracted,
+        source_url,
+        single_video_only=True,
+    )
+
+    assert playlist_info is extracted
+    assert entries == [extracted["entries"][1]]
+
+
 def test_ignore_playlists_preserves_supplied_playlist_identity_for_canonical_output(tmp_path: Path):
     source_url = "https://www.youtube.com/watch?v=video123&list=PLreal&index=4"
     info = {"id": "video123", "title": "Playlist item", "uploader": "Creator"}

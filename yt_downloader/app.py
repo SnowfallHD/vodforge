@@ -2934,6 +2934,53 @@ def run_tracked_ytdlp_operation(step: Callable[[], Any], *, control_check: Any |
                     setattr(module, "Popen", original_class)
 
 
+def _extract_playlist_source_step(
+    ytdlp_module: Any,
+    playlist_options: dict[str, Any],
+    source_url: str,
+    *,
+    control_check: Callable[[], None],
+    emit_log: Callable[[str], None],
+) -> tuple[dict[str, Any] | None, tuple[Any, ...]]:
+    """Extract playlist identity with the same bounded provider retry contract."""
+    write_diagnostic("playlist extraction start")
+
+    def extract() -> tuple[Any, tuple[Any, ...]]:
+        with ytdlp_module.YoutubeDL(playlist_options) as ydl:
+            extracted = ydl.extract_info(source_url, download=False)
+            return extracted, snapshot_ytdlp_session_cookies(ydl)
+
+    def report_retry(
+        attempt: int,
+        maximum: int,
+        delay: float,
+        exc: Exception,
+    ) -> None:
+        message = source_analysis_retry_message(
+            "playlist detection",
+            attempt,
+            maximum,
+            delay,
+            exc,
+        )
+        write_diagnostic(message)
+        emit_log(message)
+
+    extracted, session_cookies = run_with_bounded_transient_retries(
+        lambda: run_tracked_ytdlp_operation(
+            extract,
+            control_check=control_check,
+        ),
+        control_check=control_check,
+        on_retry=report_retry,
+    )
+    write_diagnostic("playlist extraction completed")
+    return (
+        extracted if isinstance(extracted, dict) else None,
+        session_cookies,
+    )
+
+
 def _analyze_source_formats_step(
     ytdlp_module: Any,
     preflight_options: dict[str, Any],
@@ -3751,6 +3798,59 @@ class _CommittedMedia:
     metadata: dict[str, Any]
     primary_output: Path
     success_count: int
+
+
+@dataclass(frozen=True)
+class _ExpandedDownloadSource:
+    """The playlist identity and item inputs bound by source expansion."""
+
+    playlist_info: dict[str, Any]
+    entries: list[dict[str, Any]]
+    session_cookies: tuple[Any, ...] = ()
+    cookie_source_loaded: bool = False
+
+
+def _normalize_download_source_result(
+    extracted_info: dict[str, Any] | None,
+    source_url: str,
+    *,
+    single_video_only: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Normalize yt-dlp's video/playlist shapes without assigning false playlist identity."""
+    playlist_info = extracted_info or {"webpage_url": source_url}
+    raw_entries = playlist_info.get("entries")
+    extracted_playlist = raw_entries is not None
+    entries = [entry for entry in (raw_entries or []) if isinstance(entry, dict)]
+    if not entries:
+        entries = [
+            {
+                "webpage_url": source_url,
+                "id": playlist_info.get("id"),
+                "title": playlist_info.get("title"),
+            }
+        ]
+    if not extracted_playlist:
+        # A normal video extraction is not a one-item playlist. Do not use the
+        # video's own title/id as playlist authority.
+        playlist_info = playlist_context_from_extraction(playlist_info, source_url)
+    if single_video_only:
+        requested_video_id = youtube_url_video_id(source_url)
+        selected_entry = next(
+            (
+                entry
+                for entry in entries
+                if str(entry.get("id") or "").strip() == requested_video_id
+            ),
+            None,
+        )
+        entries = [
+            selected_entry
+            or {
+                "webpage_url": clean_single_video_url(source_url),
+                "id": requested_video_id,
+            }
+        ]
+    return playlist_info, entries
 
 
 def browser_cookie_value(label_or_value: str | None) -> str | None:
@@ -5149,6 +5249,31 @@ class QueueLogger:
         write_diagnostic(f"{self.diagnostic_prefix} ERROR: {msg}")
         if self.events is not None:
             self.events.put(("log", f"ERROR: {msg}"))
+
+
+def _build_playlist_detection_options(
+    job: DownloadJob,
+    *,
+    deno_path: str | None,
+) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": False,
+        "extract_flat": "in_playlist",
+        "logger": QueueLogger(None, diagnostic_prefix="playlist yt-dlp"),
+        "socket_timeout": 30,
+        "ignore_no_formats_error": True,
+    }
+    apply_ytdlp_network_retry_policy(options, source_analysis=True)
+    apply_ytdlp_cookie_options(
+        options,
+        use_cookies=job.use_cookies,
+        cookie_file=job.cookie_file,
+        cookie_browser=job.cookie_browser,
+    )
+    apply_youtube_runtime_options(options, deno_path=deno_path)
+    return options
 
 
 class DownloaderApp(UiEventHandlersMixin, tk.Tk):
@@ -11289,6 +11414,100 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
         return outcome
 
+    def _expand_download_source(
+        self,
+        job: DownloadJob,
+        ytdlp_module: Any,
+        provider_network: ProviderNetworkCoordinator,
+        *,
+        control_check: Callable[[], None],
+        blocking_step_cancelled: Callable[[], bool],
+    ) -> _ExpandedDownloadSource:
+        """Resolve one submitted source into ordered item inputs and playlist identity."""
+        single_playlist_context = bool(
+            job.single_video_only
+            and youtube_url_video_id(job.url)
+            and youtube_url_playlist_id(job.url)
+        )
+        if job.single_video_only and not single_playlist_context:
+            # The source URL was already normalized and playlist expansion is
+            # disabled. Avoid a full extractor pass whose only result would be
+            # confirming the single item that preflight analyzes next.
+            playlist_info: dict[str, Any] = {"webpage_url": job.url}
+            entries = [{"webpage_url": job.url}]
+            write_diagnostic("playlist detection skipped: Ignore playlists is active")
+            if youtube_url_video_id(job.url):
+                self._emit_job_log(
+                    job,
+                    "No playlist context was included in this URL. To preserve a YouTube playlist folder, "
+                    "copy the full browser address containing list= instead of the shortened Share link.",
+                )
+            return _ExpandedDownloadSource(playlist_info=playlist_info, entries=entries)
+
+        self.events.put(("status", "Reading playlist…"))
+        write_diagnostic("playlist detection start")
+        playlist_started = time.monotonic()
+        playlist_opts = _build_playlist_detection_options(
+            job,
+            deno_path=self._find_deno(),
+        )
+        log_options("playlist detection", playlist_opts)
+
+        detect_playlist = partial(
+            _extract_playlist_source_step,
+            ytdlp_module,
+            dict(playlist_opts),
+            job.url,
+            control_check=control_check,
+            emit_log=partial(self._emit_job_log, job),
+        )
+
+        provider_network.begin_primary(control_check)
+        try:
+            playlist_result = run_cancellable_blocking_step(
+                lambda: provider_network.run_primary(detect_playlist),
+                blocking_step_cancelled,
+                timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+                poll_seconds=ANALYSIS_POLL_SECONDS,
+                label="Playlist detection",
+                on_wait=lambda elapsed: (
+                    write_diagnostic(
+                        f"playlist detection still running after {elapsed:.0f}s"
+                    ),
+                    self.events.put(
+                        (
+                            "status",
+                            f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available.",
+                        )
+                    ),
+                ),
+            )
+        finally:
+            provider_network.end_primary()
+
+        extracted_info, session_cookies = playlist_result
+        write_diagnostic(
+            f"playlist detection elapsed_seconds={time.monotonic() - playlist_started:.3f}"
+        )
+        playlist_info, entries = _normalize_download_source_result(
+            extracted_info,
+            job.url,
+            single_video_only=job.single_video_only,
+        )
+        if job.single_video_only:
+            requested_video_id = youtube_url_video_id(job.url)
+            write_diagnostic(
+                "playlist identity retained for single item: "
+                f"playlist_id={playlist_info.get('id') or playlist_info.get('playlist_id')} "
+                f"video_id={requested_video_id}"
+            )
+        return _ExpandedDownloadSource(
+            playlist_info=playlist_info,
+            entries=entries,
+            session_cookies=session_cookies,
+            cookie_source_loaded=job.use_cookies,
+        )
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -11386,118 +11605,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             max_height = _quality_max_height(job.quality_label)
             self._emit_job_log(job, f"Normalized URL: {job.url}")
             self.events.put(("progress", 0))
-            single_playlist_context = bool(
-                job.single_video_only
-                and youtube_url_video_id(job.url)
-                and youtube_url_playlist_id(job.url)
+            expanded_source = self._expand_download_source(
+                job,
+                ytdlp_module,
+                provider_network,
+                control_check=raise_for_control_requests,
+                blocking_step_cancelled=playlist_blocking_step_cancelled,
             )
-            if job.single_video_only and not single_playlist_context:
-                # The source URL was already normalized and playlist expansion is
-                # disabled. Avoid a full extractor pass whose only result would be
-                # confirming the single item that preflight analyzes next.
-                playlist_info: dict[str, Any] = {"webpage_url": job.url}
-                entries = [{"webpage_url": job.url}]
-                write_diagnostic("playlist detection skipped: Ignore playlists is active")
-                if youtube_url_video_id(job.url):
-                    self._emit_job_log(
-                        job,
-                        "No playlist context was included in this URL. To preserve a YouTube playlist folder, "
-                        "copy the full browser address containing list= instead of the shortened Share link.",
-                    )
-            else:
-                self.events.put(("status", "Reading playlist…"))
-                write_diagnostic("playlist detection start")
-                playlist_started = time.monotonic()
-                playlist_opts: dict[str, Any] = {
-                    "quiet": True,
-                    "skip_download": True,
-                    "noplaylist": False,
-                    "extract_flat": "in_playlist",
-                    "logger": QueueLogger(None, diagnostic_prefix="playlist yt-dlp"),
-                    "socket_timeout": 30,
-                    "ignore_no_formats_error": True,
-                }
-                apply_ytdlp_network_retry_policy(playlist_opts, source_analysis=True)
-                apply_ytdlp_cookie_options(playlist_opts, use_cookies=job.use_cookies, cookie_file=job.cookie_file, cookie_browser=job.cookie_browser)
-                apply_youtube_runtime_options(playlist_opts, deno_path=self._find_deno())
-                log_options("playlist detection", playlist_opts)
-
-                def detect_playlist() -> tuple[dict[str, Any] | None, tuple[Any, ...]]:
-                    write_diagnostic("playlist extraction start")
-                    def extract() -> tuple[Any, tuple[Any, ...]]:
-                        with ytdlp_module.YoutubeDL(playlist_opts) as ydl:
-                            extracted = ydl.extract_info(job.url, download=False)
-                            return extracted, snapshot_ytdlp_session_cookies(ydl)
-
-                    def report_retry(attempt: int, maximum: int, delay: float, exc: Exception) -> None:
-                        message = source_analysis_retry_message(
-                            "playlist detection",
-                            attempt,
-                            maximum,
-                            delay,
-                            exc,
-                        )
-                        write_diagnostic(message)
-                        self._emit_job_log(job, message)
-
-                    extracted, session_cookies = run_with_bounded_transient_retries(
-                        lambda: run_tracked_ytdlp_operation(
-                            extract,
-                            control_check=raise_for_control_requests,
-                        ),
-                        control_check=raise_for_control_requests,
-                        on_retry=report_retry,
-                    )
-                    write_diagnostic("playlist extraction completed")
-                    return (extracted if isinstance(extracted, dict) else None, session_cookies)
-
-                provider_network.begin_primary(raise_for_control_requests)
-                try:
-                    playlist_result = run_cancellable_blocking_step(
-                        lambda: provider_network.run_primary(detect_playlist),
-                        playlist_blocking_step_cancelled,
-                        timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
-                        poll_seconds=ANALYSIS_POLL_SECONDS,
-                        label="Playlist detection",
-                        on_wait=lambda elapsed: (write_diagnostic(f"playlist detection still running after {elapsed:.0f}s"), self.events.put(("status", f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available."))),
-                    )
-                finally:
-                    provider_network.end_primary()
-                playlist_info, job_session_cookies = playlist_result
-                playlist_info = playlist_info or {"webpage_url": job.url}
-                cookie_source_loaded = job.use_cookies
-                write_diagnostic(f"playlist detection elapsed_seconds={time.monotonic() - playlist_started:.3f}")
-                raw_entries = playlist_info.get("entries") if isinstance(playlist_info, dict) else None
-                extracted_playlist = raw_entries is not None
-                entries = [entry for entry in (raw_entries or []) if isinstance(entry, dict)]
-                if not entries:
-                    entries = [{"webpage_url": job.url, "id": playlist_info.get("id"), "title": playlist_info.get("title")}]
-                if not extracted_playlist:
-                    # A normal video extraction is not a one-item playlist. Do
-                    # not use the video's own title/id as playlist authority.
-                    playlist_info = playlist_context_from_extraction(playlist_info, job.url)
-                if job.single_video_only:
-                    requested_video_id = youtube_url_video_id(job.url)
-                    selected_entry = next(
-                        (
-                            entry
-                            for entry in entries
-                            if str(entry.get("id") or "").strip() == requested_video_id
-                        ),
-                        None,
-                    )
-                    entries = [
-                        selected_entry
-                        or {
-                            "webpage_url": clean_single_video_url(job.url),
-                            "id": requested_video_id,
-                        }
-                    ]
-                    write_diagnostic(
-                        "playlist identity retained for single item: "
-                        f"playlist_id={playlist_info.get('id') or playlist_info.get('playlist_id')} "
-                        f"video_id={requested_video_id}"
-                    )
+            playlist_info = expanded_source.playlist_info
+            entries = expanded_source.entries
+            job_session_cookies = expanded_source.session_cookies
+            cookie_source_loaded = expanded_source.cookie_source_loaded
             total_videos = len(entries)
             if total_videos > 1:
                 self._emit_job_log(job, f"Playlist detected: {total_videos} videos.")
