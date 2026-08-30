@@ -104,7 +104,7 @@ Include a completed packaged receipt in a normal/deep comparison:
 4. start Forge through the UI;
 5. observe progress produced by the real worker;
 6. observe truthful completion;
-7. inspect the committed item in Library;
+7. use `Command+2` (`Ctrl+2` on Windows/Linux) to open Library and inspect the committed item;
 8. request normal app shutdown.
 
 Each observation is a structured event in `driver-events.json`: `app_visible`, `url_entered`, `settings_observed`, `forge_started`, `progress_observed`, `completion_observed`, `library_observed`, `shutdown_requested`, `restart_requested`, and `restart_observed`. The recorder copies screenshots under the session's `ui/` directory, hashes them, timestamps the event, and rejects duplicates or wrong order. The `control.json` action `relaunch` makes the session reopen the same exact artifact with the same isolated app data so restart/history and media hashes can be checked before the final quit.
@@ -117,7 +117,7 @@ The deeper packaged profile is first-class rather than an implied consequence of
 
 It additionally requires visible receipts for a throttled active run, a second run queued through the UI, cancellation requested through the UI, a clean cancelled state, the queued job advancing, and that queued job reaching completion. A smoke pass therefore proves only the happy path plus restart and does not claim queue/cancellation coverage.
 
-The UI driver is observation/control only. It does not call production Python helpers, forge outputs, or synthesize worker events. The current macOS implementation is automation-assisted because VODForge's custom Tk navigation is not consistently exposed through accessibility. This is an explicit benchmark limitation: missing Library evidence fails the tier as an E2E testability gap instead of being replaced by headless evidence.
+The UI driver is observation/control only. It does not call production Python helpers, forge outputs, or synthesize worker events. VODForge exposes real-user view shortcuts (`Command+1/2/3` on macOS, `Ctrl+1/2/3` on Windows/Linux) through the same canonical view authority as the visible navigation. This gives native drivers a stable route when Tk children are not exposed through accessibility. Missing Library evidence still fails the tier instead of being replaced by shortcut existence or headless evidence.
 
 ## Corpus policy
 

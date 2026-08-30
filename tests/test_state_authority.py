@@ -22,6 +22,7 @@ from yt_downloader.app import (
     ManualExportSettings,
     Mp3ExportSettings,
     OutputType,
+    focus_view_shortcut_bindings,
 )
 from yt_downloader.history import history_identity, upsert_history
 
@@ -477,6 +478,53 @@ def test_opening_activity_view_starts_at_latest_line():
     assert app._focus_selected_view == "activity"
     assert activity_log._vodforge_user_scroll_locked is False
     assert activity_log.seen == ["end"]
+
+
+def test_primary_view_shortcuts_are_stable_across_platforms():
+    assert focus_view_shortcut_bindings("darwin") == (
+        ("<Command-Key-1>", "forge"),
+        ("<Command-Key-2>", "library"),
+        ("<Command-Key-3>", "activity"),
+    )
+    expected_control = (
+        ("<Control-Key-1>", "forge"),
+        ("<Control-Key-2>", "library"),
+        ("<Control-Key-3>", "activity"),
+    )
+    assert focus_view_shortcut_bindings("win32") == expected_control
+    assert focus_view_shortcut_bindings("linux") == expected_control
+
+
+def test_primary_view_shortcuts_route_through_canonical_view_authority():
+    app = DownloaderApp.__new__(DownloaderApp)
+    selected: list[str] = []
+    bindings: list[tuple[str, object, str | None]] = []
+    app._select_focus_view = selected.append
+    app.bind = lambda sequence, callback, add=None: bindings.append(
+        (sequence, callback, add)
+    )
+
+    app._bind_focus_view_shortcuts()
+
+    assert [sequence for sequence, _callback, _add in bindings] == [
+        sequence for sequence, _view in focus_view_shortcut_bindings()
+    ]
+    assert all(add == "+" for _sequence, _callback, add in bindings)
+    library_callback = next(
+        callback
+        for sequence, callback, _add in bindings
+        if sequence.endswith("Key-2>")
+    )
+    assert callable(library_callback)
+    assert library_callback(object()) == "break"
+    assert selected == ["library"]
+
+
+def test_primary_navigation_buttons_remain_keyboard_focusable():
+    focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
+
+    assert 'style="FocusNav.TButton",\n                takefocus=True,' in focus_ui_source
+    assert "self._bind_focus_view_shortcuts()" in focus_ui_source
 
 
 def test_compact_layout_does_not_schedule_a_forced_activity_tail_jump():

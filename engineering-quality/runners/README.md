@@ -4,6 +4,8 @@
 
 The current macOS driver is automation-assisted: use a visible desktop driver to perform each instruction in `session.json`, capture the resulting VODForge window, and record the event in the exact listed order:
 
+Use the app's real-user `Command+1`, `Command+2`, and `Command+3` shortcuts to select Forge, Library, and Activity. The Library screenshot must visibly show the completed item; sending `Command+2` is navigation, not evidence by itself.
+
 ```bash
 ./engineering-quality/run record-e2e-event \
   --session engineering-quality/reports/<session>/session.json \

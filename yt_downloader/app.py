@@ -213,6 +213,18 @@ def platform_font_families(platform_name: str | None = None) -> tuple[str, str]:
     return "TkDefaultFont", "TkFixedFont"
 
 
+def focus_view_shortcut_bindings(
+    platform_name: str | None = None,
+) -> tuple[tuple[str, str], ...]:
+    """Return stable real-user shortcuts for the three primary app views."""
+    platform_name = sys.platform if platform_name is None else platform_name
+    modifier = "Command" if platform_name == "darwin" else "Control"
+    return tuple(
+        (f"<{modifier}-Key-{index}>", view_name)
+        for index, view_name in enumerate(("forge", "library", "activity"), start=1)
+    )
+
+
 def bounded_window_size(screen_width: int, screen_height: int) -> tuple[int, int]:
     """Choose an initial size that stays clear of common taskbar and dock areas."""
     width_margin = 80 if screen_width > 800 else 24
@@ -6950,6 +6962,7 @@ class DownloaderApp(tk.Tk):
                 image=inactive_icon if inactive_icon is not None else "",
                 compound="left",
                 style="FocusNav.TButton",
+                takefocus=True,
                 command=lambda name=view_name: self._select_focus_view(name),
             )
             button.pack(fill="x")
@@ -6983,6 +6996,7 @@ class DownloaderApp(tk.Tk):
         for frame in (forge_view, library_view, activity_view):
             frame.grid(row=0, column=0, sticky="nsew")
         self._focus_views = {"forge": forge_view, "library": library_view, "activity": activity_view}
+        self._bind_focus_view_shortcuts()
         self.download_tab = forge_view
         self.metadata_tab = library_view
 
@@ -7590,6 +7604,18 @@ class DownloaderApp(tk.Tk):
                     activity_log.after_idle(show_latest_activity)
                 except (AttributeError, tk.TclError):
                     show_latest_activity()
+
+    def _activate_focus_view_shortcut(self, name: str) -> str:
+        self._select_focus_view(name)
+        return "break"
+
+    def _bind_focus_view_shortcuts(self) -> None:
+        for sequence, view_name in focus_view_shortcut_bindings():
+            self.bind(
+                sequence,
+                lambda _event, name=view_name: self._activate_focus_view_shortcut(name),
+                add="+",
+            )
 
     def _sync_focus_destination(self) -> None:
         path = self.output_var.get().strip() or "Choose destination"
