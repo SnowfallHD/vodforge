@@ -11796,6 +11796,84 @@ class DownloaderApp(tk.Tk):
             outcome=reuse_outcome,
         )
 
+    def _transcode_and_validate_staged_media(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        plan: ExportPlan | AudioExportPlan,
+        staged_media: list[tuple[dict[str, Any], Path]],
+        ffmpeg: str,
+        *,
+        label: str,
+        progress_callback: Callable[[float], None],
+        control_check: Callable[[], None],
+    ) -> list[tuple[dict[str, Any], Path, dict[str, Any]]]:
+        ffprobe = self._find_ffprobe() or _ffprobe_for_ffmpeg(ffmpeg)
+        if not ffprobe:
+            raise RuntimeError(f"{label}: FFprobe is required to validate the final output.")
+
+        if isinstance(plan, ExportPlan):
+            total_mp4 = len(staged_media)
+            for encode_index, (staged_info, staged_mp4) in enumerate(
+                staged_media,
+                start=1,
+            ):
+                control_check()
+                self.events.put(("status", f"{label} — transcoding"))
+                encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
+                self._emit_job_log(
+                    job,
+                    f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}",
+                )
+                write_diagnostic(
+                    f"{label} ffmpeg command: "
+                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}"
+                )
+                progress_callback((encode_index - 1) / total_mp4)
+                transcode_started = time.monotonic()
+                transcode_to_vod_streaming_settings(
+                    staged_mp4,
+                    ffmpeg,
+                    plan=plan,
+                    duration_seconds=_float_or_none(
+                        staged_info.get("duration") or info.get("duration")
+                    ),
+                    progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: progress_callback(
+                        ((encode_index - 1) + fraction) / total_mp4
+                    ),
+                    use_nvenc=job.use_nvenc,
+                    control_check=control_check,
+                )
+                write_diagnostic(
+                    f"{label} transcode elapsed_seconds={time.monotonic() - transcode_started:.3f}"
+                )
+                self._emit_job_log(job, f"{label}: transcoded staged VODForge output")
+        else:
+            self.events.put(("status", f"{label} — MP3 encoded"))
+
+        self.events.put(("status", f"{label} — validating output"))
+        validation_started = time.monotonic()
+        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
+        for staged_info, staged_path in staged_media:
+            control_check()
+            probe_data = validate_output_artifact(
+                staged_path,
+                job.output_type,
+                ffprobe,
+                expected_duration_seconds=_float_or_none(
+                    staged_info.get("duration") or info.get("duration")
+                ),
+                require_audio=True,
+                plan=plan,
+                control_check=control_check,
+            )
+            validated_staged.append((staged_info, staged_path, probe_data))
+        control_check()
+        write_diagnostic(
+            f"{label} artifact validation elapsed_seconds={time.monotonic() - validation_started:.3f}"
+        )
+        return validated_staged
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -12225,57 +12303,22 @@ class DownloaderApp(tk.Tk):
                             custom_cover_for_cache = prepared_cover
                             self._emit_job_log(job, f"{label}: embedded custom cover art ({job.mp3_settings.custom_cover_art_path.name})")
 
-                        ffprobe = self._find_ffprobe() or _ffprobe_for_ffmpeg(ffmpeg)
-                        if not ffprobe:
-                            raise RuntimeError(f"{label}: FFprobe is required to validate the final output.")
-
-                        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
-                        if isinstance(plan, ExportPlan):
-                            total_mp4 = len(staged_media)
-                            for encode_index, (staged_info, staged_mp4) in enumerate(staged_media, start=1):
-                                raise_for_control_requests()
-                                self.events.put(("status", f"{label} — transcoding"))
-                                encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
-                                self._emit_job_log(job, f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}")
-                                write_diagnostic(f"{label} ffmpeg command: {build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc)}")
-                                put_stage_progress(video_index, total_videos, 0.50, 0.40, (encode_index - 1) / total_mp4)
-                                transcode_started = time.monotonic()
-                                transcode_to_vod_streaming_settings(
-                                    staged_mp4,
-                                    ffmpeg,
-                                    plan=plan,
-                                    duration_seconds=_float_or_none(staged_info.get("duration") or info.get("duration")),
-                                    progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: put_stage_progress(
-                                        video_index,
-                                        total_videos,
-                                        0.50,
-                                        0.40,
-                                        ((encode_index - 1) + fraction) / total_mp4,
-                                    ),
-                                    use_nvenc=job.use_nvenc,
-                                    control_check=raise_for_control_requests,
-                                )
-                                write_diagnostic(f"{label} transcode elapsed_seconds={time.monotonic() - transcode_started:.3f}")
-                                self._emit_job_log(job, f"{label}: transcoded staged VODForge output")
-                        else:
-                            self.events.put(("status", f"{label} — MP3 encoded"))
-
-                        self.events.put(("status", f"{label} — validating output"))
-                        validation_started = time.monotonic()
-                        for staged_info, staged_path in staged_media:
-                            raise_for_control_requests()
-                            probe_data = validate_output_artifact(
-                                staged_path,
-                                job.output_type,
-                                ffprobe,
-                                expected_duration_seconds=_float_or_none(staged_info.get("duration") or info.get("duration")),
-                                require_audio=True,
-                                plan=plan,
-                                control_check=raise_for_control_requests,
-                            )
-                            validated_staged.append((staged_info, staged_path, probe_data))
-                        raise_for_control_requests()
-                        write_diagnostic(f"{label} artifact validation elapsed_seconds={time.monotonic() - validation_started:.3f}")
+                        validated_staged = self._transcode_and_validate_staged_media(
+                            job,
+                            info,
+                            plan,
+                            staged_media,
+                            ffmpeg,
+                            label=label,
+                            progress_callback=lambda fraction, video_index=video_index, total_videos=total_videos: put_stage_progress(
+                                video_index,
+                                total_videos,
+                                0.50,
+                                0.40,
+                                fraction,
+                            ),
+                            control_check=raise_for_control_requests,
+                        )
 
                         commit_started = time.monotonic()
                         packaged_paths = package_downloaded_media_from_staging(
