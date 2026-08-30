@@ -2,6 +2,7 @@ import json
 import inspect
 import os
 import queue
+import re
 import stat
 import threading
 import time
@@ -4519,6 +4520,127 @@ def test_batch_cancellation_reports_stopped_or_partial_truthfully(monkeypatch, t
     expected_kind = "partial" if successes_before_cancel else "stopped"
     assert any(kind == expected_kind and "cancel" in str(payload).lower() for kind, payload in events)
     assert not any(kind in {"done", "error"} for kind, _payload in events)
+
+
+@pytest.mark.parametrize(
+    ("output_type", "export_mode", "manual_settings", "expected_error"),
+    [
+        (
+            OutputType.MP3,
+            ExportMode.AUTO_CBR,
+            ManualExportSettings(),
+            "FFmpeg is required to create the MP3 audio output.",
+        ),
+        (
+            OutputType.MP4,
+            ExportMode.AUTO_CBR,
+            ManualExportSettings(),
+            "FFmpeg is required to create the H.264 / AAC MP4 video output.",
+        ),
+        (
+            OutputType.MP4,
+            ExportMode.MANUAL_OVERRIDE,
+            ManualExportSettings(audio_codec=ManualAudioCodec.MP3),
+            "FFmpeg is required to create the H.264 / MP3 MP4 video output.",
+        ),
+    ],
+    ids=["mp3", "mp4-aac", "mp4-manual-mp3"],
+)
+def test_missing_ffmpeg_reports_the_actual_export_plan_without_downloading(
+    monkeypatch,
+    tmp_path: Path,
+    output_type: OutputType,
+    export_mode: ExportMode,
+    manual_settings: ManualExportSettings,
+    expected_error: str,
+):
+    preflight = {
+        "id": "missing-ffmpeg",
+        "title": "Missing FFmpeg",
+        "uploader": "Fixture",
+        "webpage_url": "https://www.youtube.com/watch?v=missing-ffmpeg",
+        "duration": 30,
+        "formats": [
+            {
+                "format_id": "137",
+                "height": 1080,
+                "width": 1920,
+                "ext": "mp4",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 3000,
+                "fps": 30,
+                "protocol": "https",
+            },
+            {
+                "format_id": "251",
+                "ext": "webm",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 128,
+                "asr": 48000,
+                "audio_channels": 2,
+                "protocol": "https",
+            },
+        ],
+    }
+    calls = {"extract": 0, "process": 0}
+
+    class FakeYoutubeDL:
+        def __init__(self, _opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def extract_info(self, _url, *, download):
+            assert download is False
+            calls["extract"] += 1
+            return dict(preflight)
+
+        def process_ie_result(self, _info, *, download):
+            calls["process"] += 1
+            pytest.fail(f"missing FFmpeg must fail before download={download}")
+
+    class FakeYtDlp:
+        YoutubeDL = FakeYoutubeDL
+
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    app._find_ffmpeg = lambda: None
+    app._find_ffprobe = lambda: None
+    app._find_deno = lambda: None
+    job = DownloadJob(
+        url=preflight["webpage_url"],
+        output_dir=tmp_path,
+        output_type=output_type,
+        quality_label="1080p Full HD",
+        export_mode=export_mode,
+        manual_settings=manual_settings,
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+    with pytest.raises(RuntimeError, match=re.escape(expected_error)):
+        app._download_worker_single(job, re_raise=True)
+
+    assert calls == {"extract": 1, "process": 0}
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(monkeypatch, tmp_path: Path):

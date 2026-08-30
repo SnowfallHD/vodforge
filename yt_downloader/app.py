@@ -11781,11 +11781,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     try:
                         ffmpeg = self._find_ffmpeg()
                         if not ffmpeg:
-                            required_output = (
-                                "MP3 audio"
-                                if job.output_type == OutputType.MP3
-                                else f"H.264 / {plan.output_audio_codec.value} MP4 video"
-                            )
+                            if isinstance(plan, AudioExportPlan):
+                                required_output = "MP3 audio"
+                            else:
+                                required_output = (
+                                    f"H.264 / {plan.output_audio_codec.value} MP4 video"
+                                )
                             raise RuntimeError(f"FFmpeg is required to create the {required_output} output.")
                         if job_embeds_provider_thumbnail(job):
                             validate_embedded_thumbnail_sources(
