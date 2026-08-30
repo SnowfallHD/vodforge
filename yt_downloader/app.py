@@ -7,6 +7,7 @@ import os
 import queue
 import re
 import shutil
+
 # Reviewed subprocess call sites use fixed argv lists and never invoke a shell.
 import subprocess  # nosec B404
 import sys
@@ -20,12 +21,13 @@ import urllib.parse
 import uuid
 import warnings
 import webbrowser
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from .cloud_funnel import (
     InstallationIdentityError,
@@ -5080,14 +5082,46 @@ class RoundedIconButton(tk.Canvas):
         self.bind("<space>", lambda _event: self._invoke(), add="+")
         self.after_idle(self._redraw)
 
-    def configure(self, cnf: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+    def _custom_option_descriptor(
+        self,
+        option: str,
+    ) -> tuple[str, str, str, str, str] | None:
+        if option == "state":
+            return ("state", "state", "State", "normal", self._state)
+        if option == "text":
+            return ("text", "text", "Text", "", self._button_text)
+        return None
+
+    def configure(
+        self,
+        cnf: str | Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        if isinstance(cnf, str) and not kwargs:
+            custom_descriptor = self._custom_option_descriptor(cnf)
+            return (
+                custom_descriptor
+                if custom_descriptor is not None
+                else super().configure(cnf)
+            )
+        if isinstance(cnf, str):
+            return super().configure(cnf, **kwargs)
+        if cnf is None and not kwargs:
+            configured = super().configure()
+            if not isinstance(configured, dict):
+                return configured
+            configured = dict(configured)
+            configured["state"] = self._custom_option_descriptor("state")
+            configured["text"] = self._custom_option_descriptor("text")
+            return configured
         options = dict(cnf or {})
         options.update(kwargs)
-        if not options:
-            return super().configure()
         state = options.pop("state", None)
         if state is not None:
             self._state = str(state)
+            if self._state == "disabled":
+                self._hovered = False
+                self._pressed = False
             super().configure(cursor="arrow" if self._state == "disabled" else "hand2")
         text = options.pop("text", None)
         if text is not None:
@@ -5099,6 +5133,15 @@ class RoundedIconButton(tk.Canvas):
         return result
 
     config = configure
+
+    def cget(self, key: str) -> Any:
+        if key == "state":
+            return self._state
+        if key == "text":
+            return self._button_text
+        return super().cget(key)
+
+    __getitem__ = cget
 
     def _set_hovered(self, hovered: bool) -> None:
         self._hovered = hovered and self._state != "disabled"

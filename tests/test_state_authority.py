@@ -22,6 +22,7 @@ from yt_downloader.app import (
     ManualExportSettings,
     Mp3ExportSettings,
     OutputType,
+    RoundedIconButton,
     focus_view_shortcut_bindings,
 )
 from yt_downloader.history import history_identity, upsert_history
@@ -207,6 +208,73 @@ def test_queued_mp3_snapshot_formats_explicit_string_sample_rate(tmp_path: Path)
     assert "Audio quality   192 kbps" in app.focus_summary_text.value
     assert "Sample rate     48 kHz" in app.focus_summary_text.value
     assert "Channels        2" in app.focus_summary_text.value
+
+
+def test_rounded_icon_button_preserves_tk_configuration_query_contract(monkeypatch):
+    configure_calls: list[tuple[object, dict[str, object]]] = []
+    content_updates: list[tuple[object, dict[str, object]]] = []
+    invoked: list[bool] = []
+
+    def fake_canvas_configure(_self, cnf=None, **kwargs):
+        configure_calls.append((cnf, dict(kwargs)))
+        if isinstance(cnf, str):
+            return (cnf, cnf, cnf.title(), "base-default", "base-current")
+        if cnf is None and not kwargs:
+            return {
+                "cursor": ("cursor", "cursor", "Cursor", "", "hand2"),
+                "state": ("state", "state", "State", "normal", "normal"),
+            }
+        return None
+
+    monkeypatch.setattr(app_module.tk.Canvas, "configure", fake_canvas_configure)
+    monkeypatch.setattr(
+        app_module.tk.Canvas,
+        "cget",
+        lambda _self, key: f"base:{key}",
+    )
+
+    button = RoundedIconButton.__new__(RoundedIconButton)
+    button._button_image = None
+    button._button_text = "Run"
+    button._content_item = "content"
+    button._state = "normal"
+    button._hovered = True
+    button._pressed = True
+    button._command = lambda: invoked.append(True)
+    button._redraw = lambda: None
+    button.itemconfigure = lambda item, **kwargs: content_updates.append(
+        (item, dict(kwargs))
+    )
+
+    button.configure(state="disabled")
+
+    assert button.cget("state") == "disabled"
+    assert button._hovered is False
+    assert button._pressed is False
+    assert button["state"] == "disabled"
+    assert button.configure("state")[-1] == "disabled"
+    assert button.configure("text")[-1] == "Run"
+    assert button.configure("width")[-1] == "base-current"
+    assert button.cget("width") == "base:width"
+    all_options = button.configure()
+    assert all_options["state"][-1] == "disabled"
+    assert all_options["text"][-1] == "Run"
+    configure_call_count = len(configure_calls)
+    assert button.configure({}) is None
+    assert len(configure_calls) == configure_call_count
+    button._invoke()
+    assert invoked == []
+
+    button.config({"state": "normal", "text": "Forge"}, width=88)
+
+    assert button.cget("state") == "normal"
+    assert button.cget("text") == "Forge"
+    assert content_updates == [("content", {"text": "Forge"})]
+    assert (None, {"cursor": "arrow"}) in configure_calls
+    assert (None, {"cursor": "hand2"}) in configure_calls
+    assert (None, {"width": 88}) in configure_calls
+    button._invoke()
+    assert invoked == [True]
 
 
 def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: Path):
