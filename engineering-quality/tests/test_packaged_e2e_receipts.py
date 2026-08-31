@@ -8,6 +8,7 @@ from pathlib import Path
 from quality_harness import packaged_e2e
 from quality_harness.fixtures import (
     LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
     LIBRARY_DESCRIPTION_STRESS_TITLE,
 )
 from quality_harness.packaged_e2e import (
@@ -164,7 +165,7 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
     ).hexdigest()
     title_sha256 = hashlib.sha256(
-        LIBRARY_DESCRIPTION_STRESS_TITLE.encode("utf-8")
+        LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE.encode("utf-8")
     ).hexdigest()
     payload = {
         "session_nonce": nonce,
@@ -334,9 +335,11 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         "fewer than 2 measured visible lines" in error for error in rejected["errors"]
     )
 
-    wrong_title = dict(payload)
-    wrong_title["full_title_sha256"] = "0" * 64
-    receipt_path.write_text(json.dumps(wrong_title), encoding="utf-8")
+    raw_page_title = dict(payload)
+    raw_page_title["full_title_sha256"] = hashlib.sha256(
+        LIBRARY_DESCRIPTION_STRESS_TITLE.encode("utf-8")
+    ).hexdigest()
+    receipt_path.write_text(json.dumps(raw_page_title), encoding="utf-8")
     rejected = _library_description_visibility_receipt(
         state_paths=state_paths,
         driver_trace=trace,

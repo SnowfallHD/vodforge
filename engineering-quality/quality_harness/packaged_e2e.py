@@ -33,6 +33,7 @@ from .e2e_provenance import (
 from .fault_server import FixtureHTTPServer
 from .fixtures import (
     LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
     LIBRARY_DESCRIPTION_STRESS_TITLE,
     generate_fixtures,
 )
@@ -713,7 +714,7 @@ def _library_description_visibility_receipt(
         expected_description.encode("utf-8")
     ).hexdigest()
     expected_title_sha256 = hashlib.sha256(
-        LIBRARY_DESCRIPTION_STRESS_TITLE.encode("utf-8")
+        LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE.encode("utf-8")
     ).hexdigest()
     expected_values = {
         "session_nonce": session_nonce,

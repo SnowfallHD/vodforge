@@ -20,6 +20,12 @@ LIBRARY_DESCRIPTION_STRESS_TITLE = (
     "and must be ellipsized before this title is shortened — "
     "final sentinel segment for deterministic packaged UI evidence"
 )
+# The page exposes the same media through both ``og:video`` and ``video[src]``.
+# The pinned yt-dlp Generic extractor numbers those discovered entries, and the
+# packaged single-video journey selects the first one. Keep this expected
+# provider result explicit so UI identity evidence remains exact rather than
+# accepting a permissive title suffix.
+LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE = f"{LIBRARY_DESCRIPTION_STRESS_TITLE} (1)"
 LIBRARY_DESCRIPTION_STRESS_DESCRIPTION = (
     "Description visibility sentinel: this nonempty text must remain visible in the "
     "fixed-height Selected Item panel."
