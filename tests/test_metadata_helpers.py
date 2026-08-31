@@ -5669,6 +5669,385 @@ def test_append_batch_failure_report_sanitizes_url_and_repeated_error_url(
     assert "user:pass" not in text
 
 
+def _worker_test_app() -> DownloaderApp:
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    return app
+
+
+def _worker_test_job(
+    tmp_path: Path,
+    *,
+    url: str = "https://www.youtube.com/playlist?list=playlist",
+    urls: list[str] | None = None,
+) -> DownloadJob:
+    return DownloadJob(
+        url=url,
+        urls=list(urls or []),
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=False,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+
+
+def _worker_test_export_plan() -> ExportPlan:
+    return ExportPlan(
+        mode=ExportMode.AUTO_CBR,
+        video_format_id="137",
+        audio_format_id="140",
+        format_selector="137+140",
+        output_width=1920,
+        output_height=1080,
+        source_video_kbps=4_000.0,
+        effective_video_kbps=4_000.0,
+        video_bitrate_kbps=4_000,
+        source_audio_kbps=128.0,
+        effective_audio_kbps=128.0,
+        audio_bitrate_kbps=192,
+    )
+
+
+def test_single_worker_missing_ytdlp_emits_exactly_one_terminal(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: None)
+    monkeypatch.setattr(app_module, "YTDLP_IMPORT_ERROR", "injected missing runtime")
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app = _worker_test_app()
+    job = _worker_test_job(
+        tmp_path,
+        url="https://www.youtube.com/watch?v=missing-runtime",
+    )
+
+    app._download_worker(job)
+
+    terminals = [
+        (kind, payload)
+        for kind, payload in app.events.queue
+        if kind in {"done", "partial", "stopped", "error"}
+    ]
+    assert len(terminals) == 1
+    assert terminals[0][0] == "error"
+    assert "yt-dlp import failed: injected missing runtime" in str(terminals[0][1])
+
+
+@pytest.mark.parametrize(
+    "provider_message",
+    [
+        "provider request cancelled by upstream",
+        "provider reports URL skipped by policy",
+        "provider reports Video skipped by policy",
+    ],
+)
+def test_provider_error_control_words_do_not_gain_user_authority(
+    monkeypatch,
+    tmp_path: Path,
+    provider_message: str,
+):
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app = _worker_test_app()
+    app._expand_download_source = lambda *_args, **_kwargs: (
+        app_module._ExpandedDownloadSource(
+            playlist_info={"id": "playlist", "title": "Playlist"},
+            entries=[
+                {
+                    "id": "one",
+                    "title": "One",
+                    "webpage_url": "https://www.youtube.com/watch?v=one",
+                }
+            ],
+        )
+    )
+    app._analyze_download_item = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        RuntimeError(provider_message)
+    )
+    job = _worker_test_job(tmp_path)
+
+    outcome = app._download_worker_single(job)
+
+    terminals = [
+        (kind, payload)
+        for kind, payload in app.events.queue
+        if kind in {"done", "partial", "stopped", "error"}
+    ]
+    assert outcome == DownloadOutcome()
+    assert len(terminals) == 1
+    assert terminals[0][0] == "error"
+    assert provider_message in str(terminals[0][1])
+    assert app.cancel_requested is False
+    assert app.skip_url_requested is False
+    assert app.skip_video_requested is False
+
+
+def test_playlist_cancellation_after_success_emits_partial_not_stopped(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app = _worker_test_app()
+    entries = [
+        {
+            "id": video_id,
+            "title": video_id.title(),
+            "webpage_url": f"https://www.youtube.com/watch?v={video_id}",
+        }
+        for video_id in ("one", "two")
+    ]
+    app._expand_download_source = lambda *_args, **_kwargs: (
+        app_module._ExpandedDownloadSource(
+            playlist_info={"id": "playlist", "title": "Playlist"},
+            entries=entries,
+        )
+    )
+
+    def analyze_item(*_args, **kwargs):
+        item = _args[3]
+        if item.index == 2:
+            app.cancel_requested = True
+            kwargs["control_check"]()
+        return app_module._AnalyzedDownloadItem(
+            preflight_info=item.entry,
+            display_info=item.entry,
+            plan=_worker_test_export_plan(),
+            session_cookies=(),
+            cookie_source_loaded=False,
+        )
+
+    app._analyze_download_item = analyze_item
+
+    def reuse_first_item(_job, info, *_args, **_kwargs):
+        assert info["id"] == "one"
+        return app_module._ExistingOutputReuse(
+            metadata=entries[0],
+            outcome=DownloadOutcome(success_count=1),
+        )
+
+    app._try_reuse_existing_output = reuse_first_item
+    job = _worker_test_job(tmp_path)
+
+    outcome = app._download_worker_single(job)
+
+    terminals = [
+        (kind, payload)
+        for kind, payload in app.events.queue
+        if kind in {"done", "partial", "stopped", "error"}
+    ]
+    assert outcome == DownloadOutcome(success_count=1)
+    assert len(terminals) == 1
+    assert terminals[0][0] == "partial"
+    assert "1 valid output(s) completed before cancellation" in str(terminals[0][1])
+    assert app._provider_network._primary_intents == 0
+
+
+@pytest.mark.parametrize(
+    ("failure_mode", "expected_terminal"),
+    [("error", "error"), ("cancel", "partial")],
+)
+def test_post_commit_abort_preserves_the_latest_item_result(
+    monkeypatch,
+    tmp_path: Path,
+    failure_mode: str,
+    expected_terminal: str,
+):
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app = _worker_test_app()
+    entry = {
+        "id": "committed",
+        "title": "Committed",
+        "webpage_url": "https://www.youtube.com/watch?v=committed",
+    }
+    app._expand_download_source = lambda *_args, **_kwargs: (
+        app_module._ExpandedDownloadSource(
+            playlist_info={},
+            entries=[entry],
+        )
+    )
+    app._analyze_download_item = lambda *_args, **_kwargs: (
+        app_module._AnalyzedDownloadItem(
+            preflight_info=entry,
+            display_info=entry,
+            plan=_worker_test_export_plan(),
+            session_cookies=(),
+            cookie_source_loaded=False,
+        )
+    )
+    app._try_reuse_existing_output = lambda *_args, **_kwargs: None
+    app._download_item_to_staging = lambda *_args, **_kwargs: (
+        app_module._DownloadedStagingItem(
+            metadata=entry,
+            session_cookies=(),
+            ffmpeg="ffmpeg",
+        )
+    )
+
+    def prepare_item(_job, _item, _downloaded, staging_dir, **_kwargs):
+        return app_module._PreparedStagingItem(
+            metadata=entry,
+            staged_media=[(entry, staging_dir / "staged.mp4")],
+            expected_extension=".mp4",
+            ffmpeg="ffmpeg",
+            custom_cover_for_cache=None,
+        )
+
+    app._prepare_staged_download_item = prepare_item
+    app._transcode_and_validate_staged_media = lambda *_args, **_kwargs: []
+    committed_output = tmp_path / "committed.mp4"
+
+    def commit_item(*_args, **_kwargs):
+        committed_output.write_bytes(b"validated committed media")
+        return app_module._CommittedMedia(
+            metadata=entry,
+            primary_output=committed_output,
+            success_count=1,
+        )
+
+    app._commit_validated_staged_media = commit_item
+
+    def abort_after_commit(*_args, **_kwargs):
+        if failure_mode == "cancel":
+            app.cancel_requested = True
+            app._raise_for_download_control_requests()
+        raise RuntimeError("injected post-commit finalization failure")
+
+    app._record_committed_media_and_write_sidecars = abort_after_commit
+    job = _worker_test_job(
+        tmp_path,
+        url=entry["webpage_url"],
+    )
+
+    outcome = app._download_worker_single(job)
+
+    terminals = [
+        (kind, payload)
+        for kind, payload in app.events.queue
+        if kind in {"done", "partial", "stopped", "error"}
+    ]
+    assert outcome == DownloadOutcome(success_count=1)
+    assert committed_output.read_bytes() == b"validated committed media"
+    assert terminals[0][0] == expected_terminal
+    assert len(terminals) == 1
+    assert not any(kind == "stopped" for kind, _payload in terminals)
+    assert app._provider_network._primary_intents == 0
+    assert not (tmp_path / ".vfstage").exists()
+
+
+def test_all_failed_playlist_preserves_item_and_source_metadata_layers(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    monkeypatch.setattr(
+        app_module, "append_batch_failure_report", lambda *_args, **_kwargs: None
+    )
+    app = _worker_test_app()
+    entries = [
+        {
+            "id": video_id,
+            "title": video_id.title(),
+            "webpage_url": f"https://www.youtube.com/watch?v={video_id}",
+        }
+        for video_id in ("one", "two")
+    ]
+    app._expand_download_source = lambda *_args, **_kwargs: (
+        app_module._ExpandedDownloadSource(
+            playlist_info={"id": "playlist", "title": "Playlist"},
+            entries=entries,
+        )
+    )
+
+    def analyze_item(*_args, **_kwargs):
+        item = _args[3]
+        return app_module._AnalyzedDownloadItem(
+            preflight_info=item.entry,
+            display_info=item.entry,
+            plan=_worker_test_export_plan(),
+            session_cookies=(),
+            cookie_source_loaded=False,
+        )
+
+    app._analyze_download_item = analyze_item
+
+    def fail_reuse(_job, info, *_args, **_kwargs):
+        raise RuntimeError(f"provider failure {info['id']}")
+
+    app._try_reuse_existing_output = fail_reuse
+    job = _worker_test_job(tmp_path)
+
+    outcome = app._download_worker_single(job)
+
+    events = list(app.events.queue)
+    metadata = [payload for kind, payload in events if kind == "job_metadata"]
+    item_terminals = [payload for kind, payload in events if kind == "item_terminal"]
+    terminals = [
+        (kind, payload)
+        for kind, payload in events
+        if kind in {"done", "partial", "stopped", "error"}
+    ]
+    assert outcome == DownloadOutcome(failure_count=2)
+    assert [payload["info"]["id"] for payload in metadata] == ["one", "two", "two"]
+    assert [
+        payload["info"]["vodforge_encoding_summary"]["output"]["Failure reason"]
+        for payload in metadata
+    ] == [
+        "provider failure one",
+        "provider failure two",
+        (
+            "No valid MP4 output was produced; 2 item(s) failed. Failure report: "
+            f"{app_module.BATCH_FAILURE_REPORT_PATH}"
+        ),
+    ]
+    assert [payload["info"]["id"] for payload in item_terminals] == ["one", "two"]
+    assert [payload["job"].terminal_status for payload in item_terminals] == [
+        "Failed",
+        "Failed",
+    ]
+    assert [payload["job"].terminal_message for payload in item_terminals] == [
+        "provider failure one",
+        "provider failure two",
+    ]
+    layered_order = [
+        (
+            kind,
+            payload["info"]["id"]
+            if kind in {"job_metadata", "item_terminal"}
+            else None,
+        )
+        for kind, payload in events
+        if kind in {"job_metadata", "item_terminal", "error"}
+    ]
+    assert layered_order == [
+        ("job_metadata", "one"),
+        ("item_terminal", "one"),
+        ("job_metadata", "two"),
+        ("item_terminal", "two"),
+        ("job_metadata", "two"),
+        ("error", None),
+    ]
+    assert len(terminals) == 1
+    assert terminals[0][0] == "error"
+    assert app._provider_network._primary_intents == 0
+
+
 def test_batch_worker_continues_after_failed_url_and_writes_failure_report(
     monkeypatch, tmp_path: Path
 ):
@@ -5839,7 +6218,8 @@ def test_batch_cancellation_reports_stopped_or_partial_truthfully(
         nonlocal calls
         calls += 1
         if calls > successes_before_cancel:
-            raise RuntimeError("Download cancelled by user")
+            app.cancel_requested = True
+            app._raise_for_download_control_requests()
         return DownloadOutcome(success_count=1)
 
     app._download_worker_single = fake_single
@@ -6572,15 +6952,17 @@ def test_delayed_playlist_analysis_keeps_the_skipped_items_inputs(
     class FakeYtDlp:
         YoutubeDL = FakeYoutubeDL
 
-    def delayed_blocking_step(step, _cancel_requested, *, label, **_kwargs):
+    def delayed_blocking_step(step, control_requested, *, label, **_kwargs):
         if label == "Playlist detection":
             return step()
         if label == "Video 1 of 2 source analysis":
             captured_steps.append(step)
-            raise RuntimeError("Video skipped by user")
+            app.skip_video_requested = True
+            control_requested()
         if label == "Video 2 of 2 source analysis":
             captured_results.append(captured_steps[0]())
-            raise RuntimeError("Video skipped by user")
+            app.skip_video_requested = True
+            control_requested()
         raise AssertionError(f"unexpected blocking step: {label}")
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: FakeYtDlp)

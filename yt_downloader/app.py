@@ -24,6 +24,7 @@ import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
+from enum import Enum
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -4096,6 +4097,161 @@ class _PreparedStagingItem:
     expected_extension: str
     ffmpeg: str
     custom_cover_for_cache: Path | None
+
+
+class _DownloadControlKind(Enum):
+    CANCEL_RUN = "cancel_run"
+    SKIP_SOURCE = "skip_source"
+    SKIP_ITEM = "skip_item"
+
+
+class _DownloadControlRequestError(RuntimeError):
+    """A user-owned worker control request, distinct from provider error text."""
+
+    def __init__(
+        self,
+        kind: _DownloadControlKind,
+        *,
+        result: _DownloadItemResult | None = None,
+    ) -> None:
+        self.kind = kind
+        self.result = result
+        message = {
+            _DownloadControlKind.CANCEL_RUN: "Download cancelled by user",
+            _DownloadControlKind.SKIP_SOURCE: "URL skipped by user",
+            _DownloadControlKind.SKIP_ITEM: "Video skipped by user",
+        }[kind]
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class _DownloadSourceContext:
+    ytdlp_module: Any
+    provider_network: ProviderNetworkCoordinator
+    playlist_info: dict[str, Any]
+    max_height: int
+
+
+@dataclass(frozen=True)
+class _DownloadItemResult:
+    """The source-owned state that may advance after one playlist item."""
+
+    outcome: DownloadOutcome
+    session_cookies: tuple[Any, ...] = ()
+    cookie_source_loaded: bool = False
+    output_dirs: tuple[Path, ...] = ()
+    analysis: _AnalyzedDownloadItem | None = None
+    metadata: dict[str, Any] | None = None
+    plan: ExportPlan | AudioExportPlan | None = None
+    stop_source: bool = False
+
+
+@dataclass(frozen=True)
+class _DownloadBatchResult:
+    outcome: DownloadOutcome
+    failures: tuple[tuple[str, str], ...] = ()
+    control_kind: _DownloadControlKind | None = None
+
+
+class _DownloadItemExecutionError(RuntimeError):
+    """Carry the latest frozen item result with a fatal provider error."""
+
+    def __init__(
+        self,
+        error: Exception,
+        result: _DownloadItemResult,
+    ) -> None:
+        self.error = error
+        self.result = result
+        super().__init__(str(error))
+
+
+def _committed_download_outcome(result: _DownloadItemResult) -> DownloadOutcome:
+    """Carry only durable child effects across a source-level abort."""
+    return DownloadOutcome(
+        success_count=result.outcome.success_count,
+        sidecar_failure_count=result.outcome.sidecar_failure_count,
+    )
+
+
+def _download_source_failure_context(
+    error: Exception,
+    fallback_result: _DownloadItemResult,
+) -> tuple[_DownloadItemResult, Exception]:
+    if isinstance(error, _DownloadItemExecutionError):
+        return error.result, error.error
+    return fallback_result, error
+
+
+def _download_batch_terminal_event(
+    result: _DownloadBatchResult,
+    url_count: int,
+) -> UiEvent:
+    """Resolve one batch terminal without acquiring terminal-event authority."""
+    outcome = result.outcome
+    if result.control_kind is _DownloadControlKind.CANCEL_RUN:
+        if outcome.success_count:
+            return (
+                "partial",
+                (
+                    f"Batch cancelled — {outcome.success_count} valid output(s) completed before cancellation. "
+                    "No incomplete output was committed."
+                ),
+            )
+        return (
+            "stopped",
+            "Batch cancelled. No incomplete output was committed.",
+        )
+    if result.control_kind is not None:
+        return ("stopped", "Batch stopped without producing an output.")
+    if outcome.success_count == 0:
+        if outcome.failure_count:
+            raise RuntimeError(
+                f"Batch produced no valid output — {outcome.failure_count} item(s) failed. "
+                f"Failure report: {BATCH_FAILURE_REPORT_PATH}"
+            )
+        return ("stopped", "Batch stopped without producing an output.")
+    if outcome.failure_count or outcome.skipped_count or outcome.sidecar_failure_count:
+        return (
+            "partial",
+            f"Batch completed with issues — {outcome.success_count} valid output(s), "
+            f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
+            f"{outcome.sidecar_failure_count} optional sidecar failure(s)."
+            + (
+                f" Failure report: {BATCH_FAILURE_REPORT_PATH}"
+                if result.failures
+                else ""
+            ),
+        )
+    return (
+        "done",
+        f"Batch complete — {outcome.success_count} valid output(s) from {url_count} URL(s).",
+    )
+
+
+def _download_source_control_terminal_event(
+    job: DownloadJob,
+    result: _DownloadItemResult,
+    control_kind: _DownloadControlKind,
+) -> UiEvent:
+    """Resolve a source control terminal without emitting it."""
+    if control_kind is _DownloadControlKind.CANCEL_RUN:
+        if result.outcome.success_count:
+            return (
+                "partial",
+                (
+                    f"{job.output_type.value} cancelled — "
+                    f"{result.outcome.success_count} valid output(s) completed before cancellation. "
+                    "No incomplete output was committed."
+                ),
+            )
+        return (
+            "stopped",
+            "Download cancelled. No incomplete output was committed.",
+        )
+    if control_kind is _DownloadControlKind.SKIP_SOURCE:
+        return ("stopped", "URL skipped. No incomplete output was committed.")
+    return ("stopped", "Video skipped. No incomplete output was committed.")
 
 
 def _download_entry_url(entry: dict[str, Any], fallback_url: str) -> str:
@@ -10821,6 +10977,80 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             target=terminate_all_active_child_processes, daemon=True
         ).start()
 
+    def _coordinate_download_batch(
+        self,
+        job: DownloadJob,
+        urls: list[str],
+    ) -> _DownloadBatchResult:
+        """Run child sources without acquiring the batch terminal event."""
+        outcome = DownloadOutcome()
+        failures: list[tuple[str, str]] = []
+        for index, url in enumerate(urls, start=1):
+            if self.cancel_requested:
+                return _DownloadBatchResult(
+                    outcome=outcome,
+                    failures=tuple(failures),
+                    control_kind=_DownloadControlKind.CANCEL_RUN,
+                )
+            item_url, forced_single_video = prepare_batch_item_url(url)
+            item_single_video_only = job.single_video_only or forced_single_video
+            self.events.put(("status", f"Batch URL {index} of {len(urls)} — starting"))
+            self._emit_job_log(job, f"Batch URL {index} of {len(urls)}: {item_url}")
+            write_diagnostic(
+                f"batch URL {index} of {len(urls)} start: {item_url} single_video_only={item_single_video_only}"
+            )
+            try:
+                item_outcome = self._download_worker_single(
+                    replace(
+                        job,
+                        url=item_url,
+                        urls=[item_url],
+                        single_video_only=item_single_video_only,
+                    ),
+                    emit_done=False,
+                    re_raise=True,
+                )
+                outcome = outcome.combined_with(item_outcome)
+            except _DownloadControlRequestError as control_request:
+                if control_request.result is not None:
+                    outcome = outcome.combined_with(
+                        _committed_download_outcome(control_request.result)
+                    )
+                if control_request.kind is _DownloadControlKind.CANCEL_RUN:
+                    return _DownloadBatchResult(
+                        outcome=outcome,
+                        failures=tuple(failures),
+                        control_kind=control_request.kind,
+                    )
+                self.skip_video_requested = False
+                if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
+                    self.skip_url_requested = False
+                write_diagnostic(f"batch URL {index} skipped by user: {item_url}")
+                self._emit_job_log(
+                    job, f"Batch URL {index} skipped by user; continuing."
+                )
+                outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
+            except Exception as exc:  # noqa: BLE001 - each provider child failure is isolated in the batch result
+                provider_error = exc
+                if isinstance(exc, _DownloadItemExecutionError):
+                    outcome = outcome.combined_with(
+                        _committed_download_outcome(exc.result)
+                    )
+                    provider_error = exc.error
+                issue = format_ytdlp_user_error(provider_error)
+                failures.append((item_url, issue))
+                outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
+                append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item_url, issue)
+                write_diagnostic(
+                    f"batch URL {index} of {len(urls)} failed but batch will continue: "
+                    f"{type(provider_error).__name__}: {provider_error}"
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}",
+                )
+        return _DownloadBatchResult(outcome=outcome, failures=tuple(failures))
+
     def _download_worker(self, job: DownloadJob) -> None:
         urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
         if len(urls) <= 1:
@@ -10837,128 +11067,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             job.single_video_only = single_video_only
             self._download_worker_single(job)
             return
-        batch_outcome = DownloadOutcome()
         try:
             reset_batch_failure_report()
-            failures: list[tuple[str, str]] = []
-            for index, url in enumerate(urls, start=1):
-                if self.cancel_requested:
-                    raise RuntimeError("Download cancelled by user")
-                item_url, forced_single_video = prepare_batch_item_url(url)
-                item_single_video_only = job.single_video_only or forced_single_video
-                self.events.put(
-                    ("status", f"Batch URL {index} of {len(urls)} — starting")
-                )
-                self._emit_job_log(job, f"Batch URL {index} of {len(urls)}: {item_url}")
+            batch_result = self._coordinate_download_batch(job, urls)
+            if batch_result.control_kind is not None:
+                self._active_progress_context = None
                 write_diagnostic(
-                    f"batch URL {index} of {len(urls)} start: {item_url} single_video_only={item_single_video_only}"
+                    "batch download worker control request: "
+                    f"{batch_result.control_kind.value}"
                 )
-                try:
-                    item_outcome = self._download_worker_single(
-                        replace(
-                            job,
-                            url=item_url,
-                            urls=[item_url],
-                            single_video_only=item_single_video_only,
-                        ),
-                        emit_done=False,
-                        re_raise=True,
-                    )
-                    batch_outcome = batch_outcome.combined_with(item_outcome)
-                except Exception as exc:
-                    issue = format_ytdlp_user_error(exc)
-                    if "cancelled" in issue.lower():
-                        raise
-                    if "url skipped" in issue.lower():
-                        self.skip_url_requested = False
-                        self.skip_video_requested = False
-                        write_diagnostic(
-                            f"batch URL {index} skipped by user: {item_url}"
-                        )
-                        self._emit_job_log(
-                            job, f"Batch URL {index} skipped by user; continuing."
-                        )
-                        batch_outcome = batch_outcome.combined_with(
-                            DownloadOutcome(skipped_count=1)
-                        )
-                        continue
-                    failures.append((item_url, issue))
-                    batch_outcome = batch_outcome.combined_with(
-                        DownloadOutcome(failure_count=1)
-                    )
-                    append_batch_failure_report(
-                        BATCH_FAILURE_REPORT_PATH, item_url, issue
-                    )
-                    write_diagnostic(
-                        f"batch URL {index} of {len(urls)} failed but batch will continue: {type(exc).__name__}: {exc}"
-                    )
-                    self._emit_job_log(
-                        job,
-                        f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}",
-                    )
-                    continue
-            if batch_outcome.success_count == 0:
-                if batch_outcome.failure_count:
-                    raise RuntimeError(
-                        f"Batch produced no valid output — {batch_outcome.failure_count} item(s) failed. "
-                        f"Failure report: {BATCH_FAILURE_REPORT_PATH}"
-                    )
-                self.events.put(
-                    ("stopped", "Batch stopped without producing an output.")
-                )
-            elif (
-                batch_outcome.failure_count
-                or batch_outcome.skipped_count
-                or batch_outcome.sidecar_failure_count
-            ):
-                self.events.put(
-                    (
-                        "partial",
-                        f"Batch completed with issues — {batch_outcome.success_count} valid output(s), "
-                        f"{batch_outcome.failure_count} failed, {batch_outcome.skipped_count} skipped, "
-                        f"{batch_outcome.sidecar_failure_count} optional sidecar failure(s)."
-                        + (
-                            f" Failure report: {BATCH_FAILURE_REPORT_PATH}"
-                            if failures
-                            else ""
-                        ),
-                    )
-                )
-            else:
-                self.events.put(
-                    (
-                        "done",
-                        f"Batch complete — {batch_outcome.success_count} valid output(s) from {len(urls)} URL(s).",
-                    )
-                )
+            self.events.put(_download_batch_terminal_event(batch_result, len(urls)))
         except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
             self._active_progress_context = None
-            issue = format_ytdlp_user_error(exc)
             write_diagnostic(
                 f"batch download worker error: {type(exc).__name__}: {exc}"
             )
-            if "cancelled" in issue.lower():
-                if batch_outcome.success_count:
-                    self.events.put(
-                        (
-                            "partial",
-                            (
-                                f"Batch cancelled — {batch_outcome.success_count} valid output(s) completed before cancellation. "
-                                "No incomplete output was committed."
-                            ),
-                        )
-                    )
-                else:
-                    self.events.put(
-                        (
-                            "stopped",
-                            "Batch cancelled. No incomplete output was committed.",
-                        )
-                    )
-            else:
-                self.events.put(
-                    ("error", f"{exc}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}")
-                )
+            self.events.put(
+                ("error", f"{exc}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}")
+            )
 
     def _try_reuse_existing_output(
         self,
@@ -11345,23 +11471,27 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _raise_for_download_control_requests(self) -> None:
         if self.cancel_requested:
-            raise RuntimeError("Download cancelled by user")
+            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
         if self.skip_url_requested:
-            raise RuntimeError("URL skipped by user")
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
         if self.skip_video_requested:
-            raise RuntimeError("Video skipped by user")
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_ITEM)
 
     def _playlist_blocking_step_cancelled(self) -> bool:
+        if self.cancel_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
         if self.skip_url_requested:
-            raise RuntimeError("URL skipped by user")
-        return self.cancel_requested
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
+        return False
 
     def _video_blocking_step_cancelled(self) -> bool:
+        if self.cancel_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
         if self.skip_url_requested:
-            raise RuntimeError("URL skipped by user")
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
         if self.skip_video_requested:
-            raise RuntimeError("Video skipped by user")
-        return self.cancel_requested
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_ITEM)
+        return False
 
     def _emit_download_item_terminal(
         self,
@@ -11780,6 +11910,354 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             custom_cover_for_cache=custom_cover_for_cache,
         )
 
+    def _emit_failed_download_item_metadata(
+        self,
+        job: DownloadJob,
+        result: _DownloadItemResult,
+        issue: str,
+    ) -> None:
+        if result.metadata is None:
+            return
+        self.events.put(
+            job_info_event(
+                "job_metadata",
+                job,
+                build_failed_encoding_summary_metadata(
+                    result.metadata,
+                    result.plan,
+                    issue,
+                ),
+            )
+        )
+
+    def _resolve_download_item_failure(
+        self,
+        job: DownloadJob,
+        item: _DownloadItemContext,
+        result: _DownloadItemResult,
+        error: Exception,
+    ) -> _DownloadItemResult:
+        """Classify one item failure from typed user authority and item scope."""
+        self._active_progress_context = None
+        control_request = (
+            error if isinstance(error, _DownloadControlRequestError) else None
+        )
+        if control_request is None:
+            try:
+                self._raise_for_download_control_requests()
+            except _DownloadControlRequestError as pending_request:
+                control_request = pending_request
+
+        if control_request is not None:
+            if control_request.kind is _DownloadControlKind.CANCEL_RUN:
+                self._emit_failed_download_item_metadata(
+                    job, result, str(control_request)
+                )
+                raise _DownloadControlRequestError(
+                    control_request.kind,
+                    result=result,
+                ) from error
+
+            skipped_outcome = result.outcome.combined_with(
+                DownloadOutcome(skipped_count=1)
+            )
+            if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
+                self.skip_url_requested = False
+                self.skip_video_requested = False
+                self._emit_download_item_terminal(
+                    job,
+                    "Skipped",
+                    "URL skipped by user",
+                    result.metadata,
+                    result.plan,
+                    item.video_url,
+                )
+                self._emit_job_log(job, f"{item.label}: skipped URL by user.")
+                return replace(
+                    result,
+                    outcome=skipped_outcome,
+                    stop_source=True,
+                )
+
+            issue = str(control_request)
+            self._emit_failed_download_item_metadata(job, result, issue)
+            self._emit_download_item_terminal(
+                job,
+                "Skipped",
+                "Video skipped by user",
+                result.metadata,
+                result.plan,
+                item.video_url,
+            )
+            self._emit_job_log(
+                job,
+                f"{item.label}: skipped by user; continuing to next video.",
+            )
+            self.skip_video_requested = False
+            return replace(result, outcome=skipped_outcome)
+
+        issue = format_ytdlp_user_error(error)
+        if item.total <= 1:
+            raise _DownloadItemExecutionError(error, result) from error
+        self._emit_failed_download_item_metadata(job, result, issue)
+        write_diagnostic(
+            f"{item.label} failed but playlist will continue: "
+            f"{type(error).__name__}: {error}"
+        )
+        failed_outcome = result.outcome.combined_with(DownloadOutcome(failure_count=1))
+        self._emit_download_item_terminal(
+            job,
+            "Failed",
+            issue,
+            result.metadata,
+            result.plan,
+            item.video_url,
+        )
+        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, issue)
+        self._emit_job_log(
+            job,
+            f"WARNING: {item.label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
+        )
+        self.skip_video_requested = False
+        return replace(result, outcome=failed_outcome)
+
+    def _complete_staged_download_item(
+        self,
+        job: DownloadJob,
+        source: _DownloadSourceContext,
+        item: _DownloadItemContext,
+        result: _DownloadItemResult,
+    ) -> _DownloadItemResult:
+        """Own one staging transaction after analysis and a reuse miss."""
+        analyzed_item = result.analysis
+        current_info = result.metadata
+        current_plan = result.plan
+        if analyzed_item is None or current_info is None or current_plan is None:
+            raise RuntimeError("download item analysis contract is incomplete")
+
+        all_output_dirs = list(result.output_dirs)
+        staging_dir: Path | None = None
+        primary_intent_active = True
+        failure: Exception | None = None
+        try:
+            staging_dir = create_staging_dir(job.output_dir)
+            downloaded_item = self._download_item_to_staging(
+                job,
+                source.ytdlp_module,
+                source.provider_network,
+                item,
+                source.playlist_info,
+                analyzed_item,
+                staging_dir,
+                control_check=self._raise_for_download_control_requests,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.10,
+                    0.40,
+                ),
+            )
+            result = replace(
+                result,
+                session_cookies=downloaded_item.session_cookies,
+            )
+            source.provider_network.end_primary()
+            primary_intent_active = False
+            prepared_item = self._prepare_staged_download_item(
+                job,
+                item,
+                downloaded_item,
+                staging_dir,
+                control_check=self._raise_for_download_control_requests,
+            )
+            current_info = prepared_item.metadata
+            result = replace(result, metadata=current_info)
+
+            validated_staged = self._transcode_and_validate_staged_media(
+                job,
+                current_info,
+                current_plan,
+                prepared_item.staged_media,
+                prepared_item.ffmpeg,
+                label=item.label,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.50,
+                    0.40,
+                ),
+                control_check=self._raise_for_download_control_requests,
+            )
+            committed_media = self._commit_validated_staged_media(
+                job,
+                current_info,
+                current_plan,
+                staging_dir,
+                prepared_item.expected_extension,
+                validated_staged,
+                label=item.label,
+                all_output_dirs=all_output_dirs,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.50,
+                    0.40,
+                ),
+                control_check=self._raise_for_download_control_requests,
+            )
+            current_info = committed_media.metadata
+            result = replace(
+                result,
+                outcome=result.outcome.combined_with(
+                    DownloadOutcome(success_count=committed_media.success_count)
+                ),
+                output_dirs=tuple(all_output_dirs),
+                metadata=current_info,
+            )
+            result = replace(
+                result,
+                outcome=result.outcome.combined_with(
+                    self._record_committed_media_and_write_sidecars(
+                        job,
+                        current_info,
+                        committed_media.primary_output,
+                        label=item.label,
+                        custom_cover_for_cache=prepared_item.custom_cover_for_cache,
+                    )
+                ),
+            )
+            self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
+            result_label = (
+                "MP3 audio" if job.output_type == OutputType.MP3 else "MP4 video"
+            )
+            self.events.put(("status", f"{item.label} complete — {result_label}"))
+            self._emit_job_log(job, f"{item.label} complete — {result_label}")
+        except Exception as exc:  # noqa: BLE001 - item failure policy classifies provider and control errors
+            failure = exc
+        finally:
+            self._active_progress_context = None
+            if staging_dir is not None:
+                staging_root = staging_dir.parent
+                shutil.rmtree(staging_dir, ignore_errors=True)
+                try:
+                    staging_root.rmdir()
+                except OSError:
+                    pass
+            if primary_intent_active:
+                source.provider_network.end_primary()
+        if failure is not None:
+            result = replace(result, output_dirs=tuple(all_output_dirs))
+            return self._resolve_download_item_failure(job, item, result, failure)
+        return result
+
+    def _coordinate_download_item(
+        self,
+        job: DownloadJob,
+        source: _DownloadSourceContext,
+        item: _DownloadItemContext,
+        previous: _DownloadItemResult,
+    ) -> _DownloadItemResult:
+        """Acquire, analyze, and choose reuse or a staging transaction."""
+        result = replace(
+            previous,
+            analysis=None,
+            metadata=None,
+            plan=None,
+            stop_source=False,
+        )
+        primary_intent_active = False
+        try:
+            self._raise_for_download_control_requests()
+            source.provider_network.begin_primary(
+                self._raise_for_download_control_requests
+            )
+            primary_intent_active = True
+            analyzed_item = self._analyze_download_item(
+                job,
+                source.ytdlp_module,
+                source.provider_network,
+                item,
+                source.playlist_info,
+                source.max_height,
+                result.session_cookies,
+                result.cookie_source_loaded,
+                control_check=self._raise_for_download_control_requests,
+                blocking_step_cancelled=self._video_blocking_step_cancelled,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.0,
+                    0.10,
+                ),
+            )
+            result = replace(
+                result,
+                session_cookies=analyzed_item.session_cookies,
+                cookie_source_loaded=analyzed_item.cookie_source_loaded,
+                analysis=analyzed_item,
+                metadata=analyzed_item.display_info,
+                plan=analyzed_item.plan,
+            )
+            all_output_dirs = list(result.output_dirs)
+            existing_reuse = self._try_reuse_existing_output(
+                job,
+                analyzed_item.display_info,
+                analyzed_item.plan,
+                label=item.label,
+                all_output_dirs=all_output_dirs,
+                control_check=self._raise_for_download_control_requests,
+            )
+            if existing_reuse is not None:
+                self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
+                self.events.put(
+                    ("status", f"{item.label} complete — existing valid output")
+                )
+                return replace(
+                    result,
+                    outcome=result.outcome.combined_with(existing_reuse.outcome),
+                    output_dirs=tuple(all_output_dirs),
+                    metadata=existing_reuse.metadata,
+                )
+            primary_intent_active = False
+        except Exception as exc:  # noqa: BLE001 - item failure resolver separates user control from provider text
+            return self._resolve_download_item_failure(job, item, result, exc)
+        finally:
+            if primary_intent_active:
+                source.provider_network.end_primary()
+
+        return self._complete_staged_download_item(job, source, item, result)
+
+    def _log_expanded_download_source(
+        self,
+        job: DownloadJob,
+        total_videos: int,
+    ) -> None:
+        if total_videos > 1:
+            self._emit_job_log(job, f"Playlist detected: {total_videos} videos.")
+            write_diagnostic(f"playlist detected: video_count={total_videos}")
+            return
+        self._emit_job_log(job, "Single video detected.")
+        write_diagnostic("single video detected")
+
+    def _finish_download_source_failure(
+        self,
+        job: DownloadJob,
+        result: _DownloadItemResult,
+        error: Exception,
+        *,
+        re_raise: bool,
+    ) -> DownloadOutcome:
+        self._active_progress_context = None
+        user_error = format_ytdlp_user_error(error)
+        self._emit_failed_download_item_metadata(job, result, user_error)
+        write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
+        if re_raise:
+            raise _DownloadItemExecutionError(error, result) from error
+        self.events.put(
+            ("error", f"{user_error}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}")
+        )
+        return result.outcome
+
     def _download_worker_single(
         self,
         job: DownloadJob,
@@ -11787,21 +12265,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         emit_done: bool = True,
         re_raise: bool = False,
     ) -> DownloadOutcome:
-        ytdlp_module = load_yt_dlp()
-        if ytdlp_module is None:
-            raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
-        raise_for_control_requests = self._raise_for_download_control_requests
-        playlist_blocking_step_cancelled = self._playlist_blocking_step_cancelled
-        video_blocking_step_cancelled = self._video_blocking_step_cancelled
-
-        current_video_info: dict[str, Any] | None = None
-        current_plan: ExportPlan | AudioExportPlan | None = None
-        outcome = DownloadOutcome()
+        result = _DownloadItemResult(outcome=DownloadOutcome())
         provider_network = self._provider_network_coordinator()
-        job_session_cookies: tuple[Any, ...] = ()
-        cookie_source_loaded = False
 
         try:
+            ytdlp_module = load_yt_dlp()
+            if ytdlp_module is None:
+                raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
             max_height = _quality_max_height(job.quality_label)
             self._emit_job_log(job, f"Normalized URL: {job.url}")
             self.events.put(("progress", 0))
@@ -11809,306 +12279,72 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 job,
                 ytdlp_module,
                 provider_network,
-                control_check=raise_for_control_requests,
-                blocking_step_cancelled=playlist_blocking_step_cancelled,
+                control_check=self._raise_for_download_control_requests,
+                blocking_step_cancelled=self._playlist_blocking_step_cancelled,
             )
-            playlist_info = expanded_source.playlist_info
+            result = replace(
+                result,
+                session_cookies=expanded_source.session_cookies,
+                cookie_source_loaded=expanded_source.cookie_source_loaded,
+            )
             entries = expanded_source.entries
-            job_session_cookies = expanded_source.session_cookies
-            cookie_source_loaded = expanded_source.cookie_source_loaded
             total_videos = len(entries)
-            if total_videos > 1:
-                self._emit_job_log(job, f"Playlist detected: {total_videos} videos.")
-                write_diagnostic(f"playlist detected: video_count={total_videos}")
-            else:
-                self._emit_job_log(job, "Single video detected.")
-                write_diagnostic("single video detected")
+            self._log_expanded_download_source(job, total_videos)
 
-            all_output_dirs: list[Path] = []
             self.video_output_dirs_by_id = {}
-
+            source = _DownloadSourceContext(
+                ytdlp_module=ytdlp_module,
+                provider_network=provider_network,
+                playlist_info=expanded_source.playlist_info,
+                max_height=max_height,
+            )
             for video_index, entry in enumerate(entries, start=1):
-                primary_intent_active = False
-                try:
-                    current_video_info = None
-                    current_plan = None
-                    video_url = _download_entry_url(entry, job.url)
-                    label = f"Video {video_index} of {total_videos}"
-                    item = _DownloadItemContext(
-                        entry=entry,
-                        index=video_index,
-                        total=total_videos,
-                        video_url=video_url,
-                        label=label,
-                    )
-                    raise_for_control_requests()
-                    provider_network.begin_primary(raise_for_control_requests)
-                    primary_intent_active = True
-                    analyzed_item = self._analyze_download_item(
-                        job,
-                        ytdlp_module,
-                        provider_network,
-                        item,
-                        playlist_info,
-                        max_height,
-                        job_session_cookies,
-                        cookie_source_loaded,
-                        control_check=raise_for_control_requests,
-                        blocking_step_cancelled=video_blocking_step_cancelled,
-                        progress_callback=partial(
-                            self._put_download_stage_progress,
-                            item,
-                            0.0,
-                            0.10,
-                        ),
-                    )
-                    current_video_info = analyzed_item.display_info
-                    current_plan = analyzed_item.plan
-                    plan = analyzed_item.plan
-                    job_session_cookies = analyzed_item.session_cookies
-                    cookie_source_loaded = analyzed_item.cookie_source_loaded
-
-                    existing_reuse = self._try_reuse_existing_output(
-                        job,
-                        current_video_info,
-                        plan,
-                        label=label,
-                        all_output_dirs=all_output_dirs,
-                        control_check=raise_for_control_requests,
-                    )
-                    if existing_reuse is not None:
-                        current_video_info = existing_reuse.metadata
-                        outcome = outcome.combined_with(existing_reuse.outcome)
-                        self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
-                        self.events.put(
-                            ("status", f"{label} complete — existing valid output")
-                        )
-                        continue
-
-                    staging_dir = create_staging_dir(job.output_dir)
-                    try:
-                        downloaded_item = self._download_item_to_staging(
-                            job,
-                            ytdlp_module,
-                            provider_network,
-                            item,
-                            playlist_info,
-                            analyzed_item,
-                            staging_dir,
-                            control_check=raise_for_control_requests,
-                            progress_callback=partial(
-                                self._put_download_stage_progress,
-                                item,
-                                0.10,
-                                0.40,
-                            ),
-                        )
-                        job_session_cookies = downloaded_item.session_cookies
-                        provider_network.end_primary()
-                        primary_intent_active = False
-                        prepared_item = self._prepare_staged_download_item(
-                            job,
-                            item,
-                            downloaded_item,
-                            staging_dir,
-                            control_check=raise_for_control_requests,
-                        )
-                        info = prepared_item.metadata
-                        current_video_info = info
-
-                        validated_staged = self._transcode_and_validate_staged_media(
-                            job,
-                            info,
-                            plan,
-                            prepared_item.staged_media,
-                            prepared_item.ffmpeg,
-                            label=label,
-                            progress_callback=partial(
-                                self._put_download_stage_progress,
-                                item,
-                                0.50,
-                                0.40,
-                            ),
-                            control_check=raise_for_control_requests,
-                        )
-
-                        committed_media = self._commit_validated_staged_media(
-                            job,
-                            info,
-                            plan,
-                            staging_dir,
-                            prepared_item.expected_extension,
-                            validated_staged,
-                            label=label,
-                            all_output_dirs=all_output_dirs,
-                            progress_callback=partial(
-                                self._put_download_stage_progress,
-                                item,
-                                0.50,
-                                0.40,
-                            ),
-                            control_check=raise_for_control_requests,
-                        )
-                        info = committed_media.metadata
-                        primary_output = committed_media.primary_output
-                        current_video_info = info
-                        outcome = outcome.combined_with(
-                            DownloadOutcome(success_count=committed_media.success_count)
-                        )
-                        outcome = outcome.combined_with(
-                            self._record_committed_media_and_write_sidecars(
-                                job,
-                                info,
-                                primary_output,
-                                label=label,
-                                custom_cover_for_cache=prepared_item.custom_cover_for_cache,
-                            )
-                        )
-                        self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
-                        result_label = (
-                            "MP3 audio"
-                            if job.output_type == OutputType.MP3
-                            else "MP4 video"
-                        )
-                        self.events.put(
-                            ("status", f"{label} complete — {result_label}")
-                        )
-                        self._emit_job_log(job, f"{label} complete — {result_label}")
-                    finally:
-                        self._active_progress_context = None
-                        staging_root = staging_dir.parent
-                        shutil.rmtree(staging_dir, ignore_errors=True)
-                        try:
-                            staging_root.rmdir()
-                        except OSError:
-                            pass
-                except Exception as exc:
-                    self._active_progress_context = None
-                    if self.cancel_requested:
-                        raise RuntimeError("Download cancelled by user") from exc
-                    if self.skip_url_requested:
-                        issue = "URL skipped by user"
-                    elif self.skip_video_requested:
-                        issue = "Video skipped by user"
-                    else:
-                        issue = format_ytdlp_user_error(exc)
-                    if "cancelled" in issue.lower():
-                        raise
-                    if "url skipped" in issue.lower():
-                        self.skip_url_requested = False
-                        self.skip_video_requested = False
-                        outcome = outcome.combined_with(
-                            DownloadOutcome(skipped_count=1)
-                        )
-                        self._emit_download_item_terminal(
-                            job,
-                            "Skipped",
-                            "URL skipped by user",
-                            current_video_info,
-                            current_plan,
-                            video_url,
-                        )
-                        self._emit_job_log(job, f"{label}: skipped URL by user.")
-                        break
-                    if total_videos <= 1 and "video skipped" not in issue.lower():
-                        raise
-                    if current_video_info is not None:
-                        self.events.put(
-                            job_info_event(
-                                "job_metadata",
-                                job,
-                                build_failed_encoding_summary_metadata(
-                                    current_video_info,
-                                    current_plan,
-                                    issue,
-                                ),
-                            )
-                        )
-                    write_diagnostic(
-                        f"{label} failed but playlist will continue: {type(exc).__name__}: {exc}"
-                    )
-                    if "video skipped" in issue.lower():
-                        outcome = outcome.combined_with(
-                            DownloadOutcome(skipped_count=1)
-                        )
-                        self._emit_download_item_terminal(
-                            job,
-                            "Skipped",
-                            "Video skipped by user",
-                            current_video_info,
-                            current_plan,
-                            video_url,
-                        )
-                        self._emit_job_log(
-                            job, f"{label}: skipped by user; continuing to next video."
-                        )
-                    else:
-                        outcome = outcome.combined_with(
-                            DownloadOutcome(failure_count=1)
-                        )
-                        self._emit_download_item_terminal(
-                            job,
-                            "Failed",
-                            issue,
-                            current_video_info,
-                            current_plan,
-                            video_url,
-                        )
-                        append_batch_failure_report(
-                            BATCH_FAILURE_REPORT_PATH, video_url, issue
-                        )
-                        self._emit_job_log(
-                            job,
-                            f"WARNING: {label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
-                        )
-                    self.skip_video_requested = False
-                    continue
-                finally:
-                    if primary_intent_active:
-                        provider_network.end_primary()
+                item = _DownloadItemContext(
+                    entry=entry,
+                    index=video_index,
+                    total=total_videos,
+                    video_url=_download_entry_url(entry, job.url),
+                    label=f"Video {video_index} of {total_videos}",
+                )
+                result = self._coordinate_download_item(job, source, item, result)
+                if result.stop_source:
+                    break
 
             return self._finish_download_run_outcome(
                 job,
-                outcome,
+                result.outcome,
                 emit_done=emit_done,
             )
-        except Exception as exc:
+        except _DownloadControlRequestError as control_request:
             self._active_progress_context = None
-            if current_video_info is not None:
-                self.events.put(
-                    job_info_event(
-                        "job_metadata",
-                        job,
-                        build_failed_encoding_summary_metadata(
-                            current_video_info,
-                            current_plan,
-                            format_ytdlp_user_error(exc),
-                        ),
-                    )
-                )
-            user_error = format_ytdlp_user_error(exc)
-            write_diagnostic(f"download worker error: {type(exc).__name__}: {exc}")
-            if "cancelled" in user_error.lower() and not re_raise:
-                self.events.put(
-                    (
-                        "stopped",
-                        "Download cancelled. No incomplete output was committed.",
-                    )
-                )
-                return outcome
-            if "url skipped" in user_error.lower() and not re_raise:
-                self.skip_url_requested = False
-                self.skip_video_requested = False
-                self.events.put(
-                    ("stopped", "URL skipped. No incomplete output was committed.")
-                )
-                return outcome
+            if control_request.result is not None:
+                result = control_request.result
+            write_diagnostic(
+                f"download worker control request: {control_request.kind.value}"
+            )
             if re_raise:
                 raise
+            if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
+                self.skip_url_requested = False
+                self.skip_video_requested = False
+            elif control_request.kind is _DownloadControlKind.SKIP_ITEM:
+                self.skip_video_requested = False
             self.events.put(
-                ("error", f"{user_error}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}")
+                _download_source_control_terminal_event(
+                    job,
+                    result,
+                    control_request.kind,
+                )
             )
-            return outcome
+            return result.outcome
+        except Exception as exc:  # noqa: BLE001 - source parent converts provider failures into one terminal outcome
+            result, source_error = _download_source_failure_context(exc, result)
+            return self._finish_download_source_failure(
+                job,
+                result,
+                source_error,
+                re_raise=re_raise,
+            )
 
     def _build_ydl_options(
         self, job: DownloadJob, staging_dir: Path, format_selector: str | None = None
@@ -12241,12 +12477,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         return {"metadata+ffmpeg_o": ["-metadata", f"keywords={','.join(tags)}"]}
 
     def _progress_hook(self, data: dict[str, Any]) -> None:
-        if self.cancel_requested:
-            raise RuntimeError("Download cancelled by user")
-        if self.skip_url_requested:
-            raise RuntimeError("URL skipped by user")
-        if self.skip_video_requested:
-            raise RuntimeError("Video skipped by user")
+        self._raise_for_download_control_requests()
         status = data.get("status")
         if status == "downloading":
             now = time.monotonic()
