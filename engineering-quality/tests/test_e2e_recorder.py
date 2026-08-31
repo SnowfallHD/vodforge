@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from quality_harness import e2e_record
 from quality_harness.e2e_record import record_e2e_event
+from quality_harness.fixtures import LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
 
 TEST_PID = 4312
 TEST_WINDOW_ID = 9876
@@ -24,12 +25,14 @@ def _args(
     window_owner_pid: int = TEST_PID,
     window_id: int = TEST_WINDOW_ID,
     window_title_token: str = TEST_WINDOW_TOKEN,
+    observed_text: str | None = None,
 ) -> argparse.Namespace:
     return argparse.Namespace(
         session=session,
         event=event,
         screenshot=screenshot,
         note="test receipt",
+        observed_text=observed_text,
         allow_gap=allow_gap,
         control_action=None,
         window_pid=window_pid,
@@ -57,6 +60,9 @@ def _write_session(tmp_path: Path) -> tuple[Path, Path]:
                 "control_path": str(control_path),
                 "driver_ready": True,
                 "session_nonce": "0123456789abcdef0123456789abcdef",
+                "library_visibility_expectation": {
+                    "description": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+                },
                 "current_launch": {
                     "verified": True,
                     "session_nonce": "0123456789abcdef0123456789abcdef",
@@ -167,6 +173,41 @@ def test_recorder_copies_hashes_and_enforces_event_order(
         )
         == 0
     )
+
+
+def test_recorder_requires_exact_visible_description_for_library_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_path, trace_path = _write_session(tmp_path)
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    screenshot = tmp_path / "library.png"
+    screenshot.write_bytes(b"visible-library-description")
+
+    with pytest.raises(RuntimeError, match="exact visible fixture description"):
+        record_e2e_event(
+            _args(
+                session_path,
+                "library_description_observed",
+                screenshot=screenshot,
+                allow_gap=True,
+                observed_text="wrong description",
+            )
+        )
+
+    assert (
+        record_e2e_event(
+            _args(
+                session_path,
+                "library_description_observed",
+                screenshot=screenshot,
+                allow_gap=True,
+                observed_text=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+            )
+        )
+        == 0
+    )
+    event = json.loads(trace_path.read_text())["events"][0]
+    assert event["observed_text"] == LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
 
 
 @pytest.mark.parametrize(

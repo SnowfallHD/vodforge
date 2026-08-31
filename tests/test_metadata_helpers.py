@@ -66,6 +66,7 @@ from yt_downloader.app import (
     diagnostics_dir,
     download_bounded_url_bytes,
     download_job_display_title,
+    ellipsize_wrapped_text,
     embed_custom_mp3_cover_art,
     existing_cached_thumbnail_path,
     existing_output_candidate_dirs,
@@ -91,6 +92,7 @@ from yt_downloader.app import (
     legacy_cached_thumbnail_path,
     library_thumbnail_size,
     load_yt_dlp,
+    measured_wrapped_line_count,
     metadata_indices_for_output_type,
     metadata_output_type,
     metadata_run_key,
@@ -123,6 +125,7 @@ from yt_downloader.app import (
     save_cached_thumbnail_image,
     save_custom_cached_thumbnail_image,
     save_thumbnail_image,
+    selected_overview_line_budget,
     single_video_url_requires_video_id_error,
     staging_output_template,
     stretched_table_column_widths,
@@ -763,6 +766,68 @@ def test_focus_library_vertical_layout_protects_description_before_it_can_collap
     assert focus_library_vertical_layout_mode(919) == "balanced"
     assert focus_library_vertical_layout_mode(740) == "balanced"
     assert focus_library_vertical_layout_mode(739) == "compact"
+
+
+def test_selected_overview_reduces_path_lines_before_title_lines():
+    path_only = selected_overview_line_budget(
+        title_lines=3,
+        metadata_lines=1,
+        location_lines=3,
+        available_height=96,
+        title_line_height=20,
+        metadata_line_height=14,
+        location_line_height=14,
+    )
+    assert path_only.location == 1
+    assert path_only.title == 3
+    assert path_only.metadata == 1
+
+    path_then_title = selected_overview_line_budget(
+        title_lines=3,
+        metadata_lines=1,
+        location_lines=3,
+        available_height=76,
+        title_line_height=20,
+        metadata_line_height=14,
+        location_line_height=14,
+    )
+    assert path_then_title.location == 1
+    assert path_then_title.title == 2
+    assert path_then_title.metadata == 1
+
+
+def test_selected_overview_ellipsizes_from_measured_wrapping_not_character_caps():
+    def measure(value: str) -> int:
+        return len(value)
+
+    full = "alpha beta"
+    assert (
+        ellipsize_wrapped_text(
+            full,
+            maximum_width=10,
+            maximum_lines=1,
+            measure_width=measure,
+        )
+        == full
+    )
+
+    extreme = "alpha beta gamma delta epsilon"
+    shortened = ellipsize_wrapped_text(
+        extreme,
+        maximum_width=10,
+        maximum_lines=2,
+        measure_width=measure,
+    )
+    assert shortened.endswith("…")
+    assert shortened != extreme
+    assert (
+        measured_wrapped_line_count(
+            shortened,
+            maximum_width=10,
+            measure_width=measure,
+        )
+        <= 2
+    )
 
 
 def test_table_spare_width_expands_every_eligible_column_and_respects_limits():

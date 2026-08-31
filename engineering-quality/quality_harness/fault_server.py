@@ -11,7 +11,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Self
 
-from .fixtures import UNICODE_TITLE
+from .fixtures import (
+    LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    LIBRARY_DESCRIPTION_STRESS_TITLE,
+    UNICODE_TITLE,
+)
 
 
 class FaultState:
@@ -143,6 +147,7 @@ class FixtureHTTPServer:
                     self._page_response(send_body=send_body)
                     return
                 if route in {
+                    "/page/library-description-stress",
                     "/page/unicode",
                     "/page/normal",
                     "/page/long",
@@ -155,6 +160,9 @@ class FixtureHTTPServer:
                         long=route == "/page/long",
                         multi=route == "/page/multi",
                         interrupt=route == "/fault/interrupt/page",
+                        library_description_stress=(
+                            route == "/page/library-description-stress"
+                        ),
                         send_body=send_body,
                     )
                     return
@@ -206,6 +214,7 @@ class FixtureHTTPServer:
                 long: bool = False,
                 multi: bool = False,
                 interrupt: bool = False,
+                library_description_stress: bool = False,
                 send_body: bool,
             ) -> None:
                 if interrupt:
@@ -218,15 +227,25 @@ class FixtureHTTPServer:
                     media = "/hls/hls-multi/master.m3u8"
                 else:
                     media = "/hls/hls-short/master.m3u8"
+                title = (
+                    LIBRARY_DESCRIPTION_STRESS_TITLE
+                    if library_description_stress
+                    else UNICODE_TITLE
+                )
+                description = (
+                    LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+                    if library_description_stress
+                    else "Synthetic metadata-rich VODForge fixture with a thumbnail and tags."
+                )
                 document = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{html.escape(UNICODE_TITLE)}</title>
-  <meta name="description" content="Synthetic metadata-rich VODForge fixture; safe, local, and deterministic.">
+  <title>{html.escape(title)}</title>
+  <meta name="description" content="{html.escape(description, quote=True)}">
   <meta name="keywords" content="quality, reliability, unicode, punctuation, harness">
-  <meta property="og:title" content="{html.escape(UNICODE_TITLE)}">
-  <meta property="og:description" content="Synthetic metadata-rich VODForge fixture with a thumbnail and tags.">
+  <meta property="og:title" content="{html.escape(title, quote=True)}">
+  <meta property="og:description" content="{html.escape(description, quote=True)}">
   <meta property="og:image" content="{self._origin()}/thumbnail.jpg">
   <meta property="og:video" content="{self._origin()}{media}">
   <meta property="og:video:type" content="application/x-mpegURL">

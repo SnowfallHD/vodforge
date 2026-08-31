@@ -155,6 +155,10 @@ def _parser() -> argparse.ArgumentParser:
     record.add_argument("--event", required=True)
     record.add_argument("--screenshot", type=Path)
     record.add_argument("--note")
+    record.add_argument(
+        "--observed-text",
+        help="Exact visible text for UI events whose contract requires semantic content",
+    )
     record.add_argument("--window-pid", type=int, required=True)
     record.add_argument("--window-owner-pid", type=int, required=True)
     record.add_argument("--window-id", type=int, required=True)

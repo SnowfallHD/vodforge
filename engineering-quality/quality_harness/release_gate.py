@@ -629,6 +629,7 @@ def evaluate_packaged_e2e_receipt(
         "artifact_integrity_verified": "artifact_integrity_verified",
         "process_provenance_verified": "process_provenance_verified",
         "ui_interaction_observed": "ui_interaction_observed",
+        "library_description_visibility_verified": "library_description_visibility_verified",
         "final_output_probed": "final_output_probed",
         "restart_history_persistence_verified": "restart_history_persistence_verified",
         "clean_exit": "clean_exit",
@@ -690,6 +691,7 @@ def evaluate_packaged_e2e_receipt(
         )
     artifact_integrity = packaged_e2e.get("artifact_integrity")
     process_provenance = packaged_e2e.get("process_provenance")
+    library_description_visibility = packaged_e2e.get("library_description_visibility")
     conditions["top_level_artifact_integrity_verified"] = (
         isinstance(artifact_integrity, Mapping)
         and artifact_integrity.get("verified") is True
@@ -697,6 +699,10 @@ def evaluate_packaged_e2e_receipt(
     conditions["top_level_process_provenance_verified"] = (
         isinstance(process_provenance, Mapping)
         and process_provenance.get("verified") is True
+    )
+    conditions["top_level_library_description_visibility_verified"] = (
+        isinstance(library_description_visibility, Mapping)
+        and library_description_visibility.get("verified") is True
     )
     if (
         not isinstance(artifact_integrity, Mapping)
@@ -712,6 +718,13 @@ def evaluate_packaged_e2e_receipt(
         missing.append("process_provenance.verified")
     elif process_provenance.get("verified") is not True:
         failures.append("process_provenance.verified")
+    if (
+        not isinstance(library_description_visibility, Mapping)
+        or "verified" not in library_description_visibility
+    ):
+        missing.append("library_description_visibility.verified")
+    elif library_description_visibility.get("verified") is not True:
+        failures.append("library_description_visibility.verified")
     if failures:
         receipt_status: GateStatus = "failed"
     elif missing:

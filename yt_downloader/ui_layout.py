@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+import unicodedata
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Protocol
 
 from .platform_services import is_macos
@@ -20,6 +22,158 @@ LIBRARY_CENTERING_STEP = 32
 FOCUS_RUN_CARD_WIDTH = 220
 FOCUS_HERO_THUMBNAIL_MIN_WIDTH = 720
 LIBRARY_THUMBNAIL_MAX_WIDTH = 240
+FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT = 360
+FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT = 81
+
+
+@dataclass(frozen=True)
+class SelectedOverviewLineBudget:
+    """Measured display-line limits for the fixed-height Library overview."""
+
+    title: int
+    metadata: int
+    location: int
+
+
+def selected_overview_line_budget(
+    *,
+    title_lines: int,
+    metadata_lines: int,
+    location_lines: int,
+    available_height: int,
+    title_line_height: int,
+    metadata_line_height: int,
+    location_line_height: int,
+    vertical_gap_height: int = 8,
+) -> SelectedOverviewLineBudget:
+    """Fit the overview by reducing location first, then title, then metadata."""
+
+    title = max(1, int(title_lines))
+    metadata = max(1, int(metadata_lines))
+    location = max(1, int(location_lines))
+    available = max(1, int(available_height))
+    title_height = max(1, int(title_line_height))
+    metadata_height = max(1, int(metadata_line_height))
+    location_height = max(1, int(location_line_height))
+    gaps = max(0, int(vertical_gap_height))
+
+    def used_height() -> int:
+        return (
+            title * title_height
+            + metadata * metadata_height
+            + location * location_height
+            + gaps
+        )
+
+    while used_height() > available and location > 1:
+        location -= 1
+    while used_height() > available and title > 1:
+        title -= 1
+    # Provider metadata is normally one or two lines. This final safety bound
+    # cannot affect the required path-before-title priority above, and keeps
+    # hostile creator/ID text inside the already-fixed overview viewport.
+    while used_height() > available and metadata > 1:
+        metadata -= 1
+    return SelectedOverviewLineBudget(
+        title=title,
+        metadata=metadata,
+        location=location,
+    )
+
+
+def measured_wrapped_line_count(
+    text: str,
+    *,
+    maximum_width: int,
+    measure_width: Callable[[str], float],
+) -> int:
+    """Count display lines using the active font's width measurement."""
+
+    width = max(1, int(maximum_width))
+    paragraphs = str(text).splitlines() or [""]
+    line_count = 0
+    for paragraph in paragraphs:
+        remaining = paragraph
+        if not remaining:
+            line_count += 1
+            continue
+        while remaining:
+            if measure_width(remaining) <= width:
+                line_count += 1
+                break
+            low = 1
+            high = len(remaining)
+            fitting = 1
+            while low <= high:
+                midpoint = (low + high) // 2
+                if measure_width(remaining[:midpoint]) <= width:
+                    fitting = midpoint
+                    low = midpoint + 1
+                else:
+                    high = midpoint - 1
+            prefix = remaining[:fitting]
+            whitespace_break = max(
+                (
+                    index
+                    for index, character in enumerate(prefix)
+                    if character.isspace()
+                ),
+                default=-1,
+            )
+            consumed = whitespace_break + 1 if whitespace_break > 0 else fitting
+            remaining = remaining[consumed:].lstrip()
+            line_count += 1
+    return max(1, line_count)
+
+
+def ellipsize_wrapped_text(
+    text: str,
+    *,
+    maximum_width: int,
+    maximum_lines: int,
+    measure_width: Callable[[str], float],
+) -> str:
+    """Ellipsize only when measured wrapping exceeds the allowed line count."""
+
+    value = str(text)
+    lines = max(1, int(maximum_lines))
+    if (
+        measured_wrapped_line_count(
+            value,
+            maximum_width=maximum_width,
+            measure_width=measure_width,
+        )
+        <= lines
+    ):
+        return value
+
+    ellipsis = "…"
+
+    def candidate(prefix_length: int) -> str:
+        prefix = value[:prefix_length].rstrip()
+        while prefix and unicodedata.combining(prefix[-1]):
+            prefix = prefix[:-1]
+        return f"{prefix}{ellipsis}" if prefix else ellipsis
+
+    low = 0
+    high = len(value)
+    best = ellipsis
+    while low <= high:
+        midpoint = (low + high) // 2
+        proposed = candidate(midpoint)
+        if (
+            measured_wrapped_line_count(
+                proposed,
+                maximum_width=maximum_width,
+                measure_width=measure_width,
+            )
+            <= lines
+        ):
+            best = proposed
+            low = midpoint + 1
+        else:
+            high = midpoint - 1
+    return best
 
 
 class _WindowGeometryOwner(Protocol):

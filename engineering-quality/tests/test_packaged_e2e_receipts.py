@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from quality_harness import packaged_e2e
+from quality_harness.fixtures import LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
 from quality_harness.packaged_e2e import (
     SMOKE_UI_EVENT_ORDER,
     _history_persistence_receipt,
+    _library_description_visibility_receipt,
     _persisted_state_snapshot,
     _probe_media,
     _validate_driver_trace,
 )
 from quality_harness.util import CommandResult, sha256_file
+
+from yt_downloader.quality_e2e import QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX
 
 
 def _driver_trace(
@@ -107,6 +112,100 @@ def test_driver_trace_preserves_library_only_evidence_gap(tmp_path: Path) -> Non
     assert receipt["valid"] is False
     assert receipt["structural_valid"] is True
     assert receipt["missing_events"] == ["library_observed"]
+
+
+def test_packaged_library_description_receipt_requires_visible_fixed_height_geometry(
+    tmp_path: Path,
+) -> None:
+    nonce = "0123456789abcdef0123456789abcdef"
+    launch = {
+        "launch_id": "fedcba9876543210fedcba9876543210",
+        "launch_sequence": 1,
+        "pid": 7001,
+        "create_time": 101.5,
+        "executable_sha256": "a" * 64,
+        "bundle_tree_sha256": "b" * 64,
+        "window_token": "VFQ-0123456789ab-L1",
+    }
+    restart = {
+        **launch,
+        "launch_id": "11111111111111111111111111111111",
+        "launch_sequence": 2,
+        "pid": 7002,
+        "create_time": 202.5,
+        "window_token": "VFQ-0123456789ab-L2",
+    }
+    launches = [launch, restart]
+    trace = _driver_trace(
+        tmp_path / "session",
+        session_nonce=nonce,
+        launches=launches,
+    )
+    description_event = next(
+        item
+        for item in trace["events"]
+        if item["event"] == "library_description_observed"
+    )
+    description_event["observed_text"] = LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+    isolated_tmp = tmp_path / "isolated" / "tmp"
+    isolated_tmp.mkdir(parents=True)
+    state_paths = {"tmp": str(isolated_tmp)}
+    receipt_path = isolated_tmp / (
+        f"{QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX}{nonce}-{launch['window_token']}.json"
+    )
+    description_sha256 = hashlib.sha256(
+        LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
+    ).hexdigest()
+    payload = {
+        "session_nonce": nonce,
+        "launch_id": launch["launch_id"],
+        "window_token": launch["window_token"],
+        "pid": launch["pid"],
+        "description_sha256": description_sha256,
+        "details_height_px": 360,
+        "expected_details_height_px": 360,
+        "verified": True,
+        "fixed_height_preserved": True,
+        "description_heading_mapped_and_viewable": True,
+        "description_body_mapped_and_viewable": True,
+        "description_heading_fully_inside_details": True,
+        "description_body_fully_inside_details": True,
+        "description_first_line_visible": True,
+        "path_ellipsized": True,
+        "title_ellipsized": True,
+    }
+    receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+    receipt_path.chmod(0o600)
+
+    receipt = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert receipt["verified"] is True
+    assert receipt["errors"] == []
+
+    for broken_key in (
+        "description_body_fully_inside_details",
+        "description_first_line_visible",
+        "path_ellipsized",
+        "title_ellipsized",
+        "fixed_height_preserved",
+    ):
+        broken = dict(payload)
+        broken[broken_key] = False
+        receipt_path.write_text(json.dumps(broken), encoding="utf-8")
+        rejected = _library_description_visibility_receipt(
+            state_paths=state_paths,
+            driver_trace=trace,
+            launches=launches,
+            session_nonce=nonce,
+            expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+        )
+        assert rejected["verified"] is False
+        assert any(broken_key in error for error in rejected["errors"])
 
 
 def test_driver_trace_rejects_screenshot_outside_session(tmp_path: Path) -> None:

@@ -170,6 +170,7 @@ def _packaged_e2e(candidate: dict[str, Any]) -> dict[str, Any]:
                 "artifact_integrity_verified": True,
                 "process_provenance_verified": True,
                 "ui_interaction_observed": True,
+                "library_description_visibility_verified": True,
                 "final_output_probed": True,
                 "restart_history_persistence_verified": True,
                 "clean_exit": True,
@@ -191,6 +192,7 @@ def _packaged_e2e(candidate: dict[str, Any]) -> dict[str, Any]:
             "bundle_tree_sha256": candidate["artifact"]["bundle_tree"]["sha256"],
             "verified": True,
         },
+        "library_description_visibility": {"verified": True},
         "artifact_integrity": {"verified": True},
         "process_provenance": {"verified": True},
         "findings": [],
@@ -326,6 +328,19 @@ def test_packaged_receipt_requires_independent_pipeline_and_provenance_receipts(
     )
     assert receipt_check["status"] == "failed"
     assert gate_outcome(checks) == "failed"
+
+    packaged = _packaged_e2e(candidate)
+    packaged["library_description_visibility"]["verified"] = False
+    packaged["scenario"]["metrics"]["library_description_visibility_verified"] = False
+    checks = evaluate_packaged_e2e_receipt(packaged)
+    receipt_check = next(
+        item for item in checks if item["id"] == "packaged_e2e.independent_receipts"
+    )
+    assert receipt_check["status"] == "failed"
+    assert (
+        "library_description_visibility.verified"
+        in receipt_check["metrics"]["failures"]
+    )
 
 
 def test_release_receipt_allows_visible_debt_but_blocks_required_gaps() -> None:

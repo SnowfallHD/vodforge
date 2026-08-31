@@ -77,6 +77,23 @@
       "profiles": ["normal", "deep"]
     },
     {
+      "id": "generated-library-description-stress",
+      "url": "fixture://page/library-description-stress",
+      "type": "edge-case",
+      "source_kind": "generated",
+      "license_or_reason_safe": "Generated locally; all media and metadata are synthetic and intentionally constructed for Selected Item layout regression testing.",
+      "expected_behavior": "The fixed-height Selected Item panel keeps the nonempty Description heading and body visible, ellipsizing the output path first and the extreme title second.",
+      "expected_characteristics": {
+        "extreme_title": true,
+        "extreme_output_path": true,
+        "description": true,
+        "selected_item_fixed_height": 360,
+        "path_ellipsized_before_title": true,
+        "packaged_ui_evidence": true
+      },
+      "profiles": ["packaged-e2e"]
+    },
+    {
       "id": "w3c-sintel-test-trailer-mp4",
       "url": "https://media.w3.org/2010/05/sintel/trailer.mp4",
       "type": "video",

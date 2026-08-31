@@ -51,6 +51,20 @@ def test_manifest_separates_content_rights_from_platform_automation() -> None:
         for item in items
         if item.get("source_kind") == "public"
     )
+    description_stress = next(
+        item
+        for item in items
+        if item.get("id") == "generated-library-description-stress"
+    )
+    assert description_stress["url"] == "fixture://page/library-description-stress"
+    assert description_stress["expected_characteristics"] == {
+        "extreme_title": True,
+        "extreme_output_path": True,
+        "description": True,
+        "selected_item_fixed_height": 360,
+        "path_ellipsized_before_title": True,
+        "packaged_ui_evidence": True,
+    }
 
 
 def test_result_schema_names_all_three_non_interchangeable_tiers() -> None:
@@ -261,6 +275,7 @@ def test_packaged_profiles_require_restart_and_deep_queue_cancellation() -> None
         "restart_requested",
         "restart_observed",
         "library_observed",
+        "library_description_observed",
     } <= SMOKE_REQUIRED_UI_EVENTS
     assert {
         "slow_run_started",

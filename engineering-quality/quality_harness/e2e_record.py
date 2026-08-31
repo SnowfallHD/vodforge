@@ -60,6 +60,17 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         raise RuntimeError(
             f"event {args.event!r} is not valid for the {profile!r} E2E profile"
         )
+    if args.event == "library_description_observed":
+        expectation = session.get("library_visibility_expectation")
+        expected_description = (
+            str(expectation.get("description") or "")
+            if isinstance(expectation, dict)
+            else ""
+        )
+        if not expected_description or args.observed_text != expected_description:
+            raise RuntimeError(
+                "library_description_observed requires the exact visible fixture description"
+            )
 
     trace_path = Path(
         str(session.get("driver_events_path") or session_dir / "driver-events.json")
@@ -119,6 +130,7 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         if screenshot_target
         else None,
         "note": args.note or None,
+        "observed_text": args.observed_text or None,
         "recorder": "quality_harness.e2e_record/1",
         "session_nonce": session.get("session_nonce"),
         "launch_id": current_launch.get("launch_id"),

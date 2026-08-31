@@ -13,6 +13,18 @@ UNICODE_TITLE = (
     "a deliberately long title that pressures path budgets without being meaningless"
 )
 
+LIBRARY_DESCRIPTION_STRESS_TITLE = (
+    "Library visibility regression — Δοκιμή_日本語_🚀 — "
+    "an intentionally extreme selected-item title whose wrapped height must never "
+    "displace the Description heading or body; the output path is deliberately long "
+    "and must be ellipsized before this title is shortened — "
+    "final sentinel segment for deterministic packaged UI evidence"
+)
+LIBRARY_DESCRIPTION_STRESS_DESCRIPTION = (
+    "Description visibility sentinel: this nonempty text must remain visible in the "
+    "fixed-height Selected Item panel."
+)
+
 
 def _run(command: list[str], *, timeout: float = 180) -> None:
     completed = subprocess.run(

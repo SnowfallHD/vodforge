@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import plistlib
 import secrets
+import stat
 import subprocess
 import sys
 import time
@@ -15,6 +17,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
+from yt_downloader.quality_e2e import QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX
+
 from .e2e_provenance import (
     attest_owned_launch,
     bundle_tree_receipt,
@@ -23,7 +27,11 @@ from .e2e_provenance import (
     terminate_owned_group,
 )
 from .fault_server import FixtureHTTPServer
-from .fixtures import generate_fixtures
+from .fixtures import (
+    LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    LIBRARY_DESCRIPTION_STRESS_TITLE,
+    generate_fixtures,
+)
 from .metrics import ResourceSampler
 from .util import json_dump, run_command, sha256_file, utc_now
 
@@ -38,20 +46,21 @@ SMOKE_UI_EVENT_ORDER = (
     "progress_observed",
     "completion_observed",
     "library_observed",
+    "library_description_observed",
     "shutdown_requested",
     "restart_requested",
     "restart_observed",
 )
 
 DEEP_UI_EVENT_ORDER = (
-    *SMOKE_UI_EVENT_ORDER[:7],
+    *SMOKE_UI_EVENT_ORDER[:8],
     "slow_run_started",
     "second_run_queued",
     "cancellation_requested",
     "cancellation_observed",
     "queued_run_started",
     "queued_run_completion_observed",
-    *SMOKE_UI_EVENT_ORDER[7:],
+    *SMOKE_UI_EVENT_ORDER[8:],
 )
 
 SMOKE_REQUIRED_UI_EVENTS = set(SMOKE_UI_EVENT_ORDER)
@@ -524,6 +533,7 @@ def _history_persistence_receipt(
     restart_baseline: dict[str, Any] | None,
     *,
     expected_output_type: str,
+    expected_description: str | None = None,
 ) -> dict[str, Any]:
     history_path = (
         home / "Library" / "Application Support" / "VODForge" / "download-history.json"
@@ -591,6 +601,13 @@ def _history_persistence_receipt(
     media_extensions_match = bool(final_by_path) and all(
         Path(path).suffix.lower() == expected_suffix for path in final_by_path
     )
+    description_matches = expected_description is None or (
+        bool(matching_items)
+        and all(
+            str(item.get("description") or "") == expected_description
+            for item in matching_items
+        )
+    )
     verified = (
         len(launches) >= 2
         and bool(restart_launches)
@@ -598,6 +615,7 @@ def _history_persistence_receipt(
         and bool(matching_items)
         and output_type_matches
         and media_extensions_match
+        and description_matches
         and media_stable
         and history_hash_stable
         and loaded_after_restart
@@ -612,12 +630,128 @@ def _history_persistence_receipt(
         "expected_output_type": expected_output_type,
         "output_type_matches": output_type_matches,
         "media_extensions_match": media_extensions_match,
+        "expected_description_sha256": hashlib.sha256(
+            (expected_description or "").encode("utf-8")
+        ).hexdigest()
+        if expected_description is not None
+        else None,
+        "matching_item_description_matches": description_matches,
         "launch_count_at_least_two": len(launches) >= 2,
         "driver_requested_restart_launch_count": len(restart_launches),
         "loaded_after_restart": loaded_after_restart,
         "media_hashes_stable_across_restart": media_stable,
         "history_hash_stable_across_restart": history_hash_stable,
         "pre_restart_snapshot": restart_baseline,
+    }
+
+
+def _library_description_visibility_receipt(
+    *,
+    state_paths: dict[str, str],
+    driver_trace: dict[str, Any],
+    launches: list[dict[str, Any]],
+    session_nonce: str,
+    expected_description: str,
+) -> dict[str, Any]:
+    """Validate the real Tk visibility receipt against UI and launch provenance."""
+
+    events = driver_trace.get("events")
+    events = events if isinstance(events, list) else []
+    event = next(
+        (
+            item
+            for item in events
+            if isinstance(item, dict)
+            and item.get("event") == "library_description_observed"
+        ),
+        None,
+    )
+    errors: list[str] = []
+    if event is None:
+        return {
+            "verified": False,
+            "errors": ["library_description_observed event is missing"],
+            "receipt_path": None,
+        }
+    launch = next(
+        (item for item in launches if item.get("launch_id") == event.get("launch_id")),
+        None,
+    )
+    if launch is None:
+        errors.append("event launch is not one of the attested owned launches")
+        window_token = str(event.get("window_title_token") or "")
+    else:
+        window_token = str(launch.get("window_token") or "")
+    filename = (
+        f"{QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX}{session_nonce}-{window_token}.json"
+    )
+    receipt_path = Path(state_paths["tmp"]) / filename
+    payload: dict[str, Any] = {}
+    if receipt_path.parent.resolve() != Path(state_paths["tmp"]).resolve():
+        errors.append("Library visibility receipt escapes the isolated tmp directory")
+    elif receipt_path.is_symlink() or not receipt_path.is_file():
+        errors.append("Library visibility receipt is missing or not a regular file")
+    else:
+        file_stat = receipt_path.stat(follow_symlinks=False)
+        if os.name != "nt" and stat.S_IMODE(file_stat.st_mode) != 0o600:
+            errors.append("Library visibility receipt permissions are not 0600")
+        try:
+            loaded = json.loads(receipt_path.read_text(encoding="utf-8"))
+            if not isinstance(loaded, dict):
+                raise TypeError("receipt root is not an object")
+            payload = loaded
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            errors.append(
+                f"Library visibility receipt could not be read: {type(exc).__name__}"
+            )
+
+    expected_description_sha256 = hashlib.sha256(
+        expected_description.encode("utf-8")
+    ).hexdigest()
+    expected_values = {
+        "session_nonce": session_nonce,
+        "launch_id": event.get("launch_id"),
+        "window_token": event.get("window_title_token"),
+        "pid": event.get("pid"),
+        "description_sha256": expected_description_sha256,
+        "details_height_px": 360,
+        "expected_details_height_px": 360,
+    }
+    for key, expected in expected_values.items():
+        if payload.get(key) != expected:
+            errors.append(
+                f"Library visibility receipt {key} mismatch: "
+                f"expected={expected!r} observed={payload.get(key)!r}"
+            )
+    required_true = (
+        "verified",
+        "fixed_height_preserved",
+        "description_heading_mapped_and_viewable",
+        "description_body_mapped_and_viewable",
+        "description_heading_fully_inside_details",
+        "description_body_fully_inside_details",
+        "description_first_line_visible",
+        "path_ellipsized",
+        "title_ellipsized",
+    )
+    for key in required_true:
+        if payload.get(key) is not True:
+            errors.append(f"Library visibility receipt {key} is not true")
+    if event.get("observed_text") != expected_description:
+        errors.append("UI event did not record the exact visible fixture description")
+    return {
+        "verified": not errors,
+        "fixture_id": "generated-library-description-stress",
+        "expected_description_sha256": expected_description_sha256,
+        "observed_description_sha256": payload.get("description_sha256"),
+        "event_observed_text_matches": event.get("observed_text")
+        == expected_description,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": sha256_file(receipt_path)
+        if receipt_path.is_file() and not receipt_path.is_symlink()
+        else None,
+        "receipt": payload,
+        "errors": errors,
     }
 
 
@@ -769,6 +903,7 @@ def _launch_and_attest(
         {
             "VODFORGE_QUALITY_E2E_SESSION_NONCE": session_nonce,
             "VODFORGE_QUALITY_E2E_WINDOW_TOKEN": window_token,
+            "VODFORGE_QUALITY_E2E_LAUNCH_ID": launch_id,
         }
     )
     process, stdout_handle, stderr_handle = _launch(
@@ -917,12 +1052,13 @@ def run_packaged_e2e_session(
             "Observe real progress/status from the worker and record progress_observed.",
             "Wait for a truthful completion state and record completion_observed.",
             "Use Command+2 to open Library, observe the completed item, then record library_observed.",
+            "Verify the DESCRIPTION heading and exact fixture description are visibly inside Selected Item, then record library_description_observed.",
             "Request normal app shutdown, set control action to relaunch, and record shutdown_requested plus restart_requested.",
             "Verify the same exact artifact restores history/output after restart and record restart_observed.",
             "Quit normally again and set control action to finish.",
         ]
         if args.profile == "deep":
-            journey[7:7] = [
+            journey[8:8] = [
                 "Start slow_input_url and record slow_run_started once transfer is active.",
                 "Submit input_url while the slow run remains active; observe a real queued card and record second_run_queued.",
                 "Cancel the active run through the visible UI and record cancellation_requested.",
@@ -942,10 +1078,21 @@ def run_packaged_e2e_session(
             "state_paths": state_paths,
             "preexisting_vodforge_processes": preexisting_processes,
             "fixture_manifest": fixture_manifest,
-            "input_url": server.url("/page/unicode"),
+            "input_url": server.url("/page/library-description-stress"),
             "slow_input_url": server.url("/slow/page"),
             "expected_output_root": str(home / "Downloads"),
             "expected_output_type": "MP4",
+            "library_visibility_expectation": {
+                "fixture_id": "generated-library-description-stress",
+                "title": LIBRARY_DESCRIPTION_STRESS_TITLE,
+                "description": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+                "description_sha256": hashlib.sha256(
+                    LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
+                ).hexdigest(),
+                "selected_item_height_px": 360,
+                "path_ellipsized": True,
+                "title_ellipsized": True,
+            },
             "view_shortcuts": {
                 "forge": "Command+1",
                 "library": "Command+2",
@@ -1149,6 +1296,13 @@ def run_packaged_e2e_session(
         session_nonce=session_nonce,
         launches=launches,
     )
+    library_description_visibility = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=events_payload,
+        launches=launches,
+        session_nonce=session_nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
     required_ui_events = _required_ui_events(args.profile)
     missing_events = trace_validation["missing_events"]
     media_paths = sorted((home / "Downloads").rglob("*.mp4")) + sorted(
@@ -1174,6 +1328,7 @@ def run_packaged_e2e_session(
         activity,
         restart_baseline,
         expected_output_type="MP4",
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
     )
     archived_diagnostics = []
     for path in sorted(session_dir.glob("diagnostics-*.log")):
@@ -1247,6 +1402,7 @@ def run_packaged_e2e_session(
         and process_provenance["verified"]
         and not timed_out
         and trace_validation["valid"]
+        and library_description_visibility["verified"]
         and bool(media_probes)
         and all(item.get("readable") for item in media_probes)
         and all(stage_receipts.values())
@@ -1261,6 +1417,7 @@ def run_packaged_e2e_session(
         f"Immutable candidate binding: verified={candidate_binding.get('verified')} candidate_id={candidate_binding.get('candidate_id')} archive_sha256={candidate_binding.get('archive_sha256')}",
         f"Process provenance/isolation verified: {process_provenance['verified']}; launches={len(launches)}; preexisting={len(preexisting_processes)}; survivors={len(surviving_owned_processes)}",
         f"UI driver trace valid: {trace_validation['valid']}; provenance events valid: {not trace_validation['invalid_provenance_events']}; ordered events: {trace_validation['observed_required_order']}; missing: {missing_events}; invalid screenshots: {trace_validation['invalid_screenshot_events']}",
+        f"Library Description visibility: verified={library_description_visibility['verified']}; fixed_height=360; errors={library_description_visibility['errors']}",
         f"Packaged pipeline stage receipts: {stage_receipts}",
         f"Final media count: {len(media_probes)}; all independently readable using bundled ffprobe {receipt['bundled_ffprobe']['sha256']}: {bool(media_probes) and all(item.get('readable') for item in media_probes)}",
         f"Launch/exit receipts: {launches}; clean_exit={clean_exit}",
@@ -1288,6 +1445,9 @@ def run_packaged_e2e_session(
             "preexisting_vodforge_process_count": len(preexisting_processes),
             "surviving_owned_process_count": len(surviving_owned_processes),
             "ui_interaction_observed": trace_validation["valid"],
+            "library_description_visibility_verified": library_description_visibility[
+                "verified"
+            ],
             "missing_ui_events": missing_events,
             "driver_trace_structural_valid": trace_validation["structural_valid"],
             "driver_event_order_valid": trace_validation["order_valid"],
@@ -1316,6 +1476,11 @@ def run_packaged_e2e_session(
             str(driver_events_path),
             str(diagnostic_path),
             str(activity_path),
+            *(
+                [str(library_description_visibility["receipt_path"])]
+                if library_description_visibility.get("receipt_path")
+                else []
+            ),
             *[item["path"] for item in media_probes],
         ],
         "error": "session timed out" if timed_out else None,
@@ -1348,6 +1513,7 @@ def run_packaged_e2e_session(
         "fixture_server_receipt": server_receipt,
         "driver_trace": events_payload,
         "driver_trace_validation": trace_validation,
+        "library_description_visibility": library_description_visibility,
         "launches": launches,
         "media_probes": media_probes,
         "history_persistence": history_persistence,

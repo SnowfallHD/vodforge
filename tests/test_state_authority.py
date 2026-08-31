@@ -302,12 +302,12 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     app.focus_active_duration_var = Value("9:59")
     app.focus_active_profile_var = Value("Forge-owned profile")
     app.status_var = Value("Ready")
-    app.pulled_tags_text = object()
-    app.description_text = object()
+    app.pulled_tags_text = TextBuffer()
+    app.description_text = TextBuffer()
     app.source_summary_text = object()
     app.output_summary_text = object()
     app.focus_summary_text = None
-    app._set_text = lambda *_args, **_kwargs: None
+    app._set_text = lambda widget, value, **_kwargs: setattr(widget, "value", value)
     app._set_encoding_summary_text = lambda *_args, **_kwargs: None
     thumbnail_requests: list[tuple[str, str]] = []
     app._load_thumbnail_preview = lambda url, *, target="both", **_kwargs: (
@@ -324,9 +324,19 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     assert thumbnail_requests == [
         ("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")
     ]
+    assert app.description_text.value == "Library description"
     assert app.selected_title_var.get() == "Library selection"
     assert "MP4 • Library creator" in app.selected_meta_var.get()
     assert app.selected_location_var.get() == "Not downloaded in this history"
+
+    info["description"] = ""
+    thumbnail_requests.clear()
+    app._display_selected_metadata(0)
+
+    assert app.description_text.value == "No description found for this video."
+    assert thumbnail_requests == [
+        ("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")
+    ]
 
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     assert "thumbnail_wrap.pack_propagate(False)" in library_source
@@ -1894,7 +1904,16 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
     library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
 
-    assert "details.configure(width=410, height=360)" in library_source
+    assert app_module.FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT == 360
+    assert (
+        "details.configure(width=410, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)"
+        in library_source
+    )
+    assert (
+        "overview.configure(height=FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT)"
+        in library_source
+    )
+    assert "overview.grid_propagate(False)" in library_source
     assert "details.rowconfigure(3, weight=2, minsize=96)" in library_source
     assert "details.rowconfigure(4, weight=3, minsize=120)" in library_source
     assert "focus_library_vertical_layout_mode(height)" in layout_source

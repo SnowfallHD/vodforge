@@ -11,15 +11,19 @@ import yt_downloader.app as app_module
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_ATTESTATION_PREFIX,
     QUALITY_E2E_ISOLATION_ROOT_ENV,
+    QUALITY_E2E_LAUNCH_ID_ENV,
+    QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
     QUALITY_E2E_MODE_ENV,
     QUALITY_E2E_NONCE_ENV,
     QUALITY_E2E_WINDOW_TOKEN_ENV,
     QualityE2EAttestationError,
+    write_quality_e2e_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
 
 SESSION_NONCE = "0123456789abcdef0123456789abcdef"
 WINDOW_TOKEN = "VFQ-012345abcdef-L1"
+LAUNCH_ID = "fedcba9876543210fedcba9876543210"
 
 
 class _FakeStringValue:
@@ -40,6 +44,53 @@ class _FakeApp:
         if value is not None:
             self._window_title = value
         return self._window_title
+
+
+class _FakeWidget:
+    def __init__(
+        self,
+        *,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        mapped: bool = True,
+        viewable: bool = True,
+    ) -> None:
+        self.bounds = (x, y, width, height)
+        self.mapped = mapped
+        self.viewable = viewable
+
+    def winfo_ismapped(self) -> bool:
+        return self.mapped
+
+    def winfo_viewable(self) -> bool:
+        return self.viewable
+
+    def winfo_rootx(self) -> int:
+        return self.bounds[0]
+
+    def winfo_rooty(self) -> int:
+        return self.bounds[1]
+
+    def winfo_width(self) -> int:
+        return self.bounds[2]
+
+    def winfo_height(self) -> int:
+        return self.bounds[3]
+
+
+class _FakeDescriptionWidget(_FakeWidget):
+    def __init__(self, *, text: str, first_line: tuple[int, ...] | None, **kwargs):
+        super().__init__(**kwargs)
+        self.text = text
+        self.first_line = first_line
+
+    def get(self, _start: str, _end: str) -> str:
+        return self.text
+
+    def dlineinfo(self, _index: str) -> tuple[int, ...] | None:
+        return self.first_line
 
 
 def _isolated_launch(
@@ -66,6 +117,7 @@ def _isolated_launch(
         QUALITY_E2E_MODE_ENV: "1",
         QUALITY_E2E_NONCE_ENV: SESSION_NONCE,
         QUALITY_E2E_WINDOW_TOKEN_ENV: WINDOW_TOKEN,
+        QUALITY_E2E_LAUNCH_ID_ENV: LAUNCH_ID,
         QUALITY_E2E_ISOLATION_ROOT_ENV: str(isolation_root),
         "HOME": str(home),
         "XDG_DATA_HOME": str(home / ".local" / "share"),
@@ -143,6 +195,86 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
     }
     if os.name != "nt":
         assert stat.S_IMODE(expected.stat().st_mode) == 0o600
+
+
+def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
+    tmp_path: Path,
+) -> None:
+    environment, _app, _home, _application_data, _diagnostics = _isolated_launch(
+        tmp_path
+    )
+    description_text = "This packaged Description must remain visibly reachable."
+
+    result = write_quality_e2e_library_visibility_receipt(
+        details=_FakeWidget(x=100, y=100, width=410, height=360),
+        description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
+        description=_FakeDescriptionWidget(
+            x=110,
+            y=307,
+            width=385,
+            height=120,
+            text=description_text,
+            first_line=(9, 7, 250, 16, 12),
+        ),
+        full_title="An intentionally extreme title " * 8,
+        displayed_title="An intentionally extreme title…",
+        full_location="Saved in /an/intentionally/extreme/output/path/" * 5,
+        displayed_location="Saved in /an/intentionally/extreme…",
+        expected_details_height=360,
+        environ=environment,
+        pid=4321,
+        recorded_at="2026-08-31T06:00:00Z",
+    )
+
+    expected = Path(environment["TMPDIR"]) / (
+        f"{QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX}{SESSION_NONCE}-{WINDOW_TOKEN}.json"
+    )
+    assert result == expected
+    payload = json.loads(expected.read_text(encoding="utf-8"))
+    assert payload["verified"] is True
+    assert payload["fixed_height_preserved"] is True
+    assert payload["description_heading_fully_inside_details"] is True
+    assert payload["description_body_fully_inside_details"] is True
+    assert payload["description_first_line_visible"] is True
+    assert payload["path_ellipsized"] is True
+    assert payload["title_ellipsized"] is True
+    assert payload["launch_id"] == LAUNCH_ID
+    assert payload["pid"] == 4321
+    if os.name != "nt":
+        assert stat.S_IMODE(expected.stat().st_mode) == 0o600
+
+
+def test_quality_e2e_library_visibility_marks_clipped_description_unverified(
+    tmp_path: Path,
+) -> None:
+    environment, _app, _home, _application_data, _diagnostics = _isolated_launch(
+        tmp_path
+    )
+
+    result = write_quality_e2e_library_visibility_receipt(
+        details=_FakeWidget(x=100, y=100, width=410, height=360),
+        description_heading=_FakeWidget(x=110, y=445, width=130, height=18),
+        description=_FakeDescriptionWidget(
+            x=110,
+            y=467,
+            width=385,
+            height=120,
+            text="Persisted but clipped",
+            first_line=(9, 7, 180, 16, 12),
+        ),
+        full_title="Long title " * 20,
+        displayed_title="Long title…",
+        full_location="Saved in /long/path/" * 20,
+        displayed_location="Saved in /long/path…",
+        expected_details_height=360,
+        environ=environment,
+    )
+
+    assert result is not None
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    assert payload["verified"] is False
+    assert payload["description_heading_fully_inside_details"] is False
+    assert payload["description_body_fully_inside_details"] is False
 
 
 @pytest.mark.parametrize(

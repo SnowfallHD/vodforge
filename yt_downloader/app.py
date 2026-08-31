@@ -28,6 +28,7 @@ from enum import Enum
 from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 from typing import Any
 
 from . import export_planning as _export_planning
@@ -129,6 +130,8 @@ from .platform_services import (
 from .private_files import open_private_text_file, write_private_bytes
 from .quality_e2e import (
     QualityE2EAttestationError,
+    quality_e2e_mode_enabled,
+    write_quality_e2e_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
 from .safe_output import (
@@ -147,8 +150,11 @@ from .ui_events import (
     thumbnail_preview_event,
 )
 from .ui_layout import (
+    FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
+    FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT,
     bounded_window_size,
     centered_toplevel_geometry,
+    ellipsize_wrapped_text,
     focus_hero_thumbnail_visible,
     focus_layout_mode,
     focus_library_horizontal_padding,
@@ -157,7 +163,9 @@ from .ui_layout import (
     focus_run_deck_capacity,
     initial_window_geometry,
     library_thumbnail_size,
+    measured_wrapped_line_count,
     rounded_canvas_rectangle_points,
+    selected_overview_line_budget,
     thumbnail_size_within,
     youtube_thumbnail_size,
 )
@@ -6107,7 +6115,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         # Keep the inspection rail authoritative instead of letting wrapped
         # child requests feed back into Grid and progressively starve the
         # table after repeated resize cycles.
-        details.configure(width=410, height=360)
+        details.configure(width=410, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)
         details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
         details.rowconfigure(3, weight=2, minsize=96)
@@ -6117,15 +6125,25 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.selected_meta_var = tk.StringVar(value="")
         self.selected_location_var = tk.StringVar(value="")
+        self.selected_title_display_var = tk.StringVar(
+            value=self.selected_title_var.get()
+        )
+        self.selected_meta_display_var = tk.StringVar(value="")
+        self.selected_location_display_var = tk.StringVar(value="")
         ttk.Label(details, text="SELECTED ITEM", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 6)
         )
         overview = ttk.Frame(details, style="FocusShell.TFrame")
+        overview.configure(height=FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT)
+        overview.grid_propagate(False)
         overview.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         overview.columnconfigure(0, weight=1)
+        self.focus_selected_overview = overview
+        self._focus_selected_overview_layout_after_id: str | None = None
+        self._focus_selected_text_width = 220
         self.focus_selected_title_label = ttk.Label(
             overview,
-            textvariable=self.selected_title_var,
+            textvariable=self.selected_title_display_var,
             wraplength=220,
             justify="left",
             style="FocusActiveTitle.TLabel",
@@ -6135,7 +6153,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.focus_selected_meta_label = ttk.Label(
             overview,
-            textvariable=self.selected_meta_var,
+            textvariable=self.selected_meta_display_var,
             wraplength=220,
             justify="left",
             style="Muted.TLabel",
@@ -6145,7 +6163,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.focus_selected_location_label = ttk.Label(
             overview,
-            textvariable=self.selected_location_var,
+            textvariable=self.selected_location_display_var,
             wraplength=220,
             justify="left",
             style="FocusProfile.TLabel",
@@ -6196,6 +6214,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.focus_selected_title_label.configure(wraplength=text_width)
             self.focus_selected_meta_label.configure(wraplength=text_width)
             self.focus_selected_location_label.configure(wraplength=text_width)
+            self._focus_selected_text_width = text_width
+            self._queue_focus_selected_overview_layout()
 
         details.bind("<Configure>", layout_selected_overview, add="+")
 
@@ -6230,9 +6250,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         description_line.grid(row=4, column=0, sticky="nsew")
         description_line.columnconfigure(0, weight=1)
         description_line.rowconfigure(1, weight=1)
-        ttk.Label(
+        self.focus_description_heading_label = ttk.Label(
             description_line, text="DESCRIPTION", style="FocusEyebrow.TLabel"
-        ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        )
+        self.focus_description_heading_label.grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
         self.description_text = tk.Text(
             description_line,
             height=5,
@@ -6309,7 +6332,137 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.output_summary_text,
         ):
             bind_smooth_vertical_wheel(text_widget, mode="pixels")
-        self.focus_library_summary = summary
+
+    def _focus_selected_label_font(self, label: ttk.Label) -> tkfont.Font:
+        style_name = str(label.cget("style") or "TLabel")
+        font_spec = ttk.Style(self).lookup(style_name, "font") or FONT_UI
+        return tkfont.Font(root=self, font=font_spec)
+
+    def _queue_focus_selected_overview_layout(self) -> None:
+        if "selected_title_display_var" not in self.__dict__:
+            return
+        if self.__dict__.get("_focus_selected_overview_layout_after_id") is not None:
+            return
+
+        def apply_layout() -> None:
+            self._focus_selected_overview_layout_after_id = None
+            self._fit_focus_selected_overview_text()
+
+        try:
+            self._focus_selected_overview_layout_after_id = self.after_idle(
+                apply_layout
+            )
+        except (AttributeError, tk.TclError):
+            apply_layout()
+
+    def _fit_focus_selected_overview_text(self) -> None:
+        """Bound selected-item text without letting it displace Description."""
+
+        required = (
+            "focus_selected_title_label",
+            "focus_selected_meta_label",
+            "focus_selected_location_label",
+            "selected_title_display_var",
+            "selected_meta_display_var",
+            "selected_location_display_var",
+        )
+        if any(name not in self.__dict__ for name in required):
+            return
+        text_width = max(1, int(self.__dict__.get("_focus_selected_text_width", 220)))
+        title = self.selected_title_var.get()
+        metadata = self.selected_meta_var.get()
+        location = self.selected_location_var.get()
+        title_font = self._focus_selected_label_font(self.focus_selected_title_label)
+        metadata_font = self._focus_selected_label_font(self.focus_selected_meta_label)
+        location_font = self._focus_selected_label_font(
+            self.focus_selected_location_label
+        )
+        title_lines = measured_wrapped_line_count(
+            title,
+            maximum_width=text_width,
+            measure_width=title_font.measure,
+        )
+        metadata_lines = measured_wrapped_line_count(
+            metadata,
+            maximum_width=text_width,
+            measure_width=metadata_font.measure,
+        )
+        location_lines = measured_wrapped_line_count(
+            location,
+            maximum_width=text_width,
+            measure_width=location_font.measure,
+        )
+        line_budget = selected_overview_line_budget(
+            title_lines=title_lines,
+            metadata_lines=metadata_lines,
+            location_lines=location_lines,
+            available_height=FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT,
+            title_line_height=title_font.metrics("linespace"),
+            metadata_line_height=metadata_font.metrics("linespace"),
+            location_line_height=location_font.metrics("linespace"),
+        )
+        self.selected_location_display_var.set(
+            ellipsize_wrapped_text(
+                location,
+                maximum_width=text_width,
+                maximum_lines=line_budget.location,
+                measure_width=location_font.measure,
+            )
+        )
+        self.selected_title_display_var.set(
+            ellipsize_wrapped_text(
+                title,
+                maximum_width=text_width,
+                maximum_lines=line_budget.title,
+                measure_width=title_font.measure,
+            )
+        )
+        self.selected_meta_display_var.set(
+            ellipsize_wrapped_text(
+                metadata,
+                maximum_width=text_width,
+                maximum_lines=line_budget.metadata,
+                measure_width=metadata_font.measure,
+            )
+        )
+
+    def _queue_quality_e2e_library_visibility_receipt(self) -> None:
+        if not quality_e2e_mode_enabled():
+            return
+        if self.__dict__.get("_quality_e2e_library_visibility_receipt_path"):
+            return
+        if self.__dict__.get("_quality_e2e_library_visibility_receipt_scheduled"):
+            return
+        self._quality_e2e_library_visibility_receipt_scheduled = True
+
+        def record_visibility() -> None:
+            self._quality_e2e_library_visibility_receipt_scheduled = False
+            self._fit_focus_selected_overview_text()
+            try:
+                self.update_idletasks()
+                receipt_path = write_quality_e2e_library_visibility_receipt(
+                    details=self.focus_library_details,
+                    description_heading=self.focus_description_heading_label,
+                    description=self.description_text,
+                    full_title=self.selected_title_var.get(),
+                    displayed_title=self.selected_title_display_var.get(),
+                    full_location=self.selected_location_var.get(),
+                    displayed_location=self.selected_location_display_var.get(),
+                    expected_details_height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
+                )
+            except (AttributeError, QualityE2EAttestationError, tk.TclError) as exc:
+                write_diagnostic(
+                    "quality-E2E Library visibility receipt failed "
+                    f"({type(exc).__name__})"
+                )
+                return
+            if receipt_path is not None:
+                self._quality_e2e_library_visibility_receipt_path = str(receipt_path)
+
+        try:
+            self.after_idle(record_visibility)
+        except (AttributeError, tk.TclError):
+            record_visibility()
 
     def _build_focus_activity_view(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -6384,6 +6537,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if underline is not None:
                 underline.configure(bg=THEME["accent"] if active else THEME["bg"])
         self._focus_selected_view = name
+        if name == "library":
+            self._queue_focus_selected_overview_layout()
+            self._queue_quality_e2e_library_visibility_receipt()
         if name == "activity":
             activity_log = self.__dict__.get("log")
             if activity_log is not None:
@@ -9708,6 +9864,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.selected_meta_var.set("")
         if hasattr(self, "selected_location_var"):
             self.selected_location_var.set("")
+        self._queue_focus_selected_overview_layout()
         self.last_thumbnail_url = None
         self._set_text(self.pulled_tags_text, f"No {output_type} item selected.")
         self._set_text(
@@ -10015,6 +10172,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.selected_title_var.set(title)
             self.selected_meta_var.set(metadata_text)
             self.selected_location_var.set(location_text)
+            self._queue_focus_selected_overview_layout()
         else:
             self.selected_title_var.set(f"{title}\n{metadata_text}\n{location_text}")
         tags_text = build_tags_display_text(info)

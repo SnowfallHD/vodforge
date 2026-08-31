@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -14,9 +15,11 @@ QUALITY_E2E_MODE_ENV = "VODFORGE_QUALITY_E2E"
 QUALITY_E2E_NONCE_ENV = "VODFORGE_QUALITY_E2E_SESSION_NONCE"
 # This is the name of a visible window-identity environment field, not a credential.
 QUALITY_E2E_WINDOW_TOKEN_ENV = "VODFORGE_QUALITY_E2E_WINDOW_TOKEN"  # nosec B105
+QUALITY_E2E_LAUNCH_ID_ENV = "VODFORGE_QUALITY_E2E_LAUNCH_ID"
 QUALITY_E2E_ISOLATION_ROOT_ENV = "VODFORGE_QUALITY_E2E_ISOLATION_ROOT"
 QUALITY_E2E_SCHEMA_VERSION = "1.0.0"
 QUALITY_E2E_ATTESTATION_PREFIX = "vodforge-e2e-attestation-"
+QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX = "vodforge-e2e-library-visibility-"
 
 _NONCE_RE = re.compile(r"[0-9a-f]{32}")
 _WINDOW_TOKEN_RE = re.compile(r"[A-Za-z0-9._-]{8,64}")
@@ -42,6 +45,26 @@ class QualityE2EApp(Protocol):
 
     @overload
     def title(self, value: str) -> None: ...
+
+
+class _GeometryWidget(Protocol):
+    def winfo_ismapped(self) -> bool: ...
+
+    def winfo_viewable(self) -> bool: ...
+
+    def winfo_rootx(self) -> int: ...
+
+    def winfo_rooty(self) -> int: ...
+
+    def winfo_width(self) -> int: ...
+
+    def winfo_height(self) -> int: ...
+
+
+class _DescriptionWidget(_GeometryWidget, Protocol):
+    def get(self, start: str, end: str) -> str: ...
+
+    def dlineinfo(self, index: str) -> tuple[int, ...] | None: ...
 
 
 def quality_e2e_mode_enabled(environ: Mapping[str, str] | None = None) -> bool:
@@ -158,6 +181,141 @@ def _write_exclusive_private_json(path: Path, payload: dict[str, object]) -> Non
         raise QualityE2EAttestationError(
             "quality-E2E attestation is not a private regular file"
         )
+
+
+def _widget_bounds(widget: _GeometryWidget) -> dict[str, int]:
+    return {
+        "x": int(widget.winfo_rootx()),
+        "y": int(widget.winfo_rooty()),
+        "width": int(widget.winfo_width()),
+        "height": int(widget.winfo_height()),
+    }
+
+
+def _bounds_inside(child: Mapping[str, int], parent: Mapping[str, int]) -> bool:
+    return (
+        child["x"] >= parent["x"]
+        and child["y"] >= parent["y"]
+        and child["x"] + child["width"] <= parent["x"] + parent["width"]
+        and child["y"] + child["height"] <= parent["y"] + parent["height"]
+    )
+
+
+def write_quality_e2e_library_visibility_receipt(
+    *,
+    details: _GeometryWidget,
+    description_heading: _GeometryWidget,
+    description: _DescriptionWidget,
+    full_title: str,
+    displayed_title: str,
+    full_location: str,
+    displayed_location: str,
+    expected_details_height: int,
+    environ: Mapping[str, str] | None = None,
+    pid: int | None = None,
+    recorded_at: str | None = None,
+) -> Path | None:
+    """Receipt real Tk visibility without changing ordinary application behavior."""
+
+    environment = os.environ if environ is None else environ
+    if not quality_e2e_mode_enabled(environment):
+        return None
+    nonce = _required_environment_value(environment, QUALITY_E2E_NONCE_ENV)
+    if _NONCE_RE.fullmatch(nonce) is None:
+        raise QualityE2EAttestationError("quality-E2E session nonce is invalid")
+    window_token = _required_environment_value(
+        environment, QUALITY_E2E_WINDOW_TOKEN_ENV
+    )
+    if _WINDOW_TOKEN_RE.fullmatch(window_token) is None:
+        raise QualityE2EAttestationError("quality-E2E window token is invalid")
+    launch_id = _required_environment_value(environment, QUALITY_E2E_LAUNCH_ID_ENV)
+    if _NONCE_RE.fullmatch(launch_id) is None:
+        raise QualityE2EAttestationError("quality-E2E launch ID is invalid")
+    isolation_root = _existing_directory_without_symlinks(
+        _required_environment_value(environment, QUALITY_E2E_ISOLATION_ROOT_ENV),
+        label="quality-E2E isolation root",
+    )
+    tmp_path = _existing_directory_without_symlinks(
+        _required_environment_value(environment, "TMPDIR"),
+        label="quality-E2E temporary directory",
+    )
+    if tmp_path != isolation_root / "tmp":
+        raise QualityE2EAttestationError(
+            "quality-E2E temporary directory does not belong to the isolation root"
+        )
+
+    details_bounds = _widget_bounds(details)
+    heading_bounds = _widget_bounds(description_heading)
+    description_bounds = _widget_bounds(description)
+    first_line = description.dlineinfo("1.0")
+    first_line_visible = bool(
+        first_line is not None
+        and len(first_line) >= 4
+        and int(first_line[1]) >= 0
+        and int(first_line[1]) + int(first_line[3]) <= description_bounds["height"]
+    )
+    description_text = description.get("1.0", "end-1c")
+    heading_fully_inside = _bounds_inside(heading_bounds, details_bounds)
+    body_fully_inside = _bounds_inside(description_bounds, details_bounds)
+    heading_visible = bool(
+        description_heading.winfo_ismapped() and description_heading.winfo_viewable()
+    )
+    body_visible = bool(description.winfo_ismapped() and description.winfo_viewable())
+    path_ellipsized = bool(
+        full_location
+        and displayed_location != full_location
+        and displayed_location.endswith("…")
+    )
+    title_ellipsized = bool(
+        full_title and displayed_title != full_title and displayed_title.endswith("…")
+    )
+    fixed_height_preserved = details_bounds["height"] == int(expected_details_height)
+    verified = bool(
+        description_text.strip()
+        and heading_visible
+        and body_visible
+        and heading_fully_inside
+        and body_fully_inside
+        and first_line_visible
+        and path_ellipsized
+        and title_ellipsized
+        and fixed_height_preserved
+    )
+    payload: dict[str, object] = {
+        "schema_version": QUALITY_E2E_SCHEMA_VERSION,
+        "session_nonce": nonce,
+        "launch_id": launch_id,
+        "window_token": window_token,
+        "pid": os.getpid() if pid is None else int(pid),
+        "details_bounds": details_bounds,
+        "description_heading_bounds": heading_bounds,
+        "description_bounds": description_bounds,
+        "details_height_px": details_bounds["height"],
+        "expected_details_height_px": int(expected_details_height),
+        "fixed_height_preserved": fixed_height_preserved,
+        "description_heading_mapped_and_viewable": heading_visible,
+        "description_body_mapped_and_viewable": body_visible,
+        "description_heading_fully_inside_details": heading_fully_inside,
+        "description_body_fully_inside_details": body_fully_inside,
+        "description_first_line_visible": first_line_visible,
+        "description_sha256": hashlib.sha256(
+            description_text.encode("utf-8")
+        ).hexdigest(),
+        "description_length": len(description_text),
+        "path_ellipsized": path_ellipsized,
+        "title_ellipsized": title_ellipsized,
+        "verified": verified,
+        "recorded_at": recorded_at
+        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    filename = f"{QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX}{nonce}-{window_token}.json"
+    receipt_path = tmp_path / filename
+    if receipt_path.parent != tmp_path or receipt_path.name != filename:
+        raise QualityE2EAttestationError(
+            "quality-E2E Library visibility receipt path is invalid"
+        )
+    _write_exclusive_private_json(receipt_path, payload)
+    return receipt_path
 
 
 def write_quality_e2e_startup_attestation(
