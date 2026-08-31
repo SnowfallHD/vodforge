@@ -17,7 +17,10 @@ from quality_harness.packaged_e2e import (
 )
 from quality_harness.util import CommandResult, sha256_file
 
-from yt_downloader.quality_e2e import QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX
+from yt_downloader.quality_e2e import (
+    QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
+    QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
+)
 
 
 def _driver_trace(
@@ -166,12 +169,29 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         "details_allocated_height_px": 390,
         "details_configured_height_px": 360,
         "expected_details_height_px": 360,
+        "description_bounds": {"x": 110, "y": 307, "width": 385, "height": 120},
+        "library_table_bounds": {"x": 100, "y": 180, "width": 900, "height": 247},
+        "tags_body_bounds": {"x": 110, "y": 205, "width": 385, "height": 72},
+        "description_bottom_px": 427,
+        "library_table_bottom_px": 427,
+        "description_table_bottom_delta_px": 0,
+        "description_table_bottom_tolerance_px": (
+            QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+        ),
         "verified": True,
         "fixed_height_preserved": True,
         "description_heading_mapped_and_viewable": True,
         "description_body_mapped_and_viewable": True,
+        "library_table_mapped_and_viewable": True,
+        "tags_body_mapped_and_viewable": True,
         "description_heading_fully_inside_details": True,
+        "tags_body_fully_inside_details": True,
         "description_body_fully_inside_details": True,
+        "description_bottom_aligned_with_library_table": True,
+        "description_body_height_px": 120,
+        "tags_body_height_px": 72,
+        "description_tags_height_delta_px": 48,
+        "description_body_larger_than_tags_body": True,
         "description_first_line_visible": True,
         "path_ellipsized": True,
         "title_ellipsized": True,
@@ -191,6 +211,10 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
 
     for broken_key in (
         "description_body_fully_inside_details",
+        "library_table_mapped_and_viewable",
+        "tags_body_mapped_and_viewable",
+        "description_bottom_aligned_with_library_table",
+        "description_body_larger_than_tags_body",
         "description_first_line_visible",
         "path_ellipsized",
         "title_ellipsized",
@@ -208,6 +232,80 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         )
         assert rejected["verified"] is False
         assert any(broken_key in error for error in rejected["errors"])
+
+    forged_alignment = dict(payload)
+    forged_alignment["description_bounds"] = {
+        "x": 110,
+        "y": 307,
+        "width": 385,
+        "height": 110,
+    }
+    receipt_path.write_text(json.dumps(forged_alignment), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any("not aligned" in error for error in rejected["errors"])
+    assert any(
+        "description_bottom_px mismatch" in error for error in rejected["errors"]
+    )
+
+    altered_tolerance = dict(payload)
+    altered_tolerance["description_table_bottom_tolerance_px"] = (
+        QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX + 1
+    )
+    receipt_path.write_text(json.dumps(altered_tolerance), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any(
+        "description_table_bottom_tolerance_px mismatch" in error
+        for error in rejected["errors"]
+    )
+
+    equal_tag_height = dict(payload)
+    equal_tag_height["tags_body_bounds"] = {
+        "x": 110,
+        "y": 195,
+        "width": 385,
+        "height": 120,
+    }
+    receipt_path.write_text(json.dumps(equal_tag_height), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any("not larger than" in error for error in rejected["errors"])
+    assert any(
+        "description_tags_height_delta_px mismatch" in error
+        for error in rejected["errors"]
+    )
+
+    missing_tags_bounds = dict(payload)
+    missing_tags_bounds.pop("tags_body_bounds")
+    receipt_path.write_text(json.dumps(missing_tags_bounds), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any("tags_body_bounds is invalid" in error for error in rejected["errors"])
 
 
 def test_driver_trace_rejects_screenshot_outside_session(tmp_path: Path) -> None:

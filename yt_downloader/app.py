@@ -165,6 +165,7 @@ from .ui_layout import (
     library_thumbnail_size,
     measured_wrapped_line_count,
     rounded_canvas_rectangle_points,
+    selected_description_max_height,
     selected_overview_line_budget,
     thumbnail_size_within,
     youtube_thumbnail_size,
@@ -6216,6 +6217,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.focus_selected_location_label.configure(wraplength=text_width)
             self._focus_selected_text_width = text_width
             self._queue_focus_selected_overview_layout()
+            self._queue_focus_description_layout()
 
         details.bind("<Configure>", layout_selected_overview, add="+")
 
@@ -6278,6 +6280,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.description_text.grid(row=1, column=0, sticky="nsew")
         description_scroll.grid(row=1, column=1, sticky="ns", padx=(5, 0))
         self.focus_library_details = details
+        self.focus_description_line = description_line
+        self._focus_description_layout_after_id: str | None = None
+        self._focus_description_bottom_inset: int | None = None
+        for layout_owner in (queue_panel, video_tree):
+            layout_owner.bind(
+                "<Configure>",
+                lambda _event: self._queue_focus_description_layout(),
+                add="+",
+            )
+        self._queue_focus_description_layout()
 
         summary = ttk.Frame(parent, style="FocusShell.TFrame")
         summary.grid(row=2, column=0, sticky="nsew", padx=18, pady=(0, 10))
@@ -6354,6 +6366,77 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
         except (AttributeError, tk.TclError):
             apply_layout()
+
+    def _queue_focus_description_layout(self) -> None:
+        """Coalesce the measured Description-to-table alignment pass."""
+
+        required = (
+            "focus_description_line",
+            "focus_library_details",
+            "video_tree",
+        )
+        if any(name not in self.__dict__ for name in required):
+            return
+        if self.__dict__.get("_focus_description_layout_after_id") is not None:
+            return
+
+        def apply_layout() -> None:
+            self._focus_description_layout_after_id = None
+            self._fit_focus_description_to_library_table()
+
+        try:
+            self._focus_description_layout_after_id = self.after_idle(apply_layout)
+        except (AttributeError, tk.TclError):
+            apply_layout()
+
+    def _fit_focus_description_to_library_table(self) -> None:
+        """Cap Description at the measured lower edge of the Library table."""
+
+        required = (
+            "focus_description_line",
+            "focus_library_details",
+            "video_tree",
+        )
+        if any(name not in self.__dict__ for name in required):
+            return
+        description_line = self.focus_description_line
+        details = self.focus_library_details
+        library_table = self.video_tree
+        try:
+            if not (
+                description_line.winfo_ismapped()
+                and details.winfo_ismapped()
+                and library_table.winfo_ismapped()
+            ):
+                return
+            if (
+                min(
+                    description_line.winfo_height(),
+                    details.winfo_height(),
+                    library_table.winfo_height(),
+                )
+                <= 1
+            ):
+                return
+            description_top = description_line.winfo_rooty()
+            details_bottom = details.winfo_rooty() + details.winfo_height()
+            library_table_bottom = (
+                library_table.winfo_rooty() + library_table.winfo_height()
+            )
+        except tk.TclError:
+            return
+        available_height = max(0, details_bottom - description_top)
+        maximum_height = selected_description_max_height(
+            description_top=description_top,
+            library_table_bottom=library_table_bottom,
+        )
+        if maximum_height <= 1:
+            return
+        bottom_inset = max(0, available_height - maximum_height)
+        if self.__dict__.get("_focus_description_bottom_inset") == bottom_inset:
+            return
+        description_line.grid_configure(pady=(0, bottom_inset))
+        self._focus_description_bottom_inset = bottom_inset
 
     def _fit_focus_selected_overview_text(self) -> None:
         """Bound selected-item text without letting it displace Description."""
@@ -6440,8 +6523,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._fit_focus_selected_overview_text()
             try:
                 self.update_idletasks()
+                self._fit_focus_description_to_library_table()
+                self.update_idletasks()
                 receipt_path = write_quality_e2e_library_visibility_receipt(
                     details=self.focus_library_details,
+                    library_table=self.video_tree,
+                    tags_body=self.pulled_tags_text,
                     description_heading=self.focus_description_heading_label,
                     description=self.description_text,
                     full_title=self.selected_title_var.get(),
@@ -8782,6 +8869,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 video_tree.layout_column(
                     "title", width=360, minwidth=220, stretch=True, stretchmax=560
                 )
+        self._queue_focus_description_layout()
 
     def _check_runtime(self) -> None:
         if _YTDLP_IMPORT_ATTEMPTED and YTDLP_IMPORT_ERROR is not None:

@@ -17,7 +17,10 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
 
-from yt_downloader.quality_e2e import QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX
+from yt_downloader.quality_e2e import (
+    QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
+    QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
+)
 
 from .e2e_provenance import (
     attest_owned_launch,
@@ -716,6 +719,9 @@ def _library_description_visibility_receipt(
         "description_sha256": expected_description_sha256,
         "details_configured_height_px": 360,
         "expected_details_height_px": 360,
+        "description_table_bottom_tolerance_px": (
+            QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+        ),
     }
     for key, expected in expected_values.items():
         if payload.get(key) != expected:
@@ -728,8 +734,13 @@ def _library_description_visibility_receipt(
         "fixed_height_preserved",
         "description_heading_mapped_and_viewable",
         "description_body_mapped_and_viewable",
+        "library_table_mapped_and_viewable",
+        "tags_body_mapped_and_viewable",
         "description_heading_fully_inside_details",
+        "tags_body_fully_inside_details",
         "description_body_fully_inside_details",
+        "description_bottom_aligned_with_library_table",
+        "description_body_larger_than_tags_body",
         "description_first_line_visible",
         "path_ellipsized",
         "title_ellipsized",
@@ -737,6 +748,64 @@ def _library_description_visibility_receipt(
     for key in required_true:
         if payload.get(key) is not True:
             errors.append(f"Library visibility receipt {key} is not true")
+
+    geometry: dict[str, int] = {}
+    for bounds_name in (
+        "description_bounds",
+        "library_table_bounds",
+        "tags_body_bounds",
+    ):
+        bounds = payload.get(bounds_name)
+        if not isinstance(bounds, dict):
+            errors.append(f"Library visibility receipt {bounds_name} is invalid")
+            continue
+        for coordinate in ("x", "y", "width", "height"):
+            value = bounds.get(coordinate)
+            field_name = f"{bounds_name}.{coordinate}"
+            if isinstance(value, bool) or not isinstance(value, int):
+                errors.append(f"Library visibility receipt {field_name} is invalid")
+                continue
+            if coordinate in {"width", "height"} and value <= 0:
+                errors.append(f"Library visibility receipt {field_name} is invalid")
+                continue
+            geometry[field_name] = value
+    if len(geometry) == 12:
+        observed_description_bottom = (
+            geometry["description_bounds.y"] + geometry["description_bounds.height"]
+        )
+        observed_table_bottom = (
+            geometry["library_table_bounds.y"] + geometry["library_table_bounds.height"]
+        )
+        observed_delta = observed_description_bottom - observed_table_bottom
+        observed_description_height = geometry["description_bounds.height"]
+        observed_tags_height = geometry["tags_body_bounds.height"]
+        observed_description_tags_delta = (
+            observed_description_height - observed_tags_height
+        )
+        expected_geometry_values = {
+            "description_bottom_px": observed_description_bottom,
+            "library_table_bottom_px": observed_table_bottom,
+            "description_table_bottom_delta_px": observed_delta,
+            "description_body_height_px": observed_description_height,
+            "tags_body_height_px": observed_tags_height,
+            "description_tags_height_delta_px": observed_description_tags_delta,
+        }
+        for key, expected in expected_geometry_values.items():
+            if payload.get(key) != expected:
+                errors.append(
+                    f"Library visibility receipt {key} mismatch: "
+                    f"expected={expected!r} observed={payload.get(key)!r}"
+                )
+        if abs(observed_delta) > QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX:
+            errors.append(
+                "Library visibility receipt Description bottom is not aligned with "
+                "the Library table bottom"
+            )
+        if observed_description_tags_delta <= 0:
+            errors.append(
+                "Library visibility receipt Description body is not larger than "
+                "the Tags body"
+            )
     if event.get("observed_text") != expected_description:
         errors.append("UI event did not record the exact visible fixture description")
     return {
@@ -1411,13 +1480,26 @@ def run_packaged_e2e_session(
         and clean_exit
         and resources.get("peak_zombie_processes", 0) == 0
     )
+    visibility_geometry = library_description_visibility.get("receipt")
+    visibility_geometry = (
+        visibility_geometry if isinstance(visibility_geometry, dict) else {}
+    )
+    description_visibility_evidence = (
+        "Library Description visibility: "
+        f"verified={library_description_visibility['verified']}; fixed_height=360; "
+        "table_bottom_delta_px="
+        f"{visibility_geometry.get('description_table_bottom_delta_px')}; "
+        f"description_height_px={visibility_geometry.get('description_body_height_px')}; "
+        f"tags_height_px={visibility_geometry.get('tags_body_height_px')}; "
+        f"errors={library_description_visibility['errors']}"
+    )
     evidence = [
         f"Artifact executable SHA-256: {receipt['executable_sha256']} bundle-tree SHA-256: {receipt['bundle_tree']['sha256']} version={receipt['bundle_version']} policy={receipt['artifact_policy']} verified={receipt['verified']}",
         f"Artifact remained byte/layout identical after E2E: {artifact_integrity['verified']}",
         f"Immutable candidate binding: verified={candidate_binding.get('verified')} candidate_id={candidate_binding.get('candidate_id')} archive_sha256={candidate_binding.get('archive_sha256')}",
         f"Process provenance/isolation verified: {process_provenance['verified']}; launches={len(launches)}; preexisting={len(preexisting_processes)}; survivors={len(surviving_owned_processes)}",
         f"UI driver trace valid: {trace_validation['valid']}; provenance events valid: {not trace_validation['invalid_provenance_events']}; ordered events: {trace_validation['observed_required_order']}; missing: {missing_events}; invalid screenshots: {trace_validation['invalid_screenshot_events']}",
-        f"Library Description visibility: verified={library_description_visibility['verified']}; fixed_height=360; errors={library_description_visibility['errors']}",
+        description_visibility_evidence,
         f"Packaged pipeline stage receipts: {stage_receipts}",
         f"Final media count: {len(media_probes)}; all independently readable using bundled ffprobe {receipt['bundled_ffprobe']['sha256']}: {bool(media_probes) and all(item.get('readable') for item in media_probes)}",
         f"Launch/exit receipts: {launches}; clean_exit={clean_exit}",

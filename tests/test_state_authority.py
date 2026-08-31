@@ -1930,6 +1930,57 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
     assert 'Image.new("RGBA", (width * scale, height * scale)' not in forge_source
 
 
+def test_library_description_is_capped_at_the_measured_table_bottom():
+    class GeometryProbe:
+        def __init__(self, *, y: int, height: int):
+            self.y = y
+            self.height = height
+            self.grid_updates = []
+
+        def winfo_ismapped(self):
+            return True
+
+        def winfo_rooty(self):
+            return self.y
+
+        def winfo_height(self):
+            return self.height
+
+        def grid_configure(self, **kwargs):
+            self.grid_updates.append(kwargs)
+
+    class LayoutProbe:
+        _fit_focus_description_to_library_table = (
+            DownloaderApp._fit_focus_description_to_library_table
+        )
+
+        def __init__(self):
+            self.focus_description_line = GeometryProbe(y=500, height=141)
+            self.focus_library_details = GeometryProbe(y=310, height=330)
+            self.video_tree = GeometryProbe(y=370, height=256)
+            self._focus_description_bottom_inset = None
+
+    probe = LayoutProbe()
+
+    probe._fit_focus_description_to_library_table()
+
+    assert probe.focus_description_line.grid_updates == [{"pady": (0, 14)}]
+    assert probe._focus_description_bottom_inset == 14
+    assert (
+        probe.focus_description_line.y
+        + (
+            probe.focus_library_details.y
+            + probe.focus_library_details.height
+            - probe.focus_description_line.y
+            - probe._focus_description_bottom_inset
+        )
+        == probe.video_tree.y + probe.video_tree.height
+    )
+
+    probe._fit_focus_description_to_library_table()
+    assert probe.focus_description_line.grid_updates == [{"pady": (0, 14)}]
+
+
 def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
     column_layout_source = inspect.getsource(

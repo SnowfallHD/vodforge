@@ -151,6 +151,10 @@ from yt_downloader.history import (
     upsert_history,
 )
 from yt_downloader.safe_output import UnsafeOutputPathError
+from yt_downloader.ui_layout import (
+    FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
+    selected_description_max_height,
+)
 
 
 def test_platform_diagnostics_paths_follow_native_conventions(tmp_path: Path):
@@ -794,6 +798,44 @@ def test_selected_overview_reduces_path_lines_before_title_lines():
     assert path_then_title.location == 1
     assert path_then_title.title == 2
     assert path_then_title.metadata == 1
+
+
+def test_selected_description_max_height_is_measured_to_library_table_bottom():
+    tags_height = 96
+    description_top = 440
+    library_table_bottom = 620
+
+    description_height = selected_description_max_height(
+        description_top=description_top,
+        library_table_bottom=library_table_bottom,
+    )
+
+    assert description_height > tags_height
+    assert description_top + description_height == library_table_bottom
+
+
+def test_selected_description_max_height_caps_constrained_layout_at_table_edge():
+    description_top = 480
+    library_table_bottom = 505
+
+    description_height = selected_description_max_height(
+        description_top=description_top,
+        library_table_bottom=library_table_bottom,
+    )
+
+    assert description_height == 25
+    assert description_top + description_height <= library_table_bottom
+    assert (
+        selected_description_max_height(
+            description_top=description_top,
+            library_table_bottom=description_top - 1,
+        )
+        == 0
+    )
+
+
+def test_selected_description_height_contract_does_not_raise_selected_item_height():
+    assert FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT == 360
 
 
 def test_selected_overview_ellipsizes_from_measured_wrapping_not_character_caps():

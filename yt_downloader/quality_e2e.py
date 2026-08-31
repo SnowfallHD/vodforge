@@ -20,6 +20,7 @@ QUALITY_E2E_ISOLATION_ROOT_ENV = "VODFORGE_QUALITY_E2E_ISOLATION_ROOT"
 QUALITY_E2E_SCHEMA_VERSION = "1.0.0"
 QUALITY_E2E_ATTESTATION_PREFIX = "vodforge-e2e-attestation-"
 QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX = "vodforge-e2e-library-visibility-"
+QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX = 2
 
 _NONCE_RE = re.compile(r"[0-9a-f]{32}")
 _WINDOW_TOKEN_RE = re.compile(r"[A-Za-z0-9._-]{8,64}")
@@ -206,6 +207,8 @@ def _bounds_inside(child: Mapping[str, int], parent: Mapping[str, int]) -> bool:
 def write_quality_e2e_library_visibility_receipt(
     *,
     details: _GeometryWidget,
+    library_table: _GeometryWidget,
+    tags_body: _GeometryWidget,
     description_heading: _GeometryWidget,
     description: _DescriptionWidget,
     full_title: str,
@@ -247,6 +250,7 @@ def write_quality_e2e_library_visibility_receipt(
         )
 
     details_bounds = _widget_bounds(details)
+    library_table_bounds = _widget_bounds(library_table)
     try:
         configured_details_height = int(str(details.cget("height")))
     except (TypeError, ValueError) as exc:
@@ -254,7 +258,19 @@ def write_quality_e2e_library_visibility_receipt(
             "quality-E2E Selected Item configured height is invalid"
         ) from exc
     heading_bounds = _widget_bounds(description_heading)
+    tags_bounds = _widget_bounds(tags_body)
     description_bounds = _widget_bounds(description)
+    description_bottom_px = description_bounds["y"] + description_bounds["height"]
+    library_table_bottom_px = library_table_bounds["y"] + library_table_bounds["height"]
+    description_table_bottom_delta_px = description_bottom_px - library_table_bottom_px
+    description_bottom_aligned_with_library_table = bool(
+        abs(description_table_bottom_delta_px)
+        <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+    )
+    description_tags_height_delta_px = (
+        description_bounds["height"] - tags_bounds["height"]
+    )
+    description_body_larger_than_tags_body = description_tags_height_delta_px > 0
     first_line = description.dlineinfo("1.0")
     first_line_visible = bool(
         first_line is not None
@@ -265,10 +281,15 @@ def write_quality_e2e_library_visibility_receipt(
     description_text = description.get("1.0", "end-1c")
     heading_fully_inside = _bounds_inside(heading_bounds, details_bounds)
     body_fully_inside = _bounds_inside(description_bounds, details_bounds)
+    tags_fully_inside = _bounds_inside(tags_bounds, details_bounds)
     heading_visible = bool(
         description_heading.winfo_ismapped() and description_heading.winfo_viewable()
     )
     body_visible = bool(description.winfo_ismapped() and description.winfo_viewable())
+    library_table_visible = bool(
+        library_table.winfo_ismapped() and library_table.winfo_viewable()
+    )
+    tags_visible = bool(tags_body.winfo_ismapped() and tags_body.winfo_viewable())
     path_ellipsized = bool(
         full_location
         and displayed_location != full_location
@@ -282,8 +303,13 @@ def write_quality_e2e_library_visibility_receipt(
         description_text.strip()
         and heading_visible
         and body_visible
+        and library_table_visible
+        and tags_visible
         and heading_fully_inside
+        and tags_fully_inside
         and body_fully_inside
+        and description_bottom_aligned_with_library_table
+        and description_body_larger_than_tags_body
         and first_line_visible
         and path_ellipsized
         and title_ellipsized
@@ -296,6 +322,8 @@ def write_quality_e2e_library_visibility_receipt(
         "window_token": window_token,
         "pid": os.getpid() if pid is None else int(pid),
         "details_bounds": details_bounds,
+        "library_table_bounds": library_table_bounds,
+        "tags_body_bounds": tags_bounds,
         "description_heading_bounds": heading_bounds,
         "description_bounds": description_bounds,
         "details_height_px": details_bounds["height"],
@@ -305,8 +333,26 @@ def write_quality_e2e_library_visibility_receipt(
         "fixed_height_preserved": fixed_height_preserved,
         "description_heading_mapped_and_viewable": heading_visible,
         "description_body_mapped_and_viewable": body_visible,
+        "library_table_mapped_and_viewable": library_table_visible,
+        "tags_body_mapped_and_viewable": tags_visible,
         "description_heading_fully_inside_details": heading_fully_inside,
+        "tags_body_fully_inside_details": tags_fully_inside,
         "description_body_fully_inside_details": body_fully_inside,
+        "description_bottom_px": description_bottom_px,
+        "library_table_bottom_px": library_table_bottom_px,
+        "description_table_bottom_delta_px": description_table_bottom_delta_px,
+        "description_table_bottom_tolerance_px": (
+            QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+        ),
+        "description_bottom_aligned_with_library_table": (
+            description_bottom_aligned_with_library_table
+        ),
+        "description_body_height_px": description_bounds["height"],
+        "tags_body_height_px": tags_bounds["height"],
+        "description_tags_height_delta_px": description_tags_height_delta_px,
+        "description_body_larger_than_tags_body": (
+            description_body_larger_than_tags_body
+        ),
         "description_first_line_visible": first_line_visible,
         "description_sha256": hashlib.sha256(
             description_text.encode("utf-8")

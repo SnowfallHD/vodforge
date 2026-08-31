@@ -35,6 +35,16 @@ class SelectedOverviewLineBudget:
     location: int
 
 
+def selected_description_max_height(
+    *,
+    description_top: int,
+    library_table_bottom: int,
+) -> int:
+    """Return the measured Description budget ending at the Library table edge."""
+
+    return max(0, int(library_table_bottom) - int(description_top))
+
+
 def selected_overview_line_budget(
     *,
     title_lines: int,

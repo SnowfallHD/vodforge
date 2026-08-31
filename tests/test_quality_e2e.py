@@ -12,6 +12,7 @@ from yt_downloader.quality_e2e import (
     QUALITY_E2E_ATTESTATION_PREFIX,
     QUALITY_E2E_ISOLATION_ROOT_ENV,
     QUALITY_E2E_LAUNCH_ID_ENV,
+    QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
     QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
     QUALITY_E2E_MODE_ENV,
     QUALITY_E2E_NONCE_ENV,
@@ -222,6 +223,8 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
             height=390,
             configured_height=360,
         ),
+        library_table=_FakeWidget(x=100, y=180, width=900, height=247),
+        tags_body=_FakeWidget(x=110, y=205, width=385, height=72),
         description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
         description=_FakeDescriptionWidget(
             x=110,
@@ -252,6 +255,20 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     assert payload["details_configured_height_px"] == 360
     assert payload["description_heading_fully_inside_details"] is True
     assert payload["description_body_fully_inside_details"] is True
+    assert payload["library_table_mapped_and_viewable"] is True
+    assert payload["tags_body_mapped_and_viewable"] is True
+    assert payload["tags_body_fully_inside_details"] is True
+    assert payload["description_bottom_px"] == 427
+    assert payload["library_table_bottom_px"] == 427
+    assert payload["description_table_bottom_delta_px"] == 0
+    assert payload["description_table_bottom_tolerance_px"] == (
+        QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+    )
+    assert payload["description_bottom_aligned_with_library_table"] is True
+    assert payload["description_body_height_px"] == 120
+    assert payload["tags_body_height_px"] == 72
+    assert payload["description_tags_height_delta_px"] == 48
+    assert payload["description_body_larger_than_tags_body"] is True
     assert payload["description_first_line_visible"] is True
     assert payload["path_ellipsized"] is True
     assert payload["title_ellipsized"] is True
@@ -276,6 +293,8 @@ def test_quality_e2e_library_visibility_marks_clipped_description_unverified(
             height=390,
             configured_height=360,
         ),
+        library_table=_FakeWidget(x=100, y=180, width=900, height=247),
+        tags_body=_FakeWidget(x=110, y=405, width=385, height=72),
         description_heading=_FakeWidget(x=110, y=495, width=130, height=18),
         description=_FakeDescriptionWidget(
             x=110,
@@ -298,6 +317,91 @@ def test_quality_e2e_library_visibility_marks_clipped_description_unverified(
     assert payload["verified"] is False
     assert payload["description_heading_fully_inside_details"] is False
     assert payload["description_body_fully_inside_details"] is False
+    assert payload["description_bottom_aligned_with_library_table"] is False
+
+
+def test_quality_e2e_library_visibility_marks_bottom_misalignment_unverified(
+    tmp_path: Path,
+) -> None:
+    environment, _app, _home, _application_data, _diagnostics = _isolated_launch(
+        tmp_path
+    )
+
+    result = write_quality_e2e_library_visibility_receipt(
+        details=_FakeWidget(
+            x=100,
+            y=100,
+            width=410,
+            height=390,
+            configured_height=360,
+        ),
+        library_table=_FakeWidget(x=100, y=180, width=900, height=247),
+        tags_body=_FakeWidget(x=110, y=205, width=385, height=72),
+        description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
+        description=_FakeDescriptionWidget(
+            x=110,
+            y=307,
+            width=385,
+            height=110,
+            text="Visible but not aligned",
+            first_line=(9, 7, 180, 16, 12),
+        ),
+        full_title="Long title " * 20,
+        displayed_title="Long title…",
+        full_location="Saved in /long/path/" * 20,
+        displayed_location="Saved in /long/path…",
+        expected_details_height=360,
+        environ=environment,
+    )
+
+    assert result is not None
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    assert payload["description_body_fully_inside_details"] is True
+    assert payload["description_table_bottom_delta_px"] == -10
+    assert payload["description_bottom_aligned_with_library_table"] is False
+    assert payload["verified"] is False
+
+
+def test_quality_e2e_library_visibility_requires_description_larger_than_tags(
+    tmp_path: Path,
+) -> None:
+    environment, _app, _home, _application_data, _diagnostics = _isolated_launch(
+        tmp_path
+    )
+
+    result = write_quality_e2e_library_visibility_receipt(
+        details=_FakeWidget(
+            x=100,
+            y=100,
+            width=410,
+            height=390,
+            configured_height=360,
+        ),
+        library_table=_FakeWidget(x=100, y=180, width=900, height=247),
+        tags_body=_FakeWidget(x=110, y=195, width=385, height=120),
+        description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
+        description=_FakeDescriptionWidget(
+            x=110,
+            y=307,
+            width=385,
+            height=120,
+            text="Visible and aligned but not larger than Tags",
+            first_line=(9, 7, 250, 16, 12),
+        ),
+        full_title="Long title " * 20,
+        displayed_title="Long title…",
+        full_location="Saved in /long/path/" * 20,
+        displayed_location="Saved in /long/path…",
+        expected_details_height=360,
+        environ=environment,
+    )
+
+    assert result is not None
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    assert payload["description_bottom_aligned_with_library_table"] is True
+    assert payload["description_tags_height_delta_px"] == 0
+    assert payload["description_body_larger_than_tags_body"] is False
+    assert payload["verified"] is False
 
 
 @pytest.mark.parametrize(
