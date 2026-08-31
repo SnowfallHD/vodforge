@@ -1507,6 +1507,40 @@ def packaged_e2e_placeholder(
         "executable_sha256"
     ):
         problems.append("receipt has no packaged executable identity")
+    elif (
+        artifact_receipt.get("policy_verified") is not True
+        or not isinstance(artifact_receipt.get("bundle_tree"), dict)
+        or not artifact_receipt["bundle_tree"].get("sha256")
+    ):
+        problems.append("receipt has no verified artifact policy and bundle identity")
+    candidate_binding = payload.get("candidate_binding")
+    if (
+        not isinstance(candidate_binding, dict)
+        or candidate_binding.get("verified") is not True
+        or not candidate_binding.get("candidate_id")
+        or not candidate_binding.get("archive_sha256")
+        or not candidate_binding.get("bundle_tree_sha256")
+    ):
+        problems.append("receipt is not bound to one verified immutable candidate")
+    artifact_integrity = payload.get("artifact_integrity")
+    if (
+        not isinstance(artifact_integrity, dict)
+        or artifact_integrity.get("verified") is not True
+    ):
+        problems.append("receipt has no verified post-E2E artifact integrity")
+    process_provenance = payload.get("process_provenance")
+    if (
+        not isinstance(process_provenance, dict)
+        or process_provenance.get("verified") is not True
+    ):
+        problems.append("receipt has no verified isolated process provenance")
+    trace_validation = payload.get("driver_trace_validation")
+    if (
+        not isinstance(trace_validation, dict)
+        or trace_validation.get("provenance_required") is not True
+        or trace_validation.get("invalid_provenance_events")
+    ):
+        problems.append("receipt driver events are not bound to attested launches")
     if not isinstance(payload.get("driver_trace"), dict) or not isinstance(
         payload.get("launches"), list
     ):

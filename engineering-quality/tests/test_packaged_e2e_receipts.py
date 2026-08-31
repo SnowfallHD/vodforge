@@ -63,6 +63,13 @@ def _driver_trace(
                     "window_id": 1000 + index,
                     "window_owner_pid": launch["pid"],
                     "window_title_token": launch["window_token"],
+                    "native_window_identity": {
+                        "verified": True,
+                        "window_id": 1000 + index,
+                        "owner_pid": launch["pid"],
+                        "title": f"VODForge [{launch['window_token']}]",
+                        "layer": 0,
+                    },
                 }
             )
     return {"events": events, "screenshots": screenshots, "notes": []}
@@ -211,6 +218,7 @@ def test_driver_trace_rejects_pid_and_window_token_from_another_launch(
         "pid mismatch",
         "window_owner_pid mismatch",
         "window_title_token mismatch",
+        "native_window_identity is missing or invalid",
     }
 
 

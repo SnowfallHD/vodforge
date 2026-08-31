@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vodforge.local/schemas/candidate-artifact.schema.json",
+  "title": "VODForge immutable candidate artifact receipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "receipt_kind",
+    "candidate_id",
+    "created_at",
+    "candidate_version",
+    "artifact_policy",
+    "source",
+    "build",
+    "machine",
+    "immutable_archive",
+    "artifact",
+    "verification",
+    "packaged_e2e_eligible",
+    "publish_eligible"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "receipt_kind": { "const": "vodforge-candidate-artifact" },
+    "candidate_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "candidate_version": { "type": "string", "minLength": 1 },
+    "artifact_policy": { "enum": ["development", "release"] },
+    "source": {
+      "type": "object",
+      "required": ["commit", "branch", "clean"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "branch": { "type": "string", "minLength": 1 },
+        "clean": { "const": true }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["command", "environment"],
+      "properties": {
+        "command": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "environment": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "immutable_archive": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes", "read_only"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "read_only": { "const": true }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["artifact_policy", "bundle_tree", "bundle_version", "runtime_version", "policy_verified", "release_eligible"],
+      "properties": {
+        "artifact_policy": { "enum": ["development", "release"] },
+        "bundle_tree": {
+          "type": "object",
+          "required": ["sha256"],
+          "properties": { "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+        },
+        "bundle_version": { "type": "string", "minLength": 1 },
+        "runtime_version": { "type": "string", "minLength": 1 },
+        "policy_verified": { "type": "boolean" },
+        "release_eligible": { "type": "boolean" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["verified", "archive_sha256", "bundle_tree_sha256", "packaged_e2e_eligible", "publish_eligible"],
+      "properties": {
+        "verified": { "type": "boolean" },
+        "archive_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "bundle_tree_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "packaged_e2e_eligible": { "type": "boolean" },
+        "publish_eligible": { "type": "boolean" }
+      }
+    },
+    "packaged_e2e_eligible": { "type": "boolean" },
+    "publish_eligible": { "type": "boolean" }
+  }
+}

@@ -5,7 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .e2e_provenance import verify_live_launch
+from .e2e_provenance import verify_live_launch, verify_native_window_identity
 from .packaged_e2e import SCREENSHOT_OPTIONAL_EVENTS, _required_ui_event_order
 from .util import json_dump, sha256_file, utc_now
 
@@ -45,6 +45,16 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         raise RuntimeError("E2E window ID must be a positive native window identifier")
     if args.window_title_token != current_launch.get("window_token"):
         raise RuntimeError("E2E window title token does not match the current launch")
+    native_window = verify_native_window_identity(
+        window_id=args.window_id,
+        expected_pid=expected_pid,
+        expected_title=str(current_launch.get("window_title") or ""),
+    )
+    if native_window.get("verified") is not True:
+        raise RuntimeError(
+            "E2E native window identity does not match the attested launch: "
+            + "; ".join(str(item) for item in native_window.get("errors") or [])
+        )
     required_order = _required_ui_event_order(profile)
     if args.event not in required_order:
         raise RuntimeError(
@@ -120,6 +130,7 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         "window_id": args.window_id,
         "window_owner_pid": args.window_owner_pid,
         "window_title_token": args.window_title_token,
+        "native_window_identity": native_window,
     }
     if unobserved_prior_events:
         event["unobserved_prior_events"] = unobserved_prior_events

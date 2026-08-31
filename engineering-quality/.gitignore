@@ -1,4 +1,5 @@
 .runs/
+candidates/
 .cache/
 reports/*/
 reports/latest

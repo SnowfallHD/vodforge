@@ -67,6 +67,7 @@ def _write_session(tmp_path: Path) -> tuple[Path, Path]:
                     "executable_sha256": "a" * 64,
                     "bundle_tree_sha256": "b" * 64,
                     "window_token": TEST_WINDOW_TOKEN,
+                    "window_title": f"VODForge [{TEST_WINDOW_TOKEN}]",
                 },
             }
         )
@@ -77,6 +78,22 @@ def _write_session(tmp_path: Path) -> tuple[Path, Path]:
 
 def _verified_live_receipt(_launch: dict[str, Any]) -> dict[str, Any]:
     return {"verified": True, "errors": []}
+
+
+@pytest.fixture(autouse=True)
+def verified_native_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        e2e_record,
+        "verify_native_window_identity",
+        lambda *, window_id, expected_pid, expected_title: {
+            "verified": True,
+            "errors": [],
+            "window_id": window_id,
+            "owner_pid": expected_pid,
+            "title": expected_title,
+            "layer": 0,
+        },
+    )
 
 
 def test_recorder_copies_hashes_and_enforces_event_order(
@@ -109,6 +126,7 @@ def test_recorder_copies_hashes_and_enforces_event_order(
     assert event["window_id"] == TEST_WINDOW_ID
     assert event["window_owner_pid"] == TEST_PID
     assert event["window_title_token"] == TEST_WINDOW_TOKEN
+    assert event["native_window_identity"]["verified"] is True
     assert observed_launches[0]["pid"] == TEST_PID
 
     with pytest.raises(RuntimeError, match="expected next E2E event"):
@@ -197,6 +215,32 @@ def test_recorder_fails_closed_when_current_launch_no_longer_verifies(
     )
 
     with pytest.raises(RuntimeError, match="no longer verifies"):
+        record_e2e_event(
+            _args(
+                session_path,
+                "app_visible",
+                screenshot=tmp_path / "not-read.png",
+            )
+        )
+
+    assert json.loads(trace_path.read_text())["events"] == []
+
+
+def test_recorder_fails_closed_when_native_window_owner_is_unverified(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    session_path, trace_path = _write_session(tmp_path)
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    monkeypatch.setattr(
+        e2e_record,
+        "verify_native_window_identity",
+        lambda **_kwargs: {
+            "verified": False,
+            "errors": ["native window owner PID mismatch"],
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="native window identity"):
         record_e2e_event(
             _args(
                 session_path,

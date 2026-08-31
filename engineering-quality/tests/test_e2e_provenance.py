@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -11,6 +13,7 @@ from quality_harness.e2e_provenance import (
     bundle_tree_receipt,
     preexisting_vodforge_processes,
     terminate_owned_group,
+    verify_native_window_identity,
 )
 
 
@@ -150,3 +153,49 @@ def test_owned_cleanup_signals_only_attested_process_group(
     assert receipt["survivors_after"] == []
     assert killpg_calls == [(912, signal.SIGTERM)]
     assert process.wait_calls == [0.1]
+
+
+def test_native_window_identity_uses_core_graphics_owner_and_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_quartz = SimpleNamespace(
+        kCGWindowListOptionIncludingWindow=1,
+        kCGWindowListExcludeDesktopElements=2,
+        kCGWindowNumber="number",
+        kCGWindowOwnerPID="pid",
+        kCGWindowName="title",
+        kCGWindowOwnerName="owner",
+        kCGWindowLayer="layer",
+        kCGWindowIsOnscreen="onscreen",
+        kCGWindowBounds="bounds",
+        CGWindowListCopyWindowInfo=lambda _options, _window_id: [
+            {
+                "number": 55,
+                "pid": 987,
+                "title": "VODForge [VFQ-0123456789ab-L1]",
+                "owner": "VODForge",
+                "layer": 0,
+                "onscreen": True,
+                "bounds": {"X": 10, "Y": 20, "Width": 800, "Height": 600},
+            }
+        ],
+    )
+    monkeypatch.setitem(sys.modules, "Quartz", fake_quartz)
+
+    receipt = verify_native_window_identity(
+        window_id=55,
+        expected_pid=987,
+        expected_title="VODForge [VFQ-0123456789ab-L1]",
+    )
+
+    assert receipt["verified"] is True
+    assert receipt["owner_pid"] == 987
+    assert receipt["onscreen"] is True
+
+    mismatch = verify_native_window_identity(
+        window_id=55,
+        expected_pid=988,
+        expected_title="VODForge [VFQ-0123456789ab-L1]",
+    )
+    assert mismatch["verified"] is False
+    assert mismatch["errors"] == ["native window owner PID mismatch"]

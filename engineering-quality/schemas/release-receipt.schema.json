@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vodforge.local/schemas/release-receipt.schema.json",
+  "title": "VODForge release gate receipt",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "receipt_type",
+    "generated_at",
+    "status",
+    "release_eligible",
+    "candidate",
+    "summary",
+    "checks",
+    "test_counts",
+    "packaged_e2e",
+    "lifecycle",
+    "performance_observations",
+    "known_debt",
+    "commands_used",
+    "machine"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "receipt_type": { "const": "vodforge_release_gate" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "status": { "enum": ["passed", "failed", "skipped", "unproven"] },
+    "release_eligible": { "type": "boolean" },
+    "candidate": {
+      "type": "object",
+      "required": ["candidate_id", "version", "source_commit", "source_branch", "archive_sha256", "artifact_policy"],
+      "properties": {
+        "candidate_id": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] },
+        "source_commit": { "type": ["string", "null"] },
+        "source_branch": { "type": ["string", "null"] },
+        "archive_sha256": { "type": ["string", "null"] },
+        "artifact_policy": { "enum": ["development", "release", null] }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["checks", "status_counts", "required_status_counts", "blocking_check_ids", "known_debt_count"]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "status", "required", "evidence", "metrics"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["passed", "failed", "skipped", "unproven"] },
+          "required": { "type": "boolean" },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "metrics": { "type": "object" }
+        }
+      }
+    },
+    "test_counts": { "type": "object" },
+    "packaged_e2e": { "type": "object" },
+    "security_findings": { "type": "array" },
+    "lifecycle": { "type": "object" },
+    "performance_observations": { "type": "object" },
+    "known_debt": { "type": "array" },
+    "commands_used": {
+      "type": "array",
+      "items": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+    },
+    "machine": { "type": ["object", "null"] },
+    "environment": { "type": "object" }
+  }
+}

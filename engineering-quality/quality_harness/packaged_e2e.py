@@ -146,7 +146,7 @@ def _artifact_receipt(
     strict_signature_verified = checks["codesign_strict"].get("returncode") == 0
     if release_identity_verified and strict_signature_verified:
         signature_state = "developer_id"
-    elif signature_label == "adhoc" and strict_signature_verified:
+    elif (signature_label or "").casefold() == "adhoc" and strict_signature_verified:
         signature_state = "development_ad_hoc"
     elif strict_signature_verified:
         signature_state = "signed_other"
@@ -166,7 +166,10 @@ def _artifact_receipt(
         and ffprobe_version.returncode == 0
     )
     runtime_version = runtime_version_path.read_text(encoding="utf-8").strip()
-    version_consistent = plist.get("CFBundleShortVersionString") == runtime_version
+    expected_bundle_version = runtime_version.split("-", 1)[0]
+    version_consistent = (
+        plist.get("CFBundleShortVersionString") == expected_bundle_version
+    )
     release_eligible = release_eligible and version_consistent
     development_verified = development_verified and version_consistent
     policy_verified = (
@@ -397,6 +400,14 @@ def _validate_driver_trace(
         window_id = event.get("window_id")
         if not isinstance(window_id, int) or window_id <= 0:
             errors.append("window_id is missing or invalid")
+        native_window = event.get("native_window_identity")
+        if (
+            not isinstance(native_window, dict)
+            or native_window.get("verified") is not True
+            or native_window.get("window_id") != window_id
+            or native_window.get("owner_pid") != event.get("window_owner_pid")
+        ):
+            errors.append("native_window_identity is missing or invalid")
         if errors:
             invalid_provenance_events.append(name)
         provenance_receipts.append(
@@ -803,11 +814,6 @@ def run_packaged_e2e_session(
             file=sys.stderr,
         )
         return 2
-    artifact = (
-        (repo_root / args.artifact).resolve()
-        if not args.artifact.is_absolute()
-        else args.artifact.resolve()
-    )
     timestamp = (
         time.strftime("%Y%m%dT%H%M%S", time.gmtime())
         + f"{time.time_ns() % 1_000_000_000:09d}Z"
@@ -818,19 +824,52 @@ def run_packaged_e2e_session(
     session_dir.mkdir(parents=True, exist_ok=True)
     workspace = harness_root / ".runs" / f"{timestamp}-packaged-e2e"
     workspace.mkdir(parents=True, exist_ok=True)
+    candidate_path: Path | None = None
+    candidate_binding: dict[str, Any]
+    if args.candidate is not None:
+        from .candidate_artifact import materialize_candidate_for_e2e
+
+        candidate_path = (
+            (repo_root / args.candidate).resolve()
+            if not args.candidate.is_absolute()
+            else args.candidate.resolve()
+        )
+        artifact, candidate_binding = materialize_candidate_for_e2e(
+            candidate_path, workspace / "candidate-artifact"
+        )
+        artifact_policy = str(candidate_binding["artifact_policy"])
+    else:
+        requested_artifact = args.artifact or Path("dist/VODForge.app")
+        artifact = (
+            (repo_root / requested_artifact).resolve()
+            if not requested_artifact.is_absolute()
+            else requested_artifact.resolve()
+        )
+        artifact_policy = args.artifact_policy
+        candidate_binding = {
+            "verified": False,
+            "status": "unproven",
+            "reason": "direct app bundle was not materialized from a frozen candidate receipt",
+            "artifact_path": str(artifact),
+        }
     state_paths = _isolated_state_paths(workspace)
     home = Path(state_paths["home"])
     tmp = Path(state_paths["tmp"])
     fixtures = workspace / "fixtures"
     for path in (home, tmp, fixtures, home / "Downloads", session_dir / "ui"):
         path.mkdir(parents=True, exist_ok=True)
-    receipt = _artifact_receipt(
-        artifact, repo_root, artifact_policy=args.artifact_policy
-    )
+    receipt = _artifact_receipt(artifact, repo_root, artifact_policy=artifact_policy)
+    if candidate_binding.get("verified") is True and (
+        candidate_binding.get("bundle_tree_sha256")
+        != receipt.get("bundle_tree", {}).get("sha256")
+    ):
+        raise RuntimeError(
+            "fresh candidate extraction does not match the inspected app bundle"
+        )
     if not receipt["verified"]:
         raise RuntimeError(
             "packaged E2E refused to launch because the artifact does not satisfy "
-            f"the {args.artifact_policy} identity policy"
+            f"the {artifact_policy} identity policy"
         )
     preexisting_processes = preexisting_vodforge_processes(
         Path(str(receipt["executable"]))
@@ -899,6 +938,7 @@ def run_packaged_e2e_session(
             "driver_ready": False,
             "driver_block_reason": "waiting_for_owned_process_attestation",
             "artifact_receipt": receipt,
+            "candidate_binding": candidate_binding,
             "state_paths": state_paths,
             "preexisting_vodforge_processes": preexisting_processes,
             "fixture_manifest": fixture_manifest,
@@ -1060,6 +1100,38 @@ def run_packaged_e2e_session(
     resources = owned_registry.resources
     if resources is None:
         raise RuntimeError("packaged E2E resource sampler did not finalize")
+    if candidate_path is not None:
+        from .candidate_artifact import load_and_verify_candidate
+
+        try:
+            verified_candidate = load_and_verify_candidate(candidate_path)
+        except (json.JSONDecodeError, OSError, RuntimeError, TypeError) as exc:
+            candidate_binding.update(
+                {
+                    "verified": False,
+                    "status": "failed",
+                    "post_e2e_verification_error": type(exc).__name__,
+                }
+            )
+        else:
+            readback = verified_candidate.get("readback_verification") or {}
+            unchanged = readback.get("archive_sha256") == candidate_binding.get(
+                "archive_sha256"
+            ) and readback.get("bundle_tree_sha256") == candidate_binding.get(
+                "bundle_tree_sha256"
+            )
+            candidate_binding.update(
+                {
+                    "verified": bool(
+                        candidate_binding.get("verified")
+                        and readback.get("verified")
+                        and unchanged
+                    ),
+                    "status": "passed" if unchanged else "failed",
+                    "post_e2e_verification": readback,
+                    "archive_and_reference_tree_unchanged": unchanged,
+                }
+            )
     artifact_integrity = _artifact_integrity_receipt(artifact, receipt)
     try:
         loaded_events = json.loads(driver_events_path.read_text(encoding="utf-8"))
@@ -1186,6 +1258,7 @@ def run_packaged_e2e_session(
     evidence = [
         f"Artifact executable SHA-256: {receipt['executable_sha256']} bundle-tree SHA-256: {receipt['bundle_tree']['sha256']} version={receipt['bundle_version']} policy={receipt['artifact_policy']} verified={receipt['verified']}",
         f"Artifact remained byte/layout identical after E2E: {artifact_integrity['verified']}",
+        f"Immutable candidate binding: verified={candidate_binding.get('verified')} candidate_id={candidate_binding.get('candidate_id')} archive_sha256={candidate_binding.get('archive_sha256')}",
         f"Process provenance/isolation verified: {process_provenance['verified']}; launches={len(launches)}; preexisting={len(preexisting_processes)}; survivors={len(surviving_owned_processes)}",
         f"UI driver trace valid: {trace_validation['valid']}; provenance events valid: {not trace_validation['invalid_provenance_events']}; ordered events: {trace_validation['observed_required_order']}; missing: {missing_events}; invalid screenshots: {trace_validation['invalid_screenshot_events']}",
         f"Packaged pipeline stage receipts: {stage_receipts}",
@@ -1210,6 +1283,7 @@ def run_packaged_e2e_session(
             "artifact_observed": True,
             "artifact_verified": receipt["verified"],
             "artifact_integrity_verified": artifact_integrity["verified"],
+            "candidate_binding_verified": candidate_binding.get("verified"),
             "process_provenance_verified": process_provenance["verified"],
             "preexisting_vodforge_process_count": len(preexisting_processes),
             "surviving_owned_process_count": len(surviving_owned_processes),
@@ -1268,6 +1342,7 @@ def run_packaged_e2e_session(
         "started_at": started_at,
         "completed_at": utc_now(),
         "artifact_receipt": receipt,
+        "candidate_binding": candidate_binding,
         "artifact_integrity": artifact_integrity,
         "process_provenance": process_provenance,
         "fixture_server_receipt": server_receipt,

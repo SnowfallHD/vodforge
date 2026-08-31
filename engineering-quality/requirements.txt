@@ -11,3 +11,4 @@ pip-audit>=2.9,<3
 radon>=6,<7
 vulture>=2.14,<3
 mutmut>=3.3,<4
+pyobjc-framework-Quartz>=11,<13; sys_platform == "darwin"

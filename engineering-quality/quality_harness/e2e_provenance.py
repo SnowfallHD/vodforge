@@ -393,6 +393,67 @@ def verify_live_launch(launch: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def verify_native_window_identity(
+    *, window_id: int, expected_pid: int, expected_title: str
+) -> dict[str, Any]:
+    """Verify one macOS window through CoreGraphics, independent of the driver."""
+    if window_id <= 0 or expected_pid <= 0 or not expected_title:
+        return {
+            "verified": False,
+            "errors": ["native window identity inputs are invalid"],
+        }
+    try:
+        import Quartz
+    except ImportError:
+        return {
+            "verified": False,
+            "errors": ["Quartz window inspection is unavailable"],
+        }
+    options = (
+        Quartz.kCGWindowListOptionIncludingWindow
+        | Quartz.kCGWindowListExcludeDesktopElements
+    )
+    raw_windows = Quartz.CGWindowListCopyWindowInfo(options, window_id)
+    windows = [item for item in raw_windows or [] if isinstance(item, dict)]
+    matching = [
+        item
+        for item in windows
+        if int(item.get(Quartz.kCGWindowNumber, 0) or 0) == window_id
+    ]
+    if len(matching) != 1:
+        return {
+            "verified": False,
+            "errors": ["native window ID was not uniquely observable"],
+            "window_count": len(matching),
+        }
+    window = matching[0]
+    owner_pid = int(window.get(Quartz.kCGWindowOwnerPID, 0) or 0)
+    title = str(window.get(Quartz.kCGWindowName, "") or "")
+    owner_name = str(window.get(Quartz.kCGWindowOwnerName, "") or "")
+    layer = int(window.get(Quartz.kCGWindowLayer, -1) or 0)
+    errors = []
+    if owner_pid != expected_pid:
+        errors.append("native window owner PID mismatch")
+    if title != expected_title:
+        errors.append("native window title mismatch")
+    if layer != 0:
+        errors.append("native window is not an application-layer window")
+    onscreen = bool(window.get(Quartz.kCGWindowIsOnscreen, False))
+    if not onscreen:
+        errors.append("native window is not onscreen")
+    return {
+        "verified": not errors,
+        "errors": errors,
+        "window_id": window_id,
+        "owner_pid": owner_pid,
+        "owner_name": owner_name,
+        "title": title,
+        "layer": layer,
+        "onscreen": onscreen,
+        "bounds": dict(window.get(Quartz.kCGWindowBounds, {}) or {}),
+    }
+
+
 def owned_group_survivors(launch: dict[str, Any]) -> list[dict[str, Any]]:
     psutil = _psutil()
     pgid = int(launch.get("pgid") or -1)

@@ -37,6 +37,14 @@ The packaged tier additionally needs an existing VODForge artifact. Use a locall
 
 ## Commands
 
+The release-facing FAST/NORMAL/DEEP commands and immutable candidate workflow are documented in [RELEASE_GATE.md](RELEASE_GATE.md).
+
+FAST pre-commit gate:
+
+```sh
+./engineering-quality/run fast
+```
+
 Normal adversarial run (generated local corpus, real pipeline, faults, short soak, concurrency attack, security probes, repository tests, a bounded mutation campaign, and static signals):
 
 ```sh
@@ -80,26 +88,32 @@ Compare with a prior machine-readable result:
 ./engineering-quality/run normal --compare engineering-quality/reports/<baseline>/results.json
 ```
 
-Start a full packaged-app session:
+Start a full packaged-app session from a frozen candidate:
 
 ```sh
-./engineering-quality/run packaged-e2e --profile smoke --artifact dist/VODForge.app
+./engineering-quality/run packaged-e2e \
+  --profile smoke \
+  --candidate engineering-quality/candidates/<candidate-id>/candidate-artifact.json
 ```
 
-That command verifies the bundle identity/signature/staple/Gatekeeper receipts, creates an isolated `HOME` and output root, launches the actual app executable, starts the loopback fixture/fault origin, and writes `session.json`. A visible UI driver performs the journey. Record each event with the versioned recorder rather than hand-editing JSON:
+That command re-hashes and freshly extracts the frozen ZIP, verifies the declared development or release policy, rejects any pre-existing VODForge process, creates isolated state paths, launches the exact executable in its own process group, and waits for the app's startup attestation before setting `driver_ready=true`. A visible UI driver performs the journey. Record each event with the versioned recorder rather than hand-editing JSON; the native window ID and owner PID must come from the observed window:
 
 ```sh
 ./engineering-quality/run record-e2e-event \
   --session engineering-quality/reports/<e2e-run>/session.json \
   --event app_visible \
-  --screenshot /path/to/current-vodforge-window.png
+  --screenshot /path/to/current-vodforge-window.png \
+  --window-pid <attested-pid> \
+  --window-owner-pid <native-owner-pid> \
+  --window-id <native-window-id> \
+  --window-title-token <session-window-token>
 ```
 
 If a UI surface cannot be reached, keep it missing and use `--allow-gap` only
 when recording the next later event. The recorder adds the skipped event names
 to the receipt; it never turns the gap into a pass.
 
-Normal shutdown finalizes `e2e-result.json`. It passes only when ordered timezone-aware UI events, screenshot existence and hashes, exact artifact identity, real production stage diagnostics, output readability using the artifact's own bundled `ffprobe`, two clean launches, history/output hash persistence, cleanup, and process exit all agree. See [the driver protocol](runners/README.md).
+Normal shutdown finalizes `e2e-result.json`. It passes only when ordered timezone-aware UI events, CoreGraphics window ownership/title receipts, screenshot existence and hashes, candidate/archive/bundle identity, real production stage diagnostics, output readability using the artifact's own bundled `ffprobe`, two clean launches, history/output hash persistence, cleanup, and process exit all agree. See [the driver protocol](runners/README.md).
 
 Include a completed packaged receipt in a normal/deep comparison:
 
@@ -125,7 +139,9 @@ Each observation is a structured event in `driver-events.json`: `app_visible`, `
 The deeper packaged profile is first-class rather than an implied consequence of the smoke journey:
 
 ```sh
-./engineering-quality/run packaged-e2e --profile deep --artifact dist/VODForge.app
+./engineering-quality/run packaged-e2e \
+  --profile deep \
+  --candidate engineering-quality/candidates/<candidate-id>/candidate-artifact.json
 ```
 
 It additionally requires visible receipts for a throttled active run, a second run queued through the UI, cancellation requested through the UI, a clean cancelled state, the queued job advancing, and that queued job reaching completion. A smoke pass therefore proves only the happy path plus restart and does not claim queue/cancellation coverage.
