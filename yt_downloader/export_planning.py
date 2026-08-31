@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from typing import Any
 
 from .models import (
@@ -554,27 +555,91 @@ def _bitrate_warning(target_kbps: float, effective_source_kbps: float) -> str | 
     return "Source-limited encode. The output bitrate is far above the selected source quality. The file may satisfy platform requirements, but it will not become true high-bitrate quality."
 
 
-def build_auto_export_plan(
-    info: dict[str, Any],
-    mode: ExportMode | str = ExportMode.AUTO_CBR,
-    max_height: int = DEFAULT_MAX_HEIGHT,
-) -> ExportPlan:
-    mode = ExportMode(mode)
-    formats = [fmt for fmt in info.get("formats") or [] if isinstance(fmt, dict)]
+@dataclass(frozen=True)
+class _AutoSourceSelection:
+    video: dict[str, Any]
+    audio: dict[str, Any] | None
+    video_id: str | None
+    audio_id: str | None
+    selector: str
+
+
+@dataclass(frozen=True)
+class _AutoQualityEvidence:
+    height: int | None
+    effective_video_kbps: float
+    effective_audio_kbps: float
+
+
+@dataclass(frozen=True)
+class _AutoEncodeTargets:
+    video_bitrate_kbps: int
+    audio_bitrate_kbps: int
+    warnings: tuple[str, ...]
+
+
+def _choose_auto_video_source(
+    formats: list[dict[str, Any]], max_height: int
+) -> tuple[dict[str, Any] | None, bool]:
     video = choose_best_video_format(formats, max_height=max_height)
-    using_progressive_av = False
-    if video is None:
-        video = choose_best_progressive_format(formats, max_height=max_height)
-        using_progressive_av = video is not None
-    audio = video if using_progressive_av else choose_best_audio_format(formats)
-    if video is None:
-        # Last resort: pick *any* format with a video codec, ignoring all quality filters.
-        for fmt in formats:
-            if not _is_none_codec(fmt.get("vcodec")):
-                video = fmt
-                using_progressive_av = not _is_none_codec(fmt.get("acodec"))
-                audio = video if using_progressive_av else audio
-                break
+    if video is not None:
+        return video, False
+
+    video = choose_best_progressive_format(formats, max_height=max_height)
+    if video is not None:
+        return video, True
+
+    # Last resort: pick *any* format with a video codec, ignoring all quality filters.
+    video = next(
+        (fmt for fmt in formats if not _is_none_codec(fmt.get("vcodec"))),
+        None,
+    )
+    progressive = bool(video and not _is_none_codec(video.get("acodec")))
+    return video, progressive
+
+
+def _choose_auto_audio_source(
+    formats: list[dict[str, Any]],
+    video: dict[str, Any],
+    using_progressive_av: bool,
+) -> dict[str, Any] | None:
+    if using_progressive_av:
+        return video
+
+    audio = choose_best_audio_format(formats)
+    if audio is not None:
+        return audio
+
+    # Last resort: pick any audio-only format, ignoring bitrate filters.
+    return next(
+        (
+            fmt
+            for fmt in formats
+            if _is_none_codec(fmt.get("vcodec"))
+            and not _is_none_codec(fmt.get("acodec"))
+        ),
+        None,
+    )
+
+
+def _auto_format_selector(
+    video_id: str | None,
+    audio_id: str | None,
+    using_progressive_av: bool,
+) -> str:
+    if using_progressive_av and video_id:
+        return video_id
+    if video_id and audio_id:
+        return f"{video_id}+{audio_id}"
+    raise RuntimeError(
+        "VODForge could not build a safe video+audio selector from yt-dlp formats."
+    )
+
+
+def _select_auto_sources(
+    formats: list[dict[str, Any]], max_height: int
+) -> _AutoSourceSelection:
+    video, using_progressive_av = _choose_auto_video_source(formats, max_height)
     if video is None:
         raise RuntimeError(
             "No usable video source was found for this URL. This can happen when:\n"
@@ -583,22 +648,113 @@ def build_auto_export_plan(
             "• YouTube is rate-limiting the connection (retry later or use cookies).\n"
             "Check the diagnostics log for yt-dlp's detailed format list."
         )
-    if audio is None and not using_progressive_av:
-        # Last resort: pick any audio-only format, ignoring bitrate filters.
-        for fmt in formats:
-            if _is_none_codec(fmt.get("vcodec")) and not _is_none_codec(
-                fmt.get("acodec")
-            ):
-                audio = fmt
-                break
+
+    audio = _choose_auto_audio_source(formats, video, using_progressive_av)
     if audio is None and not using_progressive_av:
         raise RuntimeError(
             "No usable audio source was found for this URL. This can happen when "
             "yt-dlp returns limited formats without a JavaScript runtime (Deno 2.x). "
             "Check the diagnostics log for details."
         )
+
     video_id = str(video.get("format_id") or "") or None
     audio_id = str(audio.get("format_id") or "") if audio else None
+    selector = _auto_format_selector(video_id, audio_id, using_progressive_av)
+    return _AutoSourceSelection(
+        video=video,
+        audio=audio,
+        video_id=video_id,
+        audio_id=audio_id,
+        selector=selector,
+    )
+
+
+def _auto_target_bitrates(
+    mode: ExportMode,
+    video: dict[str, Any],
+    audio: dict[str, Any] | None,
+    effective_audio_kbps: float,
+) -> tuple[int, int]:
+    if mode in {ExportMode.STRICT_COMPLIANCE, ExportMode.MANUAL_OVERRIDE}:
+        return STRICT_VIDEO_BITRATE_KBPS, STRICT_AUDIO_BITRATE_KBPS
+    return (
+        calculate_auto_video_bitrate_kbps(video),
+        choose_audio_bitrate_kbps(effective_audio_kbps) if audio else 160,
+    )
+
+
+def _derive_auto_encode_targets(
+    *,
+    mode: ExportMode,
+    selection: _AutoSourceSelection,
+    max_height: int,
+    evidence: _AutoQualityEvidence,
+) -> _AutoEncodeTargets:
+    video_bitrate, audio_bitrate = _auto_target_bitrates(
+        mode,
+        selection.video,
+        selection.audio,
+        evidence.effective_audio_kbps,
+    )
+    warnings: list[str] = []
+    if max_height >= 1080 and evidence.height != 1080:
+        warnings.append(
+            "This video is not available in 1080p. VODForge will export the best available lower-resolution version."
+        )
+    if mode == ExportMode.STRICT_COMPLIANCE:
+        if evidence.height and evidence.height < 1080:
+            warnings.append(
+                "Strict Compliance uses high-bitrate output settings, but the selected source is below 1080p. This will not create true 1080p detail."
+            )
+        if (
+            evidence.effective_video_kbps
+            and video_bitrate / evidence.effective_video_kbps > 2
+        ):
+            warnings.append(
+                "Strict Compliance target is far above the selected source quality. The output may satisfy platform requirements, but it will not become true high-bitrate quality."
+            )
+    warn = _bitrate_warning(video_bitrate, evidence.effective_video_kbps)
+    if warn and warn not in warnings:
+        warnings.append(warn)
+    if (
+        evidence.effective_audio_kbps
+        and audio_bitrate / evidence.effective_audio_kbps > 2
+    ):
+        warnings.append(
+            "Audio target is much higher than the source. This may satisfy the output profile, but it will not restore lost audio quality."
+        )
+    return _AutoEncodeTargets(
+        video_bitrate_kbps=video_bitrate,
+        audio_bitrate_kbps=audio_bitrate,
+        warnings=tuple(warnings),
+    )
+
+
+def _auto_plan_summary(
+    mode: ExportMode,
+    height: int | None,
+    video_bitrate_kbps: int,
+    audio_bitrate_kbps: int,
+) -> str:
+    if mode == ExportMode.STRICT_COMPLIANCE:
+        return f"Strict Compliance selected the best practical {height or 'unknown'}p source and will export fixed H.264 CBR {video_bitrate_kbps / 1000:g} Mbps + AAC {audio_bitrate_kbps} kbps."
+    if mode == ExportMode.MANUAL_OVERRIDE:
+        return f"Manual Override selected the best practical {height or 'unknown'}p source; user-selected encode settings will be applied before transcode."
+    if height == 1080:
+        return f"Auto mode selected a true 1080p source and recommends {video_bitrate_kbps / 1000:g} Mbps CBR based on source quality and the platform's 1080p minimum."
+    return f"Auto mode selected the best available {height or 'unknown'}p source and will export at that truthful resolution."
+
+
+def build_auto_export_plan(
+    info: dict[str, Any],
+    mode: ExportMode | str = ExportMode.AUTO_CBR,
+    max_height: int = DEFAULT_MAX_HEIGHT,
+) -> ExportPlan:
+    mode = ExportMode(mode)
+    formats = [fmt for fmt in info.get("formats") or [] if isinstance(fmt, dict)]
+    selection = _select_auto_sources(formats, max_height)
+    video = selection.video
+    audio = selection.audio
     source_video_kbps = _format_video_kbps(video)
     effective_video_kbps = source_video_kbps * video_codec_multiplier(
         video.get("vcodec")
@@ -607,73 +763,43 @@ def build_auto_export_plan(
     effective_audio_kbps = source_audio_kbps * audio_codec_multiplier(
         (audio or {}).get("acodec")
     )
-    warnings: list[str] = []
     height = video.get("height") if isinstance(video.get("height"), int) else None
     width = video.get("width") if isinstance(video.get("width"), int) else None
     fps = _num(video.get("fps"), 30.0)
-    if max_height >= 1080 and height != 1080:
-        warnings.append(
-            "This video is not available in 1080p. VODForge will export the best available lower-resolution version."
-        )
-    if mode == ExportMode.STRICT_COMPLIANCE:
-        video_bitrate = STRICT_VIDEO_BITRATE_KBPS
-        audio_bitrate = STRICT_AUDIO_BITRATE_KBPS
-        if height and height < 1080:
-            warnings.append(
-                "Strict Compliance uses high-bitrate output settings, but the selected source is below 1080p. This will not create true 1080p detail."
-            )
-        if effective_video_kbps and video_bitrate / effective_video_kbps > 2:
-            warnings.append(
-                "Strict Compliance target is far above the selected source quality. The output may satisfy platform requirements, but it will not become true high-bitrate quality."
-            )
-    elif mode == ExportMode.MANUAL_OVERRIDE:
-        video_bitrate = STRICT_VIDEO_BITRATE_KBPS
-        audio_bitrate = STRICT_AUDIO_BITRATE_KBPS
-    else:
-        video_bitrate = calculate_auto_video_bitrate_kbps(video)
-        audio_bitrate = (
-            choose_audio_bitrate_kbps(effective_audio_kbps) if audio else 160
-        )
-    warn = _bitrate_warning(video_bitrate, effective_video_kbps)
-    if warn and warn not in warnings:
-        warnings.append(warn)
-    if effective_audio_kbps and audio_bitrate / effective_audio_kbps > 2:
-        warnings.append(
-            "Audio target is much higher than the source. This may satisfy the output profile, but it will not restore lost audio quality."
-        )
-    if using_progressive_av and video_id:
-        selector = video_id
-    elif video_id and audio_id:
-        selector = f"{video_id}+{audio_id}"
-    else:
-        raise RuntimeError(
-            "VODForge could not build a safe video+audio selector from yt-dlp formats."
-        )
-    if mode == ExportMode.STRICT_COMPLIANCE:
-        summary = f"Strict Compliance selected the best practical {height or 'unknown'}p source and will export fixed H.264 CBR {video_bitrate / 1000:g} Mbps + AAC {audio_bitrate} kbps."
-    elif mode == ExportMode.MANUAL_OVERRIDE:
-        summary = f"Manual Override selected the best practical {height or 'unknown'}p source; user-selected encode settings will be applied before transcode."
-    elif height == 1080:
-        summary = f"Auto mode selected a true 1080p source and recommends {video_bitrate / 1000:g} Mbps CBR based on source quality and the platform's 1080p minimum."
-    else:
-        summary = f"Auto mode selected the best available {height or 'unknown'}p source and will export at that truthful resolution."
+    evidence = _AutoQualityEvidence(
+        height=height,
+        effective_video_kbps=effective_video_kbps,
+        effective_audio_kbps=effective_audio_kbps,
+    )
+    targets = _derive_auto_encode_targets(
+        mode=mode,
+        selection=selection,
+        max_height=max_height,
+        evidence=evidence,
+    )
+    summary = _auto_plan_summary(
+        mode,
+        height,
+        targets.video_bitrate_kbps,
+        targets.audio_bitrate_kbps,
+    )
     return ExportPlan(
         mode=mode,
-        video_format_id=video_id,
-        audio_format_id=audio_id,
-        format_selector=selector,
+        video_format_id=selection.video_id,
+        audio_format_id=selection.audio_id,
+        format_selector=selection.selector,
         output_width=width,
         output_height=height,
         source_video_kbps=source_video_kbps,
         effective_video_kbps=effective_video_kbps,
-        video_bitrate_kbps=video_bitrate,
+        video_bitrate_kbps=targets.video_bitrate_kbps,
         source_audio_kbps=source_audio_kbps,
         effective_audio_kbps=effective_audio_kbps,
-        audio_bitrate_kbps=audio_bitrate,
+        audio_bitrate_kbps=targets.audio_bitrate_kbps,
         fps=fps,
         video_codec=str(video.get("vcodec") or "unknown"),
         audio_codec=str((audio or {}).get("acodec") or "unknown"),
-        warnings=warnings,
+        warnings=list(targets.warnings),
         summary=summary,
     )
 
