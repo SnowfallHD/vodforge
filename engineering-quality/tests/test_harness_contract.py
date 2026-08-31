@@ -64,6 +64,8 @@ def test_manifest_separates_content_rights_from_platform_automation() -> None:
         "selected_item_fixed_height": 360,
         "description_larger_than_tags": True,
         "description_bottom_aligned_to_library_table": True,
+        "tags_max_visible_lines": 2,
+        "title_minimum_visible_lines": 2,
         "path_ellipsized_before_title": True,
         "packaged_ui_evidence": True,
     }

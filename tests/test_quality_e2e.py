@@ -14,6 +14,7 @@ from yt_downloader.quality_e2e import (
     QUALITY_E2E_LAUNCH_ID_ENV,
     QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
     QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
+    QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
     QUALITY_E2E_MODE_ENV,
     QUALITY_E2E_NONCE_ENV,
     QUALITY_E2E_WINDOW_TOKEN_ENV,
@@ -236,6 +237,7 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
         ),
         full_title="An intentionally extreme title " * 8,
         displayed_title="An intentionally extreme title…",
+        displayed_title_visible_lines=2,
         full_location="Saved in /an/intentionally/extreme/output/path/" * 5,
         displayed_location="Saved in /an/intentionally/extreme…",
         expected_details_height=360,
@@ -272,6 +274,11 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     assert payload["description_first_line_visible"] is True
     assert payload["path_ellipsized"] is True
     assert payload["title_ellipsized"] is True
+    assert payload["displayed_title_visible_lines"] == 2
+    assert payload["minimum_displayed_title_visible_lines"] == (
+        QUALITY_E2E_MIN_TITLE_VISIBLE_LINES
+    )
+    assert payload["title_minimum_visible_lines_preserved"] is True
     assert payload["launch_id"] == LAUNCH_ID
     assert payload["pid"] == 4321
     if os.name != "nt":
@@ -306,6 +313,7 @@ def test_quality_e2e_library_visibility_marks_clipped_description_unverified(
         ),
         full_title="Long title " * 20,
         displayed_title="Long title…",
+        displayed_title_visible_lines=2,
         full_location="Saved in /long/path/" * 20,
         displayed_location="Saved in /long/path…",
         expected_details_height=360,
@@ -348,6 +356,7 @@ def test_quality_e2e_library_visibility_marks_bottom_misalignment_unverified(
         ),
         full_title="Long title " * 20,
         displayed_title="Long title…",
+        displayed_title_visible_lines=2,
         full_location="Saved in /long/path/" * 20,
         displayed_location="Saved in /long/path…",
         expected_details_height=360,
@@ -390,6 +399,7 @@ def test_quality_e2e_library_visibility_requires_description_larger_than_tags(
         ),
         full_title="Long title " * 20,
         displayed_title="Long title…",
+        displayed_title_visible_lines=2,
         full_location="Saved in /long/path/" * 20,
         displayed_location="Saved in /long/path…",
         expected_details_height=360,
@@ -401,6 +411,48 @@ def test_quality_e2e_library_visibility_requires_description_larger_than_tags(
     assert payload["description_bottom_aligned_with_library_table"] is True
     assert payload["description_tags_height_delta_px"] == 0
     assert payload["description_body_larger_than_tags_body"] is False
+    assert payload["verified"] is False
+
+
+def test_quality_e2e_library_visibility_requires_two_measured_title_lines(
+    tmp_path: Path,
+) -> None:
+    environment, _app, _home, _application_data, _diagnostics = _isolated_launch(
+        tmp_path
+    )
+
+    result = write_quality_e2e_library_visibility_receipt(
+        details=_FakeWidget(
+            x=100,
+            y=100,
+            width=410,
+            height=390,
+            configured_height=360,
+        ),
+        library_table=_FakeWidget(x=100, y=180, width=900, height=247),
+        tags_body=_FakeWidget(x=110, y=205, width=385, height=72),
+        description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
+        description=_FakeDescriptionWidget(
+            x=110,
+            y=307,
+            width=385,
+            height=120,
+            text="Visible, aligned Description text",
+            first_line=(9, 7, 250, 16, 12),
+        ),
+        full_title="An intentionally extreme title " * 20,
+        displayed_title="An intentionally extreme title…",
+        displayed_title_visible_lines=1,
+        full_location="Saved in /an/intentionally/extreme/path/" * 20,
+        displayed_location="Saved in /an/intentionally/extreme…",
+        expected_details_height=360,
+        environ=environment,
+    )
+
+    assert result is not None
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    assert payload["displayed_title_visible_lines"] == 1
+    assert payload["title_minimum_visible_lines_preserved"] is False
     assert payload["verified"] is False
 
 

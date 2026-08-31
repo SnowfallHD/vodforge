@@ -150,8 +150,11 @@ from .ui_events import (
     thumbnail_preview_event,
 )
 from .ui_layout import (
+    FOCUS_LIBRARY_SELECTED_DESCRIPTION_VISIBLE_LINES,
     FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
     FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT,
+    FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT,
+    FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES,
     bounded_window_size,
     centered_toplevel_geometry,
     ellipsize_wrapped_text,
@@ -166,6 +169,7 @@ from .ui_layout import (
     measured_wrapped_line_count,
     rounded_canvas_rectangle_points,
     selected_description_max_height,
+    selected_overview_height,
     selected_overview_line_budget,
     thumbnail_size_within,
     youtube_thumbnail_size,
@@ -6119,8 +6123,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         details.configure(width=410, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)
         details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
-        details.rowconfigure(3, weight=2, minsize=96)
-        details.rowconfigure(4, weight=3, minsize=120)
+        details.rowconfigure(3, weight=0)
+        details.rowconfigure(4, weight=1, minsize=120)
         self.selected_title_var = tk.StringVar(
             value="Choose a saved item or preview a URL to inspect its metadata."
         )
@@ -6140,6 +6144,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         overview.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         overview.columnconfigure(0, weight=1)
         self.focus_selected_overview = overview
+        self._focus_selected_overview_height = FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT
         self._focus_selected_overview_layout_after_id: str | None = None
         self._focus_selected_text_width = 220
         self.focus_selected_title_label = ttk.Label(
@@ -6222,6 +6227,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         details.bind("<Configure>", layout_selected_overview, add="+")
 
         tags_line = ttk.Frame(details, style="FocusShell.TFrame")
+        tags_line.configure(height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT)
+        tags_line.grid_propagate(False)
         tags_line.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
         tags_line.columnconfigure(0, weight=1)
         tags_line.rowconfigure(1, weight=1)
@@ -6230,7 +6237,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.pulled_tags_text = tk.Text(
             tags_line,
-            height=3,
+            height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES,
             width=1,
             wrap="word",
             bg=THEME["surface"],
@@ -6260,7 +6267,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.description_text = tk.Text(
             description_line,
-            height=5,
+            height=FOCUS_LIBRARY_SELECTED_DESCRIPTION_VISIBLE_LINES,
             width=1,
             wrap="word",
             bg=THEME["surface"],
@@ -6460,6 +6467,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         location_font = self._focus_selected_label_font(
             self.focus_selected_location_label
         )
+        overview_height = selected_overview_height(
+            title_line_height=title_font.metrics("linespace")
+        )
+        if self.__dict__.get("_focus_selected_overview_height") != overview_height:
+            self.focus_selected_overview.configure(height=overview_height)
+            self._focus_selected_overview_height = overview_height
+            self._queue_focus_description_layout()
         title_lines = measured_wrapped_line_count(
             title,
             maximum_width=text_width,
@@ -6479,7 +6493,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             title_lines=title_lines,
             metadata_lines=metadata_lines,
             location_lines=location_lines,
-            available_height=FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT,
+            available_height=overview_height,
             title_line_height=title_font.metrics("linespace"),
             metadata_line_height=metadata_font.metrics("linespace"),
             location_line_height=location_font.metrics("linespace"),
@@ -6492,13 +6506,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 measure_width=location_font.measure,
             )
         )
-        self.selected_title_display_var.set(
-            ellipsize_wrapped_text(
-                title,
-                maximum_width=text_width,
-                maximum_lines=line_budget.title,
-                measure_width=title_font.measure,
-            )
+        displayed_title = ellipsize_wrapped_text(
+            title,
+            maximum_width=text_width,
+            maximum_lines=line_budget.title,
+            measure_width=title_font.measure,
+        )
+        self.selected_title_display_var.set(displayed_title)
+        self._focus_selected_displayed_title_lines = measured_wrapped_line_count(
+            displayed_title,
+            maximum_width=text_width,
+            measure_width=title_font.measure,
         )
         self.selected_meta_display_var.set(
             ellipsize_wrapped_text(
@@ -6533,6 +6551,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     description=self.description_text,
                     full_title=self.selected_title_var.get(),
                     displayed_title=self.selected_title_display_var.get(),
+                    displayed_title_visible_lines=int(
+                        self.__dict__.get("_focus_selected_displayed_title_lines", 0)
+                    ),
                     full_location=self.selected_location_var.get(),
                     displayed_location=self.selected_location_display_var.get(),
                     expected_details_height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,

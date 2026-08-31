@@ -21,6 +21,7 @@ QUALITY_E2E_SCHEMA_VERSION = "1.0.0"
 QUALITY_E2E_ATTESTATION_PREFIX = "vodforge-e2e-attestation-"
 QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX = "vodforge-e2e-library-visibility-"
 QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX = 2
+QUALITY_E2E_MIN_TITLE_VISIBLE_LINES = 2
 
 _NONCE_RE = re.compile(r"[0-9a-f]{32}")
 _WINDOW_TOKEN_RE = re.compile(r"[A-Za-z0-9._-]{8,64}")
@@ -213,6 +214,7 @@ def write_quality_e2e_library_visibility_receipt(
     description: _DescriptionWidget,
     full_title: str,
     displayed_title: str,
+    displayed_title_visible_lines: int,
     full_location: str,
     displayed_location: str,
     expected_details_height: int,
@@ -247,6 +249,13 @@ def write_quality_e2e_library_visibility_receipt(
     if tmp_path != isolation_root / "tmp":
         raise QualityE2EAttestationError(
             "quality-E2E temporary directory does not belong to the isolation root"
+        )
+
+    if isinstance(displayed_title_visible_lines, bool) or not isinstance(
+        displayed_title_visible_lines, int
+    ):
+        raise QualityE2EAttestationError(
+            "quality-E2E displayed title visible-line count is invalid"
         )
 
     details_bounds = _widget_bounds(details)
@@ -298,6 +307,9 @@ def write_quality_e2e_library_visibility_receipt(
     title_ellipsized = bool(
         full_title and displayed_title != full_title and displayed_title.endswith("…")
     )
+    title_minimum_visible_lines_preserved = (
+        displayed_title_visible_lines >= QUALITY_E2E_MIN_TITLE_VISIBLE_LINES
+    )
     fixed_height_preserved = configured_details_height == int(expected_details_height)
     verified = bool(
         description_text.strip()
@@ -313,6 +325,7 @@ def write_quality_e2e_library_visibility_receipt(
         and first_line_visible
         and path_ellipsized
         and title_ellipsized
+        and title_minimum_visible_lines_preserved
         and fixed_height_preserved
     )
     payload: dict[str, object] = {
@@ -360,6 +373,12 @@ def write_quality_e2e_library_visibility_receipt(
         "description_length": len(description_text),
         "path_ellipsized": path_ellipsized,
         "title_ellipsized": title_ellipsized,
+        "full_title_sha256": hashlib.sha256(full_title.encode("utf-8")).hexdigest(),
+        "displayed_title_visible_lines": displayed_title_visible_lines,
+        "minimum_displayed_title_visible_lines": (QUALITY_E2E_MIN_TITLE_VISIBLE_LINES),
+        "title_minimum_visible_lines_preserved": (
+            title_minimum_visible_lines_preserved
+        ),
         "verified": verified,
         "recorded_at": recorded_at
         or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),

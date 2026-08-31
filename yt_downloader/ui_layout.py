@@ -24,6 +24,10 @@ FOCUS_HERO_THUMBNAIL_MIN_WIDTH = 720
 LIBRARY_THUMBNAIL_MAX_WIDTH = 240
 FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT = 360
 FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT = 81
+FOCUS_LIBRARY_SELECTED_TITLE_EXTRA_LINES = 1
+FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT = 84
+FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES = 2
+FOCUS_LIBRARY_SELECTED_DESCRIPTION_VISIBLE_LINES = 5
 
 
 @dataclass(frozen=True)
@@ -33,6 +37,15 @@ class SelectedOverviewLineBudget:
     title: int
     metadata: int
     location: int
+
+
+def selected_overview_height(*, title_line_height: int) -> int:
+    """Add one active-font title line to the established overview budget."""
+
+    measured_line_height = max(1, int(title_line_height))
+    return FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT + (
+        measured_line_height * FOCUS_LIBRARY_SELECTED_TITLE_EXTRA_LINES
+    )
 
 
 def selected_description_max_height(

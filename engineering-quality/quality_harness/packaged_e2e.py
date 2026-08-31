@@ -20,6 +20,7 @@ from typing import Any, Self
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
     QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
+    QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
 )
 
 from .e2e_provenance import (
@@ -711,14 +712,19 @@ def _library_description_visibility_receipt(
     expected_description_sha256 = hashlib.sha256(
         expected_description.encode("utf-8")
     ).hexdigest()
+    expected_title_sha256 = hashlib.sha256(
+        LIBRARY_DESCRIPTION_STRESS_TITLE.encode("utf-8")
+    ).hexdigest()
     expected_values = {
         "session_nonce": session_nonce,
         "launch_id": event.get("launch_id"),
         "window_token": event.get("window_title_token"),
         "pid": event.get("pid"),
         "description_sha256": expected_description_sha256,
+        "full_title_sha256": expected_title_sha256,
         "details_configured_height_px": 360,
         "expected_details_height_px": 360,
+        "minimum_displayed_title_visible_lines": (QUALITY_E2E_MIN_TITLE_VISIBLE_LINES),
         "description_table_bottom_tolerance_px": (
             QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
         ),
@@ -744,10 +750,24 @@ def _library_description_visibility_receipt(
         "description_first_line_visible",
         "path_ellipsized",
         "title_ellipsized",
+        "title_minimum_visible_lines_preserved",
     )
     for key in required_true:
         if payload.get(key) is not True:
             errors.append(f"Library visibility receipt {key} is not true")
+
+    displayed_title_visible_lines = payload.get("displayed_title_visible_lines")
+    if isinstance(displayed_title_visible_lines, bool) or not isinstance(
+        displayed_title_visible_lines, int
+    ):
+        errors.append(
+            "Library visibility receipt displayed_title_visible_lines is invalid"
+        )
+    elif displayed_title_visible_lines < QUALITY_E2E_MIN_TITLE_VISIBLE_LINES:
+        errors.append(
+            "Library visibility receipt displayed title has fewer than "
+            f"{QUALITY_E2E_MIN_TITLE_VISIBLE_LINES} measured visible lines"
+        )
 
     geometry: dict[str, int] = {}
     for bounds_name in (
@@ -812,6 +832,7 @@ def _library_description_visibility_receipt(
         "verified": not errors,
         "fixture_id": "generated-library-description-stress",
         "expected_description_sha256": expected_description_sha256,
+        "expected_title_sha256": expected_title_sha256,
         "observed_description_sha256": payload.get("description_sha256"),
         "event_observed_text_matches": event.get("observed_text")
         == expected_description,
@@ -1491,6 +1512,8 @@ def run_packaged_e2e_session(
         f"{visibility_geometry.get('description_table_bottom_delta_px')}; "
         f"description_height_px={visibility_geometry.get('description_body_height_px')}; "
         f"tags_height_px={visibility_geometry.get('tags_body_height_px')}; "
+        "title_visible_lines="
+        f"{visibility_geometry.get('displayed_title_visible_lines')}; "
         f"errors={library_description_visibility['errors']}"
     )
     evidence = [

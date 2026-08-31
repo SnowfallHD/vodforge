@@ -1914,8 +1914,14 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
         in library_source
     )
     assert "overview.grid_propagate(False)" in library_source
-    assert "details.rowconfigure(3, weight=2, minsize=96)" in library_source
-    assert "details.rowconfigure(4, weight=3, minsize=120)" in library_source
+    assert "details.rowconfigure(3, weight=0)" in library_source
+    assert "details.rowconfigure(4, weight=1, minsize=120)" in library_source
+    assert (
+        "tags_line.configure(height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT)"
+        in library_source
+    )
+    assert "tags_line.grid_propagate(False)" in library_source
+    assert "height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES" in library_source
     assert "focus_library_vertical_layout_mode(height)" in layout_source
     assert (
         "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)"

@@ -6,7 +6,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from quality_harness import packaged_e2e
-from quality_harness.fixtures import LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+from quality_harness.fixtures import (
+    LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    LIBRARY_DESCRIPTION_STRESS_TITLE,
+)
 from quality_harness.packaged_e2e import (
     SMOKE_UI_EVENT_ORDER,
     _history_persistence_receipt,
@@ -20,6 +23,7 @@ from quality_harness.util import CommandResult, sha256_file
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
     QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
+    QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
 )
 
 
@@ -159,16 +163,22 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
     description_sha256 = hashlib.sha256(
         LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
     ).hexdigest()
+    title_sha256 = hashlib.sha256(
+        LIBRARY_DESCRIPTION_STRESS_TITLE.encode("utf-8")
+    ).hexdigest()
     payload = {
         "session_nonce": nonce,
         "launch_id": launch["launch_id"],
         "window_token": launch["window_token"],
         "pid": launch["pid"],
         "description_sha256": description_sha256,
+        "full_title_sha256": title_sha256,
         "details_height_px": 390,
         "details_allocated_height_px": 390,
         "details_configured_height_px": 360,
         "expected_details_height_px": 360,
+        "displayed_title_visible_lines": 2,
+        "minimum_displayed_title_visible_lines": (QUALITY_E2E_MIN_TITLE_VISIBLE_LINES),
         "description_bounds": {"x": 110, "y": 307, "width": 385, "height": 120},
         "library_table_bounds": {"x": 100, "y": 180, "width": 900, "height": 247},
         "tags_body_bounds": {"x": 110, "y": 205, "width": 385, "height": 72},
@@ -195,6 +205,7 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         "description_first_line_visible": True,
         "path_ellipsized": True,
         "title_ellipsized": True,
+        "title_minimum_visible_lines_preserved": True,
     }
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     receipt_path.chmod(0o600)
@@ -218,6 +229,7 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         "description_first_line_visible",
         "path_ellipsized",
         "title_ellipsized",
+        "title_minimum_visible_lines_preserved",
         "fixed_height_preserved",
     ):
         broken = dict(payload)
@@ -306,6 +318,34 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
     )
     assert rejected["verified"] is False
     assert any("tags_body_bounds is invalid" in error for error in rejected["errors"])
+
+    one_title_line = dict(payload)
+    one_title_line["displayed_title_visible_lines"] = 1
+    receipt_path.write_text(json.dumps(one_title_line), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any(
+        "fewer than 2 measured visible lines" in error for error in rejected["errors"]
+    )
+
+    wrong_title = dict(payload)
+    wrong_title["full_title_sha256"] = "0" * 64
+    receipt_path.write_text(json.dumps(wrong_title), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any("full_title_sha256 mismatch" in error for error in rejected["errors"])
 
 
 def test_driver_trace_rejects_screenshot_outside_session(tmp_path: Path) -> None:

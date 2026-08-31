@@ -82,7 +82,7 @@
       "type": "edge-case",
       "source_kind": "generated",
       "license_or_reason_safe": "Generated locally; all media and metadata are synthetic and intentionally constructed for Selected Item layout regression testing.",
-      "expected_behavior": "The fixed-height Selected Item panel keeps the nonempty Description heading and body visible, makes Description taller than Tags, caps its bottom at the Library table edge, ellipsizes the output path first, and ellipsizes the extreme title second.",
+      "expected_behavior": "The fixed-height Selected Item panel keeps the nonempty Description heading and body visible, makes Description taller than the two-line-capped Tags region, caps its bottom at the Library table edge, ellipsizes the output path first, and gives the extreme ellipsized title at least two measured visible lines.",
       "expected_characteristics": {
         "extreme_title": true,
         "extreme_output_path": true,
@@ -90,6 +90,8 @@
         "selected_item_fixed_height": 360,
         "description_larger_than_tags": true,
         "description_bottom_aligned_to_library_table": true,
+        "tags_max_visible_lines": 2,
+        "title_minimum_visible_lines": 2,
         "path_ellipsized_before_title": true,
         "packaged_ui_evidence": true
       },
