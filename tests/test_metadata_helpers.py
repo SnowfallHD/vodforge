@@ -4268,15 +4268,65 @@ def test_transcode_atomic_replace_failure_preserves_downloaded_source(
             return 0
 
     monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
+
+    progress: list[float] = []
+    replace_attempts: list[tuple[Path, Path, tuple[float, ...]]] = []
+
+    def fail_replace(encoded: Path, destination: Path) -> None:
+        replace_attempts.append((encoded, destination, tuple(progress)))
+        raise OSError("commit failed")
+
     monkeypatch.setattr(
         app_module.os,
         "replace",
-        lambda *_args: (_ for _ in ()).throw(OSError("commit failed")),
+        fail_replace,
     )
 
     with pytest.raises(RuntimeError, match="commit failed"):
-        transcode_to_vod_streaming_settings(source, "ffmpeg")
+        transcode_to_vod_streaming_settings(
+            source,
+            "ffmpeg",
+            progress_callback=progress.append,
+        )
 
+    assert progress == [1.0]
+    assert replace_attempts == [(tmp_path / "__vodforge-tmp.mp4", source, (1.0,))]
+    assert source.read_bytes() == b"downloaded source"
+    assert not (tmp_path / "__vodforge-tmp.mp4").exists()
+
+
+def test_transcode_rejects_zero_byte_temp_before_completion_or_replace(
+    monkeypatch, tmp_path: Path
+):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+
+    class FakePopen:
+        def __init__(self, command, **_kwargs):
+            Path(command[-1]).write_bytes(b"")
+            self.stdout = iter(["progress=end\n"])
+
+        def wait(self):
+            return 0
+
+    replacements: list[tuple[Path, Path]] = []
+    progress: list[float] = []
+    monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(
+        app_module.os,
+        "replace",
+        lambda encoded, destination: replacements.append((encoded, destination)),
+    )
+
+    with pytest.raises(RuntimeError, match="produced no usable output"):
+        transcode_to_vod_streaming_settings(
+            source,
+            "ffmpeg",
+            progress_callback=progress.append,
+        )
+
+    assert progress == []
+    assert replacements == []
     assert source.read_bytes() == b"downloaded source"
     assert not (tmp_path / "__vodforge-tmp.mp4").exists()
 
@@ -4704,6 +4754,121 @@ def test_transcode_rechecks_cancellation_after_encoder_output_closes(
         )
 
     assert source.read_bytes() == b"downloaded source"
+
+
+def test_transcode_progress_is_bounded_and_process_finalizes_before_replace(
+    monkeypatch, tmp_path: Path
+):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+
+    class FakePopen:
+        def __init__(self, command, **_kwargs):
+            Path(command[-1]).write_bytes(b"encoded output")
+            self.stdout = iter(
+                [
+                    "out_time_ms=-1000000\n",
+                    "out_time_ms=500000\n",
+                    "out_time_ms=not-a-number\n",
+                    "out_time_ms=2000000\n",
+                    "progress=end\n",
+                ]
+            )
+
+        def wait(self):
+            return 0
+
+    lifecycle: list[str] = []
+    progress: list[float] = []
+    original_finalize = app_module.finalize_active_child_process
+    original_replace = app_module.os.replace
+
+    def record_finalize(process, *, confirmed_exited=False):
+        lifecycle.append("finalize")
+        return original_finalize(process, confirmed_exited=confirmed_exited)
+
+    def record_replace(encoded: Path, destination: Path) -> None:
+        lifecycle.append("replace")
+        original_replace(encoded, destination)
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(app_module, "finalize_active_child_process", record_finalize)
+    monkeypatch.setattr(app_module.os, "replace", record_replace)
+
+    transcode_to_vod_streaming_settings(
+        source,
+        "ffmpeg",
+        duration_seconds=1.0,
+        progress_callback=progress.append,
+    )
+
+    assert progress == pytest.approx([0.0, 0.5, 1.0, 1.0])
+    assert lifecycle == ["finalize", "replace"]
+    assert source.read_bytes() == b"encoded output"
+
+
+@pytest.mark.parametrize("error_type", [TypeError, ValueError, ZeroDivisionError])
+def test_transcode_progress_keeps_numeric_callback_failures_best_effort(error_type):
+    received: list[float] = []
+
+    def fail_callback(fraction: float) -> None:
+        received.append(fraction)
+        raise error_type("injected progress callback failure")
+
+    app_module._emit_transcode_progress_line(
+        "out_time_ms=500000",
+        duration_seconds=1.0,
+        progress_callback=fail_callback,
+    )
+
+    assert received == [0.5]
+
+
+def test_transcode_progress_failure_reaps_child_and_preserves_source(
+    monkeypatch, tmp_path: Path
+):
+    source = tmp_path / "video.mp4"
+    source.write_bytes(b"downloaded source")
+
+    class FakePopen:
+        def __init__(self, command, **_kwargs):
+            Path(command[-1]).write_bytes(b"partial encoded output")
+            self.stdout = iter(["out_time_ms=500000\n"])
+            self.terminated = False
+
+        def poll(self):
+            return -15 if self.terminated else None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            return -15 if timeout is not None else 0
+
+    process: FakePopen | None = None
+
+    def fake_popen(command, **kwargs):
+        nonlocal process
+        process = FakePopen(command, **kwargs)
+        return process
+
+    monkeypatch.setattr(app_module.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(RuntimeError, match="progress sink failed"):
+        transcode_to_vod_streaming_settings(
+            source,
+            "ffmpeg",
+            duration_seconds=1.0,
+            progress_callback=lambda _fraction: (_ for _ in ()).throw(
+                RuntimeError("progress sink failed")
+            ),
+        )
+
+    assert process is not None
+    assert process.terminated is True
+    assert process not in app_module._ACTIVE_CHILD_PROCESSES
+    assert source.read_bytes() == b"downloaded source"
+    assert not (tmp_path / "__vodforge-tmp.mp4").exists()
 
 
 def test_ffprobe_json_uses_unicode_safe_decoding(monkeypatch, tmp_path: Path):
@@ -5388,13 +5553,27 @@ def test_transcode_rejects_nonzero_ffmpeg_exit_even_when_output_reaches_near_end
         def wait(self):
             return 1
 
+    progress: list[float] = []
+    replacements: list[tuple[Path, Path]] = []
     monkeypatch.setattr("yt_downloader.app.subprocess.Popen", FakePopen)
+    monkeypatch.setattr(
+        app_module.os,
+        "replace",
+        lambda encoded, destination: replacements.append((encoded, destination)),
+    )
     with pytest.raises(RuntimeError, match="ffmpeg exited with code 1"):
         transcode_to_vod_streaming_settings(
-            source, "ffmpeg", duration_seconds=10.0, use_nvenc=True
+            source,
+            "ffmpeg",
+            duration_seconds=10.0,
+            progress_callback=progress.append,
+            use_nvenc=True,
         )
 
+    assert progress == pytest.approx([0.99])
+    assert replacements == []
     assert source.read_bytes() == b"original"
+    assert not (tmp_path / "__vodforge-tmp.mp4").exists()
     assert not (tmp_path / "video.vodforge-cbr-tmp.mp4").exists()
     assert not (tmp_path / "video.pre-vodforge.mp4").exists()
 

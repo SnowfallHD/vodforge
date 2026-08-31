@@ -3225,6 +3225,129 @@ def transcode_temp_paths(video_path: Path) -> tuple[Path, Path]:
     )
 
 
+@dataclass(frozen=True)
+class _TranscodeProcessResult:
+    return_code: int
+    output_lines: tuple[str, ...]
+
+
+def _emit_transcode_progress_line(
+    text_line: str,
+    *,
+    duration_seconds: float | None,
+    progress_callback: Callable[[float], None] | None,
+) -> None:
+    if not progress_callback or not duration_seconds:
+        return
+    key, separator, value = text_line.partition("=")
+    if not separator or key != "out_time_ms":
+        return
+    try:
+        fraction = min(
+            1.0,
+            max(
+                0.0,
+                (float(value) / 1_000_000) / float(duration_seconds),
+            ),
+        )
+        progress_callback(fraction)
+    except (TypeError, ValueError, ZeroDivisionError):
+        # Preserve the established best-effort progress contract, including
+        # these errors when raised by the internal callback itself.
+        pass
+
+
+def _check_transcode_control_while_running(
+    control_check: Callable[[], None] | None,
+    process: Any,
+    output_reader: threading.Thread,
+) -> None:
+    if control_check is None:
+        return
+    try:
+        control_check()
+    except Exception:
+        terminate_and_reap_process(process)
+        output_reader.join(timeout=PROCESS_TERMINATE_TIMEOUT_SECONDS)
+        raise
+
+
+def _run_cancellable_transcode_process(
+    command: list[str],
+    *,
+    failure_prefix: str,
+    duration_seconds: float | None,
+    progress_callback: Callable[[float], None] | None,
+    control_check: Callable[[], None] | None,
+) -> _TranscodeProcessResult:
+    """Run one FFmpeg encode while retaining cancellation and child ownership."""
+    process_options = hidden_window_subprocess_kwargs()
+    # The caller supplies a fixed FFmpeg argv list with paths as single entries.
+    process = subprocess.Popen(  # nosec B603
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **process_options,
+    )
+    process_confirmed_exited = False
+    try:
+        register_active_child_process(process)
+        output_lines: list[str] = []
+        encoder_output = process.stdout
+        if encoder_output is None:
+            raise RuntimeError(
+                f"{failure_prefix}: FFmpeg did not expose a captured output stream"
+            )
+        output_queue: queue.Queue[str | None] = queue.Queue()
+
+        def read_encoder_output() -> None:
+            try:
+                for output_line in encoder_output:
+                    output_queue.put(output_line)
+            finally:
+                output_queue.put(None)
+
+        output_reader = threading.Thread(target=read_encoder_output, daemon=True)
+        output_reader.start()
+        while True:
+            _check_transcode_control_while_running(
+                control_check,
+                process,
+                output_reader,
+            )
+            try:
+                line = output_queue.get(timeout=0.10)
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            text_line = line.strip()
+            if text_line:
+                output_lines.append(text_line)
+                output_lines = output_lines[-80:]
+            _emit_transcode_progress_line(
+                text_line,
+                duration_seconds=duration_seconds,
+                progress_callback=progress_callback,
+            )
+        if control_check is not None:
+            control_check()
+        return_code = process.wait()
+        process_confirmed_exited = True
+        output_reader.join(timeout=1)
+        return _TranscodeProcessResult(
+            return_code=return_code,
+            output_lines=tuple(output_lines),
+        )
+    finally:
+        finalize_active_child_process(
+            process, confirmed_exited=process_confirmed_exited
+        )
+
+
 def transcode_to_vod_streaming_settings(
     path: Path,
     ffmpeg: str,
@@ -3248,6 +3371,7 @@ def transcode_to_vod_streaming_settings(
     audio_codec = plan.output_audio_codec if plan else ManualAudioCodec.AAC
     audio_codec_label = audio_codec.value
     x264_preset = plan.x264_preset if plan else "medium"
+    failure_prefix = f"VODForge H.264/{audio_codec_label} CBR transcode failed"
 
     cleanup_legacy_encode_sidecars(path)
     if temp_output.exists():
@@ -3255,10 +3379,6 @@ def transcode_to_vod_streaming_settings(
     if backup.exists():
         backup.unlink()
 
-    process_options = hidden_window_subprocess_kwargs()
-
-    process: Any | None = None
-    process_confirmed_exited = False
     try:
         command = build_vod_ffmpeg_command(
             ffmpeg,
@@ -3274,80 +3394,22 @@ def transcode_to_vod_streaming_settings(
             preserve_attached_picture=preserve_attached_picture,
             preserve_metadata=preserve_metadata,
         )
-        # build_vod_ffmpeg_command returns fixed options with paths as single argv entries.
-        process = subprocess.Popen(  # nosec B603
+        process_result = _run_cancellable_transcode_process(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            **process_options,
+            failure_prefix=failure_prefix,
+            duration_seconds=duration_seconds,
+            progress_callback=progress_callback,
+            control_check=control_check,
         )
-        register_active_child_process(process)
-        output_lines: list[str] = []
-        encoder_output = process.stdout
-        if encoder_output is None:
+        if process_result.return_code != 0:
+            tail = "\n".join(process_result.output_lines[-40:])
             raise RuntimeError(
-                f"VODForge H.264/{audio_codec_label} CBR transcode failed: "
-                "FFmpeg did not expose a captured output stream"
-            )
-        output_queue: queue.Queue[str | None] = queue.Queue()
-
-        def read_encoder_output() -> None:
-            try:
-                for output_line in encoder_output:
-                    output_queue.put(output_line)
-            finally:
-                output_queue.put(None)
-
-        output_reader = threading.Thread(target=read_encoder_output, daemon=True)
-        output_reader.start()
-        while True:
-            if control_check is not None:
-                try:
-                    control_check()
-                except Exception:
-                    terminate_and_reap_process(process)
-                    output_reader.join(timeout=PROCESS_TERMINATE_TIMEOUT_SECONDS)
-                    raise
-            try:
-                line = output_queue.get(timeout=0.10)
-            except queue.Empty:
-                continue
-            if line is None:
-                break
-            text_line = line.strip()
-            if text_line:
-                output_lines.append(text_line)
-                output_lines = output_lines[-80:]
-            if progress_callback and duration_seconds:
-                key, sep, value = text_line.partition("=")
-                if sep and key == "out_time_ms":
-                    try:
-                        fraction = min(
-                            1.0,
-                            max(
-                                0.0,
-                                (float(value) / 1_000_000) / float(duration_seconds),
-                            ),
-                        )
-                        progress_callback(fraction)
-                    except (TypeError, ValueError, ZeroDivisionError):
-                        pass
-        if control_check is not None:
-            control_check()
-        return_code = process.wait()
-        process_confirmed_exited = True
-        output_reader.join(timeout=1)
-        if return_code != 0:
-            tail = "\n".join(output_lines[-40:])
-            raise RuntimeError(
-                f"VODForge H.264/{audio_codec_label} CBR transcode failed for {path.name}; ffmpeg exited with code {return_code}: {tail[-4000:]}"
+                f"{failure_prefix} for {path.name}; ffmpeg exited with code "
+                f"{process_result.return_code}: {tail[-4000:]}"
             )
         if not temp_output.is_file() or temp_output.stat().st_size <= 0:
             raise RuntimeError(
-                f"VODForge H.264/{audio_codec_label} CBR transcode failed for {path.name}; FFmpeg produced no usable output"
+                f"{failure_prefix} for {path.name}; FFmpeg produced no usable output"
             )
         if progress_callback:
             progress_callback(1.0)
@@ -3365,14 +3427,7 @@ def transcode_to_vod_streaming_settings(
             )
         if isinstance(exc, RuntimeError):
             raise
-        raise RuntimeError(
-            f"VODForge H.264/{audio_codec_label} CBR transcode failed for {path.name}: {exc}"
-        ) from exc
-    finally:
-        if process is not None:
-            finalize_active_child_process(
-                process, confirmed_exited=process_confirmed_exited
-            )
+        raise RuntimeError(f"{failure_prefix} for {path.name}: {exc}") from exc
 
 
 def _save_jpeg_under_size(
