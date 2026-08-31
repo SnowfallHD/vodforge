@@ -150,7 +150,10 @@ from yt_downloader.history import (
     sanitize_history_record,
     upsert_history,
 )
-from yt_downloader.safe_output import UnsafeOutputPathError
+from yt_downloader.safe_output import (
+    UnsafeOutputPathError,
+    cleanup_private_staging_directory,
+)
 from yt_downloader.ui_layout import (
     FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
     selected_description_max_height,
@@ -2379,6 +2382,74 @@ def test_staging_hardens_preexisting_loose_root_permissions(tmp_path: Path):
     if os.name != "nt":
         assert stat.S_IMODE(staging_root.stat().st_mode) == 0o700
         assert stat.S_IMODE(staging.stat().st_mode) == 0o700
+
+
+def test_staging_cleanup_removes_finder_metadata_from_idle_private_root(
+    tmp_path: Path,
+) -> None:
+    staging = create_staging_dir(tmp_path)
+    finder_metadata = staging.parent / ".DS_Store"
+    finder_metadata.write_bytes(b"Finder metadata")
+
+    assert cleanup_private_staging_directory(staging) is True
+    assert not staging.parent.exists()
+
+
+def test_staging_cleanup_preserves_unknown_root_entries(tmp_path: Path) -> None:
+    staging = create_staging_dir(tmp_path)
+    unknown = staging.parent / "keep-me"
+    unknown.write_text("unknown owner", encoding="utf-8")
+
+    assert cleanup_private_staging_directory(staging) is False
+    assert unknown.read_text(encoding="utf-8") == "unknown owner"
+    assert staging.parent.is_dir()
+
+
+def test_staging_cleanup_does_not_follow_finder_metadata_symlink(
+    tmp_path: Path,
+) -> None:
+    staging = create_staging_dir(tmp_path)
+    outside = tmp_path / "outside"
+    outside.write_text("untouched", encoding="utf-8")
+    finder_metadata = staging.parent / ".DS_Store"
+    try:
+        finder_metadata.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"file symlinks are unavailable on this host: {exc}")
+
+    assert cleanup_private_staging_directory(staging) is False
+    assert outside.read_text(encoding="utf-8") == "untouched"
+    assert finder_metadata.is_symlink()
+
+
+def test_staging_cleanup_refuses_non_vodforge_directory(tmp_path: Path) -> None:
+    unrelated = tmp_path / "unrelated" / "transaction"
+    unrelated.mkdir(parents=True)
+    sentinel = unrelated / "must-remain"
+    sentinel.write_text("untouched", encoding="utf-8")
+
+    assert cleanup_private_staging_directory(unrelated) is False
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+
+
+def test_staging_cleanup_does_not_follow_run_directory_symlink(
+    tmp_path: Path,
+) -> None:
+    staging_root = tmp_path / ".vfstage"
+    outside = tmp_path / "outside"
+    staging_root.mkdir()
+    outside.mkdir()
+    sentinel = outside / "must-remain"
+    sentinel.write_text("untouched", encoding="utf-8")
+    staging = staging_root / "run-link"
+    try:
+        staging.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlinks are unavailable on this host: {exc}")
+
+    assert cleanup_private_staging_directory(staging) is False
+    assert sentinel.read_text(encoding="utf-8") == "untouched"
+    assert staging.is_symlink()
 
 
 def test_staging_rejects_symlink_root_without_touching_target(tmp_path: Path):

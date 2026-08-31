@@ -135,6 +135,7 @@ from .quality_e2e import (
     write_quality_e2e_startup_attestation,
 )
 from .safe_output import (
+    cleanup_private_staging_directory,
     commit_file_beneath,
     create_private_staging_directory,
 )
@@ -12450,12 +12451,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         finally:
             self._active_progress_context = None
             if staging_dir is not None:
-                staging_root = staging_dir.parent
-                shutil.rmtree(staging_dir, ignore_errors=True)
-                try:
-                    staging_root.rmdir()
-                except OSError:
-                    pass
+                cleanup_private_staging_directory(staging_dir)
             if primary_intent_active:
                 source.provider_network.end_primary()
         if failure is not None:

@@ -215,6 +215,104 @@ def active_child_snapshot(app_module: Any) -> list[dict[str, Any]]:
     return snapshot
 
 
+class StagingTraceRecorder:
+    """Observe private staging topology without reading media contents."""
+
+    def __init__(self, output_dir: Path, events: TracingQueue) -> None:
+        self.output_dir = output_dir
+        self.events = events
+        self.trace: list[dict[str, Any]] = []
+        self._last_signature: tuple[object, ...] | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._monitor,
+            name="quality-staging-trace",
+            daemon=True,
+        )
+
+    def _status(self) -> str:
+        for event in reversed(self.events.trace):
+            if event.get("kind") == "status":
+                return str(event.get("payload") or "")
+        return ""
+
+    def _snapshot(self, *, final: bool = False) -> None:
+        staging_root = self.output_dir / ".vfstage"
+        entries: list[dict[str, Any]] = []
+        root_present = False
+        try:
+            root_stat = staging_root.lstat()
+            root_present = not staging_root.is_symlink() and staging_root.is_dir()
+            root_mode = root_stat.st_mode & 0o777
+        except (FileNotFoundError, OSError):
+            root_mode = None
+        if root_present:
+            try:
+                candidates = sorted(staging_root.rglob("*"), key=lambda path: str(path))
+            except OSError:
+                candidates = []
+            for path in candidates:
+                try:
+                    path_stat = path.lstat()
+                    relative = str(path.relative_to(staging_root))
+                    if path.is_symlink():
+                        kind = "symlink"
+                    elif path.is_dir():
+                        kind = "directory"
+                    elif path.is_file():
+                        kind = "file"
+                    else:
+                        kind = "other"
+                    entries.append(
+                        {
+                            "path": relative,
+                            "kind": kind,
+                            "size_bytes": path_stat.st_size if kind == "file" else None,
+                        }
+                    )
+                except (FileNotFoundError, OSError, ValueError):
+                    continue
+        status = self._status()
+        signature = (
+            root_present,
+            root_mode,
+            status,
+            tuple((entry["path"], entry["kind"]) for entry in entries),
+        )
+        if not final and signature == self._last_signature:
+            return
+        self._last_signature = signature
+        self.trace.append(
+            {
+                "elapsed_seconds": round(time.monotonic() - self.events.started, 4),
+                "status": status,
+                "root_present": root_present,
+                "root_mode": root_mode,
+                "run_directories": [
+                    entry["path"]
+                    for entry in entries
+                    if entry["kind"] == "directory" and "/" not in entry["path"]
+                ],
+                "entries": entries,
+                "final": final,
+            }
+        )
+
+    def _monitor(self) -> None:
+        self._snapshot()
+        while not self._stop.wait(0.02):
+            self._snapshot()
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> list[dict[str, Any]]:
+        self._stop.set()
+        self._thread.join(timeout=2)
+        self._snapshot(final=True)
+        return self.trace
+
+
 class HeadlessPipelineRunner:
     """High-volume adapter over VODForge's real production download worker."""
 
@@ -236,6 +334,7 @@ class HeadlessPipelineRunner:
         embed_thumbnail: bool = False,
         output_dir: Path | None = None,
         cancel_when: Callable[[TracingQueue, Any], bool] | None = None,
+        control_request: str = "cancel",
         cancel_timeout_seconds: float = 15,
         validate_destination: bool = True,
         re_raise: bool = True,
@@ -293,6 +392,8 @@ class HeadlessPipelineRunner:
         outcome: Any = None
         error: str | None = None
         cancellation_thread: threading.Thread | None = None
+        staging_recorder = StagingTraceRecorder(output_dir, events)
+        staging_recorder.start()
 
         if cancel_when is not None:
 
@@ -300,7 +401,10 @@ class HeadlessPipelineRunner:
                 deadline = time.monotonic() + cancel_timeout_seconds
                 while time.monotonic() < deadline:
                     if cancel_when(events, app):
-                        app.cancel_requested = True
+                        if control_request == "skip_video":
+                            app.skip_video_requested = True
+                        else:
+                            app.cancel_requested = True
                         app_module.terminate_all_active_child_processes()
                         return
                     time.sleep(0.02)
@@ -319,6 +423,7 @@ class HeadlessPipelineRunner:
             duration = time.monotonic() - started
             if cancellation_thread is not None:
                 cancellation_thread.join(timeout=1)
+            staging_trace = staging_recorder.stop()
             resource_metrics = sampler.stop()
             active_children_before_harness_cleanup = active_child_snapshot(app_module)
             if cleanup_global_children and any(
@@ -395,6 +500,8 @@ class HeadlessPipelineRunner:
             "outcome": _jsonable(outcome),
             "error": error,
             "cancel_requested": bool(app.cancel_requested),
+            "skip_video_requested": bool(app.skip_video_requested),
+            "control_request": control_request if cancel_when is not None else None,
             "events": events.trace,
             "progress_trace": progress_trace,
             "latest_metadata": _latest_metadata(events.trace),
@@ -402,6 +509,7 @@ class HeadlessPipelineRunner:
             "media_output_count": len(media_outputs),
             "output_bytes": tree_size(output_dir),
             "staging_entries_after": stage_entries,
+            "staging_trace": staging_trace,
             "diagnostic_timings": _diagnostic_timing(diagnostics),
             "effective_throughput_bytes_per_second": round(throughput, 3)
             if throughput

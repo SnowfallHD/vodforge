@@ -14,7 +14,12 @@ from .fault_server import FixtureHTTPServer
 from .maintainability import change_surface_probe
 from .metrics import LifecycleCheckpointRecorder, lifecycle_growth_summary
 from .mutation import run_bounded_mutation_campaign
-from .pipeline import HeadlessPipelineRunner, active_child_snapshot
+from .pipeline import (
+    HeadlessPipelineRunner,
+    TracingQueue,
+    active_child_snapshot,
+    make_headless_app,
+)
 from .reliability import batch_failure_report_reset_probe
 from .reliability_static import activity_log_failure_receipt_probe
 from .security import (
@@ -1032,6 +1037,187 @@ def reliability_malformed(
     ]
 
 
+def lifecycle_staging_transitions(
+    runner: HeadlessPipelineRunner,
+    server: FixtureHTTPServer,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Observe staging ownership through skip, successor, completion, and removal."""
+
+    from yt_downloader.app import create_staging_dir
+    from yt_downloader.library_state import resolve_library_removal_plan
+    from yt_downloader.safe_output import cleanup_private_staging_directory
+
+    case_root = runner.run_root / "cases" / "lifecycle-staging-transitions"
+    output_dir = case_root / "output"
+    staging_root = output_dir / ".vfstage"
+    staging_root.mkdir(parents=True, mode=0o700)
+    (staging_root / ".DS_Store").write_bytes(b"synthetic Finder metadata")
+
+    download_seen_at: list[float | None] = [None]
+
+    def skip_when(events: Any, _app: Any) -> bool:
+        observed = any(
+            event.get("kind") == "status"
+            and "downloading" in str(event.get("payload") or "").lower()
+            for event in events.trace
+        )
+        if observed and download_seen_at[0] is None:
+            download_seen_at[0] = time.monotonic()
+        return bool(
+            download_seen_at[0] is not None
+            and time.monotonic() - download_seen_at[0] >= 0.2
+        )
+
+    skipped = runner.run_job(
+        case_id="lifecycle-staging-skip",
+        url=server.url("/slow/page"),
+        output_type="MP4",
+        output_dir=output_dir,
+        cancel_when=skip_when,
+        control_request="skip_video",
+        cancel_timeout_seconds=20,
+    )
+    skipped_trace = skipped.get("staging_trace") or []
+    skipped_active = any(
+        snapshot.get("run_directories")
+        and any(entry.get("kind") == "file" for entry in snapshot.get("entries") or [])
+        for snapshot in skipped_trace
+    )
+    skipped_terminal_receipts = [
+        event
+        for event in skipped.get("events") or []
+        if event.get("kind") == "item_terminal"
+        and isinstance(event.get("payload"), dict)
+        and isinstance(event["payload"].get("job"), dict)
+        and event["payload"]["job"].get("terminal_status") == "Skipped"
+        and event["payload"]["job"].get("terminal_message") == "Video skipped by user"
+    ]
+    skipped_terminal = len(skipped_terminal_receipts) == 1
+    idle_after_skip = not staging_root.exists()
+
+    completed = runner.run_job(
+        case_id="lifecycle-staging-successor",
+        url=server.url("/page/unicode?staging-lifecycle=successor"),
+        output_type="MP4",
+        output_dir=output_dir,
+    )
+    completed_trace = completed.get("staging_trace") or []
+    successor_active = any(
+        snapshot.get("run_directories")
+        and any(entry.get("kind") == "file" for entry in snapshot.get("entries") or [])
+        for snapshot in completed_trace
+    )
+    idle_after_completion = not staging_root.exists()
+
+    library_stage = create_staging_dir(output_dir)
+    (library_stage / "active-owner-sentinel").write_bytes(b"active transaction")
+    terminal_info = {
+        "id": "terminal-staging-fixture",
+        "title": "Skipped staging lifecycle fixture",
+        "vodforge_output_type": "MP4",
+        "vodforge_terminal_run_id": "terminal-staging-run",
+        "vodforge_terminal_status": "Skipped",
+        "vodforge_terminal_message": "Video skipped by user",
+    }
+    library_app = make_headless_app(TracingQueue())
+    library_app.download_history = []
+    library_app.metadata_items = [terminal_info]
+    library_app.pending_jobs = []
+    library_app._terminal_jobs = []
+    library_app._completed_jobs = []
+    library_app._rebuild_output_dir_index = lambda: None
+    removal_plan = resolve_library_removal_plan(
+        terminal_info,
+        active_job=None,
+        pending_jobs=(),
+    )
+    library_app._apply_library_removal_plan(terminal_info, 0, removal_plan)
+    active_stage_preserved_by_library_removal = (
+        library_stage / "active-owner-sentinel"
+    ).is_file()
+    cleanup_private_staging_directory(library_stage)
+    idle_after_owned_cleanup = not staging_root.exists()
+
+    passed = bool(
+        skipped_active
+        and skipped_terminal
+        and idle_after_skip
+        and skipped.get("media_output_count") == 0
+        and not skipped.get("staging_entries_after")
+        and successor_active
+        and completed.get("media_output_count") == 1
+        and idle_after_completion
+        and not completed.get("staging_entries_after")
+        and active_stage_preserved_by_library_removal
+        and idle_after_owned_cleanup
+        and _worker_cleanup_is_clean(skipped)
+        and _worker_cleanup_is_clean(completed)
+    )
+    scenario = {
+        "id": "lifecycle.staging_transaction_transitions",
+        "evidence_tier": "headless_production_pipeline",
+        "category": "lifecycle",
+        "status": "passed" if passed else "failed",
+        "duration_seconds": round(
+            float(skipped.get("duration_seconds") or 0)
+            + float(completed.get("duration_seconds") or 0),
+            4,
+        ),
+        "metrics": {
+            "jobs_attempted": 2,
+            "jobs_completed": int(completed.get("media_output_count") == 1),
+            "jobs_failed": 0 if passed else 1,
+            "jobs_cancelled": 0,
+            "jobs_skipped": int(skipped_terminal),
+            "skip_active_staging_observed": skipped_active,
+            "skip_terminal_observed": skipped_terminal,
+            "idle_root_absent_after_skip": idle_after_skip,
+            "successor_active_staging_observed": successor_active,
+            "idle_root_absent_after_completion": idle_after_completion,
+            "active_stage_preserved_by_library_removal": (
+                active_stage_preserved_by_library_removal
+            ),
+            "idle_root_absent_after_owned_cleanup": idle_after_owned_cleanup,
+            "skip_staging_snapshot_count": len(skipped_trace),
+            "successor_staging_snapshot_count": len(completed_trace),
+        },
+        "evidence": [
+            f"Skip trace observed a private run directory with media files: {skipped_active}; snapshots={len(skipped_trace)}",
+            f"Skip emitted exactly one truthful item terminal and left no idle root: {skipped_terminal and idle_after_skip}",
+            f"Queued-successor equivalent created fresh staging and committed one output: {successor_active and completed.get('media_output_count') == 1}",
+            f"Successful completion left no idle root: {idle_after_completion}",
+            f"Library terminal-record removal preserved an independently active staging owner: {active_stage_preserved_by_library_removal}",
+            f"The owning cleanup removed the final private root: {idle_after_owned_cleanup}",
+        ],
+        "artifacts": [
+            str(case_root / "skip-staging-trace.json"),
+            str(case_root / "successor-staging-trace.json"),
+        ],
+        "error": None,
+    }
+    (case_root / "skip-staging-trace.json").write_text(
+        json.dumps(skipped_trace, indent=2) + "\n", encoding="utf-8"
+    )
+    (case_root / "successor-staging-trace.json").write_text(
+        json.dumps(completed_trace, indent=2) + "\n", encoding="utf-8"
+    )
+    findings = (
+        []
+        if passed
+        else [
+            _finding_for_failed_scenario(
+                scenario,
+                "Private staging lifecycle diverged during skip, successor, completion, or Library removal",
+                "reliability defect",
+                "high",
+                "same-volume staging lifecycle and Library ownership",
+                "Keep each active transaction isolated, remove its private files and idle root at terminal return, and prevent Library history mutation from deleting independently active staging.",
+            )
+        ]
+    )
+    return scenario, findings
+
+
 def lifecycle_soak(
     runner: HeadlessPipelineRunner,
     server: FixtureHTTPServer,
@@ -1690,6 +1876,10 @@ def run_scenarios(
                 jobs=lifecycle_jobs,
                 detailed=deep,
             ),
+        ),
+        (
+            "lifecycle.staging_transaction_transitions",
+            lambda: lifecycle_staging_transitions(runner, server),
         ),
         (
             "concurrency.simultaneous_worker_attack",

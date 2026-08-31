@@ -40,6 +40,7 @@ NORMAL_REQUIRED_SCENARIOS = frozenset(
         "unit_static.activity_log_failure_receipt",
         "reliability.malformed_url",
         "lifecycle.repeated_job_soak",
+        "lifecycle.staging_transaction_transitions",
         "concurrency.simultaneous_worker_attack",
         "security.path_and_subprocess_arguments",
         "security.symlink_containment_and_staging_permissions",

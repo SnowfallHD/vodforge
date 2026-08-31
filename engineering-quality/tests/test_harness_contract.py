@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -11,11 +12,43 @@ from quality_harness.packaged_e2e import (
     DEEP_REQUIRED_UI_EVENTS,
     SMOKE_REQUIRED_UI_EVENTS,
 )
-from quality_harness.pipeline import _diagnostic_timing
+from quality_harness.pipeline import (
+    StagingTraceRecorder,
+    TracingQueue,
+    _diagnostic_timing,
+)
 from quality_harness.reliability_static import activity_log_failure_receipt_probe
 from quality_harness.report import TIER_LABELS, comparison, markdown_report, summarize
 
 HARNESS_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_staging_trace_observes_active_transaction_and_idle_root_cleanup(
+    tmp_path: Path,
+) -> None:
+    from yt_downloader.app import create_staging_dir
+    from yt_downloader.safe_output import cleanup_private_staging_directory
+
+    events = TracingQueue()
+    recorder = StagingTraceRecorder(tmp_path, events)
+    recorder.start()
+    staging = create_staging_dir(tmp_path)
+    (staging.parent / ".DS_Store").write_bytes(b"Finder metadata")
+    (staging / "fixture.mp4.part").write_bytes(b"partial")
+    events.put(("status", "Video 1 of 1 — downloading"))
+    time.sleep(0.06)
+    assert cleanup_private_staging_directory(staging) is True
+    trace = recorder.stop()
+
+    assert any(
+        snapshot["run_directories"]
+        and any(
+            entry["path"].endswith("fixture.mp4.part") for entry in snapshot["entries"]
+        )
+        for snapshot in trace
+    )
+    assert trace[-1]["final"] is True
+    assert trace[-1]["root_present"] is False
 
 
 def test_activity_log_failure_probe_proves_receipt_deduplication_and_recovery(

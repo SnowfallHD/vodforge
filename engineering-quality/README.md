@@ -82,6 +82,16 @@ Run one exact scenario:
 ./engineering-quality/run normal --scenario reliability.cancel_during_slow_download
 ```
 
+The NORMAL gate includes `lifecycle.staging_transaction_transitions`. It polls
+the real output root while the production worker downloads and transcodes,
+records the `.vfstage` topology without reading media contents, skips an active
+item, completes a fresh successor, and invokes the real Library-removal path.
+The scenario requires private run directories and partial files to appear only
+while owned, exact item-level terminal receipts, no idle `.vfstage` root after
+skip or completion (including Finder-created `.DS_Store`), and proof that
+removing an unrelated Library record cannot delete another active transaction.
+Raw timestamped topology traces are retained with the ignored case artifacts.
+
 Compare with a prior machine-readable result:
 
 ```sh

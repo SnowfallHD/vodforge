@@ -36,6 +36,10 @@ def _command(returncode: int = 0, stdout: str = "") -> dict[str, Any]:
     }
 
 
+def test_normal_gate_requires_staging_transaction_lifecycle_evidence() -> None:
+    assert "lifecycle.staging_transaction_transitions" in NORMAL_REQUIRED_SCENARIOS
+
+
 def _static_scenario(*, complexity: int = 74) -> dict[str, Any]:
     commands = {name: _command() for name in FAST_REQUIRED_COMMANDS}
     commands["pytest"]["stdout"] = "548 passed in 5.0s\n"

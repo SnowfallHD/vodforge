@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
+import shutil
 import stat
 import uuid
 from collections.abc import Callable, Sequence
@@ -229,6 +230,91 @@ def create_private_staging_directory(output_root: Path, *, attempts: int = 16) -
     if supports_secure_dir_fds:
         return _create_private_staging_posix(root_real, attempts=attempts)
     return _create_private_staging_portable(root_real, attempts=attempts)
+
+
+def _remove_idle_staging_root(staging_root: Path) -> bool:
+    """Remove an idle VODForge root, tolerating Finder's private metadata only."""
+
+    if staging_root.name != ".vfstage":
+        return False
+    try:
+        root_stat = staging_root.lstat()
+    except FileNotFoundError:
+        return True
+    if is_symlink_or_reparse(root_stat) or not stat.S_ISDIR(root_stat.st_mode):
+        return False
+
+    supports_secure_dir_fds = (
+        os.name != "nt"
+        and hasattr(os, "O_NOFOLLOW")
+        and os.open in os.supports_dir_fd
+        and os.stat in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
+    )
+    if supports_secure_dir_fds:
+        try:
+            root_fd = os.open(staging_root, _directory_open_flags())
+        except OSError:
+            return False
+        try:
+            entries = os.listdir(root_fd)
+            if entries == [".DS_Store"]:
+                finder_stat = os.stat(
+                    ".DS_Store", dir_fd=root_fd, follow_symlinks=False
+                )
+                if is_symlink_or_reparse(finder_stat) or not stat.S_ISREG(
+                    finder_stat.st_mode
+                ):
+                    return False
+                os.unlink(".DS_Store", dir_fd=root_fd)
+            elif entries:
+                return False
+        except OSError:
+            return False
+        finally:
+            os.close(root_fd)
+    else:
+        try:
+            portable_entries = list(staging_root.iterdir())
+        except OSError:
+            return False
+        if len(portable_entries) == 1 and portable_entries[0].name == ".DS_Store":
+            try:
+                finder_stat = portable_entries[0].lstat()
+                if is_symlink_or_reparse(finder_stat) or not stat.S_ISREG(
+                    finder_stat.st_mode
+                ):
+                    return False
+                portable_entries[0].unlink()
+            except OSError:
+                return False
+        elif portable_entries:
+            return False
+
+    try:
+        staging_root.rmdir()
+    except OSError:
+        return False
+    return True
+
+
+def cleanup_private_staging_directory(staging_dir: Path) -> bool:
+    """Remove one transaction and its idle root without touching unknown entries."""
+
+    staging = Path(staging_dir)
+    staging_root = staging.parent
+    if staging_root.name != ".vfstage" or staging.name in {"", ".", ".."}:
+        return False
+    try:
+        staging_stat = staging.lstat()
+    except FileNotFoundError:
+        return _remove_idle_staging_root(staging_root)
+    if is_symlink_or_reparse(staging_stat) or not stat.S_ISDIR(staging_stat.st_mode):
+        return False
+    shutil.rmtree(staging, ignore_errors=True)
+    if os.path.lexists(staging):
+        return False
+    return _remove_idle_staging_root(staging_root)
 
 
 def _reject_unsafe_leaf_at(parent_fd: int, name: str) -> None:
