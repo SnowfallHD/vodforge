@@ -218,6 +218,9 @@ def write_quality_e2e_library_visibility_receipt(
     full_location: str,
     displayed_location: str,
     expected_details_height: int,
+    overview: _GeometryWidget | None = None,
+    location_label: _GeometryWidget | None = None,
+    location_is_status: bool = False,
     environ: Mapping[str, str] | None = None,
     pid: int | None = None,
     recorded_at: str | None = None,
@@ -304,6 +307,29 @@ def write_quality_e2e_library_visibility_receipt(
         and displayed_location != full_location
         and displayed_location.endswith("…")
     )
+    status_text_fully_preserved = bool(
+        location_is_status and displayed_location == full_location
+    )
+    location_text_policy_satisfied = (
+        status_text_fully_preserved if location_is_status else path_ellipsized
+    )
+    overview_bounds = _widget_bounds(overview) if overview is not None else None
+    location_bounds = (
+        _widget_bounds(location_label) if location_label is not None else None
+    )
+    location_mapped_and_viewable = bool(
+        location_label is not None
+        and location_label.winfo_ismapped()
+        and location_label.winfo_viewable()
+    )
+    location_fully_inside_overview = bool(
+        location_bounds is not None
+        and overview_bounds is not None
+        and _bounds_inside(location_bounds, overview_bounds)
+    )
+    location_fully_inside_details = bool(
+        location_bounds is not None and _bounds_inside(location_bounds, details_bounds)
+    )
     title_ellipsized = bool(
         full_title and displayed_title != full_title and displayed_title.endswith("…")
     )
@@ -323,7 +349,10 @@ def write_quality_e2e_library_visibility_receipt(
         and description_bottom_aligned_with_library_table
         and description_body_larger_than_tags_body
         and first_line_visible
-        and path_ellipsized
+        and location_text_policy_satisfied
+        and location_mapped_and_viewable
+        and location_fully_inside_overview
+        and location_fully_inside_details
         and title_ellipsized
         and title_minimum_visible_lines_preserved
         and fixed_height_preserved
@@ -372,6 +401,14 @@ def write_quality_e2e_library_visibility_receipt(
         ).hexdigest(),
         "description_length": len(description_text),
         "path_ellipsized": path_ellipsized,
+        "location_is_status": bool(location_is_status),
+        "status_text_fully_preserved": status_text_fully_preserved,
+        "location_text_policy_satisfied": location_text_policy_satisfied,
+        "overview_bounds": overview_bounds,
+        "location_bounds": location_bounds,
+        "location_mapped_and_viewable": location_mapped_and_viewable,
+        "location_fully_inside_overview": location_fully_inside_overview,
+        "location_fully_inside_details": location_fully_inside_details,
         "title_ellipsized": title_ellipsized,
         "full_title_sha256": hashlib.sha256(full_title.encode("utf-8")).hexdigest(),
         "displayed_title_visible_lines": displayed_title_visible_lines,

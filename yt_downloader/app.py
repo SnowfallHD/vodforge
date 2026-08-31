@@ -6147,6 +6147,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._focus_selected_overview_height = FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT
         self._focus_selected_overview_layout_after_id: str | None = None
         self._focus_selected_text_width = 220
+        self._focus_selected_location_is_status = False
         self.focus_selected_title_label = ttk.Label(
             overview,
             textvariable=self.selected_title_display_var,
@@ -6497,6 +6498,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             title_line_height=title_font.metrics("linespace"),
             metadata_line_height=metadata_font.metrics("linespace"),
             location_line_height=location_font.metrics("linespace"),
+            protect_location=bool(
+                self.__dict__.get("_focus_selected_location_is_status")
+            ),
         )
         self.selected_location_display_var.set(
             ellipsize_wrapped_text(
@@ -6557,6 +6561,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     full_location=self.selected_location_var.get(),
                     displayed_location=self.selected_location_display_var.get(),
                     expected_details_height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT,
+                    overview=self.focus_selected_overview,
+                    location_label=self.focus_selected_location_label,
+                    location_is_status=bool(
+                        self.__dict__.get("_focus_selected_location_is_status")
+                    ),
                 )
             except (AttributeError, QualityE2EAttestationError, tk.TclError) as exc:
                 write_diagnostic(
@@ -9973,6 +9982,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.selected_meta_var.set("")
         if hasattr(self, "selected_location_var"):
             self.selected_location_var.set("")
+        self._focus_selected_location_is_status = False
         self._queue_focus_selected_overview_layout()
         self.last_thumbnail_url = None
         self._set_text(self.pulled_tags_text, f"No {output_type} item selected.")
@@ -10281,6 +10291,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.selected_title_var.set(title)
             self.selected_meta_var.set(metadata_text)
             self.selected_location_var.set(location_text)
+            self._focus_selected_location_is_status = bool(
+                terminal_status or is_metadata_preview(info)
+            )
             self._queue_focus_selected_overview_layout()
         else:
             self.selected_title_var.set(f"{title}\n{metadata_text}\n{location_text}")

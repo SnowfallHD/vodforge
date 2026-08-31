@@ -241,6 +241,8 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
         full_location="Saved in /an/intentionally/extreme/output/path/" * 5,
         displayed_location="Saved in /an/intentionally/extreme…",
         expected_details_height=360,
+        overview=_FakeWidget(x=100, y=100, width=410, height=101),
+        location_label=_FakeWidget(x=110, y=178, width=250, height=18),
         environ=environment,
         pid=4321,
         recorded_at="2026-08-31T06:00:00Z",
@@ -273,6 +275,10 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     assert payload["description_body_larger_than_tags_body"] is True
     assert payload["description_first_line_visible"] is True
     assert payload["path_ellipsized"] is True
+    assert payload["location_text_policy_satisfied"] is True
+    assert payload["location_mapped_and_viewable"] is True
+    assert payload["location_fully_inside_overview"] is True
+    assert payload["location_fully_inside_details"] is True
     assert payload["title_ellipsized"] is True
     assert payload["displayed_title_visible_lines"] == 2
     assert payload["minimum_displayed_title_visible_lines"] == (
@@ -283,6 +289,53 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     assert payload["pid"] == 4321
     if os.name != "nt":
         assert stat.S_IMODE(expected.stat().st_mode) == 0o600
+
+
+def test_quality_e2e_library_visibility_requires_complete_terminal_status(
+    tmp_path: Path,
+) -> None:
+    environment, _app, _home, _application_data, _diagnostics = _isolated_launch(
+        tmp_path
+    )
+    full_status = "Skipped — Video skipped by user"
+
+    result = write_quality_e2e_library_visibility_receipt(
+        details=_FakeWidget(
+            x=100,
+            y=100,
+            width=410,
+            height=390,
+            configured_height=360,
+        ),
+        library_table=_FakeWidget(x=100, y=180, width=900, height=247),
+        tags_body=_FakeWidget(x=110, y=205, width=385, height=72),
+        description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
+        description=_FakeDescriptionWidget(
+            x=110,
+            y=307,
+            width=385,
+            height=120,
+            text="Visible terminal-item description",
+            first_line=(9, 7, 250, 16, 12),
+        ),
+        full_title="An intentionally extreme title " * 8,
+        displayed_title="An intentionally extreme title…",
+        displayed_title_visible_lines=2,
+        full_location=full_status,
+        displayed_location=full_status,
+        expected_details_height=360,
+        overview=_FakeWidget(x=100, y=100, width=410, height=101),
+        location_label=_FakeWidget(x=110, y=178, width=250, height=18),
+        location_is_status=True,
+        environ=environment,
+    )
+
+    assert result is not None
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    assert payload["verified"] is True
+    assert payload["path_ellipsized"] is False
+    assert payload["status_text_fully_preserved"] is True
+    assert payload["location_fully_inside_overview"] is True
 
 
 def test_quality_e2e_library_visibility_marks_clipped_description_unverified(

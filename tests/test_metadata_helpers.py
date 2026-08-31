@@ -783,7 +783,7 @@ def test_selected_overview_reduces_path_lines_before_title_lines():
         location_line_height=14,
     )
     assert path_only.location == 1
-    assert path_only.title == 3
+    assert path_only.title == 2
     assert path_only.metadata == 1
 
     path_then_title = selected_overview_line_budget(
@@ -798,6 +798,39 @@ def test_selected_overview_reduces_path_lines_before_title_lines():
     assert path_then_title.location == 1
     assert path_then_title.title == 2
     assert path_then_title.metadata == 1
+
+
+def test_selected_overview_caps_title_at_two_measured_lines() -> None:
+    budget = selected_overview_line_budget(
+        title_lines=4,
+        metadata_lines=1,
+        location_lines=1,
+        available_height=140,
+        title_line_height=20,
+        metadata_line_height=14,
+        location_line_height=14,
+    )
+
+    assert budget.title == 2
+    assert budget.metadata == 1
+    assert budget.location == 1
+
+
+def test_selected_overview_protects_terminal_message_before_title() -> None:
+    budget = selected_overview_line_budget(
+        title_lines=3,
+        metadata_lines=1,
+        location_lines=2,
+        available_height=90,
+        title_line_height=20,
+        metadata_line_height=14,
+        location_line_height=14,
+        protect_location=True,
+    )
+
+    assert budget.title == 2
+    assert budget.metadata == 1
+    assert budget.location == 2
 
 
 def test_selected_description_max_height_is_measured_to_library_table_bottom():

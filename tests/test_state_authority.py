@@ -338,6 +338,19 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
         ("https://i.ytimg.com/vi/library-only-id/hqdefault.jpg", "library")
     ]
 
+    terminal_info = dict(info)
+    terminal_info.update(
+        {
+            "vodforge_terminal_status": "Skipped",
+            "vodforge_terminal_message": "Video skipped by user",
+        }
+    )
+    app.metadata_items = [terminal_info]
+    app._display_selected_metadata(0)
+
+    assert app.selected_location_var.get() == "Skipped — Video skipped by user"
+    assert app._focus_selected_location_is_status is True
+
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     assert "thumbnail_wrap.pack_propagate(False)" in library_source
     assert "thumbnail_wrap.grid_propagate(False)" not in library_source

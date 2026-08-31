@@ -25,6 +25,7 @@ LIBRARY_THUMBNAIL_MAX_WIDTH = 240
 FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT = 360
 FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT = 81
 FOCUS_LIBRARY_SELECTED_TITLE_EXTRA_LINES = 1
+FOCUS_LIBRARY_SELECTED_TITLE_MAX_VISIBLE_LINES = 2
 FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT = 84
 FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES = 2
 FOCUS_LIBRARY_SELECTED_DESCRIPTION_VISIBLE_LINES = 5
@@ -68,12 +69,18 @@ def selected_overview_line_budget(
     metadata_line_height: int,
     location_line_height: int,
     vertical_gap_height: int = 8,
+    protect_location: bool = False,
 ) -> SelectedOverviewLineBudget:
-    """Fit the overview by reducing location first, then title, then metadata."""
+    """Fit the overview while preserving path and terminal-message priorities."""
 
-    title = max(1, int(title_lines))
+    title = min(
+        max(1, int(title_lines)),
+        FOCUS_LIBRARY_SELECTED_TITLE_MAX_VISIBLE_LINES,
+    )
     metadata = max(1, int(metadata_lines))
     location = max(1, int(location_lines))
+    if not protect_location:
+        location = 1
     available = max(1, int(available_height))
     title_height = max(1, int(title_line_height))
     metadata_height = max(1, int(metadata_line_height))
@@ -88,10 +95,16 @@ def selected_overview_line_budget(
             + gaps
         )
 
-    while used_height() > available and location > 1:
-        location -= 1
-    while used_height() > available and title > 1:
-        title -= 1
+    if protect_location:
+        while used_height() > available and title > 1:
+            title -= 1
+        while used_height() > available and location > 1:
+            location -= 1
+    else:
+        while used_height() > available and location > 1:
+            location -= 1
+        while used_height() > available and title > 1:
+            title -= 1
     # Provider metadata is normally one or two lines. This final safety bound
     # cannot affect the required path-before-title priority above, and keeps
     # hostile creator/ID text inside the already-fixed overview viewport.
