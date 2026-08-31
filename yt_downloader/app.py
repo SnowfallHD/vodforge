@@ -10251,14 +10251,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         claim_active_metadata_row(preview, job.preview_info, job.run_id)
         return True
 
-    def _build_download_job_from_current_settings(
-        self,
-        urls: list[str],
-        *,
-        output_type: OutputType,
-        single_video_only: bool,
-        batch_mode: bool,
-    ) -> DownloadJob | None:
+    def _validated_submission_urls(
+        self, urls: list[str], *, single_video_only: bool
+    ) -> list[str] | None:
         normalized_urls = [str(url).strip() for url in urls if str(url).strip()]
         if single_video_only:
             for url in normalized_urls:
@@ -10266,20 +10261,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if single_video_error:
                     messagebox.showerror(APP_NAME, single_video_error)
                     return None
-        url = normalized_urls[0] if normalized_urls else ""
-        write_diagnostic(f"URL received: {url}")
-        write_diagnostic(f"normalized URL: {url}")
-        write_diagnostic(f"batch URL count: {len(normalized_urls)}")
-        cookie_source = self._selected_cookie_source()
-        use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
-        write_diagnostic(
-            f"playlist query present: {'list=' in url.lower()} ; ignore_playlists={single_video_only} ; use_nvenc={self.use_nvenc_var.get()} ; cookie_source={cookie_source.value}"
-        )
-        if not url:
-            messagebox.showerror(
-                APP_NAME, "Paste a YouTube URL first or load a URL list text file."
-            )
-            return None
+        return normalized_urls
+
+    def _validated_submission_output_directory(self) -> Path | None:
         output_text = self.output_var.get().strip()
         if not output_text:
             messagebox.showerror(APP_NAME, "Choose an output folder.")
@@ -10294,18 +10278,26 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 f"Choose another folder or allow access, then try again.\n\n{exc}",
             )
             return None
+        return output_dir
+
+    def _submission_cookie_inputs_are_valid(
+        self,
+        cookie_source: CookieSource,
+        cookie_file: Path | None,
+        cookie_browser: str | None,
+    ) -> bool:
         if cookie_source == CookieSource.FILE and cookie_file is None:
             messagebox.showerror(
                 APP_NAME,
                 "Choose a YouTube cookies.txt file, or switch YouTube access back to Public.",
             )
-            return None
+            return False
         if cookie_source == CookieSource.BROWSER and cookie_browser is None:
             messagebox.showerror(
                 APP_NAME,
                 "Choose a browser profile, or switch YouTube access back to Public.",
             )
-            return None
+            return False
         cookie_warning = (
             windows_chromium_cookie_warning(cookie_browser)
             if cookie_source == CookieSource.BROWSER
@@ -10313,9 +10305,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         if cookie_warning:
             messagebox.showerror(APP_NAME, cookie_warning)
-            return None
+            return False
+        return True
 
-        tags = [tag.strip() for tag in self.tags_var.get().split(",") if tag.strip()]
+    def _validated_submission_export_settings(
+        self, output_type: OutputType
+    ) -> tuple[ExportMode, ManualExportSettings, Mp3ExportSettings] | None:
         export_mode = ExportMode(self.export_mode_var.get())
         try:
             manual_settings = (
@@ -10332,6 +10327,48 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except ValueError as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return None
+        return export_mode, manual_settings, mp3_settings
+
+    def _build_download_job_from_current_settings(
+        self,
+        urls: list[str],
+        *,
+        output_type: OutputType,
+        single_video_only: bool,
+        batch_mode: bool,
+    ) -> DownloadJob | None:
+        normalized_urls = self._validated_submission_urls(
+            urls, single_video_only=single_video_only
+        )
+        if normalized_urls is None:
+            return None
+        url = normalized_urls[0] if normalized_urls else ""
+        write_diagnostic(f"URL received: {url}")
+        write_diagnostic(f"normalized URL: {url}")
+        write_diagnostic(f"batch URL count: {len(normalized_urls)}")
+        cookie_source = self._selected_cookie_source()
+        use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
+        write_diagnostic(
+            f"playlist query present: {'list=' in url.lower()} ; ignore_playlists={single_video_only} ; use_nvenc={self.use_nvenc_var.get()} ; cookie_source={cookie_source.value}"
+        )
+        if not url:
+            messagebox.showerror(
+                APP_NAME, "Paste a YouTube URL first or load a URL list text file."
+            )
+            return None
+        output_dir = self._validated_submission_output_directory()
+        if output_dir is None:
+            return None
+        if not self._submission_cookie_inputs_are_valid(
+            cookie_source, cookie_file, cookie_browser
+        ):
+            return None
+
+        tags = [tag.strip() for tag in self.tags_var.get().split(",") if tag.strip()]
+        export_settings = self._validated_submission_export_settings(output_type)
+        if export_settings is None:
+            return None
+        export_mode, manual_settings, mp3_settings = export_settings
         return DownloadJob(
             url=url,
             output_dir=output_dir,

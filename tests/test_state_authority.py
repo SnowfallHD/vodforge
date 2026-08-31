@@ -2658,6 +2658,335 @@ def test_hidden_manual_values_cannot_block_auto_or_strict_mp4_runs(
         assert job.manual_settings == ManualExportSettings()
 
 
+def test_submission_phases_preserve_the_complete_mp4_job_contract(
+    monkeypatch, tmp_path: Path
+):
+    app = DownloaderApp.__new__(DownloaderApp)
+    cookie_file = tmp_path / "cookies.txt"
+    manual_settings = ManualExportSettings(
+        video_bitrate_kbps=14000,
+        audio_bitrate_kbps=256,
+        audio_sample_rate="44100",
+        audio_channels="1",
+        audio_codec=ManualAudioCodec.AAC,
+        x264_preset="slow",
+    )
+    app.output_var = Value(str(tmp_path))
+    app.tags_var = Value(" alpha, , beta ")
+    app.quality_var = Value("1440p 2K")
+    app.export_mode_var = Value(ExportMode.MANUAL_OVERRIDE.value)
+    app.use_nvenc_var = Value(True)
+    app.embed_thumbnail_var = Value(True)
+    app.write_thumbnail_var = Value(True)
+    app.embed_metadata_var = Value(True)
+    app.write_info_json_var = Value(True)
+    app._selected_cookie_source = lambda: app_module.CookieSource.FILE
+    app._cookie_inputs = lambda: (True, cookie_file, None)
+    app._manual_export_settings = lambda: manual_settings
+    app._mp3_export_settings = lambda: (_ for _ in ()).throw(
+        AssertionError("MP3 settings were read for an MP4 submission")
+    )
+    validated_paths: list[Path] = []
+    monkeypatch.setattr(
+        app_module,
+        "validate_output_directory_access",
+        validated_paths.append,
+    )
+
+    job = app._build_download_job_from_current_settings(
+        [
+            " https://www.youtube.com/watch?v=first-id ",
+            "",
+            "https://www.youtube.com/watch?v=second-id",
+        ],
+        output_type=OutputType.MP4,
+        single_video_only=False,
+        batch_mode=True,
+    )
+
+    assert validated_paths == [tmp_path]
+    assert job is not None
+    assert job.url == "https://www.youtube.com/watch?v=first-id"
+    assert job.urls == [
+        "https://www.youtube.com/watch?v=first-id",
+        "https://www.youtube.com/watch?v=second-id",
+    ]
+    assert job.output_dir == tmp_path
+    assert job.output_type is OutputType.MP4
+    assert job.quality_label == "1440p 2K"
+    assert job.export_mode is ExportMode.MANUAL_OVERRIDE
+    assert job.manual_settings is manual_settings
+    assert job.mp3_settings == Mp3ExportSettings()
+    assert job.single_video_only is False
+    assert job.use_nvenc is True
+    assert job.embed_thumbnail is True
+    assert job.write_thumbnail is True
+    assert job.embed_metadata is True
+    assert job.write_info_json is True
+    assert job.tags == ["alpha", "beta"]
+    assert job.use_cookies is True
+    assert job.cookie_file == cookie_file
+    assert job.cookie_browser is None
+    assert job.batch_mode is True
+
+
+def test_mp3_submission_does_not_capture_mp4_only_controls(monkeypatch, tmp_path: Path):
+    class DiagnosticOnlyValue(Value):
+        reads = 0
+
+        def get(self):
+            self.reads += 1
+            if self.reads > 1:
+                raise AssertionError("NVENC was read again while building an MP3 job")
+            return super().get()
+
+    class UnreadValue(Value):
+        def get(self):
+            raise AssertionError("an MP4-only control was read for an MP3 job")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    nvenc = DiagnosticOnlyValue(True)
+    mp3_settings = Mp3ExportSettings(
+        bitrate_kbps=192,
+        sample_rate="44100",
+        channels="1",
+        embed_metadata=False,
+    )
+    app.output_var = Value(str(tmp_path))
+    app.tags_var = Value("spoken, audio")
+    app.quality_var = Value("1080p Full HD")
+    app.export_mode_var = Value(ExportMode.AUTO_CBR.value)
+    app.use_nvenc_var = nvenc
+    app.embed_thumbnail_var = UnreadValue(True)
+    app.write_thumbnail_var = UnreadValue(True)
+    app.embed_metadata_var = UnreadValue(True)
+    app.write_info_json_var = UnreadValue(True)
+    app._selected_cookie_source = lambda: app_module.CookieSource.PUBLIC
+    app._cookie_inputs = lambda: (False, None, None)
+    app._manual_export_settings = lambda: (_ for _ in ()).throw(
+        AssertionError("manual MP4 settings were read for an MP3 submission")
+    )
+    app._mp3_export_settings = lambda: mp3_settings
+    monkeypatch.setattr(
+        app_module, "validate_output_directory_access", lambda _path: None
+    )
+
+    job = app._build_download_job_from_current_settings(
+        ["https://www.youtube.com/watch?v=audio-id"],
+        output_type=OutputType.MP3,
+        single_video_only=True,
+        batch_mode=False,
+    )
+
+    assert job is not None
+    assert nvenc.reads == 1
+    assert job.output_type is OutputType.MP3
+    assert job.manual_settings == ManualExportSettings()
+    assert job.mp3_settings is mp3_settings
+    assert job.use_nvenc is False
+    assert job.embed_thumbnail is False
+    assert job.write_thumbnail is False
+    assert job.embed_metadata is False
+    assert job.write_info_json is False
+    assert job.tags == ["spoken", "audio"]
+
+
+def test_submission_validation_failure_preserves_read_and_dialog_order(
+    monkeypatch, tmp_path: Path
+):
+    events: list[str] = []
+
+    class TrackedValue(Value):
+        def __init__(self, label: str, value):
+            super().__init__(value)
+            self.label = label
+
+        def get(self):
+            events.append(self.label)
+            return super().get()
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.output_var = TrackedValue("output", str(tmp_path))
+    app.tags_var = TrackedValue("tags", "alpha")
+    app.quality_var = TrackedValue("quality", "1080p Full HD")
+    app.export_mode_var = TrackedValue("export_mode", ExportMode.MANUAL_OVERRIDE.value)
+    app.use_nvenc_var = TrackedValue("diagnostic_nvenc", True)
+    app.embed_thumbnail_var = TrackedValue("embed_thumbnail", True)
+    app.write_thumbnail_var = TrackedValue("write_thumbnail", True)
+    app.embed_metadata_var = TrackedValue("embed_metadata", True)
+    app.write_info_json_var = TrackedValue("write_info_json", True)
+    app._selected_cookie_source = lambda: (
+        events.append("cookie_source") or app_module.CookieSource.PUBLIC
+    )
+    app._cookie_inputs = lambda: events.append("cookie_inputs") or (False, None, None)
+
+    def invalid_manual_settings() -> ManualExportSettings:
+        events.append("manual_settings")
+        raise ValueError("Injected invalid manual settings.")
+
+    app._manual_export_settings = invalid_manual_settings
+    app._mp3_export_settings = lambda: (_ for _ in ()).throw(
+        AssertionError("MP3 settings were read after the manual failure")
+    )
+    monkeypatch.setattr(
+        app_module,
+        "validate_output_directory_access",
+        lambda _path: events.append("validate_output"),
+    )
+    errors: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda title, message: (
+            events.append("dialog") or errors.append((title, message))
+        ),
+    )
+
+    job = app._build_download_job_from_current_settings(
+        ["https://www.youtube.com/watch?v=authority-id"],
+        output_type=OutputType.MP4,
+        single_video_only=True,
+        batch_mode=False,
+    )
+
+    assert job is None
+    assert events == [
+        "cookie_source",
+        "cookie_inputs",
+        "diagnostic_nvenc",
+        "output",
+        "validate_output",
+        "tags",
+        "export_mode",
+        "manual_settings",
+        "dialog",
+    ]
+    assert errors == [(app_module.APP_NAME, "Injected invalid manual settings.")]
+
+
+def test_submission_phase_failures_keep_dialogs_and_stop_boundaries(
+    monkeypatch, tmp_path: Path
+):
+    app = DownloaderApp.__new__(DownloaderApp)
+    errors: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda title, message: errors.append((title, message)),
+    )
+
+    app.output_var = Value("")
+    assert app._validated_submission_output_directory() is None
+    assert errors.pop() == (app_module.APP_NAME, "Choose an output folder.")
+
+    app.output_var = Value(str(tmp_path))
+    monkeypatch.setattr(
+        app_module,
+        "validate_output_directory_access",
+        lambda _path: (_ for _ in ()).throw(OSError("injected output failure")),
+    )
+    assert app._validated_submission_output_directory() is None
+    assert errors.pop() == (
+        app_module.APP_NAME,
+        (
+            "VODForge cannot write to the selected output folder. "
+            "Choose another folder or allow access, then try again.\n\n"
+            "injected output failure"
+        ),
+    )
+
+    assert (
+        app._submission_cookie_inputs_are_valid(
+            app_module.CookieSource.FILE, None, None
+        )
+        is False
+    )
+    assert errors.pop() == (
+        app_module.APP_NAME,
+        "Choose a YouTube cookies.txt file, or switch YouTube access back to Public.",
+    )
+    assert (
+        app._submission_cookie_inputs_are_valid(
+            app_module.CookieSource.BROWSER, None, None
+        )
+        is False
+    )
+    assert errors.pop() == (
+        app_module.APP_NAME,
+        "Choose a browser profile, or switch YouTube access back to Public.",
+    )
+    assert errors == []
+
+
+def test_missing_url_dialog_keeps_cookie_and_diagnostic_read_boundary(monkeypatch):
+    events: list[str] = []
+
+    class TrackedValue(Value):
+        def get(self):
+            events.append("diagnostic_nvenc")
+            return super().get()
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.use_nvenc_var = TrackedValue(False)
+    app.output_var = Value("")
+    app._selected_cookie_source = lambda: (
+        events.append("cookie_source") or app_module.CookieSource.PUBLIC
+    )
+    app._cookie_inputs = lambda: events.append("cookie_inputs") or (False, None, None)
+    errors: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda title, message: (
+            events.append("dialog") or errors.append((title, message))
+        ),
+    )
+
+    job = app._build_download_job_from_current_settings(
+        ["  "],
+        output_type=OutputType.MP4,
+        single_video_only=True,
+        batch_mode=False,
+    )
+
+    assert job is None
+    assert events == [
+        "cookie_source",
+        "cookie_inputs",
+        "diagnostic_nvenc",
+        "dialog",
+    ]
+    assert errors == [
+        (
+            app_module.APP_NAME,
+            "Paste a YouTube URL first or load a URL list text file.",
+        )
+    ]
+
+
+def test_single_video_playlist_failure_precedes_submission_state_reads(monkeypatch):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._selected_cookie_source = lambda: (_ for _ in ()).throw(
+        AssertionError("cookie state was read before single-video URL validation")
+    )
+    errors: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda title, message: errors.append((title, message)),
+    )
+
+    job = app._build_download_job_from_current_settings(
+        ["https://www.youtube.com/playlist?list=PLonly"],
+        output_type=OutputType.MP4,
+        single_video_only=True,
+        batch_mode=False,
+    )
+
+    assert job is None
+    assert errors == [(app_module.APP_NAME, app_module.SINGLE_VIDEO_PLAYLIST_ERROR)]
+
+
 def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(
     monkeypatch, tmp_path: Path
 ):
