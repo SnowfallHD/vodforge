@@ -17,6 +17,9 @@ from .fixtures import (
     UNICODE_TITLE,
 )
 
+LIBRARY_DESCRIPTION_STRESS_ROUTE = "/page/library-description-stress"
+SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE = "/slow/page/library-description-stress"
+
 
 class FaultState:
     def __init__(self) -> None:
@@ -147,7 +150,8 @@ class FixtureHTTPServer:
                     self._page_response(send_body=send_body)
                     return
                 if route in {
-                    "/page/library-description-stress",
+                    LIBRARY_DESCRIPTION_STRESS_ROUTE,
+                    SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
                     "/page/unicode",
                     "/page/normal",
                     "/page/long",
@@ -161,7 +165,11 @@ class FixtureHTTPServer:
                         multi=route == "/page/multi",
                         interrupt=route == "/fault/interrupt/page",
                         library_description_stress=(
-                            route == "/page/library-description-stress"
+                            route
+                            in {
+                                LIBRARY_DESCRIPTION_STRESS_ROUTE,
+                                SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
+                            }
                         ),
                         send_body=send_body,
                     )

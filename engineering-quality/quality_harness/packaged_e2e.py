@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
@@ -30,7 +31,10 @@ from .e2e_provenance import (
     preexisting_vodforge_processes,
     terminate_owned_group,
 )
-from .fault_server import FixtureHTTPServer
+from .fault_server import (
+    SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
+    FixtureHTTPServer,
+)
 from .fixtures import (
     LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
     LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
@@ -82,6 +86,29 @@ def _required_ui_events(profile: str) -> set[str]:
 
 def _required_ui_event_order(profile: str) -> tuple[str, ...]:
     return DEEP_UI_EVENT_ORDER if profile == "deep" else SMOKE_UI_EVENT_ORDER
+
+
+def _packaged_fixture_session_fields(
+    url_for: Callable[[str], str],
+) -> dict[str, Any]:
+    """Return the exact generated-media contract driven by packaged E2E."""
+
+    return {
+        "input_url": url_for(SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE),
+        "slow_input_url": url_for("/slow/page"),
+        "library_visibility_expectation": {
+            "fixture_id": "generated-library-description-stress",
+            "page_title": LIBRARY_DESCRIPTION_STRESS_TITLE,
+            "selected_item_title": LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
+            "description": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+            "description_sha256": hashlib.sha256(
+                LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
+            ).hexdigest(),
+            "selected_item_height_px": 360,
+            "path_ellipsized": True,
+            "title_ellipsized": True,
+        },
+    }
 
 
 def _codesign_value(output: str, key: str) -> str | None:
@@ -1169,22 +1196,9 @@ def run_packaged_e2e_session(
             "state_paths": state_paths,
             "preexisting_vodforge_processes": preexisting_processes,
             "fixture_manifest": fixture_manifest,
-            "input_url": server.url("/page/library-description-stress"),
-            "slow_input_url": server.url("/slow/page"),
             "expected_output_root": str(home / "Downloads"),
             "expected_output_type": "MP4",
-            "library_visibility_expectation": {
-                "fixture_id": "generated-library-description-stress",
-                "page_title": LIBRARY_DESCRIPTION_STRESS_TITLE,
-                "selected_item_title": LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
-                "description": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
-                "description_sha256": hashlib.sha256(
-                    LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
-                ).hexdigest(),
-                "selected_item_height_px": 360,
-                "path_ellipsized": True,
-                "title_ellipsized": True,
-            },
+            **_packaged_fixture_session_fields(server.url),
             "view_shortcuts": {
                 "forge": "Command+1",
                 "library": "Command+2",

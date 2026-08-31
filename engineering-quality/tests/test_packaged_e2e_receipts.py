@@ -4,8 +4,13 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.request import urlopen
 
 from quality_harness import packaged_e2e
+from quality_harness.fault_server import (
+    SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
+    FixtureHTTPServer,
+)
 from quality_harness.fixtures import (
     LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
     LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
@@ -26,6 +31,38 @@ from yt_downloader.quality_e2e import (
     QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
     QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
 )
+
+
+def test_packaged_session_uses_slow_description_stress_fixture() -> None:
+    fields = packaged_e2e._packaged_fixture_session_fields(
+        lambda route: f"http://fixture.invalid{route}"
+    )
+
+    assert fields["input_url"] == (
+        f"http://fixture.invalid{SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE}"
+    )
+    expectation = fields["library_visibility_expectation"]
+    assert expectation["page_title"] == LIBRARY_DESCRIPTION_STRESS_TITLE
+    assert (
+        expectation["selected_item_title"] == LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
+    )
+    assert expectation["description"] == LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+
+
+def test_slow_description_stress_route_preserves_metadata_and_uses_slow_hls(
+    tmp_path: Path,
+) -> None:
+    with (
+        FixtureHTTPServer(tmp_path) as server,
+        urlopen(
+            server.url(SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE), timeout=5
+        ) as response,
+    ):
+        document = response.read().decode("utf-8")
+
+    assert LIBRARY_DESCRIPTION_STRESS_TITLE in document
+    assert LIBRARY_DESCRIPTION_STRESS_DESCRIPTION in document
+    assert "/slow/hls/hls-long/master.m3u8" in document
 
 
 def _driver_trace(
