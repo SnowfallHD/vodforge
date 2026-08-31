@@ -4611,6 +4611,35 @@ def _download_item_plan_log_lines(
     return lines
 
 
+@dataclass(frozen=True)
+class _RunFinishDecision:
+    """Stable finished-run authority across a possible successor handoff."""
+
+    finished_job: DownloadJob | None
+    suppressed: bool
+    stopped_without_item_terminal: bool
+    archive_completed: bool
+
+
+def _resolve_run_finish_decision(
+    finished_job: DownloadJob | None,
+    run_status: str,
+    *,
+    suppressed: bool,
+) -> _RunFinishDecision:
+    item_terminal_emitted = bool(
+        finished_job is not None and finished_job.item_terminal_emitted
+    )
+    return _RunFinishDecision(
+        finished_job=finished_job,
+        suppressed=suppressed,
+        stopped_without_item_terminal=(
+            not suppressed and run_status == "Stopped" and not item_terminal_emitted
+        ),
+        archive_completed=(not suppressed and run_status in {"Completed", "Partial"}),
+    )
+
+
 class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     _event_app_name = APP_NAME
     _event_subtle_color = THEME["subtle"]
@@ -12545,20 +12574,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         progress: float | None = None,
     ) -> None:
         finished_job = self.active_job
-        suppressed = self._library_run_is_suppressed(finished_job)
-        if finished_job is not None and not suppressed:
-            self._append_job_log(finished_job, message)
-            self._persist_job_activity_to_history(finished_job)
-        else:
-            self._append_log(message)
-        if suppressed:
-            pass
-        elif run_status == "Stopped" and not (
-            finished_job is not None and finished_job.item_terminal_emitted
-        ):
-            self._archive_active_terminal_job(run_status, message)
-        elif run_status in {"Completed", "Partial"}:
-            self._archive_active_completed_job(run_status, message)
+        decision = _resolve_run_finish_decision(
+            finished_job,
+            run_status,
+            suppressed=self._library_run_is_suppressed(finished_job),
+        )
+        self._record_finished_run_before_handoff(decision, run_status, message)
         if progress is not None:
             self.progress_var.set(progress)
         self.status_var.set(message)
@@ -12577,7 +12598,31 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ):
             self._set_focus_run_controls_visible(False)
             self._refresh_focus_run_deck()
-        if suppressed and finished_job is not None:
+        self._reconcile_finished_run_after_handoff(decision)
+
+    def _record_finished_run_before_handoff(
+        self,
+        decision: _RunFinishDecision,
+        run_status: str,
+        message: str,
+    ) -> None:
+        finished_job = decision.finished_job
+        if finished_job is not None and not decision.suppressed:
+            self._append_job_log(finished_job, message)
+            self._persist_job_activity_to_history(finished_job)
+        else:
+            self._append_log(message)
+        if decision.stopped_without_item_terminal:
+            self._archive_active_terminal_job(run_status, message)
+        elif decision.archive_completed:
+            self._archive_active_completed_job(run_status, message)
+
+    def _reconcile_finished_run_after_handoff(
+        self,
+        decision: _RunFinishDecision,
+    ) -> None:
+        finished_job = decision.finished_job
+        if decision.suppressed and finished_job is not None:
             self._terminal_jobs = [
                 job for job in self._terminal_jobs if job.run_id != finished_job.run_id
             ]
@@ -12585,11 +12630,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 job for job in self._completed_jobs if job.run_id != finished_job.run_id
             ]
             self._reconcile_focus_after_library_removal({finished_job.run_id})
-        elif (
-            run_status == "Stopped"
-            and finished_job is not None
-            and not finished_job.item_terminal_emitted
-        ):
+        elif decision.stopped_without_item_terminal and finished_job is not None:
             self._focus_terminal_job(finished_job)
 
     def _append_log(self, line: str) -> None:

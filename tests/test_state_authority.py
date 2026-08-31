@@ -1038,11 +1038,172 @@ def test_one_item_skip_does_not_archive_a_second_parent_terminal_card(tmp_path: 
     app.cancel_button = Control()
     app.skip_video_button = Control()
     app.skip_url_button = Control()
-    app._launch_next_pending_job = lambda: False
+    launches: list[DownloadJob] = []
+    focused: list[DownloadJob] = []
+    app._launch_next_pending_job = lambda: launches.append(parent) or False
+    app._focus_terminal_job = focused.append
 
     app._finish_run_ui("Stopped after skip", "Stopped", "Stopped")
 
     assert app.status_var.get() == "Stopped after skip"
+    assert launches == [parent]
+    assert focused == []
+
+
+def test_finish_run_orders_persistence_and_archive_before_successor_handoff(
+    tmp_path: Path,
+):
+    finished = make_job(tmp_path, video_id="finished")
+    successor = make_job(tmp_path, video_id="successor")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = finished
+    events: list[str] = []
+    app._library_run_is_suppressed = lambda _job: False
+    app._append_job_log = lambda job, _message: events.append(f"log:{job.run_id}")
+    app._persist_job_activity_to_history = lambda job: events.append(
+        f"persist:{job.run_id}"
+    )
+    app._archive_active_terminal_job = lambda _status, _message: events.append(
+        f"archive:{app.active_job.run_id}"
+    )
+    app._archive_active_completed_job = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("stopped run used completed archive")
+    )
+    app.progress_var = SimpleNamespace(
+        set=lambda _value: events.append("render:progress")
+    )
+    app.status_var = SimpleNamespace(set=lambda _value: events.append("render:status"))
+    app.download_button = SimpleNamespace(
+        config=lambda **_kwargs: events.append("render:download")
+    )
+    app.cancel_button = SimpleNamespace(
+        config=lambda **_kwargs: events.append("render:cancel")
+    )
+    app.skip_video_button = SimpleNamespace(
+        config=lambda **_kwargs: events.append("render:skip-video")
+    )
+    app.skip_url_button = SimpleNamespace(
+        config=lambda **_kwargs: events.append("render:skip-url")
+    )
+
+    def launch_successor() -> bool:
+        events.append(f"launch:{app.active_job.run_id}")
+        app.active_job = successor
+        return True
+
+    app._launch_next_pending_job = launch_successor
+    app._focus_terminal_job = lambda job: events.append(f"focus:{job.run_id}")
+
+    app._finish_run_ui("Stopped cleanly", "Stopped", "Stopped", progress=42)
+
+    assert events == [
+        f"log:{finished.run_id}",
+        f"persist:{finished.run_id}",
+        f"archive:{finished.run_id}",
+        "render:progress",
+        "render:status",
+        "render:download",
+        "render:cancel",
+        "render:skip-video",
+        "render:skip-url",
+        f"launch:{finished.run_id}",
+        f"focus:{finished.run_id}",
+    ]
+    assert app.active_job is successor
+
+
+def test_suppressed_finish_reconciles_captured_run_after_successor_handoff(
+    tmp_path: Path,
+):
+    finished = make_job(tmp_path, video_id="removed")
+    successor = make_job(tmp_path, video_id="successor")
+    unrelated_terminal = make_job(tmp_path, video_id="failed")
+    unrelated_completed = make_job(tmp_path, video_id="completed")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = finished
+    app._terminal_jobs = [finished, unrelated_terminal]
+    app._completed_jobs = [finished, unrelated_completed]
+    events: list[str] = []
+    app._library_run_is_suppressed = lambda job: job is finished
+    app._append_log = lambda _message: events.append("log")
+    app._append_job_log = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("suppressed run received an owned log")
+    )
+    app._persist_job_activity_to_history = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("suppressed run persisted activity")
+    )
+    app._archive_active_terminal_job = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("suppressed run was archived")
+    )
+    app._archive_active_completed_job = app._archive_active_terminal_job
+    app.progress_var = Value(12)
+    app.status_var = Value("")
+    app.download_button = Control()
+    app.cancel_button = Control()
+    app.skip_video_button = Control()
+    app.skip_url_button = Control()
+
+    def launch_successor() -> bool:
+        events.append("launch")
+        app.active_job = successor
+        return True
+
+    app._launch_next_pending_job = launch_successor
+
+    def reconcile(removed_run_ids: set[str]) -> None:
+        assert app.active_job is successor
+        events.append("reconcile")
+        assert removed_run_ids == {finished.run_id}
+
+    app._reconcile_focus_after_library_removal = reconcile
+    app._focus_terminal_job = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("suppressed run received terminal focus")
+    )
+
+    app._finish_run_ui("Removed from Library", "Stopped", "Stopped")
+
+    assert events == ["log", "launch", "reconcile"]
+    assert app._terminal_jobs == [unrelated_terminal]
+    assert app._completed_jobs == [unrelated_completed]
+    assert app.active_job is successor
+
+
+def test_stopped_finish_without_focus_widgets_clears_active_run(tmp_path: Path):
+    finished = make_job(tmp_path, video_id="headless")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = finished
+    app.pending_jobs = []
+    app._append_job_log = lambda *_args: None
+    app._persist_job_activity_to_history = lambda *_args: None
+    archived: list[tuple[str, str]] = []
+    app._archive_active_terminal_job = lambda status, message: archived.append(
+        (status, message)
+    )
+    app.progress_var = Value(27)
+    app.status_var = Value("")
+    app.download_button = Control()
+    app.cancel_button = Control()
+    app.skip_video_button = Control()
+    app.skip_url_button = Control()
+    launches: list[DownloadJob] = []
+
+    def finish_without_successor() -> bool:
+        launches.append(finished)
+        app.active_job = None
+        return False
+
+    app._launch_next_pending_job = finish_without_successor
+
+    app._finish_run_ui("Stopped cleanly", "Stopped", "Stopped")
+
+    assert archived == [("Stopped", "Stopped cleanly")]
+    assert launches == [finished]
+    assert app.active_job is None
+    assert app.status_var.get() == "Stopped cleanly"
+    assert app.download_button.configured == [{"state": "normal"}]
+    assert app.cancel_button.configured == [{"state": "disabled"}]
+    assert app.skip_video_button.configured == [{"state": "disabled"}]
+    assert app.skip_url_button.configured == [{"state": "disabled"}]
 
 
 def test_single_url_worker_mutates_the_active_authority_not_a_private_copy(
@@ -2243,10 +2404,20 @@ def test_terminal_outcomes_become_the_explicit_forge_focus(monkeypatch, tmp_path
     assert dispatch_app._handle_terminal_event("error", "download failed") is True
     assert dispatched_focus == [terminal]
 
-    finish_source = inspect.getsource(DownloaderApp._finish_run_ui)
-    archive_source = inspect.getsource(DownloaderApp._archive_item_terminal_job)
-    assert "self._focus_terminal_job(finished_job)" in finish_source
-    assert "self._focus_terminal_job(job)" in archive_source
+    archived_focus: list[DownloadJob] = []
+    archive_app = DownloaderApp.__new__(DownloaderApp)
+    archive_app._library_run_is_suppressed = lambda _job: False
+    archive_app._terminal_jobs = []
+    archive_app.metadata_items = []
+    archive_app._rebuild_output_dir_index = lambda: None
+    archive_app._render_metadata_tree = lambda: None
+    archive_app.focus_run_deck = object()
+    archive_app._focus_terminal_job = archived_focus.append
+    archive_app._refresh_focus_run_deck = lambda: None
+
+    archive_app._archive_item_terminal_job(terminal, terminal.preview_info or {})
+
+    assert archived_focus == [terminal]
 
 
 def test_metadata_preview_focuses_once_and_completion_respects_manual_selection():
