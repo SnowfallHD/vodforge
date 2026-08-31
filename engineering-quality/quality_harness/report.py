@@ -137,8 +137,23 @@ def comparison(
         (str(item.get("evidence_tier")), str(item.get("id")))
         for item in baseline.get("scenarios", [])
     }
+    current_by_scenario = {
+        (str(item.get("evidence_tier")), str(item.get("id"))): item
+        for item in current.get("scenarios", [])
+    }
+    baseline_by_scenario = {
+        (str(item.get("evidence_tier")), str(item.get("id"))): item
+        for item in baseline.get("scenarios", [])
+    }
     same_profile = baseline.get("profile") == current.get("profile")
     same_scenario_set = baseline_scenarios == current_scenarios
+    workload_mismatches = [
+        f"{tier}:{scenario_id}"
+        for tier, scenario_id in sorted(current_scenarios & baseline_scenarios)
+        if current_by_scenario[(tier, scenario_id)].get("workload")
+        != baseline_by_scenario[(tier, scenario_id)].get("workload")
+    ]
+    same_workload_contracts = not workload_mismatches
     machine_field_matches = {
         key: current.get("machine", {}).get(key) is not None
         and baseline.get("machine", {}).get(key) == current.get("machine", {}).get(key)
@@ -158,6 +173,10 @@ def comparison(
         )
     if not same_scenario_set:
         refusal_reasons.append("scenario/evidence-tier sets differ")
+    if workload_mismatches:
+        refusal_reasons.append(
+            "scenario workload contracts differ: " + ", ".join(workload_mismatches)
+        )
     output: dict[str, Any] = {
         "baseline_run_id": baseline.get("run_id"),
         "baseline_machine": baseline.get("machine"),
@@ -165,6 +184,8 @@ def comparison(
         "baseline_profile": baseline.get("profile"),
         "same_profile": same_profile,
         "same_scenario_set": same_scenario_set,
+        "same_workload_contracts": same_workload_contracts,
+        "workload_mismatches": workload_mismatches,
         "current_scenario_set": [
             f"{tier}:{scenario_id}" for tier, scenario_id in sorted(current_scenarios)
         ],
@@ -328,7 +349,7 @@ def markdown_report(result: dict[str, Any]) -> str:
                 "## Baseline comparison",
                 "",
                 f"- Baseline run: `{comparison_data.get('baseline_run_id')}`",
-                f"- Comparable profile and scenario set: {'yes' if comparison_data.get('comparable') else 'no'}",
+                f"- Comparable profile, scenario set, and workload: {'yes' if comparison_data.get('comparable') else 'no'}",
                 f"- same_commit: {'yes' if comparison_data.get('same_commit') else 'no'}",
                 f"- same_machine: {'yes' if comparison_data.get('same_machine') else 'no'}",
                 "",

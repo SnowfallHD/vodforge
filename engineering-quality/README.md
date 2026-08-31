@@ -49,6 +49,19 @@ Deeper run (longer fixtures/soak plus the first default-download W3C public boun
 ./engineering-quality/run deep
 ```
 
+The deep profile uses a controlled 50-job worker soak. If its post-warmup signal
+persists and needs a longer observation under the same contract, run 100 jobs
+explicitly:
+
+```sh
+./engineering-quality/run deep \
+  --scenario lifecycle.repeated_job_soak \
+  --soak-jobs 100
+```
+
+Run the 50-job form first. The 100-job option is diagnostic evidence, not a
+machine-independent memory gate.
+
 Add the W3C public-media boundary to a normal run:
 
 ```sh
@@ -143,7 +156,19 @@ The harness records:
 - scenario status, raw evidence paths, classified findings, and suggested fixes;
 - machine, load, disk, Git SHA/dirtiness, tool versions, and optional baseline deltas.
 
-Performance values are not universal pass/fail constants. Compare like-for-like machines and corpus conditions; comparison refuses metric deltas when profiles or scenario/tier sets differ and reports commit/machine equality separately. A short soak records memory/FD trends but does not convert a single machine's arbitrary byte threshold into a leak conclusion.
+The controlled deep soak additionally writes incremental post-GC observations
+for root RSS/USS where available, traced Python allocations, GC-tracked object
+types, FDs, Python and OS threads, process children, private thumbnail-cache
+state, on-disk history state, isolated temp files, and staging residue. It reuses
+one exact source identity and releases each full pipeline result before sampling
+so harness receipts do not create a linear retention signal. Tracemalloc keeps
+only baseline/final raw snapshots and bounded intermediate deltas.
+
+This headless tier never constructs Tk or pumps UI events. Tk image counts,
+in-memory Library history, and completed-run image ownership are therefore
+reported as unavailable, not zero. Those require packaged/UI evidence.
+
+Performance values are not universal pass/fail constants. Compare like-for-like machines and corpus conditions; comparison refuses metric deltas when profiles, scenario/tier sets, or explicit workload contracts differ and reports commit/machine equality separately. A soak records memory/FD trends but does not convert a single machine's arbitrary byte threshold into a leak conclusion.
 
 ## Result contract
 

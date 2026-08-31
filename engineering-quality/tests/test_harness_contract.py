@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -140,7 +141,7 @@ def test_summary_aggregates_only_explicit_job_outcomes() -> None:
 
 def _comparison_run(
     *, profile: str, scenario_ids: list[str], commit: str = "abc"
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return {
         "run_id": f"{profile}-run",
         "profile": profile,
@@ -173,6 +174,35 @@ def test_comparison_refuses_unlike_profile_or_scenario_set() -> None:
         "profile mismatch: current='normal', baseline='deep'",
         "scenario/evidence-tier sets differ",
     ]
+
+
+def test_comparison_refuses_different_scenario_workload_contracts() -> None:
+    current = _comparison_run(
+        profile="deep", scenario_ids=["lifecycle.repeated_job_soak"]
+    )
+    baseline = _comparison_run(
+        profile="deep", scenario_ids=["lifecycle.repeated_job_soak"]
+    )
+    current["scenarios"][0]["workload"] = {"jobs": 50, "contract": "v2"}
+    baseline["scenarios"][0]["workload"] = {"jobs": 100, "contract": "v2"}
+
+    result = comparison(current, baseline)
+
+    assert result is not None
+    assert result["comparable"] is False
+    assert result["same_profile"] is True
+    assert result["same_scenario_set"] is True
+    assert result["same_workload_contracts"] is False
+    assert result["workload_mismatches"] == [
+        "headless_production_pipeline:lifecycle.repeated_job_soak"
+    ]
+    assert result["refusal_reasons"] == [
+        (
+            "scenario workload contracts differ: "
+            "headless_production_pipeline:lifecycle.repeated_job_soak"
+        )
+    ]
+    assert result["metric_deltas"] == {}
 
 
 def test_markdown_exposes_machine_and_commit_comparability() -> None:

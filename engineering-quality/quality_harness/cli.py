@@ -50,6 +50,14 @@ def _parser() -> argparse.ArgumentParser:
             action="store_true",
             help="Always exit zero after writing reports",
         )
+        if profile == "deep":
+            run.add_argument(
+                "--soak-jobs",
+                type=int,
+                choices=(50, 100),
+                default=50,
+                help="Run the controlled lifecycle soak for 50 jobs, or 100 after a persistent 50-job signal",
+            )
     e2e = subparsers.add_parser(
         "packaged-e2e", help="Prepare/run a full packaged-app E2E evidence session"
     )
@@ -258,6 +266,7 @@ def run_profile(
             run_root=run_root,
             server=server,
             profile=profile,
+            soak_jobs=getattr(args, "soak_jobs", None),
             include_public=bool(args.include_public),
             selected=selected,
             e2e_result=args.e2e_result.resolve() if args.e2e_result else None,

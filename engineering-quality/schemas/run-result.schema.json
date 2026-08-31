@@ -47,6 +47,7 @@
           "evidence_tier": {"enum": ["unit_static", "headless_production_pipeline", "packaged_app_e2e"]},
           "status": {"enum": ["passed", "failed", "error", "skipped"]},
           "duration_seconds": {"type": "number", "minimum": 0},
+          "workload": {"type": "object", "additionalProperties": true},
           "metrics": {"type": "object", "additionalProperties": true},
           "evidence": {"type": "array", "items": {"type": "string"}},
           "artifacts": {"type": "array", "items": {"type": "string"}},

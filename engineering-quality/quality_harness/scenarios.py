@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 import json
 import os
 import sys
@@ -13,6 +12,7 @@ from typing import Any
 
 from .fault_server import FixtureHTTPServer
 from .maintainability import change_surface_probe
+from .metrics import LifecycleCheckpointRecorder, lifecycle_growth_summary
 from .mutation import run_bounded_mutation_campaign
 from .pipeline import HeadlessPipelineRunner, active_child_snapshot
 from .reliability import batch_failure_report_reset_probe
@@ -181,12 +181,8 @@ def correctness_mp4(
     )
     metadata_text = json.dumps(metadata_payload, ensure_ascii=False)
     expected_tags = ["vodforge-quality", "synthetic-fixture", "unicode-Δ"]
-    media_format = (
-        (media[0].get("ffprobe") or {}).get("format") if media else {}
-    )
-    embedded_tags = (
-        media_format.get("tags") if isinstance(media_format, dict) else {}
-    )
+    media_format = (media[0].get("ffprobe") or {}).get("format") if media else {}
+    embedded_tags = media_format.get("tags") if isinstance(media_format, dict) else {}
     embedded_keywords = str((embedded_tags or {}).get("keywords") or "").casefold()
     embedded_metadata_valid = bool(
         str((embedded_tags or {}).get("title") or "").strip()
@@ -983,56 +979,95 @@ def reliability_malformed(
 
 
 def lifecycle_soak(
-    runner: HeadlessPipelineRunner, server: FixtureHTTPServer, *, jobs: int
+    runner: HeadlessPipelineRunner,
+    server: FixtureHTTPServer,
+    *,
+    jobs: int,
+    detailed: bool,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    try:
-        import psutil
-
-        process = psutil.Process(os.getpid())
-        gc.collect()
-        rss_before = process.memory_info().rss
-        fds_before_method = getattr(process, "num_fds", None) or getattr(
-            process, "num_handles", None
-        )
-        fds_before = fds_before_method() if callable(fds_before_method) else None
-    except Exception:  # noqa: BLE001 - lifecycle metrics are optional across psutil platforms
-        process = None
-        rss_before = None
-        fds_before = None
-    results = []
+    recorder = LifecycleCheckpointRecorder(
+        runner.run_root, jobs=jobs, detailed=detailed
+    )
+    stable_source_route = "/page/unicode?soak=controlled"
+    stable_source_url = server.url(stable_source_route)
+    baseline = recorder.start()
+    compact_results: list[dict[str, Any]] = []
     rss_after_each_job: list[int] = []
     fds_after_each_job: list[int] = []
+    threads_after_each_job: list[int] = []
+    traced_python_after_each_job: list[int] = []
     started = time.monotonic()
-    for index in range(jobs):
-        results.append(
-            runner.run_job(
+    try:
+        for index in range(jobs):
+            job_index = index + 1
+            recorder.before_job(job_index)
+            result = runner.run_job(
                 case_id=f"lifecycle-soak-{index + 1:03d}",
-                url=server.url(f"/page/unicode?soak={index}"),
+                url=stable_source_url,
                 output_type="MP3",
                 write_thumbnail=False,
                 write_info_json=False,
                 embed_cover_art=False,
                 cleanup_global_children=False,
             )
-        )
-        gc.collect()
-        if process is not None:
-            rss_after_each_job.append(int(process.memory_info().rss))
-            current_fd_method = getattr(process, "num_fds", None) or getattr(
-                process, "num_handles", None
-            )
-            if callable(current_fd_method):
-                fds_after_each_job.append(int(current_fd_method()))
-    gc.collect()
-    if process is not None:
-        rss_after = process.memory_info().rss
-        fds_after_method = getattr(process, "num_fds", None) or getattr(
-            process, "num_handles", None
-        )
-        fds_after = fds_after_method() if callable(fds_after_method) else None
-    else:
-        rss_after = None
-        fds_after = None
+            resources = result.get("resource_metrics") or {}
+            children_before = [
+                {
+                    "pid": item.get("pid"),
+                    "returncode": item.get("returncode"),
+                    "alive": bool(item.get("alive")),
+                }
+                for item in result.get("active_children_before_harness_cleanup") or []
+            ]
+            output_dir = str((result.get("job") or {}).get("output_dir") or "")
+            compact = {
+                "case_id": str(result.get("case_id") or ""),
+                "duration_seconds": result.get("duration_seconds"),
+                "error": result.get("error"),
+                "media_output_count": int(result.get("media_output_count") or 0),
+                "staging_residue_count": len(result.get("staging_entries_after") or []),
+                "peak_zombie_processes": int(
+                    resources.get("peak_zombie_processes") or 0
+                ),
+                "peak_child_processes": int(resources.get("peak_child_processes") or 0),
+                "active_children_before_harness_cleanup": children_before,
+                "history_event_count": sum(
+                    1
+                    for event in result.get("events") or []
+                    if event.get("kind") == "history_record"
+                ),
+                "artifact": str(Path(output_dir).parent / "pipeline-result.json"),
+            }
+            compact_results.append(compact)
+            # The full result contains large duplicated event/metadata/probe trees.
+            # Its artifact is already durable, so release it before post-GC sampling.
+            del resources
+            del children_before
+            del result
+            after = recorder.after_job(job_index, extra=compact)
+            process_state = after.get("process") or {}
+            rss = process_state.get("rss_bytes")
+            if isinstance(rss, int):
+                rss_after_each_job.append(rss)
+            fds = process_state.get("fd_or_handle_count")
+            if isinstance(fds, int):
+                fds_after_each_job.append(fds)
+            os_threads = process_state.get("os_thread_count")
+            if isinstance(os_threads, int):
+                threads_after_each_job.append(os_threads)
+            traced_current = (after.get("tracemalloc") or {}).get("current_bytes")
+            if isinstance(traced_current, int):
+                traced_python_after_each_job.append(traced_current)
+            del process_state
+            del after
+    finally:
+        recorder.finish()
+
+    baseline_process = baseline.get("process") or {}
+    rss_before = baseline_process.get("rss_bytes")
+    fds_before = baseline_process.get("fd_or_handle_count")
+    rss_after = rss_after_each_job[-1] if rss_after_each_job else None
+    fds_after = fds_after_each_job[-1] if fds_after_each_job else None
     rss_delta = (
         rss_after - rss_before
         if rss_before is not None and rss_after is not None
@@ -1045,17 +1080,31 @@ def lifecycle_soak(
     )
     failures = [
         result
-        for result in results
+        for result in compact_results
         if result.get("error") or result.get("media_output_count") != 1
     ]
-    residues = sum(len(result.get("staging_entries_after") or []) for result in results)
+    residues = sum(
+        int(result.get("staging_residue_count") or 0) for result in compact_results
+    )
     zombies = max(
-        (
-            result.get("resource_metrics", {}).get("peak_zombie_processes", 0)
-            for result in results
-        ),
+        (int(result.get("peak_zombie_processes") or 0) for result in compact_results),
         default=0,
     )
+    per_job_survivors = [
+        {
+            "case_id": result["case_id"],
+            "children": [
+                item
+                for item in result.get("active_children_before_harness_cleanup") or []
+                if item.get("alive")
+            ],
+        }
+        for result in compact_results
+        if any(
+            item.get("alive")
+            for item in result.get("active_children_before_harness_cleanup") or []
+        )
+    ]
     from yt_downloader import app as app_module
 
     survivors_before_cleanup = active_child_snapshot(app_module)
@@ -1080,14 +1129,41 @@ def lifecycle_soak(
         not failures
         and residues == 0
         and zombies == 0
+        and not per_job_survivors
         and not any(item["alive"] for item in survivors_before_cleanup)
     )
+    rss_growth = lifecycle_growth_summary(rss_after_each_job)
+    traced_growth = lifecycle_growth_summary(traced_python_after_each_job)
+    final_storage: dict[str, Any] = {}
+    if compact_results:
+        try:
+            last_sample = json.loads(
+                recorder.samples_path.read_text(encoding="utf-8").splitlines()[-1]
+            )
+            final_storage = last_sample.get("storage") or {}
+        except (IndexError, OSError, json.JSONDecodeError):
+            final_storage = {}
+    workload = {
+        "contract": "controlled-repeated-worker-v2",
+        "jobs": jobs,
+        "source_route": stable_source_route,
+        "fixture_item": "hls-short",
+        "fixture_media": "generated 6-second 640x360 H.264/AAC",
+        "output_type": "MP3",
+        "mp3_bitrate_kbps": 192,
+        "write_thumbnail": False,
+        "write_info_json": False,
+        "embed_cover_art": False,
+        "tracemalloc_enabled": detailed,
+        "full_pipeline_results_retained_during_sampling": False,
+    }
     scenario = {
         "id": "lifecycle.repeated_job_soak",
         "evidence_tier": "headless_production_pipeline",
         "category": "lifecycle",
         "status": "passed" if passed else "failed",
         "duration_seconds": round(time.monotonic() - started, 4),
+        "workload": workload,
         "metrics": {
             "jobs_attempted": jobs,
             "jobs_completed": jobs - len(failures),
@@ -1104,30 +1180,40 @@ def lifecycle_soak(
                 1 for item in survivors_before_cleanup if item.get("alive")
             ),
             "job_durations_seconds": [
-                result.get("duration_seconds") for result in results
+                result.get("duration_seconds") for result in compact_results
             ],
             "rss_after_each_job_bytes": rss_after_each_job,
             "fds_after_each_job": fds_after_each_job,
+            "os_threads_after_each_job": threads_after_each_job,
+            "traced_python_after_each_job_bytes": traced_python_after_each_job,
+            "rss_growth_description": rss_growth,
+            "traced_python_growth_description": traced_growth,
             "monotonic_rss_growth_signal": monotonic_rss_growth,
             "monotonic_fd_growth_signal": monotonic_fd_growth,
             "single_run_growth_conclusion": "comparison_required",
+            "per_job_active_child_survivors": per_job_survivors,
             "active_children_before_emergency_cleanup": survivors_before_cleanup,
             "active_children_after_emergency_cleanup": survivors_after_cleanup,
+            "thumbnail_cache": final_storage.get("thumbnail_cache"),
+            "history_file": final_storage.get("history_file"),
+            "headless_tk_image_count": None,
+            "headless_tk_visibility": "unavailable_headless_no_tk_initialization",
+            "headless_in_memory_history_count": None,
+            "headless_history_visibility": "unavailable_ui_event_queue_not_pumped",
+            "observation_artifact": str(recorder.samples_path),
         },
         "evidence": [
             f"Repeated real jobs: {jobs}; failures: {len(failures)}",
             f"RSS delta after GC: {rss_delta} bytes (machine/run signal, not universal threshold)",
             f"File descriptor delta: {fd_delta}",
             f"Staging residue: {residues}; peak zombies: {zombies}",
-            f"Per-job RSS samples: {rss_after_each_job}; monotonic growth signal: {monotonic_rss_growth}",
-            f"Per-job FD samples: {fds_after_each_job}; monotonic growth signal: {monotonic_fd_growth}",
-            f"Child-registry survivors before emergency cleanup: {survivors_before_cleanup}",
-            "Memory and FD trends require a comparable prior run and longer soak before any leak conclusion.",
+            f"Post-warmup RSS description: {rss_growth}",
+            f"Per-job child survivors: {per_job_survivors}; final survivors: {survivors_before_cleanup}",
+            "Tk images and in-memory UI history are unavailable in this headless worker tier, not observed as zero.",
+            "RSS and allocation trends remain comparison-required evidence; this scenario has no universal leak threshold.",
         ],
-        "artifacts": [
-            str(Path(result["job"]["output_dir"]).parent / "pipeline-result.json")
-            for result in results
-        ],
+        "artifacts": [str(result["artifact"]) for result in compact_results]
+        + recorder.artifacts,
         "error": None,
     }
     findings = (
@@ -1136,11 +1222,11 @@ def lifecycle_soak(
         else [
             _finding_for_failed_scenario(
                 scenario,
-                "Repeated real jobs show resource growth, failures, or cleanup residue",
+                "Repeated real jobs show failures or concrete lifecycle residue",
                 "reliability defect",
                 "medium",
                 "worker/process/temp lifecycle",
-                "Use per-job ownership receipts and identify the first monotonically growing resource before changing caching or cleanup behavior.",
+                "Use the per-job ownership receipts to repair the first failed output, unreaped child, zombie, or staging owner without converting RSS alone into a defect.",
             )
         ]
     )
@@ -1401,6 +1487,7 @@ def run_scenarios(
     run_root: Path,
     server: FixtureHTTPServer,
     profile: str,
+    soak_jobs: int | None,
     include_public: bool,
     selected: set[str] | None,
     e2e_result: Path | None,
@@ -1408,6 +1495,9 @@ def run_scenarios(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     runner = HeadlessPipelineRunner(run_root)
     deep = profile == "deep"
+    lifecycle_jobs = (
+        soak_jobs if deep and soak_jobs is not None else (50 if deep else 3)
+    )
     registry: list[
         tuple[str, Callable[[], tuple[dict[str, Any], list[dict[str, Any]]]]]
     ] = [
@@ -1487,7 +1577,12 @@ def run_scenarios(
         ("reliability.malformed_url", lambda: reliability_malformed(runner)),
         (
             "lifecycle.repeated_job_soak",
-            lambda: lifecycle_soak(runner, server, jobs=10 if deep else 3),
+            lambda: lifecycle_soak(
+                runner,
+                server,
+                jobs=lifecycle_jobs,
+                detailed=deep,
+            ),
         ),
         (
             "concurrency.simultaneous_worker_attack",
