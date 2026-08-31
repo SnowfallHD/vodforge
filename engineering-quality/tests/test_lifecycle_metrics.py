@@ -6,6 +6,7 @@ import weakref
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from quality_harness import scenarios as scenarios_module
 from quality_harness.cli import _parser
 from quality_harness.metrics import (
@@ -104,8 +105,15 @@ def test_detailed_checkpoint_writes_bounded_baseline_and_final_traces(
     assert len(trace["baseline_delta"]["top_positive_locations"]) <= 20
 
 
-def test_soak_releases_full_result_before_checkpoint_and_reuses_source(
-    monkeypatch: Any, tmp_path: Path
+@pytest.mark.parametrize(
+    ("final_worker_count", "expected_status"),
+    [(0, "passed"), (1, "failed")],
+)
+def test_soak_releases_results_reuses_source_and_gates_worker_retention(
+    monkeypatch: Any,
+    tmp_path: Path,
+    final_worker_count: int,
+    expected_status: str,
 ) -> None:
     observed_urls: list[str] = []
     result_sentinels: list[weakref.ReferenceType[object]] = []
@@ -149,7 +157,15 @@ def test_soak_releases_full_result_before_checkpoint_and_reuses_source(
             self._rss = 100
 
         def start(self) -> dict[str, Any]:
-            return {"process": {"rss_bytes": self._rss, "fd_or_handle_count": 5}}
+            return {
+                "process": {"rss_bytes": self._rss, "fd_or_handle_count": 5},
+                "gc_tracked_objects": {
+                    "selected_type_counts": {
+                        "yt_dlp.YoutubeDL.YoutubeDL": 0,
+                        "yt_downloader.models.DownloadJob": 0,
+                    }
+                },
+            }
 
         def before_job(self, job_index: int) -> dict[str, Any]:
             return {"job_index": job_index}
@@ -165,6 +181,12 @@ def test_soak_releases_full_result_before_checkpoint_and_reuses_source(
                     "os_thread_count": 2,
                 },
                 "tracemalloc": {"current_bytes": None},
+                "gc_tracked_objects": {
+                    "selected_type_counts": {
+                        "yt_dlp.YoutubeDL.YoutubeDL": final_worker_count,
+                        "yt_downloader.models.DownloadJob": final_worker_count,
+                    }
+                },
                 "storage": {
                     "thumbnail_cache": {"file_count": 1, "bytes": 10},
                     "history_file": {
@@ -188,8 +210,8 @@ def test_soak_releases_full_result_before_checkpoint_and_reuses_source(
         detailed=False,
     )
 
-    assert findings == []
-    assert scenario["status"] == "passed"
+    assert scenario["status"] == expected_status
+    assert bool(findings) is bool(final_worker_count)
     assert len(set(observed_urls)) == 1
     assert observed_urls == [
         "http://fixture.invalid/page/unicode?soak=controlled",
@@ -201,6 +223,21 @@ def test_soak_releases_full_result_before_checkpoint_and_reuses_source(
     )
     assert scenario["metrics"]["headless_tk_image_count"] is None
     assert scenario["metrics"]["headless_in_memory_history_count"] is None
+    assert scenario["metrics"]["worker_object_count_deltas"] == {
+        "yt_dlp.YoutubeDL.YoutubeDL": final_worker_count,
+        "yt_downloader.models.DownloadJob": final_worker_count,
+    }
+    assert scenario["metrics"]["retained_worker_object_deltas"] == (
+        {
+            "yt_dlp.YoutubeDL.YoutubeDL": final_worker_count,
+            "yt_downloader.models.DownloadJob": final_worker_count,
+        }
+        if final_worker_count
+        else {}
+    )
+    assert scenario["metrics"]["retained_worker_object_growth_signal"] is bool(
+        final_worker_count
+    )
 
 
 def test_cli_keeps_normal_soak_bounded_and_deep_supports_50_or_100() -> None:

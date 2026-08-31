@@ -26,6 +26,60 @@ from .security import (
 )
 from .static_analysis import run_static_suite
 
+_LIFECYCLE_WORKER_OBJECT_TYPES = (
+    "yt_dlp.YoutubeDL.YoutubeDL",
+    "yt_downloader.models.DownloadJob",
+)
+
+
+def _selected_worker_object_counts(
+    sample: dict[str, Any],
+) -> dict[str, int | None]:
+    selected = (sample.get("gc_tracked_objects") or {}).get(
+        "selected_type_counts"
+    ) or {}
+    return {
+        object_type: (
+            selected.get(object_type)
+            if type(selected.get(object_type)) is int
+            else None
+        )
+        for object_type in _LIFECYCLE_WORKER_OBJECT_TYPES
+    }
+
+
+def _worker_object_retention_receipt(
+    baseline: dict[str, Any], final_sample: dict[str, Any]
+) -> tuple[
+    dict[str, int | None],
+    dict[str, int | None],
+    dict[str, int | None],
+    dict[str, int],
+    bool | None,
+]:
+    before = _selected_worker_object_counts(baseline)
+    after = _selected_worker_object_counts(final_sample)
+    deltas = {
+        object_type: (
+            after[object_type] - before[object_type]
+            if before[object_type] is not None and after[object_type] is not None
+            else None
+        )
+        for object_type in _LIFECYCLE_WORKER_OBJECT_TYPES
+    }
+    positive = {
+        object_type: delta
+        for object_type, delta in deltas.items()
+        if delta is not None and delta > 0
+    }
+    if positive:
+        signal: bool | None = True
+    elif all(delta is not None for delta in deltas.values()):
+        signal = False
+    else:
+        signal = None
+    return before, after, deltas, positive, signal
+
 
 def _media_streams(
     result: dict[str, Any],
@@ -1123,26 +1177,39 @@ def lifecycle_soak(
         and all(left <= right for left, right in pairwise(fds_after_each_job))
         and fds_after_each_job[-1] > fds_after_each_job[0]
     )
+    rss_growth = lifecycle_growth_summary(rss_after_each_job)
+    traced_growth = lifecycle_growth_summary(traced_python_after_each_job)
+    final_sample: dict[str, Any] = {}
+    final_storage: dict[str, Any] = {}
+    if compact_results:
+        try:
+            final_sample = json.loads(
+                recorder.samples_path.read_text(encoding="utf-8").splitlines()[-1]
+            )
+            final_storage = final_sample.get("storage") or {}
+        except (IndexError, OSError, json.JSONDecodeError):
+            final_sample = {}
+            final_storage = {}
+
+    (
+        worker_counts_before,
+        worker_counts_after,
+        worker_count_deltas,
+        retained_worker_object_deltas,
+        retained_worker_growth_signal,
+    ) = _worker_object_retention_receipt(baseline, final_sample)
+
     # Memory/FD trends are recorded for comparison. They do not become defects
-    # from a machine-independent magic threshold in a single short run.
+    # from a machine-independent magic threshold in a single short run. Concrete
+    # post-GC worker-object retention does fail this controlled lifecycle probe.
     passed = (
         not failures
         and residues == 0
         and zombies == 0
         and not per_job_survivors
         and not any(item["alive"] for item in survivors_before_cleanup)
+        and not retained_worker_object_deltas
     )
-    rss_growth = lifecycle_growth_summary(rss_after_each_job)
-    traced_growth = lifecycle_growth_summary(traced_python_after_each_job)
-    final_storage: dict[str, Any] = {}
-    if compact_results:
-        try:
-            last_sample = json.loads(
-                recorder.samples_path.read_text(encoding="utf-8").splitlines()[-1]
-            )
-            final_storage = last_sample.get("storage") or {}
-        except (IndexError, OSError, json.JSONDecodeError):
-            final_storage = {}
     workload = {
         "contract": "controlled-repeated-worker-v2",
         "jobs": jobs,
@@ -1190,6 +1257,11 @@ def lifecycle_soak(
             "traced_python_growth_description": traced_growth,
             "monotonic_rss_growth_signal": monotonic_rss_growth,
             "monotonic_fd_growth_signal": monotonic_fd_growth,
+            "worker_object_counts_before": worker_counts_before,
+            "worker_object_counts_after": worker_counts_after,
+            "worker_object_count_deltas": worker_count_deltas,
+            "retained_worker_object_deltas": retained_worker_object_deltas,
+            "retained_worker_object_growth_signal": retained_worker_growth_signal,
             "single_run_growth_conclusion": "comparison_required",
             "per_job_active_child_survivors": per_job_survivors,
             "active_children_before_emergency_cleanup": survivors_before_cleanup,
@@ -1208,6 +1280,7 @@ def lifecycle_soak(
             f"File descriptor delta: {fd_delta}",
             f"Staging residue: {residues}; peak zombies: {zombies}",
             f"Post-warmup RSS description: {rss_growth}",
+            f"Post-GC retained worker object deltas: {retained_worker_object_deltas}",
             f"Per-job child survivors: {per_job_survivors}; final survivors: {survivors_before_cleanup}",
             "Tk images and in-memory UI history are unavailable in this headless worker tier, not observed as zero.",
             "RSS and allocation trends remain comparison-required evidence; this scenario has no universal leak threshold.",
@@ -1222,11 +1295,11 @@ def lifecycle_soak(
         else [
             _finding_for_failed_scenario(
                 scenario,
-                "Repeated real jobs show failures or concrete lifecycle residue",
+                "Repeated real jobs show failures, lifecycle residue, or retained worker objects",
                 "reliability defect",
                 "medium",
-                "worker/process/temp lifecycle",
-                "Use the per-job ownership receipts to repair the first failed output, unreaped child, zombie, or staging owner without converting RSS alone into a defect.",
+                "worker/object/process/temp lifecycle",
+                "Use the post-GC object and per-job ownership receipts to repair the first retained worker object, failed output, unreaped child, zombie, or staging owner without converting RSS alone into a defect.",
             )
         ]
     )

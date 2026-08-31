@@ -12450,6 +12450,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "writethumbnail": write_thumbnail,
             "writeinfojson": False,
             "postprocessors": postprocessors,
+            # VODForge owns progress through the hook below. Suppressing yt-dlp's
+            # terminal printer avoids caching its logger wrapper, which otherwise
+            # retains the per-job event queue after the download completes.
+            "noprogress": True,
             "progress_hooks": [self._progress_hook],
             "logger": QueueLogger(self.events),
             "embed_infojson": False,

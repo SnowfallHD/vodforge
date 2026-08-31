@@ -6907,6 +6907,25 @@ def test_ytdlp_format_probes_use_the_per_run_staging_directory(
         assert Path(ydl.get_output_path("temp")) == staging_dir
 
 
+def test_ytdlp_options_keep_hook_progress_without_terminal_progress(
+    monkeypatch, tmp_path: Path
+):
+    app = _worker_test_app()
+    monkeypatch.setattr(DownloaderApp, "_find_ffmpeg", staticmethod(lambda: None))
+    monkeypatch.setattr(DownloaderApp, "_find_deno", staticmethod(lambda: None))
+
+    opts = app._build_ydl_options(
+        _worker_test_job(tmp_path),
+        tmp_path / "staging",
+        format_selector="137+251",
+    )
+
+    assert opts["noprogress"] is True
+    progress_hook = opts["progress_hooks"][0]
+    assert progress_hook.__self__ is app
+    assert progress_hook.__func__ is DownloaderApp._progress_hook
+
+
 def test_delayed_playlist_analysis_keeps_the_skipped_items_inputs(
     monkeypatch,
     tmp_path: Path,
