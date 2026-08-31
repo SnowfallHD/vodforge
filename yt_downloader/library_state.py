@@ -82,6 +82,67 @@ class LibraryMetadataMerge:
     incoming_items: list[dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class LibraryRemovalPlan:
+    """Immutable ownership resolved before a Library removal mutates app state."""
+
+    history_identity: HistoryIdentity | None
+    active_run_id: str | None
+    queued_run_ids: frozenset[str]
+
+    @property
+    def execution_run_ids(self) -> frozenset[str]:
+        if self.active_run_id is None:
+            return self.queued_run_ids
+        return self.queued_run_ids | {self.active_run_id}
+
+    @property
+    def execution_notice(self) -> str:
+        if self.active_run_id is not None:
+            return (
+                " Its active run will be stopped and will not return to Forge recents."
+            )
+        if self.queued_run_ids:
+            return " Its queued run will be removed before it starts."
+        return ""
+
+
+def _library_execution_owner_run_id(info: dict[str, Any]) -> str | None:
+    """Return an exact execution owner, never a same-media historical lookalike."""
+    persisted_run_id = str(info.get("vodforge_run_id") or "").strip()
+    if persisted_run_id:
+        return persisted_run_id
+    if history_output_dir(info) is not None:
+        return None
+    active_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
+    return active_run_id or None
+
+
+def resolve_library_removal_plan(
+    info: dict[str, Any],
+    *,
+    active_job: DownloadJob | None,
+    pending_jobs: Iterable[DownloadJob],
+) -> LibraryRemovalPlan:
+    """Resolve durable and live owners without changing Library or Forge state."""
+    saved = history_output_dir(info)
+    item_history_identity = history_identity(info) if saved is not None else None
+    owner_run_id = _library_execution_owner_run_id(info)
+    active_run_id = (
+        active_job.run_id
+        if active_job is not None and active_job.run_id == owner_run_id
+        else None
+    )
+    queued_run_ids = frozenset(
+        job.run_id for job in pending_jobs if job.run_id == owner_run_id
+    )
+    return LibraryRemovalPlan(
+        history_identity=item_history_identity,
+        active_run_id=active_run_id,
+        queued_run_ids=queued_run_ids,
+    )
+
+
 def merge_library_metadata_items(
     existing_items: list[dict[str, Any]],
     incoming_items: Iterable[dict[str, Any]],

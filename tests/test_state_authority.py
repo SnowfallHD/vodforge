@@ -26,7 +26,7 @@ from yt_downloader.app import (
     focus_view_shortcut_bindings,
 )
 from yt_downloader.focus_settings import FocusSettingsDialog
-from yt_downloader.history import history_identity, upsert_history
+from yt_downloader.history import HistoryError, history_identity, upsert_history
 
 
 class Value:
@@ -2517,6 +2517,86 @@ def test_remove_active_library_item_after_history_commit_still_stops_its_exact_r
     assert len(reconciled) == 1
     assert active.run_id in reconciled[0]
     assert older_terminal.run_id in reconciled[0]
+
+
+def test_library_history_save_failure_has_no_partial_removal_side_effects(
+    monkeypatch, tmp_path: Path
+):
+    active = make_job(tmp_path, video_id="persist-first")
+    output_dir = tmp_path / "Creator" / "videos - no playlist" / "Saved [persist-first]"
+    output_dir.mkdir(parents=True)
+    media = output_dir / "Saved.mp4"
+    media.write_bytes(b"committed media remains authoritative")
+    saved = upsert_history(
+        [],
+        {
+            "id": "persist-first",
+            "title": "Saved",
+            "vodforge_output_type": "MP4",
+            "vodforge_run_id": active.run_id,
+        },
+        output_dir,
+    )[0]
+    queued = make_job(tmp_path, video_id="queued-unrelated")
+    terminal = make_job(tmp_path, video_id="terminal-unrelated")
+    completed = make_job(tmp_path, video_id="persist-first")
+    completed.history_identities.add(history_identity(saved))
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = SelectedTree()
+    app.metadata_items = [saved]
+    app.download_history = [saved]
+    app.history_path = tmp_path / "history.json"
+    app.active_job = active
+    app.pending_jobs = [queued]
+    app._terminal_jobs = [terminal]
+    app._completed_jobs = [completed]
+    app._library_suppressed_run_ids = set()
+    app.status_var = Value("Before removal")
+    cancellations: list[str] = []
+    renders: list[bool] = []
+    rebuilds: list[bool] = []
+    reconciled: list[set[str]] = []
+    persisted: list[list[dict]] = []
+    errors: list[tuple[str, str]] = []
+    app._cancel = lambda: cancellations.append(active.run_id)
+    app._render_metadata_tree = lambda: renders.append(True)
+    app._rebuild_output_dir_index = lambda: rebuilds.append(True)
+    app._reconcile_focus_after_library_removal = lambda run_ids: reconciled.append(
+        set(run_ids)
+    )
+    monkeypatch.setattr(
+        app_module.messagebox, "askyesno", lambda *_args, **_kwargs: True
+    )
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda title, message: errors.append((title, message)),
+    )
+
+    def fail_save(_path: Path, records: list[dict]) -> None:
+        persisted.append(list(records))
+        raise HistoryError("injected history save failure")
+
+    monkeypatch.setattr(app_module, "save_history", fail_save)
+
+    app._remove_selected_library_item()
+
+    assert persisted == [[]]
+    assert cancellations == []
+    assert app._library_suppressed_run_ids == set()
+    assert app.pending_jobs == [queued]
+    assert app.metadata_items == [saved]
+    assert app.download_history == [saved]
+    assert app._terminal_jobs == [terminal]
+    assert app._completed_jobs == [completed]
+    assert completed.history_identities == {history_identity(saved)}
+    assert renders == []
+    assert rebuilds == []
+    assert reconciled == []
+    assert app.status_var.get() == "Before removal"
+    assert media.read_bytes() == b"committed media remains authoritative"
+    assert errors == [(app_module.APP_NAME, "injected history save failure")]
 
 
 def test_manual_mp3_in_mp4_rejects_unsupported_bitrate_before_launch():

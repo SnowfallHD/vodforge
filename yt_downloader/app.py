@@ -79,6 +79,7 @@ from .history import (
 )
 from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
+    LibraryRemovalPlan,
     claim_active_metadata_row,
     format_duration,
     is_metadata_preview,
@@ -86,6 +87,7 @@ from .library_state import (
     metadata_output_type,
     metadata_run_key,
     persisted_run_deck_records,
+    resolve_library_removal_plan,
 )
 from .models import (
     AUDIO_CHANNELS,
@@ -9397,19 +9399,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             job.origin_run_id and job.origin_run_id in suppressed
         )
 
-    @staticmethod
-    def _library_item_matches_execution_job(
-        info: dict[str, Any], job: DownloadJob
-    ) -> bool:
-        """Match an exact run-owned row, never a historical lookalike."""
-        persisted_run_id = str(info.get("vodforge_run_id") or "").strip()
-        if persisted_run_id:
-            return persisted_run_id == job.run_id
-        if history_output_dir(info) is not None:
-            return False
-        active_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
-        return bool(active_run_id) and active_run_id == job.run_id
-
     def _rebuild_output_dir_index(self) -> None:
         self.video_output_dirs_by_id = {}
         for item in self.metadata_items:
@@ -9586,102 +9575,36 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except (IndexError, TypeError, ValueError):
             return
         title = str(info.get("title") or info.get("id") or "this item")
-        item_key = metadata_run_key(info)
-        active_row_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
-        persisted_run_id = str(info.get("vodforge_run_id") or "").strip()
-        terminal_history = bool(
-            not active_row_run_id
-            and item_key is not None
-            and any(
-                item_key in terminal_job.metadata_keys
-                or item_key == metadata_run_key(terminal_job.preview_info or {})
-                for terminal_job in self.__dict__.get("_terminal_jobs", [])
-            )
+        active_job_value = self.__dict__.get("active_job")
+        active_job = (
+            active_job_value if isinstance(active_job_value, DownloadJob) else None
         )
-        active_job = self.__dict__.get("active_job")
-
-        def matches_execution_owner(job: DownloadJob) -> bool:
-            if not self._library_item_matches_execution_job(info, job):
-                return False
-            # A saved row can coexist briefly with an active run after its
-            # media commit while optional post-processing finishes. Its exact
-            # run ID outranks an older same-video terminal-history heuristic.
-            explicit_owner = persisted_run_id or active_row_run_id
-            return not terminal_history or explicit_owner == job.run_id
-
-        active_match = (
-            active_job
-            if isinstance(active_job, DownloadJob)
-            and matches_execution_owner(active_job)
-            else None
+        plan = resolve_library_removal_plan(
+            info,
+            active_job=active_job,
+            pending_jobs=self.__dict__.get("pending_jobs", []),
         )
-        queued_matches = [
-            job
-            for job in self.__dict__.get("pending_jobs", [])
-            if matches_execution_owner(job)
-        ]
-        execution_notice = ""
-        if active_match is not None:
-            execution_notice = (
-                " Its active run will be stopped and will not return to Forge recents."
-            )
-        elif queued_matches:
-            execution_notice = " Its queued run will be removed before it starts."
         if not messagebox.askyesno(
             APP_NAME,
             (
                 f"Remove “{title}” from VODForge Library and Forge recents?\n\n"
                 "This removes its VODForge history cards. Media files and folders remain on your computer."
-                + execution_notice
+                + plan.execution_notice
             ),
         ):
             return
-        removed_run_ids: set[str] = set()
-        for job in [
-            *(queued_matches),
-            *([active_match] if active_match is not None else []),
-        ]:
-            self.__dict__.setdefault("_library_suppressed_run_ids", set()).add(
-                job.run_id
-            )
-            removed_run_ids.add(job.run_id)
-        if queued_matches:
-            queued_ids = {job.run_id for job in queued_matches}
-            self.pending_jobs = [
-                job
-                for job in self.__dict__.get("pending_jobs", [])
-                if job.run_id not in queued_ids
-            ]
-        if active_match is not None:
-            self._cancel()
-        saved = history_output_dir(info)
-        previous_history = list(self.download_history)
-        if saved is not None:
-            identity = history_identity(info)
-            self.download_history = [
-                item
-                for item in self.download_history
-                if history_identity(item) != identity
-            ]
-            try:
-                save_history(self.history_path, self.download_history)
-            except HistoryError as exc:
-                self.download_history = previous_history
-                messagebox.showerror(APP_NAME, str(exc))
-                return
-        removed_run_ids.update(self._remove_library_item_from_forge_recents(info))
-        removed_run_ids.add(
-            str(info.get("vodforge_preview_run_id") or f"history:{index}")
-        )
-        self.metadata_items.pop(index)
-        self._rebuild_output_dir_index()
+        try:
+            removed_run_ids = self._apply_library_removal_plan(info, index, plan)
+        except HistoryError as exc:
+            messagebox.showerror(APP_NAME, str(exc))
+            return
         self._render_metadata_tree()
         self._reconcile_focus_after_library_removal(removed_run_ids)
-        if active_match is not None:
+        if plan.active_run_id is not None:
             self.status_var.set(
                 "Removed the item from Library and Forge recents; its active run is stopping. Media files were not deleted."
             )
-        elif queued_matches:
+        elif plan.queued_run_ids:
             self.status_var.set(
                 "Removed the item and its queued run from Library and Forge. Media files were not deleted."
             )
@@ -9689,6 +9612,44 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.status_var.set(
                 "Removed the item from Library and Forge recents. Media files were not deleted."
             )
+
+    def _apply_library_removal_plan(
+        self,
+        info: dict[str, Any],
+        index: int,
+        plan: LibraryRemovalPlan,
+    ) -> set[str]:
+        """Persist removal before applying its live Library and Forge effects."""
+        prospective_history = self.download_history
+        if plan.history_identity is not None:
+            prospective_history = [
+                item
+                for item in self.download_history
+                if history_identity(item) != plan.history_identity
+            ]
+            save_history(self.history_path, prospective_history)
+            self.download_history = prospective_history
+
+        removed_run_ids = set(plan.execution_run_ids)
+        if removed_run_ids:
+            self.__dict__.setdefault("_library_suppressed_run_ids", set()).update(
+                removed_run_ids
+            )
+        if plan.queued_run_ids:
+            self.pending_jobs = [
+                job
+                for job in self.__dict__.get("pending_jobs", [])
+                if job.run_id not in plan.queued_run_ids
+            ]
+        if plan.active_run_id is not None:
+            self._cancel()
+        removed_run_ids.update(self._remove_library_item_from_forge_recents(info))
+        removed_run_ids.add(
+            str(info.get("vodforge_preview_run_id") or f"history:{index}")
+        )
+        self.metadata_items.pop(index)
+        self._rebuild_output_dir_index()
+        return removed_run_ids
 
     def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> set[str]:
         """Remove one item's presentation history without deleting media files."""
