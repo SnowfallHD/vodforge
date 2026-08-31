@@ -7,6 +7,7 @@ import signal
 import stat
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -414,11 +415,30 @@ def verify_native_window_identity(
         | Quartz.kCGWindowListExcludeDesktopElements
     )
     raw_windows = Quartz.CGWindowListCopyWindowInfo(options, window_id)
-    windows = [item for item in raw_windows or [] if isinstance(item, dict)]
+
+    def normalized_mapping(value: Any) -> dict[Any, Any] | None:
+        if not isinstance(value, Mapping):
+            return None
+        try:
+            return dict(value)
+        except (TypeError, ValueError):
+            return None
+
+    def integer(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (OverflowError, TypeError, ValueError):
+            return default
+
+    windows = [
+        normalized
+        for item in raw_windows or []
+        if (normalized := normalized_mapping(item)) is not None
+    ]
     matching = [
         item
         for item in windows
-        if int(item.get(Quartz.kCGWindowNumber, 0) or 0) == window_id
+        if integer(item.get(Quartz.kCGWindowNumber)) == window_id
     ]
     if len(matching) != 1:
         return {
@@ -427,10 +447,10 @@ def verify_native_window_identity(
             "window_count": len(matching),
         }
     window = matching[0]
-    owner_pid = int(window.get(Quartz.kCGWindowOwnerPID, 0) or 0)
+    owner_pid = integer(window.get(Quartz.kCGWindowOwnerPID))
     title = str(window.get(Quartz.kCGWindowName, "") or "")
     owner_name = str(window.get(Quartz.kCGWindowOwnerName, "") or "")
-    layer = int(window.get(Quartz.kCGWindowLayer, -1) or 0)
+    layer = integer(window.get(Quartz.kCGWindowLayer), -1)
     errors = []
     if owner_pid != expected_pid:
         errors.append("native window owner PID mismatch")
@@ -441,6 +461,7 @@ def verify_native_window_identity(
     onscreen = bool(window.get(Quartz.kCGWindowIsOnscreen, False))
     if not onscreen:
         errors.append("native window is not onscreen")
+    bounds = normalized_mapping(window.get(Quartz.kCGWindowBounds)) or {}
     return {
         "verified": not errors,
         "errors": errors,
@@ -450,7 +471,7 @@ def verify_native_window_identity(
         "title": title,
         "layer": layer,
         "onscreen": onscreen,
-        "bounds": dict(window.get(Quartz.kCGWindowBounds, {}) or {}),
+        "bounds": bounds,
     }
 
 

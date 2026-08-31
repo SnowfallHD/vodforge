@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import signal
 import sys
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -48,6 +49,22 @@ class _PopenDouble:
     def wait(self, timeout: float) -> int:
         self.wait_calls.append(timeout)
         return 0
+
+
+class _NSDictionaryLike(Mapping[str, Any]):
+    """Exercise the Mapping contract used by PyObjC without being a dict."""
+
+    def __init__(self, values: dict[str, Any]) -> None:
+        self._values = values
+
+    def __getitem__(self, key: str) -> Any:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
 
 
 def test_bundle_tree_receipt_detects_same_size_bundle_mutation(tmp_path: Path) -> None:
@@ -199,3 +216,54 @@ def test_native_window_identity_uses_core_graphics_owner_and_title(
     )
     assert mismatch["verified"] is False
     assert mismatch["errors"] == ["native window owner PID mismatch"]
+
+
+def test_native_window_identity_accepts_pyobjc_mapping_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bounds = _NSDictionaryLike({"X": 10, "Y": 20, "Width": 800, "Height": 600})
+    window = _NSDictionaryLike(
+        {
+            "number": 55,
+            "pid": 987,
+            "title": "VODForge [VFQ-0123456789ab-L1]",
+            "owner": "VODForge",
+            "layer": 0,
+            "onscreen": True,
+            "bounds": bounds,
+        }
+    )
+    fake_quartz = SimpleNamespace(
+        kCGWindowListOptionIncludingWindow=1,
+        kCGWindowListExcludeDesktopElements=2,
+        kCGWindowNumber="number",
+        kCGWindowOwnerPID="pid",
+        kCGWindowName="title",
+        kCGWindowOwnerName="owner",
+        kCGWindowLayer="layer",
+        kCGWindowIsOnscreen="onscreen",
+        kCGWindowBounds="bounds",
+        CGWindowListCopyWindowInfo=lambda _options, _window_id: [
+            {"number": object()},
+            window,
+        ],
+    )
+    monkeypatch.setitem(sys.modules, "Quartz", fake_quartz)
+
+    receipt = verify_native_window_identity(
+        window_id=55,
+        expected_pid=987,
+        expected_title="VODForge [VFQ-0123456789ab-L1]",
+    )
+
+    assert not isinstance(window, dict)
+    assert not isinstance(bounds, dict)
+    assert receipt["verified"] is True
+    assert receipt["window_id"] == 55
+    assert receipt["owner_pid"] == 987
+    assert receipt["bounds"] == {
+        "X": 10,
+        "Y": 20,
+        "Width": 800,
+        "Height": 600,
+    }
