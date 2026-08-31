@@ -5,6 +5,7 @@ import json
 import shutil
 from pathlib import Path
 
+from .e2e_provenance import verify_live_launch
 from .packaged_e2e import SCREENSHOT_OPTIONAL_EVENTS, _required_ui_event_order
 from .util import json_dump, sha256_file, utc_now
 
@@ -22,6 +23,28 @@ def record_e2e_event(args: argparse.Namespace) -> int:
             "session_dir does not match the directory containing session.json"
         )
     profile = str(session.get("e2e_profile") or "")
+    if session.get("driver_ready") is not True:
+        raise RuntimeError(
+            "E2E driver is not ready; provenance must verify before UI interaction"
+        )
+    current_launch = session.get("current_launch")
+    if not isinstance(current_launch, dict) or not current_launch.get("verified"):
+        raise RuntimeError("E2E session has no verified current launch")
+    live_receipt = verify_live_launch(current_launch)
+    if live_receipt.get("verified") is not True:
+        raise RuntimeError(
+            "E2E current launch no longer verifies: "
+            + "; ".join(str(item) for item in live_receipt.get("errors") or [])
+        )
+    expected_pid = int(current_launch["pid"])
+    if args.window_pid != expected_pid or args.window_owner_pid != expected_pid:
+        raise RuntimeError(
+            "E2E window PID does not match the verified harness-owned process"
+        )
+    if args.window_id <= 0:
+        raise RuntimeError("E2E window ID must be a positive native window identifier")
+    if args.window_title_token != current_launch.get("window_token"):
+        raise RuntimeError("E2E window title token does not match the current launch")
     required_order = _required_ui_event_order(profile)
     if args.event not in required_order:
         raise RuntimeError(
@@ -87,6 +110,16 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         else None,
         "note": args.note or None,
         "recorder": "quality_harness.e2e_record/1",
+        "session_nonce": session.get("session_nonce"),
+        "launch_id": current_launch.get("launch_id"),
+        "launch_sequence": current_launch.get("launch_sequence"),
+        "pid": expected_pid,
+        "process_create_time": current_launch.get("create_time"),
+        "executable_sha256": current_launch.get("executable_sha256"),
+        "bundle_tree_sha256": current_launch.get("bundle_tree_sha256"),
+        "window_id": args.window_id,
+        "window_owner_pid": args.window_owner_pid,
+        "window_title_token": args.window_title_token,
     }
     if unobserved_prior_events:
         event["unobserved_prior_events"] = unobserved_prior_events

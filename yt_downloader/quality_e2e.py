@@ -1,0 +1,289 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import stat
+import sys
+from collections.abc import Mapping
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Protocol, overload
+
+QUALITY_E2E_MODE_ENV = "VODFORGE_QUALITY_E2E"
+QUALITY_E2E_NONCE_ENV = "VODFORGE_QUALITY_E2E_SESSION_NONCE"
+# This is the name of a visible window-identity environment field, not a credential.
+QUALITY_E2E_WINDOW_TOKEN_ENV = "VODFORGE_QUALITY_E2E_WINDOW_TOKEN"  # nosec B105
+QUALITY_E2E_ISOLATION_ROOT_ENV = "VODFORGE_QUALITY_E2E_ISOLATION_ROOT"
+QUALITY_E2E_SCHEMA_VERSION = "1.0.0"
+QUALITY_E2E_ATTESTATION_PREFIX = "vodforge-e2e-attestation-"
+
+_NONCE_RE = re.compile(r"[0-9a-f]{32}")
+_WINDOW_TOKEN_RE = re.compile(r"[A-Za-z0-9._-]{8,64}")
+
+
+class QualityE2EAttestationError(RuntimeError):
+    """Raised when an explicitly requested quality-E2E launch is not isolated."""
+
+
+class _StringValue(Protocol):
+    def get(self) -> str: ...
+
+
+class QualityE2EApp(Protocol):
+    @property
+    def history_path(self) -> Path: ...
+
+    @property
+    def output_var(self) -> _StringValue: ...
+
+    @overload
+    def title(self, value: None = None) -> str: ...
+
+    @overload
+    def title(self, value: str) -> None: ...
+
+
+def quality_e2e_mode_enabled(environ: Mapping[str, str] | None = None) -> bool:
+    environment = os.environ if environ is None else environ
+    return environment.get(QUALITY_E2E_MODE_ENV) == "1"
+
+
+def _required_environment_value(environment: Mapping[str, str], name: str) -> str:
+    value = environment.get(name, "")
+    if not value:
+        raise QualityE2EAttestationError(f"missing required environment value: {name}")
+    return value
+
+
+def _canonical_path(value: str | Path, *, label: str) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        raise QualityE2EAttestationError(f"{label} must be an absolute path")
+    normalized = Path(os.path.normpath(str(path)))
+    if normalized != path:
+        raise QualityE2EAttestationError(f"{label} must be lexically canonical")
+    return path
+
+
+def _existing_directory_without_symlinks(value: str | Path, *, label: str) -> Path:
+    path = _canonical_path(value, label=label)
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise QualityE2EAttestationError(
+            f"{label} is not an existing directory"
+        ) from exc
+    if resolved != path:
+        raise QualityE2EAttestationError(f"{label} must not contain symlink components")
+    try:
+        mode = path.stat(follow_symlinks=False).st_mode
+    except OSError as exc:
+        raise QualityE2EAttestationError(f"{label} could not be inspected") from exc
+    if not stat.S_ISDIR(mode):
+        raise QualityE2EAttestationError(f"{label} is not a directory")
+    return path
+
+
+def _require_exact_path(actual: Path, expected: Path, *, label: str) -> Path:
+    canonical = _canonical_path(actual, label=label)
+    if canonical != expected:
+        raise QualityE2EAttestationError(
+            f"{label} does not match the isolated quality-E2E path"
+        )
+    if canonical.resolve(strict=False) != canonical:
+        raise QualityE2EAttestationError(f"{label} must not contain symlink components")
+    return canonical
+
+
+def _require_path_beneath(path: Path, root: Path, *, label: str) -> None:
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise QualityE2EAttestationError(
+            f"{label} escapes the isolated quality-E2E root"
+        ) from exc
+
+
+def _write_exclusive_private_json(path: Path, payload: dict[str, object]) -> None:
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise QualityE2EAttestationError(
+            "quality-E2E attestation target must be a new private file"
+        ) from exc
+    write_error: OSError | None = None
+    try:
+        if os.name != "nt" and hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
+        remaining = memoryview(encoded)
+        while remaining:
+            written = os.write(descriptor, remaining)
+            if written <= 0:
+                raise OSError("quality-E2E attestation write did not advance")
+            remaining = remaining[written:]
+        os.fsync(descriptor)
+    except OSError as exc:
+        write_error = exc
+    finally:
+        os.close(descriptor)
+    if write_error is not None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise QualityE2EAttestationError(
+            "quality-E2E attestation could not be written completely"
+        ) from write_error
+
+    try:
+        file_stat = path.stat(follow_symlinks=False)
+    except OSError as exc:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise QualityE2EAttestationError(
+            "quality-E2E attestation could not be inspected"
+        ) from exc
+    permissions_invalid = os.name != "nt" and stat.S_IMODE(file_stat.st_mode) != 0o600
+    if not stat.S_ISREG(file_stat.st_mode) or permissions_invalid:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise QualityE2EAttestationError(
+            "quality-E2E attestation is not a private regular file"
+        )
+
+
+def write_quality_e2e_startup_attestation(
+    app: QualityE2EApp,
+    *,
+    app_version: str,
+    application_data_path: Path,
+    diagnostics_path: Path,
+    environ: Mapping[str, str] | None = None,
+    home: Path | None = None,
+    executable: Path | None = None,
+    pid: int | None = None,
+    ppid: int | None = None,
+    recorded_at: str | None = None,
+) -> Path | None:
+    """Attest one isolated app launch; remain inert outside explicit E2E mode."""
+    environment = os.environ if environ is None else environ
+    if not quality_e2e_mode_enabled(environment):
+        return None
+
+    nonce = _required_environment_value(environment, QUALITY_E2E_NONCE_ENV)
+    if _NONCE_RE.fullmatch(nonce) is None:
+        raise QualityE2EAttestationError(
+            "quality-E2E session nonce must be 32 lowercase hexadecimal characters"
+        )
+    window_token = _required_environment_value(
+        environment, QUALITY_E2E_WINDOW_TOKEN_ENV
+    )
+    if _WINDOW_TOKEN_RE.fullmatch(window_token) is None:
+        raise QualityE2EAttestationError("quality-E2E window token is invalid")
+
+    isolation_root = _existing_directory_without_symlinks(
+        _required_environment_value(environment, QUALITY_E2E_ISOLATION_ROOT_ENV),
+        label="quality-E2E isolation root",
+    )
+    expected_home = isolation_root / "home"
+    expected_tmp = isolation_root / "tmp"
+    home_path = _existing_directory_without_symlinks(
+        Path.home() if home is None else home, label="quality-E2E home"
+    )
+    tmp_path = _existing_directory_without_symlinks(
+        _required_environment_value(environment, "TMPDIR"),
+        label="quality-E2E temporary directory",
+    )
+    if home_path != expected_home or tmp_path != expected_tmp:
+        raise QualityE2EAttestationError(
+            "HOME and TMPDIR must be the isolated quality-E2E home and tmp directories"
+        )
+
+    expected_xdg = home_path / ".local" / "share"
+    expected_local_app_data = home_path / "AppData" / "Local"
+    _require_exact_path(
+        _canonical_path(
+            _required_environment_value(environment, "XDG_DATA_HOME"),
+            label="XDG_DATA_HOME",
+        ),
+        expected_xdg,
+        label="XDG_DATA_HOME",
+    )
+    _require_exact_path(
+        _canonical_path(
+            _required_environment_value(environment, "LOCALAPPDATA"),
+            label="LOCALAPPDATA",
+        ),
+        expected_local_app_data,
+        label="LOCALAPPDATA",
+    )
+
+    app_data = _canonical_path(application_data_path, label="application-data path")
+    history_path = _canonical_path(app.history_path, label="history path")
+    diagnostic_file = _canonical_path(diagnostics_path, label="diagnostics path")
+    output_root = _canonical_path(app.output_var.get(), label="default output root")
+    for label, path in (
+        ("application-data path", app_data),
+        ("history path", history_path),
+        ("diagnostics path", diagnostic_file),
+        ("default output root", output_root),
+    ):
+        _require_path_beneath(path, home_path, label=label)
+        if path.resolve(strict=False) != path:
+            raise QualityE2EAttestationError(
+                f"{label} must not contain symlink components"
+            )
+    if history_path != app_data / "download-history.json":
+        raise QualityE2EAttestationError(
+            "history path does not belong to the isolated application-data directory"
+        )
+    expected_output_root = home_path / "Downloads"
+    if output_root != expected_output_root:
+        raise QualityE2EAttestationError(
+            "default output root does not match the isolated Downloads directory"
+        )
+    _existing_directory_without_symlinks(output_root, label="default output root")
+
+    window_title = f"VODForge [{window_token}]"
+    app.title(window_title)
+    if app.title() != window_title:
+        raise QualityE2EAttestationError("quality-E2E window title was not applied")
+
+    attestation_path = tmp_path / f"{QUALITY_E2E_ATTESTATION_PREFIX}{nonce}.json"
+    if (
+        attestation_path.parent != tmp_path
+        or attestation_path.name != f"{QUALITY_E2E_ATTESTATION_PREFIX}{nonce}.json"
+    ):
+        raise QualityE2EAttestationError("quality-E2E attestation path is invalid")
+    executable_path = _canonical_path(
+        Path(sys.executable) if executable is None else executable,
+        label="runtime executable",
+    )
+    payload: dict[str, object] = {
+        "schema_version": QUALITY_E2E_SCHEMA_VERSION,
+        "session_nonce": nonce,
+        "pid": os.getpid() if pid is None else pid,
+        "ppid": os.getppid() if ppid is None else ppid,
+        "executable": str(executable_path),
+        "app_version": app_version,
+        "window_title": window_title,
+        "home": str(home_path),
+        "application_data_dir": str(app_data),
+        "history_path": str(history_path),
+        "diagnostics_dir": str(diagnostic_file.parent),
+        "diagnostics_path": str(diagnostic_file),
+        "output_root": str(output_root),
+        "tmp_dir": str(tmp_path),
+        "recorded_at": recorded_at
+        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    _write_exclusive_private_json(attestation_path, payload)
+    return attestation_path

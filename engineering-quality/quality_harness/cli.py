@@ -63,6 +63,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     e2e.add_argument("--artifact", type=Path, default=Path("dist/VODForge.app"))
     e2e.add_argument(
+        "--artifact-policy",
+        choices=("development", "release"),
+        default="release",
+        help="Require either an ad-hoc development contract or the full signed release contract",
+    )
+    e2e.add_argument(
         "--profile",
         choices=("smoke", "deep"),
         default="smoke",
@@ -83,6 +89,10 @@ def _parser() -> argparse.ArgumentParser:
     record.add_argument("--event", required=True)
     record.add_argument("--screenshot", type=Path)
     record.add_argument("--note")
+    record.add_argument("--window-pid", type=int, required=True)
+    record.add_argument("--window-owner-pid", type=int, required=True)
+    record.add_argument("--window-id", type=int, required=True)
+    record.add_argument("--window-title-token", required=True)
     record.add_argument(
         "--allow-gap",
         action="store_true",

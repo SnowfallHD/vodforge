@@ -16,7 +16,11 @@ from quality_harness.util import CommandResult, sha256_file
 
 
 def _driver_trace(
-    session_dir: Path, *, omit: set[str] | None = None
+    session_dir: Path,
+    *,
+    omit: set[str] | None = None,
+    session_nonce: str | None = None,
+    launches: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     omit = omit or set()
     ui_dir = session_dir / "ui"
@@ -42,6 +46,25 @@ def _driver_trace(
                 "screenshot": screenshot,
             }
         )
+        if session_nonce is not None and launches is not None:
+            sequence = 2 if name == "restart_observed" else 1
+            launch = next(
+                item for item in launches if item["launch_sequence"] == sequence
+            )
+            events[-1].update(
+                {
+                    "session_nonce": session_nonce,
+                    "launch_id": launch["launch_id"],
+                    "launch_sequence": sequence,
+                    "pid": launch["pid"],
+                    "process_create_time": launch["create_time"],
+                    "executable_sha256": launch["executable_sha256"],
+                    "bundle_tree_sha256": launch["bundle_tree_sha256"],
+                    "window_id": 1000 + index,
+                    "window_owner_pid": launch["pid"],
+                    "window_title_token": launch["window_token"],
+                }
+            )
     return {"events": events, "screenshots": screenshots, "notes": []}
 
 
@@ -92,6 +115,103 @@ def test_driver_trace_rejects_screenshot_outside_session(tmp_path: Path) -> None
     )
     assert receipt["valid"] is False
     assert receipt["invalid_screenshot_events"] == ["app_visible"]
+
+
+def test_driver_trace_binds_every_receipt_to_exact_launch_provenance(
+    tmp_path: Path,
+) -> None:
+    nonce = "0123456789abcdef0123456789abcdef"
+    launches: list[dict[str, object]] = [
+        {
+            "launch_id": "launch-one",
+            "launch_sequence": 1,
+            "pid": 7001,
+            "create_time": 101.5,
+            "executable_sha256": "a" * 64,
+            "bundle_tree_sha256": "b" * 64,
+            "window_token": "VFQ-0123456789ab-L1",
+        },
+        {
+            "launch_id": "launch-two",
+            "launch_sequence": 2,
+            "pid": 7002,
+            "create_time": 202.5,
+            "executable_sha256": "a" * 64,
+            "bundle_tree_sha256": "b" * 64,
+            "window_token": "VFQ-0123456789ab-L2",
+        },
+    ]
+    payload = _driver_trace(tmp_path, session_nonce=nonce, launches=launches)
+
+    receipt = _validate_driver_trace(
+        payload,
+        profile="smoke",
+        session_dir=tmp_path,
+        session_nonce=nonce,
+        launches=launches,
+    )
+
+    assert receipt["valid"] is True
+    assert receipt["provenance_required"] is True
+    assert receipt["invalid_provenance_events"] == []
+    assert all(item["valid"] for item in receipt["provenance_receipts"])
+
+
+def test_driver_trace_rejects_pid_and_window_token_from_another_launch(
+    tmp_path: Path,
+) -> None:
+    nonce = "0123456789abcdef0123456789abcdef"
+    launches: list[dict[str, object]] = [
+        {
+            "launch_id": "launch-one",
+            "launch_sequence": 1,
+            "pid": 7001,
+            "create_time": 101.5,
+            "executable_sha256": "a" * 64,
+            "bundle_tree_sha256": "b" * 64,
+            "window_token": "VFQ-0123456789ab-L1",
+        },
+        {
+            "launch_id": "launch-two",
+            "launch_sequence": 2,
+            "pid": 7002,
+            "create_time": 202.5,
+            "executable_sha256": "a" * 64,
+            "bundle_tree_sha256": "b" * 64,
+            "window_token": "VFQ-0123456789ab-L2",
+        },
+    ]
+    payload = _driver_trace(tmp_path, session_nonce=nonce, launches=launches)
+    progress = next(
+        item
+        for item in payload["events"]  # type: ignore[union-attr]
+        if item["event"] == "progress_observed"
+    )
+    progress["pid"] = 7002
+    progress["window_owner_pid"] = 7002
+    progress["window_title_token"] = "VFQ-0123456789ab-L2"
+
+    receipt = _validate_driver_trace(
+        payload,
+        profile="smoke",
+        session_dir=tmp_path,
+        session_nonce=nonce,
+        launches=launches,
+    )
+
+    assert receipt["valid"] is False
+    assert receipt["structural_valid"] is False
+    assert receipt["invalid_provenance_events"] == ["progress_observed"]
+    progress_receipt = next(
+        item
+        for item in receipt["provenance_receipts"]
+        if item["event"] == "progress_observed"
+    )
+    assert set(progress_receipt["errors"]) == {
+        "pid mismatch",
+        "window_owner_pid mismatch",
+        "window_title_token mismatch",
+    }
 
 
 def test_media_probe_uses_exact_bundled_ffprobe(monkeypatch, tmp_path: Path) -> None:

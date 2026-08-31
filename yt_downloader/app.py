@@ -127,6 +127,10 @@ from .platform_services import (
     open_path as open_system_path,
 )
 from .private_files import open_private_text_file, write_private_bytes
+from .quality_e2e import (
+    QualityE2EAttestationError,
+    write_quality_e2e_startup_attestation,
+)
 from .safe_output import (
     commit_file_beneath,
     create_private_staging_directory,
@@ -12918,6 +12922,16 @@ def main() -> None:
     if len(sys.argv) >= 3 and sys.argv[1] == "--debug-preflight":
         raise SystemExit(debug_preflight(" ".join(sys.argv[2:])))
     app = DownloaderApp()
+    try:
+        write_quality_e2e_startup_attestation(
+            app,
+            app_version=__version__,
+            application_data_path=application_data_dir(),
+            diagnostics_path=DIAGNOSTICS_LOG_PATH,
+        )
+    except QualityE2EAttestationError as exc:
+        app.destroy()
+        raise SystemExit(f"VODForge quality-E2E startup rejected: {exc}") from exc
     app.mainloop()
 
 

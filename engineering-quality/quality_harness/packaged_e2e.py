@@ -4,15 +4,24 @@ import argparse
 import json
 import os
 import plistlib
-import signal
+import secrets
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime
 from itertools import pairwise
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
+from .e2e_provenance import (
+    attest_owned_launch,
+    bundle_tree_receipt,
+    owned_group_survivors,
+    preexisting_vodforge_processes,
+    terminate_owned_group,
+)
 from .fault_server import FixtureHTTPServer
 from .fixtures import generate_fixtures
 from .metrics import ResourceSampler
@@ -69,16 +78,26 @@ def _codesign_value(output: str, key: str) -> str | None:
     return None
 
 
-def _artifact_receipt(artifact: Path, repo_root: Path) -> dict[str, Any]:
+def _artifact_receipt(
+    artifact: Path, repo_root: Path, *, artifact_policy: str = "release"
+) -> dict[str, Any]:
+    if artifact_policy not in {"development", "release"}:
+        raise ValueError(f"unsupported artifact policy: {artifact_policy}")
     artifact = artifact.resolve()
     executable = artifact / "Contents" / "MacOS" / "VODForge"
+    ffmpeg = artifact / "Contents" / "Frameworks" / "ffmpeg"
     ffprobe = artifact / "Contents" / "Frameworks" / "ffprobe"
+    deno = artifact / "Contents" / "Frameworks" / "deno"
     plist_path = artifact / "Contents" / "Info.plist"
+    runtime_version_path = artifact / "Contents" / "Resources" / "VODFORGE_VERSION"
     if (
         not artifact.is_dir()
         or not executable.is_file()
+        or not ffmpeg.is_file()
         or not ffprobe.is_file()
+        or not deno.is_file()
         or not plist_path.is_file()
+        or not runtime_version_path.is_file()
     ):
         raise RuntimeError(f"packaged VODForge artifact is incomplete: {artifact}")
     with plist_path.open("rb") as handle:
@@ -86,7 +105,7 @@ def _artifact_receipt(artifact: Path, repo_root: Path) -> dict[str, Any]:
     checks = {
         "codesign_strict": run_command(
             [
-                "codesign",
+                "/usr/bin/codesign",
                 "--verify",
                 "--deep",
                 "--strict",
@@ -97,40 +116,98 @@ def _artifact_receipt(artifact: Path, repo_root: Path) -> dict[str, Any]:
             timeout=60,
         ).as_dict(),
         "gatekeeper": run_command(
-            ["spctl", "-a", "-t", "exec", "-vv", str(artifact)],
+            ["/usr/sbin/spctl", "-a", "-t", "exec", "-vv", str(artifact)],
             cwd=repo_root,
             timeout=60,
         ).as_dict(),
         "staple": run_command(
-            ["xcrun", "stapler", "validate", str(artifact)], cwd=repo_root, timeout=60
+            ["/usr/bin/xcrun", "stapler", "validate", str(artifact)],
+            cwd=repo_root,
+            timeout=60,
         ).as_dict(),
     }
     codesign_identity = run_command(
-        ["codesign", "-dv", "--verbose=4", str(artifact)], cwd=repo_root, timeout=60
+        ["/usr/bin/codesign", "-dv", "--verbose=4", str(artifact)],
+        cwd=repo_root,
+        timeout=60,
     )
     identity_output = f"{codesign_identity.stdout}\n{codesign_identity.stderr}"
     signed_identifier = _codesign_value(identity_output, "Identifier")
     team_identifier = _codesign_value(identity_output, "TeamIdentifier")
+    signature_label = _codesign_value(identity_output, "Signature")
     ffprobe_version = run_command([str(ffprobe), "-version"], cwd=repo_root, timeout=30)
-    identity_verified = (
+    bundle_identifier_verified = (
         plist.get("CFBundleIdentifier") == EXPECTED_BUNDLE_IDENTIFIER
         and signed_identifier == EXPECTED_BUNDLE_IDENTIFIER
-        and team_identifier == EXPECTED_TEAM_IDENTIFIER
     )
+    release_identity_verified = (
+        bundle_identifier_verified and team_identifier == EXPECTED_TEAM_IDENTIFIER
+    )
+    strict_signature_verified = checks["codesign_strict"].get("returncode") == 0
+    if release_identity_verified and strict_signature_verified:
+        signature_state = "developer_id"
+    elif signature_label == "adhoc" and strict_signature_verified:
+        signature_state = "development_ad_hoc"
+    elif strict_signature_verified:
+        signature_state = "signed_other"
+    else:
+        signature_state = "invalid_or_unsigned"
+    release_eligible = (
+        release_identity_verified
+        and strict_signature_verified
+        and checks["gatekeeper"].get("returncode") == 0
+        and checks["staple"].get("returncode") == 0
+        and ffprobe_version.returncode == 0
+    )
+    development_verified = (
+        bundle_identifier_verified
+        and strict_signature_verified
+        and signature_state in {"development_ad_hoc", "developer_id"}
+        and ffprobe_version.returncode == 0
+    )
+    runtime_version = runtime_version_path.read_text(encoding="utf-8").strip()
+    version_consistent = plist.get("CFBundleShortVersionString") == runtime_version
+    release_eligible = release_eligible and version_consistent
+    development_verified = development_verified and version_consistent
+    policy_verified = (
+        release_eligible if artifact_policy == "release" else development_verified
+    )
+    tree_receipt = bundle_tree_receipt(artifact)
     return {
+        "artifact_policy": artifact_policy,
         "artifact": str(artifact),
         "executable": str(executable),
         "executable_sha256": sha256_file(executable),
+        "bundle_tree": tree_receipt,
+        "info_plist_sha256": sha256_file(plist_path),
         "bundle_identifier": plist.get("CFBundleIdentifier"),
         "bundle_version": plist.get("CFBundleShortVersionString"),
+        "runtime_version": runtime_version,
+        "runtime_version_sha256": sha256_file(runtime_version_path),
         "architecture": run_command(
-            ["file", str(executable)], cwd=repo_root, timeout=30
+            ["/usr/bin/file", str(executable)], cwd=repo_root, timeout=30
         ).stdout.strip(),
         "signed_identifier": signed_identifier,
         "team_identifier": team_identifier,
         "expected_bundle_identifier": EXPECTED_BUNDLE_IDENTIFIER,
         "expected_team_identifier": EXPECTED_TEAM_IDENTIFIER,
-        "identity_verified": identity_verified,
+        "bundle_identifier_verified": bundle_identifier_verified,
+        "version_consistent": version_consistent,
+        "identity_verified": (
+            release_identity_verified
+            if artifact_policy == "release"
+            else bundle_identifier_verified
+        ),
+        "release_identity_verified": release_identity_verified,
+        "signature_state": signature_state,
+        "notarization_state": (
+            "stapled" if checks["staple"].get("returncode") == 0 else "not_stapled"
+        ),
+        "gatekeeper_state": (
+            "accepted"
+            if checks["gatekeeper"].get("returncode") == 0
+            else "not_release_accepted"
+        ),
         "codesign_identity": codesign_identity.as_dict(),
         "bundled_ffprobe": {
             "path": str(ffprobe),
@@ -138,12 +215,15 @@ def _artifact_receipt(artifact: Path, repo_root: Path) -> dict[str, Any]:
             "version": ffprobe_version.as_dict(),
             "runnable": ffprobe_version.returncode == 0,
         },
+        "bundled_dependencies": {
+            "ffmpeg": {"path": str(ffmpeg), "sha256": sha256_file(ffmpeg)},
+            "ffprobe": {"path": str(ffprobe), "sha256": sha256_file(ffprobe)},
+            "deno": {"path": str(deno), "sha256": sha256_file(deno)},
+        },
         "checks": checks,
-        "verified": (
-            identity_verified
-            and ffprobe_version.returncode == 0
-            and all(check.get("returncode") == 0 for check in checks.values())
-        ),
+        "policy_verified": policy_verified,
+        "release_eligible": release_eligible,
+        "verified": policy_verified,
     }
 
 
@@ -192,6 +272,49 @@ def _probe_media(
     return output
 
 
+def _artifact_integrity_receipt(
+    artifact: Path, before: dict[str, Any]
+) -> dict[str, Any]:
+    """Re-hash the complete bundle and critical executables after the journey."""
+    after_tree = bundle_tree_receipt(artifact)
+    before_dependencies = before.get("bundled_dependencies") or {}
+    critical_files: dict[str, dict[str, Any]] = {}
+    paths = {
+        "executable": Path(str(before["executable"])),
+        **{
+            str(name): Path(str(value["path"]))
+            for name, value in before_dependencies.items()
+            if isinstance(value, dict) and value.get("path")
+        },
+    }
+    expected_hashes = {
+        "executable": before.get("executable_sha256"),
+        **{
+            str(name): value.get("sha256")
+            for name, value in before_dependencies.items()
+            if isinstance(value, dict)
+        },
+    }
+    for name, path in paths.items():
+        observed_hash = sha256_file(path) if path.is_file() else None
+        critical_files[name] = {
+            "path": str(path),
+            "expected_sha256": expected_hashes.get(name),
+            "observed_sha256": observed_hash,
+            "unchanged": observed_hash == expected_hashes.get(name),
+        }
+    verified = after_tree["sha256"] == before.get("bundle_tree", {}).get(
+        "sha256"
+    ) and all(item["unchanged"] for item in critical_files.values())
+    return {
+        "verified": verified,
+        "before_bundle_tree_sha256": before.get("bundle_tree", {}).get("sha256"),
+        "after_bundle_tree_sha256": after_tree["sha256"],
+        "after_bundle_tree": after_tree,
+        "critical_files": critical_files,
+    }
+
+
 def _parse_observed_at(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -207,6 +330,8 @@ def _validate_driver_trace(
     *,
     profile: str,
     session_dir: Path,
+    session_nonce: str | None = None,
+    launches: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     required_order = _required_ui_event_order(profile)
     required = set(required_order)
@@ -238,6 +363,45 @@ def _validate_driver_trace(
     timestamps_monotonic = all(
         current >= previous for previous, current in pairwise(timestamps)
     )
+
+    launch_by_sequence = {
+        int(item.get("launch_sequence") or 0): item for item in (launches or [])
+    }
+    provenance_required = session_nonce is not None and launches is not None
+    invalid_provenance_events: list[str] = []
+    provenance_receipts: list[dict[str, Any]] = []
+    for event in named_events:
+        name = str(event["event"])
+        if name not in required or not provenance_required:
+            continue
+        expected_sequence = 2 if name == "restart_observed" else 1
+        launch = launch_by_sequence.get(expected_sequence)
+        errors: list[str] = []
+        if launch is None:
+            errors.append(f"required launch {expected_sequence} is missing")
+        else:
+            expected = {
+                "session_nonce": session_nonce,
+                "launch_id": launch.get("launch_id"),
+                "launch_sequence": expected_sequence,
+                "pid": launch.get("pid"),
+                "process_create_time": launch.get("create_time"),
+                "executable_sha256": launch.get("executable_sha256"),
+                "bundle_tree_sha256": launch.get("bundle_tree_sha256"),
+                "window_owner_pid": launch.get("pid"),
+                "window_title_token": launch.get("window_token"),
+            }
+            for key, value in expected.items():
+                if event.get(key) != value:
+                    errors.append(f"{key} mismatch")
+        window_id = event.get("window_id")
+        if not isinstance(window_id, int) or window_id <= 0:
+            errors.append("window_id is missing or invalid")
+        if errors:
+            invalid_provenance_events.append(name)
+        provenance_receipts.append(
+            {"event": name, "valid": not errors, "errors": errors}
+        )
 
     ui_root = (session_dir / "ui").resolve()
     raw_declared_screenshots = events_payload.get("screenshots")
@@ -298,6 +462,7 @@ def _validate_driver_trace(
         and not invalid_timestamp_events
         and timestamps_monotonic
         and not invalid_screenshot_events
+        and not invalid_provenance_events
     )
     return {
         "valid": structural_valid and not missing_events,
@@ -312,6 +477,9 @@ def _validate_driver_trace(
         "timestamps_monotonic": timestamps_monotonic,
         "invalid_screenshot_events": invalid_screenshot_events,
         "screenshot_receipts": screenshot_receipts,
+        "provenance_required": provenance_required,
+        "invalid_provenance_events": invalid_provenance_events,
+        "provenance_receipts": provenance_receipts,
     }
 
 
@@ -496,6 +664,136 @@ def _launch(
     return process, stdout_handle, stderr_handle
 
 
+class _OwnedLaunchRegistry:
+    """Own only process groups created and attested by this E2E session."""
+
+    def __init__(self, sampler: ResourceSampler) -> None:
+        self._runtimes: list[
+            tuple[subprocess.Popen[bytes], dict[str, Any], Any, Any]
+        ] = []
+        self._sampler = sampler
+        self.resources: dict[str, Any] | None = None
+        self.cleanup_receipts: list[dict[str, Any]] = []
+
+    def __enter__(self) -> Self:
+        return self
+
+    def register(
+        self,
+        process: subprocess.Popen[bytes],
+        launch: dict[str, Any],
+        stdout_handle: Any,
+        stderr_handle: Any,
+    ) -> None:
+        self._runtimes.append((process, launch, stdout_handle, stderr_handle))
+
+    def cleanup(self) -> None:
+        for process, launch, stdout_handle, stderr_handle in self._runtimes:
+            survivors = owned_group_survivors(launch)
+            if survivors:
+                self.cleanup_receipts.append(terminate_owned_group(process, launch))
+            launch["group_survivors_after_exit"] = owned_group_survivors(launch)
+            stdout_handle.close()
+            stderr_handle.close()
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        try:
+            self.cleanup()
+        finally:
+            self.resources = self._sampler.stop()
+
+
+def _isolated_state_paths(workspace: Path) -> dict[str, str]:
+    root = workspace.resolve()
+    home = (root / "home").resolve()
+    tmp = (root / "tmp").resolve()
+    application_data = home / "Library" / "Application Support" / "VODForge"
+    diagnostics = home / "Library" / "Logs" / "VODForge"
+    return {
+        "isolation_root": str(root),
+        "home": str(home),
+        "xdg_data": str((home / ".local" / "share").resolve()),
+        "local_app_data": str((home / "AppData" / "Local").resolve()),
+        "application_data": str(application_data.resolve()),
+        "history": str((application_data / "download-history.json").resolve()),
+        "diagnostics": str(diagnostics.resolve()),
+        "diagnostics_log": str((diagnostics / "latest.log").resolve()),
+        "output": str((home / "Downloads").resolve()),
+        "tmp": str(tmp),
+    }
+
+
+def _write_session(path: Path, payload: dict[str, Any]) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    json_dump(temporary, payload)
+    temporary.chmod(0o600)
+    os.replace(temporary, path)
+
+
+def _launch_and_attest(
+    *,
+    executable: Path,
+    base_environment: dict[str, str],
+    receipt: dict[str, Any],
+    state_paths: dict[str, str],
+    session_nonce: str,
+    launch_sequence: int,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> tuple[subprocess.Popen[bytes], Any, Any, dict[str, Any], dict[str, str]]:
+    launch_id = uuid.uuid4().hex
+    window_token = f"VFQ-{session_nonce[:12]}-L{launch_sequence}"
+    attestation_path = (
+        Path(state_paths["tmp"]) / f"vodforge-e2e-attestation-{session_nonce}.json"
+    )
+    if attestation_path.exists() or attestation_path.is_symlink():
+        attestation_path.unlink()
+    environment = base_environment.copy()
+    environment.update(
+        {
+            "VODFORGE_QUALITY_E2E_SESSION_NONCE": session_nonce,
+            "VODFORGE_QUALITY_E2E_WINDOW_TOKEN": window_token,
+        }
+    )
+    process, stdout_handle, stderr_handle = _launch(
+        executable, environment, stdout_path, stderr_path
+    )
+    try:
+        launch = attest_owned_launch(
+            process,
+            expected_executable=executable,
+            expected_executable_sha256=str(receipt["executable_sha256"]),
+            expected_bundle_tree_sha256=str(receipt["bundle_tree"]["sha256"]),
+            expected_app_version=str(receipt["runtime_version"]),
+            expected_environment=environment,
+            state_paths=state_paths,
+            session_nonce=session_nonce,
+            launch_id=launch_id,
+            launch_sequence=launch_sequence,
+            window_token=window_token,
+            attestation_path=attestation_path,
+        )
+    except Exception:
+        provisional = {
+            "pid": process.pid,
+            "pgid": process.pid,
+            # The launch created a new process group whose id is this direct
+            # child's pid. Zero allows cleanup of only that newly-created group
+            # even when live attestation failed before psutil exposed a time.
+            "create_time": 0.0,
+        }
+        terminate_owned_group(process, provisional)
+        stdout_handle.close()
+        stderr_handle.close()
+        raise
+    return process, stdout_handle, stderr_handle, launch, environment
+
+
 def run_packaged_e2e_session(
     args: argparse.Namespace, *, repo_root: Path, harness_root: Path
 ) -> int:
@@ -520,12 +818,28 @@ def run_packaged_e2e_session(
     session_dir.mkdir(parents=True, exist_ok=True)
     workspace = harness_root / ".runs" / f"{timestamp}-packaged-e2e"
     workspace.mkdir(parents=True, exist_ok=True)
-    home = workspace / "home"
-    tmp = workspace / "tmp"
+    state_paths = _isolated_state_paths(workspace)
+    home = Path(state_paths["home"])
+    tmp = Path(state_paths["tmp"])
     fixtures = workspace / "fixtures"
     for path in (home, tmp, fixtures, home / "Downloads", session_dir / "ui"):
         path.mkdir(parents=True, exist_ok=True)
-    receipt = _artifact_receipt(artifact, repo_root)
+    receipt = _artifact_receipt(
+        artifact, repo_root, artifact_policy=args.artifact_policy
+    )
+    if not receipt["verified"]:
+        raise RuntimeError(
+            "packaged E2E refused to launch because the artifact does not satisfy "
+            f"the {args.artifact_policy} identity policy"
+        )
+    preexisting_processes = preexisting_vodforge_processes(
+        Path(str(receipt["executable"]))
+    )
+    if preexisting_processes:
+        raise RuntimeError(
+            "packaged E2E refused to launch because another VODForge process is "
+            f"already running; no process was changed: {preexisting_processes}"
+        )
     fixture_manifest = generate_fixtures(fixtures, deep=False)
     driver_events_path = session_dir / "driver-events.json"
     control_path = session_dir / "control.json"
@@ -534,20 +848,27 @@ def run_packaged_e2e_session(
     env = os.environ.copy()
     env.update(
         {
-            "HOME": str(home),
-            "XDG_DATA_HOME": str(home / ".local" / "share"),
-            "LOCALAPPDATA": str(home / "AppData" / "Local"),
-            "TMPDIR": str(tmp),
+            "HOME": state_paths["home"],
+            "XDG_DATA_HOME": state_paths["xdg_data"],
+            "LOCALAPPDATA": state_paths["local_app_data"],
+            "TMPDIR": state_paths["tmp"],
+            "TMP": state_paths["tmp"],
+            "TEMP": state_paths["tmp"],
             "VODFORGE_QUALITY_E2E": "1",
+            "VODFORGE_QUALITY_E2E_ISOLATION_ROOT": state_paths["isolation_root"],
         }
     )
+    session_nonce = secrets.token_hex(16)
     started_at = utc_now()
     started = time.monotonic()
     sampler = ResourceSampler(workspace).start()
     launches: list[dict[str, Any]] = []
     restart_baseline: dict[str, Any] | None = None
     timed_out = False
-    with FixtureHTTPServer(fixtures) as server:
+    with (
+        _OwnedLaunchRegistry(sampler) as owned_registry,
+        FixtureHTTPServer(fixtures) as server,
+    ):
         required_ui_events = _required_ui_events(args.profile)
         journey = [
             "Observe the packaged VODForge window and record app_visible.",
@@ -574,7 +895,12 @@ def run_packaged_e2e_session(
             "schema_version": "1.0.0",
             "e2e_profile": args.profile,
             "session_dir": str(session_dir),
+            "session_nonce": session_nonce,
+            "driver_ready": False,
+            "driver_block_reason": "waiting_for_owned_process_attestation",
             "artifact_receipt": receipt,
+            "state_paths": state_paths,
+            "preexisting_vodforge_processes": preexisting_processes,
             "fixture_manifest": fixture_manifest,
             "input_url": server.url("/page/unicode"),
             "slow_input_url": server.url("/slow/page"),
@@ -590,22 +916,42 @@ def run_packaged_e2e_session(
             "required_ui_events": sorted(required_ui_events),
             "journey": journey,
         }
-        json_dump(session_dir / "session.json", session)
-        print(f"[e2e] session={session_dir / 'session.json'}", flush=True)
-        print(f"[e2e] app=VODForge input_url={session['input_url']}", flush=True)
-        print(f"[e2e] driver_events={driver_events_path}", flush=True)
+        session_path = session_dir / "session.json"
+        _write_session(session_path, session)
+        print(f"[e2e] session={session_path}", flush=True)
+        print("[e2e] driver_ready=false; do not drive the app", flush=True)
+        executable = Path(receipt["executable"])
+        process, stdout_handle, stderr_handle, launch, _launch_environment = (
+            _launch_and_attest(
+                executable=executable,
+                base_environment=env,
+                receipt=receipt,
+                state_paths=state_paths,
+                session_nonce=session_nonce,
+                launch_sequence=1,
+                stdout_path=session_dir / "app.stdout.log",
+                stderr_path=session_dir / "app.stderr.log",
+            )
+        )
+        launch["started_at"] = utc_now()
+        launches.append(launch)
+        owned_registry.register(process, launch, stdout_handle, stderr_handle)
+        session.update(
+            {
+                "driver_ready": True,
+                "driver_block_reason": None,
+                "current_launch": launch,
+                "launches": launches,
+            }
+        )
+        _write_session(session_path, session)
         print(
-            "[e2e] waiting for the UI driver; quit the app normally to finalize",
+            f"[e2e] driver_ready=true pid={launch['pid']} "
+            f"launch_id={launch['launch_id']} window={launch['window_title']}",
             flush=True,
         )
-        executable = Path(receipt["executable"])
-        process, stdout_handle, stderr_handle = _launch(
-            executable,
-            env,
-            session_dir / "app.stdout.log",
-            session_dir / "app.stderr.log",
-        )
-        launches.append({"pid": process.pid, "started_at": utc_now()})
+        print(f"[e2e] input_url={session['input_url']}", flush=True)
+        print(f"[e2e] driver_events={driver_events_path}", flush=True)
         deadline = time.monotonic() + int(args.timeout)
         last_notice = 0.0
         while time.monotonic() < deadline:
@@ -622,24 +968,60 @@ def run_packaged_e2e_session(
                 launches[-1].update(
                     {"completed_at": utc_now(), "returncode": returncode}
                 )
+                session.update(
+                    {
+                        "driver_ready": False,
+                        "driver_block_reason": "current_launch_exited",
+                        "current_launch": None,
+                        "launches": launches,
+                    }
+                )
+                _write_session(session_path, session)
                 stdout_handle.close()
                 stderr_handle.close()
                 if action == "relaunch":
                     restart_baseline = _persisted_state_snapshot(home)
                     launches[-1]["pre_restart_state"] = restart_baseline
                     json_dump(control_path, {"action": "running"})
-                    process, stdout_handle, stderr_handle = _launch(
-                        executable,
-                        env,
-                        session_dir / "app.stdout.log",
-                        session_dir / "app.stderr.log",
+                    (
+                        process,
+                        stdout_handle,
+                        stderr_handle,
+                        launch,
+                        _launch_environment,
+                    ) = _launch_and_attest(
+                        executable=executable,
+                        base_environment=env,
+                        receipt=receipt,
+                        state_paths=state_paths,
+                        session_nonce=session_nonce,
+                        launch_sequence=len(launches) + 1,
+                        stdout_path=session_dir / "app.stdout.log",
+                        stderr_path=session_dir / "app.stderr.log",
                     )
-                    launches.append(
+                    launch.update(
                         {
-                            "pid": process.pid,
                             "started_at": utc_now(),
                             "reason": "driver_requested_restart",
                         }
+                    )
+                    launches.append(launch)
+                    owned_registry.register(
+                        process, launch, stdout_handle, stderr_handle
+                    )
+                    session.update(
+                        {
+                            "driver_ready": True,
+                            "driver_block_reason": None,
+                            "current_launch": launch,
+                            "launches": launches,
+                        }
+                    )
+                    _write_session(session_path, session)
+                    print(
+                        f"[e2e] driver_ready=true pid={launch['pid']} "
+                        f"launch_id={launch['launch_id']} window={launch['window_title']}",
+                        flush=True,
                     )
                     continue
                 break
@@ -652,14 +1034,9 @@ def run_packaged_e2e_session(
             time.sleep(0.25)
         else:
             timed_out = True
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-                process.wait(timeout=10)
-            except (OSError, subprocess.TimeoutExpired):
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except OSError:
-                    pass
+            owned_registry.cleanup_receipts.append(
+                terminate_owned_group(process, launches[-1])
+            )
             launches[-1].update(
                 {
                     "completed_at": utc_now(),
@@ -670,7 +1047,20 @@ def run_packaged_e2e_session(
             stdout_handle.close()
             stderr_handle.close()
         server_receipt = server.state.snapshot()
-    resources = sampler.stop()
+    cleanup_receipts = owned_registry.cleanup_receipts
+    session.update(
+        {
+            "driver_ready": False,
+            "driver_block_reason": "session_finalized",
+            "current_launch": None,
+            "launches": launches,
+        }
+    )
+    _write_session(session_path, session)
+    resources = owned_registry.resources
+    if resources is None:
+        raise RuntimeError("packaged E2E resource sampler did not finalize")
+    artifact_integrity = _artifact_integrity_receipt(artifact, receipt)
     try:
         loaded_events = json.loads(driver_events_path.read_text(encoding="utf-8"))
         events_payload = loaded_events if isinstance(loaded_events, dict) else {}
@@ -681,7 +1071,11 @@ def run_packaged_e2e_session(
             "notes": [f"invalid driver trace: {type(exc).__name__}: {exc}"],
         }
     trace_validation = _validate_driver_trace(
-        events_payload, profile=args.profile, session_dir=session_dir
+        events_payload,
+        profile=args.profile,
+        session_dir=session_dir,
+        session_nonce=session_nonce,
+        launches=launches,
     )
     required_ui_events = _required_ui_events(args.profile)
     missing_events = trace_validation["missing_events"]
@@ -733,6 +1127,31 @@ def run_packaged_e2e_session(
     clean_exit = bool(launches) and all(
         item.get("returncode") == 0 for item in launches
     )
+    surviving_owned_processes = [
+        survivor
+        for launch in launches
+        for survivor in launch.get("group_survivors_after_exit", [])
+    ]
+    cleanup_verified = all(
+        item.get("verified_owned") is True and not item.get("survivors_after")
+        for item in cleanup_receipts
+    )
+    process_provenance = {
+        "verified": (
+            bool(launches)
+            and not preexisting_processes
+            and all(item.get("verified") is True for item in launches)
+            and not surviving_owned_processes
+            and cleanup_verified
+        ),
+        "session_nonce": session_nonce,
+        "preexisting_processes": preexisting_processes,
+        "launch_count": len(launches),
+        "attested_launch_count": sum(item.get("verified") is True for item in launches),
+        "surviving_owned_processes": surviving_owned_processes,
+        "cleanup_receipts": cleanup_receipts,
+        "isolated_state_paths": state_paths,
+    }
     unexpected_process_exit = any(
         item.get("returncode") not in {0, None} and not item.get("timed_out")
         for item in launches
@@ -752,6 +1171,8 @@ def run_packaged_e2e_session(
     jobs_failed = max(0, expected_jobs_attempted - jobs_completed - jobs_cancelled)
     passed = (
         receipt["verified"]
+        and artifact_integrity["verified"]
+        and process_provenance["verified"]
         and not timed_out
         and trace_validation["valid"]
         and bool(media_probes)
@@ -763,8 +1184,10 @@ def run_packaged_e2e_session(
         and resources.get("peak_zombie_processes", 0) == 0
     )
     evidence = [
-        f"Artifact SHA-256: {receipt['executable_sha256']} version={receipt['bundle_version']} verified={receipt['verified']}",
-        f"UI driver trace valid: {trace_validation['valid']}; ordered events: {trace_validation['observed_required_order']}; missing: {missing_events}; invalid screenshots: {trace_validation['invalid_screenshot_events']}",
+        f"Artifact executable SHA-256: {receipt['executable_sha256']} bundle-tree SHA-256: {receipt['bundle_tree']['sha256']} version={receipt['bundle_version']} policy={receipt['artifact_policy']} verified={receipt['verified']}",
+        f"Artifact remained byte/layout identical after E2E: {artifact_integrity['verified']}",
+        f"Process provenance/isolation verified: {process_provenance['verified']}; launches={len(launches)}; preexisting={len(preexisting_processes)}; survivors={len(surviving_owned_processes)}",
+        f"UI driver trace valid: {trace_validation['valid']}; provenance events valid: {not trace_validation['invalid_provenance_events']}; ordered events: {trace_validation['observed_required_order']}; missing: {missing_events}; invalid screenshots: {trace_validation['invalid_screenshot_events']}",
         f"Packaged pipeline stage receipts: {stage_receipts}",
         f"Final media count: {len(media_probes)}; all independently readable using bundled ffprobe {receipt['bundled_ffprobe']['sha256']}: {bool(media_probes) and all(item.get('readable') for item in media_probes)}",
         f"Launch/exit receipts: {launches}; clean_exit={clean_exit}",
@@ -786,6 +1209,10 @@ def run_packaged_e2e_session(
             "required_ui_events": sorted(required_ui_events),
             "artifact_observed": True,
             "artifact_verified": receipt["verified"],
+            "artifact_integrity_verified": artifact_integrity["verified"],
+            "process_provenance_verified": process_provenance["verified"],
+            "preexisting_vodforge_process_count": len(preexisting_processes),
+            "surviving_owned_process_count": len(surviving_owned_processes),
             "ui_interaction_observed": trace_validation["valid"],
             "missing_ui_events": missing_events,
             "driver_trace_structural_valid": trace_validation["structural_valid"],
@@ -821,6 +1248,8 @@ def run_packaged_e2e_session(
     }
     evidence_gap_only = (
         receipt["verified"]
+        and artifact_integrity["verified"]
+        and process_provenance["verified"]
         and bool(media_probes)
         and all(item.get("readable") for item in media_probes)
         and all(stage_receipts.values())
@@ -839,6 +1268,8 @@ def run_packaged_e2e_session(
         "started_at": started_at,
         "completed_at": utc_now(),
         "artifact_receipt": receipt,
+        "artifact_integrity": artifact_integrity,
+        "process_provenance": process_provenance,
         "fixture_server_receipt": server_receipt,
         "driver_trace": events_payload,
         "driver_trace_validation": trace_validation,
