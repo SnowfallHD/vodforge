@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
+from quality_harness import cli
 from quality_harness.release_gate import (
     DEEP_REQUIRED_SCENARIOS,
     FAST_REQUIRED_COMMANDS,
@@ -213,6 +214,50 @@ def test_profile_invocations_use_existing_harness_commands(tmp_path: Path) -> No
     assert str(e2e.resolve()) in deep[0].command
     with pytest.raises(ValueError, match="exact-candidate"):
         profile_invocations("deep", output_root=tmp_path)
+
+
+def test_release_receipt_command_keeps_subcommand_routing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    observed: dict[str, Any] = {}
+
+    def fake_release_gate(args: Any) -> int:
+        observed["subcommand"] = args.command
+        observed["commands_used"] = args.commands_used
+        return 0
+
+    monkeypatch.setattr(cli, "run_release_receipt_gate", fake_release_gate)
+    argv = [
+        "release-receipt",
+        "--candidate",
+        str(tmp_path / "candidate.json"),
+        "--fast-result",
+        str(tmp_path / "fast.json"),
+        "--normal-result",
+        str(tmp_path / "normal.json"),
+        "--deep-result",
+        str(tmp_path / "deep.json"),
+        "--e2e-result",
+        str(tmp_path / "e2e.json"),
+        "--output-dir",
+        str(tmp_path / "receipt"),
+        "--command",
+        "./engineering-quality/run fast",
+        "--command",
+        "./engineering-quality/run normal",
+    ]
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(argv)
+
+    assert exit_info.value.code == 0
+    assert observed == {
+        "subcommand": "release-receipt",
+        "commands_used": [
+            "./engineering-quality/run fast",
+            "./engineering-quality/run normal",
+        ],
+    }
 
 
 def test_fast_gate_preserves_complexity_as_failed_nonblocking_debt() -> None:

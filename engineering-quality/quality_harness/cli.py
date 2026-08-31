@@ -133,6 +133,7 @@ def _parser() -> argparse.ArgumentParser:
     release_receipt.add_argument("--output-dir", type=Path, required=True)
     release_receipt.add_argument(
         "--command",
+        dest="commands_used",
         action="append",
         default=[],
         required=True,
@@ -430,7 +431,7 @@ def run_release_receipt_gate(args: argparse.Namespace) -> int:
         normal_result=_read_json_object(args.normal_result, label="NORMAL result"),
         deep_result=_read_json_object(args.deep_result, label="DEEP result"),
         packaged_e2e=_read_json_object(args.e2e_result, label="packaged E2E result"),
-        commands_used=[shlex.split(command) for command in args.command],
+        commands_used=[shlex.split(command) for command in args.commands_used],
     )
     paths = write_release_receipt(args.output_dir.resolve(), receipt)
     print(
