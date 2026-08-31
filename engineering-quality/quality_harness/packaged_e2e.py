@@ -1175,7 +1175,8 @@ def run_packaged_e2e_session(
             "expected_output_type": "MP4",
             "library_visibility_expectation": {
                 "fixture_id": "generated-library-description-stress",
-                "title": LIBRARY_DESCRIPTION_STRESS_TITLE,
+                "page_title": LIBRARY_DESCRIPTION_STRESS_TITLE,
+                "selected_item_title": LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE,
                 "description": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
                 "description_sha256": hashlib.sha256(
                     LIBRARY_DESCRIPTION_STRESS_DESCRIPTION.encode("utf-8")
