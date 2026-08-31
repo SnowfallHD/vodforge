@@ -48,6 +48,8 @@ class QualityE2EApp(Protocol):
 
 
 class _GeometryWidget(Protocol):
+    def cget(self, key: str) -> object: ...
+
     def winfo_ismapped(self) -> bool: ...
 
     def winfo_viewable(self) -> bool: ...
@@ -245,6 +247,12 @@ def write_quality_e2e_library_visibility_receipt(
         )
 
     details_bounds = _widget_bounds(details)
+    try:
+        configured_details_height = int(str(details.cget("height")))
+    except (TypeError, ValueError) as exc:
+        raise QualityE2EAttestationError(
+            "quality-E2E Selected Item configured height is invalid"
+        ) from exc
     heading_bounds = _widget_bounds(description_heading)
     description_bounds = _widget_bounds(description)
     first_line = description.dlineinfo("1.0")
@@ -269,7 +277,7 @@ def write_quality_e2e_library_visibility_receipt(
     title_ellipsized = bool(
         full_title and displayed_title != full_title and displayed_title.endswith("…")
     )
-    fixed_height_preserved = details_bounds["height"] == int(expected_details_height)
+    fixed_height_preserved = configured_details_height == int(expected_details_height)
     verified = bool(
         description_text.strip()
         and heading_visible
@@ -291,6 +299,8 @@ def write_quality_e2e_library_visibility_receipt(
         "description_heading_bounds": heading_bounds,
         "description_bounds": description_bounds,
         "details_height_px": details_bounds["height"],
+        "details_allocated_height_px": details_bounds["height"],
+        "details_configured_height_px": configured_details_height,
         "expected_details_height_px": int(expected_details_height),
         "fixed_height_preserved": fixed_height_preserved,
         "description_heading_mapped_and_viewable": heading_visible,

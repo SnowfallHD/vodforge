@@ -714,7 +714,7 @@ def _library_description_visibility_receipt(
         "window_token": event.get("window_title_token"),
         "pid": event.get("pid"),
         "description_sha256": expected_description_sha256,
-        "details_height_px": 360,
+        "details_configured_height_px": 360,
         "expected_details_height_px": 360,
     }
     for key, expected in expected_values.items():

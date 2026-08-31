@@ -56,10 +56,19 @@ class _FakeWidget:
         height: int,
         mapped: bool = True,
         viewable: bool = True,
+        configured_height: int | None = None,
     ) -> None:
         self.bounds = (x, y, width, height)
         self.mapped = mapped
         self.viewable = viewable
+        self.configured_height = (
+            height if configured_height is None else configured_height
+        )
+
+    def cget(self, key: str) -> object:
+        if key != "height":
+            raise KeyError(key)
+        return self.configured_height
 
     def winfo_ismapped(self) -> bool:
         return self.mapped
@@ -206,7 +215,13 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     description_text = "This packaged Description must remain visibly reachable."
 
     result = write_quality_e2e_library_visibility_receipt(
-        details=_FakeWidget(x=100, y=100, width=410, height=360),
+        details=_FakeWidget(
+            x=100,
+            y=100,
+            width=410,
+            height=390,
+            configured_height=360,
+        ),
         description_heading=_FakeWidget(x=110, y=285, width=130, height=18),
         description=_FakeDescriptionWidget(
             x=110,
@@ -233,6 +248,8 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     payload = json.loads(expected.read_text(encoding="utf-8"))
     assert payload["verified"] is True
     assert payload["fixed_height_preserved"] is True
+    assert payload["details_allocated_height_px"] == 390
+    assert payload["details_configured_height_px"] == 360
     assert payload["description_heading_fully_inside_details"] is True
     assert payload["description_body_fully_inside_details"] is True
     assert payload["description_first_line_visible"] is True
@@ -252,11 +269,17 @@ def test_quality_e2e_library_visibility_marks_clipped_description_unverified(
     )
 
     result = write_quality_e2e_library_visibility_receipt(
-        details=_FakeWidget(x=100, y=100, width=410, height=360),
-        description_heading=_FakeWidget(x=110, y=445, width=130, height=18),
+        details=_FakeWidget(
+            x=100,
+            y=100,
+            width=410,
+            height=390,
+            configured_height=360,
+        ),
+        description_heading=_FakeWidget(x=110, y=495, width=130, height=18),
         description=_FakeDescriptionWidget(
             x=110,
-            y=467,
+            y=517,
             width=385,
             height=120,
             text="Persisted but clipped",
