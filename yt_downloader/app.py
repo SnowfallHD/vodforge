@@ -2172,6 +2172,67 @@ def load_vodforge_output_summary(item_dir: Path) -> dict[str, Any] | None:
     return output if isinstance(output, dict) else None
 
 
+@dataclass(frozen=True)
+class ExistingOutputRequirements:
+    """The export contract an existing provider-scoped artifact must satisfy."""
+
+    output_type: OutputType
+    plan: ExportPlan | AudioExportPlan | None = None
+    embed_metadata: bool | None = None
+    embed_cover_art: bool | None = None
+    custom_cover_art: bool = False
+    expected_tags: list[str] | None = None
+    expected_duration_seconds: float | None = None
+
+
+def _validate_existing_output_candidate(
+    path: Path,
+    ffprobe: str,
+    requirements: ExistingOutputRequirements,
+    *,
+    control_check: Callable[[], None] | None,
+) -> dict[str, Any] | None:
+    """Return probe data only when one candidate satisfies the reuse contract."""
+    try:
+        probe_data = validate_output_artifact(
+            path,
+            requirements.output_type,
+            ffprobe,
+            expected_duration_seconds=requirements.expected_duration_seconds,
+            require_audio=True,
+            expected_audio_codec=(
+                requirements.plan.output_audio_codec.ffprobe_codec
+                if isinstance(requirements.plan, ExportPlan)
+                else "mp3"
+            ),
+            control_check=control_check,
+        )
+    except Exception as exc:  # noqa: BLE001 - any invalid candidate must fail closed
+        # Validation is cancellable. Recheck the canonical control boundary
+        # before classifying the exception as an invalid artifact and scanning on.
+        if control_check is not None:
+            control_check()
+        write_diagnostic(
+            f"existing output rejected: path={path} reason={type(exc).__name__}: {exc}"
+        )
+        return None
+
+    if requirements.plan is not None and not output_artifact_matches_plan(
+        probe_data,
+        requirements.plan,
+        embed_metadata=requirements.embed_metadata,
+        embed_cover_art=requirements.embed_cover_art,
+        custom_cover_art=requirements.custom_cover_art,
+        expected_tags=requirements.expected_tags,
+        sidecar_summary=load_vodforge_output_summary(path.parent),
+    ):
+        write_diagnostic(
+            f"existing output rejected: path={path} reason=export settings do not match"
+        )
+        return None
+    return probe_data
+
+
 def find_valid_existing_output(
     output_dir: Path,
     info: dict[str, Any],
@@ -2184,9 +2245,18 @@ def find_valid_existing_output(
     custom_cover_art: bool = False,
     expected_tags: list[str] | None = None,
     expected_duration_seconds: float | None = None,
-    control_check: Any | None = None,
+    control_check: Callable[[], None] | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     """Reuse only a provider-ID-scoped artifact that passes full media validation."""
+    requirements = ExistingOutputRequirements(
+        output_type=output_type,
+        plan=plan,
+        embed_metadata=embed_metadata,
+        embed_cover_art=embed_cover_art,
+        custom_cover_art=custom_cover_art,
+        expected_tags=expected_tags,
+        expected_duration_seconds=expected_duration_seconds,
+    )
     extension = ".mp3" if output_type == OutputType.MP3 else ".mp4"
     target_file_name = video_file_name(info, extension)
     try:
@@ -2218,41 +2288,13 @@ def find_valid_existing_output(
                 control_check()
             if not path.is_file():
                 continue
-            try:
-                probe_data = validate_output_artifact(
-                    path,
-                    output_type,
-                    ffprobe,
-                    expected_duration_seconds=expected_duration_seconds,
-                    require_audio=True,
-                    expected_audio_codec=(
-                        plan.output_audio_codec.ffprobe_codec
-                        if isinstance(plan, ExportPlan)
-                        else "mp3"
-                    ),
-                    control_check=control_check,
-                )
-            except Exception as exc:  # noqa: BLE001 - any invalid candidate must fail closed
-                # Validation is cancellable, so distinguish a live control request
-                # from an invalid artifact before recording a rejection or scanning on.
-                if control_check is not None:
-                    control_check()
-                write_diagnostic(
-                    f"existing output rejected: path={path} reason={type(exc).__name__}: {exc}"
-                )
-                continue
-            if plan is not None and not output_artifact_matches_plan(
-                probe_data,
-                plan,
-                embed_metadata=embed_metadata,
-                embed_cover_art=embed_cover_art,
-                custom_cover_art=custom_cover_art,
-                expected_tags=expected_tags,
-                sidecar_summary=load_vodforge_output_summary(path.parent),
-            ):
-                write_diagnostic(
-                    f"existing output rejected: path={path} reason=export settings do not match"
-                )
+            probe_data = _validate_existing_output_candidate(
+                path,
+                ffprobe,
+                requirements,
+                control_check=control_check,
+            )
+            if probe_data is None:
                 continue
             return path, probe_data
     return None

@@ -1749,19 +1749,32 @@ def test_valid_legacy_single_output_is_reused_by_later_playlist_run(
     )
     legacy.parent.mkdir(parents=True)
     legacy.write_bytes(b"valid-media")
+    canonical = video_output_dir(tmp_path, info) / video_file_name(info, ".mp4")
+    canonical.parent.mkdir(parents=True)
+    canonical.write_bytes(b"invalid-media")
     probe = {"format": {"duration": "30", "format_name": "mp4"}, "streams": []}
     validated: list[Path] = []
+    diagnostics: list[str] = []
 
     def validate(path, *_args, **_kwargs):
         validated.append(path)
+        if path == canonical:
+            raise RuntimeError("corrupt canonical candidate")
         return probe
 
     monkeypatch.setattr(app_module, "validate_output_artifact", validate)
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
 
     found = find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe")
 
     assert found == (legacy, probe)
-    assert validated == [legacy]
+    assert validated == [canonical, legacy]
+    assert diagnostics == [
+        (
+            f"existing output rejected: path={canonical} "
+            "reason=RuntimeError: corrupt canonical candidate"
+        )
+    ]
 
 
 def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_new_allocation(
@@ -1811,6 +1824,54 @@ def test_invalid_existing_output_is_not_treated_as_downloaded(
     )
 
     assert find_valid_existing_output(tmp_path, info, OutputType.MP4, "ffprobe") is None
+
+
+def test_final_existing_output_candidate_propagates_cancellation_before_rejection(
+    monkeypatch, tmp_path: Path
+):
+    info = {"id": "abc123", "title": "One song", "uploader": "Creator"}
+    target_file_name = video_file_name(info, ".mp4")
+    final_candidate = (
+        existing_output_candidate_dirs(tmp_path, info, target_file_name)[-1]
+        / target_file_name
+    )
+    final_candidate.parent.mkdir(parents=True)
+    final_candidate.write_bytes(b"valid-media")
+    cancelled = False
+    control_checks = 0
+    validated: list[Path] = []
+    diagnostics: list[str] = []
+
+    def control_check() -> None:
+        nonlocal control_checks
+        control_checks += 1
+        if cancelled:
+            raise RuntimeError("Download cancelled by user")
+
+    def cancel_during_validation(path, *_args, **_kwargs):
+        nonlocal cancelled
+        validated.append(path)
+        cancelled = True
+        raise RuntimeError("probe interrupted")
+
+    monkeypatch.setattr(
+        app_module, "validate_output_artifact", cancel_during_validation
+    )
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
+
+    with pytest.raises(RuntimeError, match="Download cancelled by user"):
+        find_valid_existing_output(
+            tmp_path,
+            info,
+            OutputType.MP4,
+            "ffprobe",
+            control_check=control_check,
+        )
+
+    assert validated == [final_candidate]
+    assert control_checks > 1
+    assert diagnostics == []
+    assert final_candidate.read_bytes() == b"valid-media"
 
 
 def test_batch_playlist_urls_remain_playlist_jobs():
