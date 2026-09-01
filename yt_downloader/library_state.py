@@ -275,11 +275,17 @@ class LibraryProjectionOwner:
     def claim_preview(self, preview_run_id: str) -> list[dict[str, Any]]:
         return self._preview_items.pop(str(preview_run_id).strip(), [])
 
-    def observe_phase(self, run_id: str, status: str) -> None:
+    def observe_phase(self, run_id: str, status: str) -> bool:
+        """Record one transient run phase and report whether it changed."""
+
         owner = str(run_id).strip()
         phase = str(status).strip()
-        if owner and phase in TRANSIENT_LIBRARY_STATUSES:
-            self._run_phases[owner] = phase
+        if not owner or phase not in TRANSIENT_LIBRARY_STATUSES:
+            return False
+        if self._run_phases.get(owner) == phase:
+            return False
+        self._run_phases[owner] = phase
+        return True
 
     def forget_run(self, run_id: str) -> None:
         self._run_phases.pop(str(run_id).strip(), None)

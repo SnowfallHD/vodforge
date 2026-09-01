@@ -8555,7 +8555,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     str(record.get("run_id") or ""),
                     record.get("metadata_index"),
                     str(record.get("title") or ""),
-                    str(record.get("status") or ""),
+                    None
+                    if str(record.get("kind") or "") == "active"
+                    else str(record.get("status") or ""),
                     str(record.get("output_type") or ""),
                     str(record.get("preview_thumbnail_path") or ""),
                     id(record.get("preview_thumbnail_image")),
@@ -9771,8 +9773,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         phase = library_phase_from_status(status_text)
         if job is None or phase is None:
             return
-        self._library_projection_owner().observe_phase(job.run_id, phase)
-        self._reconcile_library_projection()
+        if self._library_projection_owner().observe_phase(job.run_id, phase):
+            self._reconcile_library_projection()
 
     def _queued_preview_loop(self) -> None:
         request_queue: queue.Queue[DownloadJob] = self._queued_preview_requests

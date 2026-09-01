@@ -201,3 +201,13 @@ def test_no_projection_exists_without_a_canonical_owner() -> None:
     assert _reconcile(owner).rows == ()
     owner.observe_phase("ghost", "Preparing")
     assert _reconcile(owner).rows == ()
+
+
+def test_observe_phase_is_idempotent_for_repeated_worker_status() -> None:
+    owner = LibraryProjectionOwner()
+
+    assert owner.observe_phase("run-1", "Downloading") is True
+    assert owner.observe_phase("run-1", "Downloading") is False
+    assert owner.observe_phase("run-1", "Transcoding") is True
+    assert owner.observe_phase("", "Downloading") is False
+    assert owner.observe_phase("run-1", "arbitrary prose") is False

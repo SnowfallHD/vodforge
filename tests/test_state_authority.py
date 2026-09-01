@@ -2218,6 +2218,87 @@ def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
     assert probe.rendered == 2
 
 
+def test_run_deck_active_live_status_change_does_not_rebuild_widgets():
+    class Deck:
+        def winfo_width(self):
+            return 900
+
+        def winfo_children(self):
+            return ()
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+    class Probe:
+        _focus_layout = "wide"
+        focus_run_deck = Deck()
+        rendered = 0
+        status = "12%  /  ETA 20s"
+        focus_run_count_var = SimpleNamespace(set=lambda _value: None)
+        focus_run_overflow_button = SimpleNamespace(
+            grid=lambda: None,
+            configure=lambda **_kwargs: None,
+        )
+
+        def _focus_run_records(self):
+            return [
+                {
+                    "kind": "active",
+                    "run_id": "active-run",
+                    "title": "Active item",
+                    "status": self.status,
+                    "output_type": "MP4",
+                    "progress": 12,
+                }
+            ]
+
+        def winfo_width(self):
+            return 952
+
+        def _render_focus_run_deck_tile(self, *_args, **_kwargs):
+            self.rendered += 1
+
+    probe = Probe()
+    DownloaderApp._refresh_focus_run_deck(probe)
+    probe.status = "13%  /  ETA 19s"
+    DownloaderApp._refresh_focus_run_deck(probe)
+
+    assert probe.rendered == 1
+
+
+def test_active_library_status_reconciles_only_when_phase_changes():
+    class ProjectionOwner:
+        phase = ""
+
+        def observe_phase(self, _run_id, phase):
+            if self.phase == phase:
+                return False
+            self.phase = phase
+            return True
+
+    class Probe:
+        active_job = SimpleNamespace(run_id="active-run")
+        owner = ProjectionOwner()
+        reconciliations = 0
+
+        def _library_projection_owner(self):
+            return self.owner
+
+        def _reconcile_library_projection(self):
+            self.reconciliations += 1
+
+    probe = Probe()
+    DownloaderApp._update_active_library_status(
+        probe, "Downloading a.mp4 — 1.0MB/s ETA 20s"
+    )
+    DownloaderApp._update_active_library_status(
+        probe, "Downloading a.mp4 — 1.1MB/s ETA 19s"
+    )
+    DownloaderApp._update_active_library_status(probe, "Video 1 of 1 — transcoding")
+
+    assert probe.reconciliations == 2
+
+
 def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
