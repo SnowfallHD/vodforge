@@ -71,6 +71,14 @@ class _DescriptionWidget(_GeometryWidget, Protocol):
     def dlineinfo(self, index: str) -> tuple[int, ...] | None: ...
 
 
+class _LibraryInvariantReceipt(Protocol):
+    row_count: int
+    canonical_run_ids: tuple[str, ...]
+    projected_run_ids: tuple[str, ...]
+    statuses: tuple[str, ...]
+    violation_codes: tuple[str, ...]
+
+
 def quality_e2e_mode_enabled(environ: Mapping[str, str] | None = None) -> bool:
     environment = os.environ if environ is None else environ
     return environment.get(QUALITY_E2E_MODE_ENV) == "1"
@@ -221,6 +229,7 @@ def write_quality_e2e_library_visibility_receipt(
     overview: _GeometryWidget | None = None,
     location_label: _GeometryWidget | None = None,
     location_is_status: bool = False,
+    library_invariant_receipt: _LibraryInvariantReceipt | None = None,
     environ: Mapping[str, str] | None = None,
     pid: int | None = None,
     recorded_at: str | None = None,
@@ -337,6 +346,28 @@ def write_quality_e2e_library_visibility_receipt(
         displayed_title_visible_lines >= QUALITY_E2E_MIN_TITLE_VISIBLE_LINES
     )
     fixed_height_preserved = configured_details_height == int(expected_details_height)
+    canonical_run_ids = (
+        tuple(library_invariant_receipt.canonical_run_ids)
+        if library_invariant_receipt is not None
+        else ()
+    )
+    projected_run_ids = (
+        tuple(library_invariant_receipt.projected_run_ids)
+        if library_invariant_receipt is not None
+        else ()
+    )
+    invariant_violation_codes = (
+        tuple(library_invariant_receipt.violation_codes)
+        if library_invariant_receipt is not None
+        else ("missing_library_invariant_receipt",)
+    )
+    library_projection_invariants_clean = bool(
+        library_invariant_receipt is not None
+        and not invariant_violation_codes
+        and len(canonical_run_ids) == len(set(canonical_run_ids))
+        and len(projected_run_ids) == len(set(projected_run_ids))
+        and canonical_run_ids == projected_run_ids
+    )
     verified = bool(
         description_text.strip()
         and heading_visible
@@ -356,6 +387,7 @@ def write_quality_e2e_library_visibility_receipt(
         and title_ellipsized
         and title_minimum_visible_lines_preserved
         and fixed_height_preserved
+        and library_projection_invariants_clean
     )
     payload: dict[str, object] = {
         "schema_version": QUALITY_E2E_SCHEMA_VERSION,
@@ -416,6 +448,20 @@ def write_quality_e2e_library_visibility_receipt(
         "title_minimum_visible_lines_preserved": (
             title_minimum_visible_lines_preserved
         ),
+        "library_projection_invariants_clean": library_projection_invariants_clean,
+        "library_projection_row_count": (
+            int(library_invariant_receipt.row_count)
+            if library_invariant_receipt is not None
+            else None
+        ),
+        "library_projection_canonical_run_ids": list(canonical_run_ids),
+        "library_projection_projected_run_ids": list(projected_run_ids),
+        "library_projection_statuses": (
+            list(library_invariant_receipt.statuses)
+            if library_invariant_receipt is not None
+            else []
+        ),
+        "library_projection_violation_codes": list(invariant_violation_codes),
         "verified": verified,
         "recorded_at": recorded_at
         or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),

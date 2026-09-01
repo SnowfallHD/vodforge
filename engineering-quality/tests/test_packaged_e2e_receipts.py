@@ -244,6 +244,12 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         "path_ellipsized": True,
         "title_ellipsized": True,
         "title_minimum_visible_lines_preserved": True,
+        "library_projection_invariants_clean": True,
+        "library_projection_row_count": 1,
+        "library_projection_canonical_run_ids": ["run-1"],
+        "library_projection_projected_run_ids": ["run-1"],
+        "library_projection_statuses": ["Completed"],
+        "library_projection_violation_codes": [],
     }
     receipt_path.write_text(json.dumps(payload), encoding="utf-8")
     receipt_path.chmod(0o600)
@@ -269,6 +275,7 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         "title_ellipsized",
         "title_minimum_visible_lines_preserved",
         "fixed_height_preserved",
+        "library_projection_invariants_clean",
     ):
         broken = dict(payload)
         broken[broken_key] = False
@@ -282,6 +289,21 @@ def test_packaged_library_description_receipt_requires_visible_fixed_height_geom
         )
         assert rejected["verified"] is False
         assert any(broken_key in error for error in rejected["errors"])
+
+    invariant_violation = dict(payload)
+    invariant_violation["library_projection_violation_codes"] = [
+        "transient_projection_without_owner"
+    ]
+    receipt_path.write_text(json.dumps(invariant_violation), encoding="utf-8")
+    rejected = _library_description_visibility_receipt(
+        state_paths=state_paths,
+        driver_trace=trace,
+        launches=launches,
+        session_nonce=nonce,
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert rejected["verified"] is False
+    assert any("violation codes" in error for error in rejected["errors"])
 
     forged_alignment = dict(payload)
     forged_alignment["description_bounds"] = {

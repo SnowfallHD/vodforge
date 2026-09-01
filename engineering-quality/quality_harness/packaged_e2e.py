@@ -779,6 +779,7 @@ def _library_description_visibility_receipt(
         "path_ellipsized",
         "title_ellipsized",
         "title_minimum_visible_lines_preserved",
+        "library_projection_invariants_clean",
     )
     for key in required_true:
         if payload.get(key) is not True:
@@ -856,6 +857,35 @@ def _library_description_visibility_receipt(
             )
     if event.get("observed_text") != expected_description:
         errors.append("UI event did not record the exact visible fixture description")
+    canonical_run_ids = payload.get("library_projection_canonical_run_ids")
+    projected_run_ids = payload.get("library_projection_projected_run_ids")
+    violation_codes = payload.get("library_projection_violation_codes")
+    statuses = payload.get("library_projection_statuses")
+    if not isinstance(canonical_run_ids, list) or any(
+        not isinstance(value, str) for value in canonical_run_ids
+    ):
+        errors.append("Library invariant canonical run IDs are invalid")
+    if not isinstance(projected_run_ids, list) or any(
+        not isinstance(value, str) for value in projected_run_ids
+    ):
+        errors.append("Library invariant projected run IDs are invalid")
+    if not isinstance(violation_codes, list) or any(
+        not isinstance(value, str) for value in violation_codes
+    ):
+        errors.append("Library invariant violation codes are invalid")
+    if not isinstance(statuses, list) or any(
+        not isinstance(value, str) for value in statuses
+    ):
+        errors.append("Library invariant statuses are invalid")
+    if isinstance(canonical_run_ids, list) and isinstance(projected_run_ids, list):
+        if canonical_run_ids != projected_run_ids:
+            errors.append("Library invariant canonical/projected run IDs differ")
+        if len(canonical_run_ids) != len(set(canonical_run_ids)):
+            errors.append("Library invariant canonical run IDs are not unique")
+        if len(projected_run_ids) != len(set(projected_run_ids)):
+            errors.append("Library invariant projected run IDs are not unique")
+    if violation_codes:
+        errors.append("Library invariant receipt contains violation codes")
     return {
         "verified": not errors,
         "fixture_id": "generated-library-description-stress",
@@ -864,6 +894,10 @@ def _library_description_visibility_receipt(
         "observed_description_sha256": payload.get("description_sha256"),
         "event_observed_text_matches": event.get("observed_text")
         == expected_description,
+        "library_projection_invariants_clean": payload.get(
+            "library_projection_invariants_clean"
+        )
+        is True,
         "receipt_path": str(receipt_path),
         "receipt_sha256": sha256_file(receipt_path)
         if receipt_path.is_file() and not receipt_path.is_symlink()
@@ -1540,6 +1574,7 @@ def run_packaged_e2e_session(
         f"UI driver trace valid: {trace_validation['valid']}; provenance events valid: {not trace_validation['invalid_provenance_events']}; ordered events: {trace_validation['observed_required_order']}; missing: {missing_events}; invalid screenshots: {trace_validation['invalid_screenshot_events']}",
         description_visibility_evidence,
         f"Packaged pipeline stage receipts: {stage_receipts}",
+        f"Packaged Library projection invariants: clean={library_description_visibility.get('library_projection_invariants_clean')}",
         f"Final media count: {len(media_probes)}; all independently readable using bundled ffprobe {receipt['bundled_ffprobe']['sha256']}: {bool(media_probes) and all(item.get('readable') for item in media_probes)}",
         f"Launch/exit receipts: {launches}; clean_exit={clean_exit}",
         f"Restart/history persistence: verified={history_persistence['verified']}; history_items={history_persistence['history_item_count']}; matching_items={history_persistence['matching_history_item_count']}; media_hashes_stable={history_persistence['media_hashes_stable_across_restart']}",
@@ -1569,6 +1604,9 @@ def run_packaged_e2e_session(
             "library_description_visibility_verified": library_description_visibility[
                 "verified"
             ],
+            "library_projection_invariants_clean": library_description_visibility.get(
+                "library_projection_invariants_clean"
+            ),
             "missing_ui_events": missing_events,
             "driver_trace_structural_valid": trace_validation["structural_valid"],
             "driver_event_order_valid": trace_validation["order_valid"],

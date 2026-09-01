@@ -6711,6 +6711,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     location_is_status=bool(
                         self.__dict__.get("_focus_selected_location_is_status")
                     ),
+                    library_invariant_receipt=self.__dict__.get(
+                        "_last_library_invariant_receipt"
+                    ),
                 )
             except (AttributeError, QualityE2EAttestationError, tk.TclError) as exc:
                 write_diagnostic(

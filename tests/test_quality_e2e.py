@@ -4,6 +4,7 @@ import json
 import os
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,6 +27,16 @@ from yt_downloader.quality_e2e import (
 SESSION_NONCE = "0123456789abcdef0123456789abcdef"
 WINDOW_TOKEN = "VFQ-012345abcdef-L1"
 LAUNCH_ID = "fedcba9876543210fedcba9876543210"
+
+
+def _clean_library_invariant_receipt() -> SimpleNamespace:
+    return SimpleNamespace(
+        row_count=1,
+        canonical_run_ids=("run-1",),
+        projected_run_ids=("run-1",),
+        statuses=("Completed",),
+        violation_codes=(),
+    )
 
 
 class _FakeStringValue:
@@ -243,6 +254,7 @@ def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
         expected_details_height=360,
         overview=_FakeWidget(x=100, y=100, width=410, height=101),
         location_label=_FakeWidget(x=110, y=178, width=250, height=18),
+        library_invariant_receipt=_clean_library_invariant_receipt(),
         environ=environment,
         pid=4321,
         recorded_at="2026-08-31T06:00:00Z",
@@ -327,6 +339,7 @@ def test_quality_e2e_library_visibility_requires_complete_terminal_status(
         overview=_FakeWidget(x=100, y=100, width=410, height=101),
         location_label=_FakeWidget(x=110, y=178, width=250, height=18),
         location_is_status=True,
+        library_invariant_receipt=_clean_library_invariant_receipt(),
         environ=environment,
     )
 
@@ -370,6 +383,7 @@ def test_quality_e2e_library_visibility_marks_clipped_description_unverified(
         full_location="Saved in /long/path/" * 20,
         displayed_location="Saved in /long/path…",
         expected_details_height=360,
+        library_invariant_receipt=_clean_library_invariant_receipt(),
         environ=environment,
     )
 
@@ -413,6 +427,7 @@ def test_quality_e2e_library_visibility_marks_bottom_misalignment_unverified(
         full_location="Saved in /long/path/" * 20,
         displayed_location="Saved in /long/path…",
         expected_details_height=360,
+        library_invariant_receipt=_clean_library_invariant_receipt(),
         environ=environment,
     )
 
@@ -456,6 +471,7 @@ def test_quality_e2e_library_visibility_requires_description_larger_than_tags(
         full_location="Saved in /long/path/" * 20,
         displayed_location="Saved in /long/path…",
         expected_details_height=360,
+        library_invariant_receipt=_clean_library_invariant_receipt(),
         environ=environment,
     )
 
@@ -499,6 +515,7 @@ def test_quality_e2e_library_visibility_requires_two_measured_title_lines(
         full_location="Saved in /an/intentionally/extreme/path/" * 20,
         displayed_location="Saved in /an/intentionally/extreme…",
         expected_details_height=360,
+        library_invariant_receipt=_clean_library_invariant_receipt(),
         environ=environment,
     )
 
