@@ -563,6 +563,7 @@ def lifecycle_quit_restart_recovery(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Exercise durable settings, run, process, and staging owners across restart."""
 
+    from yt_downloader.app import DownloaderApp
     from yt_downloader.process_lifecycle import process_command, terminate_pid
     from yt_downloader.run_state import ActiveRunStore, recover_interrupted_run
     from yt_downloader.safe_output import create_private_staging_directory
@@ -669,6 +670,47 @@ def lifecycle_quit_restart_recovery(
     store.clear(second_queued.run_id)
     durable_failed_jobs = store.load_failed_jobs()
     store.clear(job.run_id)
+    # Reproduce the UI-side restart race: the recovered Failed row is removed,
+    # then both preserved queued jobs are promoted and stopped before provider
+    # analysis has created a preview row. Terminalization must create both
+    # Library records instead of relying on a preview that may not exist yet.
+    ui_owner = DownloaderApp.__new__(DownloaderApp)
+    ui_owner._terminal_jobs = [*recovered]
+    ui_owner.metadata_items = [
+        {
+            "title": "Recovered failed run",
+            "vodforge_terminal_status": "Failed",
+            "vodforge_terminal_run_id": job.run_id,
+        }
+    ]
+    ui_owner._library_suppressed_run_ids = set()
+    ui_owner._focus_active_thumbnail_source_image = None
+    ui_owner._focus_active_thumbnail_is_placeholder = True
+    ui_owner.metadata_items = [
+        item
+        for item in ui_owner.metadata_items
+        if str(item.get("vodforge_terminal_run_id") or "") != job.run_id
+    ]
+    ui_owner._terminal_jobs = [
+        item for item in ui_owner._terminal_jobs if item.run_id != job.run_id
+    ]
+    for queued_job in (first_queued, second_queued):
+        ui_owner.active_job = queued_job
+        ui_owner._focus_selected_run_id = queued_job.run_id
+        ui_owner._archive_active_terminal_job(
+            "Stopped", "Cancelled before provider analysis"
+        )
+    sequential_stop_ids = [
+        str(item.get("vodforge_terminal_run_id") or "")
+        for item in ui_owner.metadata_items
+    ]
+    sequential_stops_retained = sequential_stop_ids == [
+        second_queued.run_id,
+        first_queued.run_id,
+    ] and all(
+        str(item.get("vodforge_terminal_status") or "") == "Stopped"
+        for item in ui_owner.metadata_items
+    )
     trace.append(
         {
             "phase": "after_library_removal",
@@ -709,6 +751,7 @@ def lifecycle_quit_restart_recovery(
         and child_reaped
         and stage_cleaned
         and journal_removed
+        and sequential_stops_retained
     )
     scenario = {
         "id": "lifecycle.quit_restart_recovery",
@@ -728,6 +771,8 @@ def lifecycle_quit_restart_recovery(
             "failed_state_durable_until_removal": failed_preserved,
             "queued_runs_preserved_in_order": queue_preserved,
             "journal_removed_by_library_removal": journal_removed,
+            "sequential_fast_stops_retained_in_library": (sequential_stops_retained),
+            "sequential_fast_stop_run_ids": sequential_stop_ids,
         },
         "evidence": [
             f"Restart loaded the selected output root and export preferences unchanged: {settings_preserved}",
@@ -736,6 +781,10 @@ def lifecycle_quit_restart_recovery(
             f"The interrupted run used Failed and survived a later run until removal: {failed_preserved}",
             f"Two queued runs survived restart in their original order and promoted exactly once: {queue_preserved}",
             f"Library removal cleared the durable failure journal: {journal_removed}",
+            (
+                "Both restored queued runs remained distinct Stopped Library rows "
+                f"after immediate cancellation: {sequential_stops_retained}"
+            ),
         ],
         "artifacts": [str(trace_path), str(settings_path)],
         "error": recovery_error,

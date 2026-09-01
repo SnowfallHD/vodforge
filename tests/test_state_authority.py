@@ -1794,10 +1794,7 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
         'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)'
         in library_layout_source
     )
-    assert (
-        'video_tree.layout_column("id", width=90, minwidth=72, stretch=True)'
-        in library_layout_source
-    )
+    assert 'video_tree.layout_column("id"' not in library_layout_source
     assert (
         'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)'
         in library_layout_source
@@ -2323,33 +2320,119 @@ def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
     assert pixel_table.focus_item("missing") == "row"
 
 
-def test_pixel_scroll_table_resolves_output_profile_tooltip_for_hovered_row():
-    class BodyProbe:
-        def winfo_pointerxy(self):
-            return 250, 145
-
-        def winfo_rooty(self):
-            return 100
-
-    pixel_table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
-    pixel_table._body = BodyProbe()
-    pixel_table._items = {"0": (), "1": ()}
-    pixel_table._row_tooltips = {}
-    pixel_table.identify_row = lambda local_y: "1" if local_y >= 40 else "0"
-
-    pixel_table.set_row_tooltips(
-        {
-            "0": "MP4 • 1080p Full HD • Auto CBR",
-            "1": "MP4 • 720p HD • Manual override",
-            "missing": "must not survive",
-        }
-    )
-
-    assert pixel_table.tooltip_text_at_pointer() == ("MP4 • 720p HD • Manual override")
-    assert pixel_table._row_tooltips == {
-        "0": "MP4 • 1080p Full HD • Auto CBR",
-        "1": "MP4 • 720p HD • Manual override",
+def test_library_output_details_are_explicit_and_exclude_content_metadata(monkeypatch):
+    info = {
+        "title": "A title that should not be repeated in output details",
+        "description": "private description sentinel",
+        "tags": ["content-tag-sentinel"],
+        "vodforge_output_profile_details": (
+            "MP4 • 720p HD • Auto CBR\nDestination: /tmp/output"
+        ),
+        "vodforge_encoding_summary": {
+            "source": {"Source video codec": "vp9"},
+            "output": {
+                "Output video codec": "h264",
+                "Output resolution": "1280x720",
+            },
+            "warnings": [],
+        },
     }
+    observed: list[tuple[str, str, object]] = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showinfo",
+        lambda title, message, *, parent: observed.append((title, message, parent)),
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+
+    app._show_library_output_details(info)
+
+    assert observed[0][0] == "VODForge Output details"
+    assert observed[0][2] is app
+    assert "REQUESTED OUTPUT" in observed[0][1]
+    assert "MP4 • 720p HD • Auto CBR" in observed[0][1]
+    assert "FINAL OUTPUT" in observed[0][1]
+    assert "Video codec: h264" in observed[0][1]
+    assert "private description sentinel" not in observed[0][1]
+    assert "content-tag-sentinel" not in observed[0][1]
+
+
+def test_retryable_row_replaces_leading_number_only_while_hovered():
+    class BodyProbe:
+        def __init__(self):
+            self.cursors: list[str] = []
+
+        def configure(self, *, cursor):
+            self.cursors.append(cursor)
+
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._body = BodyProbe()
+    table._items = {"stopped": ("001", "Stopped item")}
+    table._leading_hover_values = {}
+    table._hovered_row = None
+    table.identify_row = lambda _y: "stopped"
+    table.identify_column = lambda _x: "#1"
+    redraws: list[bool] = []
+    table._redraw = lambda: redraws.append(True)
+
+    table.set_leading_hover_values({"stopped": "↻", "missing": "↻"})
+    table._update_row_hover(SimpleNamespace(x=12, y=12))
+
+    assert table._leading_hover_values == {"stopped": "↻"}
+    assert table._hovered_row == "stopped"
+    assert table._body.cursors[-1] == "hand2"
+
+    table._clear_row_hover()
+
+    assert table._hovered_row is None
+    assert table._body.cursors[-1] == ""
+    assert len(redraws) == 3
+
+
+def test_visible_leading_retry_cell_owns_the_retry_click(tmp_path: Path):
+    class TreeProbe:
+        def __init__(self):
+            self.selected: list[str] = []
+
+        def identify_row(self, _y):
+            return "0"
+
+        def identify_column(self, _x):
+            return "#1"
+
+        def selection_set(self, row):
+            self.selected.append(row)
+
+    terminal = make_job(tmp_path, video_id="visible-retry")
+    terminal.terminal_status = "Stopped"
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.video_tree = TreeProbe()
+    app.metadata_items = [
+        {
+            "id": "visible-retry",
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_run_id": terminal.run_id,
+        }
+    ]
+    app._terminal_jobs = [terminal]
+    retried: list[DownloadJob] = []
+    app._retry_terminal_job = retried.append
+
+    result = app._on_library_tree_click(SimpleNamespace(x=12, y=12))
+
+    assert result == "break"
+    assert app.video_tree.selected == ["0"]
+    assert retried == [terminal]
+
+
+def test_library_table_hides_provider_id_and_has_no_invisible_action_column():
+    source = inspect.getsource(DownloaderApp._build_focus_library_view)
+    detail_source = inspect.getsource(DownloaderApp._display_selected_metadata)
+
+    assert '("location", "Status / location")' in source
+    assert '("id", "ID")' not in source
+    assert '"action"' not in source
+    assert "info.get('id') or 'no id'" not in detail_source
 
 
 def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():
@@ -3693,3 +3776,103 @@ def test_cancelled_active_run_links_its_library_row_to_the_terminal_recent(
     assert app.metadata_items[0]["vodforge_terminal_status"] == "Stopped"
     assert app.metadata_items[0]["vodforge_terminal_message"] == "Cancelled by user"
     assert app.metadata_items[0]["vodforge_terminal_run_id"] == stopped.run_id
+
+
+def test_fast_stop_finalizes_a_stale_not_downloaded_preview(tmp_path: Path):
+    stopped = make_job(tmp_path, video_id="stale-preview")
+    stopped.preview_info = {
+        "id": "stale-preview",
+        "title": "Stopped before preview ownership settled",
+        "vodforge_output_type": "MP4",
+    }
+    stale_preview = {
+        **stopped.preview_info,
+        "vodforge_preview_complete": True,
+        "vodforge_preview_run_id": "preview:stale-preview",
+    }
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = stopped
+    app._terminal_jobs = []
+    app.metadata_items = [stale_preview]
+    app._library_suppressed_run_ids = set()
+    app._focus_active_thumbnail_source_image = None
+    app._focus_active_thumbnail_is_placeholder = True
+    app._focus_selected_run_id = stopped.run_id
+
+    app._archive_active_terminal_job("Stopped", "Cancelled immediately")
+
+    assert len(app.metadata_items) == 1
+    row = app.metadata_items[0]
+    assert row["vodforge_terminal_status"] == "Stopped"
+    assert row["vodforge_terminal_run_id"] == stopped.run_id
+    assert "vodforge_preview_complete" not in row
+    assert "vodforge_preview_run_id" not in row
+
+
+def test_two_fast_sequential_stops_create_distinct_library_rows(tmp_path: Path):
+    """Stopping before preview insertion must not lose either queued run."""
+
+    first = make_job(tmp_path, video_id="fast-stop-first")
+    first.preview_info = {
+        "id": "fast-stop-first",
+        "title": "First queued item",
+        "vodforge_output_type": "MP4",
+    }
+    second = make_job(tmp_path, video_id="fast-stop-second")
+    second.preview_info = {
+        "id": "fast-stop-second",
+        "title": "Second queued item",
+        "vodforge_output_type": "MP4",
+    }
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = []
+    app.metadata_items = []
+    app._library_suppressed_run_ids = set()
+    app._focus_active_thumbnail_source_image = None
+    app._focus_active_thumbnail_is_placeholder = True
+
+    app.active_job = first
+    app._focus_selected_run_id = first.run_id
+    app._archive_active_terminal_job("Stopped", "Cancelled before analysis")
+    app.active_job = second
+    app._focus_selected_run_id = second.run_id
+    app._archive_active_terminal_job("Stopped", "Cancelled before analysis")
+
+    assert [job.run_id for job in app._terminal_jobs] == [
+        second.run_id,
+        first.run_id,
+    ]
+    assert [item["vodforge_terminal_run_id"] for item in app.metadata_items] == [
+        second.run_id,
+        first.run_id,
+    ]
+    assert [item["id"] for item in app.metadata_items] == [
+        "fast-stop-second",
+        "fast-stop-first",
+    ]
+    assert all(
+        item["vodforge_terminal_status"] == "Stopped" for item in app.metadata_items
+    )
+
+
+def test_fast_stop_without_provider_preview_still_creates_a_library_row(
+    tmp_path: Path,
+):
+    stopped = make_job(tmp_path, video_id="stopped-before-provider-analysis")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = stopped
+    app._terminal_jobs = []
+    app.metadata_items = []
+    app._library_suppressed_run_ids = set()
+    app._focus_active_thumbnail_source_image = None
+    app._focus_active_thumbnail_is_placeholder = True
+    app._focus_selected_run_id = stopped.run_id
+
+    app._archive_active_terminal_job("Stopped", "Cancelled immediately")
+
+    assert len(app.metadata_items) == 1
+    row = app.metadata_items[0]
+    assert row["title"] == "Preparing video run"
+    assert row["webpage_url"] == stopped.url
+    assert row["vodforge_terminal_status"] == "Stopped"
+    assert row["vodforge_terminal_run_id"] == stopped.run_id

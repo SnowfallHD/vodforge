@@ -570,7 +570,8 @@ class PixelScrollTable(tk.Frame):
             for column in columns
         }
         self._items: dict[str, tuple[Any, ...]] = {}
-        self._row_tooltips: dict[str, str] = {}
+        self._leading_hover_values: dict[str, str] = {}
+        self._hovered_row: str | None = None
         self._order: list[str] = []
         self._selection: str | None = None
         self._focus_item: str | None = None
@@ -616,6 +617,8 @@ class PixelScrollTable(tk.Frame):
         )
         self._body.bind("<Configure>", lambda _event: self._schedule_redraw(), add="+")
         self._body.bind("<Button-1>", self._select_from_pointer, add="+")
+        self._body.bind("<Motion>", self._update_row_hover, add="+")
+        self._body.bind("<Leave>", self._clear_row_hover, add="+")
         self._body.bind("<Up>", lambda _event: self._move_selection(-1), add="+")
         self._body.bind("<Down>", lambda _event: self._move_selection(1), add="+")
         self._body.bind(
@@ -726,48 +729,28 @@ class PixelScrollTable(tk.Frame):
         preferred = str(selected) if selected is not None else self._selection
         self._selection = preferred if preferred in items else None
         self._focus_item = self._selection
+        self._leading_hover_values = {
+            item: value
+            for item, value in self._leading_hover_values.items()
+            if item in items
+        }
+        if self._hovered_row not in items:
+            self._hovered_row = None
         self._redraw()
         return tuple(order)
 
-    def set_row_tooltips(self, values: dict[str, str]) -> None:
-        self._row_tooltips = {
-            str(item): str(text)
-            for item, text in values.items()
-            if str(item) in self._items and str(text).strip()
+    def set_leading_hover_values(self, values: dict[str, str]) -> None:
+        """Replace the first cell only while its actionable row is hovered."""
+
+        self._leading_hover_values = {
+            str(item): str(value)
+            for item, value in values.items()
+            if str(item) in self._items and str(value).strip()
         }
-
-    def tooltip_targets(self) -> tuple[tk.Widget, ...]:
-        return (self._body,)
-
-    def tooltip_text_at_pointer(self) -> str:
-        try:
-            _pointer_x, pointer_y = self._body.winfo_pointerxy()
-            local_y = pointer_y - self._body.winfo_rooty()
-        except tk.TclError:
-            return ""
-        row = self.identify_row(local_y)
-        return self._row_tooltips.get(row, "")
-
-    def tooltip_anchor_bounds(self) -> tuple[int, int, int, int] | None:
-        try:
-            _pointer_x, pointer_y = self._body.winfo_pointerxy()
-            local_y = pointer_y - self._body.winfo_rooty()
-            row = self.identify_row(local_y)
-            row_index = self._order.index(row)
-            top = round(
-                self._body.winfo_rooty()
-                + (row_index * self._row_height)
-                - self._body.canvasy(0)
-            )
-            bottom = top + self._row_height
-            return (
-                self._body.winfo_rootx(),
-                top,
-                self._body.winfo_rootx() + self._body.winfo_width(),
-                bottom,
-            )
-        except (tk.TclError, ValueError):
-            return None
+        if self._hovered_row not in self._leading_hover_values:
+            self._hovered_row = None
+        self._body.configure(cursor="hand2" if self._hovered_row is not None else "")
+        self._redraw()
 
     def delete(self, *items: str) -> None:
         for raw_item in items:
@@ -1091,6 +1074,8 @@ class PixelScrollTable(tk.Frame):
                 cursor = 0
                 for value_index, (_column, width, anchor) in enumerate(layout):
                     value = values[value_index] if value_index < len(values) else ""
+                    if value_index == 0 and item_id == self._hovered_row:
+                        value = self._leading_hover_values.get(item_id, value)
                     text_x = cursor + (
                         width / 2
                         if anchor == "center"
@@ -1140,6 +1125,27 @@ class PixelScrollTable(tk.Frame):
         if row:
             self.selection_set(row)
             self._body.focus_set()
+
+    def _update_row_hover(self, event: tk.Event[Any]) -> None:
+        row = self.identify_row(event.y)
+        hovered = row if row in self._leading_hover_values else None
+        cursor = (
+            "hand2"
+            if hovered is not None and self.identify_column(event.x) == "#1"
+            else ""
+        )
+        self._body.configure(cursor=cursor)
+        if hovered == self._hovered_row:
+            return
+        self._hovered_row = hovered
+        self._redraw()
+
+    def _clear_row_hover(self, _event: tk.Event[Any] | None = None) -> None:
+        if self._hovered_row is None:
+            return
+        self._hovered_row = None
+        self._body.configure(cursor="")
+        self._redraw()
 
     def _move_selection(self, amount: int) -> str:
         if not self._order:

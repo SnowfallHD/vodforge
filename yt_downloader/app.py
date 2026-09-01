@@ -6211,9 +6211,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "profile",
                 "duration",
                 "creator",
-                "id",
                 "location",
-                "action",
             ),
             selectmode="browse",
         )
@@ -6224,9 +6222,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ("profile", "Output profile"),
             ("duration", "Length"),
             ("creator", "Creator"),
-            ("id", "ID"),
-            ("location", "Saved location"),
-            ("action", ""),
+            ("location", "Status / location"),
         ):
             video_tree.heading(
                 column,
@@ -6244,11 +6240,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "duration", width=72, minwidth=62, stretch=False, anchor="center"
         )
         video_tree.column("creator", width=140, minwidth=90, stretch=False, anchor="w")
-        video_tree.column("id", width=100, minwidth=72, stretch=False, anchor="w")
         video_tree.column("location", width=140, minwidth=90, stretch=False, anchor="w")
-        video_tree.column(
-            "action", width=42, minwidth=42, stretch=False, anchor="center"
-        )
         tree_scroll = SleekScrollbar(queue_panel, command=video_tree.yview)
         tree_x_scroll = SleekScrollbar(
             queue_panel, command=video_tree.xview, orient="horizontal"
@@ -6263,9 +6255,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         video_tree.bind_body_event("<Button-1>", self._on_library_tree_click, add="+")
         video_tree.bind_body_event("<Button-2>", self._show_library_row_menu)
         video_tree.bind_body_event("<Button-3>", self._show_library_row_menu)
-        self.focus_library_profile_tooltip = ToolTip(
-            video_tree, video_tree.tooltip_text_at_pointer
-        )
         self.focus_queue_panel = queue_panel
 
         details = ttk.Frame(metadata_content, style="FocusShell.TFrame")
@@ -8012,6 +8001,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 command=lambda: self._retry_terminal_job(terminal_job),
             )
             menu.add_separator()
+        if isinstance(selected_info, dict):
+            menu.add_command(
+                label="Output details…",
+                command=partial(self._show_library_output_details, selected_info),
+            )
+            menu.add_separator()
         menu.add_command(
             label="Copy tags",
             command=lambda: self._run_library_copy_action(self._copy_tags),
@@ -9018,7 +9013,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             video_tree.layout_column("profile", width=180, minwidth=120, stretch=True)
             video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)
             video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)
-            video_tree.layout_column("id", width=90, minwidth=72, stretch=True)
             video_tree.layout_column("location", width=140, minwidth=100, stretch=True)
         else:
             if vertical_mode == "balanced":
@@ -9042,7 +9036,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 video_tree.layout_column(
                     "creator", width=110, minwidth=90, stretch=False
                 )
-                video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 video_tree.layout_column(
                     "location", width=120, minwidth=90, stretch=False
                 )
@@ -9063,7 +9056,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 video_tree.layout_column(
                     "creator", width=120, minwidth=90, stretch=False
                 )
-                video_tree.layout_column("id", width=90, minwidth=72, stretch=False)
                 video_tree.layout_column(
                     "location", width=120, minwidth=90, stretch=False
                 )
@@ -10123,6 +10115,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.metadata_items, self.library_output_type_var.get()
         )
         rows: list[tuple[str, tuple[Any, ...]]] = []
+        retry_rows: dict[str, str] = {}
         for visible_position, metadata_index in enumerate(visible_indices, start=1):
             item = self.metadata_items[metadata_index]
             output_dir = history_output_dir(item)
@@ -10136,19 +10129,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     else "Not downloaded"
                 )
             )
-            retry_available = terminal_status in {"Skipped", "Failed"} and bool(
-                item.get("vodforge_terminal_run_id")
-            )
+            retry_available = terminal_status in {
+                "Stopped",
+                "Skipped",
+                "Failed",
+            } and bool(item.get("vodforge_terminal_run_id"))
             base_values = video_list_row_values(item, fallback_index=visible_position)
             values: tuple[Any, ...] = (
                 *base_values[:2],
                 metadata_output_profile(item),
-                *base_values[2:],
+                *base_values[2:4],
                 location,
             )
-            if "action" in self.video_tree["columns"]:
-                values = (*values, "↻" if retry_available else "")
             rows.append((str(metadata_index), values))
+            if retry_available:
+                retry_rows[str(metadata_index)] = "↻"
         preferred = str(selected_index) if selected_index is not None else selected_iid
         target = (
             preferred
@@ -10158,16 +10153,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             else None
         )
         children = self.video_tree.replace_rows(rows, selected=target)
-        set_row_tooltips = getattr(self.video_tree, "set_row_tooltips", None)
-        if callable(set_row_tooltips):
-            set_row_tooltips(
-                {
-                    str(metadata_index): metadata_output_profile_details(
-                        self.metadata_items[metadata_index]
-                    )
-                    for metadata_index in visible_indices
-                }
-            )
+        set_leading_hover_values = getattr(
+            self.video_tree, "set_leading_hover_values", None
+        )
+        if callable(set_leading_hover_values):
+            set_leading_hover_values(retry_rows)
         if children and target is not None:
             _focus_library_table_item(self.video_tree, target)
             self._display_selected_metadata(int(target))
@@ -10220,14 +10210,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _on_library_tree_click(self, event: tk.Event[Any]) -> str | None:
         row = self.video_tree.identify_row(event.y)
         column = self.video_tree.identify_column(event.x)
-        if not row or column != f"#{len(self.video_tree['columns'])}":
+        if not row or column != "#1":
             return None
         try:
             info = self.metadata_items[int(row)]
         except (IndexError, TypeError, ValueError):
             return None
         terminal_job = self._terminal_job_for_metadata(info)
-        if terminal_job is None:
+        if terminal_job is None or str(terminal_job.terminal_status or "") not in {
+            "Stopped",
+            "Skipped",
+            "Failed",
+        }:
             return None
         self.video_tree.selection_set(row)
         self._retry_terminal_job(terminal_job)
@@ -10256,6 +10250,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         terminal_job = (
             self._terminal_job_for_metadata(info) if isinstance(info, dict) else None
         )
+        if isinstance(info, dict):
+            menu.add_command(
+                label="Output details…",
+                command=partial(self._show_library_output_details, info),
+            )
+            menu.add_separator()
         if is_metadata_preview(info):
             menu.add_command(
                 label="Start download in Forge",
@@ -10287,6 +10287,29 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         finally:
             menu.grab_release()
         return "break"
+
+    def _show_library_output_details(self, info: dict[str, Any] | None = None) -> None:
+        """Show requested/final output facts only after an explicit user action."""
+
+        if info is None:
+            selection = self.video_tree.selection()
+            if not selection:
+                messagebox.showinfo(APP_NAME, "Choose an item in Library first.")
+                return
+            try:
+                info = self.metadata_items[int(selection[0])]
+            except (IndexError, TypeError, ValueError):
+                return
+        requested = metadata_output_profile_details(info).strip()
+        _source, final_output = build_encoding_summary_display(info)
+        sections = [f"REQUESTED OUTPUT\n{requested or metadata_output_profile(info)}"]
+        if final_output.strip():
+            sections.append(f"FINAL OUTPUT\n{final_output.strip()}")
+        messagebox.showinfo(
+            f"{APP_NAME} Output details",
+            "\n\n".join(sections),
+            parent=self,
+        )
 
     def _remove_selected_library_item(self) -> None:
         selection = self.video_tree.selection()
@@ -10511,8 +10534,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 else "Not downloaded in this history"
             )
         metadata_text = (
-            f"{output_type.value} • {creator} • {format_duration(info.get('duration'))} • "
-            f"{info.get('id') or 'no id'}"
+            f"{output_type.value} • {creator} • {format_duration(info.get('duration'))}"
         )
         if hasattr(self, "selected_meta_var") and hasattr(
             self, "selected_location_var"
@@ -11522,7 +11544,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         job.terminal_status = status
         job.terminal_message = message
-        job.preview_info = annotate_job_metadata(job, job.preview_info or {})
+        terminal_info = build_terminal_item_metadata(
+            job.preview_info or {},
+            None,
+            status,
+            message,
+            job.run_id,
+        )
+        terminal_info.setdefault("title", download_job_display_title(job))
+        terminal_info.setdefault("webpage_url", job.url)
+        terminal_info.setdefault("original_url", job.url)
+        terminal_info["vodforge_output_type"] = job.output_type.value
+        terminal_info = annotate_job_metadata(job, terminal_info)
+        job.preview_info = terminal_info
         if status == "Failed":
             recovery_owner = self.__dict__.get("run_recovery")
             try:
@@ -11546,34 +11580,33 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ]
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
-        preview_key = metadata_run_key(job.preview_info or {})
+        preview_key = metadata_run_key(terminal_info)
         attempt_signature = job_attempt_signature(job)
-        if preview_key is not None:
-            matching = next(
-                (
-                    item
-                    for item in self.metadata_items
-                    if history_output_dir(item) is None
-                    and metadata_run_key(item) == preview_key
-                    and (
-                        str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == job.run_id
-                        or metadata_attempt_signature(item) == attempt_signature
-                        or (
-                            not str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "")
-                            and not metadata_attempt_signature(item)
-                        )
+        matching = next(
+            (
+                item
+                for item in self.metadata_items
+                if history_output_dir(item) is None
+                and preview_key is not None
+                and metadata_run_key(item) == preview_key
+                and (
+                    str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == job.run_id
+                    or metadata_attempt_signature(item) == attempt_signature
+                    or (
+                        not str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "")
+                        and not metadata_attempt_signature(item)
                     )
-                ),
-                None,
-            )
-            if matching is not None:
-                matching.update(job.preview_info or {})
-                matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
-                matching.pop("vodforge_preview_complete", None)
-                matching.pop("vodforge_preview_run_id", None)
-                matching["vodforge_terminal_status"] = status
-                matching["vodforge_terminal_message"] = message
-                matching["vodforge_terminal_run_id"] = job.run_id
+                )
+            ),
+            None,
+        )
+        if matching is None:
+            self.metadata_items.insert(0, terminal_info)
+        else:
+            matching.update(terminal_info)
+            matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
+            matching.pop("vodforge_preview_complete", None)
+            matching.pop("vodforge_preview_run_id", None)
 
     def _archive_active_completed_job(self, status: str, message: str) -> None:
         job = self.active_job
