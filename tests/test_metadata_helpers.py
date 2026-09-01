@@ -2299,9 +2299,10 @@ def test_atomic_package_failure_preserves_existing_valid_output(
     target.parent.mkdir(parents=True)
     target.write_bytes(b"known good output")
 
+    commit_primitive = "rename" if os.name == "nt" else "link"
     monkeypatch.setattr(
         app_module.os,
-        "link",
+        commit_primitive,
         lambda _source, _target, **_kwargs: (_ for _ in ()).throw(
             OSError("disk unavailable")
         ),

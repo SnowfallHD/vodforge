@@ -196,8 +196,9 @@ def _freeze_archive(source: Path, candidate_dir: Path) -> dict[str, Any]:
 
     frozen = candidate_dir / "candidate.zip"
     temporary = candidate_dir / ".candidate.zip.incomplete"
-    read_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    binary_flag = getattr(os, "O_BINARY", 0)
+    read_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | binary_flag
+    write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary_flag
     digest = hashlib.sha256()
     source_fd = os.open(source, read_flags)
     try:

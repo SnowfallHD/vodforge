@@ -294,17 +294,18 @@ def open_path(
         return
 
     if is_macos(platform_name):
-        opener = Path("/usr/bin/open")
+        opener = "/usr/bin/open"
     else:
         resolved = which("xdg-open")
         candidate = Path(resolved) if resolved else None
         if candidate is None or not candidate.is_absolute():
             raise RuntimeError("No trusted system folder opener is available.")
         try:
-            opener = candidate.resolve(strict=True)
+            resolved_opener = candidate.resolve(strict=True)
         except OSError as exc:
             raise RuntimeError("No trusted system folder opener is available.") from exc
-        if not opener.is_file() or not os.access(opener, os.X_OK):
+        if not resolved_opener.is_file() or not os.access(resolved_opener, os.X_OK):
             raise RuntimeError("No trusted system folder opener is available.")
+        opener = str(resolved_opener)
 
-    popen([str(opener), str(path)])
+    popen([opener, str(path)])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 
@@ -76,7 +77,8 @@ def test_active_run_store_is_private_and_failed_state_survives_restart(
     store.begin(_job(tmp_path))
     failed = store.mark_failed()
 
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert failed.terminal_status == "Failed"
     assert failed.terminal_message == INTERRUPTED_FAILURE_MESSAGE
     assert ActiveRunStore(path).load_failed_job() is not None

@@ -129,7 +129,10 @@ def test_owned_cleanup_refuses_group_with_prelaunch_process(
         e2e_provenance, "owned_group_survivors", lambda _launch: [older]
     )
     monkeypatch.setattr(
-        os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))
+        os,
+        "killpg",
+        lambda pgid, sig: killpg_calls.append((pgid, sig)),
+        raising=False,
     )
 
     receipt = terminate_owned_group(process, {"pgid": 811, "create_time": 100.0})
@@ -158,7 +161,10 @@ def test_owned_cleanup_signals_only_attested_process_group(
         lambda _launch: next(survivor_snapshots),
     )
     monkeypatch.setattr(
-        os, "killpg", lambda pgid, sig: killpg_calls.append((pgid, sig))
+        os,
+        "killpg",
+        lambda pgid, sig: killpg_calls.append((pgid, sig)),
+        raising=False,
     )
 
     receipt = terminate_owned_group(

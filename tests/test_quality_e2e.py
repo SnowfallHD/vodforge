@@ -178,6 +178,11 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
     environment, app, home, application_data, diagnostics_path = _isolated_launch(
         tmp_path
     )
+    executable = (
+        Path(r"C:\Applications\VODForge\VODForge.exe")
+        if os.name == "nt"
+        else Path("/Applications/VODForge.app/Contents/MacOS/VODForge")
+    )
 
     result = write_quality_e2e_startup_attestation(
         app,
@@ -186,7 +191,7 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
         diagnostics_path=diagnostics_path,
         environ=environment,
         home=home,
-        executable=Path("/Applications/VODForge.app/Contents/MacOS/VODForge"),
+        executable=executable,
         pid=4321,
         ppid=1234,
         recorded_at="2026-08-31T01:02:03Z",
@@ -203,7 +208,7 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
         "session_nonce": SESSION_NONCE,
         "pid": 4321,
         "ppid": 1234,
-        "executable": "/Applications/VODForge.app/Contents/MacOS/VODForge",
+        "executable": str(executable),
         "app_version": "9.8.7-dev",
         "window_title": f"VODForge [{WINDOW_TOKEN}]",
         "home": str(home),
