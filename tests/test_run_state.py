@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import stat
+from pathlib import Path
+
+import pytest
+
+import yt_downloader.run_state as run_state_module
+from yt_downloader.models import (
+    DownloadJob,
+    ExportMode,
+    ManualExportSettings,
+    Mp3ExportSettings,
+    OutputType,
+)
+from yt_downloader.process_lifecycle import terminate_recorded_children
+from yt_downloader.run_state import (
+    INTERRUPTED_FAILURE_MESSAGE,
+    ActiveRunStore,
+    RunStateError,
+    deserialize_download_job,
+    recover_interrupted_run,
+    serialize_download_job,
+)
+
+
+def _job(tmp_path: Path) -> DownloadJob:
+    return DownloadJob(
+        url="https://user:password@www.youtube.com/watch?v=abc123&token=secret#private",
+        urls=["https://www.youtube.com/watch?v=abc123&list=playlist"],
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=ExportMode.AUTO_CBR,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=True,
+        embed_metadata=False,
+        write_info_json=True,
+        tags=["safe", "https://example.test/?token=secret#fragment"],
+        use_cookies=True,
+        cookie_file=tmp_path / "cookies.txt",
+        cookie_browser="chrome:Default",
+        preview_info={"id": "abc123", "title": "A title", "uploader": "Creator"},
+        run_id="run-1",
+    )
+
+
+def test_job_recovery_contract_excludes_secrets_and_cookie_authority(
+    tmp_path: Path,
+) -> None:
+    payload = serialize_download_job(_job(tmp_path))
+    text = repr(payload)
+
+    assert "password" not in text
+    assert "secret" not in text
+    assert "fragment" not in text
+    assert "cookies.txt" not in text
+    assert "chrome:Default" not in text
+
+    recovered = deserialize_download_job(payload)
+    assert recovered.url == "https://www.youtube.com/watch?v=abc123"
+    assert recovered.use_cookies is False
+    assert recovered.cookie_file is None
+    assert recovered.cookie_browser is None
+
+
+def test_active_run_store_is_private_and_failed_state_survives_restart(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state" / "active-run.json"
+    store = ActiveRunStore(path)
+    store.begin(_job(tmp_path))
+    failed = store.mark_failed()
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert failed.terminal_status == "Failed"
+    assert failed.terminal_message == INTERRUPTED_FAILURE_MESSAGE
+    assert ActiveRunStore(path).load_failed_job() is not None
+
+
+def test_recovery_stops_only_bound_child_then_cleans_stage(tmp_path: Path) -> None:
+    stage = tmp_path / ".vfstage" / "deadbeef"
+    stage.mkdir(parents=True)
+    (stage / "source.mp4").write_bytes(b"partial")
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    store.add_staging_dir("run-1", stage)
+    store.child_started(4321, ["/bundle/ffmpeg", "-i", str(stage / "source.mp4")])
+    terminated: list[int] = []
+
+    recovered = recover_interrupted_run(
+        store,
+        cleanup_staging=lambda paths: [_remove_tree(path) for path in paths],
+        terminate_children=lambda children, paths: terminate_recorded_children(
+            children,
+            paths,
+            command_reader=lambda _pid: f"/bundle/ffmpeg -i {stage}/source.mp4",
+            pid_terminator=lambda pid: terminated.append(pid) is None or True,
+        ),
+        owner_command_reader=lambda _pid: None,
+    )
+
+    assert len(recovered) == 1
+    assert recovered[0].terminal_status == "Failed"
+    assert terminated == [4321]
+    assert not stage.exists()
+
+
+def _remove_tree(path: Path) -> bool:
+    for child in path.iterdir():
+        child.unlink()
+    path.rmdir()
+    return False
+
+
+def test_recovery_fails_closed_for_unrelated_or_reused_pid(tmp_path: Path) -> None:
+    stage = tmp_path / ".vfstage" / "deadbeef"
+    stage.mkdir(parents=True)
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    store.add_staging_dir("run-1", stage)
+    store.child_started(4321, ["/bundle/ffmpeg", "-i", str(stage / "source.mp4")])
+    terminated: list[int] = []
+
+    with pytest.raises(RunStateError, match="Refusing to stop PID"):
+        recover_interrupted_run(
+            store,
+            cleanup_staging=lambda _paths: None,
+            terminate_children=lambda children, paths: terminate_recorded_children(
+                children,
+                paths,
+                command_reader=lambda _pid: "/usr/bin/python unrelated.py",
+                pid_terminator=lambda pid: terminated.append(pid) is None or True,
+            ),
+            owner_command_reader=lambda _pid: None,
+        )
+
+    assert terminated == []
+    assert stage.exists()
+    assert store.load()["state"] == "active"  # type: ignore[index]
+
+
+def test_recovery_refuses_to_touch_a_run_owned_by_a_live_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stage = tmp_path.resolve() / ".vfstage" / "deadbeef"
+    stage.mkdir(parents=True)
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    store.add_staging_dir("run-1", stage)
+    monkeypatch.setattr(run_state_module.os, "getpid", lambda: 999_999)
+
+    with pytest.raises(RunStateError, match="Another live process"):
+        recover_interrupted_run(
+            store,
+            terminate_children=lambda _children, _paths: pytest.fail(
+                "must not terminate another app's children"
+            ),
+            cleanup_staging=lambda _paths: pytest.fail(
+                "must not clean another app's staging"
+            ),
+            owner_command_reader=lambda _pid: "/Applications/VODForge.app/VODForge",
+        )
+
+    assert stage.exists()
+
+
+def test_recovery_rejects_staging_outside_the_recorded_output_root(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent / ".vfstage" / "outside"
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    store.add_staging_dir("run-1", outside)
+
+    with pytest.raises(RunStateError, match="outside its selected output root"):
+        recover_interrupted_run(store, owner_command_reader=lambda _pid: None)
+
+
+def test_library_removal_or_retry_can_clear_recovered_failure(tmp_path: Path) -> None:
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    store.mark_failed()
+
+    store.clear("run-1")
+
+    assert store.load() is None
+
+
+def test_recovered_failure_survives_a_later_active_run(tmp_path: Path) -> None:
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    first = _job(tmp_path)
+    store.begin(first)
+    store.mark_failed()
+    second = _job(tmp_path)
+    second.run_id = "run-2"
+
+    store.begin(second)
+    store.clear("run-2")
+
+    recovered = store.load_failed_jobs()
+    assert [job.run_id for job in recovered] == ["run-1"]
+    assert recovered[0].terminal_status == "Failed"

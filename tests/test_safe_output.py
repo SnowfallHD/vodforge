@@ -182,3 +182,49 @@ def test_windows_reparse_attribute_is_treated_as_redirect():
     )
 
     assert is_symlink_or_reparse(fake_stat)
+
+
+def test_abandoned_cleanup_removes_only_recorded_transactions(tmp_path: Path):
+    from yt_downloader.safe_output import cleanup_abandoned_staging_transactions
+
+    root = tmp_path / ".vfstage"
+    first = root / "first"
+    second = root / "second"
+    first.mkdir(parents=True)
+    second.mkdir()
+    (first / "partial.mp4").write_bytes(b"partial")
+    (second / "partial.webm").write_bytes(b"partial")
+
+    cleanup_abandoned_staging_transactions([first, second])
+
+    assert not root.exists()
+
+
+def test_abandoned_cleanup_rejects_paths_outside_staging_root(tmp_path: Path):
+    from yt_downloader.safe_output import (
+        UnsafeOutputPathError,
+        cleanup_abandoned_staging_transactions,
+    )
+
+    outside = tmp_path / "ordinary" / "transaction"
+    outside.mkdir(parents=True)
+
+    with pytest.raises(UnsafeOutputPathError, match="outside"):
+        cleanup_abandoned_staging_transactions([outside])
+
+    assert outside.exists()
+
+
+def test_abandoned_cleanup_preserves_unknown_staging_entries(tmp_path: Path):
+    from yt_downloader.safe_output import cleanup_abandoned_staging_transactions
+
+    root = tmp_path / ".vfstage"
+    recorded = root / "recorded"
+    unknown = root / "unrelated"
+    recorded.mkdir(parents=True)
+    unknown.mkdir()
+
+    cleanup_abandoned_staging_transactions([recorded])
+
+    assert not recorded.exists()
+    assert unknown.exists()

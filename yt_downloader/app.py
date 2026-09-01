@@ -118,6 +118,7 @@ from .platform_services import (
     find_runtime_executable,
     focus_view_shortcut_bindings,
     hidden_window_subprocess_kwargs,
+    install_native_quit_handler,
     is_macos,
     is_windows,
     output_directory_failure_guidance,
@@ -128,16 +129,26 @@ from .platform_services import (
     open_path as open_system_path,
 )
 from .private_files import open_private_text_file, write_private_bytes
+from .process_lifecycle import ACTIVE_CHILD_PROCESS_REGISTRY
 from .quality_e2e import (
     QualityE2EAttestationError,
     quality_e2e_mode_enabled,
     write_quality_e2e_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
+from .run_state import (
+    RunRecoveryOwner,
+    RunStateError,
+    run_state_file_path,
+)
 from .safe_output import (
     cleanup_private_staging_directory,
     commit_file_beneath,
     create_private_staging_directory,
+)
+from .settings_store import (
+    SettingsPersistenceOwner,
+    settings_file_path,
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .ui_events import (
@@ -337,6 +348,35 @@ BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
 AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
 AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
+
+
+def _persisted_bool(values: dict[str, Any], key: str, default: bool) -> bool:
+    value = values.get(key)
+    return value if isinstance(value, bool) else default
+
+
+def _persisted_choice(
+    values: dict[str, Any], key: str, allowed: set[str], default: str
+) -> str:
+    value = values.get(key)
+    return value if isinstance(value, str) and value in allowed else default
+
+
+def _persisted_int_text(
+    values: dict[str, Any], key: str, default: int, *, minimum: int, maximum: int
+) -> str:
+    value = values.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, str)):
+        return str(default)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    if not minimum <= parsed <= maximum:
+        parsed = default
+    return str(parsed)
+
+
 AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
 THUMBNAIL_CACHE_MAX_ITEMS = 1000
 CUSTOM_COVER_MAX_INPUT_BYTES = 50 * 1024 * 1024
@@ -504,9 +544,8 @@ _ACTIVITY_LOG_LOCK = threading.RLock()
 _ACTIVITY_LOG_HANDLE: Any | None = None
 _ACTIVITY_LOG_HANDLE_PATH: Path | None = None
 _ACTIVITY_LOG_FAILURE_REPORTED = False
-_ACTIVE_CHILD_PROCESSES: set[Any] = set()
-_ACTIVE_CHILD_PROCESS_LOCK = threading.RLock()
-_CHILD_TERMINATION_LOCK = threading.RLock()
+_ACTIVE_CHILD_PROCESSES = ACTIVE_CHILD_PROCESS_REGISTRY.processes
+_ACTIVE_CHILD_PROCESS_LOCK = ACTIVE_CHILD_PROCESS_REGISTRY.inspection_lock
 _THUMBNAIL_CACHE_LOCKS = tuple(threading.RLock() for _ in range(64))
 _YTDLP_SUBPROCESS_TRACKING_LOCK = threading.RLock()
 
@@ -2889,49 +2928,35 @@ def validate_output_artifact(
 def terminate_and_reap_process(
     process: Any, *, timeout_seconds: float = PROCESS_TERMINATE_TIMEOUT_SECONDS
 ) -> None:
-    """Stop a child process without leaving an encoder writing after cleanup."""
-    with _CHILD_TERMINATION_LOCK:
-        poll = getattr(process, "poll", None)
-        if callable(poll) and poll() is not None:
-            return
-        try:
-            process.terminate()
-        except Exception as exc:  # noqa: BLE001 - process adapters may raise provider-specific errors
-            write_diagnostic(
-                f"child process terminate request failed: {type(exc).__name__}"
-            )
-        try:
-            process.wait(timeout=timeout_seconds)
-            return
-        except subprocess.TimeoutExpired:
-            pass
-        try:
-            process.kill()
-        except Exception as exc:  # noqa: BLE001 - process adapters may raise provider-specific errors
-            write_diagnostic(f"child process kill request failed: {type(exc).__name__}")
-        try:
-            process.wait(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(
-                "Child process did not stop after terminate and kill requests"
-            ) from exc
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
+    ACTIVE_CHILD_PROCESS_REGISTRY.terminate_and_reap(
+        process, timeout_seconds=timeout_seconds
+    )
+
+
+def set_active_child_process_observer(
+    observer: Callable[[str, Any], None] | None,
+) -> None:
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_observer(observer)
 
 
 def register_active_child_process(process: Any) -> None:
-    with _ACTIVE_CHILD_PROCESS_LOCK:
-        _ACTIVE_CHILD_PROCESSES.add(process)
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
+    ACTIVE_CHILD_PROCESS_REGISTRY.register(
+        process, timeout_seconds=PROCESS_TERMINATE_TIMEOUT_SECONDS
+    )
 
 
 def unregister_active_child_process(process: Any) -> None:
-    with _ACTIVE_CHILD_PROCESS_LOCK:
-        _ACTIVE_CHILD_PROCESSES.discard(process)
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
+    ACTIVE_CHILD_PROCESS_REGISTRY.unregister(process)
 
 
 def child_process_has_exited(process: Any, *, confirmed_exited: bool = False) -> bool:
-    if confirmed_exited:
-        return True
-    poll = getattr(process, "poll", None)
-    return bool(callable(poll) and poll() is not None)
+    return ACTIVE_CHILD_PROCESS_REGISTRY.has_exited(
+        process, confirmed_exited=confirmed_exited
+    )
 
 
 def finalize_active_child_process(
@@ -2942,49 +2967,22 @@ def finalize_active_child_process(
     If an exceptional path leaves a child alive, retain it in the registry so
     application-close cleanup can retry instead of losing ownership of a writer.
     """
-    if child_process_has_exited(process, confirmed_exited=confirmed_exited):
-        unregister_active_child_process(process)
-        return True
-    try:
-        terminate_and_reap_process(process)
-    except Exception as exc:  # noqa: BLE001 - cleanup retains unconfirmed child ownership
-        write_diagnostic(
-            f"active child process remains live after cleanup attempt: {type(exc).__name__}: {exc}"
-        )
-    if child_process_has_exited(process):
-        unregister_active_child_process(process)
-        return True
-    write_diagnostic(
-        "active child process remains registered because exit could not be confirmed"
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
+    return ACTIVE_CHILD_PROCESS_REGISTRY.finalize(
+        process,
+        timeout_seconds=PROCESS_TERMINATE_TIMEOUT_SECONDS,
+        confirmed_exited=confirmed_exited,
     )
-    return False
 
 
 def terminate_all_active_child_processes(
     *, deadline_monotonic: float | None = None
 ) -> None:
-    with _ACTIVE_CHILD_PROCESS_LOCK:
-        active = tuple(_ACTIVE_CHILD_PROCESSES)
-    for process in active:
-        timeout_seconds: float = PROCESS_TERMINATE_TIMEOUT_SECONDS
-        if deadline_monotonic is not None:
-            remaining = deadline_monotonic - time.monotonic()
-            if remaining <= 0:
-                write_diagnostic(
-                    "active child process cleanup deadline reached before every child was reaped"
-                )
-                break
-            timeout_seconds = max(0.01, min(timeout_seconds, remaining / 2))
-        try:
-            terminate_and_reap_process(process, timeout_seconds=timeout_seconds)
-        except Exception as exc:  # noqa: BLE001 - shutdown must continue across child adapters
-            write_diagnostic(
-                f"active child process cleanup failed: {type(exc).__name__}: {exc}"
-            )
-        finally:
-            poll = getattr(process, "poll", None)
-            if callable(poll) and poll() is not None:
-                unregister_active_child_process(process)
+    ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
+    ACTIVE_CHILD_PROCESS_REGISTRY.terminate_all(
+        timeout_seconds=PROCESS_TERMINATE_TIMEOUT_SECONDS,
+        deadline_monotonic=deadline_monotonic,
+    )
 
 
 def tracked_ytdlp_popen_class(
@@ -4671,6 +4669,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         write_diagnostic(message)
 
     def __init__(self) -> None:
+        ACTIVE_CHILD_PROCESS_REGISTRY.set_diagnostic(write_diagnostic)
         reset_diagnostics_log()
         prepare_activity_log()
         write_diagnostic(
@@ -4730,6 +4729,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.installation_state: InstallationState | None = None
         self._first_launch_worker: threading.Thread | None = None
         self._cloud_seen_worker: threading.Thread | None = None
+        self.run_recovery = RunRecoveryOwner(
+            run_state_file_path(), diagnostic=write_diagnostic
+        )
+        recovered_failed_jobs = self.run_recovery.recover_at_startup()
+        set_active_child_process_observer(self.run_recovery.child_event)
+        self.settings_persistence = SettingsPersistenceOwner(
+            settings_file_path(), diagnostic=write_diagnostic
+        )
+        saved_settings = self.settings_persistence.load()
         try:
             self.installation_state = load_or_create_installation_state(
                 self.installation_state_path
@@ -4745,40 +4753,128 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.url_var = tk.StringVar()
         self.url_list_file_var = tk.StringVar(value="No URL list loaded")
         self.batch_urls: list[str] = []
-        self.output_var = tk.StringVar(value=str(Path.home() / "Downloads"))
-        self.output_type_var = tk.StringVar(value=OutputType.MP4.value)
+        output_value = str(saved_settings.get("output_dir") or "").strip()
+        if not output_value or "\x00" in output_value or len(output_value) > 4096:
+            output_value = str(Path.home() / "Downloads")
+        output_type_value = _persisted_choice(
+            saved_settings,
+            "output_type",
+            {item.value for item in OutputType},
+            OutputType.MP4.value,
+        )
+        quality_value = _persisted_choice(
+            saved_settings, "quality", set(QUALITY_OPTIONS), "1080p Full HD"
+        )
+        export_mode_value = _persisted_choice(
+            saved_settings,
+            "export_mode",
+            {item.value for item in ExportMode},
+            ExportMode.AUTO_CBR.value,
+        )
+        self.output_var = tk.StringVar(value=output_value)
+        self.output_type_var = tk.StringVar(value=output_type_value)
         self.library_output_type_var = tk.StringVar(value=OutputType.MP4.value)
-        self.quality_var = tk.StringVar(value="1080p Full HD")
-        self.export_mode_var = tk.StringVar(value=ExportMode.AUTO_CBR.value)
+        self.quality_var = tk.StringVar(value=quality_value)
+        self.export_mode_var = tk.StringVar(value=export_mode_value)
         self.export_mode_choice_var = tk.StringVar(
-            value=export_mode_display_name(ExportMode.AUTO_CBR)
+            value=export_mode_display_name(ExportMode(export_mode_value))
         )
         self.export_mode_description_var = tk.StringVar(
-            value=export_mode_description(ExportMode.AUTO_CBR)
+            value=export_mode_description(ExportMode(export_mode_value))
         )
         self.manual_video_bitrate_var = tk.StringVar(
-            value=str(STRICT_VIDEO_BITRATE_KBPS)
+            value=_persisted_int_text(
+                saved_settings,
+                "manual_video_bitrate",
+                STRICT_VIDEO_BITRATE_KBPS,
+                minimum=100,
+                maximum=100_000,
+            )
         )
         self.manual_audio_bitrate_var = tk.StringVar(
-            value=str(STRICT_AUDIO_BITRATE_KBPS)
+            value=_persisted_int_text(
+                saved_settings,
+                "manual_audio_bitrate",
+                STRICT_AUDIO_BITRATE_KBPS,
+                minimum=32,
+                maximum=1_536,
+            )
         )
-        self.manual_audio_codec_var = tk.StringVar(value=ManualAudioCodec.AAC.value)
-        self.manual_sample_rate_var = tk.StringVar(value=AUDIO_SAMPLE_RATE)
-        self.manual_channels_var = tk.StringVar(value="Stereo")
-        self.manual_preset_var = tk.StringVar(value="medium")
-        self.mp3_quality_var = tk.StringVar(value="Maximum — 320 kbps CBR")
-        self.mp3_sample_rate_var = tk.StringVar(value="Preserve source")
-        self.mp3_channels_var = tk.StringVar(value="Preserve source")
-        self.mp3_embed_metadata_var = tk.BooleanVar(value=True)
-        self.mp3_cover_art_mode_var = tk.StringVar(value=MP3_COVER_ART_OPTIONS[0])
+        manual_codec = _persisted_choice(
+            saved_settings,
+            "manual_audio_codec",
+            {item.value for item in ManualAudioCodec},
+            ManualAudioCodec.AAC.value,
+        )
+        self.manual_audio_codec_var = tk.StringVar(value=manual_codec)
+        self.manual_sample_rate_var = tk.StringVar(
+            value=_persisted_choice(
+                saved_settings,
+                "manual_sample_rate",
+                {"44100", "48000"},
+                AUDIO_SAMPLE_RATE,
+            )
+        )
+        self.manual_channels_var = tk.StringVar(
+            value=_persisted_choice(
+                saved_settings, "manual_channels", {"Mono", "Stereo"}, "Stereo"
+            )
+        )
+        self.manual_preset_var = tk.StringVar(
+            value=_persisted_choice(
+                saved_settings,
+                "manual_preset",
+                {"ultrafast", "veryfast", "fast", "medium", "slow"},
+                "medium",
+            )
+        )
+        mp3_quality = _persisted_choice(
+            saved_settings,
+            "mp3_quality",
+            set(MP3_QUALITY_OPTIONS),
+            "Maximum — 320 kbps CBR",
+        )
+        mp3_sample_rate = _persisted_choice(
+            saved_settings,
+            "mp3_sample_rate",
+            set(MP3_SAMPLE_RATE_OPTIONS),
+            "Preserve source",
+        )
+        mp3_channels = _persisted_choice(
+            saved_settings,
+            "mp3_channels",
+            set(MP3_CHANNEL_OPTIONS),
+            "Preserve source",
+        )
+        mp3_cover_art = _persisted_choice(
+            saved_settings,
+            "mp3_cover_art_mode",
+            set(MP3_COVER_ART_OPTIONS),
+            MP3_COVER_ART_OPTIONS[0],
+        )
+        if mp3_cover_art not in MP3_COVER_ART_OPTIONS or mp3_cover_art == "Custom art":
+            mp3_cover_art = MP3_COVER_ART_OPTIONS[0]
+        self.mp3_quality_var = tk.StringVar(value=mp3_quality)
+        self.mp3_sample_rate_var = tk.StringVar(value=mp3_sample_rate)
+        self.mp3_channels_var = tk.StringVar(value=mp3_channels)
+        self.mp3_embed_metadata_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "mp3_embed_metadata", True)
+        )
+        self.mp3_cover_art_mode_var = tk.StringVar(value=mp3_cover_art)
         self.mp3_custom_cover_art_path: Path | None = None
         self.mp3_custom_cover_art_var = tk.StringVar(
             value="Select Custom art to choose an image"
         )
         self.mp3_cover_art_description_var = tk.StringVar()
         self.tags_var = tk.StringVar()
-        self.single_video_only_var = tk.BooleanVar(value=DEFAULT_IGNORE_PLAYLISTS)
-        self.use_nvenc_var = tk.BooleanVar(value=False)
+        self.single_video_only_var = tk.BooleanVar(
+            value=_persisted_bool(
+                saved_settings, "single_video_only", DEFAULT_IGNORE_PLAYLISTS
+            )
+        )
+        self.use_nvenc_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "use_nvenc", False)
+        )
         self.cookie_source_var = tk.StringVar(value=CookieSource.PUBLIC.value)
         self.cookie_file_path: Path | None = None
         self.cookie_file_var = tk.StringVar(value="No cookies.txt selected")
@@ -4786,10 +4882,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.cookie_source_var.trace_add(
             "write", lambda *_args: self._on_cookie_source_changed()
         )
-        self.embed_thumbnail_var = tk.BooleanVar(value=False)
-        self.write_thumbnail_var = tk.BooleanVar(value=True)
-        self.embed_metadata_var = tk.BooleanVar(value=False)
-        self.write_info_json_var = tk.BooleanVar(value=True)
+        self.embed_thumbnail_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "embed_thumbnail", False)
+        )
+        self.write_thumbnail_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "write_thumbnail", True)
+        )
+        self.embed_metadata_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "embed_metadata", False)
+        )
+        self.write_info_json_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "write_info_json", True)
+        )
         self.status_var = tk.StringVar(value="Ready")
         self.progress_var = tk.DoubleVar(value=0.0)
         self.thumbnail_image: Any | None = None
@@ -4805,6 +4909,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         self._apply_theme()
         self._build_ui()
+        self.settings_persistence.bind(self, self._settings_variables())
         previous_activity = load_activity_log_tail()
         if previous_activity:
             self._set_text(self.log, previous_activity, disabled=True)
@@ -4813,11 +4918,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             f"—— Session started {datetime.now().isoformat(timespec='seconds')} ——"  # noqa: DTZ005 - local wall-clock receipt
         )
         self._load_download_history()
+        for recovered_failed_job in recovered_failed_jobs:
+            self._restore_recovered_failed_run(recovered_failed_job)
         self._check_runtime()
         self.after(100, self._pump_events)
         self.after(250, self._record_first_launch)
         self.after(25, self._start_ytdlp_preload)
         self.protocol("WM_DELETE_WINDOW", self._request_application_close)
+        install_native_quit_handler(self, self._request_application_close)
         if bool(getattr(sys, "frozen", False)):
             self._schedule_auto_update_check(AUTO_UPDATE_INITIAL_DELAY_MS)
 
@@ -10169,6 +10277,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             str(info.get("vodforge_preview_run_id") or f"history:{index}")
         )
         self.metadata_items.pop(index)
+        recovery_owner = self.__dict__.get("run_recovery")
+        for run_id in removed_run_ids:
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.removed_or_retried(run_id)
+            except RunStateError as exc:
+                write_diagnostic(f"removed run recovery record cleanup failed: {exc}")
         self._rebuild_output_dir_index()
         return removed_run_ids
 
@@ -10992,6 +11107,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _launch_download_job(
         self, job: DownloadJob, *, select_detail: bool = True
     ) -> None:
+        recovery_owner = self.__dict__.get("run_recovery")
+        if recovery_owner is not None:
+            try:
+                recovery_owner.begin(job)
+            except RunStateError as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    "VODForge could not create the private recovery record required "
+                    f"to start this run. No download was started.\n\n{exc}",
+                )
+                return
         self.active_job = job
         if select_detail:
             self._focus_selected_run_id = job.run_id
@@ -11060,6 +11186,40 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._set_focus_run_controls_visible(True)
             self._apply_focus_layout(force=True)
 
+    def _restore_recovered_failed_run(self, job: DownloadJob) -> None:
+        """Render an abandoned run through the existing Failed presentation."""
+
+        message = job.terminal_message or "VODForge closed before this run finished."
+        preview = dict(job.preview_info or {})
+        preview.setdefault("title", "Interrupted VODForge run")
+        preview.setdefault("webpage_url", job.url)
+        preview.setdefault("original_url", job.url)
+        preview["vodforge_output_type"] = job.output_type.value
+        terminal_info = build_terminal_item_metadata(
+            preview,
+            None,
+            "Failed",
+            message,
+            job.run_id,
+        )
+        job.preview_info = terminal_info
+        self._terminal_jobs = [
+            item for item in self._terminal_jobs if item.run_id != job.run_id
+        ]
+        self._terminal_jobs.insert(0, job)
+        self.metadata_items = [
+            item
+            for item in self.metadata_items
+            if str(item.get("vodforge_terminal_run_id") or "") != job.run_id
+        ]
+        self.metadata_items.insert(0, terminal_info)
+        self._rebuild_output_dir_index()
+        self._render_metadata_tree(selected_index=0)
+        self.status_var.set("Recovered an interrupted run as Failed.")
+        self._append_log(message)
+        self._focus_terminal_job(job)
+        self._refresh_focus_run_deck()
+
     def _launch_next_pending_job(self) -> bool:
         if not self.pending_jobs:
             self.active_job = None
@@ -11077,6 +11237,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         job.terminal_status = status
         job.terminal_message = message
+        if status == "Failed":
+            recovery_owner = self.__dict__.get("run_recovery")
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.failed(message)
+            except RunStateError as exc:
+                write_diagnostic(
+                    f"failed run recovery record could not be saved: {exc}"
+                )
         if (
             job.preview_thumbnail_image is None
             and self._focus_active_thumbnail_source_image is not None
@@ -11183,6 +11352,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._focus_select_run_record(record)
 
     def _retry_terminal_job(self, failed_job: DownloadJob) -> None:
+        recovery_owner = self.__dict__.get("run_recovery")
+        try:
+            if recovery_owner is not None:
+                recovery_owner.removed_or_retried(failed_job.run_id)
+        except RunStateError as exc:
+            write_diagnostic(f"retried run recovery record cleanup failed: {exc}")
         retry_url = retry_url_for_item(failed_job.preview_info or {}, failed_job.url)
         retry_job = replace(
             failed_job,
@@ -11224,10 +11399,39 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             target=terminate_all_active_child_processes, daemon=True
         ).start()
 
+    def _settings_variables(self) -> dict[str, Any]:
+        """Expose only non-secret preference variables to their persistence owner."""
+        return {
+            "output_dir": self.output_var,
+            "output_type": self.output_type_var,
+            "quality": self.quality_var,
+            "export_mode": self.export_mode_var,
+            "manual_video_bitrate": self.manual_video_bitrate_var,
+            "manual_audio_bitrate": self.manual_audio_bitrate_var,
+            "manual_audio_codec": self.manual_audio_codec_var,
+            "manual_sample_rate": self.manual_sample_rate_var,
+            "manual_channels": self.manual_channels_var,
+            "manual_preset": self.manual_preset_var,
+            "mp3_quality": self.mp3_quality_var,
+            "mp3_sample_rate": self.mp3_sample_rate_var,
+            "mp3_channels": self.mp3_channels_var,
+            "mp3_embed_metadata": self.mp3_embed_metadata_var,
+            "mp3_cover_art_mode": self.mp3_cover_art_mode_var,
+            "single_video_only": self.single_video_only_var,
+            "use_nvenc": self.use_nvenc_var,
+            "embed_thumbnail": self.embed_thumbnail_var,
+            "write_thumbnail": self.write_thumbnail_var,
+            "embed_metadata": self.embed_metadata_var,
+            "write_info_json": self.write_info_json_var,
+        }
+
     def _request_application_close(self) -> None:
         if self._closing:
             return
         self._closing = True
+        settings_owner = self.__dict__.get("settings_persistence")
+        if settings_owner is not None:
+            settings_owner.flush()
         self._close_deadline = time.monotonic() + APPLICATION_CLOSE_TIMEOUT_SECONDS
         self.cancel_requested = True
         self.pending_jobs.clear()
@@ -12355,6 +12559,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         failure: Exception | None = None
         try:
             staging_dir = create_staging_dir(job.output_dir)
+            recovery_owner = self.__dict__.get("run_recovery")
+            if recovery_owner is not None:
+                recovery_owner.staging_started(job, staging_dir)
             downloaded_item = self._download_item_to_staging(
                 job,
                 source.ytdlp_module,
@@ -12507,6 +12714,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 metadata=analyzed_item.display_info,
                 plan=analyzed_item.plan,
             )
+            recovery_owner = self.__dict__.get("run_recovery")
+            if recovery_owner is not None:
+                recovery_owner.metadata_observed(job, analyzed_item.display_info)
             all_output_dirs = list(result.output_dirs)
             existing_reuse = self._try_reuse_existing_output(
                 job,
@@ -12900,6 +13110,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._archive_active_terminal_job(run_status, message)
         elif decision.archive_completed:
             self._archive_active_completed_job(run_status, message)
+        if finished_job is not None and not self.__dict__.get("_closing", False):
+            recovery_owner = self.__dict__.get("run_recovery")
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.finished(
+                        finished_job.run_id,
+                        application_closing=False,
+                    )
+            except RunStateError as exc:
+                write_diagnostic(f"finished run recovery record cleanup failed: {exc}")
 
     def _reconcile_finished_run_after_handoff(
         self,

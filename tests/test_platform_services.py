@@ -10,9 +10,29 @@ from yt_downloader.app import DownloaderApp
 from yt_downloader.platform_services import (
     choose_output_directory,
     hidden_window_subprocess_kwargs,
+    install_native_quit_handler,
     open_path,
     output_directory_failure_guidance,
 )
+
+
+def test_native_quit_routes_only_macos_application_menu_through_callback():
+    registered: list[tuple[str, object]] = []
+    root = type(
+        "Root",
+        (),
+        {
+            "createcommand": lambda _self, name, callback: registered.append(
+                (name, callback)
+            )
+        },
+    )()
+    callback = lambda: None
+
+    assert install_native_quit_handler(root, callback, platform_name="darwin") is True
+    assert registered == [("::tk::mac::Quit", callback)]
+    assert install_native_quit_handler(root, callback, platform_name="linux") is False
+    assert registered == [("::tk::mac::Quit", callback)]
 
 
 def test_hidden_window_subprocess_policy_is_empty_off_windows():

@@ -317,6 +317,22 @@ def cleanup_private_staging_directory(staging_dir: Path) -> bool:
     return _remove_idle_staging_root(staging_root)
 
 
+def cleanup_abandoned_staging_transactions(staging_dirs: Sequence[Path]) -> None:
+    """Safely remove only recorded private transactions after child shutdown."""
+
+    for value in staging_dirs:
+        staging_dir = Path(value)
+        if staging_dir.parent.name != ".vfstage":
+            raise UnsafeOutputPathError(
+                "An abandoned staging record is outside a VODForge staging root."
+            )
+        cleanup_private_staging_directory(staging_dir)
+        if os.path.lexists(staging_dir):
+            raise UnsafeOutputPathError(
+                f"VODForge could not safely clean abandoned staging transaction {staging_dir}."
+            )
+
+
 def _reject_unsafe_leaf_at(parent_fd: int, name: str) -> None:
     try:
         leaf_stat = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)

@@ -27,6 +27,20 @@ def is_macos(platform_name: str | None = None) -> bool:
     return value == "darwin"
 
 
+def install_native_quit_handler(
+    root: Any,
+    callback: Callable[[], None],
+    *,
+    platform_name: str | None = None,
+) -> bool:
+    """Route the macOS application-menu Quit action through safe shutdown."""
+
+    if not is_macos(platform_name):
+        return False
+    root.createcommand("::tk::mac::Quit", callback)
+    return True
+
+
 def diagnostics_dir(
     *,
     platform_name: str | None = None,
