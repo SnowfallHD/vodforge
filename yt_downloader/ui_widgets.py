@@ -686,7 +686,7 @@ class PixelScrollTable(tk.Frame):
 
     def layout_column(self, column: str, **kwargs: Any) -> dict[str, Any]:
         """Apply responsive defaults while retaining widths dragged this session."""
-        if column in self._manually_resized_columns:
+        if self._manually_resized_columns:
             kwargs.pop("width", None)
         return self.column(column, **kwargs)
 
@@ -849,16 +849,17 @@ class PixelScrollTable(tk.Frame):
             if self._column_options[column].get("stretch")
         }
         stretch_limits: dict[int, int | None] = {}
-        for index in responsive_table_stretch_indices(
-            self._columns,
-            stretch_columns,
-            self._manually_resized_columns,
-            resizing_column=self._resize_column,
-            last_resized_column=self._last_manually_resized_column,
-        ):
-            column = self._columns[index]
-            raw_limit = self._column_options[column].get("stretchmax")
-            stretch_limits[index] = int(raw_limit) if raw_limit is not None else None
+        if not self._manually_resized_columns and self._resize_column is None:
+            for index in responsive_table_stretch_indices(
+                self._columns,
+                stretch_columns,
+                self._manually_resized_columns,
+            ):
+                column = self._columns[index]
+                raw_limit = self._column_options[column].get("stretchmax")
+                stretch_limits[index] = (
+                    int(raw_limit) if raw_limit is not None else None
+                )
         widths = stretched_table_column_widths(
             widths, max(1, self._body.winfo_width()), stretch_limits
         )
@@ -875,7 +876,7 @@ class PixelScrollTable(tk.Frame):
         position = float(self._header.canvasx(x))
         cursor = 0.0
         layout = self._layout_columns()
-        for column, width, _anchor in layout[:-1]:
+        for column, width, _anchor in layout:
             cursor += width
             if abs(position - cursor) <= self._resize_margin:
                 return column
@@ -910,9 +911,12 @@ class PixelScrollTable(tk.Frame):
         column = self._column_divider_at(event.x)
         if column is None:
             return None
+        rendered_layout = self._layout_columns()
+        for rendered_column, width, _anchor in rendered_layout:
+            self._column_options[rendered_column]["width"] = int(width)
         rendered_width = next(
             width
-            for rendered_column, width, _anchor in self._layout_columns()
+            for rendered_column, width, _anchor in rendered_layout
             if rendered_column == column
         )
         self._resize_column = column
@@ -1030,19 +1034,19 @@ class PixelScrollTable(tk.Frame):
                     font=self._header_font,
                 )
                 cursor += width
-                if column != layout[-1][0]:
-                    self._header.create_line(
-                        cursor,
-                        5,
-                        cursor,
-                        self._header_height - 5,
-                        fill=THEME["accent"]
-                        if column in {self._resize_column, self._resize_hover_column}
-                        else THEME["subtle"],
-                        width=2
-                        if column in {self._resize_column, self._resize_hover_column}
-                        else 1,
-                    )
+                divider_x = cursor - 1 if column == layout[-1][0] else cursor
+                self._header.create_line(
+                    divider_x,
+                    5,
+                    divider_x,
+                    self._header_height - 5,
+                    fill=THEME["accent"]
+                    if column in {self._resize_column, self._resize_hover_column}
+                    else THEME["subtle"],
+                    width=2
+                    if column in {self._resize_column, self._resize_hover_column}
+                    else 1,
+                )
             self._header.create_line(
                 0,
                 self._header_height - 1,

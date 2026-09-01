@@ -62,6 +62,17 @@ def is_metadata_preview(info: object) -> TypeGuard[dict[str, Any]]:
     )
 
 
+def library_status_or_location(info: dict[str, Any]) -> str:
+    """Render terminal state or the complete saved location for one Library row."""
+    terminal_status = str(info.get("vodforge_terminal_status") or "").strip()
+    if terminal_status:
+        return terminal_status
+    output_dir = history_output_dir(info)
+    if output_dir is not None:
+        return str(output_dir)
+    return "Preview complete" if is_metadata_preview(info) else "Not downloaded"
+
+
 def claim_active_metadata_row(
     row: dict[str, Any],
     incoming: dict[str, Any],

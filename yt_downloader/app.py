@@ -85,6 +85,7 @@ from .library_state import (
     claim_active_metadata_row,
     format_duration,
     is_metadata_preview,
+    library_status_or_location,
     merge_library_metadata_items,
     metadata_output_type,
     metadata_run_key,
@@ -4763,7 +4764,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.run_recovery = RunRecoveryOwner(
             run_state_file_path(), diagnostic=write_diagnostic
         )
-        recovered_failed_jobs = self.run_recovery.recover_at_startup()
+        recovered_terminal_jobs = self.run_recovery.recover_at_startup()
         recovered_queued_jobs = self.run_recovery.queued_at_startup()
         set_active_child_process_observer(self.run_recovery.child_event)
         self.settings_persistence = SettingsPersistenceOwner(
@@ -4950,8 +4951,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             f"—— Session started {datetime.now().isoformat(timespec='seconds')} ——"  # noqa: DTZ005 - local wall-clock receipt
         )
         self._load_download_history()
-        for recovered_failed_job in recovered_failed_jobs:
-            self._restore_recovered_failed_run(recovered_failed_job)
+        for recovered_terminal_job in recovered_terminal_jobs:
+            self._restore_recovered_terminal_run(recovered_terminal_job)
         self.pending_jobs = recovered_queued_jobs
         for recovered_queued_job in recovered_queued_jobs:
             self._enqueue_queue_preview(recovered_queued_job)
@@ -10118,17 +10119,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         retry_rows: dict[str, str] = {}
         for visible_position, metadata_index in enumerate(visible_indices, start=1):
             item = self.metadata_items[metadata_index]
-            output_dir = history_output_dir(item)
             terminal_status = str(item.get("vodforge_terminal_status") or "").strip()
-            location = (
-                terminal_status
-                or (output_dir.name if output_dir is not None else "")
-                or (
-                    "Preview complete"
-                    if is_metadata_preview(item)
-                    else "Not downloaded"
-                )
-            )
+            location = library_status_or_location(item)
             retry_available = terminal_status in {
                 "Stopped",
                 "Skipped",
@@ -11484,19 +11476,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._apply_focus_layout(force=True)
         return True
 
-    def _restore_recovered_failed_run(self, job: DownloadJob) -> None:
-        """Render an abandoned run through the existing Failed presentation."""
+    def _restore_recovered_terminal_run(self, job: DownloadJob) -> None:
+        """Render one durable terminal run through its existing presentation."""
 
         message = job.terminal_message or "VODForge closed before this run finished."
+        status = job.terminal_status or "Failed"
         preview = dict(job.preview_info or {})
-        preview.setdefault("title", "Interrupted VODForge run")
+        preview.setdefault(
+            "title",
+            "Interrupted VODForge run" if status == "Failed" else "Preparing video run",
+        )
         preview.setdefault("webpage_url", job.url)
         preview.setdefault("original_url", job.url)
         preview["vodforge_output_type"] = job.output_type.value
         terminal_info = build_terminal_item_metadata(
             preview,
             None,
-            "Failed",
+            status,
             message,
             job.run_id,
         )
@@ -11514,7 +11510,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.metadata_items.insert(0, terminal_info)
         self._rebuild_output_dir_index()
         self._render_metadata_tree(selected_index=0)
-        self.status_var.set("Recovered an interrupted run as Failed.")
+        self.status_var.set(f"Restored a {status} run in Library.")
         self._append_log(message)
         self._focus_terminal_job(job)
         self._refresh_focus_run_deck()
@@ -11557,15 +11553,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         terminal_info["vodforge_output_type"] = job.output_type.value
         terminal_info = annotate_job_metadata(job, terminal_info)
         job.preview_info = terminal_info
-        if status == "Failed":
-            recovery_owner = self.__dict__.get("run_recovery")
-            try:
-                if recovery_owner is not None:
-                    recovery_owner.failed(message)
-            except RunStateError as exc:
-                write_diagnostic(
-                    f"failed run recovery record could not be saved: {exc}"
-                )
+        recovery_owner = self.__dict__.get("run_recovery")
+        try:
+            if recovery_owner is not None:
+                recovery_owner.terminal(status, message)
+        except RunStateError as exc:
+            write_diagnostic(f"terminal run recovery record could not be saved: {exc}")
         if (
             job.preview_thumbnail_image is None
             and self._focus_active_thumbnail_source_image is not None
@@ -11607,6 +11600,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
             matching.pop("vodforge_preview_complete", None)
             matching.pop("vodforge_preview_run_id", None)
+        self._rebuild_output_dir_index()
+        if self.__dict__.get("video_tree") is not None:
+            self._render_metadata_tree()
 
     def _archive_active_completed_job(self, status: str, message: str) -> None:
         job = self.active_job
@@ -13456,14 +13452,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         finished_job = decision.finished_job
         if finished_job is not None and not decision.suppressed:
             self._append_job_log(finished_job, message)
-            self._persist_job_activity_to_history(finished_job)
         else:
             self._append_log(message)
         if decision.stopped_without_item_terminal:
             self._archive_active_terminal_job(run_status, message)
         elif decision.archive_completed:
             self._archive_active_completed_job(run_status, message)
-        if finished_job is not None and not self.__dict__.get("_closing", False):
+        if finished_job is not None and not decision.suppressed:
+            self._persist_job_activity_to_history(finished_job)
+        if (
+            finished_job is not None
+            and not decision.stopped_without_item_terminal
+            and not self.__dict__.get("_closing", False)
+        ):
             recovery_owner = self.__dict__.get("run_recovery")
             try:
                 if recovery_owner is not None:

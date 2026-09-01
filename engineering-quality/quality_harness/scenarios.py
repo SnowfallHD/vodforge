@@ -565,7 +565,11 @@ def lifecycle_quit_restart_recovery(
 
     from yt_downloader.app import DownloaderApp
     from yt_downloader.process_lifecycle import process_command, terminate_pid
-    from yt_downloader.run_state import ActiveRunStore, recover_interrupted_run
+    from yt_downloader.run_state import (
+        ActiveRunStore,
+        RunRecoveryOwner,
+        recover_interrupted_run,
+    )
     from yt_downloader.safe_output import create_private_staging_directory
     from yt_downloader.settings_store import load_settings, save_settings
 
@@ -664,10 +668,6 @@ def lifecycle_quit_restart_recovery(
         }
     )
     queued_after_restart = store.load_queued_jobs()
-    store.begin(first_queued, [second_queued])
-    store.clear(first_queued.run_id)
-    store.begin(second_queued, [])
-    store.clear(second_queued.run_id)
     durable_failed_jobs = store.load_failed_jobs()
     store.clear(job.run_id)
     # Reproduce the UI-side restart race: the recovered Failed row is removed,
@@ -686,6 +686,8 @@ def lifecycle_quit_restart_recovery(
     ui_owner._library_suppressed_run_ids = set()
     ui_owner._focus_active_thumbnail_source_image = None
     ui_owner._focus_active_thumbnail_is_placeholder = True
+    ui_owner.run_recovery = RunRecoveryOwner(run_state_path)
+    ui_owner._rebuild_output_dir_index = lambda: None
     ui_owner.metadata_items = [
         item
         for item in ui_owner.metadata_items
@@ -694,12 +696,22 @@ def lifecycle_quit_restart_recovery(
     ui_owner._terminal_jobs = [
         item for item in ui_owner._terminal_jobs if item.run_id != job.run_id
     ]
-    for queued_job in (first_queued, second_queued):
+    for queued_job, successors in (
+        (first_queued, [second_queued]),
+        (second_queued, []),
+    ):
+        store.begin(queued_job, successors)
         ui_owner.active_job = queued_job
         ui_owner._focus_selected_run_id = queued_job.run_id
         ui_owner._archive_active_terminal_job(
             "Stopped", "Cancelled before provider analysis"
         )
+    durable_fast_stops = ActiveRunStore(run_state_path).load_terminal_jobs()
+    durable_fast_stop_ids = [item.run_id for item in durable_fast_stops]
+    durable_fast_stops_retained = durable_fast_stop_ids == [
+        first_queued.run_id,
+        second_queued.run_id,
+    ] and all(item.terminal_status == "Stopped" for item in durable_fast_stops)
     sequential_stop_ids = [
         str(item.get("vodforge_terminal_run_id") or "")
         for item in ui_owner.metadata_items
@@ -711,6 +723,8 @@ def lifecycle_quit_restart_recovery(
         str(item.get("vodforge_terminal_status") or "") == "Stopped"
         for item in ui_owner.metadata_items
     )
+    for terminal_job in durable_fast_stops:
+        store.clear(terminal_job.run_id)
     trace.append(
         {
             "phase": "after_library_removal",
@@ -752,6 +766,7 @@ def lifecycle_quit_restart_recovery(
         and stage_cleaned
         and journal_removed
         and sequential_stops_retained
+        and durable_fast_stops_retained
     )
     scenario = {
         "id": "lifecycle.quit_restart_recovery",
@@ -773,6 +788,8 @@ def lifecycle_quit_restart_recovery(
             "journal_removed_by_library_removal": journal_removed,
             "sequential_fast_stops_retained_in_library": (sequential_stops_retained),
             "sequential_fast_stop_run_ids": sequential_stop_ids,
+            "fast_stops_reloaded_after_restart": durable_fast_stops_retained,
+            "durable_fast_stop_run_ids": durable_fast_stop_ids,
         },
         "evidence": [
             f"Restart loaded the selected output root and export preferences unchanged: {settings_preserved}",
@@ -784,6 +801,10 @@ def lifecycle_quit_restart_recovery(
             (
                 "Both restored queued runs remained distinct Stopped Library rows "
                 f"after immediate cancellation: {sequential_stops_retained}"
+            ),
+            (
+                "Both immediate cancellations reloaded from the durable run owner "
+                f"as distinct Stopped runs: {durable_fast_stops_retained}"
             ),
         ],
         "artifacts": [str(trace_path), str(settings_path)],

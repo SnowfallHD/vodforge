@@ -30,6 +30,7 @@ from yt_downloader.app import (
 from yt_downloader.focus_settings import FocusSettingsDialog
 from yt_downloader.history import HistoryError, history_identity, upsert_history
 from yt_downloader.run_identity import annotate_job_metadata, job_attempt_signature
+from yt_downloader.run_state import ActiveRunStore, RunRecoveryOwner
 
 
 class Value:
@@ -1347,8 +1348,8 @@ def test_finish_run_orders_persistence_and_archive_before_successor_handoff(
 
     assert events == [
         f"log:{finished.run_id}",
-        f"persist:{finished.run_id}",
         f"archive:{finished.run_id}",
+        f"persist:{finished.run_id}",
         "render:progress",
         "render:status",
         "render:download",
@@ -1359,6 +1360,47 @@ def test_finish_run_orders_persistence_and_archive_before_successor_handoff(
         f"focus:{finished.run_id}",
     ]
     assert app.active_job is successor
+
+
+def test_fast_stop_is_durable_before_active_recovery_ownership_is_released(
+    tmp_path: Path,
+):
+    stopped = make_job(tmp_path, video_id="stopped-before-provider-analysis")
+    state_path = tmp_path / "private" / "active-run.json"
+    recovery = RunRecoveryOwner(state_path)
+    recovery.begin(stopped)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = stopped
+    app.run_recovery = recovery
+    app._closing = False
+    app._terminal_jobs = []
+    app.metadata_items = []
+    app._library_suppressed_run_ids = set()
+    app._focus_active_thumbnail_source_image = None
+    app._focus_active_thumbnail_is_placeholder = True
+    app._focus_selected_run_id = stopped.run_id
+    app._append_job_log = lambda *_args: None
+    app._persist_job_activity_to_history = lambda *_args: None
+    rendered: list[bool] = []
+    app.video_tree = object()
+    app._render_metadata_tree = lambda **_kwargs: rendered.append(True)
+
+    decision = app_module._resolve_run_finish_decision(
+        stopped,
+        "Stopped",
+        suppressed=False,
+    )
+    app._record_finished_run_before_handoff(
+        decision,
+        "Stopped",
+        "Cancelled before analysis",
+    )
+
+    assert rendered == [True]
+    assert app.metadata_items[0]["vodforge_terminal_status"] == "Stopped"
+    restarted = ActiveRunStore(state_path).load_terminal_jobs()
+    assert [job.run_id for job in restarted] == [stopped.run_id]
+    assert restarted[0].terminal_status == "Stopped"
 
 
 def test_suppressed_finish_reconciles_captured_run_after_successor_handoff(
@@ -2245,7 +2287,7 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
         in pixel_table_source
     )
     assert "rendered_width = next(" in pixel_table_source
-    assert "layout[:-1]" in pixel_table_source
+    assert "for column, width, _anchor in layout:" in pixel_table_source
     assert "self._resize_margin = 8" in pixel_table_source
     assert "self._header.grab_set()" in pixel_table_source
     assert "self._header.grab_release()" in pixel_table_source
@@ -2282,6 +2324,50 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     )
     assert "video_tree.layout_column(" in library_layout_source
     assert "xscrollincrement=1" in pixel_table_source
+
+
+def test_last_table_column_has_a_trailing_resize_divider():
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._header = SimpleNamespace(canvasx=float)
+    table._resize_margin = 8
+    table._layout_columns = lambda: [
+        ("title", 300, "w"),
+        ("location", 140, "w"),
+    ]
+
+    assert table._column_divider_at(300) == "title"
+    assert table._column_divider_at(439) == "location"
+
+
+def test_manual_column_drag_keeps_unrelated_rendered_widths_stationary():
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._columns = ("title", "profile", "location")
+    table._column_options = {
+        "title": {
+            "width": 360,
+            "minwidth": 220,
+            "stretch": True,
+            "stretchmax": 560,
+        },
+        "profile": {"width": 180, "minwidth": 120, "stretch": False},
+        "location": {"width": 140, "minwidth": 90, "stretch": False},
+    }
+    table._manually_resized_columns = set()
+    table._last_manually_resized_column = None
+    table._resize_column = None
+    table._body = SimpleNamespace(winfo_width=lambda: 900)
+
+    initial = table._layout_columns()
+    assert [width for _column, width, _anchor in initial] == [560, 180, 140]
+
+    for column, width, _anchor in initial:
+        table._column_options[column]["width"] = width
+    table._resize_column = "profile"
+    table._manually_resized_columns.add("profile")
+    table._column_options["profile"]["width"] = 230
+
+    dragged = table._layout_columns()
+    assert [width for _column, width, _anchor in dragged] == [560, 230, 140]
 
 
 def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
@@ -2435,6 +2521,23 @@ def test_library_table_hides_provider_id_and_has_no_invisible_action_column():
     assert "info.get('id') or 'no id'" not in detail_source
 
 
+def test_library_status_or_location_uses_terminal_state_or_complete_saved_path(
+    tmp_path,
+):
+    saved = tmp_path / "Creator" / "Video title [provider-id]"
+
+    assert (
+        app_module.library_status_or_location(
+            {"vodforge_terminal_status": "Stopped", "vodforge_output_dir": str(saved)}
+        )
+        == "Stopped"
+    )
+    assert app_module.library_status_or_location(
+        {"vodforge_output_dir": str(saved)}
+    ) == str(saved)
+    assert app_module.library_status_or_location({}) == "Not downloaded"
+
+
 def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():
     class InconsistentTree:
         def selection(self):
@@ -2464,7 +2567,7 @@ def test_library_render_clears_an_inconsistent_widget_without_a_selection_target
     assert cleared == [True]
 
 
-def test_manual_column_width_keeps_responsive_stretch_authority():
+def test_manual_table_layout_preserves_every_column_width_across_breakpoints():
     class ColumnProbe:
         def __init__(self):
             self._manually_resized_columns = {"title"}
@@ -2478,17 +2581,16 @@ def test_manual_column_width_keeps_responsive_stretch_authority():
 
     app_module.PixelScrollTable.layout_column(
         probe,
-        "title",
-        width=360,
-        minwidth=220,
-        stretch=True,
-        stretchmax=None,
+        "location",
+        width=140,
+        minwidth=90,
+        stretch=False,
     )
 
     assert probe.calls == [
         (
-            "title",
-            {"minwidth": 220, "stretch": True, "stretchmax": None},
+            "location",
+            {"minwidth": 90, "stretch": False},
         )
     ]
 

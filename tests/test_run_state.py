@@ -82,6 +82,26 @@ def test_active_run_store_is_private_and_failed_state_survives_restart(
     assert ActiveRunStore(path).load_failed_job() is not None
 
 
+def test_stopped_terminal_state_survives_restart_until_library_removal(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state" / "active-run.json"
+    store = ActiveRunStore(path)
+    store.begin(_job(tmp_path))
+
+    stopped = store.mark_terminal("Stopped", "Cancelled before analysis")
+
+    assert stopped.terminal_status == "Stopped"
+    restarted = ActiveRunStore(path)
+    recovered = restarted.load_terminal_jobs()
+    assert [job.run_id for job in recovered] == ["run-1"]
+    assert recovered[0].terminal_status == "Stopped"
+    assert recovered[0].terminal_message == "Cancelled before analysis"
+
+    restarted.clear("run-1")
+    assert restarted.load() is None
+
+
 def test_recovery_stops_only_bound_child_then_cleans_stage(tmp_path: Path) -> None:
     stage = tmp_path / ".vfstage" / "deadbeef"
     stage.mkdir(parents=True)

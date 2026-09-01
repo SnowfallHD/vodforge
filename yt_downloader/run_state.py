@@ -38,6 +38,7 @@ INTERRUPTED_FAILURE_MESSAGE = (
     "VODForge closed before this run finished. Its incomplete staging files were "
     "removed; retry the run to start again."
 )
+PERSISTED_TERMINAL_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
 
 
 class RunStateError(RuntimeError):
@@ -429,13 +430,15 @@ class ActiveRunStore:
                 ]
             self._write_unlocked(payload)
 
-    def mark_failed(self, message: str = INTERRUPTED_FAILURE_MESSAGE) -> DownloadJob:
+    def mark_terminal(self, status: str, message: str) -> DownloadJob:
+        if status not in PERSISTED_TERMINAL_STATUSES:
+            raise RunStateError(f"Unsupported durable terminal status: {status}")
         with self._lock:
             payload = self._read_unlocked()
             if payload is None or not isinstance(payload.get("job"), dict):
-                raise RunStateError("No interrupted run is available to recover.")
+                raise RunStateError("No active run is available to terminalize.")
             job = deserialize_download_job(payload["job"])
-            job.terminal_status = "Failed"
+            job.terminal_status = status
             job.terminal_message = message
             job.activity_lines = [message]
             failures = self._failure_records(payload)
@@ -447,6 +450,8 @@ class ActiveRunStore:
             failures.append(
                 {
                     "job": dict(payload["job"]),
+                    "terminal_status": status,
+                    "terminal_message": message,
                     "failure_message": message,
                 }
             )
@@ -460,20 +465,35 @@ class ActiveRunStore:
             )
             return job
 
-    def load_failed_jobs(self) -> list[DownloadJob]:
+    def mark_failed(self, message: str = INTERRUPTED_FAILURE_MESSAGE) -> DownloadJob:
+        return self.mark_terminal("Failed", message)
+
+    def load_terminal_jobs(self) -> list[DownloadJob]:
         with self._lock:
             payload = self._read_unlocked()
             jobs: list[DownloadJob] = []
             for record in self._failure_records(payload):
                 job = deserialize_download_job(record["job"])
+                status = str(record.get("terminal_status") or "Failed")
+                if status not in PERSISTED_TERMINAL_STATUSES:
+                    raise RunStateError(
+                        f"Unsupported recovered terminal status: {status}"
+                    )
                 message = str(
-                    record.get("failure_message") or INTERRUPTED_FAILURE_MESSAGE
+                    record.get("terminal_message")
+                    or record.get("failure_message")
+                    or INTERRUPTED_FAILURE_MESSAGE
                 )
-                job.terminal_status = "Failed"
+                job.terminal_status = status
                 job.terminal_message = message
                 job.activity_lines = [message]
                 jobs.append(job)
             return jobs
+
+    def load_failed_jobs(self) -> list[DownloadJob]:
+        """Backward-compatible name for all durable terminal attempts."""
+
+        return self.load_terminal_jobs()
 
     def load_failed_job(self) -> DownloadJob | None:
         jobs = self.load_failed_jobs()
@@ -551,7 +571,7 @@ def recover_interrupted_run(
     if payload is None:
         return []
     if payload.get("state") in {"failed", "idle"}:
-        return store.load_failed_jobs()
+        return store.load_terminal_jobs()
     if payload.get("state") != "active":
         raise RunStateError("The active-run record has an unknown state.")
     owner_pid = payload.get("owner_pid")
@@ -590,7 +610,7 @@ def recover_interrupted_run(
     except (ProcessOwnershipError, UnsafeOutputPathError) as exc:
         raise RunStateError(str(exc)) from exc
     store.mark_failed()
-    return store.load_failed_jobs()
+    return store.load_terminal_jobs()
 
 
 class RunRecoveryOwner:
@@ -665,6 +685,9 @@ class RunRecoveryOwner:
 
     def failed(self, message: str) -> None:
         self.store.mark_failed(message)
+
+    def terminal(self, status: str, message: str) -> None:
+        self.store.mark_terminal(status, message)
 
     def finished(self, run_id: str, *, application_closing: bool) -> None:
         if not application_closing:
