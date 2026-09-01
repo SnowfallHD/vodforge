@@ -36,7 +36,18 @@ def test_staging_trace_observes_active_transaction_and_idle_root_cleanup(
     (staging.parent / ".DS_Store").write_bytes(b"Finder metadata")
     (staging / "fixture.mp4.part").write_bytes(b"partial")
     events.put(("status", "Video 1 of 1 — downloading"))
-    time.sleep(0.06)
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        if any(
+            snapshot["run_directories"]
+            and any(
+                entry["path"].endswith("fixture.mp4.part")
+                for entry in snapshot["entries"]
+            )
+            for snapshot in recorder.trace
+        ):
+            break
+        time.sleep(0.01)
     assert cleanup_private_staging_directory(staging) is True
     trace = recorder.stop()
 
