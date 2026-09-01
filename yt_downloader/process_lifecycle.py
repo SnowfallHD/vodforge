@@ -221,9 +221,17 @@ def terminate_recorded_children(
             continue
         argv = child.get("argv")
         expected_executable = str(argv[0]) if isinstance(argv, list) and argv else ""
+        executable_identities = {expected_executable}
+        if expected_executable:
+            try:
+                executable_identities.add(
+                    str(Path(expected_executable).expanduser().resolve(strict=False))
+                )
+            except OSError:
+                pass
         if (
             not expected_executable
-            or expected_executable not in command
+            or not any(identity in command for identity in executable_identities)
             or not any(marker in command for marker in stage_markers)
         ):
             raise ProcessOwnershipError(

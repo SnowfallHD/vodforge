@@ -40,6 +40,26 @@ def test_recorded_child_rejects_reused_pid_without_staging_identity() -> None:
         )
 
 
+def test_recorded_child_accepts_resolved_executable_identity(
+    tmp_path: Path,
+) -> None:
+    real = tmp_path / "real-ffmpeg"
+    alias = tmp_path / "ffmpeg"
+    real.write_bytes(b"")
+    alias.symlink_to(real)
+    stage = tmp_path / ".vfstage" / "transaction"
+    terminated: list[int] = []
+
+    terminate_recorded_children(
+        [{"pid": 654, "argv": [str(alias), str(stage / "input.mp4")]}],
+        [stage],
+        command_reader=lambda _pid: f"{real} {stage}/input.mp4",
+        pid_terminator=lambda pid: terminated.append(pid) is None or True,
+    )
+
+    assert terminated == [654]
+
+
 def test_registry_observes_process_before_and_after_confirmed_exit() -> None:
     events: list[tuple[str, int]] = []
     registry = ActiveChildProcessRegistry()

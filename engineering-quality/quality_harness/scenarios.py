@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -18,6 +19,7 @@ from .pipeline import (
     HeadlessPipelineRunner,
     TracingQueue,
     active_child_snapshot,
+    build_job,
     make_headless_app,
 )
 from .reliability import batch_failure_report_reset_probe
@@ -343,6 +345,186 @@ def correctness_mp4(
                 "Use the raw diagnostic stage that failed; repair production selection, transcode, validation, sidecar, or commit behavior without adding a parallel harness implementation.",
             )
         ]
+    return scenario, findings
+
+
+def lifecycle_quit_restart_recovery(
+    runner: HeadlessPipelineRunner,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Exercise durable settings, run, process, and staging owners across restart."""
+
+    from yt_downloader.process_lifecycle import process_command, terminate_pid
+    from yt_downloader.run_state import ActiveRunStore, recover_interrupted_run
+    from yt_downloader.safe_output import create_private_staging_directory
+    from yt_downloader.settings_store import load_settings, save_settings
+
+    case_root = runner.run_root / "cases" / "lifecycle-quit-restart-recovery"
+    output_dir = case_root / "selected-output"
+    state_dir = case_root / "application-state"
+    settings_path = state_dir / "settings.json"
+    run_state_path = state_dir / "active-run.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_settings(
+        settings_path,
+        {
+            "output_dir": str(output_dir),
+            "output_type": "MP3",
+            "quality": "720p HD",
+        },
+    )
+    settings_after_restart = load_settings(settings_path)
+
+    job = build_job(
+        url="https://example.invalid/generated",
+        output_dir=output_dir,
+        output_type="MP4",
+    )
+    job.run_id = "hard-exit-run"
+    store = ActiveRunStore(run_state_path)
+    store.begin(job)
+    stage = create_private_staging_directory(output_dir)
+    partial = stage / "interrupted-source.part"
+    partial.write_bytes(b"generated partial media" * 1024)
+    store.add_staging_dir(job.run_id, stage)
+    tail = Path("/usr/bin/tail")
+    child_command = (
+        [str(tail), "-f", str(partial)]
+        if tail.is_file()
+        else [sys.executable, "-c", "import time; time.sleep(120)", str(partial)]
+    )
+    orphan_launcher = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess,sys; "
+                "p=subprocess.Popen(sys.argv[1:], start_new_session=True, "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, "
+                "stderr=subprocess.DEVNULL); print(p.pid)"
+            ),
+            *child_command,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    child_pid = int(orphan_launcher.stdout.strip())
+    store.child_started(child_pid, child_command)
+    trace = [
+        {
+            "phase": "active_before_restart_recovery",
+            "stage_exists": stage.is_dir(),
+            "partial_size": partial.stat().st_size,
+            "child_pid": child_pid,
+            "child_command": process_command(child_pid),
+            "run_state": store.load(),
+        }
+    ]
+    recovered = []
+    recovery_error: str | None = None
+    try:
+        recovered = recover_interrupted_run(store)
+    except Exception as exc:  # noqa: BLE001 - retain cleanup evidence
+        recovery_error = f"{type(exc).__name__}: {exc}"
+    finally:
+        if process_command(child_pid) is not None:
+            terminate_pid(child_pid)
+    child_reaped = process_command(child_pid) is None
+    trace.append(
+        {
+            "phase": "after_restart_recovery",
+            "stage_exists": stage.exists(),
+            "staging_root_exists": (output_dir / ".vfstage").exists(),
+            "child_alive": not child_reaped,
+            "run_state": store.load(),
+            "recovery_error": recovery_error,
+        }
+    )
+    successor = build_job(
+        url="https://example.invalid/generated-successor",
+        output_dir=output_dir,
+        output_type="MP4",
+    )
+    successor.run_id = "successor-run"
+    store.begin(successor)
+    store.clear(successor.run_id)
+    durable_failed_jobs = store.load_failed_jobs()
+    store.clear(job.run_id)
+    trace.append(
+        {
+            "phase": "after_library_removal",
+            "run_state_exists": run_state_path.exists(),
+            "staging_root_exists": (output_dir / ".vfstage").exists(),
+        }
+    )
+    trace_path = case_root / "quit-restart-trace.json"
+    trace_path.write_text(
+        json.dumps({"snapshots": trace}, indent=2) + "\n", encoding="utf-8"
+    )
+    settings_private = (settings_path.stat().st_mode & 0o777) == 0o600
+    settings_preserved = settings_after_restart == {
+        "output_dir": str(output_dir),
+        "output_type": "MP3",
+        "quality": "720p HD",
+    }
+    failed_preserved = (
+        len(recovered) == 1
+        and recovered[0].terminal_status == "Failed"
+        and [item.run_id for item in durable_failed_jobs] == [job.run_id]
+    )
+    stage_cleaned = not stage.exists() and not (output_dir / ".vfstage").exists()
+    journal_removed = not run_state_path.exists()
+    passed = bool(
+        recovery_error is None
+        and settings_preserved
+        and settings_private
+        and failed_preserved
+        and child_reaped
+        and stage_cleaned
+        and journal_removed
+    )
+    scenario = {
+        "id": "lifecycle.quit_restart_recovery",
+        "evidence_tier": "headless_production_pipeline",
+        "category": "lifecycle",
+        "status": "passed" if passed else "failed",
+        "duration_seconds": 0.0,
+        "metrics": {
+            "jobs_attempted": 1,
+            "jobs_completed": 0,
+            "jobs_failed": int(failed_preserved),
+            "jobs_cancelled": 0,
+            "settings_persisted": settings_preserved,
+            "settings_private": settings_private,
+            "orphan_child_reaped": child_reaped,
+            "recorded_stage_cleaned": stage_cleaned,
+            "failed_state_durable_until_removal": failed_preserved,
+            "journal_removed_by_library_removal": journal_removed,
+        },
+        "evidence": [
+            f"Restart loaded the selected output root and export preferences unchanged: {settings_preserved}",
+            f"The persisted settings file was private 0600: {settings_private}",
+            f"Recovery reaped the exact recorded child and removed its staging transaction: {child_reaped and stage_cleaned}",
+            f"The interrupted run used Failed and survived a later run until removal: {failed_preserved}",
+            f"Library removal cleared the durable failure journal: {journal_removed}",
+        ],
+        "artifacts": [str(trace_path), str(settings_path)],
+        "error": recovery_error,
+    }
+    findings = (
+        []
+        if passed
+        else [
+            _finding_for_failed_scenario(
+                scenario,
+                "Quit/restart recovery violated an ownership or cleanup contract",
+                "reliability defect",
+                "high",
+                "settings_store, run_state, process_lifecycle, and safe_output",
+                "Keep settings, active-run journaling, child reaping, and recorded staging cleanup independently durable and fail closed on uncertain ownership.",
+            )
+        ]
+    )
     return scenario, findings
 
 
@@ -1880,6 +2062,10 @@ def run_scenarios(
         (
             "lifecycle.staging_transaction_transitions",
             lambda: lifecycle_staging_transitions(runner, server),
+        ),
+        (
+            "lifecycle.quit_restart_recovery",
+            lambda: lifecycle_quit_restart_recovery(runner),
         ),
         (
             "concurrency.simultaneous_worker_attack",
