@@ -57,6 +57,12 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
+- Output destinations and export preferences now persist across app restarts, while queued runs retain their order and resume through the normal sequential launcher.
+- Closing VODForge now terminates and reaps its owned download/transcode processes. A hard exit is recovered safely on the next launch as the existing **Failed** state, with abandoned `.vfstage` transactions reconciled by the staging owner instead of leaving invisible background work.
+- Library is now a deterministic, run-ID-first projection of durable run and history state. Queued, Preparing, Downloading, Transcoding, Completed, Failed, Stopped, and retry transitions update one canonical row, eliminating orphan placeholders, temporary disappearance, and stale or duplicated terminal rows.
+- Exact duplicate submissions now focus or supersede the correct attempt, reuse an already-valid output without retranscoding, repair missing metadata or thumbnail sidecars, and keep genuinely distinct settings or destinations as distinct Library artifacts.
+- Fast cancellation and restart are durable even before provider metadata arrives. Stopped attempts remain visible after relaunch, while retry and output-detail actions stay attached to the exact run they control.
+- Run Deck, Library table, and progress surfaces now have local render owners that no-op on identical immutable snapshots, patch value-only changes, and rebuild only for real structural changes. Active download progress beside queued MP3 work no longer causes card flicker.
 - Window resizing and responsive Library transitions are substantially smoother on macOS and Windows, with breakpoint changes applied during the drag instead of after release.
 - The pixel-scrolling Library table keeps draggable, session-persistent columns while making divider placement, hit tracking, and large MP4/MP3 list switches more responsive.
 - Selected Library details now use a bounded responsive rail with clearer title, metadata, saved-location, thumbnail, tags, and description hierarchy. Tags and descriptions retain usable independently scrollable space, and ultrawide layouts no longer stretch the table into empty space.
