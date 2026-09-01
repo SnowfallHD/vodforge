@@ -500,7 +500,10 @@ def load_candidate_receipt(path: Path) -> dict[str, Any]:
     metadata = path.lstat()
     if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
         raise RuntimeError("candidate receipt must be a regular no-follow file")
-    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != 0o400:
+    getuid = getattr(os, "getuid", None)
+    if callable(getuid) and (
+        metadata.st_uid != getuid() or stat.S_IMODE(metadata.st_mode) != 0o400
+    ):
         raise RuntimeError("candidate receipt ownership or permissions are unsafe")
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):

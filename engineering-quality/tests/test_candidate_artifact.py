@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import zipfile
 from pathlib import Path
@@ -104,7 +105,8 @@ def test_candidate_receipt_freezes_and_binds_development_archive(
     frozen = Path(receipt["immutable_archive"]["path"])
     assert frozen != source
     assert sha256_file(frozen) == sha256_file(source)
-    assert stat.S_IMODE(frozen.stat().st_mode) == 0o444
+    if os.name != "nt":
+        assert stat.S_IMODE(frozen.stat().st_mode) == 0o444
     assert receipt["source"]["commit"] == "a" * 40
     assert receipt["artifact"]["signature_state"] == "development_ad_hoc"
     assert receipt["packaged_e2e_eligible"] is True
@@ -117,7 +119,8 @@ def test_candidate_receipt_freezes_and_binds_development_archive(
         load_and_verify_candidate(receipt_path)["candidate_id"]
         == receipt["candidate_id"]
     )
-    assert stat.S_IMODE(receipt_path.stat().st_mode) == 0o400
+    if os.name != "nt":
+        assert stat.S_IMODE(receipt_path.stat().st_mode) == 0o400
     schema = json.loads(
         (
             Path(__file__).parents[1] / "schemas" / "candidate-artifact.schema.json"
