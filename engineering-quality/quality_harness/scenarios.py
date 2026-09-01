@@ -564,6 +564,15 @@ def lifecycle_quit_restart_recovery(
     """Exercise durable settings, run, process, and staging owners across restart."""
 
     from yt_downloader.app import DownloaderApp
+    from yt_downloader.library_state import (
+        ACTIVE_METADATA_RUN_ID_KEY,
+        QUEUED_METADATA_RUN_ID_KEY,
+        RUN_STATUS_KEY,
+        library_status_or_location,
+        project_preparing_library_item,
+        project_queued_library_item,
+        update_active_library_status,
+    )
     from yt_downloader.process_lifecycle import process_command, terminate_pid
     from yt_downloader.run_state import (
         ActiveRunStore,
@@ -668,6 +677,20 @@ def lifecycle_quit_restart_recovery(
         }
     )
     queued_after_restart = store.load_queued_jobs()
+    queued_library_rows: list[dict[str, Any]] = []
+    for queued_job in queued_after_restart:
+        project_queued_library_item(queued_library_rows, queued_job)
+    queued_rows_visible = (
+        len(queued_library_rows) == 2
+        and {
+            str(item.get(QUEUED_METADATA_RUN_ID_KEY) or "")
+            for item in queued_library_rows
+        }
+        == {first_queued.run_id, second_queued.run_id}
+        and all(
+            library_status_or_location(item) == "Queued" for item in queued_library_rows
+        )
+    )
     durable_failed_jobs = store.load_failed_jobs()
     store.clear(job.run_id)
     # Reproduce the UI-side restart race: the recovered Failed row is removed,
@@ -723,6 +746,48 @@ def lifecycle_quit_restart_recovery(
         str(item.get("vodforge_terminal_status") or "") == "Stopped"
         for item in ui_owner.metadata_items
     )
+    retry_source = durable_fast_stops[0] if durable_fast_stops else first_queued
+    retry_row_count_before = len(ui_owner.metadata_items)
+    retry_job = build_job(
+        url=retry_source.url,
+        output_dir=retry_source.output_dir,
+        output_type=retry_source.output_type.value,
+    )
+    retry_job.run_id = "retry-transition"
+    retry_job.origin_run_id = retry_source.run_id
+    retry_job.preview_info = dict(retry_source.preview_info or {})
+    project_preparing_library_item(ui_owner.metadata_items, retry_job)
+    preparing_row = next(
+        (
+            item
+            for item in ui_owner.metadata_items
+            if str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == retry_job.run_id
+        ),
+        None,
+    )
+    retry_row_never_disappeared = bool(
+        len(ui_owner.metadata_items) == retry_row_count_before
+        and preparing_row is not None
+        and library_status_or_location(preparing_row) == "Preparing"
+    )
+    downloading_visible = bool(
+        update_active_library_status(
+            ui_owner.metadata_items,
+            retry_job.run_id,
+            "Video 1 of 1 — downloading",
+        )
+        and preparing_row is not None
+        and preparing_row.get(RUN_STATUS_KEY) == "Downloading"
+    )
+    transcoding_visible = bool(
+        update_active_library_status(
+            ui_owner.metadata_items,
+            retry_job.run_id,
+            "Video 1 of 1 — transcoding",
+        )
+        and preparing_row is not None
+        and preparing_row.get(RUN_STATUS_KEY) == "Transcoding"
+    )
     for terminal_job in durable_fast_stops:
         store.clear(terminal_job.run_id)
     trace.append(
@@ -767,6 +832,10 @@ def lifecycle_quit_restart_recovery(
         and journal_removed
         and sequential_stops_retained
         and durable_fast_stops_retained
+        and queued_rows_visible
+        and retry_row_never_disappeared
+        and downloading_visible
+        and transcoding_visible
     )
     scenario = {
         "id": "lifecycle.quit_restart_recovery",
@@ -790,6 +859,10 @@ def lifecycle_quit_restart_recovery(
             "sequential_fast_stop_run_ids": sequential_stop_ids,
             "fast_stops_reloaded_after_restart": durable_fast_stops_retained,
             "durable_fast_stop_run_ids": durable_fast_stop_ids,
+            "queued_runs_visible_in_library": queued_rows_visible,
+            "retry_row_never_disappeared": retry_row_never_disappeared,
+            "downloading_state_visible_in_library": downloading_visible,
+            "transcoding_state_visible_in_library": transcoding_visible,
         },
         "evidence": [
             f"Restart loaded the selected output root and export preferences unchanged: {settings_preserved}",
@@ -806,6 +879,9 @@ def lifecycle_quit_restart_recovery(
                 "Both immediate cancellations reloaded from the durable run owner "
                 f"as distinct Stopped runs: {durable_fast_stops_retained}"
             ),
+            f"Both durable queued runs projected into Library as Queued: {queued_rows_visible}",
+            f"Retry transitioned its exact row directly to Preparing without a missing-row frame: {retry_row_never_disappeared}",
+            f"The exact active Library row advanced through Downloading and Transcoding: {downloading_visible and transcoding_visible}",
         ],
         "artifacts": [str(trace_path), str(settings_path)],
         "error": recovery_error,

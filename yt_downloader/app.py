@@ -81,6 +81,8 @@ from .history import (
 )
 from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
+    QUEUED_METADATA_RUN_ID_KEY,
+    RUN_STATUS_KEY,
     LibraryRemovalPlan,
     claim_active_metadata_row,
     format_duration,
@@ -90,7 +92,10 @@ from .library_state import (
     metadata_output_type,
     metadata_run_key,
     persisted_run_deck_records,
+    project_preparing_library_item,
+    project_queued_library_item,
     resolve_library_removal_plan,
+    update_active_library_status,
 )
 from .models import (
     AUDIO_CHANNELS,
@@ -9718,6 +9723,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.events.put(("metadata_fetch_done", None))
 
     def _enqueue_queue_preview(self, job: DownloadJob) -> None:
+        self._project_queued_job_to_library(job)
         request_queue = getattr(self, "_queued_preview_requests", None)
         worker = getattr(self, "_queued_preview_thread", None)
         if request_queue is None:
@@ -9734,6 +9740,43 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             worker = threading.Thread(target=self._queued_preview_loop, daemon=True)
             self._queued_preview_thread = worker
             worker.start()
+
+    def _project_queued_job_to_library(
+        self, job: DownloadJob, info: dict[str, Any] | None = None
+    ) -> None:
+        """Render the durable queue owner as one exact Library row."""
+
+        projected = project_queued_library_item(
+            self.__dict__.setdefault("metadata_items", []), job, info
+        )
+        self.metadata_items = projected.items
+        job.preview_info = dict(projected.incoming_items[0])
+        self._rebuild_output_dir_index()
+        if self.__dict__.get("video_tree") is not None:
+            self._render_metadata_tree()
+
+    def _project_preparing_job_to_library(self, job: DownloadJob) -> None:
+        """Claim one exact Library row while an accepted launch prepares."""
+
+        projected = project_preparing_library_item(
+            self.__dict__.setdefault("metadata_items", []), job
+        )
+        self.metadata_items = projected.items
+        job.preview_info = dict(projected.incoming_items[0])
+        self._rebuild_output_dir_index()
+        if self.__dict__.get("video_tree") is not None:
+            self._render_metadata_tree()
+
+    def _update_active_library_status(self, status_text: str) -> None:
+        """Render a worker phase only on the exact active Library owner."""
+
+        job = self.active_job
+        if job is None or not update_active_library_status(
+            self.metadata_items, job.run_id, status_text
+        ):
+            return
+        if self.__dict__.get("video_tree") is not None:
+            self._render_metadata_tree()
 
     def _queued_preview_loop(self) -> None:
         request_queue: queue.Queue[DownloadJob] = self._queued_preview_requests
@@ -9945,6 +9988,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.metadata_items,
             iter_video_infos(info),
             active_run_id=active_job.run_id if active_job is not None else None,
+            replacing_run_id=(
+                active_job.origin_run_id if active_job is not None else None
+            ),
             preview_complete=preview_complete,
             preview_run_id=preview_run_id,
         )
@@ -10523,7 +10569,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             location_text = (
                 f"Saved in {saved}"
                 if saved is not None
-                else "Not downloaded in this history"
+                else "Metadata only — no output file"
             )
         metadata_text = (
             f"{output_type.value} • {creator} • {format_duration(info.get('duration'))}"
@@ -11219,7 +11265,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self._append_log(f"Queued {job.output_type.value} run: {job.url}")
                 self._refresh_focus_run_deck()
                 self.download_button.configure(text="Queue run", state="normal")
-                self._enqueue_queue_preview(job)
+            self._enqueue_queue_preview(job)
             if clear_source:
                 self._reset_source_input_after_send()
             return
@@ -11298,6 +11344,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 item
                 for item in metadata_items
                 if str(item.get("vodforge_terminal_run_id") or "") == previous.run_id
+                or str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == job.run_id
             ),
             None,
         )
@@ -11307,6 +11354,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if candidate.run_id != previous.run_id
         ]
         if previous_row is not None:
+            live_status = str(previous_row.get(RUN_STATUS_KEY) or "").strip()
             job.preview_info = dict(previous_row)
             for key in (
                 "vodforge_terminal_status",
@@ -11319,6 +11367,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if metadata_key is not None:
                 job.metadata_keys.add(metadata_key)
             claim_active_metadata_row(previous_row, job.preview_info, job.run_id)
+            if live_status:
+                previous_row[RUN_STATUS_KEY] = live_status
         if cleanup_recovery:
             recovery_owner = self.__dict__.get("run_recovery")
             try:
@@ -11408,6 +11458,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
                 return False
         self.active_job = job
+        self._project_preparing_job_to_library(job)
         if select_detail:
             self._focus_selected_run_id = job.run_id
 
@@ -11598,6 +11649,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         else:
             matching.update(terminal_info)
             matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
+            matching.pop(QUEUED_METADATA_RUN_ID_KEY, None)
+            matching.pop(RUN_STATUS_KEY, None)
             matching.pop("vodforge_preview_complete", None)
             matching.pop("vodforge_preview_run_id", None)
         self._rebuild_output_dir_index()
@@ -11654,6 +11707,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if matching is not None:
             matching.update(info)
             matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
+            matching.pop(QUEUED_METADATA_RUN_ID_KEY, None)
+            matching.pop(RUN_STATUS_KEY, None)
         else:
             self.metadata_items.insert(0, dict(info))
         self._rebuild_output_dir_index()
@@ -11683,18 +11738,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _retry_terminal_job(self, failed_job: DownloadJob) -> None:
         recovery_owner = self.__dict__.get("run_recovery")
-        try:
-            if recovery_owner is not None:
-                recovery_owner.removed_or_retried(failed_job.run_id)
-        except RunStateError as exc:
-            write_diagnostic(f"retried run recovery record cleanup failed: {exc}")
         retry_url = retry_url_for_item(failed_job.preview_info or {}, failed_job.url)
+        retry_preview = dict(failed_job.preview_info or {})
+        for key in (
+            ACTIVE_METADATA_RUN_ID_KEY,
+            QUEUED_METADATA_RUN_ID_KEY,
+            RUN_STATUS_KEY,
+            "vodforge_terminal_status",
+            "vodforge_terminal_message",
+            "vodforge_terminal_run_id",
+        ):
+            retry_preview.pop(key, None)
         retry_job = replace(
             failed_job,
             url=retry_url,
             urls=[retry_url],
             run_id=uuid.uuid4().hex,
-            origin_run_id=None,
+            origin_run_id=failed_job.run_id,
+            preview_info=retry_preview,
             metadata_keys=set(),
             history_identities=set(),
             activity_lines=[],
@@ -11702,24 +11763,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             terminal_message="",
             item_terminal_emitted=False,
         )
-        self._terminal_jobs = [
-            item for item in self._terminal_jobs if item.run_id != failed_job.run_id
-        ]
-        self.metadata_items = [
-            item
-            for item in self.__dict__.get("metadata_items", [])
-            if str(item.get("vodforge_terminal_run_id") or "") != failed_job.run_id
-        ]
-        self._rebuild_output_dir_index()
-        if self.__dict__.get("video_tree") is not None:
-            self._render_metadata_tree()
+        retry_job.preview_info = annotate_job_metadata(retry_job, retry_preview)
         if self.__dict__.get("_focus_views") is not None:
             self._select_focus_view("forge")
         if self.active_job is not None or (self.worker and self.worker.is_alive()):
             queued_jobs = [*self.pending_jobs, retry_job]
             try:
                 if recovery_owner is not None:
-                    recovery_owner.queue_changed(queued_jobs)
+                    recovery_owner.queue_changed(
+                        queued_jobs, superseded_run_id=failed_job.run_id
+                    )
             except RunStateError as exc:
                 messagebox.showerror(
                     APP_NAME,
@@ -11727,11 +11780,25 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"it was not queued.\n\n{exc}",
                 )
                 return
+            self._supersede_matching_terminal_attempt(
+                retry_job,
+                previous=failed_job,
+                cleanup_recovery=False,
+            )
             self.pending_jobs = queued_jobs
             self._enqueue_queue_preview(retry_job)
             self._refresh_focus_run_deck()
             return
-        self._launch_download_job(retry_job)
+        launched = self._launch_download_job(
+            retry_job,
+            superseded_run_id=failed_job.run_id,
+        )
+        if launched:
+            self._supersede_matching_terminal_attempt(
+                retry_job,
+                previous=failed_job,
+                cleanup_recovery=False,
+            )
 
     def _cancel(self) -> None:
         self.cancel_requested = True

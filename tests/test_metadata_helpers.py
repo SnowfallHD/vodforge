@@ -673,8 +673,9 @@ def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(
     app._terminal_jobs = [failed_job]
     app.active_job = None
     app.worker = None
+    app._append_log = lambda _line: None
     launched: list[DownloadJob] = []
-    app._launch_download_job = launched.append
+    app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
 
     app._retry_terminal_job(failed_job)
 

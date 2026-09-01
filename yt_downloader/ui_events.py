@@ -259,6 +259,14 @@ class _UiEventHost(Protocol):
         job: DownloadJob,
     ) -> None: ...
 
+    def _project_queued_job_to_library(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def _update_active_library_status(self, status_text: str) -> None: ...
+
     def _library_run_is_suppressed(self, job: DownloadJob | None) -> bool: ...
 
     def _record_download_history(
@@ -363,9 +371,10 @@ class UiEventHandlersMixin:
                 self.progress_bar.config(mode="determinate")
             self.progress_var.set(float(payload))
         elif kind == "status":
-            self.status_var.set(str(payload))
+            status_text = str(payload)
+            self.status_var.set(status_text)
+            self._update_active_library_status(status_text)
             if hasattr(self, "focus_run_status_var"):
-                status_text = str(payload)
                 eta = status_text.partition(" ETA ")[2]
                 if eta:
                     self.focus_run_status_var.set(
@@ -434,6 +443,7 @@ class UiEventHandlersMixin:
         if not any(item is queued_job for item in self.pending_jobs):
             return
         queued_job.preview_info = dict(payload["info"])
+        self._project_queued_job_to_library(queued_job, payload["info"])
         if hasattr(self, "focus_run_deck"):
             self._refresh_focus_run_deck()
         if self._focus_selected_run_id != queued_job.run_id:

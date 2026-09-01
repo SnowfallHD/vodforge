@@ -339,7 +339,7 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     assert app.description_text.value == "Library description"
     assert app.selected_title_var.get() == "Library selection"
     assert "MP4 • Library creator" in app.selected_meta_var.get()
-    assert app.selected_location_var.get() == "Not downloaded in this history"
+    assert app.selected_location_var.get() == "Metadata only — no output file"
 
     info["description"] = ""
     thumbnail_requests.clear()
@@ -928,8 +928,9 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     app._terminal_jobs = [failed_job]
     app.active_job = None
     app.worker = None
+    app._append_log = lambda _line: None
     launched: list[DownloadJob] = []
-    app._launch_download_job = launched.append
+    app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
 
     app._retry_terminal_job(failed_job)
 
@@ -940,7 +941,7 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     assert launched[0].terminal_status is None
 
 
-def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(
+def test_retry_preserves_playlist_identity_and_reuses_the_terminal_row(
     tmp_path: Path,
 ):
     failed_job = make_job(tmp_path)
@@ -957,8 +958,9 @@ def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(
     app.metadata_items = [dict(failed_job.preview_info)]
     app.active_job = None
     app.worker = None
+    app._append_log = lambda _line: None
     launched: list[DownloadJob] = []
-    app._launch_download_job = launched.append
+    app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
 
     app._retry_terminal_job(failed_job)
 
@@ -968,7 +970,70 @@ def test_retry_preserves_playlist_identity_and_removes_the_old_terminal_row(
         == "https://www.youtube.com/watch?v=authority-id&list=PLauthority"
     )
     assert launched[0].urls == [launched[0].url]
-    assert app.metadata_items == []
+    assert len(app.metadata_items) == 1
+    assert (
+        app.metadata_items[0][app_module.ACTIVE_METADATA_RUN_ID_KEY]
+        == launched[0].run_id
+    )
+    assert "vodforge_terminal_run_id" not in app.metadata_items[0]
+
+
+def test_retry_row_never_disappears_before_it_transitions_to_preparing(
+    tmp_path: Path,
+) -> None:
+    retried = make_job(tmp_path, video_id="retry-this")
+    retried.terminal_status = "Stopped"
+    retried.preview_info = annotate_job_metadata(
+        retried,
+        {
+            "id": "retry-this",
+            "title": "Retry this video",
+            "vodforge_output_type": "MP4",
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_run_id": retried.run_id,
+        },
+    )
+    untouched = make_job(tmp_path, video_id="leave-stopped")
+    untouched.terminal_status = "Stopped"
+    untouched.preview_info = annotate_job_metadata(
+        untouched,
+        {
+            "id": "leave-stopped",
+            "title": "Leave this video stopped",
+            "vodforge_output_type": "MP4",
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_run_id": untouched.run_id,
+        },
+    )
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = [retried, untouched]
+    app.metadata_items = [dict(retried.preview_info), dict(untouched.preview_info)]
+    app.active_job = None
+    app.worker = None
+    app.video_tree = None
+    app._append_log = lambda _line: None
+    observed_before_launch: list[list[str]] = []
+
+    def launch(job: DownloadJob, **_kwargs: object) -> bool:
+        observed_before_launch.append(
+            [str(item.get("id") or "") for item in app.metadata_items]
+        )
+        app.active_job = job
+        app._project_preparing_job_to_library(job)
+        return True
+
+    app._launch_download_job = launch
+
+    app._retry_terminal_job(retried)
+
+    assert observed_before_launch == [["retry-this", "leave-stopped"]]
+    assert len(app.metadata_items) == 2
+    retry_row = next(item for item in app.metadata_items if item["id"] == "retry-this")
+    other_row = next(
+        item for item in app.metadata_items if item["id"] == "leave-stopped"
+    )
+    assert retry_row["vodforge_run_status"] == "Preparing"
+    assert other_row["vodforge_terminal_status"] == "Stopped"
 
 
 def test_skipped_item_is_one_terminal_run_not_a_preview_duplicate(tmp_path: Path):
@@ -1018,6 +1083,7 @@ def test_retry_joins_latest_queue_position_with_fresh_authority(tmp_path: Path):
     app.pending_jobs = [queued]
     app._enqueue_queue_preview = lambda _job: None
     app._refresh_focus_run_deck = lambda: None
+    app._append_log = lambda _line: None
 
     app._retry_terminal_job(failed)
 
@@ -2535,7 +2601,7 @@ def test_library_status_or_location_uses_terminal_state_or_complete_saved_path(
     assert app_module.library_status_or_location(
         {"vodforge_output_dir": str(saved)}
     ) == str(saved)
-    assert app_module.library_status_or_location({}) == "Not downloaded"
+    assert app_module.library_status_or_location({}) == "Metadata only"
 
 
 def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():

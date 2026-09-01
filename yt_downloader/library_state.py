@@ -8,15 +8,19 @@ from typing import Any, TypeGuard
 
 from .history import history_identity, history_output_dir, history_output_type
 from .models import DownloadJob, OutputType
-from .run_identity import metadata_attempt_signature
+from .run_identity import annotate_job_metadata, metadata_attempt_signature
 
 ACTIVE_METADATA_RUN_ID_KEY = "vodforge_active_run_id"
+QUEUED_METADATA_RUN_ID_KEY = "vodforge_queued_run_id"
+RUN_STATUS_KEY = "vodforge_run_status"
 _ACTIVE_METADATA_STALE_KEYS = (
     "vodforge_preview_complete",
     "vodforge_preview_run_id",
     "vodforge_terminal_status",
     "vodforge_terminal_message",
     "vodforge_terminal_run_id",
+    QUEUED_METADATA_RUN_ID_KEY,
+    RUN_STATUS_KEY,
 )
 
 MetadataRunKey = tuple[str, str]
@@ -67,10 +71,51 @@ def library_status_or_location(info: dict[str, Any]) -> str:
     terminal_status = str(info.get("vodforge_terminal_status") or "").strip()
     if terminal_status:
         return terminal_status
+    run_status = str(info.get(RUN_STATUS_KEY) or "").strip()
+    if run_status:
+        return run_status
     output_dir = history_output_dir(info)
     if output_dir is not None:
         return str(output_dir)
-    return "Preview complete" if is_metadata_preview(info) else "Not downloaded"
+    return "Preview complete" if is_metadata_preview(info) else "Metadata only"
+
+
+def update_active_library_status(
+    items: list[dict[str, Any]], run_id: str, status_text: str
+) -> bool:
+    """Apply a worker phase only to the exact active Library row it owns."""
+
+    normalized = status_text.casefold()
+    phase = (
+        "Transcoding"
+        if "transcod" in normalized or "encoded" in normalized
+        else "Downloading"
+        if "downloading" in normalized
+        else "Validating"
+        if "validating" in normalized
+        else "Finalizing"
+        if "finalizing" in normalized
+        else "Preparing"
+        if any(
+            marker in normalized
+            for marker in ("starting", "reading playlist", "analyzing source")
+        )
+        else None
+    )
+    if phase is None:
+        return False
+    row = next(
+        (
+            item
+            for item in items
+            if str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == run_id
+        ),
+        None,
+    )
+    if row is None or row.get(RUN_STATUS_KEY) == phase:
+        return False
+    row[RUN_STATUS_KEY] = phase
+    return True
 
 
 def claim_active_metadata_row(
@@ -84,6 +129,79 @@ def claim_active_metadata_row(
         row.pop(key, None)
     row[ACTIVE_METADATA_RUN_ID_KEY] = str(run_id)
     return row
+
+
+def _project_live_library_item(
+    existing_items: list[dict[str, Any]],
+    job: DownloadJob,
+    info: dict[str, Any] | None,
+    *,
+    status: str,
+    run_id_key: str,
+) -> LibraryMetadataMerge:
+    """Project one live run by exact run identity, never media identity."""
+
+    incoming = {**(job.preview_info or {}), **(info or {})}
+    incoming.setdefault("title", f"{status} video run")
+    incoming.setdefault("webpage_url", job.url)
+    incoming.setdefault("original_url", job.url)
+    incoming["vodforge_output_type"] = job.output_type.value
+    incoming = annotate_job_metadata(job, incoming)
+    owned_run_ids = {job.run_id}
+    if job.origin_run_id:
+        owned_run_ids.add(job.origin_run_id)
+    matching = next(
+        (
+            item
+            for item in existing_items
+            if str(item.get(QUEUED_METADATA_RUN_ID_KEY) or "") in owned_run_ids
+            or str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") in owned_run_ids
+            or str(item.get("vodforge_terminal_run_id") or "") in owned_run_ids
+        ),
+        None,
+    )
+    if matching is None:
+        matching = {}
+        existing_items.insert(0, matching)
+    matching.update(incoming)
+    for key in _ACTIVE_METADATA_STALE_KEYS:
+        matching.pop(key, None)
+    matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
+    matching.pop(QUEUED_METADATA_RUN_ID_KEY, None)
+    matching[run_id_key] = job.run_id
+    matching[RUN_STATUS_KEY] = status
+    return LibraryMetadataMerge(items=existing_items, incoming_items=[incoming])
+
+
+def project_queued_library_item(
+    existing_items: list[dict[str, Any]],
+    job: DownloadJob,
+    info: dict[str, Any] | None = None,
+) -> LibraryMetadataMerge:
+    """Project one durable queued run as a visible Library row."""
+
+    return _project_live_library_item(
+        existing_items,
+        job,
+        info,
+        status="Queued",
+        run_id_key=QUEUED_METADATA_RUN_ID_KEY,
+    )
+
+
+def project_preparing_library_item(
+    existing_items: list[dict[str, Any]],
+    job: DownloadJob,
+) -> LibraryMetadataMerge:
+    """Transition an exact retry row directly from terminal to Preparing."""
+
+    return _project_live_library_item(
+        existing_items,
+        job,
+        job.preview_info,
+        status="Preparing",
+        run_id_key=ACTIVE_METADATA_RUN_ID_KEY,
+    )
 
 
 @dataclass(frozen=True)
@@ -127,7 +245,8 @@ def _library_execution_owner_run_id(info: dict[str, Any]) -> str | None:
     if history_output_dir(info) is not None:
         return None
     active_run_id = str(info.get(ACTIVE_METADATA_RUN_ID_KEY) or "").strip()
-    return active_run_id or None
+    queued_run_id = str(info.get(QUEUED_METADATA_RUN_ID_KEY) or "").strip()
+    return active_run_id or queued_run_id or None
 
 
 def resolve_library_removal_plan(
@@ -160,6 +279,7 @@ def merge_library_metadata_items(
     incoming_items: Iterable[dict[str, Any]],
     *,
     active_run_id: str | None = None,
+    replacing_run_id: str | None = None,
     preview_complete: bool = False,
     preview_run_id: str = "",
 ) -> LibraryMetadataMerge:
@@ -181,36 +301,57 @@ def merge_library_metadata_items(
         video_id = str(incoming.get("id") or "")
         output_type = metadata_output_type(incoming)
         incoming_signature = metadata_attempt_signature(incoming)
-        matching = next(
-            (
-                item
-                for item in [*new_items, *existing_items]
-                if video_id
-                and str(item.get("id") or "") == video_id
-                and metadata_output_type(item) == output_type
-                and not (
-                    active_run_id is not None and history_output_dir(item) is not None
-                )
-                and (
+        candidates = [
+            item
+            for item in [*new_items, *existing_items]
+            if video_id
+            and str(item.get("id") or "") == video_id
+            and metadata_output_type(item) == output_type
+            and not (active_run_id is not None and history_output_dir(item) is not None)
+        ]
+        matching = None
+        if active_run_id is not None:
+            matching = next(
+                (
+                    item
+                    for item in candidates
+                    if str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == active_run_id
+                    or str(item.get(QUEUED_METADATA_RUN_ID_KEY) or "") == active_run_id
+                    or (
+                        replacing_run_id
+                        and str(item.get("vodforge_terminal_run_id") or "")
+                        == replacing_run_id
+                    )
+                ),
+                None,
+            )
+            if matching is None:
+                matching = next(
                     (
-                        active_run_id is not None
-                        and (
+                        item
+                        for item in candidates
+                        if (
                             metadata_attempt_signature(item) == incoming_signature
                             if incoming_signature
                             else not metadata_attempt_signature(item)
                         )
-                    )
-                    or (preview_complete and is_metadata_preview(item))
-                    or (active_run_id is None and not preview_complete)
+                    ),
+                    None,
                 )
-            ),
-            None,
-        )
+        elif preview_complete:
+            matching = next(
+                (item for item in candidates if is_metadata_preview(item)), None
+            )
+        else:
+            matching = next(iter(candidates), None)
         if matching is None:
             new_items.append(incoming)
             continue
         if active_run_id is not None:
+            live_status = str(matching.get(RUN_STATUS_KEY) or "").strip()
             claim_active_metadata_row(matching, incoming, active_run_id)
+            if live_status:
+                matching[RUN_STATUS_KEY] = live_status
         else:
             matching.update(incoming)
         if not preview_complete and active_run_id is None:

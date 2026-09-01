@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from yt_downloader.history import history_identity, upsert_history
 from yt_downloader.library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
+    QUEUED_METADATA_RUN_ID_KEY,
+    RUN_STATUS_KEY,
     claim_active_metadata_row,
     is_metadata_preview,
     merge_library_metadata_items,
     metadata_output_type,
     metadata_run_key,
     persisted_run_deck_records,
+    project_preparing_library_item,
+    project_queued_library_item,
+    update_active_library_status,
 )
 from yt_downloader.models import (
     DownloadJob,
@@ -187,6 +193,92 @@ def test_active_merge_reuses_the_exact_terminal_attempt_row() -> None:
     assert terminal[ACTIVE_METADATA_RUN_ID_KEY] == "active:new"
     assert terminal["title"] == "Fresh output"
     assert "vodforge_terminal_run_id" not in terminal
+
+
+def test_queue_projection_keeps_same_video_attempts_distinct_by_run_id(
+    tmp_path: Path,
+) -> None:
+    first = _job(tmp_path, video_id="same")
+    second = _job(tmp_path, video_id="same")
+    first.preview_info = {"id": "same", "title": "First queued attempt"}
+    second.preview_info = {"id": "same", "title": "Second queued attempt"}
+    items: list[dict[str, Any]] = []
+
+    project_queued_library_item(items, first)
+    project_queued_library_item(items, second)
+
+    assert len(items) == 2
+    assert {item[QUEUED_METADATA_RUN_ID_KEY] for item in items} == {
+        first.run_id,
+        second.run_id,
+    }
+    assert all(item[RUN_STATUS_KEY] == "Queued" for item in items)
+
+
+def test_retry_projection_transitions_the_exact_terminal_row_without_a_gap(
+    tmp_path: Path,
+) -> None:
+    first = _job(tmp_path, video_id="same")
+    second = _job(tmp_path, video_id="same")
+    first_row = {
+        "id": "same",
+        "title": "Retry this row",
+        "vodforge_output_type": "MP4",
+        "vodforge_terminal_status": "Stopped",
+        "vodforge_terminal_run_id": first.run_id,
+    }
+    second_row = {
+        "id": "same",
+        "title": "Keep this stopped row",
+        "vodforge_output_type": "MP4",
+        "vodforge_terminal_status": "Stopped",
+        "vodforge_terminal_run_id": second.run_id,
+    }
+    retry = _job(tmp_path, video_id="same")
+    retry.origin_run_id = first.run_id
+    retry.preview_info = dict(first_row)
+    items = [first_row, second_row]
+
+    project_preparing_library_item(items, retry)
+    second_row[ATTEMPT_SIGNATURE_KEY] = first_row[ATTEMPT_SIGNATURE_KEY]
+    merge_library_metadata_items(
+        items,
+        [{"id": "same", ATTEMPT_SIGNATURE_KEY: first_row[ATTEMPT_SIGNATURE_KEY]}],
+        active_run_id=retry.run_id,
+        replacing_run_id=first.run_id,
+    )
+
+    assert len(items) == 2
+    assert first_row[ACTIVE_METADATA_RUN_ID_KEY] == retry.run_id
+    assert first_row[RUN_STATUS_KEY] == "Preparing"
+    assert "vodforge_terminal_status" not in first_row
+    assert second_row["vodforge_terminal_status"] == "Stopped"
+    assert second_row["vodforge_terminal_run_id"] == second.run_id
+
+
+def test_active_phase_updates_are_state_aware_and_never_not_downloaded(
+    tmp_path: Path,
+) -> None:
+    job = _job(tmp_path, video_id="phase")
+    row = project_preparing_library_item([], job).items[0]
+
+    assert update_active_library_status([row], job.run_id, "Video 1 — downloading")
+    assert row[RUN_STATUS_KEY] == "Downloading"
+    assert update_active_library_status([row], job.run_id, "Video 1 — transcoding")
+    assert row[RUN_STATUS_KEY] == "Transcoding"
+
+
+def test_queued_job_promotion_reuses_its_row_as_preparing(tmp_path: Path) -> None:
+    job = _job(tmp_path, video_id="promoted")
+    items: list[dict[str, Any]] = []
+
+    project_queued_library_item(items, job)
+    project_preparing_library_item(items, job)
+
+    assert len(items) == 1
+    assert items[0][ACTIVE_METADATA_RUN_ID_KEY] == job.run_id
+    assert items[0][RUN_STATUS_KEY] == "Preparing"
+    assert QUEUED_METADATA_RUN_ID_KEY not in items[0]
 
 
 def test_preview_merge_retains_exact_preview_run_identity() -> None:
