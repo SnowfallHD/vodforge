@@ -139,6 +139,11 @@ from .quality_e2e import (
     write_quality_e2e_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
+from .run_deck_renderer import (
+    RunDeckRenderOwner,
+    RunDeckSnapshot,
+    RunDeckTileSnapshot,
+)
 from .run_identity import (
     annotate_job_metadata,
     matching_attempt,
@@ -8491,6 +8496,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             hover_widgets.append(play_button)
         if bar is not None:
             widgets.append(bar)
+        self._focus_run_deck_value_widgets.append((status_label, bar))
 
         def sync_tile_hover(
             *,
@@ -8546,64 +8552,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if deck_width <= 1:
             deck_width = max(1, self.winfo_width() - 52)
         limit = focus_run_deck_capacity(deck_width)
-        render_signature = (
-            self._focus_layout,
-            limit,
-            tuple(
-                (
-                    str(record.get("kind") or ""),
-                    str(record.get("run_id") or ""),
-                    record.get("metadata_index"),
-                    str(record.get("title") or ""),
-                    None
-                    if str(record.get("kind") or "") == "active"
-                    else str(record.get("status") or ""),
-                    str(record.get("output_type") or ""),
-                    str(record.get("preview_thumbnail_path") or ""),
-                    id(record.get("preview_thumbnail_image")),
-                    None
-                    if str(record.get("kind") or "") == "active"
-                    else round(float(record.get("progress") or 0), 1),
-                )
-                for record in records
-            ),
-        )
-        if render_signature == self.__dict__.get("_focus_run_deck_signature"):
-            self._focus_run_deck_rendered_capacity = limit
-            return
-        self._focus_run_deck_signature = render_signature
-        for child in self.focus_run_deck.winfo_children():
-            child.destroy()
-        self._focus_run_thumbnail_images: list[Any] = []
-        self._focus_run_deck_rendered_capacity = limit
         visible = records[:limit]
-        for column in range(4):
-            self.focus_run_deck.columnconfigure(column, weight=0, uniform="")
-        if not visible:
-            empty = ttk.Frame(self.focus_run_deck, style="FocusShell.TFrame")
-            empty.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
-            ttk.Label(empty, text="Your runs will collect here", style="TLabel").pack(
-                anchor="w"
-            )
-            ttk.Label(
-                empty,
-                text="Start with a URL above. Completed downloads stay available in Library.",
-                style="Muted.TLabel",
-            ).pack(anchor="w", pady=(4, 0))
-            self.focus_run_deck.columnconfigure(0, weight=1)
-            self.focus_run_count_var.set("No runs yet")
-            self.focus_run_overflow_button.grid_remove()
-            return
-
-        for column in range(limit):
-            self.focus_run_deck.columnconfigure(column, weight=1, uniform="focus-run")
-        for column, record in enumerate(visible):
-            self._render_focus_run_deck_tile(
-                record,
-                column=column,
-                visible_count=len(visible),
-            )
-
         completed = sum(1 for record in records if record.get("kind") == "completed")
         failed = sum(1 for record in records if record.get("kind") == "failed")
         skipped = sum(1 for record in records if record.get("kind") == "skipped")
@@ -8620,9 +8569,103 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             parts.append(f"{failed} failed")
         if skipped:
             parts.append(f"{skipped} skipped")
-        self.focus_run_count_var.set("  •  ".join(parts))
-        self.focus_run_overflow_button.grid()
-        self.focus_run_overflow_button.configure(text=f"All {len(records)} runs")
+        summary_text = "No runs yet" if not records else "  •  ".join(parts)
+        snapshot = RunDeckSnapshot(
+            layout=str(self._focus_layout or ""),
+            capacity=limit,
+            tiles=tuple(
+                RunDeckTileSnapshot(
+                    structure=(
+                        str(record.get("kind") or ""),
+                        str(record.get("run_id") or ""),
+                        record.get("metadata_index"),
+                        str(record.get("title") or ""),
+                        str(record.get("output_type") or ""),
+                        str(record.get("preview_thumbnail_path") or ""),
+                        id(record.get("preview_thumbnail_image")),
+                        id(record.get("job")),
+                        str(record.get("kind") or "") == "active"
+                        or 0 < float(record.get("progress") or 0) < 100,
+                    ),
+                    status=str(record.get("status") or "Ready"),
+                    progress=round(float(record.get("progress") or 0), 1),
+                )
+                for record in visible
+            ),
+            summary_text=summary_text,
+            overflow_text=f"All {len(records)} runs",
+            overflow_visible=bool(records),
+        )
+
+        def update_summary(next_snapshot: RunDeckSnapshot) -> None:
+            self.focus_run_count_var.set(next_snapshot.summary_text)
+            if next_snapshot.overflow_visible:
+                self.focus_run_overflow_button.grid()
+                self.focus_run_overflow_button.configure(
+                    text=next_snapshot.overflow_text
+                )
+            else:
+                self.focus_run_overflow_button.grid_remove()
+
+        def patch_values(
+            previous: RunDeckSnapshot,
+            next_snapshot: RunDeckSnapshot,
+        ) -> None:
+            widgets = self.__dict__.get("_focus_run_deck_value_widgets", [])
+            for index, (before, after) in enumerate(
+                zip(previous.tiles, next_snapshot.tiles, strict=True)
+            ):
+                if before == after or after.structure[0] == "active":
+                    continue
+                status_label, progress_bar = widgets[index]
+                if before.status != after.status:
+                    status_label.configure(text=after.status)
+                if progress_bar is not None and before.progress != after.progress:
+                    progress_bar.configure(value=after.progress)
+            update_summary(next_snapshot)
+
+        def rebuild(_snapshot: RunDeckSnapshot) -> None:
+            for child in self.focus_run_deck.winfo_children():
+                child.destroy()
+            self._focus_run_thumbnail_images: list[Any] = []
+            self._focus_run_deck_value_widgets: list[
+                tuple[tk.Label, SleekProgressbar | None]
+            ] = []
+            for column in range(4):
+                self.focus_run_deck.columnconfigure(column, weight=0, uniform="")
+            if not visible:
+                empty = ttk.Frame(self.focus_run_deck, style="FocusShell.TFrame")
+                empty.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
+                ttk.Label(
+                    empty, text="Your runs will collect here", style="TLabel"
+                ).pack(anchor="w")
+                ttk.Label(
+                    empty,
+                    text="Start with a URL above. Completed downloads stay available in Library.",
+                    style="Muted.TLabel",
+                ).pack(anchor="w", pady=(4, 0))
+                self.focus_run_deck.columnconfigure(0, weight=1)
+                update_summary(snapshot)
+                return
+            for column in range(limit):
+                self.focus_run_deck.columnconfigure(
+                    column, weight=1, uniform="focus-run"
+                )
+            for column, record in enumerate(visible):
+                self._render_focus_run_deck_tile(
+                    record,
+                    column=column,
+                    visible_count=len(visible),
+                )
+            update_summary(snapshot)
+
+        owner = self.__dict__.get("_focus_run_deck_render_owner")
+        if owner is None:
+            owner = RunDeckRenderOwner()
+            self._focus_run_deck_render_owner = owner
+        owner.render(snapshot, patch_values=patch_values, rebuild=rebuild)
+        self._focus_run_deck_signature = snapshot
+        self._focus_run_deck_rendered_capacity = limit
 
     def _focus_thumbnail_source_for_record(self, record: dict[str, Any]) -> Any | None:
         if Image is None:
@@ -10165,11 +10208,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._last_library_invariant_violations = projection.violations
         self._last_library_invariant_receipt = projection.receipt
         self._rebuild_output_dir_index()
-        if render and self.__dict__.get("video_tree") is not None:
+        previous_projection = self.__dict__.get("_last_rendered_library_projection")
+        if (
+            render
+            and self.__dict__.get("video_tree") is not None
+            and (projection != previous_projection or selected_index is not None)
+        ):
             if selected_index is None:
                 self._render_metadata_tree()
             else:
                 self._render_metadata_tree(selected_index=selected_index)
+            self._last_rendered_library_projection = projection
 
     def _library_projection_owner(self) -> LibraryProjectionOwner:
         owner = self.__dict__.get("library_projection")
@@ -10214,12 +10263,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if rows
             else None
         )
-        children = self.video_tree.replace_rows(rows, selected=target)
-        set_leading_hover_values = getattr(
-            self.video_tree, "set_leading_hover_values", None
+        children = self.video_tree.replace_snapshot(
+            rows,
+            selected=target,
+            leading_hover_values=retry_rows,
         )
-        if callable(set_leading_hover_values):
-            set_leading_hover_values(retry_rows)
         if children and target is not None:
             _focus_library_table_item(self.video_tree, target)
             self._display_selected_metadata(int(target))
@@ -10406,7 +10454,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except HistoryError as exc:
             messagebox.showerror(APP_NAME, str(exc))
             return
-        self._render_metadata_tree()
         self._reconcile_focus_after_library_removal(removed_run_ids)
         if plan.active_run_id is not None:
             self.status_var.set(

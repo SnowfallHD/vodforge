@@ -2186,6 +2186,10 @@ def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
             configure=lambda **_kwargs: None,
         )
 
+        def __init__(self):
+            self.rendered = 0
+            self.configured_statuses: list[str] = []
+
         def _focus_run_records(self):
             return [
                 {
@@ -2202,6 +2206,12 @@ def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
 
         def _render_focus_run_deck_tile(self, *_args, **_kwargs):
             self.rendered += 1
+            status_widget = SimpleNamespace(
+                configure=lambda **kwargs: self.configured_statuses.append(
+                    kwargs["text"]
+                )
+            )
+            self._focus_run_deck_value_widgets.append((status_widget, None))
 
     probe = Probe()
     DownloaderApp._refresh_focus_run_deck(probe)
@@ -2215,7 +2225,8 @@ def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
     probe.status = "Failed  •  MP4"
     DownloaderApp._refresh_focus_run_deck(probe)
 
-    assert probe.rendered == 2
+    assert probe.rendered == 1
+    assert probe.configured_statuses == ["Failed  •  MP4"]
 
 
 def test_run_deck_active_live_status_change_does_not_rebuild_widgets():
@@ -2266,6 +2277,69 @@ def test_run_deck_active_live_status_change_does_not_rebuild_widgets():
     assert probe.rendered == 1
 
 
+def test_run_deck_active_progress_with_queued_successor_does_not_rebuild_cards():
+    class Deck:
+        def winfo_width(self):
+            return 900
+
+        def winfo_children(self):
+            return ()
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+    class Probe:
+        _focus_layout = "wide"
+        focus_run_deck = Deck()
+        focus_run_count_var = SimpleNamespace(set=lambda _value: None)
+        focus_run_overflow_button = SimpleNamespace(
+            grid=lambda: None,
+            configure=lambda **_kwargs: None,
+        )
+
+        def __init__(self):
+            self.rendered = 0
+            self.progress = 30.0
+            self.status = "30%  /  ETA 20s"
+
+        def _focus_run_records(self):
+            return [
+                {
+                    "kind": "active",
+                    "run_id": "active-run",
+                    "title": "Active MP4",
+                    "status": self.status,
+                    "output_type": "MP4",
+                    "progress": self.progress,
+                },
+                {
+                    "kind": "queued",
+                    "run_id": "queued-run",
+                    "title": "Queued MP3",
+                    "status": "Queued  •  MP3",
+                    "output_type": "MP3",
+                    "progress": 0,
+                },
+            ]
+
+        def winfo_width(self):
+            return 952
+
+        def _render_focus_run_deck_tile(self, *_args, **_kwargs):
+            self.rendered += 1
+            self._focus_run_deck_value_widgets.append(
+                (SimpleNamespace(configure=lambda **_kwargs: None), None)
+            )
+
+    probe = Probe()
+    DownloaderApp._refresh_focus_run_deck(probe)
+    probe.progress = 31.0
+    probe.status = "31%  /  ETA 19s"
+    DownloaderApp._refresh_focus_run_deck(probe)
+
+    assert probe.rendered == 2
+
+
 def test_active_library_status_reconciles_only_when_phase_changes():
     class ProjectionOwner:
         phase = ""
@@ -2299,6 +2373,25 @@ def test_active_library_status_reconciles_only_when_phase_changes():
     assert probe.reconciliations == 2
 
 
+def test_identical_library_projection_does_not_request_another_render():
+    projection = SimpleNamespace(rows=(), violations=(), receipt=object())
+    owner = SimpleNamespace(reconcile=lambda **_kwargs: projection)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.download_history = []
+    app.pending_jobs = []
+    app._terminal_jobs = []
+    app.video_tree = object()
+    app._library_projection_owner = lambda: owner
+    app._rebuild_output_dir_index = lambda: None
+    renders: list[str] = []
+    app._render_metadata_tree = lambda **_kwargs: renders.append("render")
+
+    app._reconcile_library_projection()
+    app._reconcile_library_projection()
+
+    assert renders == ["render"]
+
+
 def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
@@ -2323,14 +2416,17 @@ def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
     assert tile_source.index(
         'play_button.bind(\n                "<Button-1>",'
     ) < tile_source.index("hover_widgets.append(play_button)")
-    render_index = deck_source.index("self._render_focus_run_deck_tile(")
     aggregate_index = deck_source.index("completed = sum(")
+    snapshot_index = deck_source.index("snapshot = RunDeckSnapshot(")
+    render_index = deck_source.index("self._render_focus_run_deck_tile(")
+    owner_index = deck_source.index("owner.render(")
     count_index = deck_source.index("self.focus_run_count_var.set(", aggregate_index)
     overflow_index = deck_source.index(
         "self.focus_run_overflow_button.grid()",
         count_index,
     )
-    assert render_index < aggregate_index < count_index < overflow_index
+    assert aggregate_index < snapshot_index < count_index < overflow_index
+    assert render_index < owner_index
 
 
 def test_library_actions_remain_one_stable_menu_at_every_width():
@@ -2528,10 +2624,7 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
         "Every supported scroll entry point already schedules a redraw"
         in report_yview_source
     )
-    assert (
-        "children = self.video_tree.replace_rows(rows, selected=target)"
-        in render_source
-    )
+    assert "children = self.video_tree.replace_snapshot(" in render_source
     assert "video_tree.layout_columns(" in library_layout_source
     assert "xscrollincrement=1" in pixel_table_source
 
@@ -2746,12 +2839,17 @@ def test_retryable_row_replaces_leading_number_only_while_hovered():
     table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
     table._body = BodyProbe()
     table._items = {"stopped": ("001", "Stopped item")}
+    table._order = ["stopped"]
+    table._selection = None
+    table._focus_item = None
     table._leading_hover_values = {}
     table._hovered_row = None
     table.identify_row = lambda _y: "stopped"
     table.identify_column = lambda _x: "#1"
-    redraws: list[bool] = []
-    table._redraw = lambda: redraws.append(True)
+    patches: list[tuple[str | None, str | None]] = []
+    table._patch_rows = lambda _items, **kwargs: patches.append(
+        (kwargs["previous_hovered_row"], table._hovered_row)
+    )
 
     table.set_leading_hover_values({"stopped": "↻", "missing": "↻"})
     table._update_row_hover(SimpleNamespace(x=12, y=12))
@@ -2764,7 +2862,40 @@ def test_retryable_row_replaces_leading_number_only_while_hovered():
 
     assert table._hovered_row is None
     assert table._body.cursors[-1] == ""
-    assert len(redraws) == 3
+    assert patches == [(None, None), (None, "stopped"), ("stopped", None)]
+
+
+def test_pixel_table_snapshot_is_atomic_and_idempotent():
+    class BodyProbe:
+        def configure(self, **_kwargs):
+            return None
+
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._body = BodyProbe()
+    table._items = {}
+    table._order = []
+    table._selection = None
+    table._focus_item = None
+    table._leading_hover_values = {}
+    table._hovered_row = None
+    redraws: list[str] = []
+    patches: list[str] = []
+    table._redraw = lambda: redraws.append("rebuild")
+    table._patch_rows = lambda *_args, **_kwargs: patches.append("patch")
+
+    rows = [("0", ("001", "Stopped item"))]
+    assert table.replace_snapshot(
+        rows, selected="0", leading_hover_values={"0": "↻"}
+    ) == ("0",)
+    table.replace_snapshot(rows, selected="0", leading_hover_values={"0": "↻"})
+    table.replace_snapshot(
+        [("0", ("001", "Failed item"))],
+        selected="0",
+        leading_hover_values={"0": "↻"},
+    )
+
+    assert redraws == ["rebuild"]
+    assert patches == ["patch"]
 
 
 def test_visible_leading_retry_cell_owns_the_retry_click(tmp_path: Path):
@@ -2835,9 +2966,10 @@ def test_library_render_clears_an_inconsistent_widget_without_a_selection_target
         def selection(self):
             return ()
 
-        def replace_rows(self, rows, *, selected):
+        def replace_snapshot(self, rows, *, selected, leading_hover_values):
             assert rows == []
             assert selected is None
+            assert leading_hover_values == {}
             return ("orphaned-widget-row",)
 
         def focus(self, _target):
@@ -3171,6 +3303,28 @@ def test_terminal_focus_uses_retry_restart_actions_and_outcome_colors(tmp_path: 
 
     progress_source = inspect.getsource(app_module.SleekProgressbar.configure)
     assert 'if "bar_color" in kwargs:' in progress_source
+
+
+def test_progress_surface_noops_identical_mode_and_value_updates():
+    progress = app_module.SleekProgressbar.__new__(app_module.SleekProgressbar)
+    progress._mode = "determinate"
+    progress._maximum = 100.0
+    progress._track_color = "track"
+    progress._bar_color = "bar"
+    progress._variable = Value(30.0)
+    progress._suspend_variable_redraw = False
+    redraws: list[str] = []
+    progress._redraw = lambda: redraws.append("redraw")
+
+    app_module.SleekProgressbar.configure(
+        progress,
+        mode="determinate",
+        value=30.0,
+    )
+    app_module.SleekProgressbar.configure(progress, value=31.0)
+
+    assert redraws == ["redraw"]
+    assert progress._variable.get() == 31.0
 
 
 def test_terminal_outcomes_become_the_explicit_forge_focus(monkeypatch, tmp_path: Path):

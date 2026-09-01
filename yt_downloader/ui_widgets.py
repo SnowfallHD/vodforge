@@ -468,30 +468,60 @@ class SleekProgressbar(tk.Canvas):
         self._variable = (
             variable if variable is not None else tk.DoubleVar(master=self, value=value)
         )
+        self._suspend_variable_redraw = False
         if variable is not None and value:
             self._variable.set(value)
-        self._variable.trace_add("write", lambda *_args: self._redraw())
+        self._variable.trace_add("write", self._on_variable_changed)
         self.bind("<Configure>", lambda _event: self._redraw(), add="+")
         self.after_idle(self._redraw)
 
     def configure(self, cnf: Any | None = None, **kwargs: Any) -> Any:
         if cnf:
             kwargs.update(cnf)
+        changed = False
         if "mode" in kwargs:
-            self._mode = str(kwargs.pop("mode"))
+            mode = str(kwargs.pop("mode"))
+            if mode != self._mode:
+                self._mode = mode
+                changed = True
         if "maximum" in kwargs:
-            self._maximum = max(1.0, float(kwargs.pop("maximum")))
+            maximum = max(1.0, float(kwargs.pop("maximum")))
+            if maximum != self._maximum:
+                self._maximum = maximum
+                changed = True
         if "value" in kwargs:
-            self._variable.set(float(kwargs.pop("value")))
+            value = float(kwargs.pop("value"))
+            try:
+                current_value = float(self._variable.get())
+            except (TypeError, ValueError, tk.TclError):
+                current_value = float("nan")
+            if value != current_value:
+                self._suspend_variable_redraw = True
+                try:
+                    self._variable.set(value)
+                finally:
+                    self._suspend_variable_redraw = False
+                changed = True
         if "track_color" in kwargs:
-            self._track_color = str(kwargs.pop("track_color"))
+            track_color = str(kwargs.pop("track_color"))
+            if track_color != self._track_color:
+                self._track_color = track_color
+                changed = True
         if "bar_color" in kwargs:
-            self._bar_color = str(kwargs.pop("bar_color"))
+            bar_color = str(kwargs.pop("bar_color"))
+            if bar_color != self._bar_color:
+                self._bar_color = bar_color
+                changed = True
         result = super().configure(**kwargs) if kwargs else None
-        self._redraw()
+        if changed or kwargs:
+            self._redraw()
         return result
 
     config = configure
+
+    def _on_variable_changed(self, *_args: Any) -> None:
+        if not self._suspend_variable_redraw:
+            self._redraw()
 
     def start(self, interval: int = 50) -> None:
         self.stop()
@@ -589,6 +619,7 @@ class PixelScrollTable(tk.Frame):
         self._resize_hover_column: str | None = None
         self._redraw_after_id: str | None = None
         self._redrawing = False
+        self._visible_row_items: dict[str, tuple[int, tuple[int, ...]]] = {}
         # Keep the divider itself quiet while giving trackpads and high-DPI
         # pointers a forgiving target on either side of the hairline.
         self._resize_margin = 8
@@ -745,6 +776,21 @@ class PixelScrollTable(tk.Frame):
         every mutation, making a large Library effectively quadratic. Keep the
         model update atomic and let the virtualized renderer paint once.
         """
+        return self.replace_snapshot(
+            rows,
+            selected=selected,
+            leading_hover_values=self._leading_hover_values,
+        )
+
+    def replace_snapshot(
+        self,
+        rows: Iterable[tuple[str, tuple[Any, ...]]],
+        *,
+        selected: str | None = None,
+        leading_hover_values: Mapping[str, str] | None = None,
+    ) -> tuple[str, ...]:
+        """Atomically commit one immutable table snapshot with minimum rendering."""
+
         items: dict[str, tuple[Any, ...]] = {}
         order: list[str] = []
         for raw_item, values in rows:
@@ -753,33 +799,58 @@ class PixelScrollTable(tk.Frame):
                 order.remove(item)
             order.append(item)
             items[item] = tuple(values)
+        preferred = str(selected) if selected is not None else self._selection
+        next_selection = preferred if preferred in items else None
+        raw_hover_values = (
+            self._leading_hover_values
+            if leading_hover_values is None
+            else leading_hover_values
+        )
+        next_hover_values = {
+            str(item): str(value)
+            for item, value in raw_hover_values.items()
+            if str(item) in items and str(value).strip()
+        }
+        next_hovered_row = (
+            self._hovered_row if self._hovered_row in next_hover_values else None
+        )
+        if (
+            items == self._items
+            and order == self._order
+            and next_selection == self._selection
+            and next_hover_values == self._leading_hover_values
+            and next_hovered_row == self._hovered_row
+        ):
+            return tuple(order)
+
+        previous_items = self._items
+        previous_selection = self._selection
+        previous_hovered_row = self._hovered_row
+        structure_matches = order == self._order and items.keys() == self._items.keys()
         self._items = items
         self._order = order
-        preferred = str(selected) if selected is not None else self._selection
-        self._selection = preferred if preferred in items else None
-        self._focus_item = self._selection
-        self._leading_hover_values = {
-            item: value
-            for item, value in self._leading_hover_values.items()
-            if item in items
-        }
-        if self._hovered_row not in items:
-            self._hovered_row = None
-        self._redraw()
+        self._selection = next_selection
+        self._focus_item = next_selection
+        self._leading_hover_values = next_hover_values
+        self._hovered_row = next_hovered_row
+        self._body.configure(cursor="hand2" if next_hovered_row is not None else "")
+        if structure_matches:
+            self._patch_rows(
+                previous_items,
+                previous_selection=previous_selection,
+                previous_hovered_row=previous_hovered_row,
+            )
+        else:
+            self._redraw()
         return tuple(order)
 
     def set_leading_hover_values(self, values: dict[str, str]) -> None:
         """Replace the first cell only while its actionable row is hovered."""
-
-        self._leading_hover_values = {
-            str(item): str(value)
-            for item, value in values.items()
-            if str(item) in self._items and str(value).strip()
-        }
-        if self._hovered_row not in self._leading_hover_values:
-            self._hovered_row = None
-        self._body.configure(cursor="hand2" if self._hovered_row is not None else "")
-        self._redraw()
+        self.replace_snapshot(
+            ((item, self._items[item]) for item in self._order),
+            selected=self._selection,
+            leading_hover_values=values,
+        )
 
     def delete(self, *items: str) -> None:
         for raw_item in items:
@@ -804,9 +875,15 @@ class PixelScrollTable(tk.Frame):
         if item_id not in self._items:
             return
         changed = item_id != self._selection
+        previous_selection = self._selection
         self._selection = item_id
         self._focus_item = item_id
-        self._redraw()
+        if changed:
+            self._patch_rows(
+                self._items,
+                previous_selection=previous_selection,
+                previous_hovered_row=self._hovered_row,
+            )
         self._see(item_id)
         if changed:
             self._body.event_generate("<<TreeviewSelect>>", when="tail")
@@ -1009,6 +1086,56 @@ class PixelScrollTable(tk.Frame):
                 high = middle - 1
         return text[:low] + "…"
 
+    def _patch_rows(
+        self,
+        previous_items: Mapping[str, tuple[Any, ...]],
+        *,
+        previous_selection: str | None,
+        previous_hovered_row: str | None,
+    ) -> None:
+        """Patch value/selection changes without rebuilding the table Canvas."""
+
+        layout = self._layout_columns()
+        changed_rows = {
+            item
+            for item in self._items
+            if previous_items.get(item) != self._items.get(item)
+        }
+        changed_rows.update(
+            item
+            for item in {
+                previous_selection,
+                self._selection,
+                previous_hovered_row,
+                self._hovered_row,
+            }
+            if item is not None
+        )
+        try:
+            for item in changed_rows:
+                rendered = self._visible_row_items.get(item)
+                if rendered is None:
+                    continue
+                background_item, text_items = rendered
+                selected = item == self._selection
+                self._body.itemconfigure(
+                    background_item,
+                    fill=THEME["accent_dark"] if selected else THEME["surface"],
+                )
+                values = self._items.get(item, ())
+                for value_index, text_item in enumerate(text_items):
+                    _column, width, _anchor = layout[value_index]
+                    value = values[value_index] if value_index < len(values) else ""
+                    if value_index == 0 and item == self._hovered_row:
+                        value = self._leading_hover_values.get(item, value)
+                    self._body.itemconfigure(
+                        text_item,
+                        text=self._ellipsize(value, width, font=self._font),
+                        fill="#ffffff" if selected else THEME["text"],
+                    )
+        except (IndexError, tk.TclError):
+            self._redraw()
+
     def _redraw(self) -> None:
         if self._redraw_after_id is not None:
             try:
@@ -1022,6 +1149,7 @@ class PixelScrollTable(tk.Frame):
         except tk.TclError:
             return
         self._redrawing = True
+        self._visible_row_items = {}
         layout = self._layout_columns()
         content_width = max(1, sum(width for _column, width, _anchor in layout))
         content_height = max(self._row_height, len(self._order) * self._row_height)
@@ -1095,7 +1223,7 @@ class PixelScrollTable(tk.Frame):
                 item_id = self._order[row_index]
                 top = row_index * self._row_height
                 selected = item_id == self._selection
-                self._body.create_rectangle(
+                background_item = self._body.create_rectangle(
                     0,
                     top,
                     content_width,
@@ -1105,6 +1233,7 @@ class PixelScrollTable(tk.Frame):
                 )
                 values = self._items.get(item_id, ())
                 cursor = 0
+                text_items: list[int] = []
                 for value_index, (_column, width, anchor) in enumerate(layout):
                     value = values[value_index] if value_index < len(values) else ""
                     if value_index == 0 and item_id == self._hovered_row:
@@ -1116,19 +1245,25 @@ class PixelScrollTable(tk.Frame):
                         if anchor == "e"
                         else 10
                     )
-                    self._body.create_text(
-                        text_x,
-                        top + (self._row_height / 2),
-                        text=self._ellipsize(value, width, font=self._font),
-                        anchor="center"
-                        if anchor == "center"
-                        else "e"
-                        if anchor == "e"
-                        else "w",
-                        fill="#ffffff" if selected else THEME["text"],
-                        font=self._font,
+                    text_items.append(
+                        self._body.create_text(
+                            text_x,
+                            top + (self._row_height / 2),
+                            text=self._ellipsize(value, width, font=self._font),
+                            anchor="center"
+                            if anchor == "center"
+                            else "e"
+                            if anchor == "e"
+                            else "w",
+                            fill="#ffffff" if selected else THEME["text"],
+                            font=self._font,
+                        )
                     )
                     cursor += width
+                self._visible_row_items[item_id] = (
+                    background_item,
+                    tuple(text_items),
+                )
             self._header.configure(
                 scrollregion=(0, 0, content_width, self._header_height)
             )
@@ -1170,15 +1305,25 @@ class PixelScrollTable(tk.Frame):
         self._body.configure(cursor=cursor)
         if hovered == self._hovered_row:
             return
+        previous_hovered_row = self._hovered_row
         self._hovered_row = hovered
-        self._redraw()
+        self._patch_rows(
+            self._items,
+            previous_selection=self._selection,
+            previous_hovered_row=previous_hovered_row,
+        )
 
     def _clear_row_hover(self, _event: tk.Event[Any] | None = None) -> None:
         if self._hovered_row is None:
             return
+        previous_hovered_row = self._hovered_row
         self._hovered_row = None
         self._body.configure(cursor="")
-        self._redraw()
+        self._patch_rows(
+            self._items,
+            previous_selection=self._selection,
+            previous_hovered_row=previous_hovered_row,
+        )
 
     def _move_selection(self, amount: int) -> str:
         if not self._order:
