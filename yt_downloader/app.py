@@ -83,19 +83,16 @@ from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
+    LibraryProjectionOwner,
     LibraryRemovalPlan,
-    claim_active_metadata_row,
     format_duration,
     is_metadata_preview,
+    library_phase_from_status,
     library_status_or_location,
-    merge_library_metadata_items,
     metadata_output_type,
     metadata_run_key,
     persisted_run_deck_records,
-    project_preparing_library_item,
-    project_queued_library_item,
     resolve_library_removal_plan,
-    update_active_library_status,
 )
 from .models import (
     AUDIO_CHANNELS,
@@ -144,9 +141,7 @@ from .quality_e2e import (
 )
 from .run_identity import (
     annotate_job_metadata,
-    job_attempt_signature,
     matching_attempt,
-    metadata_attempt_signature,
     metadata_output_profile,
     metadata_output_profile_details,
 )
@@ -1143,7 +1138,7 @@ def build_description_display_text(info: dict[str, Any]) -> str:
 
 
 def metadata_indices_for_output_type(
-    items: list[dict[str, Any]],
+    items: Sequence[dict[str, Any]],
     output_type: OutputType | str,
 ) -> list[int]:
     """Return stable source-list indices for one Library media type."""
@@ -4936,7 +4931,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.progress_var = tk.DoubleVar(value=0.0)
         self.thumbnail_image: Any | None = None
         self.last_thumbnail_url: str | None = None
-        self.metadata_items: list[dict[str, Any]] = []
+        self.metadata_items: Sequence[dict[str, Any]] = ()
+        self.library_projection = LibraryProjectionOwner(diagnostic=write_diagnostic)
+        self._last_library_invariant_violations: tuple[Any, ...] = ()
         self.download_history: list[dict[str, Any]] = []
         self.history_path = history_file_path()
         self.last_output_dirs: list[Path] = []
@@ -9329,16 +9326,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "Download history could not be loaded; the existing history file was left untouched."
             )
             return
-        self.metadata_items = [dict(item) for item in self.download_history]
-        self._rebuild_output_dir_index()
-        if self.metadata_items and not metadata_indices_for_output_type(
-            self.metadata_items,
+        self._reconcile_library_projection()
+        if self.download_history and not metadata_indices_for_output_type(
+            self.download_history,
             self.library_output_type_var.get(),
         ):
             self.library_output_type_var.set(
-                metadata_output_type(self.metadata_items[0]).value
+                metadata_output_type(self.download_history[0]).value
             )
-        self._render_metadata_tree()
         if self.download_history:
             self.status_var.set(
                 f"Loaded {len(self.download_history)} downloaded media item(s) from history."
@@ -9381,56 +9376,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         saved_record = self.download_history[0]
         if owning_job is not None:
             owning_job.history_identities.add(history_identity(saved_record))
-        saved_id = str(saved_record.get("id") or "")
         saved_type = metadata_output_type(saved_record)
-        saved_signature = metadata_attempt_signature(saved_record)
-        merged = dict(saved_record)
-        retained: list[dict[str, Any]] = []
-        persisted_identities = {
-            history_identity(item) for item in self.download_history
-        }
-        metadata_items = self.__dict__.get("metadata_items", [])
-        for item in metadata_items:
-            if (
-                history_output_dir(item) is not None
-                and history_identity(item) not in persisted_identities
-            ):
-                continue
-            if history_identity(item) == history_identity(saved_record):
-                merged = {**item, **saved_record}
-                continue
-            if (
-                saved_id
-                and str(item.get("id") or "") == saved_id
-                and metadata_output_type(item) == saved_type
-                and history_output_dir(item) is None
-                and (
-                    (
-                        owning_job is not None
-                        and str(
-                            item.get(ACTIVE_METADATA_RUN_ID_KEY)
-                            or item.get("vodforge_terminal_run_id")
-                            or ""
-                        )
-                        == owning_job.run_id
-                    )
-                    or (
-                        bool(saved_signature)
-                        and metadata_attempt_signature(item) == saved_signature
-                    )
-                )
-            ):
-                merged = {**item, **saved_record}
-                continue
-            retained.append(item)
-        merged.pop("vodforge_preview_complete", None)
-        merged.pop("vodforge_preview_run_id", None)
-        merged.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
-        self.metadata_items = [merged, *retained]
-        self._rebuild_output_dir_index()
         if self.library_output_type_var.get() != saved_type.value:
             self.library_output_type_var.set(saved_type.value)
-        self._render_metadata_tree(selected_index=0)
+        self._reconcile_library_projection(selected_index=0)
         if owning_job is not None:
             self._append_job_log(
                 owning_job, f"Saved download history entry: {output_dir}"
@@ -9462,16 +9411,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._append_job_log(job, f"WARNING: {exc}")
             return
         self.download_history = updated_history
-        for index, item in enumerate(self.metadata_items):
-            if (
-                history_output_dir(item) is None
-                or history_identity(item) not in identities
-            ):
-                continue
-            updated = dict(item)
-            updated["vodforge_run_id"] = job.run_id
-            updated["vodforge_run_activity"] = activity
-            self.metadata_items[index] = updated
+        self._reconcile_library_projection()
 
     def _manual_help_icon(self, frame: ttk.LabelFrame, row: int, text: str) -> None:
         icon = ttk.Label(
@@ -9806,37 +9746,30 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> None:
         """Render the durable queue owner as one exact Library row."""
 
-        projected = project_queued_library_item(
-            self.__dict__.setdefault("metadata_items", []), job, info
-        )
-        self.metadata_items = projected.items
-        job.preview_info = dict(projected.incoming_items[0])
-        self._rebuild_output_dir_index()
-        if self.__dict__.get("video_tree") is not None:
-            self._render_metadata_tree()
+        incoming = {**(job.preview_info or {}), **(info or {})}
+        incoming.setdefault("title", "Queued video run")
+        incoming.setdefault("webpage_url", job.url)
+        incoming.setdefault("original_url", job.url)
+        incoming["vodforge_output_type"] = job.output_type.value
+        job.preview_info = annotate_job_metadata(job, incoming)
+        self._library_projection_owner().observe_phase(job.run_id, "Queued")
+        self._reconcile_library_projection()
 
     def _project_preparing_job_to_library(self, job: DownloadJob) -> None:
         """Claim one exact Library row while an accepted launch prepares."""
 
-        projected = project_preparing_library_item(
-            self.__dict__.setdefault("metadata_items", []), job
-        )
-        self.metadata_items = projected.items
-        job.preview_info = dict(projected.incoming_items[0])
-        self._rebuild_output_dir_index()
-        if self.__dict__.get("video_tree") is not None:
-            self._render_metadata_tree()
+        self._library_projection_owner().observe_phase(job.run_id, "Preparing")
+        self._reconcile_library_projection()
 
     def _update_active_library_status(self, status_text: str) -> None:
         """Render a worker phase only on the exact active Library owner."""
 
         job = self.active_job
-        if job is None or not update_active_library_status(
-            self.metadata_items, job.run_id, status_text
-        ):
+        phase = library_phase_from_status(status_text)
+        if job is None or phase is None:
             return
-        if self.__dict__.get("video_tree") is not None:
-            self._render_metadata_tree()
+        self._library_projection_owner().observe_phase(job.run_id, phase)
+        self._reconcile_library_projection()
 
     def _queued_preview_loop(self) -> None:
         request_queue: queue.Queue[DownloadJob] = self._queued_preview_requests
@@ -10044,26 +9977,26 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if isinstance(preview_request, dict)
             else ""
         )
-        merged = merge_library_metadata_items(
-            self.metadata_items,
-            iter_video_infos(info),
-            active_run_id=active_job.run_id if active_job is not None else None,
-            replacing_run_id=(
-                active_job.origin_run_id if active_job is not None else None
-            ),
-            preview_complete=preview_complete,
-            preview_run_id=preview_run_id,
-        )
-        self.metadata_items = merged.items
-        incoming_items = merged.incoming_items
+        incoming_items = [dict(item) for item in iter_video_infos(info)]
+        if active_job is not None and incoming_items:
+            active_job.preview_info = annotate_job_metadata(
+                active_job, incoming_items[0]
+            )
+            for incoming in incoming_items:
+                key = metadata_run_key(incoming)
+                if key is not None:
+                    active_job.metadata_keys.add(key)
+        elif preview_complete and preview_run_id:
+            self._library_projection_owner().record_preview(
+                preview_run_id, incoming_items
+            )
         if preview_complete:
             self._metadata_preview_request = None
-        self._rebuild_output_dir_index()
         if incoming_items:
             incoming_type = metadata_output_type(incoming_items[0])
             if self.library_output_type_var.get() != incoming_type.value:
                 self.library_output_type_var.set(incoming_type.value)
-        self._render_metadata_tree()
+        self._reconcile_library_projection()
         if (
             preview_run_id
             and self.__dict__.get("_focus_selected_run_id") == preview_run_id
@@ -10086,10 +10019,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     selected_preview, self.metadata_items[selected_index]
                 )
         if active_job is not None and active_job is self.active_job and incoming_items:
-            for incoming in incoming_items:
-                key = metadata_run_key(incoming)
-                if key is not None:
-                    active_job.metadata_keys.add(key)
             self._display_active_job_metadata(active_job, incoming_items[0])
             if active_status is not None:
                 self.status_var.set(active_status)
@@ -10213,6 +10142,36 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             output_dir = history_output_dir(item)
             if video_id and output_dir is not None:
                 self.video_output_dirs_by_id.setdefault(video_id, output_dir)
+
+    def _reconcile_library_projection(
+        self, *, selected_index: int | None = None, render: bool = True
+    ) -> None:
+        """Render one deterministic snapshot from canonical Library owners."""
+
+        owner = self._library_projection_owner()
+        projection = owner.reconcile(
+            history_items=self.__dict__.get("download_history", []),
+            active_job=self.__dict__.get("active_job"),
+            queued_jobs=self.__dict__.get("pending_jobs", []),
+            terminal_jobs=self.__dict__.get("_terminal_jobs", []),
+            suppressed_run_ids=self.__dict__.get("_library_suppressed_run_ids", set()),
+        )
+        self.metadata_items = projection.rows
+        self._last_library_invariant_violations = projection.violations
+        self._last_library_invariant_receipt = projection.receipt
+        self._rebuild_output_dir_index()
+        if render and self.__dict__.get("video_tree") is not None:
+            if selected_index is None:
+                self._render_metadata_tree()
+            else:
+                self._render_metadata_tree(selected_index=selected_index)
+
+    def _library_projection_owner(self) -> LibraryProjectionOwner:
+        owner = self.__dict__.get("library_projection")
+        if owner is None:
+            owner = LibraryProjectionOwner(diagnostic=write_diagnostic)
+            self.library_projection = owner
+        return owner
 
     def _render_metadata_tree(self, *, selected_index: int | None = None) -> None:
         selected_iid = (
@@ -10498,10 +10457,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if plan.active_run_id is not None:
             self._cancel()
         removed_run_ids.update(self._remove_library_item_from_forge_recents(info))
-        removed_run_ids.add(
-            str(info.get("vodforge_preview_run_id") or f"history:{index}")
-        )
-        self.metadata_items.pop(index)
+        preview_run_id = str(info.get("vodforge_preview_run_id") or "")
+        if preview_run_id:
+            removed_run_ids.add(preview_run_id)
+            self._library_projection_owner().remove_preview(preview_run_id)
         recovery_owner = self.__dict__.get("run_recovery")
         for run_id in removed_run_ids:
             try:
@@ -10509,7 +10468,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     recovery_owner.removed_or_retried(run_id)
             except RunStateError as exc:
                 write_diagnostic(f"removed run recovery record cleanup failed: {exc}")
-        self._rebuild_output_dir_index()
+        self._reconcile_library_projection()
         return removed_run_ids
 
     def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> set[str]:
@@ -11117,12 +11076,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         if preview is None:
             return False
+        preview_run_id = str(preview.get("vodforge_preview_run_id") or "")
         job.preview_info = dict(preview)
         job.preview_info.pop("vodforge_preview_complete", None)
         job.preview_info.pop("vodforge_preview_run_id", None)
         job.preview_info = annotate_job_metadata(job, job.preview_info)
         job.metadata_keys.add(preview_key)
-        claim_active_metadata_row(preview, job.preview_info, job.run_id)
+        self._library_projection_owner().remove_preview(preview_run_id)
         return True
 
     def _validated_submission_urls(
@@ -11426,9 +11386,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             metadata_key = metadata_run_key(job.preview_info)
             if metadata_key is not None:
                 job.metadata_keys.add(metadata_key)
-            claim_active_metadata_row(previous_row, job.preview_info, job.run_id)
             if live_status:
-                previous_row[RUN_STATUS_KEY] = live_status
+                self._library_projection_owner().observe_phase(job.run_id, live_status)
+        self._library_projection_owner().forget_run(previous.run_id)
         if cleanup_recovery:
             recovery_owner = self.__dict__.get("run_recovery")
             try:
@@ -11442,8 +11402,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             f"Superseded identical {previous_status.lower()} run "
             f"{previous.run_id} with {job.run_id}."
         )
-        if self.__dict__.get("video_tree") is not None:
-            self._render_metadata_tree()
+        self._reconcile_library_projection()
 
     def _start_preview_download(self, info: dict[str, Any]) -> None:
         """Turn one metadata preview into a fresh Forge-owned one-item run."""
@@ -11472,7 +11431,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         key = metadata_run_key(info)
         if key is not None:
             job.metadata_keys.add(key)
-        claim_active_metadata_row(info, job.preview_info, job.run_id)
+        self._library_projection_owner().remove_preview(
+            str(info.get("vodforge_preview_run_id") or "")
+        )
         self._focus_selected_run_id = job.run_id
         self._start_or_queue_download_job(job, clear_source=False)
         self._select_focus_view("forge")
@@ -11613,14 +11574,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             item for item in self._terminal_jobs if item.run_id != job.run_id
         ]
         self._terminal_jobs.insert(0, job)
-        self.metadata_items = [
-            item
-            for item in self.metadata_items
-            if str(item.get("vodforge_terminal_run_id") or "") != job.run_id
-        ]
-        self.metadata_items.insert(0, terminal_info)
-        self._rebuild_output_dir_index()
-        self._render_metadata_tree(selected_index=0)
+        self._reconcile_library_projection(selected_index=0)
         self.status_var.set(f"Restored a {status} run in Library.")
         self._append_log(message)
         self._focus_terminal_job(job)
@@ -11629,6 +11583,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _launch_next_pending_job(self) -> bool:
         if not self.pending_jobs:
             self.active_job = None
+            self._reconcile_library_projection()
             if hasattr(self, "focus_run_deck"):
                 self.download_button.configure(text="Forge", state="normal")
                 self.focus_engine_var.set("Runs process one at a time")
@@ -11670,6 +11625,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 recovery_owner.terminal(status, message)
         except RunStateError as exc:
             write_diagnostic(f"terminal run recovery record could not be saved: {exc}")
+            self._reconcile_library_projection()
+            return
         if (
             job.preview_thumbnail_image is None
             and self._focus_active_thumbnail_source_image is not None
@@ -11684,38 +11641,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ]
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
-        preview_key = metadata_run_key(terminal_info)
-        attempt_signature = job_attempt_signature(job)
-        matching = next(
-            (
-                item
-                for item in self.metadata_items
-                if history_output_dir(item) is None
-                and preview_key is not None
-                and metadata_run_key(item) == preview_key
-                and (
-                    str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == job.run_id
-                    or metadata_attempt_signature(item) == attempt_signature
-                    or (
-                        not str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "")
-                        and not metadata_attempt_signature(item)
-                    )
-                )
-            ),
-            None,
-        )
-        if matching is None:
-            self.metadata_items.insert(0, terminal_info)
-        else:
-            matching.update(terminal_info)
-            matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
-            matching.pop(QUEUED_METADATA_RUN_ID_KEY, None)
-            matching.pop(RUN_STATUS_KEY, None)
-            matching.pop("vodforge_preview_complete", None)
-            matching.pop("vodforge_preview_run_id", None)
-        self._rebuild_output_dir_index()
-        if self.__dict__.get("video_tree") is not None:
-            self._render_metadata_tree()
+        self._library_projection_owner().forget_run(job.run_id)
+        self._reconcile_library_projection()
 
     def _archive_active_completed_job(self, status: str, message: str) -> None:
         job = self.active_job
@@ -11744,35 +11671,34 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         """Archive one playlist item attempt without transferring Library authority."""
         if self._library_run_is_suppressed(job):
             return
+        recovery_owner = self.__dict__.get("run_recovery")
+        try:
+            if recovery_owner is not None:
+                recovery_owner.terminal_attempt(
+                    job,
+                    str(
+                        job.terminal_status
+                        or info.get("vodforge_terminal_status")
+                        or "Failed"
+                    ),
+                    str(
+                        job.terminal_message
+                        or info.get("vodforge_terminal_message")
+                        or ""
+                    ),
+                )
+        except RunStateError as exc:
+            write_diagnostic(f"terminal item recovery record could not be saved: {exc}")
+            self._reconcile_library_projection()
+            return
         self._terminal_jobs = [
             item for item in self._terminal_jobs if item.run_id != job.run_id
         ]
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
-        item_key = metadata_run_key(info)
-        item_signature = metadata_attempt_signature(info)
-        matching = next(
-            (
-                item
-                for item in self.metadata_items
-                if history_output_dir(item) is None
-                and metadata_run_key(item) == item_key
-                and (
-                    not item_signature
-                    or metadata_attempt_signature(item) == item_signature
-                )
-            ),
-            None,
-        )
-        if matching is not None:
-            matching.update(info)
-            matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
-            matching.pop(QUEUED_METADATA_RUN_ID_KEY, None)
-            matching.pop(RUN_STATUS_KEY, None)
-        else:
-            self.metadata_items.insert(0, dict(info))
-        self._rebuild_output_dir_index()
-        self._render_metadata_tree()
+        job.preview_info = dict(info)
+        self._library_projection_owner().forget_run(job.run_id)
+        self._reconcile_library_projection()
         if hasattr(self, "focus_run_deck"):
             self._focus_terminal_job(job)
             self._refresh_focus_run_deck()

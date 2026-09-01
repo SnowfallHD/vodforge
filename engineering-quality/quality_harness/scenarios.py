@@ -568,10 +568,8 @@ def lifecycle_quit_restart_recovery(
         ACTIVE_METADATA_RUN_ID_KEY,
         QUEUED_METADATA_RUN_ID_KEY,
         RUN_STATUS_KEY,
+        LibraryProjectionOwner,
         library_status_or_location,
-        project_preparing_library_item,
-        project_queued_library_item,
-        update_active_library_status,
     )
     from yt_downloader.process_lifecycle import process_command, terminate_pid
     from yt_downloader.run_state import (
@@ -677,9 +675,14 @@ def lifecycle_quit_restart_recovery(
         }
     )
     queued_after_restart = store.load_queued_jobs()
-    queued_library_rows: list[dict[str, Any]] = []
-    for queued_job in queued_after_restart:
-        project_queued_library_item(queued_library_rows, queued_job)
+    projection_owner = LibraryProjectionOwner()
+    queued_projection = projection_owner.reconcile(
+        history_items=[],
+        active_job=None,
+        queued_jobs=queued_after_restart,
+        terminal_jobs=[],
+    )
+    queued_library_rows = queued_projection.rows
     queued_rows_visible = (
         len(queued_library_rows) == 2
         and {
@@ -699,23 +702,16 @@ def lifecycle_quit_restart_recovery(
     # Library records instead of relying on a preview that may not exist yet.
     ui_owner = DownloaderApp.__new__(DownloaderApp)
     ui_owner._terminal_jobs = [*recovered]
-    ui_owner.metadata_items = [
-        {
-            "title": "Recovered failed run",
-            "vodforge_terminal_status": "Failed",
-            "vodforge_terminal_run_id": job.run_id,
-        }
-    ]
+    ui_owner.library_projection = LibraryProjectionOwner()
+    ui_owner.download_history = []
+    ui_owner.pending_jobs = []
+    ui_owner.video_tree = None
+    ui_owner.metadata_items = ()
     ui_owner._library_suppressed_run_ids = set()
     ui_owner._focus_active_thumbnail_source_image = None
     ui_owner._focus_active_thumbnail_is_placeholder = True
     ui_owner.run_recovery = RunRecoveryOwner(run_state_path)
     ui_owner._rebuild_output_dir_index = lambda: None
-    ui_owner.metadata_items = [
-        item
-        for item in ui_owner.metadata_items
-        if str(item.get("vodforge_terminal_run_id") or "") != job.run_id
-    ]
     ui_owner._terminal_jobs = [
         item for item in ui_owner._terminal_jobs if item.run_id != job.run_id
     ]
@@ -725,6 +721,7 @@ def lifecycle_quit_restart_recovery(
     ):
         store.begin(queued_job, successors)
         ui_owner.active_job = queued_job
+        ui_owner.pending_jobs = list(successors)
         ui_owner._focus_selected_run_id = queued_job.run_id
         ui_owner._archive_active_terminal_job(
             "Stopped", "Cancelled before provider analysis"
@@ -756,37 +753,62 @@ def lifecycle_quit_restart_recovery(
     retry_job.run_id = "retry-transition"
     retry_job.origin_run_id = retry_source.run_id
     retry_job.preview_info = dict(retry_source.preview_info or {})
-    project_preparing_library_item(ui_owner.metadata_items, retry_job)
+    remaining_terminals = [
+        item for item in durable_fast_stops if item.run_id != retry_source.run_id
+    ]
+    projection_owner.observe_phase(retry_job.run_id, "Preparing")
+    preparing_projection = projection_owner.reconcile(
+        history_items=[],
+        active_job=retry_job,
+        queued_jobs=[],
+        terminal_jobs=remaining_terminals,
+    )
     preparing_row = next(
         (
             item
-            for item in ui_owner.metadata_items
+            for item in preparing_projection.rows
             if str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == retry_job.run_id
         ),
         None,
     )
     retry_row_never_disappeared = bool(
-        len(ui_owner.metadata_items) == retry_row_count_before
+        len(preparing_projection.rows) == retry_row_count_before
         and preparing_row is not None
         and library_status_or_location(preparing_row) == "Preparing"
     )
-    downloading_visible = bool(
-        update_active_library_status(
-            ui_owner.metadata_items,
-            retry_job.run_id,
-            "Video 1 of 1 — downloading",
-        )
-        and preparing_row is not None
-        and preparing_row.get(RUN_STATUS_KEY) == "Downloading"
+    projection_owner.observe_phase(retry_job.run_id, "Downloading")
+    downloading_projection = projection_owner.reconcile(
+        history_items=[],
+        active_job=retry_job,
+        queued_jobs=[],
+        terminal_jobs=remaining_terminals,
     )
-    transcoding_visible = bool(
-        update_active_library_status(
-            ui_owner.metadata_items,
-            retry_job.run_id,
-            "Video 1 of 1 — transcoding",
-        )
-        and preparing_row is not None
-        and preparing_row.get(RUN_STATUS_KEY) == "Transcoding"
+    downloading_visible = any(
+        item.get(ACTIVE_METADATA_RUN_ID_KEY) == retry_job.run_id
+        and item.get(RUN_STATUS_KEY) == "Downloading"
+        for item in downloading_projection.rows
+    )
+    projection_owner.observe_phase(retry_job.run_id, "Transcoding")
+    transcoding_projection = projection_owner.reconcile(
+        history_items=[],
+        active_job=retry_job,
+        queued_jobs=[],
+        terminal_jobs=remaining_terminals,
+    )
+    transcoding_visible = any(
+        item.get(ACTIVE_METADATA_RUN_ID_KEY) == retry_job.run_id
+        and item.get(RUN_STATUS_KEY) == "Transcoding"
+        for item in transcoding_projection.rows
+    )
+    invariant_receipts = [
+        queued_projection.receipt,
+        ui_owner._last_library_invariant_receipt,
+        preparing_projection.receipt,
+        downloading_projection.receipt,
+        transcoding_projection.receipt,
+    ]
+    library_invariants_clean = all(
+        not receipt.violation_codes for receipt in invariant_receipts
     )
     for terminal_job in durable_fast_stops:
         store.clear(terminal_job.run_id)
@@ -797,6 +819,16 @@ def lifecycle_quit_restart_recovery(
             "staging_root_exists": (output_dir / ".vfstage").exists(),
             "recovered_queue_order": [
                 queued_job.run_id for queued_job in queued_after_restart
+            ],
+            "library_invariant_receipts": [
+                {
+                    "row_count": receipt.row_count,
+                    "canonical_run_ids": receipt.canonical_run_ids,
+                    "projected_run_ids": receipt.projected_run_ids,
+                    "statuses": receipt.statuses,
+                    "violation_codes": receipt.violation_codes,
+                }
+                for receipt in invariant_receipts
             ],
         }
     )
@@ -836,6 +868,7 @@ def lifecycle_quit_restart_recovery(
         and retry_row_never_disappeared
         and downloading_visible
         and transcoding_visible
+        and library_invariants_clean
     )
     scenario = {
         "id": "lifecycle.quit_restart_recovery",
@@ -863,6 +896,7 @@ def lifecycle_quit_restart_recovery(
             "retry_row_never_disappeared": retry_row_never_disappeared,
             "downloading_state_visible_in_library": downloading_visible,
             "transcoding_state_visible_in_library": transcoding_visible,
+            "library_projection_invariants_clean": library_invariants_clean,
         },
         "evidence": [
             f"Restart loaded the selected output root and export preferences unchanged: {settings_preserved}",
@@ -882,6 +916,7 @@ def lifecycle_quit_restart_recovery(
             f"Both durable queued runs projected into Library as Queued: {queued_rows_visible}",
             f"Retry transitioned its exact row directly to Preparing without a missing-row frame: {retry_row_never_disappeared}",
             f"The exact active Library row advanced through Downloading and Transcoding: {downloading_visible and transcoding_visible}",
+            f"Every Library projection receipt was invariant-clean: {library_invariants_clean}",
         ],
         "artifacts": [str(trace_path), str(settings_path)],
         "error": recovery_error,

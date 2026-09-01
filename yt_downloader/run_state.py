@@ -468,6 +468,37 @@ class ActiveRunStore:
     def mark_failed(self, message: str = INTERRUPTED_FAILURE_MESSAGE) -> DownloadJob:
         return self.mark_terminal("Failed", message)
 
+    def record_terminal_attempt(
+        self, job: DownloadJob, status: str, message: str
+    ) -> None:
+        """Durably upsert a terminal child/item attempt without changing active ownership."""
+
+        if status not in PERSISTED_TERMINAL_STATUSES:
+            raise RunStateError(f"Unsupported durable terminal status: {status}")
+        with self._lock:
+            payload = self._read_unlocked()
+            if payload is None:
+                payload = {
+                    "schema_version": RUN_STATE_SCHEMA_VERSION,
+                    "state": "idle",
+                    "queued_jobs": [],
+                }
+            failures = [
+                record
+                for record in self._failure_records(payload)
+                if str(record["job"].get("run_id") or "") != job.run_id
+            ]
+            failures.append(
+                {
+                    "job": serialize_download_job(job),
+                    "terminal_status": status,
+                    "terminal_message": message,
+                    "failure_message": message,
+                }
+            )
+            payload["recovered_failures"] = failures
+            self._write_unlocked(payload)
+
     def load_terminal_jobs(self) -> list[DownloadJob]:
         with self._lock:
             payload = self._read_unlocked()
@@ -688,6 +719,9 @@ class RunRecoveryOwner:
 
     def terminal(self, status: str, message: str) -> None:
         self.store.mark_terminal(status, message)
+
+    def terminal_attempt(self, job: DownloadJob, status: str, message: str) -> None:
+        self.store.record_terminal_attempt(job, status, message)
 
     def finished(self, run_id: str, *, application_closing: bool) -> None:
         if not application_closing:

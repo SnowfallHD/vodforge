@@ -929,8 +929,17 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     app.active_job = None
     app.worker = None
     app._append_log = lambda _line: None
+    app.pending_jobs = []
+    app.download_history = []
+    app.video_tree = None
     launched: list[DownloadJob] = []
-    app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
+
+    def launch(job, **_kwargs):
+        launched.append(job)
+        app.active_job = job
+        return True
+
+    app._launch_download_job = launch
 
     app._retry_terminal_job(failed_job)
 
@@ -959,8 +968,17 @@ def test_retry_preserves_playlist_identity_and_reuses_the_terminal_row(
     app.active_job = None
     app.worker = None
     app._append_log = lambda _line: None
+    app.pending_jobs = []
+    app.download_history = []
+    app.video_tree = None
     launched: list[DownloadJob] = []
-    app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
+
+    def launch(job, **_kwargs):
+        launched.append(job)
+        app.active_job = job
+        return True
+
+    app._launch_download_job = launch
 
     app._retry_terminal_job(failed_job)
 
@@ -1165,6 +1183,9 @@ def test_exact_terminal_duplicate_is_superseded_in_place_and_activity_is_retaine
     app = DownloaderApp.__new__(DownloaderApp)
     app._terminal_jobs = [stopped]
     app.metadata_items = [row]
+    app.download_history = []
+    app.pending_jobs = []
+    app.active_job = replacement
     app.video_tree = None
     logs: list[str] = []
     app._append_log = logs.append
@@ -1173,9 +1194,12 @@ def test_exact_terminal_duplicate_is_superseded_in_place_and_activity_is_retaine
 
     assert app._terminal_jobs == []
     assert replacement.preview_info is not None
-    assert row["vodforge_active_run_id"] == replacement.run_id
-    assert row["vodforge_attempt_signature"] == job_attempt_signature(replacement)
-    assert "vodforge_terminal_status" not in row
+    assert "vodforge_active_run_id" not in row
+    assert app.metadata_items[0]["vodforge_active_run_id"] == replacement.run_id
+    assert app.metadata_items[0]["vodforge_attempt_signature"] == job_attempt_signature(
+        replacement
+    )
+    assert "vodforge_terminal_status" not in app.metadata_items[0]
     assert logs == [
         (
             f"Superseded identical stopped run {stopped.run_id} "
@@ -2875,9 +2899,9 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
     assert built_job.preview_info["vodforge_attempt_signature"] == (
         job_attempt_signature(built_job)
     )
-    assert preview[app_module.ACTIVE_METADATA_RUN_ID_KEY] == built_job.run_id
-    assert "vodforge_preview_complete" not in preview
-    assert "vodforge_preview_run_id" not in preview
+    assert app_module.ACTIVE_METADATA_RUN_ID_KEY not in preview
+    assert preview["vodforge_preview_complete"] is True
+    assert preview["vodforge_preview_run_id"] == "preview:request"
     assert ("preview-id", "MP3") in built_job.metadata_keys
     assert app._focus_selected_run_id == built_job.run_id
     assert selected_views == ["forge"]
@@ -2920,9 +2944,9 @@ def test_submitting_a_previewed_url_adopts_it_into_one_fresh_active_run(tmp_path
     assert job.preview_info is not None
     assert job.preview_info["title"] == "Preview title"
     assert job.preview_info["vodforge_attempt_signature"] == job_attempt_signature(job)
-    assert preview[app_module.ACTIVE_METADATA_RUN_ID_KEY] == job.run_id
-    assert "vodforge_preview_complete" not in preview
-    assert "vodforge_preview_run_id" not in preview
+    assert app_module.ACTIVE_METADATA_RUN_ID_KEY not in preview
+    assert preview["vodforge_preview_complete"] is True
+    assert preview["vodforge_preview_run_id"] == "preview:old-presentation-id"
     assert app.metadata_items == [preview]
 
     app._focus_preview_runs = None
@@ -3197,7 +3221,7 @@ def test_remove_from_library_never_deletes_the_media_file(monkeypatch, tmp_path:
     app._remove_selected_library_item()
 
     assert media.read_bytes() == b"keep me"
-    assert app.metadata_items == []
+    assert not app.metadata_items
     assert app.download_history == []
     assert "not deleted" in app.status_var.get()
 
@@ -3255,7 +3279,17 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(
     app._remove_selected_library_item()
 
     assert cancellations == [active.run_id]
-    assert app.metadata_items == []
+    visible_run_ids = {
+        str(
+            item.get(app_module.ACTIVE_METADATA_RUN_ID_KEY)
+            or item.get(app_module.QUEUED_METADATA_RUN_ID_KEY)
+            or item.get("vodforge_terminal_run_id")
+            or ""
+        )
+        for item in app.metadata_items
+    }
+    assert active.run_id not in visible_run_ids
+    assert visible_run_ids == {queued_same_item.run_id, unrelated_queued.run_id}
     assert app.pending_jobs == [queued_same_item, unrelated_queued]
     assert app._library_suppressed_run_ids == {active.run_id}
     assert active.run_id in reconciled[0]
@@ -3275,7 +3309,10 @@ def test_remove_active_library_item_stops_and_tombstones_only_its_execution(
     app._archive_item_terminal_job(child, dict(info))
     assert app._terminal_jobs == []
     assert app._completed_jobs == []
-    assert app.metadata_items == []
+    assert all(
+        str(item.get("vodforge_terminal_run_id") or "") != active.run_id
+        for item in app.metadata_items
+    )
 
 
 def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(
@@ -3295,9 +3332,9 @@ def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(
         "vodforge_output_type": "MP4",
     }
     claimed_queue.metadata_keys.add(("same-video", "MP4"))
-    app_module.claim_active_metadata_row(
-        preview, claimed_queue.preview_info, claimed_queue.run_id
-    )
+    preview.pop("vodforge_preview_complete")
+    preview.pop("vodforge_preview_run_id")
+    preview[app_module.QUEUED_METADATA_RUN_ID_KEY] = claimed_queue.run_id
 
     other_same_video = make_job(tmp_path, video_id="same-video")
     other_same_video.preview_info = {
@@ -3330,10 +3367,14 @@ def test_remove_claimed_preview_queue_preserves_other_same_video_attempts(
 
     app._remove_selected_library_item()
 
-    assert app.metadata_items == []
+    visible_run_ids = {
+        str(item.get(app_module.QUEUED_METADATA_RUN_ID_KEY) or "")
+        for item in app.metadata_items
+    }
+    assert visible_run_ids == {other_same_video.run_id, unrelated.run_id}
     assert app.pending_jobs == [other_same_video, unrelated]
     assert app._library_suppressed_run_ids == {claimed_queue.run_id}
-    assert reconciled == [{claimed_queue.run_id, "history:0"}]
+    assert reconciled == [{claimed_queue.run_id}]
 
 
 def test_remove_active_library_item_after_history_commit_still_stops_its_exact_run(
@@ -3391,7 +3432,8 @@ def test_remove_active_library_item_after_history_commit_still_stops_its_exact_r
 
     assert cancellations == [active.run_id]
     assert app._library_suppressed_run_ids == {active.run_id}
-    assert app.metadata_items == []
+    assert len(app.metadata_items) == 1
+    assert app.metadata_items[0]["vodforge_terminal_run_id"] == older_terminal.run_id
     assert app.download_history == []
     assert app._terminal_jobs == [older_terminal]
     assert len(reconciled) == 1
@@ -3926,7 +3968,7 @@ def test_active_metadata_claims_a_same_item_terminal_row_before_library_removal(
 
     assert cancellations == [active.run_id]
     assert active.run_id in app._library_suppressed_run_ids
-    assert app.metadata_items == []
+    assert not app.metadata_items
 
 
 def test_late_worker_events_cannot_resurrect_a_library_removed_run(tmp_path: Path):
@@ -3997,20 +4039,21 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(
         "vodforge_output_type": "MP4",
     }
     unrelated.metadata_keys.add(("other-item", "MP4"))
-    active = make_job(tmp_path, video_id="stopped-item")
-    queued = make_job(tmp_path, video_id="stopped-item")
-
     app = DownloaderApp.__new__(DownloaderApp)
     app.video_tree = SelectedTree()
-    # Reproduce the legacy cancellation row: it has media identity but no
-    # vodforge_terminal_run_id linking it to the Forge terminal collection.
-    app.metadata_items = [dict(stopped.preview_info)]
+    app.metadata_items = [
+        {
+            **stopped.preview_info,
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_run_id": stopped.run_id,
+        }
+    ]
     app.download_history = []
     app.history_path = tmp_path / "history.json"
     app._terminal_jobs = [stopped, unrelated]
     app._completed_jobs = []
-    app.active_job = active
-    app.pending_jobs = [queued]
+    app.active_job = None
+    app.pending_jobs = []
     app.status_var = Value("")
     app._render_metadata_tree = lambda: None
     app._focus_selected_run_id = stopped.run_id
@@ -4026,10 +4069,11 @@ def test_remove_from_library_clears_matching_stopped_forge_recent(
 
     app._remove_selected_library_item()
 
-    assert app.metadata_items == []
+    assert len(app.metadata_items) == 1
+    assert app.metadata_items[0]["vodforge_terminal_run_id"] == unrelated.run_id
     assert [job.run_id for job in app._terminal_jobs] == [unrelated.run_id]
-    assert app.active_job is active
-    assert app.pending_jobs == [queued]
+    assert app.active_job is None
+    assert app.pending_jobs == []
     assert selected_records == [{"kind": "completed", "run_id": unrelated.run_id}]
     assert refreshes == [True]
     assert "Library and Forge recents" in app.status_var.get()

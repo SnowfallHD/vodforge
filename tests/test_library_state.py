@@ -1,22 +1,20 @@
 from __future__ import annotations
 
+import random
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from yt_downloader.history import history_identity, upsert_history
 from yt_downloader.library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
+    PROJECTION_OWNER_KIND_KEY,
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
-    claim_active_metadata_row,
+    LibraryProjectionOwner,
     is_metadata_preview,
-    merge_library_metadata_items,
-    metadata_output_type,
-    metadata_run_key,
     persisted_run_deck_records,
-    project_preparing_library_item,
-    project_queued_library_item,
-    update_active_library_status,
 )
 from yt_downloader.models import (
     DownloadJob,
@@ -25,7 +23,6 @@ from yt_downloader.models import (
     Mp3ExportSettings,
     OutputType,
 )
-from yt_downloader.run_identity import ATTEMPT_SIGNATURE_KEY
 
 
 def _job(
@@ -49,257 +46,163 @@ def _job(
     )
 
 
-def test_merge_updates_existing_row_and_list_in_place() -> None:
-    row = {
-        "id": "same",
-        "title": "Old title",
-        "vodforge_output_type": "MP4",
-        "vodforge_preview_complete": True,
-        "vodforge_preview_run_id": "preview:old",
-    }
-    items = [row]
-
-    result = merge_library_metadata_items(
-        items,
-        [{"id": "same", "title": "Fresh title", "vodforge_output_type": "MP4"}],
+def _projection(
+    owner: LibraryProjectionOwner,
+    *,
+    history: list[dict[str, Any]] | None = None,
+    active: DownloadJob | None = None,
+    queued: list[DownloadJob] | None = None,
+    terminal: list[DownloadJob] | None = None,
+):
+    return owner.reconcile(
+        history_items=history or [],
+        active_job=active,
+        queued_jobs=queued or [],
+        terminal_jobs=terminal or [],
     )
 
-    assert result.items is items
-    assert result.items[0] is row
-    assert row["title"] == "Fresh title"
-    assert "vodforge_preview_complete" not in row
-    assert "vodforge_preview_run_id" not in row
 
-
-def test_merge_prepends_new_rows_and_collapses_incoming_duplicates() -> None:
-    existing_row = {"id": "older", "title": "Older", "vodforge_output_type": "MP4"}
-    items = [existing_row]
-
-    result = merge_library_metadata_items(
-        items,
-        [
-            {"id": "new", "title": "First title", "vodforge_output_type": "MP4"},
-            {"id": "new", "title": "Final title", "vodforge_output_type": "MP4"},
-        ],
-    )
-
-    assert result.items is not items
-    assert [item["id"] for item in result.items] == ["new", "older"]
-    assert result.items[0]["title"] == "Final title"
-    assert result.items[1] is existing_row
-
-
-def test_active_merge_claims_ephemeral_row_without_overwriting_saved_row(
+def test_projection_rows_are_deeply_immutable_and_snapshot_is_atomic(
     tmp_path: Path,
 ) -> None:
-    saved = upsert_history(
-        [],
-        {"id": "same", "title": "Saved copy", "vodforge_output_type": "MP4"},
-        tmp_path,
-    )[0]
-    ephemeral = {
-        "id": "same",
-        "title": "Old failure",
-        "vodforge_output_type": "MP4",
-        "vodforge_terminal_status": "Failed",
-        "vodforge_terminal_run_id": "failed:old",
-    }
-    items = [saved, ephemeral]
+    owner = LibraryProjectionOwner()
+    job = _job(tmp_path, video_id="immutable")
+    job.preview_info = {"id": "immutable", "tags": ["one"], "nested": {"x": 1}}
 
-    result = merge_library_metadata_items(
-        items,
-        [{"id": "same", "title": "Fresh active", "vodforge_output_type": "MP4"}],
-        active_run_id="active:new",
-    )
+    first = _projection(owner, active=job)
+    with pytest.raises(TypeError):
+        first.rows[0][RUN_STATUS_KEY] = "Stopped"
+    with pytest.raises(TypeError):
+        first.rows[0]["tags"].append("two")
+    with pytest.raises(TypeError):
+        first.rows[0]["nested"]["x"] = 2
 
-    assert result.items is items
-    assert saved["title"] == "Saved copy"
-    assert ephemeral["title"] == "Fresh active"
-    assert ephemeral[ACTIVE_METADATA_RUN_ID_KEY] == "active:new"
-    assert "vodforge_terminal_status" not in ephemeral
-    assert "vodforge_terminal_run_id" not in ephemeral
+    owner.observe_phase(job.run_id, "Downloading")
+    second = _projection(owner, active=job)
+    assert first is not second
+    assert first.rows[0][RUN_STATUS_KEY] == "Preparing"
+    assert second.rows[0][RUN_STATUS_KEY] == "Downloading"
 
 
-def test_merge_keeps_mp3_and_mp4_rows_separate_for_one_provider_item() -> None:
-    mp4 = {"id": "same", "title": "Video", "vodforge_output_type": "MP4"}
-
-    result = merge_library_metadata_items(
-        [mp4],
-        [{"id": "same", "title": "Audio", "vodforge_output_type": "MP3"}],
-    )
-
-    assert [metadata_output_type(item) for item in result.items] == [
-        OutputType.MP3,
-        OutputType.MP4,
-    ]
-    assert metadata_run_key(result.items[0]) == ("same", "MP3")
-    assert metadata_run_key(result.items[1]) == ("same", "MP4")
-
-
-def test_active_merge_keeps_same_video_rows_with_different_output_contracts() -> None:
-    automatic = {
-        "id": "same",
-        "title": "Automatic output",
-        "vodforge_output_type": "MP4",
-        ATTEMPT_SIGNATURE_KEY: "automatic-signature",
-        "vodforge_terminal_status": "Stopped",
-        "vodforge_terminal_run_id": "stopped:auto",
-    }
-
-    result = merge_library_metadata_items(
-        [automatic],
-        [
-            {
-                "id": "same",
-                "title": "Manual output",
-                "vodforge_output_type": "MP4",
-                ATTEMPT_SIGNATURE_KEY: "manual-signature",
-            }
-        ],
-        active_run_id="active:manual",
-    )
-
-    assert len(result.items) == 2
-    assert [item[ATTEMPT_SIGNATURE_KEY] for item in result.items] == [
-        "manual-signature",
-        "automatic-signature",
-    ]
-
-
-def test_active_merge_reuses_the_exact_terminal_attempt_row() -> None:
-    terminal = {
-        "id": "same",
-        "title": "Stopped output",
-        "vodforge_output_type": "MP4",
-        ATTEMPT_SIGNATURE_KEY: "exact-signature",
-        "vodforge_terminal_status": "Stopped",
-        "vodforge_terminal_run_id": "stopped:old",
-    }
-
-    result = merge_library_metadata_items(
-        [terminal],
-        [
-            {
-                "id": "same",
-                "title": "Fresh output",
-                "vodforge_output_type": "MP4",
-                ATTEMPT_SIGNATURE_KEY: "exact-signature",
-            }
-        ],
-        active_run_id="active:new",
-    )
-
-    assert result.items == [terminal]
-    assert terminal[ACTIVE_METADATA_RUN_ID_KEY] == "active:new"
-    assert terminal["title"] == "Fresh output"
-    assert "vodforge_terminal_run_id" not in terminal
-
-
-def test_queue_projection_keeps_same_video_attempts_distinct_by_run_id(
+def test_queued_preparing_and_terminal_replace_one_run_projection(
     tmp_path: Path,
 ) -> None:
+    owner = LibraryProjectionOwner()
+    job = _job(tmp_path, video_id="")
+
+    queued = _projection(owner, queued=[job])
+    assert len(queued.rows) == 1
+    assert queued.rows[0][QUEUED_METADATA_RUN_ID_KEY] == job.run_id
+    assert queued.rows[0][RUN_STATUS_KEY] == "Queued"
+
+    preparing = _projection(owner, active=job)
+    assert len(preparing.rows) == 1
+    assert preparing.rows[0][ACTIVE_METADATA_RUN_ID_KEY] == job.run_id
+    assert preparing.rows[0][RUN_STATUS_KEY] == "Preparing"
+
+    job.terminal_status = "Stopped"
+    job.terminal_message = "Download cancelled."
+    stopped = _projection(owner, active=job, terminal=[job])
+    assert len(stopped.rows) == 1
+    assert stopped.rows[0]["vodforge_terminal_run_id"] == job.run_id
+    assert stopped.rows[0]["vodforge_terminal_status"] == "Stopped"
+    assert stopped.violations == ()
+    assert stopped == _projection(owner, active=job, terminal=[job])
+
+
+def test_same_video_distinct_runs_remain_distinct(tmp_path: Path) -> None:
+    owner = LibraryProjectionOwner()
     first = _job(tmp_path, video_id="same")
     second = _job(tmp_path, video_id="same")
-    first.preview_info = {"id": "same", "title": "First queued attempt"}
-    second.preview_info = {"id": "same", "title": "Second queued attempt"}
-    items: list[dict[str, Any]] = []
+    first.preview_info = {"id": "same", "title": "First"}
+    second.preview_info = {"id": "same", "title": "Second"}
+    first.terminal_status = "Stopped"
 
-    project_queued_library_item(items, first)
-    project_queued_library_item(items, second)
-
-    assert len(items) == 2
-    assert {item[QUEUED_METADATA_RUN_ID_KEY] for item in items} == {
-        first.run_id,
-        second.run_id,
-    }
-    assert all(item[RUN_STATUS_KEY] == "Queued" for item in items)
+    projection = _projection(owner, queued=[second], terminal=[first])
+    assert len(projection.rows) == 2
+    assert {
+        row.get(QUEUED_METADATA_RUN_ID_KEY) or row.get("vodforge_terminal_run_id")
+        for row in projection.rows
+    } == {first.run_id, second.run_id}
 
 
-def test_retry_projection_transitions_the_exact_terminal_row_without_a_gap(
+def test_metadata_arriving_after_terminalization_cannot_resurrect_transient(
     tmp_path: Path,
 ) -> None:
-    first = _job(tmp_path, video_id="same")
-    second = _job(tmp_path, video_id="same")
-    first_row = {
-        "id": "same",
-        "title": "Retry this row",
-        "vodforge_output_type": "MP4",
-        "vodforge_terminal_status": "Stopped",
-        "vodforge_terminal_run_id": first.run_id,
-    }
-    second_row = {
-        "id": "same",
-        "title": "Keep this stopped row",
-        "vodforge_output_type": "MP4",
-        "vodforge_terminal_status": "Stopped",
-        "vodforge_terminal_run_id": second.run_id,
-    }
-    retry = _job(tmp_path, video_id="same")
-    retry.origin_run_id = first.run_id
-    retry.preview_info = dict(first_row)
-    items = [first_row, second_row]
+    owner = LibraryProjectionOwner()
+    job = _job(tmp_path, video_id="late")
+    job.terminal_status = "Stopped"
+    terminal = _projection(owner, terminal=[job])
+    job.preview_info = {"id": "late", "title": "Late metadata"}
+    owner.observe_phase(job.run_id, "Downloading")
+    after_late_event = _projection(owner, terminal=[job])
 
-    project_preparing_library_item(items, retry)
-    second_row[ATTEMPT_SIGNATURE_KEY] = first_row[ATTEMPT_SIGNATURE_KEY]
-    merge_library_metadata_items(
-        items,
-        [{"id": "same", ATTEMPT_SIGNATURE_KEY: first_row[ATTEMPT_SIGNATURE_KEY]}],
-        active_run_id=retry.run_id,
-        replacing_run_id=first.run_id,
-    )
-
-    assert len(items) == 2
-    assert first_row[ACTIVE_METADATA_RUN_ID_KEY] == retry.run_id
-    assert first_row[RUN_STATUS_KEY] == "Preparing"
-    assert "vodforge_terminal_status" not in first_row
-    assert second_row["vodforge_terminal_status"] == "Stopped"
-    assert second_row["vodforge_terminal_run_id"] == second.run_id
+    assert len(terminal.rows) == len(after_late_event.rows) == 1
+    assert after_late_event.rows[0]["vodforge_terminal_status"] == "Stopped"
+    assert RUN_STATUS_KEY not in after_late_event.rows[0]
 
 
-def test_active_phase_updates_are_state_aware_and_never_not_downloaded(
+def test_preview_owner_is_explicit_and_removable() -> None:
+    owner = LibraryProjectionOwner()
+    source = {"id": "preview", "title": "Preview", "vodforge_output_type": "MP3"}
+    owner.record_preview("preview:request-7", [source])
+    projection = _projection(owner)
+
+    assert projection.rows[0]["vodforge_preview_run_id"] == "preview:request-7"
+    assert is_metadata_preview(projection.rows[0])
+    assert projection.rows[0][PROJECTION_OWNER_KIND_KEY] == "preview"
+    owner.remove_preview("preview:request-7")
+    assert _projection(owner).rows == ()
+
+
+def test_seeded_transition_sequences_preserve_projection_invariants(
     tmp_path: Path,
 ) -> None:
-    job = _job(tmp_path, video_id="phase")
-    row = project_preparing_library_item([], job).items[0]
-
-    assert update_active_library_status([row], job.run_id, "Video 1 — downloading")
-    assert row[RUN_STATUS_KEY] == "Downloading"
-    assert update_active_library_status([row], job.run_id, "Video 1 — transcoding")
-    assert row[RUN_STATUS_KEY] == "Transcoding"
-
-
-def test_queued_job_promotion_reuses_its_row_as_preparing(tmp_path: Path) -> None:
-    job = _job(tmp_path, video_id="promoted")
-    items: list[dict[str, Any]] = []
-
-    project_queued_library_item(items, job)
-    project_preparing_library_item(items, job)
-
-    assert len(items) == 1
-    assert items[0][ACTIVE_METADATA_RUN_ID_KEY] == job.run_id
-    assert items[0][RUN_STATUS_KEY] == "Preparing"
-    assert QUEUED_METADATA_RUN_ID_KEY not in items[0]
-
-
-def test_preview_merge_retains_exact_preview_run_identity() -> None:
-    result = merge_library_metadata_items(
-        [],
-        [{"id": "preview", "title": "Preview", "vodforge_output_type": "MP3"}],
-        preview_complete=True,
-        preview_run_id="preview:request-7",
-    )
-
-    assert result.items[0]["vodforge_preview_run_id"] == "preview:request-7"
-    assert is_metadata_preview(result.items[0])
-    assert (
-        claim_active_metadata_row(
-            result.items[0],
-            {"id": "preview", "vodforge_output_type": "MP3"},
-            "active:8",
-        )[ACTIVE_METADATA_RUN_ID_KEY]
-        == "active:8"
-    )
-    assert not is_metadata_preview(result.items[0])
+    randomizer = random.Random(381996)
+    for _case in range(50):
+        owner = LibraryProjectionOwner()
+        jobs = [_job(tmp_path, video_id="same") for _ in range(3)]
+        queued = list(jobs)
+        active: DownloadJob | None = None
+        terminal: list[DownloadJob] = []
+        for _step in range(30):
+            action = randomizer.choice(("start", "phase", "stop", "fail", "complete"))
+            if action == "start" and active is None and queued:
+                active = queued.pop(0)
+            elif action == "phase" and active is not None:
+                owner.observe_phase(
+                    active.run_id,
+                    randomizer.choice(("Preparing", "Downloading", "Transcoding")),
+                )
+            elif action in {"stop", "fail"} and active is not None:
+                active.terminal_status = "Stopped" if action == "stop" else "Failed"
+                terminal.append(active)
+                active = None
+            elif action == "complete" and active is not None:
+                active.terminal_status = "Completed"
+                terminal.append(active)
+                active = None
+            projection = _projection(
+                owner, active=active, queued=queued, terminal=terminal
+            )
+            run_ids = [
+                str(
+                    row.get(ACTIVE_METADATA_RUN_ID_KEY)
+                    or row.get(QUEUED_METADATA_RUN_ID_KEY)
+                    or row.get("vodforge_terminal_run_id")
+                )
+                for row in projection.rows
+            ]
+            assert len(run_ids) == len(set(run_ids))
+            assert set(run_ids) == {
+                *(job.run_id for job in queued),
+                *(job.run_id for job in terminal),
+                *((active.run_id,) if active is not None else ()),
+            }
+            assert projection.violations == ()
+            assert projection == _projection(
+                owner, active=active, queued=queued, terminal=terminal
+            )
 
 
 def test_persisted_records_filter_live_owners_and_keep_saved_output_separate(
