@@ -82,6 +82,14 @@ class LiveWorker:
         return True
 
 
+class QueueRecoveryOwner:
+    def __init__(self):
+        self.snapshots: list[list[str]] = []
+
+    def queue_changed(self, jobs):
+        self.snapshots.append([job.run_id for job in jobs])
+
+
 class Control:
     def __init__(self):
         self.raised = False
@@ -1012,6 +1020,49 @@ def test_retry_joins_latest_queue_position_with_fresh_authority(tmp_path: Path):
     assert app.pending_jobs[0] is queued
     assert app.pending_jobs[1].run_id != failed.run_id
     assert app.pending_jobs[1].url == failed.url
+
+
+def test_enqueue_persists_order_before_exposing_job_to_ui(tmp_path: Path):
+    active = make_job(tmp_path, video_id="active")
+    queued = make_job(tmp_path, video_id="queued")
+    new_job = make_job(tmp_path, video_id="new")
+    owner = QueueRecoveryOwner()
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active
+    app.worker = LiveWorker()
+    app.pending_jobs = [queued]
+    app.run_recovery = owner
+    app.focus_run_deck = object()
+    app.focus_engine_var = Value("")
+    app.download_button = Control()
+    app._append_log = lambda _line: None
+    app._refresh_focus_run_deck = lambda: None
+    app._enqueue_queue_preview = lambda _job: None
+
+    app._start_or_queue_download_job(new_job, clear_source=False)
+
+    assert owner.snapshots == [[queued.run_id, new_job.run_id]]
+    assert app.pending_jobs == [queued, new_job]
+
+
+def test_queue_promotion_supplies_remaining_order_and_never_starts_twice(
+    tmp_path: Path,
+):
+    first = make_job(tmp_path, video_id="first")
+    second = make_job(tmp_path, video_id="second")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.pending_jobs = [first, second]
+    launches: list[tuple[str, list[str]]] = []
+    app._launch_download_job = lambda job, **kwargs: (
+        launches.append((job.run_id, [item.run_id for item in kwargs["queued_jobs"]]))
+        or True
+    )
+    app._refresh_focus_run_deck = lambda: None
+
+    assert app._launch_next_pending_job() is True
+
+    assert launches == [(first.run_id, [second.run_id])]
+    assert app.pending_jobs == [second]
 
 
 def test_newest_completed_run_remains_owner_of_a_repeated_history_identity(

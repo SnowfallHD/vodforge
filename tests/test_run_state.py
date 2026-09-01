@@ -205,3 +205,78 @@ def test_recovered_failure_survives_a_later_active_run(tmp_path: Path) -> None:
     recovered = store.load_failed_jobs()
     assert [job.run_id for job in recovered] == ["run-1"]
     assert recovered[0].terminal_status == "Failed"
+
+
+def test_ordered_queue_survives_restart_and_active_failure(tmp_path: Path) -> None:
+    path = tmp_path / "active-run.json"
+    store = ActiveRunStore(path)
+    active = _job(tmp_path)
+    first = _job(tmp_path)
+    first.run_id = "queued-1"
+    first.url = "https://www.youtube.com/watch?v=queued1"
+    first.urls = [first.url]
+    second = _job(tmp_path)
+    second.run_id = "queued-2"
+    second.url = "https://www.youtube.com/watch?v=queued2"
+    second.urls = [second.url]
+
+    store.begin(active, [first, second])
+    store.mark_failed()
+
+    restarted = ActiveRunStore(path)
+    assert [job.run_id for job in restarted.load_queued_jobs()] == [
+        "queued-1",
+        "queued-2",
+    ]
+    assert restarted.load_failed_job().run_id == "run-1"  # type: ignore[union-attr]
+
+
+def test_queue_promotion_is_one_durable_transition(tmp_path: Path) -> None:
+    path = tmp_path / "active-run.json"
+    store = ActiveRunStore(path)
+    first = _job(tmp_path)
+    first.run_id = "queued-1"
+    second = _job(tmp_path)
+    second.run_id = "queued-2"
+    store.replace_queue([first, second])
+
+    store.begin(first, [second])
+
+    payload = store.load()
+    assert payload is not None
+    assert payload["state"] == "active"
+    assert payload["job"]["run_id"] == "queued-1"
+    assert [record["run_id"] for record in payload["queued_jobs"]] == ["queued-2"]
+
+
+def test_finishing_active_run_preserves_queued_jobs(tmp_path: Path) -> None:
+    path = tmp_path / "active-run.json"
+    store = ActiveRunStore(path)
+    active = _job(tmp_path)
+    queued = _job(tmp_path)
+    queued.run_id = "queued-1"
+    store.begin(active, [queued])
+
+    store.clear(active.run_id)
+
+    payload = store.load()
+    assert payload is not None
+    assert payload["state"] == "idle"
+    assert [job.run_id for job in store.load_queued_jobs()] == ["queued-1"]
+
+
+def test_removing_queued_run_does_not_disturb_active_owner(tmp_path: Path) -> None:
+    path = tmp_path / "active-run.json"
+    store = ActiveRunStore(path)
+    active = _job(tmp_path)
+    queued = _job(tmp_path)
+    queued.run_id = "queued-1"
+    store.begin(active, [queued])
+
+    store.clear(queued.run_id)
+
+    payload = store.load()
+    assert payload is not None
+    assert payload["state"] == "active"
+    assert payload["job"]["run_id"] == active.run_id
+    assert store.load_queued_jobs() == []

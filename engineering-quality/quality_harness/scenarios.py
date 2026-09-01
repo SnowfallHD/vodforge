@@ -380,8 +380,20 @@ def lifecycle_quit_restart_recovery(
         output_type="MP4",
     )
     job.run_id = "hard-exit-run"
+    first_queued = build_job(
+        url="https://example.invalid/generated-queued-first",
+        output_dir=output_dir,
+        output_type="MP4",
+    )
+    first_queued.run_id = "queued-first"
+    second_queued = build_job(
+        url="https://example.invalid/generated-queued-second",
+        output_dir=output_dir,
+        output_type="MP3",
+    )
+    second_queued.run_id = "queued-second"
     store = ActiveRunStore(run_state_path)
-    store.begin(job)
+    store.begin(job, [first_queued, second_queued])
     stage = create_private_staging_directory(output_dir)
     partial = stage / "interrupted-source.part"
     partial.write_bytes(b"generated partial media" * 1024)
@@ -440,14 +452,11 @@ def lifecycle_quit_restart_recovery(
             "recovery_error": recovery_error,
         }
     )
-    successor = build_job(
-        url="https://example.invalid/generated-successor",
-        output_dir=output_dir,
-        output_type="MP4",
-    )
-    successor.run_id = "successor-run"
-    store.begin(successor)
-    store.clear(successor.run_id)
+    queued_after_restart = store.load_queued_jobs()
+    store.begin(first_queued, [second_queued])
+    store.clear(first_queued.run_id)
+    store.begin(second_queued, [])
+    store.clear(second_queued.run_id)
     durable_failed_jobs = store.load_failed_jobs()
     store.clear(job.run_id)
     trace.append(
@@ -455,6 +464,9 @@ def lifecycle_quit_restart_recovery(
             "phase": "after_library_removal",
             "run_state_exists": run_state_path.exists(),
             "staging_root_exists": (output_dir / ".vfstage").exists(),
+            "recovered_queue_order": [
+                queued_job.run_id for queued_job in queued_after_restart
+            ],
         }
     )
     trace_path = case_root / "quit-restart-trace.json"
@@ -472,6 +484,10 @@ def lifecycle_quit_restart_recovery(
         and recovered[0].terminal_status == "Failed"
         and [item.run_id for item in durable_failed_jobs] == [job.run_id]
     )
+    queue_preserved = [queued_job.run_id for queued_job in queued_after_restart] == [
+        "queued-first",
+        "queued-second",
+    ]
     stage_cleaned = not stage.exists() and not (output_dir / ".vfstage").exists()
     journal_removed = not run_state_path.exists()
     passed = bool(
@@ -479,6 +495,7 @@ def lifecycle_quit_restart_recovery(
         and settings_preserved
         and settings_private
         and failed_preserved
+        and queue_preserved
         and child_reaped
         and stage_cleaned
         and journal_removed
@@ -499,6 +516,7 @@ def lifecycle_quit_restart_recovery(
             "orphan_child_reaped": child_reaped,
             "recorded_stage_cleaned": stage_cleaned,
             "failed_state_durable_until_removal": failed_preserved,
+            "queued_runs_preserved_in_order": queue_preserved,
             "journal_removed_by_library_removal": journal_removed,
         },
         "evidence": [
@@ -506,6 +524,7 @@ def lifecycle_quit_restart_recovery(
             f"The persisted settings file was private 0600: {settings_private}",
             f"Recovery reaped the exact recorded child and removed its staging transaction: {child_reaped and stage_cleaned}",
             f"The interrupted run used Failed and survived a later run until removal: {failed_preserved}",
+            f"Two queued runs survived restart in their original order and promoted exactly once: {queue_preserved}",
             f"Library removal cleared the durable failure journal: {journal_removed}",
         ],
         "artifacts": [str(trace_path), str(settings_path)],

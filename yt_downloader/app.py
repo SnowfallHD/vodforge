@@ -21,7 +21,7 @@ import urllib.parse
 import uuid
 import warnings
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum
@@ -4733,6 +4733,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             run_state_file_path(), diagnostic=write_diagnostic
         )
         recovered_failed_jobs = self.run_recovery.recover_at_startup()
+        recovered_queued_jobs = self.run_recovery.queued_at_startup()
         set_active_child_process_observer(self.run_recovery.child_event)
         self.settings_persistence = SettingsPersistenceOwner(
             settings_file_path(), diagnostic=write_diagnostic
@@ -4920,6 +4921,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._load_download_history()
         for recovered_failed_job in recovered_failed_jobs:
             self._restore_recovered_failed_run(recovered_failed_job)
+        self.pending_jobs = recovered_queued_jobs
+        for recovered_queued_job in recovered_queued_jobs:
+            self._enqueue_queue_preview(recovered_queued_job)
+        if recovered_queued_jobs:
+            self._refresh_focus_run_deck()
+            self.after(0, self._launch_next_pending_job)
         self._check_runtime()
         self.after(100, self._pump_events)
         self.after(250, self._record_first_launch)
@@ -10265,11 +10272,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 removed_run_ids
             )
         if plan.queued_run_ids:
-            self.pending_jobs = [
+            remaining_jobs = [
                 job
                 for job in self.__dict__.get("pending_jobs", [])
                 if job.run_id not in plan.queued_run_ids
             ]
+            recovery_owner = self.__dict__.get("run_recovery")
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.queue_changed(remaining_jobs)
+            except RunStateError as exc:
+                raise HistoryError(
+                    "The queued run could not be removed safely because its private "
+                    f"recovery record could not be updated: {exc}"
+                ) from exc
+            self.pending_jobs = remaining_jobs
         if plan.active_run_id is not None:
             self._cancel()
         removed_run_ids.update(self._remove_library_item_from_forge_recents(info))
@@ -11045,7 +11062,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self, job: DownloadJob, *, clear_source: bool
     ) -> None:
         if self.worker is not None and self.worker.is_alive():
-            self.pending_jobs.append(job)
+            queued_jobs = [*self.pending_jobs, job]
+            recovery_owner = self.__dict__.get("run_recovery")
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.queue_changed(queued_jobs)
+            except RunStateError as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    "VODForge could not save this run to its private queue, so it "
+                    f"was not queued.\n\n{exc}",
+                )
+                return
+            self.pending_jobs = queued_jobs
             if hasattr(self, "focus_run_deck"):
                 self.focus_engine_var.set(
                     f"1 active  /  {len(self.pending_jobs)} queued  /  runs process one at a time"
@@ -11058,7 +11087,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self._reset_source_input_after_send()
             return
 
-        self._launch_download_job(job)
+        self._launch_download_job(job, queued_jobs=self.pending_jobs)
         if clear_source:
             self._reset_source_input_after_send()
 
@@ -11105,19 +11134,26 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self._display_focus_queued_job_snapshot(record, job)
 
     def _launch_download_job(
-        self, job: DownloadJob, *, select_detail: bool = True
-    ) -> None:
+        self,
+        job: DownloadJob,
+        *,
+        select_detail: bool = True,
+        queued_jobs: Sequence[DownloadJob] | None = None,
+    ) -> bool:
         recovery_owner = self.__dict__.get("run_recovery")
         if recovery_owner is not None:
             try:
-                recovery_owner.begin(job)
+                recovery_owner.begin(
+                    job,
+                    self.pending_jobs if queued_jobs is None else queued_jobs,
+                )
             except RunStateError as exc:
                 messagebox.showerror(
                     APP_NAME,
                     "VODForge could not create the private recovery record required "
                     f"to start this run. No download was started.\n\n{exc}",
                 )
-                return
+                return False
         self.active_job = job
         if select_detail:
             self._focus_selected_run_id = job.run_id
@@ -11185,6 +11221,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if hasattr(self, "focus_run_controls"):
             self._set_focus_run_controls_visible(True)
             self._apply_focus_layout(force=True)
+        return True
 
     def _restore_recovered_failed_run(self, job: DownloadJob) -> None:
         """Render an abandoned run through the existing Failed presentation."""
@@ -11227,8 +11264,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.download_button.configure(text="Forge", state="normal")
                 self.focus_engine_var.set("Runs process one at a time")
             return False
-        job = self.pending_jobs.pop(0)
-        self._launch_download_job(job, select_detail=False)
+        job = self.pending_jobs[0]
+        remaining_jobs = self.pending_jobs[1:]
+        if not self._launch_download_job(
+            job,
+            select_detail=False,
+            queued_jobs=remaining_jobs,
+        ):
+            return False
+        self.pending_jobs = remaining_jobs
+        self._refresh_focus_run_deck()
         return True
 
     def _archive_active_terminal_job(self, status: str, message: str) -> None:
@@ -11386,7 +11431,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if self.__dict__.get("_focus_views") is not None:
             self._select_focus_view("forge")
         if self.active_job is not None or (self.worker and self.worker.is_alive()):
-            self.pending_jobs.append(retry_job)
+            queued_jobs = [*self.pending_jobs, retry_job]
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.queue_changed(queued_jobs)
+            except RunStateError as exc:
+                messagebox.showerror(
+                    APP_NAME,
+                    "VODForge could not save this retry to its private queue, so "
+                    f"it was not queued.\n\n{exc}",
+                )
+                return
+            self.pending_jobs = queued_jobs
             self._enqueue_queue_preview(retry_job)
             self._refresh_focus_run_deck()
             return
@@ -11434,7 +11490,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             settings_owner.flush()
         self._close_deadline = time.monotonic() + APPLICATION_CLOSE_TIMEOUT_SECONDS
         self.cancel_requested = True
-        self.pending_jobs.clear()
         write_diagnostic(
             "application close requested; cancelling active work before destroying the window"
         )

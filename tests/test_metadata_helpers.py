@@ -4785,7 +4785,7 @@ def test_application_close_cancels_work_reaps_owned_child_then_destroys():
     callbacks.pop(0)()
 
     assert app.cancel_requested is True
-    assert app.pending_jobs == []
+    assert len(app.pending_jobs) == 1
     assert process.poll() == -15
     assert destroyed == [True]
     with app_module._ACTIVE_CHILD_PROCESS_LOCK:
