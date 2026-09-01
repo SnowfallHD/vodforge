@@ -227,7 +227,7 @@ class _TooltipController:
         )
 
     def request_show(self, tooltip: ToolTip) -> None:
-        if not tooltip.text:
+        if not tooltip.current_text():
             return
         if self.active is tooltip:
             return
@@ -268,7 +268,7 @@ class _TooltipController:
             tip.wm_overrideredirect(True)
             label = tk.Label(
                 tip,
-                text=tooltip.text,
+                text=tooltip.current_text(),
                 justify="left",
                 wraplength=320,
                 bg="#111214",
@@ -350,9 +350,10 @@ class _TooltipController:
 class ToolTip:
     """Precise, delayed hover tooltip coordinated within its containing window."""
 
-    def __init__(self, widget: tk.Widget, text: str) -> None:
+    def __init__(self, widget: tk.Widget, text: str | Callable[[], str]) -> None:
         self.widget = widget
         self.text = text
+        self._pointer_text = ""
         targets_provider = getattr(widget, "tooltip_targets", None)
         targets = tuple(targets_provider()) if callable(targets_provider) else (widget,)
         self.targets = targets or (widget,)
@@ -366,9 +367,10 @@ class ToolTip:
         for target in self.targets:
             target.bind(
                 "<Enter>",
-                lambda _event, tooltip=self: tooltip.controller.request_show(tooltip),
+                self._pointer_entered,
                 add="+",
             )
+            target.bind("<Motion>", self._pointer_moved, add="+")
             target.bind(
                 "<Leave>",
                 lambda _event, tooltip=self: tooltip.controller.request_hide(tooltip),
@@ -380,7 +382,25 @@ class ToolTip:
     def _hide_from_event(self, _event: tk.Event[tk.Widget]) -> None:
         self.controller.hide()
 
+    def current_text(self) -> str:
+        value = self.text() if callable(self.text) else self.text
+        return str(value or "")
+
+    def _pointer_entered(self, _event: tk.Event[tk.Widget]) -> None:
+        self._pointer_text = self.current_text()
+        self.controller.request_show(self)
+
+    def _pointer_moved(self, _event: tk.Event[tk.Widget]) -> None:
+        current = self.current_text()
+        if current == self._pointer_text:
+            return
+        self._pointer_text = current
+        self.controller.hide()
+        self.controller.request_show(self)
+
     def contains_pointer(self) -> bool:
+        if not self.current_text():
+            return False
         try:
             pointer_x, pointer_y = self.widget.winfo_pointerxy()
         except tk.TclError:
@@ -388,6 +408,11 @@ class ToolTip:
         return pointer_inside_widget_bounds(self.targets, pointer_x, pointer_y)
 
     def anchor_bounds(self) -> tuple[int, int, int, int]:
+        bounds_provider = getattr(self.widget, "tooltip_anchor_bounds", None)
+        if callable(bounds_provider):
+            provided = bounds_provider()
+            if provided is not None:
+                return provided
         bounds: list[tuple[int, int, int, int]] = []
         for target in self.targets:
             try:
@@ -545,6 +570,7 @@ class PixelScrollTable(tk.Frame):
             for column in columns
         }
         self._items: dict[str, tuple[Any, ...]] = {}
+        self._row_tooltips: dict[str, str] = {}
         self._order: list[str] = []
         self._selection: str | None = None
         self._focus_item: str | None = None
@@ -702,6 +728,46 @@ class PixelScrollTable(tk.Frame):
         self._focus_item = self._selection
         self._redraw()
         return tuple(order)
+
+    def set_row_tooltips(self, values: dict[str, str]) -> None:
+        self._row_tooltips = {
+            str(item): str(text)
+            for item, text in values.items()
+            if str(item) in self._items and str(text).strip()
+        }
+
+    def tooltip_targets(self) -> tuple[tk.Widget, ...]:
+        return (self._body,)
+
+    def tooltip_text_at_pointer(self) -> str:
+        try:
+            _pointer_x, pointer_y = self._body.winfo_pointerxy()
+            local_y = pointer_y - self._body.winfo_rooty()
+        except tk.TclError:
+            return ""
+        row = self.identify_row(local_y)
+        return self._row_tooltips.get(row, "")
+
+    def tooltip_anchor_bounds(self) -> tuple[int, int, int, int] | None:
+        try:
+            _pointer_x, pointer_y = self._body.winfo_pointerxy()
+            local_y = pointer_y - self._body.winfo_rooty()
+            row = self.identify_row(local_y)
+            row_index = self._order.index(row)
+            top = round(
+                self._body.winfo_rooty()
+                + (row_index * self._row_height)
+                - self._body.canvasy(0)
+            )
+            bottom = top + self._row_height
+            return (
+                self._body.winfo_rootx(),
+                top,
+                self._body.winfo_rootx() + self._body.winfo_width(),
+                bottom,
+            )
+        except (tk.TclError, ValueError):
+            return None
 
     def delete(self, *items: str) -> None:
         for raw_item in items:

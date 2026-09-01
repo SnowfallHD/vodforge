@@ -344,6 +344,14 @@ def _reject_unsafe_leaf_at(parent_fd: int, name: str) -> None:
         )
 
 
+def _leaf_exists_at(parent_fd: int, name: str) -> bool:
+    try:
+        os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def _commit_posix(
     source: Path,
     root_real: Path,
@@ -351,6 +359,7 @@ def _commit_posix(
     parent_parts: Sequence[str],
     leaf_name: str,
     control_check: Callable[[], None] | None,
+    replace_existing: bool,
 ) -> None:
     try:
         root_fd = os.open(root_real, _directory_open_flags())
@@ -393,7 +402,18 @@ def _commit_posix(
                     "The final output directory changed before commit."
                 )
             _reject_unsafe_leaf_at(parent_fd, leaf_name)
-            os.replace(source, leaf_name, dst_dir_fd=parent_fd)
+            if replace_existing:
+                os.replace(source, leaf_name, dst_dir_fd=parent_fd)
+            else:
+                if _leaf_exists_at(parent_fd, leaf_name):
+                    raise FileExistsError(leaf_name)
+                os.link(
+                    source,
+                    leaf_name,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+                source.unlink()
         finally:
             os.close(parent_fd)
     finally:
@@ -448,6 +468,7 @@ def _commit_windows(
     parent_parts: Sequence[str],
     leaf_name: str,
     control_check: Callable[[], None] | None,
+    replace_existing: bool,
 ) -> None:
     _verify_windows_directory_chain(root_absolute, root_real, parent_parts, create=True)
     if control_check is not None:
@@ -473,7 +494,13 @@ def _commit_windows(
     # Windows does not expose an os.replace directory-handle variant. The
     # immediately preceding reparse and resolved-containment checks are the
     # strongest portable boundary available here.
-    os.replace(source, destination_absolute)
+    if replace_existing:
+        os.replace(source, destination_absolute)
+    elif os.name == "nt":
+        os.rename(source, destination_absolute)
+    else:
+        os.link(source, destination_absolute, follow_symlinks=False)
+        source.unlink()
 
 
 def commit_file_beneath(
@@ -482,12 +509,15 @@ def commit_file_beneath(
     destination: Path,
     *,
     control_check: Callable[[], None] | None = None,
+    replace_existing: bool = True,
 ) -> Path:
-    """Atomically replace a regular file beneath ``root`` without following children.
+    """Commit a regular file beneath ``root`` without following children.
 
     The selected root itself may be a symlink chosen by the user. Every
     descendant component is created and verified without following symlinks or
     Windows reparse points, then checked again immediately before commit.
+    ``replace_existing=False`` creates a new leaf or fails, allowing callers to
+    allocate a distinct filename without overwriting an existing artifact.
     """
     root_absolute, destination_absolute, parent_parts, leaf_name = (
         _lexical_destination_parts(
@@ -526,6 +556,7 @@ def commit_file_beneath(
             parent_parts,
             leaf_name,
             control_check,
+            replace_existing,
         )
     else:
         _commit_windows(
@@ -536,5 +567,6 @@ def commit_file_beneath(
             parent_parts,
             leaf_name,
             control_check,
+            replace_existing,
         )
     return destination_absolute

@@ -19,6 +19,7 @@ from yt_downloader.models import (
     Mp3ExportSettings,
     OutputType,
 )
+from yt_downloader.run_identity import ATTEMPT_SIGNATURE_KEY
 
 
 def _job(
@@ -127,6 +128,65 @@ def test_merge_keeps_mp3_and_mp4_rows_separate_for_one_provider_item() -> None:
     ]
     assert metadata_run_key(result.items[0]) == ("same", "MP3")
     assert metadata_run_key(result.items[1]) == ("same", "MP4")
+
+
+def test_active_merge_keeps_same_video_rows_with_different_output_contracts() -> None:
+    automatic = {
+        "id": "same",
+        "title": "Automatic output",
+        "vodforge_output_type": "MP4",
+        ATTEMPT_SIGNATURE_KEY: "automatic-signature",
+        "vodforge_terminal_status": "Stopped",
+        "vodforge_terminal_run_id": "stopped:auto",
+    }
+
+    result = merge_library_metadata_items(
+        [automatic],
+        [
+            {
+                "id": "same",
+                "title": "Manual output",
+                "vodforge_output_type": "MP4",
+                ATTEMPT_SIGNATURE_KEY: "manual-signature",
+            }
+        ],
+        active_run_id="active:manual",
+    )
+
+    assert len(result.items) == 2
+    assert [item[ATTEMPT_SIGNATURE_KEY] for item in result.items] == [
+        "manual-signature",
+        "automatic-signature",
+    ]
+
+
+def test_active_merge_reuses_the_exact_terminal_attempt_row() -> None:
+    terminal = {
+        "id": "same",
+        "title": "Stopped output",
+        "vodforge_output_type": "MP4",
+        ATTEMPT_SIGNATURE_KEY: "exact-signature",
+        "vodforge_terminal_status": "Stopped",
+        "vodforge_terminal_run_id": "stopped:old",
+    }
+
+    result = merge_library_metadata_items(
+        [terminal],
+        [
+            {
+                "id": "same",
+                "title": "Fresh output",
+                "vodforge_output_type": "MP4",
+                ATTEMPT_SIGNATURE_KEY: "exact-signature",
+            }
+        ],
+        active_run_id="active:new",
+    )
+
+    assert result.items == [terminal]
+    assert terminal[ACTIVE_METADATA_RUN_ID_KEY] == "active:new"
+    assert terminal["title"] == "Fresh output"
+    assert "vodforge_terminal_run_id" not in terminal
 
 
 def test_preview_merge_retains_exact_preview_run_identity() -> None:

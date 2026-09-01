@@ -37,6 +37,7 @@ NORMAL_REQUIRED_SCENARIOS = frozenset(
         "reliability.unwritable_output_directory",
         "reliability.ffmpeg_child_failure",
         "reliability.batch_failure_report_reset",
+        "reliability.duplicate_artifact_transitions",
         "unit_static.activity_log_failure_receipt",
         "reliability.malformed_url",
         "lifecycle.repeated_job_soak",

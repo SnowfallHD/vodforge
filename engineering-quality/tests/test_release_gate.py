@@ -39,6 +39,7 @@ def _command(returncode: int = 0, stdout: str = "") -> dict[str, Any]:
 def test_normal_gate_requires_staging_transaction_lifecycle_evidence() -> None:
     assert "lifecycle.staging_transaction_transitions" in NORMAL_REQUIRED_SCENARIOS
     assert "lifecycle.quit_restart_recovery" in NORMAL_REQUIRED_SCENARIOS
+    assert "reliability.duplicate_artifact_transitions" in NORMAL_REQUIRED_SCENARIOS
 
 
 def _static_scenario(*, complexity: int = 74) -> dict[str, Any]:

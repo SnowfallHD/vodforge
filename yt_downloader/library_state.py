@@ -8,6 +8,7 @@ from typing import Any, TypeGuard
 
 from .history import history_identity, history_output_dir, history_output_type
 from .models import DownloadJob, OutputType
+from .run_identity import metadata_attempt_signature
 
 ACTIVE_METADATA_RUN_ID_KEY = "vodforge_active_run_id"
 _ACTIVE_METADATA_STALE_KEYS = (
@@ -168,6 +169,7 @@ def merge_library_metadata_items(
 
         video_id = str(incoming.get("id") or "")
         output_type = metadata_output_type(incoming)
+        incoming_signature = metadata_attempt_signature(incoming)
         matching = next(
             (
                 item
@@ -177,6 +179,18 @@ def merge_library_metadata_items(
                 and metadata_output_type(item) == output_type
                 and not (
                     active_run_id is not None and history_output_dir(item) is not None
+                )
+                and (
+                    (
+                        active_run_id is not None
+                        and (
+                            metadata_attempt_signature(item) == incoming_signature
+                            if incoming_signature
+                            else not metadata_attempt_signature(item)
+                        )
+                    )
+                    or (preview_complete and is_metadata_preview(item))
+                    or (active_run_id is None and not preview_complete)
                 )
             ),
             None,
@@ -206,6 +220,8 @@ def persisted_run_deck_records(
     terminal_metadata_keys: AbstractSet[MetadataRunKey],
     active_history_identities: AbstractSet[HistoryIdentity],
     completed_jobs: Iterable[DownloadJob],
+    active_run_ids: AbstractSet[str] = frozenset(),
+    terminal_run_ids: AbstractSet[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Project saved and preview Library rows into run-deck records."""
     completed_jobs_by_identity: dict[HistoryIdentity, DownloadJob] = {}
@@ -219,11 +235,22 @@ def persisted_run_deck_records(
     for index, item in enumerate(metadata_items):
         item_key = metadata_run_key(item)
         saved = history_output_dir(item)
+        item_run_id = str(
+            item.get(ACTIVE_METADATA_RUN_ID_KEY)
+            or item.get("vodforge_terminal_run_id")
+            or ""
+        )
         item_history_identity = history_identity(item) if saved is not None else None
-        if (
-            saved is None
-            and item_key is not None
-            and (item_key in active_metadata_keys or item_key in terminal_metadata_keys)
+        if saved is None and (
+            item_run_id in active_run_ids | terminal_run_ids
+            or (
+                not item_run_id
+                and item_key is not None
+                and (
+                    item_key in active_metadata_keys
+                    or item_key in terminal_metadata_keys
+                )
+            )
         ):
             continue
         if (

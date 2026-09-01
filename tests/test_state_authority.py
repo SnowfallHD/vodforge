@@ -13,6 +13,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import yt_downloader.app as app_module
 from yt_downloader.app import (
     DownloaderApp,
@@ -27,6 +29,7 @@ from yt_downloader.app import (
 )
 from yt_downloader.focus_settings import FocusSettingsDialog
 from yt_downloader.history import HistoryError, history_identity, upsert_history
+from yt_downloader.run_identity import annotate_job_metadata, job_attempt_signature
 
 
 class Value:
@@ -1043,6 +1046,178 @@ def test_enqueue_persists_order_before_exposing_job_to_ui(tmp_path: Path):
 
     assert owner.snapshots == [[queued.run_id, new_job.run_id]]
     assert app.pending_jobs == [queued, new_job]
+
+
+@pytest.mark.parametrize("duplicate_owner", ["active", "queued"])
+def test_exact_live_duplicate_focuses_existing_attempt_without_scheduling(
+    tmp_path: Path, duplicate_owner: str
+) -> None:
+    existing = make_job(tmp_path, video_id="duplicate")
+    submitted = make_job(tmp_path, video_id="duplicate")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = existing if duplicate_owner == "active" else None
+    app.pending_jobs = [existing] if duplicate_owner == "queued" else []
+    app.status_var = Value("")
+    app._focus_views = None
+    app.focus_run_deck = None
+    logs: list[str] = []
+    app._append_log = logs.append
+    app._launch_download_job = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("exact duplicate was launched")
+    )
+    cleared: list[bool] = []
+    app._reset_source_input_after_send = lambda: cleared.append(True)
+
+    app._start_or_queue_download_job(submitted, clear_source=True)
+
+    assert app._focus_selected_run_id == existing.run_id
+    assert duplicate_owner in app.status_var.get()
+    assert logs == [app.status_var.get()]
+    assert cleared == [True]
+    assert submitted not in app.pending_jobs
+
+
+def test_exact_terminal_duplicate_is_superseded_in_place_and_activity_is_retained(
+    tmp_path: Path,
+) -> None:
+    stopped = make_job(tmp_path, video_id="duplicate")
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = annotate_job_metadata(
+        stopped,
+        {
+            "id": "duplicate",
+            "title": "Stopped attempt",
+            "vodforge_output_type": "MP4",
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_message": "Stopped by user",
+            "vodforge_terminal_run_id": stopped.run_id,
+        },
+    )
+    replacement = make_job(tmp_path, video_id="duplicate")
+    row = dict(stopped.preview_info)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = [stopped]
+    app.metadata_items = [row]
+    app.video_tree = None
+    logs: list[str] = []
+    app._append_log = logs.append
+
+    app._supersede_matching_terminal_attempt(replacement)
+
+    assert app._terminal_jobs == []
+    assert replacement.preview_info is not None
+    assert row["vodforge_active_run_id"] == replacement.run_id
+    assert row["vodforge_attempt_signature"] == job_attempt_signature(replacement)
+    assert "vodforge_terminal_status" not in row
+    assert logs == [
+        (
+            f"Superseded identical stopped run {stopped.run_id} "
+            f"with {replacement.run_id}."
+        )
+    ]
+
+
+def test_different_settings_do_not_supersede_terminal_attempt(
+    tmp_path: Path,
+) -> None:
+    stopped = make_job(tmp_path, video_id="duplicate")
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = annotate_job_metadata(
+        stopped,
+        {
+            "id": "duplicate",
+            "title": "Automatic profile",
+            "vodforge_output_type": "MP4",
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_run_id": stopped.run_id,
+        },
+    )
+    replacement = make_job(tmp_path, video_id="duplicate")
+    replacement.quality_label = "720p HD"
+    row = dict(stopped.preview_info)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._terminal_jobs = [stopped]
+    app.metadata_items = [row]
+    app._append_log = lambda _line: None
+
+    app._supersede_matching_terminal_attempt(replacement)
+
+    assert app._terminal_jobs == [stopped]
+    assert app.metadata_items == [row]
+
+
+def test_terminal_attempt_is_not_superseded_when_queue_persistence_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    stopped = make_job(tmp_path, video_id="duplicate")
+    stopped.terminal_status = "Failed"
+    stopped.preview_info = annotate_job_metadata(
+        stopped,
+        {
+            "id": "duplicate",
+            "title": "Failed attempt",
+            "vodforge_output_type": "MP4",
+            "vodforge_terminal_status": "Failed",
+            "vodforge_terminal_run_id": stopped.run_id,
+        },
+    )
+    replacement = make_job(tmp_path, video_id="duplicate")
+
+    class FailingRecoveryOwner:
+        def queue_changed(self, _jobs, *, superseded_run_id=None):
+            assert superseded_run_id == stopped.run_id
+            raise app_module.RunStateError("injected persistence failure")
+
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = make_job(tmp_path, video_id="active")
+    app.worker = LiveWorker()
+    app.pending_jobs = []
+    app._terminal_jobs = [stopped]
+    app.metadata_items = [dict(stopped.preview_info)]
+    app.run_recovery = FailingRecoveryOwner()
+    errors: list[str] = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda _title, message: errors.append(str(message)),
+    )
+
+    app._start_or_queue_download_job(replacement, clear_source=False)
+
+    assert app.pending_jobs == []
+    assert app._terminal_jobs == [stopped]
+    assert app.metadata_items[0]["vodforge_terminal_run_id"] == stopped.run_id
+    assert errors and "was not queued" in errors[0]
+
+
+def test_terminal_attempt_is_not_superseded_when_launch_is_rejected(
+    tmp_path: Path,
+) -> None:
+    stopped = make_job(tmp_path, video_id="duplicate")
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = annotate_job_metadata(
+        stopped,
+        {
+            "id": "duplicate",
+            "title": "Stopped attempt",
+            "vodforge_output_type": "MP4",
+            "vodforge_terminal_status": "Stopped",
+            "vodforge_terminal_run_id": stopped.run_id,
+        },
+    )
+    replacement = make_job(tmp_path, video_id="duplicate")
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = None
+    app.worker = None
+    app.pending_jobs = []
+    app._terminal_jobs = [stopped]
+    app.metadata_items = [dict(stopped.preview_info)]
+    app._launch_download_job = lambda *_args, **_kwargs: False
+
+    app._start_or_queue_download_job(replacement, clear_source=False)
+
+    assert app._terminal_jobs == [stopped]
+    assert app.metadata_items[0]["vodforge_terminal_run_id"] == stopped.run_id
 
 
 def test_queue_promotion_supplies_remaining_order_and_never_starts_twice(
@@ -2148,6 +2323,35 @@ def test_pixel_scroll_table_keeps_tk_focus_and_body_event_contracts_separate():
     assert pixel_table.focus_item("missing") == "row"
 
 
+def test_pixel_scroll_table_resolves_output_profile_tooltip_for_hovered_row():
+    class BodyProbe:
+        def winfo_pointerxy(self):
+            return 250, 145
+
+        def winfo_rooty(self):
+            return 100
+
+    pixel_table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    pixel_table._body = BodyProbe()
+    pixel_table._items = {"0": (), "1": ()}
+    pixel_table._row_tooltips = {}
+    pixel_table.identify_row = lambda local_y: "1" if local_y >= 40 else "0"
+
+    pixel_table.set_row_tooltips(
+        {
+            "0": "MP4 • 1080p Full HD • Auto CBR",
+            "1": "MP4 • 720p HD • Manual override",
+            "missing": "must not survive",
+        }
+    )
+
+    assert pixel_table.tooltip_text_at_pointer() == ("MP4 • 720p HD • Manual override")
+    assert pixel_table._row_tooltips == {
+        "0": "MP4 • 1080p Full HD • Auto CBR",
+        "1": "MP4 • 720p HD • Manual override",
+    }
+
+
 def test_library_render_clears_an_inconsistent_widget_without_a_selection_target():
     class InconsistentTree:
         def selection(self):
@@ -2294,16 +2498,11 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
             },
         )
     ]
-    assert built_job.preview_info == {
-        key: value
-        for key, value in preview.items()
-        if key
-        not in {
-            "vodforge_preview_complete",
-            "vodforge_preview_run_id",
-            app_module.ACTIVE_METADATA_RUN_ID_KEY,
-        }
-    }
+    assert built_job.preview_info is not None
+    assert built_job.preview_info["title"] == "Preview title"
+    assert built_job.preview_info["vodforge_attempt_signature"] == (
+        job_attempt_signature(built_job)
+    )
     assert preview[app_module.ACTIVE_METADATA_RUN_ID_KEY] == built_job.run_id
     assert "vodforge_preview_complete" not in preview
     assert "vodforge_preview_run_id" not in preview
@@ -2346,11 +2545,9 @@ def test_submitting_a_previewed_url_adopts_it_into_one_fresh_active_run(tmp_path
     assert adopted is True
     assert job.run_id != "preview:old-presentation-id"
     assert job.metadata_keys == {("preview-id", "MP4")}
-    assert job.preview_info == {
-        key: value
-        for key, value in preview.items()
-        if key != app_module.ACTIVE_METADATA_RUN_ID_KEY
-    }
+    assert job.preview_info is not None
+    assert job.preview_info["title"] == "Preview title"
+    assert job.preview_info["vodforge_attempt_signature"] == job_attempt_signature(job)
     assert preview[app_module.ACTIVE_METADATA_RUN_ID_KEY] == job.run_id
     assert "vodforge_preview_complete" not in preview
     assert "vodforge_preview_run_id" not in preview
@@ -2824,10 +3021,10 @@ def test_remove_active_library_item_after_history_commit_still_stops_its_exact_r
     assert app._library_suppressed_run_ids == {active.run_id}
     assert app.metadata_items == []
     assert app.download_history == []
-    assert app._terminal_jobs == []
+    assert app._terminal_jobs == [older_terminal]
     assert len(reconciled) == 1
     assert active.run_id in reconciled[0]
-    assert older_terminal.run_id in reconciled[0]
+    assert older_terminal.run_id not in reconciled[0]
 
 
 def test_library_history_save_failure_has_no_partial_removal_side_effects(

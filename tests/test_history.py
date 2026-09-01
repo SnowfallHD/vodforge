@@ -13,8 +13,10 @@ from yt_downloader.history import (
     application_data_dir,
     history_identity,
     history_media_file_exists,
+    history_media_file_state,
     history_media_identity,
     history_output_dir,
+    history_output_path,
     history_output_type,
     load_history,
     sanitize_durable_text,
@@ -243,6 +245,91 @@ def test_history_keeps_same_video_downloaded_to_two_locations(tmp_path: Path):
 
     assert len(second) == 2
     assert history_output_dir(second[0]) != history_output_dir(second[1])
+
+
+def _record_with_exact_output(
+    *, video_id: str, title: str, output_path: Path
+) -> dict[str, object]:
+    return {
+        "id": video_id,
+        "title": title,
+        "vodforge_output_type": output_path.suffix.removeprefix(".").upper(),
+        "vodforge_encoding_summary": {"output": {"Output file path": str(output_path)}},
+    }
+
+
+def test_history_keeps_distinct_physical_outputs_in_one_item_folder(
+    tmp_path: Path,
+) -> None:
+    item_dir = tmp_path / "downloads" / "Example [abc123]"
+    first_path = item_dir / "Example.mp4"
+    second_path = item_dir / "Example (1).mp4"
+
+    history = upsert_history(
+        [],
+        _record_with_exact_output(
+            video_id="abc123", title="Automatic profile", output_path=first_path
+        ),
+        item_dir,
+    )
+    history = upsert_history(
+        history,
+        _record_with_exact_output(
+            video_id="abc123", title="Manual profile", output_path=second_path
+        ),
+        item_dir,
+    )
+
+    assert len(history) == 2
+    assert {history_output_path(item) for item in history} == {
+        first_path.resolve(),
+        second_path.resolve(),
+    }
+
+
+def test_history_merges_two_rows_for_the_same_physical_output(tmp_path: Path) -> None:
+    item_dir = tmp_path / "downloads" / "Example [abc123]"
+    output_path = item_dir / "Example.mp4"
+    history = upsert_history(
+        [],
+        _record_with_exact_output(
+            video_id="abc123", title="Older title", output_path=output_path
+        ),
+        item_dir,
+        recorded_at="2026-08-31T10:00:00+00:00",
+    )
+
+    history = upsert_history(
+        history,
+        _record_with_exact_output(
+            video_id="abc123", title="Newest title", output_path=output_path
+        ),
+        item_dir,
+        recorded_at="2026-08-31T11:00:00+00:00",
+    )
+
+    assert len(history) == 1
+    assert history[0]["title"] == "Newest title"
+    assert history_output_path(history[0]) == output_path.resolve()
+
+
+def test_exact_missing_output_is_not_hidden_by_an_unrelated_sibling_file(
+    tmp_path: Path,
+) -> None:
+    item_dir = tmp_path / "downloads" / "Example [abc123]"
+    item_dir.mkdir(parents=True)
+    (item_dir / "Example (1).mp4").write_bytes(b"different settings output")
+    missing_path = item_dir / "Example.mp4"
+    record = upsert_history(
+        [],
+        _record_with_exact_output(
+            video_id="abc123", title="Missing profile", output_path=missing_path
+        ),
+        item_dir,
+    )[0]
+
+    assert history_media_file_state(record) == history_module.HISTORY_MEDIA_MISSING
+    assert history_media_file_exists(record) is False
 
 
 def test_redownload_replaces_a_missing_same_item_location(tmp_path: Path):

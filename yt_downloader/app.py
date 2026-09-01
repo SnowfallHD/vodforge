@@ -136,6 +136,14 @@ from .quality_e2e import (
     write_quality_e2e_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
+from .run_identity import (
+    annotate_job_metadata,
+    job_attempt_signature,
+    matching_attempt,
+    metadata_attempt_signature,
+    metadata_output_profile,
+    metadata_output_profile_details,
+)
 from .run_state import (
     RunRecoveryOwner,
     RunStateError,
@@ -2382,7 +2390,11 @@ def output_artifact_matches_plan(
         embed_cover_art=embed_cover_art,
         expected_tags=expected_tags,
         sidecar_summary=sidecar_summary,
-        require_sidecar=True,
+        # A compact metadata file is an optional requested output, not the
+        # authority for whether the media itself is valid.  Enforce its stored
+        # plan when present; when it is missing, require the probe-visible plan
+        # contract and let the reuse path regenerate the requested sidecar.
+        require_sidecar=isinstance(sidecar_summary, dict),
     )
 
 
@@ -2680,12 +2692,31 @@ def package_downloaded_media_from_staging(
         # Commit relative to a freshly verified directory handle so metadata-
         # derived path components cannot follow a pre-existing symlink outside
         # the selected destination. Existing output remains intact on failure.
-        commit_file_beneath(
-            staged,
-            output_dir,
-            target,
-            control_check=control_check,
-        )
+        for collision_index in range(10_000):
+            candidate = (
+                target
+                if collision_index == 0
+                else target.with_name(
+                    f"{target.stem} ({collision_index}){target.suffix}"
+                )
+            )
+            try:
+                commit_file_beneath(
+                    staged,
+                    output_dir,
+                    candidate,
+                    control_check=control_check,
+                    replace_existing=False,
+                )
+            except FileExistsError:
+                continue
+            target = candidate
+            break
+        else:
+            raise RuntimeError(
+                "VODForge could not allocate a distinct output filename after "
+                "10,000 existing conflicts."
+            )
         remember_video_output_dir(video, target_dir)
         packaged.append(target)
     return packaged
@@ -6177,6 +6208,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             columns=(
                 "index",
                 "title",
+                "profile",
                 "duration",
                 "creator",
                 "id",
@@ -6189,6 +6221,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         for column, label in (
             ("index", "#"),
             ("title", "Title"),
+            ("profile", "Output profile"),
             ("duration", "Length"),
             ("creator", "Creator"),
             ("id", "ID"),
@@ -6206,6 +6239,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         video_tree.column(
             "title", width=360, minwidth=220, stretch=True, stretchmax=560, anchor="w"
         )
+        video_tree.column("profile", width=180, minwidth=120, stretch=False, anchor="w")
         video_tree.column(
             "duration", width=72, minwidth=62, stretch=False, anchor="center"
         )
@@ -6229,6 +6263,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         video_tree.bind_body_event("<Button-1>", self._on_library_tree_click, add="+")
         video_tree.bind_body_event("<Button-2>", self._show_library_row_menu)
         video_tree.bind_body_event("<Button-3>", self._show_library_row_menu)
+        self.focus_library_profile_tooltip = ToolTip(
+            video_tree, video_tree.tooltip_text_at_pointer
+        )
         self.focus_queue_panel = queue_panel
 
         details = ttk.Frame(metadata_content, style="FocusShell.TFrame")
@@ -8199,6 +8236,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 terminal_metadata_keys=terminal_keys,
                 active_history_identities=active_history_identities,
                 completed_jobs=self.__dict__.get("_completed_jobs", []),
+                active_run_ids=(
+                    {self.active_job.run_id} if self.active_job is not None else set()
+                ),
+                terminal_run_ids={job.run_id for job in self._terminal_jobs},
             )
         )
         return records
@@ -8694,6 +8735,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     label="Open saved location",
                     command=open_saved_location,
                 )
+            if str(record.get("kind")) in {"failed", "skipped", "stopped"}:
+
+                def remove_from_library() -> None:
+                    self._select_record_in_library(record)
+                    self._remove_selected_library_item()
+
+                menu.add_command(
+                    label="Remove from Library…",
+                    command=remove_from_library,
+                )
         youtube_url = self._youtube_url_for_run_record(record)
         if youtube_url:
             menu.add_command(
@@ -8964,6 +9015,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             video_tree.layout_column(
                 "title", width=360, minwidth=220, stretch=True, stretchmax=None
             )
+            video_tree.layout_column("profile", width=180, minwidth=120, stretch=True)
             video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)
             video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)
             video_tree.layout_column("id", width=90, minwidth=72, stretch=True)
@@ -8997,6 +9049,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 video_tree.layout_column(
                     "title", width=320, minwidth=200, stretch=False
                 )
+                video_tree.layout_column(
+                    "profile", width=160, minwidth=120, stretch=False
+                )
             else:
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)
@@ -9014,6 +9069,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
                 video_tree.layout_column(
                     "title", width=360, minwidth=220, stretch=True, stretchmax=560
+                )
+                video_tree.layout_column(
+                    "profile", width=180, minwidth=120, stretch=False
                 )
         self._queue_focus_description_layout()
 
@@ -9267,6 +9325,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             owning_job.history_identities.add(history_identity(saved_record))
         saved_id = str(saved_record.get("id") or "")
         saved_type = metadata_output_type(saved_record)
+        saved_signature = metadata_attempt_signature(saved_record)
         merged = dict(saved_record)
         retained: list[dict[str, Any]] = []
         persisted_identities = {
@@ -9287,6 +9346,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 and str(item.get("id") or "") == saved_id
                 and metadata_output_type(item) == saved_type
                 and history_output_dir(item) is None
+                and (
+                    (
+                        owning_job is not None
+                        and str(
+                            item.get(ACTIVE_METADATA_RUN_ID_KEY)
+                            or item.get("vodforge_terminal_run_id")
+                            or ""
+                        )
+                        == owning_job.run_id
+                    )
+                    or (
+                        bool(saved_signature)
+                        and metadata_attempt_signature(item) == saved_signature
+                    )
+                )
             ):
                 merged = {**item, **saved_record}
                 continue
@@ -10065,8 +10139,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             retry_available = terminal_status in {"Skipped", "Failed"} and bool(
                 item.get("vodforge_terminal_run_id")
             )
+            base_values = video_list_row_values(item, fallback_index=visible_position)
             values: tuple[Any, ...] = (
-                *video_list_row_values(item, fallback_index=visible_position),
+                *base_values[:2],
+                metadata_output_profile(item),
+                *base_values[2:],
                 location,
             )
             if "action" in self.video_tree["columns"]:
@@ -10081,6 +10158,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             else None
         )
         children = self.video_tree.replace_rows(rows, selected=target)
+        set_row_tooltips = getattr(self.video_tree, "set_row_tooltips", None)
+        if callable(set_row_tooltips):
+            set_row_tooltips(
+                {
+                    str(metadata_index): metadata_output_profile_details(
+                        self.metadata_items[metadata_index]
+                    )
+                    for metadata_index in visible_indices
+                }
+            )
         if children and target is not None:
             _focus_library_table_item(self.video_tree, target)
             self._display_selected_metadata(int(target))
@@ -10314,9 +10401,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if identity in completed_job.history_identities:
                     removed_run_ids.add(completed_job.run_id)
                 completed_job.history_identities.discard(identity)
-        terminal_run_ids = {str(info.get("vodforge_terminal_run_id") or "")}
+        explicit_terminal_run_id = str(
+            info.get("vodforge_terminal_run_id") or ""
+        ).strip()
+        terminal_run_ids = (
+            {explicit_terminal_run_id} if explicit_terminal_run_id else set()
+        )
         item_key = metadata_run_key(info)
-        if item_key is not None:
+        if (
+            not terminal_run_ids
+            and history_output_dir(info) is None
+            and item_key is not None
+        ):
             for terminal_job in self._terminal_jobs:
                 terminal_info = terminal_job.preview_info or {}
                 if (
@@ -10904,6 +11000,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         job.preview_info = dict(preview)
         job.preview_info.pop("vodforge_preview_complete", None)
         job.preview_info.pop("vodforge_preview_run_id", None)
+        job.preview_info = annotate_job_metadata(job, job.preview_info)
         job.metadata_keys.add(preview_key)
         claim_active_metadata_row(preview, job.preview_info, job.run_id)
         return True
@@ -11061,12 +11158,33 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _start_or_queue_download_job(
         self, job: DownloadJob, *, clear_source: bool
     ) -> None:
+        duplicate = matching_attempt(
+            job,
+            [
+                *([self.active_job] if self.active_job is not None else []),
+                *self.pending_jobs,
+            ],
+        )
+        if duplicate is not None:
+            self._focus_existing_duplicate_attempt(duplicate)
+            if clear_source:
+                self._reset_source_input_after_send()
+            return
+
+        superseded = self._matching_supersedable_terminal_attempt(job)
+        superseded_run_id = superseded.run_id if superseded is not None else None
         if self.worker is not None and self.worker.is_alive():
             queued_jobs = [*self.pending_jobs, job]
             recovery_owner = self.__dict__.get("run_recovery")
             try:
                 if recovery_owner is not None:
-                    recovery_owner.queue_changed(queued_jobs)
+                    if superseded_run_id is None:
+                        recovery_owner.queue_changed(queued_jobs)
+                    else:
+                        recovery_owner.queue_changed(
+                            queued_jobs,
+                            superseded_run_id=superseded_run_id,
+                        )
             except RunStateError as exc:
                 messagebox.showerror(
                     APP_NAME,
@@ -11074,6 +11192,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"was not queued.\n\n{exc}",
                 )
                 return
+            self._supersede_matching_terminal_attempt(
+                job,
+                previous=superseded,
+                cleanup_recovery=False,
+            )
             self.pending_jobs = queued_jobs
             if hasattr(self, "focus_run_deck"):
                 self.focus_engine_var.set(
@@ -11087,9 +11210,116 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self._reset_source_input_after_send()
             return
 
-        self._launch_download_job(job, queued_jobs=self.pending_jobs)
+        launched = self._launch_download_job(
+            job,
+            queued_jobs=self.pending_jobs,
+            superseded_run_id=superseded_run_id,
+        )
+        if launched:
+            self._supersede_matching_terminal_attempt(
+                job,
+                previous=superseded,
+                cleanup_recovery=False,
+            )
         if clear_source:
             self._reset_source_input_after_send()
+
+    def _focus_existing_duplicate_attempt(self, job: DownloadJob) -> None:
+        """Focus one exact live attempt instead of scheduling duplicate work."""
+
+        self._focus_selected_run_id = job.run_id
+        message = (
+            "This exact run is already queued; focused the existing attempt."
+            if any(candidate is job for candidate in self.pending_jobs)
+            else "This exact run is already active; focused the existing attempt."
+        )
+        self.status_var.set(message)
+        self._append_log(message)
+        if self.__dict__.get("_focus_views") is not None:
+            self._select_focus_view("forge")
+        if self.__dict__.get("focus_run_deck") is not None:
+            record = next(
+                (
+                    candidate
+                    for candidate in self._focus_run_records()
+                    if str(candidate.get("run_id") or "") == job.run_id
+                ),
+                None,
+            )
+            if record is not None:
+                self._focus_select_run_record(record)
+            self._refresh_focus_run_deck()
+
+    def _matching_supersedable_terminal_attempt(
+        self, job: DownloadJob
+    ) -> DownloadJob | None:
+        previous = matching_attempt(job, self.__dict__.get("_terminal_jobs", []))
+        if previous is None or str(previous.terminal_status or "Stopped") not in {
+            "Stopped",
+            "Skipped",
+            "Failed",
+        }:
+            return None
+        return previous
+
+    def _supersede_matching_terminal_attempt(
+        self,
+        job: DownloadJob,
+        *,
+        previous: DownloadJob | None = None,
+        cleanup_recovery: bool = True,
+    ) -> None:
+        """Replace one identical no-output attempt while retaining Activity history."""
+
+        terminal_jobs = self.__dict__.get("_terminal_jobs", [])
+        previous = previous or self._matching_supersedable_terminal_attempt(job)
+        if previous is None:
+            return
+        previous_status = str(previous.terminal_status or "Stopped")
+        if previous_status not in {"Stopped", "Skipped", "Failed"}:
+            return
+        metadata_items = self.__dict__.get("metadata_items", [])
+        previous_row = next(
+            (
+                item
+                for item in metadata_items
+                if str(item.get("vodforge_terminal_run_id") or "") == previous.run_id
+            ),
+            None,
+        )
+        self._terminal_jobs = [
+            candidate
+            for candidate in terminal_jobs
+            if candidate.run_id != previous.run_id
+        ]
+        if previous_row is not None:
+            job.preview_info = dict(previous_row)
+            for key in (
+                "vodforge_terminal_status",
+                "vodforge_terminal_message",
+                "vodforge_terminal_run_id",
+            ):
+                job.preview_info.pop(key, None)
+            job.preview_info = annotate_job_metadata(job, job.preview_info)
+            metadata_key = metadata_run_key(job.preview_info)
+            if metadata_key is not None:
+                job.metadata_keys.add(metadata_key)
+            claim_active_metadata_row(previous_row, job.preview_info, job.run_id)
+        if cleanup_recovery:
+            recovery_owner = self.__dict__.get("run_recovery")
+            try:
+                if recovery_owner is not None:
+                    recovery_owner.removed_or_retried(previous.run_id)
+            except RunStateError as exc:
+                write_diagnostic(
+                    f"superseded run recovery record cleanup failed: {exc}"
+                )
+        self._append_log(
+            f"Superseded identical {previous_status.lower()} run "
+            f"{previous.run_id} with {job.run_id}."
+        )
+        if self.__dict__.get("video_tree") is not None:
+            self._render_metadata_tree()
 
     def _start_preview_download(self, info: dict[str, Any]) -> None:
         """Turn one metadata preview into a fresh Forge-owned one-item run."""
@@ -11114,6 +11344,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         job.preview_info = dict(info)
         job.preview_info.pop("vodforge_preview_complete", None)
         job.preview_info.pop("vodforge_preview_run_id", None)
+        job.preview_info = annotate_job_metadata(job, job.preview_info)
         key = metadata_run_key(info)
         if key is not None:
             job.metadata_keys.add(key)
@@ -11139,14 +11370,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         *,
         select_detail: bool = True,
         queued_jobs: Sequence[DownloadJob] | None = None,
+        superseded_run_id: str | None = None,
     ) -> bool:
         recovery_owner = self.__dict__.get("run_recovery")
         if recovery_owner is not None:
             try:
-                recovery_owner.begin(
-                    job,
-                    self.pending_jobs if queued_jobs is None else queued_jobs,
+                recovery_queue = (
+                    self.pending_jobs if queued_jobs is None else queued_jobs
                 )
+                if superseded_run_id is None:
+                    recovery_owner.begin(job, recovery_queue)
+                else:
+                    recovery_owner.begin(
+                        job,
+                        recovery_queue,
+                        superseded_run_id=superseded_run_id,
+                    )
             except RunStateError as exc:
                 messagebox.showerror(
                     APP_NAME,
@@ -11239,6 +11478,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             message,
             job.run_id,
         )
+        terminal_info = annotate_job_metadata(job, terminal_info)
         job.preview_info = terminal_info
         self._terminal_jobs = [
             item for item in self._terminal_jobs if item.run_id != job.run_id
@@ -11282,6 +11522,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         job.terminal_status = status
         job.terminal_message = message
+        job.preview_info = annotate_job_metadata(job, job.preview_info or {})
         if status == "Failed":
             recovery_owner = self.__dict__.get("run_recovery")
             try:
@@ -11306,6 +11547,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
         preview_key = metadata_run_key(job.preview_info or {})
+        attempt_signature = job_attempt_signature(job)
         if preview_key is not None:
             matching = next(
                 (
@@ -11313,10 +11555,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     for item in self.metadata_items
                     if history_output_dir(item) is None
                     and metadata_run_key(item) == preview_key
+                    and (
+                        str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "") == job.run_id
+                        or metadata_attempt_signature(item) == attempt_signature
+                        or (
+                            not str(item.get(ACTIVE_METADATA_RUN_ID_KEY) or "")
+                            and not metadata_attempt_signature(item)
+                        )
+                    )
                 ),
                 None,
             )
             if matching is not None:
+                matching.update(job.preview_info or {})
                 matching.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
                 matching.pop("vodforge_preview_complete", None)
                 matching.pop("vodforge_preview_run_id", None)
@@ -11357,12 +11608,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._terminal_jobs.insert(0, job)
         del self._terminal_jobs[20:]
         item_key = metadata_run_key(info)
+        item_signature = metadata_attempt_signature(info)
         matching = next(
             (
                 item
                 for item in self.metadata_items
                 if history_output_dir(item) is None
                 and metadata_run_key(item) == item_key
+                and (
+                    not item_signature
+                    or metadata_attempt_signature(item) == item_signature
+                )
             ),
             None,
         )
@@ -11721,7 +11977,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         reuse_outcome = DownloadOutcome(success_count=1)
         self._emit_job_log(
             job,
-            f"{label}: already downloaded and valid; reused {existing_path}.",
+            f"{label}: Already downloaded and valid — reused existing file. "
+            f"Path: {existing_path}",
         )
         try:
             cached_thumbnail = save_cached_thumbnail_image(
@@ -12105,6 +12362,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             terminal_message=message,
             item_terminal_emitted=True,
         )
+        terminal_info = annotate_job_metadata(terminal_job, terminal_info)
+        terminal_job.preview_info = terminal_info
         self.events.put(job_info_event("item_terminal", terminal_job, terminal_info))
 
     def _finish_download_run_outcome(
@@ -12784,7 +13043,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if existing_reuse is not None:
                 self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
                 self.events.put(
-                    ("status", f"{item.label} complete — existing valid output")
+                    (
+                        "status",
+                        (
+                            f"{item.label} complete — Already downloaded and valid — "
+                            "reused existing file."
+                        ),
+                    )
                 )
                 return replace(
                     result,

@@ -2228,6 +2228,27 @@ def test_package_downloaded_media_uses_title_only_filename_with_sanitized_youtub
     assert "video [" not in moved[0].name
 
 
+def test_package_downloaded_media_preserves_existing_profile_with_numbered_output(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "downloads"
+    staging_dir = tmp_path / "staging"
+    current_stage = staging_dir / "abc123"
+    current_stage.mkdir(parents=True)
+    (current_stage / "video [abc123].mp4").write_bytes(b"different settings")
+    info = {"title": "Example", "id": "abc123", "uploader": "Creator"}
+    item_dir = output_dir / "Creator" / "videos - no playlist" / "Example [abc123]"
+    item_dir.mkdir(parents=True)
+    existing = item_dir / "Example.mp4"
+    existing.write_bytes(b"original settings")
+
+    moved = package_downloaded_media_from_staging(staging_dir, output_dir, info)
+
+    assert moved == [item_dir / "Example (1).mp4"]
+    assert existing.read_bytes() == b"original settings"
+    assert moved[0].read_bytes() == b"different settings"
+
+
 def test_package_downloaded_mp3_moves_only_the_single_audio_result(tmp_path: Path):
     output_dir = tmp_path / "downloads"
     staging_dir = tmp_path / "staging"
@@ -2279,7 +2300,7 @@ def test_atomic_package_failure_preserves_existing_valid_output(
 
     monkeypatch.setattr(
         app_module.os,
-        "replace",
+        "link",
         lambda _source, _target, **_kwargs: (_ for _ in ()).throw(
             OSError("disk unavailable")
         ),
@@ -2851,6 +2872,15 @@ def test_existing_mp4_must_match_the_requested_export_plan_not_only_container_an
         expected_tags=[],
         sidecar_summary=sidecar_summary,
     )
+    assert output_artifact_matches_plan(
+        matching,
+        plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        custom_cover_art=False,
+        expected_tags=[],
+        sidecar_summary=None,
+    )
     assert not output_artifact_matches_plan(
         stale_360p,
         plan,
@@ -2859,6 +2889,15 @@ def test_existing_mp4_must_match_the_requested_export_plan_not_only_container_an
         custom_cover_art=False,
         expected_tags=[],
         sidecar_summary=sidecar_summary,
+    )
+    assert not output_artifact_matches_plan(
+        stale_360p,
+        plan,
+        embed_metadata=False,
+        embed_cover_art=False,
+        custom_cover_art=False,
+        expected_tags=[],
+        sidecar_summary=None,
     )
     assert not output_artifact_matches_plan(
         {
@@ -6762,6 +6801,29 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
     )
     assert not any(kind == "metadata" for kind, _payload in emitted_events)
 
+    repaired_sidecars: list[str] = []
+
+    def repair_metadata(output_dir, _info, _tags):
+        repaired_sidecars.append("metadata")
+        path = Path(output_dir) / "metadata.json"
+        path.write_text("repaired metadata", encoding="utf-8")
+        return path
+
+    def repair_thumbnail(output_dir, _info, *, filename="thumbnail.jpeg", source_url):
+        assert source_url == preflight["webpage_url"]
+        repaired_sidecars.append("thumbnail")
+        path = Path(output_dir) / filename
+        path.write_bytes(b"repaired thumbnail")
+        return path
+
+    (expected.parent / "metadata.json").unlink(missing_ok=True)
+    (expected.parent / "thumbnail.jpeg").unlink(missing_ok=True)
+    job.write_thumbnail = True
+    monkeypatch.setattr(app_module, "write_compact_video_metadata", repair_metadata)
+    monkeypatch.setattr(app_module, "save_thumbnail_image", repair_thumbnail)
+    monkeypatch.setattr(
+        app_module, "save_cached_thumbnail_image", lambda *_args, **_kwargs: None
+    )
     app.events = queue.Queue()
     monkeypatch.setattr(
         app_module,
@@ -6772,9 +6834,19 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
     )
     second_outcome = app._download_worker_single(job)
 
-    assert second_outcome == DownloadOutcome(success_count=1)
+    reuse_warnings = [
+        payload["line"]
+        for kind, payload in app.events.queue
+        if kind == "job_log" and str(payload["line"]).startswith("WARNING:")
+    ]
+    assert second_outcome == DownloadOutcome(success_count=1), reuse_warnings
     assert calls == {"extract": 2, "process": 1}
     assert expected.read_bytes() == b"downloaded media"
+    assert repaired_sidecars == ["metadata", "thumbnail"]
+    assert (expected.parent / "metadata.json").read_text(encoding="utf-8") == (
+        "repaired metadata"
+    )
+    assert (expected.parent / "thumbnail.jpeg").read_bytes() == b"repaired thumbnail"
     assert not (tmp_path / ".vfstage").exists()
     reuse_events = list(app.events.queue)
     assert any(
@@ -6807,14 +6879,16 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
         for index, (kind, payload) in enumerate(reuse_events)
         if index > folders_index
         and kind == "job_log"
-        and "already downloaded and valid" in payload["line"]
+        and "Already downloaded and valid — reused existing file." in payload["line"]
     )
     terminal_status_index = next(
         index
         for index, (kind, payload) in enumerate(reuse_events)
         if index > reuse_log_index
         and kind == "status"
-        and str(payload).endswith("existing valid output")
+        and str(payload).endswith(
+            "Already downloaded and valid — reused existing file."
+        )
     )
     assert any(
         index > terminal_status_index and kind == "done"
@@ -6920,7 +6994,7 @@ def test_committed_media_sidecar_failures_preserve_history_and_media(
     assert history_events == [
         {
             "job": job,
-            "info": info,
+            "info": app_module.annotate_job_metadata(job, info),
             "output_dir": str(output_dir),
         }
     ]

@@ -276,10 +276,22 @@ class ActiveRunStore:
             result.append(dict(record))
         return result
 
-    def begin(self, job: DownloadJob, queued_jobs: Sequence[DownloadJob] = ()) -> None:
+    def begin(
+        self,
+        job: DownloadJob,
+        queued_jobs: Sequence[DownloadJob] = (),
+        *,
+        superseded_run_id: str | None = None,
+    ) -> None:
         with self._lock:
             existing = self._read_unlocked()
             failures = self._failure_records(existing)
+            if superseded_run_id:
+                failures = [
+                    record
+                    for record in failures
+                    if str(record["job"].get("run_id") or "") != superseded_run_id
+                ]
             self._write_unlocked(
                 {
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
@@ -295,12 +307,23 @@ class ActiveRunStore:
                 }
             )
 
-    def replace_queue(self, jobs: Sequence[DownloadJob]) -> None:
+    def replace_queue(
+        self,
+        jobs: Sequence[DownloadJob],
+        *,
+        superseded_run_id: str | None = None,
+    ) -> None:
         """Durably replace the ordered queue without disturbing active ownership."""
 
         with self._lock:
             payload = self._read_unlocked()
             failures = self._failure_records(payload)
+            if superseded_run_id:
+                failures = [
+                    record
+                    for record in failures
+                    if str(record["job"].get("run_id") or "") != superseded_run_id
+                ]
             if payload is None:
                 payload = {
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
@@ -309,6 +332,8 @@ class ActiveRunStore:
             payload["queued_jobs"] = [serialize_download_job(job) for job in jobs]
             if failures:
                 payload["recovered_failures"] = failures
+            else:
+                payload.pop("recovered_failures", None)
             if not jobs and payload.get("state") == "idle" and not failures:
                 self._unlink_unlocked()
                 return
@@ -594,19 +619,34 @@ class RunRecoveryOwner:
             self._diagnostic(f"queued run recovery failed closed: {exc}")
             return []
 
-    def begin(self, job: DownloadJob, queued_jobs: Sequence[DownloadJob] = ()) -> None:
+    def begin(
+        self,
+        job: DownloadJob,
+        queued_jobs: Sequence[DownloadJob] = (),
+        *,
+        superseded_run_id: str | None = None,
+    ) -> None:
         if not self._available:
             raise RunStateError(
                 "The previous active-run record could not be recovered safely."
             )
-        self.store.begin(job, queued_jobs)
+        self.store.begin(
+            job,
+            queued_jobs,
+            superseded_run_id=superseded_run_id,
+        )
 
-    def queue_changed(self, jobs: Sequence[DownloadJob]) -> None:
+    def queue_changed(
+        self,
+        jobs: Sequence[DownloadJob],
+        *,
+        superseded_run_id: str | None = None,
+    ) -> None:
         if not self._available:
             raise RunStateError(
                 "The durable run queue is unavailable because recovery failed safely."
             )
-        self.store.replace_queue(jobs)
+        self.store.replace_queue(jobs, superseded_run_id=superseded_run_id)
 
     def staging_started(self, job: DownloadJob, path: Path) -> None:
         self.store.add_staging_dir(job.run_id, path)

@@ -348,6 +348,216 @@ def correctness_mp4(
     return scenario, findings
 
 
+def reliability_duplicate_artifact_transitions(
+    runner: HeadlessPipelineRunner, server: FixtureHTTPServer
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Prove reuse repair and identity behavior through the real worker."""
+
+    from yt_downloader.history import (
+        HISTORY_MEDIA_MISSING,
+        history_media_file_state,
+        history_output_path,
+        upsert_history,
+    )
+
+    shared_output = runner.run_root / "cases" / "duplicate-artifact" / "output"
+    source_url = server.url("/page/unicode?duplicate-artifact=stable")
+    first = runner.run_job(
+        case_id="duplicate-artifact-first",
+        url=source_url,
+        output_type="MP4",
+        output_dir=shared_output,
+    )
+    first_media, _first_streams = _media_streams(first)
+    first_media_path = Path(first_media[0]["path"]) if first_media else None
+    first_hash = str(first_media[0].get("sha256") or "") if first_media else ""
+    metadata_path = (
+        first_media_path.parent / "metadata.json" if first_media_path else None
+    )
+    thumbnail_path = (
+        first_media_path.parent / "thumbnail.jpeg" if first_media_path else None
+    )
+    sidecars_initially_present = bool(
+        metadata_path
+        and thumbnail_path
+        and metadata_path.is_file()
+        and thumbnail_path.is_file()
+    )
+    if metadata_path is not None:
+        metadata_path.unlink(missing_ok=True)
+    if thumbnail_path is not None:
+        thumbnail_path.unlink(missing_ok=True)
+
+    second = runner.run_job(
+        case_id="duplicate-artifact-reuse",
+        url=source_url,
+        output_type="MP4",
+        output_dir=shared_output,
+    )
+    second_media, _second_streams = _media_streams(second)
+    second_media_path = Path(second_media[0]["path"]) if second_media else None
+    second_hash = str(second_media[0].get("sha256") or "") if second_media else ""
+    reuse_events = [
+        event
+        for event in second.get("events") or []
+        if event.get("kind") == "job_log"
+        and "Already downloaded and valid — reused existing file."
+        in str((event.get("payload") or {}).get("line") or "")
+    ]
+    repaired_sidecars = bool(
+        metadata_path
+        and thumbnail_path
+        and metadata_path.is_file()
+        and thumbnail_path.is_file()
+    )
+
+    item_dir = runner.run_root / "cases" / "duplicate-artifact-identity"
+    item_dir.mkdir(parents=True, exist_ok=True)
+    primary_identity_path = item_dir / "primary-profile.mp4"
+    primary_identity_path.write_bytes(b"identity-only primary")
+    sibling_path = item_dir / "different-profile.mp4"
+    sibling_path.write_bytes(b"identity-only sibling")
+
+    def record(path: Path, title: str) -> dict[str, Any]:
+        return {
+            "id": "unicode-1",
+            "title": title,
+            "vodforge_output_type": "MP4",
+            "vodforge_encoding_summary": {"output": {"Output file path": str(path)}},
+        }
+
+    history = upsert_history([], record(primary_identity_path, "Primary"), item_dir)
+    history = upsert_history(
+        history,
+        record(sibling_path, "Different profile"),
+        item_dir,
+    )
+    distinct_physical_rows = len(history) == 2
+    history = upsert_history(
+        history,
+        record(primary_identity_path, "Primary refreshed"),
+        item_dir,
+    )
+    same_physical_row_merged = len(history) == 2 and history[0]["title"] == (
+        "Primary refreshed"
+    )
+    primary_identity_path.unlink(missing_ok=True)
+    primary_record = next(
+        item for item in history if history_output_path(item) == primary_identity_path
+    )
+    exact_missing_not_masked_by_sibling = (
+        history_media_file_state(primary_record) == HISTORY_MEDIA_MISSING
+    )
+    sibling_path.unlink(missing_ok=True)
+    try:
+        item_dir.rmdir()
+    except OSError:
+        pass
+
+    passed = bool(
+        first.get("error") is None
+        and second.get("error") is None
+        and len(first_media) == 1
+        and len(second_media) == 1
+        and first_media_path == second_media_path
+        and first_hash
+        and first_hash == second_hash
+        and sidecars_initially_present
+        and repaired_sidecars
+        and len(reuse_events) == 1
+        and distinct_physical_rows
+        and same_physical_row_merged
+        and exact_missing_not_masked_by_sibling
+        and _worker_cleanup_is_clean(first)
+        and _worker_cleanup_is_clean(second)
+        and not first.get("staging_entries_after")
+        and not second.get("staging_entries_after")
+    )
+    scenario = {
+        "id": "reliability.duplicate_artifact_transitions",
+        "evidence_tier": "headless_production_pipeline",
+        "category": "reliability",
+        "status": "passed" if passed else "failed",
+        "duration_seconds": round(
+            float(first.get("duration_seconds") or 0)
+            + float(second.get("duration_seconds") or 0),
+            4,
+        ),
+        "metrics": {
+            "jobs_attempted": 2,
+            "jobs_completed": sum(
+                int(result.get("media_output_count") == 1) for result in (first, second)
+            ),
+            "jobs_failed": 0 if passed else 1,
+            "same_media_path_reused": first_media_path == second_media_path,
+            "stable_media_hash": bool(first_hash and first_hash == second_hash),
+            "sidecars_initially_present": sidecars_initially_present,
+            "missing_sidecars_repaired": repaired_sidecars,
+            "reuse_receipt_count": len(reuse_events),
+            "distinct_physical_rows_retained": distinct_physical_rows,
+            "same_physical_row_merged": same_physical_row_merged,
+            "exact_missing_not_masked_by_sibling": (
+                exact_missing_not_masked_by_sibling
+            ),
+            "orphaned_child_processes": sum(
+                len(
+                    [
+                        child
+                        for child in result.get(
+                            "active_children_before_harness_cleanup"
+                        )
+                        or []
+                        if child.get("alive")
+                    ]
+                )
+                for result in (first, second)
+            ),
+            "staging_residue_count": sum(
+                len(result.get("staging_entries_after") or [])
+                for result in (first, second)
+            ),
+        },
+        "evidence": [
+            f"The second real worker run reused the same media path and SHA-256: {first_media_path == second_media_path and first_hash == second_hash}",
+            f"Deleted metadata and thumbnail sidecars were regenerated without media replacement: {repaired_sidecars}",
+            f"The exact reuse receipt was emitted once: {len(reuse_events) == 1}",
+            f"Two physical outputs in one item directory remained two Library identities: {distinct_physical_rows}",
+            f"Two records for one physical output collapsed to one identity: {same_physical_row_merged}",
+            f"A missing exact output was not hidden by a sibling MP4: {exact_missing_not_masked_by_sibling}",
+        ],
+        "artifacts": [
+            str(
+                runner.run_root
+                / "cases"
+                / "duplicate-artifact-first"
+                / "pipeline-result.json"
+            ),
+            str(
+                runner.run_root
+                / "cases"
+                / "duplicate-artifact-reuse"
+                / "pipeline-result.json"
+            ),
+        ],
+        "error": first.get("error") or second.get("error"),
+    }
+    findings = (
+        []
+        if passed
+        else [
+            _finding_for_failed_scenario(
+                scenario,
+                "Duplicate artifact lifecycle lost identity, media, sidecars, or cleanup",
+                "reliability defect",
+                "high",
+                "run identity, existing-output reuse, history, and atomic commit",
+                "Keep duplicate decisions bound to source, effective output settings, exact destination, and exact committed path; validate media before reuse and repair optional sidecars independently.",
+            )
+        ]
+    )
+    return scenario, findings
+
+
 def lifecycle_quit_restart_recovery(
     runner: HeadlessPipelineRunner,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -2061,6 +2271,10 @@ def run_scenarios(
             lambda: batch_failure_report_reset_probe(
                 run_root / "cases" / "reliability-batch-report-reset"
             ),
+        ),
+        (
+            "reliability.duplicate_artifact_transitions",
+            lambda: reliability_duplicate_artifact_transitions(runner, server),
         ),
         (
             "unit_static.activity_log_failure_receipt",

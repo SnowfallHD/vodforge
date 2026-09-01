@@ -42,6 +42,10 @@ HISTORY_METADATA_KEYS = (
     "playlist_index",
     "vodforge_output_type",
     "vodforge_encoding_summary",
+    "vodforge_output_path",
+    "vodforge_attempt_signature",
+    "vodforge_output_profile",
+    "vodforge_output_profile_details",
     "vodforge_run_id",
     "vodforge_run_activity",
 )
@@ -247,6 +251,38 @@ def history_output_dir(record: dict[str, Any]) -> Path | None:
     return Path(value).expanduser() if value else None
 
 
+def history_output_path(record: dict[str, Any]) -> Path | None:
+    """Return the exact committed artifact path when the record provides one."""
+
+    value = str(record.get("vodforge_output_path") or "").strip()
+    if not value:
+        summary = record.get("vodforge_encoding_summary")
+        if isinstance(summary, dict):
+            output = summary.get("output")
+            if isinstance(output, dict):
+                candidate = str(output.get("Output file path") or "").strip()
+                if candidate not in {"", "Pending", "Not produced"}:
+                    value = candidate
+    if not value:
+        return None
+    candidate_path = Path(value).expanduser()
+    if not candidate_path.is_absolute():
+        return None
+    try:
+        candidate_path = candidate_path.resolve(strict=False)
+    except OSError:
+        candidate_path = Path(os.path.abspath(str(candidate_path)))
+    output_dir = history_output_dir(record)
+    if output_dir is not None:
+        try:
+            output_dir = output_dir.resolve(strict=False)
+        except OSError:
+            output_dir = Path(os.path.abspath(str(output_dir)))
+        if candidate_path.parent != output_dir:
+            return None
+    return candidate_path
+
+
 def history_output_type(record: dict[str, Any]) -> str:
     raw = str(record.get("vodforge_output_type") or "").strip().upper()
     if raw in {"MP4", "MP3"}:
@@ -264,15 +300,17 @@ def history_output_type(record: dict[str, Any]) -> str:
 
 def history_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     video_id = str(record.get("id") or "").strip()
-    output_dir = history_output_dir(record)
-    normalized_dir = (
-        os.path.normcase(os.path.abspath(str(output_dir))) if output_dir else ""
+    output_location = history_output_path(record) or history_output_dir(record)
+    normalized_location = (
+        os.path.normcase(os.path.abspath(str(output_location)))
+        if output_location
+        else ""
     )
     if video_id:
-        return video_id, normalized_dir, history_output_type(record)
+        return video_id, normalized_location, history_output_type(record)
     return (
         str(record.get("title") or "").strip(),
-        normalized_dir,
+        normalized_location,
         history_output_type(record),
     )
 
@@ -314,6 +352,22 @@ def history_media_file_state(record: dict[str, Any]) -> str:
     output_dir = history_output_dir(record)
     if output_dir is None:
         return HISTORY_MEDIA_MISSING
+    output_path = history_output_path(record)
+    if output_path is not None:
+        try:
+            output_stat = output_path.stat()
+        except FileNotFoundError:
+            storage_root = _external_storage_root(output_path)
+            if storage_root and not Path(storage_root).exists():
+                return HISTORY_MEDIA_UNAVAILABLE
+            return HISTORY_MEDIA_MISSING
+        except OSError:
+            return HISTORY_MEDIA_UNAVAILABLE
+        return (
+            HISTORY_MEDIA_PRESENT
+            if stat.S_ISREG(output_stat.st_mode) and output_stat.st_size > 0
+            else HISTORY_MEDIA_MISSING
+        )
     extension = ".mp3" if history_output_type(record) == "MP3" else ".mp4"
     try:
         directory_stat = output_dir.stat()
@@ -384,6 +438,10 @@ def sanitize_history_record(
         path = Path(os.path.abspath(str(path)))
     record["vodforge_output_dir"] = str(path)
     record["vodforge_output_type"] = history_output_type(record or info)
+    record.pop("vodforge_output_path", None)
+    exact_output = history_output_path({**record, "vodforge_output_dir": str(path)})
+    if exact_output is not None:
+        record["vodforge_output_path"] = str(exact_output)
     record["vodforge_recorded_at"] = (
         recorded_at or datetime.now(timezone.utc).isoformat()
     )

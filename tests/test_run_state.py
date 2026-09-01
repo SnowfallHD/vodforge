@@ -249,6 +249,48 @@ def test_queue_promotion_is_one_durable_transition(tmp_path: Path) -> None:
     assert [record["run_id"] for record in payload["queued_jobs"]] == ["queued-2"]
 
 
+def test_queue_supersession_atomically_removes_recovered_failure(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "active-run.json"
+    store = ActiveRunStore(path)
+    failed = _job(tmp_path)
+    failed.run_id = "failed-old"
+    store.begin(failed)
+    store.mark_failed("injected interrupted run")
+    replacement = _job(tmp_path)
+    replacement.run_id = "queued-new"
+
+    store.replace_queue(
+        [replacement],
+        superseded_run_id=failed.run_id,
+    )
+
+    assert store.load_failed_jobs() == []
+    assert [job.run_id for job in store.load_queued_jobs()] == ["queued-new"]
+
+
+def test_launch_supersession_atomically_replaces_recovered_failure(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "active-run.json"
+    store = ActiveRunStore(path)
+    failed = _job(tmp_path)
+    failed.run_id = "failed-old"
+    store.begin(failed)
+    store.mark_failed("injected interrupted run")
+    replacement = _job(tmp_path)
+    replacement.run_id = "active-new"
+
+    store.begin(replacement, superseded_run_id=failed.run_id)
+
+    payload = store.load()
+    assert payload is not None
+    assert payload["state"] == "active"
+    assert payload["job"]["run_id"] == "active-new"
+    assert store.load_failed_jobs() == []
+
+
 def test_finishing_active_run_preserves_queued_jobs(tmp_path: Path) -> None:
     path = tmp_path / "active-run.json"
     store = ActiveRunStore(path)

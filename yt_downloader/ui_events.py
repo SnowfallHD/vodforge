@@ -12,6 +12,7 @@ from .cloud_funnel import (
     mark_first_launch_confirmed,
 )
 from .models import DownloadJob
+from .run_identity import annotate_job_metadata
 from .updates import MacUpdatePlan, ReleaseInfo
 
 
@@ -97,7 +98,7 @@ def job_info_event(
     job: DownloadJob,
     info: dict[str, Any],
 ) -> tuple[JobInfoEventName, JobInfoPayload]:
-    return name, {"job": job, "info": info}
+    return name, {"job": job, "info": annotate_job_metadata(job, info)}
 
 
 def history_record_event(
@@ -107,7 +108,7 @@ def history_record_event(
 ) -> tuple[Literal["history_record"], HistoryRecordPayload]:
     return "history_record", {
         "job": job,
-        "info": info,
+        "info": annotate_job_metadata(job, info),
         "output_dir": output_dir,
     }
 

@@ -7,6 +7,7 @@ from yt_downloader.models import (
     Mp3ExportSettings,
     OutputType,
 )
+from yt_downloader.run_identity import annotate_job_metadata
 from yt_downloader.ui_events import (
     history_record_event,
     installation_result_event,
@@ -38,6 +39,7 @@ def _job(tmp_path: Path) -> DownloadJob:
 def test_job_event_constructors_preserve_fifo_wire_shape(tmp_path: Path):
     job = _job(tmp_path)
     info = {"id": "fixture", "title": "Fixture"}
+    annotated = annotate_job_metadata(job, info)
 
     assert job_log_event(job, "started") == (
         "job_log",
@@ -45,11 +47,11 @@ def test_job_event_constructors_preserve_fifo_wire_shape(tmp_path: Path):
     )
     assert job_info_event("job_metadata", job, info) == (
         "job_metadata",
-        {"job": job, "info": info},
+        {"job": job, "info": annotated},
     )
     assert history_record_event(job, info, str(tmp_path)) == (
         "history_record",
-        {"job": job, "info": info, "output_dir": str(tmp_path)},
+        {"job": job, "info": annotated, "output_dir": str(tmp_path)},
     )
 
 
