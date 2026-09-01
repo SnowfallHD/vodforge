@@ -35,7 +35,7 @@ if [[ "$python_bin" != ".venv/bin/python" ]]; then
 fi
 
 "$python_bin" -m pip install --upgrade pip
-"$python_bin" -m pip install -r requirements-dev.txt
+"$python_bin" -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
 "$python_bin" -m compileall -q yt_downloader main.py macos_smoke_test.py
 "$python_bin" -m pytest -q
 

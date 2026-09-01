@@ -23,7 +23,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
       - name: Run tests

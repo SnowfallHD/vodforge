@@ -52,6 +52,19 @@ def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
     assert "brew --prefix python@3.13" in workflow
 
 
+def test_every_full_repository_test_runner_installs_harness_dependencies():
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    tests_workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+
+    required_install = (
+        "pip install -r requirements-dev.txt -r engineering-quality/requirements.txt"
+    )
+    assert required_install in macos_build
+    assert required_install in tests_workflow
+
+
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
