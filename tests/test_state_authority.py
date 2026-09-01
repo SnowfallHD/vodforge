@@ -1853,19 +1853,15 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
 
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
-    assert (
-        'video_tree.layout_column("creator", width=120, minwidth=90'
-        in library_layout_source
+    assert "video_tree.layout_columns(" in library_layout_source
+    assert '"creator": {"width": 120, "minwidth": 90, "stretch": True}' in (
+        library_layout_source
     )
-    assert (
-        'video_tree.layout_column("location", width=140, minwidth=100'
-        in library_layout_source
+    assert '"location": {"width": 140, "minwidth": 100, "stretch": True}' in (
+        library_layout_source
     )
-    title_column_pattern = (
-        r'video_tree\.layout_column\(\s*"title",\s*width=360,\s*minwidth=220,'
-        r"\s*stretch=True,\s*stretchmax=None\s*\)"
-    )
-    assert re.search(title_column_pattern, library_layout_source)
+    assert '"width": 360' in library_layout_source
+    assert '"stretchmax": None' in library_layout_source
     assert "width=0, minwidth=0" not in library_layout_source
     assert (
         "library_vertical_mode = focus_library_vertical_layout_mode(height)"
@@ -1889,24 +1885,13 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "vertical_mode=library_vertical_mode," in layout_source
     assert 'if library_mode == "compact":' in library_layout_source
     assert "library_actions_collapsed" not in library_layout_source
-    assert (
-        'video_tree.layout_column("index", width=44, minwidth=38, stretch=True)'
-        in library_layout_source
+    assert '"index": {"width": 44, "minwidth": 38, "stretch": True}' in (
+        library_layout_source
     )
-    assert re.search(title_column_pattern, library_layout_source)
-    assert (
-        'video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)'
-        in library_layout_source
+    assert '"duration": {"width": 72, "minwidth": 62, "stretch": True}' in (
+        library_layout_source
     )
-    assert (
-        'video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)'
-        in library_layout_source
-    )
-    assert 'video_tree.layout_column("id"' not in library_layout_source
-    assert (
-        'video_tree.layout_column("location", width=140, minwidth=100, stretch=True)'
-        in library_layout_source
-    )
+    assert '"id": {' not in library_layout_source
     assert (
         "self.focus_metadata_content.columnconfigure(0, weight=1)"
         in library_layout_source
@@ -2155,6 +2140,60 @@ def test_run_deck_capacity_crossing_refreshes_synchronously_once():
     assert probe.refreshes == 1
 
 
+def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
+    class Deck:
+        def winfo_width(self):
+            return 900
+
+        def winfo_children(self):
+            return ()
+
+        def columnconfigure(self, *_args, **_kwargs):
+            return None
+
+    class Probe:
+        _focus_layout = "wide"
+        focus_run_deck = Deck()
+        rendered = 0
+        status = "Completed  •  MP4"
+        focus_run_count_var = SimpleNamespace(set=lambda _value: None)
+        focus_run_overflow_button = SimpleNamespace(
+            grid=lambda: None,
+            configure=lambda **_kwargs: None,
+        )
+
+        def _focus_run_records(self):
+            return [
+                {
+                    "kind": "completed",
+                    "metadata_index": 1,
+                    "title": "Completed item",
+                    "status": self.status,
+                    "output_type": "MP4",
+                }
+            ]
+
+        def winfo_width(self):
+            return 952
+
+        def _render_focus_run_deck_tile(self, *_args, **_kwargs):
+            self.rendered += 1
+
+    probe = Probe()
+    DownloaderApp._refresh_focus_run_deck(probe)
+    first_signature = probe._focus_run_deck_signature
+    DownloaderApp._refresh_focus_run_deck(probe)
+
+    assert probe._focus_run_deck_signature == first_signature
+    assert probe._focus_run_deck_rendered_capacity == 4
+    assert probe.rendered == 1
+
+    probe.status = "Failed  •  MP4"
+    DownloaderApp._refresh_focus_run_deck(probe)
+
+    assert probe.rendered == 2
+
+
 def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
@@ -2388,8 +2427,90 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
         "children = self.video_tree.replace_rows(rows, selected=target)"
         in render_source
     )
-    assert "video_tree.layout_column(" in library_layout_source
+    assert "video_tree.layout_columns(" in library_layout_source
     assert "xscrollincrement=1" in pixel_table_source
+
+
+def test_responsive_library_columns_commit_with_one_redraw():
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._manually_resized_columns = set()
+    table._column_options = {
+        "title": {"width": 200, "minwidth": 100, "stretch": False},
+        "location": {"width": 100, "minwidth": 80, "stretch": False},
+    }
+    redraws = []
+    table._redraw = lambda: redraws.append("redraw")
+
+    result = app_module.PixelScrollTable.layout_columns(
+        table,
+        {
+            "title": {"width": 360, "minwidth": 220, "stretch": True},
+            "location": {"width": 140, "minwidth": 100, "stretch": True},
+        },
+    )
+
+    assert redraws == ["redraw"]
+    assert result["title"]["width"] == 360
+    assert result["location"]["width"] == 140
+
+    app_module.PixelScrollTable.layout_columns(
+        table,
+        {
+            "title": {"width": 360, "minwidth": 220, "stretch": True},
+            "location": {"width": 140, "minwidth": 100, "stretch": True},
+        },
+    )
+    assert redraws == ["redraw"]
+
+
+def test_responsive_library_columns_preserve_all_manual_widths():
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._manually_resized_columns = {"title"}
+    table._column_options = {
+        "title": {"width": 444, "minwidth": 100, "stretch": False},
+        "location": {"width": 177, "minwidth": 80, "stretch": False},
+    }
+    redraws = []
+    table._redraw = lambda: redraws.append("redraw")
+
+    result = app_module.PixelScrollTable.layout_columns(
+        table,
+        {
+            "title": {"width": 360, "minwidth": 220, "stretch": True},
+            "location": {"width": 140, "minwidth": 100, "stretch": True},
+        },
+    )
+
+    assert result["title"]["width"] == 444
+    assert result["location"]["width"] == 177
+    assert result["title"]["minwidth"] == 220
+    assert result["location"]["minwidth"] == 100
+    assert redraws == ["redraw"]
+
+
+def test_native_table_resize_storm_schedules_one_frame_redraw():
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._redraw_after_id = None
+    callbacks = []
+    delays = []
+    table.after = lambda delay, callback: (
+        delays.append(delay),
+        callbacks.append(callback),
+        "frame",
+    )[-1]
+
+    for _ in range(200):
+        app_module.PixelScrollTable._schedule_redraw(table)
+
+    assert delays == [16]
+    assert len(callbacks) == 1
+
+    redraws = []
+    table._redraw = lambda: redraws.append("redraw")
+    callbacks[0]()
+
+    assert table._redraw_after_id is None
+    assert redraws == ["redraw"]
 
 
 def test_last_table_column_has_a_trailing_resize_divider():

@@ -690,6 +690,35 @@ class PixelScrollTable(tk.Frame):
             kwargs.pop("width", None)
         return self.column(column, **kwargs)
 
+    def layout_columns(
+        self,
+        columns: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Apply one responsive column transaction with at most one redraw.
+
+        A responsive breakpoint changes every Library column together. Calling
+        ``layout_column`` for each field rebuilt the complete Canvas once per
+        column, which made a single native resize step disproportionately
+        expensive. Keep the same session-manual-width contract while committing
+        the complete layout atomically.
+        """
+
+        changed = False
+        for column, requested in columns.items():
+            options = self._column_options[column]
+            updates = dict(requested)
+            if self._manually_resized_columns:
+                updates.pop("width", None)
+            before = dict(options)
+            options.update(updates)
+            options["width"] = max(
+                int(options.get("minwidth", 1)), int(options.get("width", 100))
+            )
+            changed = changed or options != before
+        if changed:
+            self._redraw()
+        return {column: dict(self._column_options[column]) for column in columns}
+
     def insert(
         self, _parent: str, index: str | int, *, iid: str, values: tuple[Any, ...]
     ) -> str:
@@ -1111,7 +1140,7 @@ class PixelScrollTable(tk.Frame):
             self._redrawing = False
 
     def _schedule_redraw(self) -> None:
-        """Coalesce resize/scroll storms into one redraw at the next idle turn."""
+        """Coalesce resize storms to one redraw per display-frame budget."""
         if self._redraw_after_id is not None:
             return
 
@@ -1120,7 +1149,7 @@ class PixelScrollTable(tk.Frame):
             self._redraw()
 
         try:
-            self._redraw_after_id = self.after_idle(redraw)
+            self._redraw_after_id = self.after(16, redraw)
         except tk.TclError:
             self._redraw_after_id = None
 

@@ -8541,14 +8541,38 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _refresh_focus_run_deck(self) -> None:
         if not hasattr(self, "focus_run_deck"):
             return
-        for child in self.focus_run_deck.winfo_children():
-            child.destroy()
-        self._focus_run_thumbnail_images: list[Any] = []
         records = self._focus_run_records()
         deck_width = self.focus_run_deck.winfo_width()
         if deck_width <= 1:
             deck_width = max(1, self.winfo_width() - 52)
         limit = focus_run_deck_capacity(deck_width)
+        render_signature = (
+            self._focus_layout,
+            limit,
+            tuple(
+                (
+                    str(record.get("kind") or ""),
+                    str(record.get("run_id") or ""),
+                    record.get("metadata_index"),
+                    str(record.get("title") or ""),
+                    str(record.get("status") or ""),
+                    str(record.get("output_type") or ""),
+                    str(record.get("preview_thumbnail_path") or ""),
+                    id(record.get("preview_thumbnail_image")),
+                    None
+                    if str(record.get("kind") or "") == "active"
+                    else round(float(record.get("progress") or 0), 1),
+                )
+                for record in records
+            ),
+        )
+        if render_signature == self.__dict__.get("_focus_run_deck_signature"):
+            self._focus_run_deck_rendered_capacity = limit
+            return
+        self._focus_run_deck_signature = render_signature
+        for child in self.focus_run_deck.winfo_children():
+            child.destroy()
+        self._focus_run_thumbnail_images: list[Any] = []
         self._focus_run_deck_rendered_capacity = limit
         visible = records[:limit]
         for column in range(4):
@@ -9012,14 +9036,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             # Keep the canonical table intact at small widths. The sleek
             # horizontal scrollbar makes every field reachable without
             # squeezing columns to zero or changing what the table means.
-            video_tree.layout_column("index", width=44, minwidth=38, stretch=True)
-            video_tree.layout_column(
-                "title", width=360, minwidth=220, stretch=True, stretchmax=None
+            video_tree.layout_columns(
+                {
+                    "index": {"width": 44, "minwidth": 38, "stretch": True},
+                    "title": {
+                        "width": 360,
+                        "minwidth": 220,
+                        "stretch": True,
+                        "stretchmax": None,
+                    },
+                    "profile": {"width": 180, "minwidth": 120, "stretch": True},
+                    "duration": {"width": 72, "minwidth": 62, "stretch": True},
+                    "creator": {"width": 120, "minwidth": 90, "stretch": True},
+                    "location": {"width": 140, "minwidth": 100, "stretch": True},
+                }
             )
-            video_tree.layout_column("profile", width=180, minwidth=120, stretch=True)
-            video_tree.layout_column("duration", width=72, minwidth=62, stretch=True)
-            video_tree.layout_column("creator", width=120, minwidth=90, stretch=True)
-            video_tree.layout_column("location", width=140, minwidth=100, stretch=True)
         else:
             if vertical_mode == "balanced":
                 # Reduced-height windows give the independently scrollable
@@ -9035,41 +9066,70 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)
                 self.focus_library_details.configure(width=330)
-                video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
-                video_tree.layout_column(
-                    "duration", width=72, minwidth=62, stretch=False
-                )
-                video_tree.layout_column(
-                    "creator", width=110, minwidth=90, stretch=False
-                )
-                video_tree.layout_column(
-                    "location", width=120, minwidth=90, stretch=False
-                )
-                video_tree.layout_column(
-                    "title", width=320, minwidth=200, stretch=False
-                )
-                video_tree.layout_column(
-                    "profile", width=160, minwidth=120, stretch=False
+                video_tree.layout_columns(
+                    {
+                        "index": {"width": 44, "minwidth": 38, "stretch": False},
+                        "duration": {
+                            "width": 72,
+                            "minwidth": 62,
+                            "stretch": False,
+                        },
+                        "creator": {
+                            "width": 110,
+                            "minwidth": 90,
+                            "stretch": False,
+                        },
+                        "location": {
+                            "width": 120,
+                            "minwidth": 90,
+                            "stretch": False,
+                        },
+                        "title": {
+                            "width": 320,
+                            "minwidth": 200,
+                            "stretch": False,
+                        },
+                        "profile": {
+                            "width": 160,
+                            "minwidth": 120,
+                            "stretch": False,
+                        },
+                    }
                 )
             else:
                 self.focus_metadata_content.columnconfigure(0, weight=1)
                 self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)
                 self.focus_library_details.configure(width=410)
-                video_tree.layout_column("index", width=44, minwidth=38, stretch=False)
-                video_tree.layout_column(
-                    "duration", width=72, minwidth=62, stretch=False
-                )
-                video_tree.layout_column(
-                    "creator", width=120, minwidth=90, stretch=False
-                )
-                video_tree.layout_column(
-                    "location", width=120, minwidth=90, stretch=False
-                )
-                video_tree.layout_column(
-                    "title", width=360, minwidth=220, stretch=True, stretchmax=560
-                )
-                video_tree.layout_column(
-                    "profile", width=180, minwidth=120, stretch=False
+                video_tree.layout_columns(
+                    {
+                        "index": {"width": 44, "minwidth": 38, "stretch": False},
+                        "duration": {
+                            "width": 72,
+                            "minwidth": 62,
+                            "stretch": False,
+                        },
+                        "creator": {
+                            "width": 120,
+                            "minwidth": 90,
+                            "stretch": False,
+                        },
+                        "location": {
+                            "width": 120,
+                            "minwidth": 90,
+                            "stretch": False,
+                        },
+                        "title": {
+                            "width": 360,
+                            "minwidth": 220,
+                            "stretch": True,
+                            "stretchmax": 560,
+                        },
+                        "profile": {
+                            "width": 180,
+                            "minwidth": 120,
+                            "stretch": False,
+                        },
+                    }
                 )
         self._queue_focus_description_layout()
 
