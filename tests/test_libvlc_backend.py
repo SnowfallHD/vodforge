@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -179,6 +180,37 @@ def test_stop_detaches_and_restores_drawable_around_provider_stop(
     backend.stop()
 
     assert module.player.actions == ["nsview:0", "stop", "nsview:47"]
+
+
+def test_windows_stop_services_hwnd_messages_while_provider_closes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media = tmp_path / "video.mp4"
+    media.write_bytes(b"video")
+    backend, module = make_backend()
+    backend.attach_render_surface(NativeRenderSurface("hwnd", 91))
+    backend.load(media, duration=10)
+    original_stop = module.player.stop
+    messages_pumped = threading.Event()
+
+    def blocking_stop() -> None:
+        if not messages_pumped.wait(1):
+            raise RuntimeError("host HWND was not serviced")
+        original_stop()
+
+    module.player.stop = blocking_stop
+    monkeypatch.setattr("yt_downloader.libvlc_backend.sys.platform", "win32")
+    monkeypatch.setattr(
+        backend,
+        "_service_windows_messages",
+        messages_pumped.set,
+    )
+
+    backend.stop()
+
+    assert messages_pumped.is_set()
+    assert module.player.actions[-3:] == ["hwnd:0", "stop", "hwnd:91"]
 
 
 def test_shutdown_is_idempotent_and_releases_native_owners(tmp_path: Path) -> None:

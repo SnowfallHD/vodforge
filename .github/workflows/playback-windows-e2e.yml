@@ -43,15 +43,22 @@ jobs:
             --ffmpeg .\vendor\ffmpeg\bin\ffmpeg.exe `
             --output .\build\playback-fixtures
       - name: Exercise Windows portable application
+        timeout-minutes: 4
         shell: pwsh
         run: |
           $fixtures = Get-ChildItem .\build\playback-fixtures\* | Sort-Object Name
           $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-portable.json"
           $arguments = @("--playback-smoke") + @($fixtures.FullName)
-          $process = Start-Process .\dist\VODForge\VODForge.exe -ArgumentList $arguments -Wait -PassThru
+          $process = Start-Process .\dist\VODForge\VODForge.exe -ArgumentList $arguments -PassThru
+          if (-not $process.WaitForExit(120000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT -ErrorAction Continue
+            throw "Portable playback timed out."
+          }
           Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT -ErrorAction Continue
           if ($process.ExitCode -ne 0) { throw "Portable playback failed with exit code $($process.ExitCode)." }
       - name: Build, install, and exercise Windows installer
+        timeout-minutes: 6
         shell: pwsh
         run: |
           .\build_windows_installer.ps1 -Version "0.1.8-dev"
@@ -64,7 +71,12 @@ jobs:
           $fixtures = Get-ChildItem .\build\playback-fixtures\* | Sort-Object Name
           $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-installer.json"
           $arguments = @("--playback-smoke") + @($fixtures.FullName)
-          $process = Start-Process "$installRoot\VODForge.exe" -ArgumentList $arguments -Wait -PassThru
+          $process = Start-Process "$installRoot\VODForge.exe" -ArgumentList $arguments -PassThru
+          if (-not $process.WaitForExit(120000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT -ErrorAction Continue
+            throw "Installed playback timed out."
+          }
           Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT -ErrorAction Continue
           if ($process.ExitCode -ne 0) { throw "Installed playback failed with exit code $($process.ExitCode)." }
       - name: Verify cleanup and record artifact evidence

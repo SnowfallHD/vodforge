@@ -430,30 +430,46 @@ class LibVLCPlaybackBackend:
             raise MediaPlayerError("Unsupported native playback surface.")
 
     def _stop_provider(self) -> None:
-        """Stop libVLC without blocking Cocoa's main-thread video teardown."""
+        """Stop libVLC while servicing native drawable teardown messages."""
 
-        if (
-            sys.platform != "darwin"
-            or threading.current_thread() is not threading.main_thread()
-        ):
+        if threading.current_thread() is not threading.main_thread():
             self._player.stop()
             return
 
-        # VLC 3's CAOpenGLLayer video output synchronously dispatches part of
-        # teardown to Cocoa's main queue. Calling stop directly from Tk's main
-        # thread can therefore deadlock: libVLC waits for a queue which Tk is
-        # no longer pumping. Keep provider ownership here, perform the blocking
-        # stop off-thread, and service only the native run loop until it ends.
-        try:
-            from Foundation import (  # type: ignore[import-untyped]
-                NSDate,
-                NSDefaultRunLoopMode,
-                NSRunLoop,
-            )
-        except ImportError as exc:  # pragma: no cover - packaged dependency contract
-            raise MediaPlayerError(
-                "The macOS playback bridge could not stop cleanly."
-            ) from exc
+        if sys.platform == "darwin":
+            # VLC 3's CAOpenGLLayer output synchronously dispatches part of
+            # teardown to Cocoa's main queue. Tk must keep that queue moving.
+            try:
+                from Foundation import (  # type: ignore[import-untyped]
+                    NSDate,
+                    NSDefaultRunLoopMode,
+                    NSRunLoop,
+                )
+            except ImportError as exc:  # pragma: no cover - packaging contract
+                raise MediaPlayerError(
+                    "The macOS playback bridge could not stop cleanly."
+                ) from exc
+
+            run_loop = NSRunLoop.currentRunLoop()
+
+            def service_native_events() -> None:
+                run_loop.runMode_beforeDate_(
+                    NSDefaultRunLoopMode,
+                    NSDate.dateWithTimeIntervalSinceNow_(0.01),
+                )
+
+        elif sys.platform == "win32":
+            # Windows video outputs can synchronously message the host HWND
+            # during teardown. Keep that owning thread responsive too.
+            service_native_events = self._service_windows_messages
+        else:
+            self._player.stop()
+            return
+
+        self._run_provider_stop_with_pump(service_native_events)
+
+    def _run_provider_stop_with_pump(self, pump_events: Callable[[], None]) -> None:
+        """Run blocking provider teardown off-thread and pump the host surface."""
 
         finished = threading.Event()
         provider_error: list[Exception] = []
@@ -473,19 +489,40 @@ class LibVLCPlaybackBackend:
         )
         worker.start()
         deadline = time.monotonic() + 5.0
-        run_loop = NSRunLoop.currentRunLoop()
         while not finished.is_set():
             if time.monotonic() >= deadline:
                 raise MediaPlayerError(
                     "The local playback engine did not stop cleanly."
                 )
-            run_loop.runMode_beforeDate_(
-                NSDefaultRunLoopMode,
-                NSDate.dateWithTimeIntervalSinceNow_(0.01),
-            )
+            pump_events()
+            finished.wait(0.005)
         worker.join()
         if provider_error:
             raise provider_error[0]
+
+    @staticmethod
+    def _service_windows_messages() -> None:
+        """Dispatch pending messages for the Tk-owned native video HWND."""
+
+        class Point(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+        class Message(ctypes.Structure):
+            _fields_ = [
+                ("hwnd", ctypes.c_void_p),
+                ("message", ctypes.c_uint),
+                ("w_param", ctypes.c_size_t),
+                ("l_param", ctypes.c_ssize_t),
+                ("time", ctypes.c_ulong),
+                ("point", Point),
+                ("private", ctypes.c_ulong),
+            ]
+
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        message = Message()
+        while user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
+            user32.TranslateMessage(ctypes.byref(message))
+            user32.DispatchMessageW(ctypes.byref(message))
 
     def _attach_provider_events(self) -> None:
         """Use libVLC's event edge only to apply settings when output exists."""

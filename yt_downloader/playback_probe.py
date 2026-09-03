@@ -92,7 +92,17 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
     root: tk.Tk | None = None
     backend: LibVLCPlaybackBackend | None = None
     surface: TkPlaybackSurfaceOwner | None = None
+
+    def checkpoint(phase: str) -> None:
+        receipt["phase"] = phase
+        if receipt_path:
+            write_private_bytes(
+                Path(receipt_path),
+                json.dumps(receipt, sort_keys=True, indent=2).encode("utf-8"),
+            )
+
     try:
+        checkpoint("initialize")
         if not paths:
             raise MediaPlayerError("The packaged playback probe needs local media.")
         runtime = find_libvlc_runtime()
@@ -110,6 +120,7 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
         backend.attach_render_surface(surface.surface)
 
         for index, path in enumerate(paths):
+            checkpoint(f"load:{index}:{path.suffix.casefold()}")
             backend.load(path)
             started = time.perf_counter()
             backend.play()
@@ -122,6 +133,7 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
                     "startup_ms": round(startup_ms, 2),
                 }
             )
+            checkpoint(f"playing:{index}:{path.suffix.casefold()}")
             if index > 0:
                 continue
 
@@ -149,12 +161,15 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
                     "count": len(targets),
                 }
             )
+            checkpoint("rapid_seek_complete")
             backend.set_volume(0)
             backend.set_volume(40)
             backend.set_volume(0)
             receipt["steps"].append({"action": "volume", "final": 0})
+            checkpoint("volume_complete")
             clock_sample = _sample_engine_clock(root, backend)
             receipt["steps"].append({"action": "engine_clock", **clock_sample})
+            checkpoint("clock_complete")
             if not clock_sample["within_tolerance"]:
                 raise MediaPlayerError(
                     "The packaged playback clock did not advance smoothly enough."
@@ -169,7 +184,9 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
                     "height": stage.winfo_height(),
                 }
             )
+            checkpoint("resize_complete")
 
+        checkpoint("shutdown_before_reopen")
         backend.shutdown()
         surface.close()
         backend = LibVLCPlaybackBackend(runtime=runtime)
@@ -181,6 +198,7 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
         _wait_for(root, lambda: backend.snapshot.status == "Playing")
         receipt["steps"].append({"action": "close_reopen", "status": "Playing"})
         receipt["success"] = True
+        checkpoint("complete")
     except Exception as exc:  # noqa: BLE001 - probe must receipt every native failure
         receipt["error"] = f"{type(exc).__name__}: {exc}"
     finally:
