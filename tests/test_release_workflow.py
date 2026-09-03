@@ -196,6 +196,11 @@ def test_windows_packaged_playback_e2e_covers_portable_and_installer():
     assert "playback-installer.json" in workflow
     assert "build_windows_installer.ps1" in workflow
     assert "Get-Process VODForge,vlc,ffmpeg,ffplay" in workflow
+    assert "ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
+    assert (
+        'source_sha = "${{ github.event.pull_request.head.sha || github.sha }}"'
+        in workflow
+    )
 
 
 def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():

@@ -22,6 +22,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -86,7 +88,7 @@ jobs:
           if ($survivors) { throw "Playback left processes running: $($survivors.Name -join ', ')." }
           Compress-Archive -Path .\dist\VODForge -DestinationPath .\dist\release\VODForge-Windows-Portable-v0.1.8-dev.zip -Force
           $evidence = @{
-            source_sha = "${{ github.sha }}"
+            source_sha = "${{ github.event.pull_request.head.sha || github.sha }}"
             installer_sha256 = (Get-FileHash .\dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe -Algorithm SHA256).Hash.ToLowerInvariant()
             portable_sha256 = (Get-FileHash .\dist\release\VODForge-Windows-Portable-v0.1.8-dev.zip -Algorithm SHA256).Hash.ToLowerInvariant()
             installer_bytes = (Get-Item .\dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe).Length
