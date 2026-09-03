@@ -69,30 +69,25 @@ if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng) -or -not (Test-Path
 $iconArgs = @("--icon", $iconFile)
 $addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets", "--add-data", "$iconAssetDir;assets/icons/lucide")
 
-# Bundle FFmpeg. Prefer explicit vendor copies because embedding thumbnails also
-# needs ffprobe.exe. imageio-ffmpeg is only a fallback for non-thumbnail flows.
+# Bundle the complete playback/transcode runtime from the pinned vendor family.
 $addBinary = @()
 $vendorBin = Join-Path $PSScriptRoot "vendor\ffmpeg\bin"
 $ffmpeg = Join-Path $vendorBin "ffmpeg.exe"
 $ffprobe = Join-Path $vendorBin "ffprobe.exe"
+$ffplay = Join-Path $vendorBin "ffplay.exe"
 if (Test-Path $ffmpeg) {
   $addBinary += @("--add-binary", "$ffmpeg;.")
   Write-Host "Bundling ffmpeg.exe from $ffmpeg"
-  if (Test-Path $ffprobe) {
+  if ((Test-Path $ffprobe) -and (Test-Path $ffplay)) {
     $addBinary += @("--add-binary", "$ffprobe;.")
+    $addBinary += @("--add-binary", "$ffplay;.")
     Write-Host "Bundling ffprobe.exe from $ffprobe"
+    Write-Host "Bundling ffplay.exe from $ffplay"
   } else {
-    Write-Host "WARNING: ffprobe.exe missing beside vendor ffmpeg.exe; embedded thumbnails may fail."
+    throw "ffprobe.exe and ffplay.exe are required beside vendor ffmpeg.exe for a self-contained build."
   }
 } else {
-  $imageioFfmpeg = python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
-  if (Test-Path $imageioFfmpeg) {
-    $addBinary += @("--add-binary", "$imageioFfmpeg;.")
-    Write-Host "Bundling imageio ffmpeg from $imageioFfmpeg"
-    Write-Host "WARNING: imageio-ffmpeg does not include ffprobe.exe; use vendor\ffmpeg\bin for embedded thumbnails."
-  } else {
-    Write-Host "WARNING: ffmpeg.exe not found. The app will require FFmpeg from PATH."
-  }
+  throw "vendor\ffmpeg\bin must contain ffmpeg.exe, ffprobe.exe, and ffplay.exe for a self-contained build."
 }
 
 $deno = Join-Path $PSScriptRoot "vendor\deno\deno.exe"

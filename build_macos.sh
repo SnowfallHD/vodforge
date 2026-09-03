@@ -59,9 +59,10 @@ fi
 
 ffmpeg="$(command -v ffmpeg || true)"
 ffprobe="$(command -v ffprobe || true)"
+ffplay="$(command -v ffplay || true)"
 deno="$(command -v deno || true)"
-if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
-  echo "FFmpeg, ffprobe, and Deno are required for a self-contained app."
+if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$ffplay" || -z "$deno" ]]; then
+  echo "FFmpeg, ffprobe, ffplay, and Deno are required for a self-contained app."
   echo "Run ./install_macos_dependencies.sh first."
   exit 1
 fi
@@ -80,6 +81,7 @@ fi
   --add-data "$icon_asset_dir:assets/icons/lucide" \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
+  --add-binary "$ffplay:." \
   --add-binary "$deno:." \
   main.py
 

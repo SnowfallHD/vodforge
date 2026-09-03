@@ -19,12 +19,35 @@ from yt_downloader.history import (
     history_output_path,
     history_output_type,
     load_history,
+    sanitize_chapters,
     sanitize_durable_text,
     sanitize_durable_url,
+    sanitize_heatmap,
     sanitize_history_record,
     save_history,
     upsert_history,
 )
+
+
+def test_chapters_and_heatmap_are_bounded_display_only_metadata() -> None:
+    chapters = sanitize_chapters(
+        [
+            {"start_time": 0, "end_time": 12.5, "title": "Intro", "url": "secret"},
+            {"start_time": -1, "end_time": 2, "title": "Invalid"},
+        ]
+    )
+    heatmap = sanitize_heatmap(
+        [
+            {"start_time": 0, "end_time": 5, "value": 1.4, "url": "secret"},
+            {"start_time": 5, "end_time": 10, "value": "0.25"},
+        ]
+    )
+
+    assert chapters == [{"start_time": 0.0, "end_time": 12.5, "title": "Intro"}]
+    assert heatmap == [
+        {"start_time": 0.0, "end_time": 5.0, "value": 1.0},
+        {"start_time": 5.0, "end_time": 10.0, "value": 0.25},
+    ]
 
 
 def test_application_data_dir_uses_platform_conventions(tmp_path: Path):

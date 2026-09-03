@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import ntpath
 import os
 import re
@@ -35,6 +36,8 @@ HISTORY_METADATA_KEYS = (
     "tags",
     "extra_tags",
     "categories",
+    "chapters",
+    "heatmap",
     "thumbnail",
     "best_thumbnail",
     "playlist_title",
@@ -49,6 +52,74 @@ HISTORY_METADATA_KEYS = (
     "vodforge_run_id",
     "vodforge_run_activity",
 )
+
+MAX_CHAPTERS = 500
+MAX_HEATMAP_POINTS = 5000
+
+
+def _finite_nonnegative(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def sanitize_chapters(value: Any) -> list[dict[str, Any]]:
+    """Retain bounded, display-only chapter timing from provider metadata."""
+
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            continue
+        start = _finite_nonnegative(raw.get("start_time"))
+        end = _finite_nonnegative(raw.get("end_time"))
+        title = str(raw.get("title") or "").strip()[:300]
+        if start is None or end is None or end < start:
+            continue
+        result.append({"start_time": start, "end_time": end, "title": title})
+        if len(result) >= MAX_CHAPTERS:
+            break
+    return result
+
+
+def sanitize_heatmap(value: Any) -> list[dict[str, float]]:
+    """Retain bounded YouTube engagement samples without provider URLs."""
+
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, float]] = []
+    for raw in value:
+        if not isinstance(raw, dict):
+            continue
+        start = _finite_nonnegative(raw.get("start_time"))
+        end = _finite_nonnegative(raw.get("end_time"))
+        raw_value = raw.get("value")
+        if raw_value is None:
+            continue
+        try:
+            value_number = float(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if (
+            start is None
+            or end is None
+            or end < start
+            or not math.isfinite(value_number)
+        ):
+            continue
+        result.append(
+            {
+                "start_time": start,
+                "end_time": end,
+                "value": min(1.0, max(0.0, value_number)),
+            }
+        )
+        if len(result) >= MAX_HEATMAP_POINTS:
+            break
+    return result
 
 
 class HistoryError(RuntimeError):
@@ -414,6 +485,10 @@ def sanitize_history_record(
         value = info.get(key)
         if key in {"tags", "extra_tags", "categories"}:
             value = _clean_string_list(value)
+        elif key == "chapters":
+            value = sanitize_chapters(value)
+        elif key == "heatmap":
+            value = sanitize_heatmap(value)
         elif key == "description":
             value = str(value or "")[:MAX_DESCRIPTION_CHARS]
         elif key == "vodforge_run_activity":

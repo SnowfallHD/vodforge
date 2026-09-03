@@ -3,12 +3,12 @@ from __future__ import annotations
 import tkinter as tk
 from collections.abc import Callable
 from dataclasses import dataclass
-from tkinter import ttk
+from tkinter import colorchooser, ttk
 from typing import Any
 
 from .models import CookieSource, OutputType
 from .ui_layout import centered_toplevel_geometry
-from .ui_theme import THEME
+from .ui_theme import CUSTOM_THEME_NAME, THEME
 from .ui_widgets import SegmentedSelector, ToolTip, reveal_toplevel
 
 
@@ -44,6 +44,8 @@ class FocusSettingsBindings:
     mp3_cover_art_mode: tk.StringVar
     mp3_cover_art_description: tk.StringVar
     mp3_custom_cover_art: tk.StringVar
+    appearance_theme: tk.StringVar
+    custom_accent: tk.StringVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,7 @@ class FocusSettingsOptions:
     mp3_sample_rates: tuple[str, ...]
     mp3_channels: tuple[str, ...]
     mp3_cover_art: tuple[str, ...]
+    appearance_themes: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +115,7 @@ class FocusSettingsDialog:
         self._build_source_section(root)
         self._build_mp4_section(root, macos=macos)
         self._build_mp3_section(root)
+        self._build_appearance_section(root)
         self._build_cloud_section(root)
         self._build_footer(root)
 
@@ -626,6 +630,63 @@ class FocusSettingsDialog:
             cloud_button,
             "Open the VODForge Cloud early-access signup page in your browser.",
         )
+
+    def _build_appearance_section(self, root: ttk.Frame) -> None:
+        appearance = ttk.Frame(root, style="FocusShell.TFrame")
+        appearance.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        appearance.columnconfigure(1, weight=1)
+        appearance.columnconfigure(3, weight=1)
+        ttk.Label(
+            appearance,
+            text="APPEARANCE",
+            style="FocusEyebrow.TLabel",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 7))
+        ttk.Label(appearance, text="Theme", style="Muted.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, 8)
+        )
+        theme_combo = ttk.Combobox(
+            appearance,
+            textvariable=self.bindings.appearance_theme,
+            values=self.options.appearance_themes,
+            state="readonly",
+            width=18,
+        )
+        theme_combo.grid(row=1, column=1, sticky="ew", padx=(0, 18))
+        self._bind_readonly_combo(theme_combo)
+        ttk.Label(appearance, text="Custom accent", style="Muted.TLabel").grid(
+            row=1, column=2, sticky="w", padx=(0, 8)
+        )
+        accent_controls = ttk.Frame(appearance, style="FocusShell.TFrame")
+        accent_controls.grid(row=1, column=3, sticky="ew")
+        accent_controls.columnconfigure(0, weight=1)
+        ttk.Entry(
+            accent_controls,
+            textvariable=self.bindings.custom_accent,
+            width=12,
+        ).grid(row=0, column=0, sticky="ew")
+        ttk.Button(
+            accent_controls,
+            text="Choose",
+            command=self._choose_accent_color,
+            style="FocusQuiet.TButton",
+        ).grid(row=0, column=1, padx=(6, 0))
+        ttk.Label(
+            appearance,
+            text="Choose Custom accent to use a #RRGGBB color. Appearance updates the next time VODForge opens.",
+            style="Muted.TLabel",
+            wraplength=680,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(5, 0))
+
+    def _choose_accent_color(self) -> None:
+        _rgb, selected = colorchooser.askcolor(
+            color=self.bindings.custom_accent.get(),
+            title="Choose VODForge accent color",
+            parent=self.popup,
+        )
+        if selected:
+            self.bindings.custom_accent.set(str(selected).lower())
+            self.bindings.appearance_theme.set(CUSTOM_THEME_NAME)
 
     def _build_footer(self, root: ttk.Frame) -> None:
         footer = ttk.Frame(root, style="FocusShell.TFrame")

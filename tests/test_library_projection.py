@@ -6,8 +6,10 @@ from typing import Any
 
 import pytest
 
+from yt_downloader.library_annotations import LibraryAnnotation
 from yt_downloader.library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
+    ANNOTATION_OWNER_KEY,
     PROJECTION_OWNER_KIND_KEY,
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
@@ -199,8 +201,90 @@ def test_completed_history_removal_and_physical_identity_merge(tmp_path: Path) -
 def test_no_projection_exists_without_a_canonical_owner() -> None:
     owner = LibraryProjectionOwner()
     assert _reconcile(owner).rows == ()
+
+
+def test_annotations_are_joined_by_projection_owner_and_remain_immutable(
+    tmp_path: Path,
+) -> None:
+    owner = LibraryProjectionOwner()
+    job = _job(tmp_path, "annotated", metadata=True)
+
+    projection = owner.reconcile(
+        history_items=[],
+        active_job=job,
+        queued_jobs=[],
+        terminal_jobs=[],
+        annotations={
+            f"run:{job.run_id}": LibraryAnnotation(
+                note="Keep this", tags=("Focus",), category="Work"
+            )
+        },
+    )
+
+    row = projection.rows[0]
+    assert row["vodforge_user_note"] == "Keep this"
+    assert row["vodforge_user_tags"] == ["Focus"]
+    assert row["vodforge_user_category"] == "Work"
+    assert row[ANNOTATION_OWNER_KEY] == f"run:{job.run_id}"
+    with pytest.raises(TypeError):
+        row["vodforge_user_tags"].append("mutate")
     owner.observe_phase("ghost", "Preparing")
     assert _reconcile(owner).rows == ()
+
+
+def test_annotation_owner_survives_transition_from_run_to_history(
+    tmp_path: Path,
+) -> None:
+    owner = LibraryProjectionOwner()
+    annotation = LibraryAnnotation(note="Keep through completion")
+    history = {
+        "id": "annotated",
+        "title": "Completed",
+        "vodforge_run_id": "durable-run",
+        "vodforge_output_type": "MP4",
+        "vodforge_output_path": str(tmp_path / "completed.mp4"),
+        "vodforge_output_dir": str(tmp_path),
+    }
+
+    projection = owner.reconcile(
+        history_items=[history],
+        active_job=None,
+        queued_jobs=[],
+        terminal_jobs=[],
+        annotations={"run:durable-run": annotation},
+    )
+
+    assert projection.rows[0][ANNOTATION_OWNER_KEY] == "run:durable-run"
+    assert projection.rows[0]["vodforge_user_note"] == "Keep through completion"
+
+
+def test_projection_drops_stale_annotation_decorations_without_owner(
+    tmp_path: Path,
+) -> None:
+    job = _job(tmp_path, "stale-annotation", metadata=True)
+    assert job.preview_info is not None
+    job.preview_info.update(
+        {
+            "vodforge_user_note": "stale",
+            "vodforge_user_tags": ["stale"],
+            "vodforge_user_category": "stale",
+        }
+    )
+
+    row = (
+        LibraryProjectionOwner()
+        .reconcile(
+            history_items=[],
+            active_job=job,
+            queued_jobs=[],
+            terminal_jobs=[],
+        )
+        .rows[0]
+    )
+
+    assert "vodforge_user_note" not in row
+    assert "vodforge_user_tags" not in row
+    assert "vodforge_user_category" not in row
 
 
 def test_observe_phase_is_idempotent_for_repeated_worker_status() -> None:

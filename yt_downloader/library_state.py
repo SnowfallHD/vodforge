@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
 from .history import history_identity, history_output_dir, history_output_type
+from .library_annotations import LibraryAnnotation
 from .models import DownloadJob, OutputType
 from .run_identity import annotate_job_metadata
 
@@ -16,6 +17,7 @@ QUEUED_METADATA_RUN_ID_KEY = "vodforge_queued_run_id"
 RUN_STATUS_KEY = "vodforge_run_status"
 PROJECTION_OWNER_KEY = "vodforge_projection_owner"
 PROJECTION_OWNER_KIND_KEY = "vodforge_projection_owner_kind"
+ANNOTATION_OWNER_KEY = "vodforge_annotation_owner"
 TRANSIENT_LIBRARY_STATUSES = frozenset(
     {"Queued", "Preparing", "Downloading", "Transcoding", "Validating", "Finalizing"}
 )
@@ -28,6 +30,14 @@ _ACTIVE_METADATA_STALE_KEYS = (
     "vodforge_terminal_run_id",
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
+)
+_PROJECTION_DECORATION_KEYS = (
+    PROJECTION_OWNER_KEY,
+    PROJECTION_OWNER_KIND_KEY,
+    ANNOTATION_OWNER_KEY,
+    "vodforge_user_note",
+    "vodforge_user_tags",
+    "vodforge_user_category",
 )
 
 MetadataRunKey = tuple[str, str]
@@ -235,6 +245,8 @@ def _clean_projection_row(info: dict[str, Any]) -> dict[str, Any]:
     row.pop(ACTIVE_METADATA_RUN_ID_KEY, None)
     row.pop(QUEUED_METADATA_RUN_ID_KEY, None)
     row.pop(RUN_STATUS_KEY, None)
+    for key in _PROJECTION_DECORATION_KEYS:
+        row.pop(key, None)
     return row
 
 
@@ -298,6 +310,7 @@ class LibraryProjectionOwner:
         queued_jobs: Sequence[DownloadJob],
         terminal_jobs: Sequence[DownloadJob],
         suppressed_run_ids: AbstractSet[str] = frozenset(),
+        annotations: Mapping[str, LibraryAnnotation] | None = None,
     ) -> LibraryProjection:
         """Return one row per canonical owner using deterministic precedence."""
 
@@ -430,6 +443,25 @@ class LibraryProjectionOwner:
                 preview_rows.append(row)
 
         mutable_rows = [*live_rows, *terminal_rows, *preview_rows, *history_rows]
+        annotation_snapshot = annotations or {}
+        for row in mutable_rows:
+            run_id = str(
+                row.get("vodforge_run_id")
+                or row.get("vodforge_terminal_run_id")
+                or row.get(ACTIVE_METADATA_RUN_ID_KEY)
+                or row.get(QUEUED_METADATA_RUN_ID_KEY)
+                or ""
+            ).strip()
+            annotation_owner = (
+                f"run:{run_id}" if run_id else str(row.get(PROJECTION_OWNER_KEY) or "")
+            )
+            row[ANNOTATION_OWNER_KEY] = annotation_owner
+            annotation = annotation_snapshot.get(annotation_owner)
+            if annotation is None:
+                continue
+            row["vodforge_user_note"] = annotation.note
+            row["vodforge_user_tags"] = list(annotation.tags)
+            row["vodforge_user_category"] = annotation.category
         rows = tuple(_freeze_projection_value(row) for row in mutable_rows)
         owner_keys = [str(row.get(PROJECTION_OWNER_KEY) or "") for row in rows]
         if len(owner_keys) != len(set(owner_keys)):

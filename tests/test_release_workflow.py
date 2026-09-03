@@ -128,6 +128,19 @@ def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
     assert 'YTDLP_EJS_SOLVER_RESOURCES = ("core.min.js", "lib.min.js")' in app_source
 
 
+def test_library_player_runtime_is_self_contained_on_macos_and_windows():
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
+    windows_install = (ROOT / "install_ffmpeg_windows.ps1").read_text(encoding="utf-8")
+    app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
+
+    assert '--add-binary "$ffplay:."' in macos_build
+    assert 'Join-Path $vendorBin "ffplay.exe"' in windows_build
+    assert '"--add-binary", "$ffplay;."' in windows_build
+    assert 'Copy-Item (Join-Path $bin "ffplay.exe")' in windows_install
+    assert '"ffplay": DownloaderApp._find_ffplay()' in app_source
+
+
 def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")

@@ -71,16 +71,29 @@ from .history import (
     history_identity,
     history_output_dir,
     load_history,
+    sanitize_chapters,
     sanitize_durable_text,
     sanitize_durable_thumbnail_record,
     sanitize_durable_url,
+    sanitize_heatmap,
     sanitize_run_activity,
     save_history,
     upsert_history,
 )
 from .install_attribution import InstallationAttributionOwner
+from .library_annotation_ui import LibraryAnnotationDialog
+from .library_annotations import (
+    LibraryAnnotation,
+    LibraryAnnotationsError,
+    LibraryAnnotationsOwner,
+    library_annotations_file_path,
+)
+from .library_search import LIBRARY_ALL_MEDIA, library_visible_indices
+from .library_search_ui import LibrarySearchField
 from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
+    ANNOTATION_OWNER_KEY,
+    PROJECTION_OWNER_KEY,
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
@@ -94,6 +107,12 @@ from .library_state import (
     persisted_run_deck_records,
     resolve_library_removal_plan,
 )
+from .media_player import (
+    MediaPlaybackOwner,
+    MediaPlayerError,
+    resolve_library_media_path,
+)
+from .media_player_ui import MediaPlayerWindow
 from .models import (
     AUDIO_CHANNELS,
     AUDIO_SAMPLE_RATE,
@@ -201,6 +220,7 @@ from .ui_layout import (
     youtube_thumbnail_size,
 )
 from .ui_theme import (
+    DEFAULT_THEME_NAME,
     FONT_MONO,
     FONT_MONO_FAMILY,
     FONT_TITLE,
@@ -210,6 +230,8 @@ from .ui_theme import (
     FONT_UI_SMALL,
     FONT_UI_SMALL_MEDIUM,
     THEME,
+    THEME_NAMES,
+    apply_theme_selection,
 )
 from .ui_widgets import (
     PillAction,
@@ -2533,6 +2555,8 @@ def compact_video_metadata(
         "tags": _clean_list(info.get("tags")),
         "extra_tags": _clean_list(extra_tags),
         "categories": _clean_list(info.get("categories")),
+        "chapters": sanitize_chapters(info.get("chapters")),
+        "heatmap": sanitize_heatmap(info.get("heatmap")),
         "thumbnail": sanitize_durable_url(
             info.get("thumbnail") or (thumb or {}).get("url"),
             preserve_youtube_context=False,
@@ -4779,6 +4803,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             settings_file_path(), diagnostic=write_diagnostic
         )
         saved_settings = self.settings_persistence.load()
+        theme_selection = apply_theme_selection(
+            saved_settings.get("appearance_theme", DEFAULT_THEME_NAME),
+            saved_settings.get("custom_accent", "#7170ff"),
+        )
         try:
             self.installation_state = load_or_create_installation_state(
                 self.installation_state_path
@@ -4815,6 +4843,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.output_var = tk.StringVar(value=output_value)
         self.output_type_var = tk.StringVar(value=output_type_value)
         self.library_output_type_var = tk.StringVar(value=OutputType.MP4.value)
+        self.library_search_var = tk.StringVar()
+        self.appearance_theme_var = tk.StringVar(value=theme_selection.name)
+        self.custom_accent_var = tk.StringVar(value=theme_selection.custom_accent)
         self.quality_var = tk.StringVar(value=quality_value)
         self.export_mode_var = tk.StringVar(value=export_mode_value)
         self.export_mode_choice_var = tk.StringVar(
@@ -4941,6 +4972,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.last_thumbnail_url: str | None = None
         self.metadata_items: Sequence[dict[str, Any]] = ()
         self.library_projection = LibraryProjectionOwner(diagnostic=write_diagnostic)
+        self.library_annotations = LibraryAnnotationsOwner(
+            library_annotations_file_path(), diagnostic=write_diagnostic
+        )
+        self.library_annotations.load()
+        self._media_player_window: MediaPlayerWindow | None = None
+        self._media_player_source: Path | None = None
         self._last_library_invariant_violations: tuple[Any, ...] = ()
         self.download_history: list[dict[str, Any]] = []
         self.history_path = history_file_path()
@@ -5727,6 +5764,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.library_output_type_var.trace_add(
             "write", lambda *_args: self._on_library_output_type_changed()
         )
+        self.library_search_var.trace_add(
+            "write", lambda *_args: self._render_metadata_tree()
+        )
         self.mp3_quality_var.trace_add(
             "write", lambda *_args: self._sync_focus_settings_summary()
         )
@@ -6169,6 +6209,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_library_output_type_selector = SegmentedSelector(
             heading_title,
             variable=self.library_output_type_var,
+            values=(LIBRARY_ALL_MEDIA, OutputType.MP4.value, OutputType.MP3.value),
             background=THEME["bg"],
             compact=True,
         )
@@ -6178,11 +6219,29 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ).pack(anchor="w", pady=(3, 0))
         action_row = ttk.Frame(actions, style="FocusShell.TFrame")
         action_row.grid(row=0, column=1, sticky="e")
+        search_shell = LibrarySearchField(
+            action_row,
+            variable=self.library_search_var,
+        )
+        search_shell.pack(side="left", padx=(0, 10))
+        self.focus_library_search_entry = search_shell.entry
+        ToolTip(
+            self.focus_library_search_entry,
+            "Search titles, creators, notes, tags, categories, status, and saved location.",
+        )
         self.focus_library_details_button = ttk.Button(
             action_row,
             text="Selected details",
             command=self._show_selected_metadata_details,
             style="FocusQuiet.TButton",
+        )
+        self.focus_library_play_button = ttk.Button(
+            action_row,
+            text="Play",
+            width=6,
+            command=self._play_selected_library_item,
+            style="FocusQuiet.TButton",
+            state="disabled",
         )
         self.focus_library_menu_button = ttk.Button(
             action_row,
@@ -6192,6 +6251,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             style="FocusQuiet.TButton",
         )
         self._focus_library_action_feedback_after_id: str | None = None
+        self.focus_library_play_button.pack(side="left", padx=(0, 6))
         self.focus_library_menu_button.pack(side="left")
 
         metadata_content = ttk.Frame(parent, style="FocusShell.TFrame")
@@ -6264,6 +6324,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         tree_x_scroll.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         video_tree.bind_body_event("<<TreeviewSelect>>", self._on_video_selected)
         video_tree.bind_body_event("<Button-1>", self._on_library_tree_click, add="+")
+        video_tree.bind_body_event("<Double-1>", self._on_library_double_click)
         video_tree.bind_body_event("<Button-2>", self._show_library_row_menu)
         video_tree.bind_body_event("<Button-3>", self._show_library_row_menu)
         self.focus_queue_panel = queue_panel
@@ -7017,8 +7078,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._refresh_manual_settings_visibility()
 
     def _on_library_output_type_changed(self) -> None:
+        selected = self.library_output_type_var.get()
+        if selected == LIBRARY_ALL_MEDIA:
+            if hasattr(self, "focus_library_media_label_var"):
+                self.focus_library_media_label_var.set("ALL MEDIA")
+            if hasattr(self, "video_tree"):
+                self._render_metadata_tree()
+            return
         try:
-            output_type = OutputType(self.library_output_type_var.get())
+            output_type = OutputType(selected)
         except ValueError:
             output_type = OutputType.MP4
             self.library_output_type_var.set(output_type.value)
@@ -7262,6 +7330,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             mp3_cover_art_mode=self.mp3_cover_art_mode_var,
             mp3_cover_art_description=self.mp3_cover_art_description_var,
             mp3_custom_cover_art=self.mp3_custom_cover_art_var,
+            appearance_theme=self.appearance_theme_var,
+            custom_accent=self.custom_accent_var,
         )
 
     @staticmethod
@@ -7276,6 +7346,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             mp3_sample_rates=tuple(MP3_SAMPLE_RATE_OPTIONS),
             mp3_channels=tuple(MP3_CHANNEL_OPTIONS),
             mp3_cover_art=MP3_COVER_ART_OPTIONS,
+            appearance_themes=THEME_NAMES,
         )
 
     def _focus_settings_actions(self) -> FocusSettingsActions:
@@ -8022,9 +8093,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
             menu.add_separator()
         if isinstance(selected_info, dict):
+            if resolve_library_media_path(selected_info) is not None:
+                menu.add_command(
+                    label="Play in VODForge",
+                    command=partial(self._play_selected_library_item, selected_info),
+                )
+                menu.add_separator()
             menu.add_command(
                 label="Output details…",
                 command=partial(self._show_library_output_details, selected_info),
+            )
+            menu.add_command(
+                label="Edit notes, tags & category…",
+                command=partial(self._show_library_annotation_editor, selected_info),
             )
             menu.add_separator()
         menu.add_command(
@@ -9192,8 +9273,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._append_log(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
             self.download_button.config(state="disabled")
         ffmpeg = self._find_ffmpeg()
+        ffplay = self._find_ffplay()
         deno = self._find_deno()
         write_diagnostic(f"runtime path: ffmpeg={ffmpeg}")
+        write_diagnostic(f"runtime path: ffplay={ffplay}")
         write_diagnostic(f"runtime path: deno={deno}")
         if not ffmpeg:
             self._append_log(
@@ -9201,6 +9284,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
         else:
             self._append_log(f"FFmpeg found: {ffmpeg}")
+        if not ffplay:
+            self._append_log(
+                "FFplay not found. Library playback will be unavailable until VODForge is reinstalled with its playback engine."
+            )
         self._append_log(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
 
     def _start_ytdlp_preload(self) -> None:
@@ -10206,12 +10293,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         """Render one deterministic snapshot from canonical Library owners."""
 
         owner = self._library_projection_owner()
+        annotation_owner = self.__dict__.get("library_annotations")
         projection = owner.reconcile(
             history_items=self.__dict__.get("download_history", []),
             active_job=self.__dict__.get("active_job"),
             queued_jobs=self.__dict__.get("pending_jobs", []),
             terminal_jobs=self.__dict__.get("_terminal_jobs", []),
             suppressed_run_ids=self.__dict__.get("_library_suppressed_run_ids", set()),
+            annotations=(
+                annotation_owner.snapshot if annotation_owner is not None else {}
+            ),
         )
         self.metadata_items = projection.rows
         self._last_library_invariant_violations = projection.violations
@@ -10240,8 +10331,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         selected_iid = (
             self.video_tree.selection()[0] if self.video_tree.selection() else None
         )
-        visible_indices = metadata_indices_for_output_type(
-            self.metadata_items, self.library_output_type_var.get()
+        visible_indices = library_visible_indices(
+            self.metadata_items,
+            self.library_output_type_var.get(),
+            (
+                self.__dict__["library_search_var"].get()
+                if "library_search_var" in self.__dict__
+                else ""
+            ),
         )
         rows: list[tuple[str, tuple[Any, ...]]] = []
         retry_rows: dict[str, str] = {}
@@ -10287,8 +10384,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _clear_library_selection(self) -> None:
         output_type = self.library_output_type_var.get()
+        search_query = (
+            self.__dict__["library_search_var"].get()
+            if "library_search_var" in self.__dict__
+            else ""
+        )
+        play_button = self.__dict__.get("focus_library_play_button")
+        if play_button is not None:
+            play_button.configure(state="disabled")
         self.selected_title_var.set(
-            f"No {output_type} items yet. Preview or forge a URL to add one."
+            "No Library items match this search."
+            if search_query.strip()
+            else f"No {output_type} items yet. Preview or forge a URL to add one."
         )
         if hasattr(self, "selected_meta_var"):
             self.selected_meta_var.set("")
@@ -10321,6 +10428,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             except (TypeError, ValueError):
                 index = 0
             self._display_selected_metadata(index)
+
+    def _on_library_double_click(self, event: tk.Event[Any]) -> str | None:
+        row = self.video_tree.identify_row(event.y)
+        if not row:
+            return None
+        try:
+            info = self.metadata_items[int(row)]
+        except (IndexError, TypeError, ValueError):
+            return None
+        if resolve_library_media_path(info) is None:
+            return None
+        self.video_tree.selection_set(row)
+        self._display_selected_metadata(int(row))
+        self._play_selected_library_item(info)
+        return "break"
 
     def _terminal_job_for_metadata(self, info: dict[str, Any]) -> DownloadJob | None:
         run_id = str(info.get("vodforge_terminal_run_id") or "")
@@ -10370,9 +10492,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._terminal_job_for_metadata(info) if isinstance(info, dict) else None
         )
         if isinstance(info, dict):
+            if resolve_library_media_path(info) is not None:
+                menu.add_command(
+                    label="Play in VODForge",
+                    command=partial(self._play_selected_library_item, info),
+                )
+                menu.add_separator()
             menu.add_command(
                 label="Output details…",
                 command=partial(self._show_library_output_details, info),
+            )
+            menu.add_command(
+                label="Edit notes, tags & category…",
+                command=partial(self._show_library_annotation_editor, info),
             )
             menu.add_separator()
         if is_metadata_preview(info):
@@ -10429,6 +10561,161 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "\n\n".join(sections),
             parent=self,
         )
+
+    def _show_library_annotation_editor(
+        self, info: dict[str, Any] | None = None
+    ) -> None:
+        """Coordinate one immutable annotation edit for a projected Library owner."""
+
+        selected_index: int | None = None
+        if info is None:
+            selection = self.video_tree.selection()
+            if not selection:
+                messagebox.showinfo(APP_NAME, "Choose an item in Library first.")
+                return
+            try:
+                selected_index = int(selection[0])
+                info = self.metadata_items[selected_index]
+            except (IndexError, TypeError, ValueError):
+                return
+        else:
+            selected_index = next(
+                (
+                    index
+                    for index, item in enumerate(self.metadata_items)
+                    if item is info
+                ),
+                None,
+            )
+        owner = str(
+            info.get(ANNOTATION_OWNER_KEY) or info.get(PROJECTION_OWNER_KEY) or ""
+        ).strip()
+        if not owner:
+            messagebox.showerror(
+                APP_NAME,
+                "This item has no stable Library owner, so its details cannot be saved.",
+            )
+            return
+        categories = tuple(
+            sorted(
+                {
+                    annotation.category
+                    for annotation in self.library_annotations.snapshot.values()
+                    if annotation.category
+                },
+                key=str.casefold,
+            )
+        )
+
+        def save(annotation: LibraryAnnotation) -> bool:
+            try:
+                self.library_annotations.replace(owner, annotation)
+            except LibraryAnnotationsError as exc:
+                messagebox.showerror(APP_NAME, str(exc), parent=self)
+                return False
+            self._reconcile_library_projection(selected_index=selected_index)
+            self.status_var.set("Library notes and organization saved.")
+            return True
+
+        LibraryAnnotationDialog(
+            self,
+            title=str(info.get("title") or "Selected Library item"),
+            annotation=self.library_annotations.annotation_for(owner),
+            categories=categories,
+            on_save=save,
+        ).show()
+
+    @staticmethod
+    def _library_thumbnail_path(info: dict[str, Any]) -> Path | None:
+        preview = str(info.get("preview_thumbnail_path") or "").strip()
+        candidates = [Path(preview)] if preview else []
+        saved = history_output_dir(info)
+        if saved is not None:
+            candidates.extend(
+                saved / filename
+                for filename in (
+                    "thumbnail.jpg",
+                    "thumbnail.jpeg",
+                    "thumbnail.png",
+                    "thumbnail.webp",
+                )
+            )
+        cached = existing_cached_thumbnail_path(info)
+        if cached is not None:
+            candidates.append(cached)
+        return next(
+            (candidate for candidate in candidates if candidate.is_file()), None
+        )
+
+    def _play_selected_library_item(self, info: dict[str, Any] | None = None) -> None:
+        """Coordinate local playback without owning player state or processes."""
+
+        if info is None:
+            selection = self.video_tree.selection()
+            if not selection:
+                messagebox.showinfo(APP_NAME, "Choose a saved Library item first.")
+                return
+            try:
+                info = self.metadata_items[int(selection[0])]
+            except (IndexError, TypeError, ValueError):
+                return
+        media_path = resolve_library_media_path(info)
+        if media_path is None:
+            messagebox.showinfo(
+                f"{APP_NAME} Player",
+                "This Library item does not currently point to one available saved media file.",
+                parent=self,
+            )
+            return
+        existing = self.__dict__.get("_media_player_window")
+        if (
+            self.__dict__.get("_media_player_source") == media_path
+            and existing is not None
+            and existing.focus_existing()
+        ):
+            return
+        if existing is not None:
+            existing.close()
+        ffmpeg = find_runtime_executable("ffmpeg")
+        ffprobe = find_runtime_executable("ffprobe")
+        ffplay = self._find_ffplay()
+        if not ffmpeg or not ffprobe or not ffplay:
+            messagebox.showerror(
+                f"{APP_NAME} Player",
+                "The bundled playback engine is unavailable. Reinstall VODForge or use Open saved location.",
+                parent=self,
+            )
+            return
+        try:
+            duration = float(info.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if not 0 < duration < 60 * 60 * 48:
+            duration = 0.0
+        playback = MediaPlaybackOwner(
+            ffmpeg=ffmpeg,
+            ffprobe=ffprobe,
+            ffplay=ffplay,
+            diagnostic=write_diagnostic,
+        )
+        try:
+            playback.load(
+                media_path,
+                duration=duration,
+                audio_only=metadata_output_type(info) == OutputType.MP3,
+            )
+        except MediaPlayerError as exc:
+            messagebox.showerror(f"{APP_NAME} Player", str(exc), parent=self)
+            return
+        window = MediaPlayerWindow(
+            self,
+            playback=playback,
+            info=info,
+            thumbnail_path=self._library_thumbnail_path(info),
+        )
+        self._media_player_window = window
+        self._media_player_source = media_path
+        window.show()
 
     def _remove_selected_library_item(self) -> None:
         selection = self.video_tree.selection()
@@ -10529,6 +10816,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     recovery_owner.removed_or_retried(run_id)
             except RunStateError as exc:
                 write_diagnostic(f"removed run recovery record cleanup failed: {exc}")
+        annotation_owner = str(
+            info.get(ANNOTATION_OWNER_KEY) or info.get(PROJECTION_OWNER_KEY) or ""
+        ).strip()
+        annotations = self.__dict__.get("library_annotations")
+        if annotation_owner and annotations is not None:
+            try:
+                annotations.remove(annotation_owner)
+            except LibraryAnnotationsError as exc:
+                write_diagnostic(
+                    "removed Library annotation cleanup failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
         self._reconcile_library_projection()
         return removed_run_ids
 
@@ -10633,6 +10932,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if index < 0 or index >= len(self.metadata_items):
             return
         info = self.metadata_items[index]
+        play_button = self.__dict__.get("focus_library_play_button")
+        if play_button is not None:
+            play_button.configure(
+                state=(
+                    "normal"
+                    if resolve_library_media_path(info) is not None
+                    else "disabled"
+                )
+            )
         title = str(info.get("title") or info.get("id") or "selected video")
         creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
         output_type = metadata_output_type(info)
@@ -10654,6 +10962,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         metadata_text = (
             f"{output_type.value} • {creator} • {format_duration(info.get('duration'))}"
         )
+        user_category = str(info.get("vodforge_user_category") or "").strip()
+        if user_category:
+            metadata_text += f" • {user_category}"
         if hasattr(self, "selected_meta_var") and hasattr(
             self, "selected_location_var"
         ):
@@ -10666,8 +10977,28 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._queue_focus_selected_overview_layout()
         else:
             self.selected_title_var.set(f"{title}\n{metadata_text}\n{location_text}")
-        tags_text = build_tags_display_text(info)
-        description = build_description_display_text(info)
+        provider_tags = build_tags_display_text(info)
+        user_tags = ", ".join(
+            str(tag) for tag in info.get("vodforge_user_tags", ()) if str(tag).strip()
+        )
+        tags_text = "\n".join(
+            section
+            for section in (
+                f"Your tags: {user_tags}" if user_tags else "",
+                f"Source tags: {provider_tags}" if provider_tags else "",
+            )
+            if section
+        )
+        source_description = build_description_display_text(info)
+        user_note = str(info.get("vodforge_user_note") or "").strip()
+        description = "\n\n".join(
+            section
+            for section in (
+                f"YOUR NOTE\n{user_note}" if user_note else "",
+                source_description,
+            )
+            if section
+        )
         self._set_text(
             self.pulled_tags_text, tags_text or "No tags found for this video."
         )
@@ -11419,6 +11750,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         previous_status = str(previous.terminal_status or "Stopped")
         if previous_status not in {"Stopped", "Skipped", "Failed"}:
             return
+        annotations = self.__dict__.get("library_annotations")
+        if annotations is not None:
+            try:
+                annotations.transfer(
+                    f"run:{previous.run_id}",
+                    f"run:{job.run_id}",
+                )
+            except LibraryAnnotationsError as exc:
+                write_diagnostic(
+                    "superseded Library annotation transfer failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
         metadata_items = self.__dict__.get("metadata_items", [])
         previous_row = next(
             (
@@ -11878,12 +12221,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "write_thumbnail": self.write_thumbnail_var,
             "embed_metadata": self.embed_metadata_var,
             "write_info_json": self.write_info_json_var,
+            "appearance_theme": self.appearance_theme_var,
+            "custom_accent": self.custom_accent_var,
         }
 
     def _request_application_close(self) -> None:
         if self._closing:
             return
         self._closing = True
+        player = self.__dict__.get("_media_player_window")
+        if player is not None:
+            player.close()
         settings_owner = self.__dict__.get("settings_persistence")
         if settings_owner is not None:
             settings_owner.flush()
@@ -13452,6 +13800,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         return find_runtime_executable("ffprobe")
 
     @staticmethod
+    def _find_ffplay() -> str | None:
+        return find_runtime_executable("ffplay")
+
+    @staticmethod
     def _find_deno() -> str | None:
         return find_runtime_executable("deno")
 
@@ -13839,6 +14191,7 @@ def runtime_smoke() -> int:
     runtimes = {
         "ffmpeg": DownloaderApp._find_ffmpeg(),
         "ffprobe": DownloaderApp._find_ffprobe(),
+        "ffplay": DownloaderApp._find_ffplay(),
         "deno": DownloaderApp._find_deno(),
     }
     _runtime_smoke_output(
