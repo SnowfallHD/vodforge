@@ -10764,7 +10764,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 playback.shutdown()
             messagebox.showerror(f"{APP_NAME} Player", str(exc), parent=self)
             return
-        assert playback is not None and previews is not None
+        if playback is None or previews is None:
+            if previews is not None:
+                previews.shutdown()
+            if playback is not None:
+                playback.shutdown()
+            messagebox.showerror(
+                f"{APP_NAME} Player",
+                "The bundled playback engine could not initialize.",
+                parent=self,
+            )
+            return
         window = MediaPlayerWindow(
             self,
             playback=playback,
