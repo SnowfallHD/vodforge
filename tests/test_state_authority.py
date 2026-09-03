@@ -319,6 +319,7 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     app.source_summary_text = object()
     app.output_summary_text = object()
     app.focus_summary_text = None
+    app.focus_library_play_button = Control()
     app._set_text = lambda widget, value, **_kwargs: setattr(widget, "value", value)
     app._set_encoding_summary_text = lambda *_args, **_kwargs: None
     thumbnail_requests: list[tuple[str, str]] = []
@@ -340,6 +341,16 @@ def test_library_selection_cannot_mutate_forge_identity_or_thumbnail(tmp_path: P
     assert app.selected_title_var.get() == "Library selection"
     assert "MP4 • Library creator" in app.selected_meta_var.get()
     assert app.selected_location_var.get() == "Metadata only — no output file"
+    assert app.focus_library_play_button.configured[-1]["state"] == "disabled"
+
+    info["vodforge_output_dir"] = str(tmp_path / "missing-saved-folder")
+    info["vodforge_output_path"] = str(
+        tmp_path / "missing-saved-folder" / "missing.mp4"
+    )
+    app._display_selected_metadata(0)
+    assert app.focus_library_play_button.configured[-1]["state"] == "normal"
+    info.pop("vodforge_output_dir")
+    info.pop("vodforge_output_path")
 
     info["description"] = ""
     thumbnail_requests.clear()

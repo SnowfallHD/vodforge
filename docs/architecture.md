@@ -11,7 +11,9 @@ State is divided by authority:
 - Next-run values remain application-owned Tk variables while Settings edits them. A `DownloadJob` receives an immutable-by-convention snapshot at submission.
 - Active and queued execution belongs to `active_job`, `pending_jobs`, and the worker control flags.
 - A run owns its preview metadata, activity lines, terminal state, and output profile. Forge renders the selected run; it does not rewrite that run from current Settings values.
-- `history.py` owns the durable schema and sanitization. `download_history` is the durable completed-output ledger; `metadata_items` is the mutable session and Library projection. Library removal changes VODForge presentation history, not media files, unless a separate file action is explicitly requested.
+- `history.py` owns the durable schema and sanitization. `download_history` is the durable completed-output ledger; `metadata_items` is an atomically replaced, immutable-derived Library snapshot and never an authority. Library removal changes VODForge presentation history, not media files, unless a separate file action is explicitly requested.
+- `library_annotations.py` separately owns durable user notes, tags, and categories. Categories are user-created Library collections exposed through projection-backed filtering; they do not change provider metadata or output paths.
+- `media_player.py` owns local playback state, synchronization, and its FFmpeg-family child processes. Missing-media recovery is planned by `library_media_recovery.py` from durable history and a validated saved job profile; UI code cannot reconstruct or guess an output profile.
 - UI selection is presentation state. It must not become execution authority.
 
 ## UI seams
@@ -19,7 +21,8 @@ State is divided by authority:
 The composition root still owns the Forge and Library widget trees because their controls share selected-run and execution state. The extracted seams are narrower:
 
 - `focus_settings.py` owns Settings dialog construction and visibility. It receives explicit variables and actions; it does not own the next-run settings values or create jobs.
-- `library_state.py` owns pure Library row identity, merge, and run-deck projection rules. The application owns the mutable collection and renders the resulting records.
+- `library_state.py` owns the single Library membership/status projection from canonical run, queue, terminal, preview, history, and annotation owners. The application atomically adopts and renders that immutable snapshot; it does not append, remove, or terminalize Library rows.
+- `library_search.py` owns render-only search/category predicates. `library_search_ui.py`, `media_player_ui.py`, annotation UI, and missing-media recovery UI each own rendering strategy for their local surface.
 - `ui_layout.py` owns shared responsive geometry policy. `ui_widgets.py` owns reusable Tk controls and input behavior. `ui_theme.py` owns the shared visual tokens.
 
 These modules are not independent view models. Execution authority and cross-view selection remain explicit in `DownloaderApp` so a second state system cannot drift from the real queue.

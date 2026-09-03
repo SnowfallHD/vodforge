@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from yt_downloader.media_player import (
+    PLAYER_FRAME_BYTES,
     MediaPlaybackOwner,
     MediaPlayerError,
     probe_media_duration,
@@ -19,8 +20,8 @@ from yt_downloader.media_player import (
 
 
 class FakeProcess:
-    def __init__(self, *, output: bytes = b"") -> None:
-        self.stdout = BytesIO()
+    def __init__(self, *, output: bytes = b"", stdout: bytes = b"") -> None:
+        self.stdout = BytesIO(stdout)
         self._output = output
         self.returncode: int | None = None
         self.terminated = False
@@ -92,6 +93,24 @@ def test_resolve_library_media_path_falls_back_only_when_unambiguous(
     assert resolve_library_media_path(record) is None
 
 
+def test_resolve_library_media_path_never_substitutes_for_missing_exact_file(
+    tmp_path: Path,
+) -> None:
+    other = tmp_path / "other.mp4"
+    other.write_bytes(b"different media")
+
+    assert (
+        resolve_library_media_path(
+            {
+                "vodforge_output_dir": str(tmp_path),
+                "vodforge_output_path": str(tmp_path / "missing.mp4"),
+                "vodforge_output_type": "MP4",
+            }
+        )
+        is None
+    )
+
+
 def test_probe_duration_uses_fixed_json_contract(tmp_path: Path) -> None:
     calls: list[list[str]] = []
 
@@ -150,6 +169,43 @@ def test_audio_playback_pause_and_close_are_owned_and_reaped(tmp_path: Path) -> 
     assert owner._playback_registry.processes == set()
     owner.close()
     assert owner.snapshot.status == "Closed"
+
+
+def test_video_decodes_first_frame_before_starting_audio_clock(tmp_path: Path) -> None:
+    media = tmp_path / "video.mp4"
+    media.write_bytes(b"video")
+    commands: list[list[str]] = []
+
+    def popen(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "/trusted/ffmpeg":
+            return FakeProcess(stdout=b"\x00" * PLAYER_FRAME_BYTES)
+        return FakeProcess()
+
+    owner = MediaPlaybackOwner(
+        ffmpeg="/trusted/ffmpeg",
+        ffprobe="/trusted/ffprobe",
+        ffplay="/trusted/ffplay",
+        popen=popen,
+    )
+    owner.load(media, duration=30, audio_only=False)
+
+    starting = owner.play()
+
+    assert starting.status in {"Starting", "Playing"}
+    deadline = time.monotonic() + 1
+    while len(commands) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert [command[0] for command in commands[:2]] == [
+        "/trusted/ffmpeg",
+        "/trusted/ffplay",
+    ]
+    deadline = time.monotonic() + 1
+    while owner.snapshot.status == "Starting" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert owner.snapshot.status == "Playing"
+    assert owner.latest_frame(-1)[1] is not None
+    owner.close()
 
 
 def test_ended_playback_restarts_from_beginning(tmp_path: Path) -> None:

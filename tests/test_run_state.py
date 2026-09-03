@@ -69,6 +69,27 @@ def test_job_recovery_contract_excludes_secrets_and_cookie_authority(
     assert recovered.cookie_browser is None
 
 
+def test_job_recovery_preserves_output_profile_origin_and_local_cover_art(
+    tmp_path: Path,
+) -> None:
+    cover = tmp_path / "cover.jpg"
+    job = _job(tmp_path)
+    job.origin_run_id = "previous-run"
+    job.mp3_settings = Mp3ExportSettings(
+        bitrate_kbps=256,
+        sample_rate="48000",
+        channels="2",
+        embed_metadata=True,
+        embed_cover_art=True,
+        custom_cover_art_path=cover,
+    )
+
+    recovered = deserialize_download_job(serialize_download_job(job))
+
+    assert recovered.origin_run_id == "previous-run"
+    assert recovered.mp3_settings.custom_cover_art_path == cover
+
+
 def test_active_run_store_is_private_and_failed_state_survives_restart(
     tmp_path: Path,
 ) -> None:

@@ -36,7 +36,7 @@ class LibraryAnnotationDialog:
         root = ttk.Frame(popup, style="FocusShell.TFrame")
         root.pack(fill="both", expand=True, padx=24, pady=22)
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(8, weight=1)
+        root.rowconfigure(9, weight=1)
 
         ttk.Label(root, text="Organize this item", style="FocusTitle.TLabel").grid(
             row=0, column=0, sticky="w"
@@ -53,29 +53,44 @@ class LibraryAnnotationDialog:
             row=2, column=0, sticky="w", pady=(0, 5)
         )
         self.category_var = tk.StringVar(value=annotation.category)
-        ttk.Combobox(
+        category_field: ttk.Entry | ttk.Combobox
+        if categories:
+            category_field = ttk.Combobox(
+                root,
+                textvariable=self.category_var,
+                values=categories,
+                state="normal",
+            )
+        else:
+            category_field = ttk.Entry(root, textvariable=self.category_var)
+        category_field.grid(row=3, column=0, sticky="ew")
+        ttk.Label(
             root,
-            textvariable=self.category_var,
-            values=categories,
-            state="normal",
-        ).grid(row=3, column=0, sticky="ew")
+            text=(
+                "Categories are your custom Library collections. Type one to "
+                "create it, then filter Library by it."
+            ),
+            style="Muted.TLabel",
+            wraplength=620,
+            justify="left",
+        ).grid(row=4, column=0, sticky="w", pady=(4, 14))
 
         ttk.Label(root, text="YOUR TAGS", style="FocusEyebrow.TLabel").grid(
-            row=4, column=0, sticky="w", pady=(16, 5)
+            row=5, column=0, sticky="w", pady=(0, 5)
         )
         self.tags_var = tk.StringVar(value=", ".join(annotation.tags))
-        ttk.Entry(root, textvariable=self.tags_var).grid(row=5, column=0, sticky="ew")
+        ttk.Entry(root, textvariable=self.tags_var).grid(row=6, column=0, sticky="ew")
         ttk.Label(
             root,
             text="Separate tags with commas. YouTube’s original tags stay unchanged.",
             style="Muted.TLabel",
-        ).grid(row=6, column=0, sticky="w", pady=(4, 14))
+        ).grid(row=7, column=0, sticky="w", pady=(4, 14))
 
         ttk.Label(root, text="NOTES", style="FocusEyebrow.TLabel").grid(
-            row=7, column=0, sticky="nw", pady=(0, 5)
+            row=8, column=0, sticky="nw", pady=(0, 5)
         )
         note_shell = tk.Frame(root, bg=THEME["border"], bd=0)
-        note_shell.grid(row=8, column=0, sticky="nsew")
+        note_shell.grid(row=9, column=0, sticky="nsew")
         note_shell.columnconfigure(0, weight=1)
         note_shell.rowconfigure(0, weight=1)
         self.note = tk.Text(
@@ -95,7 +110,7 @@ class LibraryAnnotationDialog:
         self.note.insert("1.0", annotation.note)
 
         actions = ttk.Frame(root, style="FocusShell.TFrame")
-        actions.grid(row=9, column=0, sticky="e", pady=(18, 0))
+        actions.grid(row=10, column=0, sticky="e", pady=(18, 0))
         ttk.Button(
             actions,
             text="Cancel",

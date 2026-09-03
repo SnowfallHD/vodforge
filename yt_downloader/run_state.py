@@ -129,6 +129,11 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
             "channels": job.mp3_settings.channels,
             "embed_metadata": job.mp3_settings.embed_metadata,
             "embed_cover_art": job.mp3_settings.embed_cover_art,
+            "custom_cover_art_path": (
+                str(job.mp3_settings.custom_cover_art_path)
+                if job.mp3_settings.custom_cover_art_path is not None
+                else None
+            ),
         },
         "single_video_only": job.single_video_only,
         "use_nvenc": job.use_nvenc,
@@ -140,6 +145,7 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "batch_mode": job.batch_mode,
         "preview_info": _safe_preview(job.preview_info),
         "run_id": job.run_id,
+        "origin_run_id": job.origin_run_id,
     }
 
 
@@ -186,6 +192,13 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
                 channels=str(mp3["channels"]) if mp3.get("channels") else None,
                 embed_metadata=_required_bool(mp3, "embed_metadata"),
                 embed_cover_art=_required_bool(mp3, "embed_cover_art"),
+                custom_cover_art_path=(
+                    Path(str(mp3["custom_cover_art_path"])).expanduser()
+                    if mp3.get("custom_cover_art_path")
+                    and "\x00" not in str(mp3["custom_cover_art_path"])
+                    and len(str(mp3["custom_cover_art_path"])) <= 4096
+                    else None
+                ),
             ),
             single_video_only=_required_bool(payload, "single_video_only"),
             use_nvenc=_required_bool(payload, "use_nvenc"),
@@ -197,6 +210,9 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
             batch_mode=_required_bool(payload, "batch_mode"),
             preview_info=_safe_preview(payload.get("preview_info")),
             run_id=str(payload.get("run_id") or "")[:128],
+            origin_run_id=(
+                str(payload.get("origin_run_id") or "").strip()[:128] or None
+            ),
         )
     except (TypeError, ValueError) as exc:
         raise RunStateError(f"The interrupted run record is invalid: {exc}") from exc

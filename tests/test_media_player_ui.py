@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from yt_downloader.media_player_ui import format_playback_time, heatmap_buckets
+from yt_downloader.media_player_ui import (
+    bounded_content_rows,
+    format_playback_time,
+    heatmap_buckets,
+)
 
 
 def test_playback_time_formats_compactly() -> None:
@@ -16,3 +20,11 @@ def test_heatmap_buckets_are_bounded_and_deterministic() -> None:
     ]
     assert heatmap_buckets(points, 100.0, 5) == (0.25, 0.0, 0.9, 0.0, 0.0)
     assert heatmap_buckets(points, 0.0, 5) == ()
+
+
+def test_player_detail_surfaces_stay_compact_and_bounded() -> None:
+    assert bounded_content_rows(0) == 3
+    assert bounded_content_rows(4) == 4
+    assert bounded_content_rows(40) == 8
+    assert bounded_content_rows("Short note") == 3
+    assert bounded_content_rows("x" * 500) == 8

@@ -126,6 +126,32 @@ def test_same_video_distinct_runs_remain_distinct(tmp_path: Path) -> None:
     } == {first.run_id, second.run_id}
 
 
+def test_redownload_origin_replaces_stale_history_projection_without_flicker(
+    tmp_path: Path,
+) -> None:
+    owner = LibraryProjectionOwner()
+    completed_run_id = "completed-missing"
+    history = [
+        {
+            "id": "same",
+            "title": "Missing saved media",
+            "vodforge_output_type": "MP4",
+            "vodforge_output_dir": str(tmp_path),
+            "vodforge_output_path": str(tmp_path / "missing.mp4"),
+            "vodforge_run_id": completed_run_id,
+        }
+    ]
+    redownload = _job(tmp_path, video_id="same")
+    redownload.origin_run_id = completed_run_id
+
+    projection = _projection(owner, history=history, queued=[redownload])
+
+    assert len(projection.rows) == 1
+    assert projection.rows[0][QUEUED_METADATA_RUN_ID_KEY] == redownload.run_id
+    assert projection.rows[0][RUN_STATUS_KEY] == "Queued"
+    assert projection.violations == ()
+
+
 def test_metadata_arriving_after_terminalization_cannot_resurrect_transient(
     tmp_path: Path,
 ) -> None:

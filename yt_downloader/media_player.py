@@ -17,6 +17,7 @@ PLAYER_WIDTH = 768
 PLAYER_HEIGHT = 432
 PLAYER_FPS = 20
 PLAYER_FRAME_BYTES = PLAYER_WIDTH * PLAYER_HEIGHT * 3
+VIDEO_START_TIMEOUT_SECONDS = 1.5
 
 
 class MediaPlayerError(RuntimeError):
@@ -43,7 +44,10 @@ def resolve_library_media_path(record: dict[str, Any]) -> Path | None:
             if exact.is_file() and exact.stat().st_size > 0:
                 return exact
         except OSError:
-            return None
+            pass
+        # A canonical exact path must never fall through to an unrelated file
+        # that merely shares the same extension in the saved directory.
+        return None
     output_dir = history_output_dir(record)
     if output_dir is None:
         return None
@@ -139,6 +143,7 @@ class MediaPlaybackOwner:
         self._frame_sequence = 0
         self._latest_frame: bytes | None = None
         self._error = ""
+        self._video_release_event: threading.Event | None = None
 
     @property
     def snapshot(self) -> PlaybackSnapshot:
@@ -214,14 +219,41 @@ class MediaPlaybackOwner:
             offset = self._position
             volume = self._volume
             audio_only = self._audio_only
-            self._status = "Playing"
-            self._started_at = self._clock()
+            self._status = "Playing" if audio_only else "Starting"
             self._error = ""
         try:
-            self._spawn_audio(path, offset, volume, generation)
-            if not audio_only:
-                self._spawn_video(path, offset, generation)
+            if audio_only:
+                self._spawn_audio(path, offset, volume, generation)
+                with self._lock:
+                    if generation == self._generation:
+                        self._started_at = self._clock()
+            else:
+                first_frame_ready = threading.Event()
+                video_release = threading.Event()
+                with self._lock:
+                    self._video_release_event = video_release
+                self._spawn_video(
+                    path,
+                    offset,
+                    generation,
+                    first_frame_ready=first_frame_ready,
+                    video_release=video_release,
+                )
+                threading.Thread(
+                    target=self._start_synchronized_audio,
+                    args=(
+                        path,
+                        offset,
+                        volume,
+                        generation,
+                        first_frame_ready,
+                        video_release,
+                    ),
+                    daemon=True,
+                    name="vodforge-player-sync",
+                ).start()
         except (OSError, subprocess.SubprocessError) as exc:
+            self._release_video_gate()
             self._playback_registry.terminate_all(timeout_seconds=1.0)
             with self._lock:
                 self._status = "Failed"
@@ -284,28 +316,35 @@ class MediaPlaybackOwner:
 
     def pause(self) -> PlaybackSnapshot:
         with self._lock:
-            if self._status != "Playing":
+            if self._status not in {"Playing", "Starting"}:
                 return self.snapshot
-            self._position = min(
-                self._duration,
-                self._position + max(0.0, self._clock() - self._started_at),
-            )
+            if self._status == "Playing":
+                self._position = min(
+                    self._duration,
+                    self._position + max(0.0, self._clock() - self._started_at),
+                )
             self._status = "Paused"
             self._generation += 1
+        self._release_video_gate()
         self._playback_registry.terminate_all(timeout_seconds=1.0)
         return self.snapshot
 
     def toggle(self) -> PlaybackSnapshot:
-        return self.pause() if self.snapshot.status == "Playing" else self.play()
+        return (
+            self.pause()
+            if self.snapshot.status in {"Playing", "Starting"}
+            else self.play()
+        )
 
     def seek(self, position: float) -> PlaybackSnapshot:
         with self._lock:
             target = min(self._duration, max(0.0, float(position)))
-            playing = self._status == "Playing"
+            playing = self._status in {"Playing", "Starting"}
             self._position = target
             self._status = "Paused"
             self._started_at = self._clock()
             self._generation += 1
+        self._release_video_gate()
         self._playback_registry.terminate_all(timeout_seconds=1.0)
         return self.play() if playing else self.snapshot
 
@@ -314,7 +353,7 @@ class MediaPlaybackOwner:
             volume = min(100, max(0, int(value)))
             if volume == self._volume:
                 return self.snapshot
-            playing = self._status == "Playing"
+            playing = self._status in {"Playing", "Starting"}
             current = self.snapshot.position
             self._volume = volume
             if playing:
@@ -323,6 +362,7 @@ class MediaPlaybackOwner:
                 self._generation += 1
                 self._status = "Paused"
         if playing:
+            self._release_video_gate()
             self._playback_registry.terminate_all(timeout_seconds=1.0)
             return self.play()
         return self.snapshot
@@ -338,6 +378,7 @@ class MediaPlaybackOwner:
             self._status = "Ready" if reset and self._path is not None else "Stopped"
             if reset:
                 self._position = 0.0
+        self._release_video_gate()
         self._playback_registry.terminate_all(timeout_seconds=1.0)
         return self.snapshot
 
@@ -345,6 +386,7 @@ class MediaPlaybackOwner:
         with self._lock:
             self._generation += 1
             self._status = "Closed"
+        self._release_video_gate()
         self._playback_registry.terminate_all(timeout_seconds=1.5)
         self._preview_registry.terminate_all(timeout_seconds=1.5)
 
@@ -377,7 +419,15 @@ class MediaPlaybackOwner:
             name="vodforge-player-audio",
         ).start()
 
-    def _spawn_video(self, path: Path, offset: float, generation: int) -> None:
+    def _spawn_video(
+        self,
+        path: Path,
+        offset: float,
+        generation: int,
+        *,
+        first_frame_ready: threading.Event,
+        video_release: threading.Event,
+    ) -> None:
         process = self._popen(  # nosec B603 - fixed argv to resolved ffmpeg
             [
                 self.ffmpeg,
@@ -411,33 +461,91 @@ class MediaPlaybackOwner:
         self._playback_registry.register(process, timeout_seconds=1.0)
         threading.Thread(
             target=self._read_frames,
-            args=(process, generation),
+            args=(process, generation, first_frame_ready, video_release),
             daemon=True,
             name="vodforge-player-video",
         ).start()
 
-    def _read_frames(self, process: Any, generation: int) -> None:
+    def _read_frames(
+        self,
+        process: Any,
+        generation: int,
+        first_frame_ready: threading.Event,
+        video_release: threading.Event,
+    ) -> None:
         stream: BinaryIO | None = process.stdout
         if stream is None:
+            first_frame_ready.set()
             return
+        first_frame = True
         try:
             while True:
                 frame = stream.read(PLAYER_FRAME_BYTES)
                 if len(frame) != PLAYER_FRAME_BYTES:
                     break
                 with self._lock:
-                    if generation != self._generation or self._status != "Playing":
+                    if generation != self._generation or self._status not in {
+                        "Playing",
+                        "Starting",
+                    }:
                         break
                     self._latest_frame = frame
                     self._frame_sequence += 1
+                if first_frame:
+                    first_frame = False
+                    first_frame_ready.set()
+                    video_release.wait(timeout=VIDEO_START_TIMEOUT_SECONDS + 0.5)
         except (OSError, ValueError) as exc:
             self._diagnostic(f"media player frame reader stopped: {type(exc).__name__}")
         finally:
+            first_frame_ready.set()
             self._playback_registry.finalize(
                 process,
                 timeout_seconds=1.0,
                 confirmed_exited=process.poll() is not None,
             )
+
+    def _start_synchronized_audio(
+        self,
+        path: Path,
+        offset: float,
+        volume: int,
+        generation: int,
+        first_frame_ready: threading.Event,
+        video_release: threading.Event,
+    ) -> None:
+        """Start audio only after video has decoded its first displayable frame."""
+
+        first_frame_ready.wait(timeout=VIDEO_START_TIMEOUT_SECONDS)
+        try:
+            with self._lock:
+                if generation != self._generation or self._status != "Starting":
+                    video_release.set()
+                    return
+                self._spawn_audio(path, offset, volume, generation)
+                self._started_at = self._clock()
+                self._status = "Playing"
+                self._video_release_event = None
+        except (OSError, subprocess.SubprocessError) as exc:
+            self._diagnostic(
+                f"media player synchronized audio failed: {type(exc).__name__}"
+            )
+            with self._lock:
+                if generation == self._generation:
+                    self._generation += 1
+                    self._status = "Failed"
+                    self._error = "The local playback engine could not start."
+            video_release.set()
+            self._playback_registry.terminate_all(timeout_seconds=1.0)
+            return
+        video_release.set()
+
+    def _release_video_gate(self) -> None:
+        with self._lock:
+            event = self._video_release_event
+            self._video_release_event = None
+        if event is not None:
+            event.set()
 
     def _reap_audio_process(self, process: Any, generation: int) -> None:
         return_code: int | None = None

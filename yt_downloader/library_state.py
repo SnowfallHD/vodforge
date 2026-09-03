@@ -345,12 +345,20 @@ class LibraryProjectionOwner:
         for job in terminal_jobs:
             add_run_source("terminal", job)
 
+        superseded_history_run_ids = {
+            str(job.origin_run_id).strip()
+            for _kind, job in run_sources.values()
+            if str(job.origin_run_id or "").strip()
+        }
+
         history_rows: list[dict[str, Any]] = []
         committed_run_ids: set[str] = set()
         seen_history_owners: set[str] = set()
         for source in history_items:
             row = _clean_projection_row(source)
             run_id = str(row.get("vodforge_run_id") or "").strip()
+            if run_id and run_id in superseded_history_run_ids:
+                continue
             owner = _legacy_history_owner(row)
             output_path = str(row.get("vodforge_output_path") or "").strip()
             if output_path:

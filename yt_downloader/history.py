@@ -23,6 +23,7 @@ MAX_RUN_ACTIVITY_CHARS = 100_000
 HISTORY_MEDIA_PRESENT = "present"
 HISTORY_MEDIA_MISSING = "missing"
 HISTORY_MEDIA_UNAVAILABLE = "unavailable"
+RETRY_JOB_METADATA_KEY = "vodforge_retry_job"
 
 HISTORY_METADATA_KEYS = (
     "id",
@@ -51,6 +52,7 @@ HISTORY_METADATA_KEYS = (
     "vodforge_output_profile_details",
     "vodforge_run_id",
     "vodforge_run_activity",
+    RETRY_JOB_METADATA_KEY,
 )
 
 MAX_CHAPTERS = 500
@@ -495,6 +497,8 @@ def sanitize_history_record(
             value = sanitize_run_activity(value)
         elif key == "vodforge_run_id":
             value = str(value or "").strip()[:128]
+        elif key == RETRY_JOB_METADATA_KEY:
+            value = _json_safe(dict(value)) if isinstance(value, dict) else None
         elif key in {"webpage_url", "original_url"}:
             value = sanitize_durable_url(value, preserve_youtube_context=True)
         elif key == "thumbnail":

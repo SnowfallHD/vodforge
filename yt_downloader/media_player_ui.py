@@ -27,6 +27,8 @@ except ImportError:  # pragma: no cover - required by production package
 
 PREVIEW_WIDTH = 132
 PREVIEW_HEIGHT = 74
+CHAPTER_ROWS_MAX = 8
+DETAIL_ROWS_MAX = 8
 
 
 def format_playback_time(seconds: float) -> str:
@@ -47,6 +49,125 @@ def heatmap_buckets(
         index = min(count - 1, max(0, int((midpoint / duration) * count)))
         buckets[index] = max(buckets[index], point["value"])
     return tuple(buckets)
+
+
+def bounded_content_rows(
+    content: str | int,
+    *,
+    minimum: int = 3,
+    maximum: int = 8,
+) -> int:
+    """Return a compact, bounded row count for player detail surfaces."""
+
+    if isinstance(content, int):
+        count = content
+    else:
+        lines = str(content or "").splitlines() or [""]
+        count = sum(max(1, (len(line) + 35) // 36) for line in lines)
+    return min(maximum, max(minimum, count))
+
+
+class PlayerVolumeControl(tk.Canvas):
+    """Own one compact volume binding and its minimal Canvas rendering."""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        variable: tk.IntVar,
+        command: Any,
+        width: int = 112,
+    ) -> None:
+        super().__init__(
+            master,
+            width=width,
+            height=22,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2",
+            takefocus=True,
+        )
+        self.variable = variable
+        self.command = command
+        self._rendered_value: tuple[int, int] | None = None
+        self._trace = variable.trace_add("write", self._value_changed)
+        self.bind("<Configure>", self._draw)
+        self.bind("<Button-1>", self._set_from_pointer)
+        self.bind("<B1-Motion>", self._set_from_pointer)
+        self.bind("<Left>", lambda _event: self._step(-5))
+        self.bind("<Right>", lambda _event: self._step(5))
+        self.bind("<Home>", lambda _event: self._set_value(0))
+        self.bind("<End>", lambda _event: self._set_value(100))
+        self.bind("<Destroy>", self._destroyed, add="+")
+
+    def _value_changed(self, *_args: object) -> None:
+        self._draw()
+        self.command(str(self.variable.get()))
+
+    def _set_from_pointer(self, event: tk.Event[Any]) -> str:
+        width = max(1, self.winfo_width() - 16)
+        value = round(min(1.0, max(0.0, (event.x - 8) / width)) * 100)
+        self._set_value(value)
+        self.focus_set()
+        return "break"
+
+    def _step(self, amount: int) -> str:
+        self._set_value(self.variable.get() + amount)
+        return "break"
+
+    def _set_value(self, value: int) -> str:
+        self.variable.set(min(100, max(0, int(value))))
+        return "break"
+
+    def _draw(self, _event: tk.Event[Any] | None = None) -> None:
+        try:
+            width = max(24, self.winfo_width())
+            value = min(100, max(0, int(self.variable.get())))
+        except (tk.TclError, ValueError):
+            return
+        signature = (width, value)
+        if signature == self._rendered_value:
+            return
+        self._rendered_value = signature
+        self.delete("all")
+        left, right, center = 8, width - 8, 11
+        x = left + ((right - left) * value / 100)
+        self.create_line(
+            left,
+            center,
+            right,
+            center,
+            fill=THEME["border"],
+            width=4,
+            capstyle="round",
+        )
+        self.create_line(
+            left,
+            center,
+            x,
+            center,
+            fill=THEME["accent"],
+            width=4,
+            capstyle="round",
+        )
+        self.create_oval(
+            x - 6,
+            center - 6,
+            x + 6,
+            center + 6,
+            fill=THEME["text"],
+            outline=THEME["accent_dark"],
+            width=2,
+        )
+
+    def _destroyed(self, event: tk.Event[Any]) -> None:
+        if event.widget is not self:
+            return
+        try:
+            self.variable.trace_remove("write", self._trace)
+        except tk.TclError:
+            pass
 
 
 class MediaPlayerWindow:
@@ -70,6 +191,9 @@ class MediaPlayerWindow:
         self._last_snapshot: PlaybackSnapshot | None = None
         self._frame_sequence = -1
         self._frame_image: Any | None = None
+        self._source_image: Any | None = None
+        self._stage_render_after_id: str | None = None
+        self._stage_render_signature: tuple[int, int, int] | None = None
         self._timeline_signature: tuple[Any, ...] | None = None
         self._timeline_progress: int | None = None
         self._timeline_handle: int | None = None
@@ -83,7 +207,7 @@ class MediaPlayerWindow:
         popup.withdraw()
         popup.title(f"VODForge Player — {info.get('title') or 'Saved media'}")
         popup.configure(bg=THEME["bg"])
-        popup.minsize(980, 640)
+        popup.minsize(980, 690)
         popup.resizable(True, True)
         self.popup = popup
 
@@ -91,7 +215,7 @@ class MediaPlayerWindow:
         root.pack(fill="both", expand=True, padx=22, pady=18)
         root.columnconfigure(0, weight=3)
         root.columnconfigure(1, weight=1, minsize=235)
-        root.rowconfigure(1, weight=1)
+        root.rowconfigure(1, weight=1, minsize=290)
 
         self._build_header(root)
         self._build_stage(root)
@@ -133,10 +257,18 @@ class MediaPlayerWindow:
         ).grid(row=0, column=1, rowspan=2, sticky="e")
 
     def _build_stage(self, root: ttk.Frame) -> None:
-        stage_shell = tk.Frame(root, bg=THEME["border"], bd=0)
+        stage_shell = tk.Frame(
+            root,
+            bg=THEME["border"],
+            bd=0,
+            width=690,
+            height=388,
+        )
         stage_shell.grid(row=1, column=0, sticky="nsew", padx=(0, 18))
+        stage_shell.grid_propagate(False)
         stage_shell.columnconfigure(0, weight=1)
         stage_shell.rowconfigure(0, weight=1)
+        self.stage_shell = stage_shell
         self.stage = tk.Label(
             stage_shell,
             bg="#000000",
@@ -147,6 +279,7 @@ class MediaPlayerWindow:
             highlightthickness=0,
         )
         self.stage.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.stage.bind("<Configure>", self._queue_stage_render, add="+")
         if self.thumbnail_path is not None:
             self._render_still_image(self.thumbnail_path)
         elif self._audio_only:
@@ -154,36 +287,54 @@ class MediaPlayerWindow:
 
     def _build_sidebar(self, root: ttk.Frame) -> None:
         sidebar = ttk.Frame(root, style="FocusShell.TFrame")
-        sidebar.grid(row=1, column=1, rowspan=3, sticky="nsew")
+        sidebar.grid(row=1, column=1, rowspan=3, sticky="new")
         sidebar.columnconfigure(0, weight=1)
-        sidebar.rowconfigure(1, weight=2)
-        sidebar.rowconfigure(4, weight=1)
         ttk.Label(sidebar, text="CHAPTERS", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 6)
         )
-        self.chapter_list = tk.Listbox(
-            sidebar,
-            activestyle="none",
-            bg=THEME["surface"],
-            fg=THEME["text"],
-            selectbackground=THEME["accent_dark"],
-            selectforeground="#ffffff",
-            bd=0,
-            highlightthickness=1,
-            highlightbackground=THEME["border"],
-            font=FONT_UI_SMALL,
-        )
-        self.chapter_list.grid(row=1, column=0, sticky="nsew")
+        self.chapter_list: tk.Listbox | None = None
         if self._chapters:
+            chapter_shell = ttk.Frame(sidebar, style="FocusShell.TFrame")
+            chapter_shell.grid(row=1, column=0, sticky="ew")
+            chapter_shell.columnconfigure(0, weight=1)
+            self.chapter_list = tk.Listbox(
+                chapter_shell,
+                height=bounded_content_rows(
+                    len(self._chapters), maximum=CHAPTER_ROWS_MAX
+                ),
+                activestyle="none",
+                bg=THEME["surface"],
+                fg=THEME["text"],
+                selectbackground=THEME["accent_dark"],
+                selectforeground="#ffffff",
+                bd=0,
+                highlightthickness=1,
+                highlightbackground=THEME["border"],
+                font=FONT_UI_SMALL,
+            )
+            self.chapter_list.grid(row=0, column=0, sticky="ew")
             for chapter in self._chapters:
                 label = chapter["title"] or "Untitled chapter"
                 self.chapter_list.insert(
                     "end", f"{format_playback_time(chapter['start_time'])}  {label}"
                 )
             self.chapter_list.bind("<<ListboxSelect>>", self._chapter_selected)
+            if len(self._chapters) > CHAPTER_ROWS_MAX:
+                scrollbar = ttk.Scrollbar(
+                    chapter_shell,
+                    orient="vertical",
+                    command=self.chapter_list.yview,
+                )
+                scrollbar.grid(row=0, column=1, sticky="ns")
+                self.chapter_list.configure(yscrollcommand=scrollbar.set)
         else:
-            self.chapter_list.insert("end", "No chapters in source metadata")
-            self.chapter_list.configure(state="disabled")
+            ttk.Label(
+                sidebar,
+                text="No chapters in this media.",
+                style="Muted.TLabel",
+                wraplength=220,
+                justify="left",
+            ).grid(row=1, column=0, sticky="w")
 
         ttk.Label(sidebar, text="YOUR DETAILS", style="FocusEyebrow.TLabel").grid(
             row=2, column=0, sticky="w", pady=(16, 6)
@@ -192,20 +343,31 @@ class MediaPlayerWindow:
             str(tag) for tag in self.info.get("vodforge_user_tags", ())
         )
         note = str(self.info.get("vodforge_user_note") or "").strip()
-        detail_text = (
-            "\n\n".join(
-                section
-                for section in (
-                    f"Tags\n{user_tags}" if user_tags else "",
-                    f"Notes\n{note}" if note else "",
-                )
-                if section
+        category = str(self.info.get("vodforge_user_category") or "").strip()
+        detail_text = "\n\n".join(
+            section
+            for section in (
+                f"Category\n{category}" if category else "",
+                f"Tags\n{user_tags}" if user_tags else "",
+                f"Notes\n{note}" if note else "",
             )
-            or "Add notes, tags, or a category from Library actions."
+            if section
         )
+        if not detail_text:
+            ttk.Label(
+                sidebar,
+                text="Add a category, tags, or notes from Library actions.",
+                style="Muted.TLabel",
+                wraplength=220,
+                justify="left",
+            ).grid(row=4, column=0, sticky="w")
+            return
+        detail_shell = ttk.Frame(sidebar, style="FocusShell.TFrame")
+        detail_shell.grid(row=4, column=0, sticky="ew")
+        detail_shell.columnconfigure(0, weight=1)
         details = tk.Text(
-            sidebar,
-            height=7,
+            detail_shell,
+            height=bounded_content_rows(detail_text, maximum=DETAIL_ROWS_MAX),
             wrap="word",
             bg=THEME["surface"],
             fg=THEME["muted"],
@@ -215,9 +377,17 @@ class MediaPlayerWindow:
             pady=9,
             font=FONT_UI_SMALL,
         )
-        details.grid(row=4, column=0, sticky="nsew")
+        details.grid(row=0, column=0, sticky="ew")
         details.insert("1.0", detail_text)
         details.configure(state="disabled")
+        if bounded_content_rows(detail_text, maximum=10_000) > DETAIL_ROWS_MAX:
+            scrollbar = ttk.Scrollbar(
+                detail_shell,
+                orient="vertical",
+                command=details.yview,
+            )
+            scrollbar.grid(row=0, column=1, sticky="ns")
+            details.configure(yscrollcommand=scrollbar.set)
 
     def _build_transport(self, root: ttk.Frame) -> None:
         transport = ttk.Frame(root, style="FocusShell.TFrame")
@@ -250,20 +420,19 @@ class MediaPlayerWindow:
         ttk.Label(transport, textvariable=self.status_var, style="Muted.TLabel").grid(
             row=1, column=2, sticky="e", padx=(12, 14)
         )
-        ttk.Label(transport, text="Volume", style="Muted.TLabel").grid(
-            row=1, column=3, sticky="e"
-        )
         self.volume_var = tk.IntVar(value=self.playback.snapshot.volume)
-        volume = ttk.Scale(
+        self.volume_label_var = tk.StringVar(value=f"Volume  {self.volume_var.get()}%")
+        ttk.Label(
             transport,
-            from_=0,
-            to=100,
-            orient="horizontal",
+            textvariable=self.volume_label_var,
+            style="Muted.TLabel",
+        ).grid(row=1, column=3, sticky="e", padx=(12, 5))
+        volume = PlayerVolumeControl(
+            transport,
             variable=self.volume_var,
             command=self._schedule_volume,
-            length=100,
         )
-        volume.grid(row=1, column=4, sticky="e", padx=(7, 0))
+        volume.grid(row=1, column=4, sticky="e")
 
     def _build_preview_strip(self, root: ttk.Frame) -> None:
         self.preview_labels: list[tk.Label] = []
@@ -314,7 +483,7 @@ class MediaPlayerWindow:
     def show(self) -> None:
         reveal_toplevel(
             self.popup,
-            centered_toplevel_geometry(self.owner, width=1040, height=720),
+            centered_toplevel_geometry(self.owner, width=1100, height=760),
         )
         self.popup.focus_force()
         self._poll()
@@ -352,6 +521,8 @@ class MediaPlayerWindow:
         self.playback.seek(self.playback.snapshot.duration * fraction)
 
     def _chapter_selected(self, _event: tk.Event[Any]) -> None:
+        if self.chapter_list is None:
+            return
         selection = self.chapter_list.curselection()
         if selection and selection[0] < len(self._chapters):
             self.playback.seek(self._chapters[selection[0]]["start_time"])
@@ -361,6 +532,7 @@ class MediaPlayerWindow:
         self.playback.seek(duration * ((index + 0.5) / len(self.preview_labels)))
 
     def _schedule_volume(self, _value: str) -> None:
+        self.volume_label_var.set(f"Volume  {self.volume_var.get()}%")
         if self._volume_after_id is not None:
             try:
                 self.popup.after_cancel(self._volume_after_id)
@@ -463,7 +635,7 @@ class MediaPlayerWindow:
             )
             self.status_var.set(snapshot.status)
             self.play_button.configure(
-                text="Pause" if snapshot.status == "Playing" else "Play"
+                text=("Pause" if snapshot.status in {"Playing", "Starting"} else "Play")
             )
             self._update_timeline_value(snapshot)
         sequence, frame = self.playback.latest_frame(self._frame_sequence)
@@ -477,24 +649,56 @@ class MediaPlayerWindow:
     def _render_frame(self, frame: bytes) -> None:
         if Image is None or ImageOps is None or ImageTk is None:
             return
-        image = Image.frombytes("RGB", (PLAYER_WIDTH, PLAYER_HEIGHT), frame)
-        self._frame_image = ImageTk.PhotoImage(image)
-        self.stage.configure(image=self._frame_image, text="")
+        self._source_image = Image.frombytes(
+            "RGB", (PLAYER_WIDTH, PLAYER_HEIGHT), frame
+        )
+        self._queue_stage_render()
 
     def _render_still_image(self, path: Path) -> None:
         if Image is None or ImageOps is None or ImageTk is None:
             return
         try:
             with Image.open(path) as source:
-                image = ImageOps.pad(
-                    source.convert("RGB"),
-                    (PLAYER_WIDTH, PLAYER_HEIGHT),
-                    color="#000000",
-                )
-            self._frame_image = ImageTk.PhotoImage(image)
-            self.stage.configure(image=self._frame_image, text="")
+                self._source_image = source.convert("RGB").copy()
+            self._queue_stage_render()
         except (OSError, ValueError):
             return
+
+    def _queue_stage_render(self, _event: tk.Event[Any] | None = None) -> None:
+        if self._source_image is None or self._closed:
+            return
+        if self._stage_render_after_id is not None:
+            try:
+                self.popup.after_cancel(self._stage_render_after_id)
+            except tk.TclError:
+                pass
+        self._stage_render_after_id = self.popup.after(16, self._commit_stage_render)
+
+    def _commit_stage_render(self) -> None:
+        self._stage_render_after_id = None
+        if (
+            self._source_image is None
+            or ImageOps is None
+            or ImageTk is None
+            or self._closed
+        ):
+            return
+        try:
+            width = max(240, self.stage.winfo_width())
+            height = max(135, self.stage.winfo_height())
+        except tk.TclError:
+            return
+        signature = (id(self._source_image), width, height)
+        if signature == self._stage_render_signature:
+            return
+        self._stage_render_signature = signature
+        image = ImageOps.pad(
+            self._source_image,
+            (width, height),
+            color="#000000",
+        )
+        self._frame_image = ImageTk.PhotoImage(image)
+        self.stage.configure(image=self._frame_image, text="")
 
     def _generate_previews(self) -> None:
         snapshot = self.playback.snapshot
@@ -543,6 +747,11 @@ class MediaPlayerWindow:
         if self._poll_after_id is not None:
             try:
                 self.popup.after_cancel(self._poll_after_id)
+            except tk.TclError:
+                pass
+        if self._stage_render_after_id is not None:
+            try:
+                self.popup.after_cancel(self._stage_render_after_id)
             except tk.TclError:
                 pass
         self.playback.close()

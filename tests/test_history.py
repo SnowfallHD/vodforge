@@ -9,6 +9,7 @@ import yt_downloader.history as history_module
 from yt_downloader.history import (
     MAX_RUN_ACTIVITY_CHARS,
     MAX_RUN_ACTIVITY_LINES,
+    RETRY_JOB_METADATA_KEY,
     HistoryError,
     application_data_dir,
     history_identity,
@@ -119,6 +120,10 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(
             "cookiefile": "/private/cookies.txt",
             "http_headers": {"Authorization": "secret"},
             "password": "secret",
+            RETRY_JOB_METADATA_KEY: {
+                "run_id": "saved-run",
+                "output_dir": str(tmp_path / "downloads" / "Example"),
+            },
         },
         tmp_path / "downloads" / "Example",
         recorded_at="2026-08-05T12:00:00+00:00",
@@ -136,6 +141,7 @@ def test_sanitize_history_record_allowlists_metadata_and_excludes_secrets(
     }
     assert history_output_dir(record) == (tmp_path / "downloads" / "Example").resolve()
     assert record["vodforge_recorded_at"] == "2026-08-05T12:00:00+00:00"
+    assert record[RETRY_JOB_METADATA_KEY]["run_id"] == "saved-run"
     assert history_output_type(record) == "MP4"
     assert "cookiefile" not in record
     assert "http_headers" not in record

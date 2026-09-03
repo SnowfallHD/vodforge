@@ -65,6 +65,7 @@ from .focus_settings import (
     FocusSettingsOptions,
 )
 from .history import (
+    RETRY_JOB_METADATA_KEY,
     HistoryError,
     application_data_dir,
     history_file_path,
@@ -88,8 +89,21 @@ from .library_annotations import (
     LibraryAnnotationsOwner,
     library_annotations_file_path,
 )
-from .library_search import LIBRARY_ALL_MEDIA, library_visible_indices
-from .library_search_ui import LibrarySearchField
+from .library_media_recovery import (
+    LibraryMediaRecoveryOwner,
+    LibraryMediaRecoveryPlan,
+)
+from .library_media_recovery_ui import (
+    LibraryMediaRecoveryDialog,
+    MediaRecoveryAction,
+)
+from .library_search import (
+    LIBRARY_ALL_CATEGORIES,
+    LIBRARY_ALL_MEDIA,
+    library_categories,
+    library_visible_indices,
+)
+from .library_search_ui import LibraryCategoryFilter, LibrarySearchField
 from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
     ANNOTATION_OWNER_KEY,
@@ -173,6 +187,7 @@ from .run_state import (
     RunRecoveryOwner,
     RunStateError,
     run_state_file_path,
+    serialize_download_job,
 )
 from .safe_output import (
     cleanup_private_staging_directory,
@@ -4796,6 +4811,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.run_recovery = RunRecoveryOwner(
             run_state_file_path(), diagnostic=write_diagnostic
         )
+        self.library_media_recovery = LibraryMediaRecoveryOwner()
         recovered_terminal_jobs = self.run_recovery.recover_at_startup()
         recovered_queued_jobs = self.run_recovery.queued_at_startup()
         set_active_child_process_observer(self.run_recovery.child_event)
@@ -4844,6 +4860,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.output_type_var = tk.StringVar(value=output_type_value)
         self.library_output_type_var = tk.StringVar(value=OutputType.MP4.value)
         self.library_search_var = tk.StringVar()
+        self.library_category_var = tk.StringVar(value=LIBRARY_ALL_CATEGORIES)
         self.appearance_theme_var = tk.StringVar(value=theme_selection.name)
         self.custom_accent_var = tk.StringVar(value=theme_selection.custom_accent)
         self.quality_var = tk.StringVar(value=quality_value)
@@ -5767,6 +5784,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.library_search_var.trace_add(
             "write", lambda *_args: self._render_metadata_tree()
         )
+        self.library_category_var.trace_add(
+            "write", lambda *_args: self._render_metadata_tree()
+        )
         self.mp3_quality_var.trace_add(
             "write", lambda *_args: self._sync_focus_settings_summary()
         )
@@ -6219,11 +6239,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ).pack(anchor="w", pady=(3, 0))
         action_row = ttk.Frame(actions, style="FocusShell.TFrame")
         action_row.grid(row=0, column=1, sticky="e")
+        self.focus_library_category_filter = LibraryCategoryFilter(
+            action_row,
+            variable=self.library_category_var,
+        )
+        self.focus_library_category_filter.pack(side="left", padx=(0, 8))
+        ToolTip(
+            self.focus_library_category_filter,
+            "Filter by the personal category assigned in Library actions.",
+        )
         search_shell = LibrarySearchField(
             action_row,
             variable=self.library_search_var,
+            width=19,
         )
         search_shell.pack(side="left", padx=(0, 10))
+        self.focus_library_search_field = search_shell
         self.focus_library_search_entry = search_shell.entry
         ToolTip(
             self.focus_library_search_entry,
@@ -8093,7 +8124,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
             menu.add_separator()
         if isinstance(selected_info, dict):
-            if resolve_library_media_path(selected_info) is not None:
+            if history_output_dir(selected_info) is not None:
                 menu.add_command(
                     label="Play in VODForge",
                     command=partial(self._play_selected_library_item, selected_info),
@@ -9153,6 +9184,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         # size. Only the Selected details launcher follows rail visibility.
         if not self.focus_library_menu_button.winfo_manager():
             self.focus_library_menu_button.pack(side="left")
+        compact = library_mode == "compact"
+        self.focus_library_category_filter.set_compact(compact)
+        self.focus_library_search_field.set_compact(compact)
         if library_mode == "compact":
             if not self.focus_library_details_button.winfo_manager():
                 self.focus_library_details_button.pack(
@@ -9499,6 +9533,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             history_info["vodforge_run_activity"] = sanitize_run_activity(
                 owning_job.activity_lines
             )
+            history_info[RETRY_JOB_METADATA_KEY] = serialize_download_job(owning_job)
         try:
             self.download_history = upsert_history(
                 self.download_history,
@@ -10331,6 +10366,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         selected_iid = (
             self.video_tree.selection()[0] if self.video_tree.selection() else None
         )
+        category_filter = self.__dict__.get("focus_library_category_filter")
+        if category_filter is not None:
+            category_filter.replace_categories(library_categories(self.metadata_items))
         visible_indices = library_visible_indices(
             self.metadata_items,
             self.library_output_type_var.get(),
@@ -10338,6 +10376,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.__dict__["library_search_var"].get()
                 if "library_search_var" in self.__dict__
                 else ""
+            ),
+            (
+                self.__dict__["library_category_var"].get()
+                if "library_category_var" in self.__dict__
+                else LIBRARY_ALL_CATEGORIES
             ),
         )
         rows: list[tuple[str, tuple[Any, ...]]] = []
@@ -10389,12 +10432,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if "library_search_var" in self.__dict__
             else ""
         )
+        category = (
+            self.__dict__["library_category_var"].get()
+            if "library_category_var" in self.__dict__
+            else LIBRARY_ALL_CATEGORIES
+        )
         play_button = self.__dict__.get("focus_library_play_button")
         if play_button is not None:
             play_button.configure(state="disabled")
         self.selected_title_var.set(
-            "No Library items match this search."
-            if search_query.strip()
+            "No Library items match these filters."
+            if search_query.strip() or category != LIBRARY_ALL_CATEGORIES
             else f"No {output_type} items yet. Preview or forge a URL to add one."
         )
         if hasattr(self, "selected_meta_var"):
@@ -10437,7 +10485,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             info = self.metadata_items[int(row)]
         except (IndexError, TypeError, ValueError):
             return None
-        if resolve_library_media_path(info) is None:
+        if history_output_dir(info) is None:
             return None
         self.video_tree.selection_set(row)
         self._display_selected_metadata(int(row))
@@ -10492,7 +10540,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._terminal_job_for_metadata(info) if isinstance(info, dict) else None
         )
         if isinstance(info, dict):
-            if resolve_library_media_path(info) is not None:
+            if history_output_dir(info) is not None:
                 menu.add_command(
                     label="Play in VODForge",
                     command=partial(self._play_selected_library_item, info),
@@ -10661,11 +10709,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 return
         media_path = resolve_library_media_path(info)
         if media_path is None:
-            messagebox.showinfo(
-                f"{APP_NAME} Player",
-                "This Library item does not currently point to one available saved media file.",
-                parent=self,
-            )
+            self._handle_missing_library_media(info)
             return
         existing = self.__dict__.get("_media_player_window")
         if (
@@ -10716,6 +10760,84 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._media_player_window = window
         self._media_player_source = media_path
         window.show()
+
+    def _handle_missing_library_media(self, info: dict[str, Any]) -> None:
+        """Render one recovery decision owned by LibraryMediaRecoveryOwner."""
+
+        plan = self.library_media_recovery.plan(
+            info,
+            completed_jobs=tuple(self.__dict__.get("_completed_jobs", ())),
+        )
+        LibraryMediaRecoveryDialog(
+            self,
+            plan=plan,
+            on_action=lambda action: self._apply_missing_media_action(
+                info, plan, action
+            ),
+        ).show()
+
+    def _apply_missing_media_action(
+        self,
+        info: dict[str, Any],
+        plan: LibraryMediaRecoveryPlan,
+        action: MediaRecoveryAction,
+    ) -> None:
+        if action == "open_forge":
+            self._open_missing_media_in_forge(info, plan)
+        elif action == "redownload":
+            self._accept_library_redownload(plan)
+
+    def _open_missing_media_in_forge(
+        self,
+        info: dict[str, Any],
+        plan: LibraryMediaRecoveryPlan,
+    ) -> None:
+        source_url = canonical_youtube_url(info)
+        if source_url:
+            self.url_var.set(source_url)
+        if plan.destination is not None:
+            self.output_var.set(str(plan.destination))
+        self.output_type_var.set(metadata_output_type(info).value)
+        self._select_focus_view("forge")
+        self.status_var.set(
+            "Review the saved destination and output settings, then Forge again."
+        )
+
+    def _accept_library_redownload(self, plan: LibraryMediaRecoveryPlan) -> None:
+        job = plan.job
+        if job is None:
+            return
+        accepted = self._start_or_queue_download_job(job, clear_source=False)
+        if not accepted:
+            return
+        previous_owner = plan.previous_annotation_owner
+        if previous_owner:
+            try:
+                self.library_annotations.transfer(
+                    previous_owner,
+                    f"run:{job.run_id}",
+                )
+            except LibraryAnnotationsError as exc:
+                write_diagnostic(
+                    "missing-media Library annotation transfer failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+        updated_history = self.library_media_recovery.history_after_acceptance(
+            self.download_history,
+            plan,
+        )
+        try:
+            save_history(self.history_path, updated_history)
+        except HistoryError as exc:
+            write_diagnostic(f"missing-media history retirement deferred: {exc}")
+        else:
+            self.download_history = updated_history
+        self._reconcile_library_projection()
+        self._focus_selected_run_id = job.run_id
+        self._select_focus_view("forge")
+        self.status_var.set(
+            "Redownloading with the saved output settings and location."
+        )
 
     def _remove_selected_library_item(self) -> None:
         selection = self.video_tree.selection()
@@ -10935,11 +11057,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         play_button = self.__dict__.get("focus_library_play_button")
         if play_button is not None:
             play_button.configure(
-                state=(
-                    "normal"
-                    if resolve_library_media_path(info) is not None
-                    else "disabled"
-                )
+                state=("normal" if history_output_dir(info) is not None else "disabled")
             )
         title = str(info.get("title") or info.get("id") or "selected video")
         creator = str(info.get("uploader") or info.get("channel") or "Unknown creator")
@@ -11629,7 +11747,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _start_or_queue_download_job(
         self, job: DownloadJob, *, clear_source: bool
-    ) -> None:
+    ) -> bool:
         duplicate = matching_attempt(
             job,
             [
@@ -11641,7 +11759,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._focus_existing_duplicate_attempt(duplicate)
             if clear_source:
                 self._reset_source_input_after_send()
-            return
+            return False
 
         superseded = self._matching_supersedable_terminal_attempt(job)
         superseded_run_id = superseded.run_id if superseded is not None else None
@@ -11663,7 +11781,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     "VODForge could not save this run to its private queue, so it "
                     f"was not queued.\n\n{exc}",
                 )
-                return
+                return False
             self._supersede_matching_terminal_attempt(
                 job,
                 previous=superseded,
@@ -11680,7 +11798,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._enqueue_queue_preview(job)
             if clear_source:
                 self._reset_source_input_after_send()
-            return
+            return True
 
         launched = self._launch_download_job(
             job,
@@ -11695,6 +11813,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
         if clear_source:
             self._reset_source_input_after_send()
+        return launched
 
     def _focus_existing_duplicate_attempt(self, job: DownloadJob) -> None:
         """Focus one exact live attempt instead of scheduling duplicate work."""
