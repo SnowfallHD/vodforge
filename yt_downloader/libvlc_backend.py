@@ -229,12 +229,7 @@ class LibVLCPlaybackBackend:
         with self._lock:
             self._ensure_open()
             try:
-                if surface.kind == "hwnd":
-                    self._player.set_hwnd(surface.handle)
-                elif surface.kind == "nsview":
-                    self._player.set_nsobject(surface.handle)
-                else:  # pragma: no cover - closed by the value type
-                    raise MediaPlayerError("Unsupported native playback surface.")
+                self._bind_provider_surface(surface)
             except Exception as exc:
                 raise MediaPlayerError(
                     "VODForge could not attach its internal playback surface."
@@ -246,10 +241,7 @@ class LibVLCPlaybackBackend:
             if self._closed or self._surface is None:
                 return
             try:
-                if self._surface.kind == "hwnd":
-                    self._player.set_hwnd(0)
-                else:
-                    self._player.set_nsobject(0)
+                self._bind_provider_surface(None)
             except Exception as exc:  # noqa: BLE001 - teardown remains best effort
                 self._diagnostic(f"libVLC surface detach failed: {type(exc).__name__}")
             finally:
@@ -271,9 +263,12 @@ class LibVLCPlaybackBackend:
             raise MediaPlayerError("The saved media file is unavailable.") from exc
         with self._lock:
             self._ensure_open()
-            self._player.stop()
             previous = self._media
+            surface = self._surface if previous is not None else None
             try:
+                if surface is not None:
+                    self._bind_provider_surface(None)
+                self._player.stop()
                 media = self._instance.media_new_path(str(media_path))
                 self._player.set_media(media)
                 self._player.audio_set_volume(self._volume)
@@ -281,6 +276,9 @@ class LibVLCPlaybackBackend:
                 raise MediaPlayerError(
                     "VODForge could not load this media file."
                 ) from exc
+            finally:
+                if surface is not None:
+                    self._bind_provider_surface(surface)
             self._media = media
             self._path = media_path
             self._duration_hint = self._bounded_duration(duration)
@@ -359,10 +357,16 @@ class LibVLCPlaybackBackend:
     def stop(self) -> PlaybackSnapshot:
         with self._lock:
             self._ensure_open()
+            surface = self._surface
             try:
+                if surface is not None:
+                    self._bind_provider_surface(None)
                 self._player.stop()
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
                 return self._fail("The local playback engine could not stop.", exc)
+            finally:
+                if surface is not None:
+                    self._bind_provider_surface(surface)
         return self.snapshot
 
     def shutdown(self) -> None:
@@ -406,6 +410,23 @@ class LibVLCPlaybackBackend:
             self._vlc.State.Error: "Failed",
         }
         return mapping.get(state, "Ready")
+
+    def _bind_provider_surface(
+        self,
+        surface: NativeRenderSurface | None,
+    ) -> None:
+        """Bind or clear the native drawable without changing surface ownership."""
+
+        current = surface or self._surface
+        if current is None:
+            return
+        handle = surface.handle if surface is not None else 0
+        if current.kind == "hwnd":
+            self._player.set_hwnd(handle)
+        elif current.kind == "nsview":
+            self._player.set_nsobject(handle)
+        else:  # pragma: no cover - closed by the value type
+            raise MediaPlayerError("Unsupported native playback surface.")
 
     def _attach_provider_events(self) -> None:
         """Use libVLC's event edge only to apply settings when output exists."""

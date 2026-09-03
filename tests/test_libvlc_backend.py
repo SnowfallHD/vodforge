@@ -154,6 +154,7 @@ def test_load_switches_media_in_place_and_releases_previous(tmp_path: Path) -> N
     first.write_bytes(b"first")
     second.write_bytes(b"second")
     backend, module = make_backend()
+    backend.attach_render_surface(NativeRenderSurface("hwnd", 88))
 
     backend.load(first, duration=10)
     first_media = module.instance.media[0]
@@ -162,6 +163,22 @@ def test_load_switches_media_in_place_and_releases_previous(tmp_path: Path) -> N
     assert backend.snapshot.path == second
     assert first_media.released is True
     assert module.player.stop_calls == 2
+    assert module.player.actions[-3:] == ["hwnd:0", "stop", "hwnd:88"]
+
+
+def test_stop_detaches_and_restores_drawable_around_provider_stop(
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "video.mp4"
+    media.write_bytes(b"video")
+    backend, module = make_backend()
+    backend.attach_render_surface(NativeRenderSurface("nsview", 47))
+    backend.load(media, duration=10)
+    module.player.actions.clear()
+
+    backend.stop()
+
+    assert module.player.actions == ["nsview:0", "stop", "nsview:47"]
 
 
 def test_shutdown_is_idempotent_and_releases_native_owners(tmp_path: Path) -> None:
