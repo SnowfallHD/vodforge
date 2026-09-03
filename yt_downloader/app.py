@@ -43,7 +43,6 @@ from .cloud_funnel import (
     load_or_create_installation_state,
     record_cloud_click,
     record_cloud_seen,
-    record_first_launch,
 )
 from .export_planning import (
     DEFAULT_MAX_HEIGHT,
@@ -79,6 +78,7 @@ from .history import (
     save_history,
     upsert_history,
 )
+from .install_attribution import InstallationAttributionOwner
 from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
     QUEUED_METADATA_RUN_ID_KEY,
@@ -4764,6 +4764,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._close_deadline: float | None = None
         self.installation_state_path = installation_state_path()
         self.installation_state: InstallationState | None = None
+        self.installation_attribution = InstallationAttributionOwner(
+            self.installation_state_path
+        )
         self._first_launch_worker: threading.Thread | None = None
         self._cloud_seen_worker: threading.Thread | None = None
         self.run_recovery = RunRecoveryOwner(
@@ -7188,18 +7191,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _record_first_launch(self) -> None:
         state = self.installation_state
-        if state is None or state.first_launch_confirmed or self._closing:
+        if (
+            state is None
+            or not self.installation_attribution.needs_delivery(state)
+            or self._closing
+        ):
             return
         existing = self._first_launch_worker
         if existing is not None and existing.is_alive():
             return
 
         def worker() -> None:
-            success = record_first_launch(state, app_version=__version__)
+            updated = self.installation_attribution.deliver_first_launch(
+                state, app_version=__version__
+            )
             self.events.put(
                 installation_result_event(
                     "first_launch_result",
-                    success,
+                    updated.first_launch_confirmed,
                     state.install_id,
                 )
             )

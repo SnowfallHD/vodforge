@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -23,6 +25,8 @@ INSTALLATION_STATE_SCHEMA_VERSION = 1
 INSTALLATION_STATE_FILENAME = "installation.json"
 MAX_STATE_FILE_BYTES = 4096
 NETWORK_TIMEOUT_SECONDS = 4.0
+CLAIM_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_STATE_LOCK = threading.Lock()
 
 
 class InstallationIdentityError(RuntimeError):
@@ -34,6 +38,10 @@ class InstallationState:
     install_id: str
     first_launch_confirmed: bool = False
     cloud_seen_confirmed: bool = False
+    heycatch_first_launch_confirmed: bool = False
+    attribution_claim_opened: bool = False
+    attribution_claim_confirmed: bool = False
+    attribution_claim_token: str | None = None
 
 
 def installation_state_path(*, data_dir: Path | None = None, **kwargs: Any) -> Path:
@@ -52,6 +60,15 @@ def _parse_install_id(value: Any) -> str:
     return str(parsed)
 
 
+def _parse_claim_token(value: Any) -> str | None:
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    if not CLAIM_TOKEN_PATTERN.fullmatch(candidate):
+        raise InstallationIdentityError("attribution claim token is invalid")
+    return candidate
+
+
 def _read_state(path: Path) -> InstallationState:
     try:
         if path.stat().st_size > MAX_STATE_FILE_BYTES:
@@ -68,10 +85,32 @@ def _read_state(path: Path) -> InstallationState:
         or payload.get("schema_version") != INSTALLATION_STATE_SCHEMA_VERSION
     ):
         raise InstallationIdentityError("installation state has an unsupported schema")
+    first_launch_confirmed = payload.get("first_launch_confirmed") is True
+    has_attribution_state = "heycatch_first_launch_confirmed" in payload
     return InstallationState(
         install_id=_parse_install_id(payload.get("install_id")),
-        first_launch_confirmed=payload.get("first_launch_confirmed") is True,
+        first_launch_confirmed=first_launch_confirmed,
         cloud_seen_confirmed=payload.get("cloud_seen_confirmed") is True,
+        # Existing installations must not be relabeled as new first launches or
+        # surprised with a browser claim after upgrading.
+        heycatch_first_launch_confirmed=(
+            payload.get("heycatch_first_launch_confirmed") is True
+            if has_attribution_state
+            else first_launch_confirmed
+        ),
+        attribution_claim_opened=(
+            payload.get("attribution_claim_opened") is True
+            if has_attribution_state
+            else first_launch_confirmed
+        ),
+        attribution_claim_confirmed=(
+            payload.get("attribution_claim_confirmed") is True
+            if has_attribution_state
+            else first_launch_confirmed
+        ),
+        attribution_claim_token=_parse_claim_token(
+            payload.get("attribution_claim_token") if has_attribution_state else None
+        ),
     )
 
 
@@ -83,6 +122,10 @@ def _encoded_state(state: InstallationState) -> bytes:
                 "install_id": state.install_id,
                 "first_launch_confirmed": state.first_launch_confirmed,
                 "cloud_seen_confirmed": state.cloud_seen_confirmed,
+                "heycatch_first_launch_confirmed": state.heycatch_first_launch_confirmed,
+                "attribution_claim_opened": state.attribution_claim_opened,
+                "attribution_claim_confirmed": state.attribution_claim_confirmed,
+                "attribution_claim_token": state.attribution_claim_token,
             },
             indent=2,
             sort_keys=True,
@@ -147,32 +190,88 @@ def load_or_create_installation_state(path: Path | None = None) -> InstallationS
     raise last_error or InstallationIdentityError("could not load installation state")
 
 
-def mark_cloud_seen_confirmed(path: Path, install_id: str) -> InstallationState:
-    state = _read_state(path)
+def _update_state(
+    path: Path,
+    install_id: str,
+    transform: Callable[[InstallationState], InstallationState],
+) -> InstallationState:
     normalized = _parse_install_id(install_id)
-    if state.install_id != normalized:
-        raise InstallationIdentityError(
-            "installation ID changed while recording Cloud state"
-        )
-    if state.cloud_seen_confirmed:
-        return state
-    updated = replace(state, cloud_seen_confirmed=True)
-    _replace_state(path, updated)
-    return updated
+    with _STATE_LOCK:
+        state = _read_state(path)
+        if state.install_id != normalized:
+            raise InstallationIdentityError(
+                "installation ID changed while recording telemetry state"
+            )
+        updated = transform(state)
+        if updated != state:
+            _replace_state(path, updated)
+        return updated
+
+
+def mark_cloud_seen_confirmed(path: Path, install_id: str) -> InstallationState:
+    return _update_state(
+        path, install_id, lambda state: replace(state, cloud_seen_confirmed=True)
+    )
 
 
 def mark_first_launch_confirmed(path: Path, install_id: str) -> InstallationState:
-    state = _read_state(path)
-    normalized = _parse_install_id(install_id)
-    if state.install_id != normalized:
-        raise InstallationIdentityError(
-            "installation ID changed while recording first launch"
-        )
-    if state.first_launch_confirmed:
-        return state
-    updated = replace(state, first_launch_confirmed=True)
-    _replace_state(path, updated)
-    return updated
+    return _update_state(
+        path, install_id, lambda state: replace(state, first_launch_confirmed=True)
+    )
+
+
+def mark_attribution_claim_issued(
+    path: Path,
+    install_id: str,
+    claim_token: str,
+) -> InstallationState:
+    token = _parse_claim_token(claim_token)
+    if token is None:
+        raise InstallationIdentityError("attribution claim token is missing")
+    return _update_state(
+        path,
+        install_id,
+        lambda state: replace(state, attribution_claim_token=token),
+    )
+
+
+def mark_attribution_claim_opened(path: Path, install_id: str) -> InstallationState:
+    return _update_state(
+        path,
+        install_id,
+        lambda state: replace(state, attribution_claim_opened=True),
+    )
+
+
+def mark_attribution_claim_confirmed(path: Path, install_id: str) -> InstallationState:
+    return _update_state(
+        path,
+        install_id,
+        lambda state: replace(
+            state,
+            attribution_claim_confirmed=True,
+            attribution_claim_token=None,
+        ),
+    )
+
+
+def clear_attribution_claim(path: Path, install_id: str) -> InstallationState:
+    return _update_state(
+        path,
+        install_id,
+        lambda state: replace(state, attribution_claim_token=None),
+    )
+
+
+def mark_heycatch_first_launch_confirmed(
+    path: Path,
+    install_id: str,
+) -> InstallationState:
+    return _update_state(
+        path,
+        install_id,
+        lambda state: replace(state, heycatch_first_launch_confirmed=True),
+    )
 
 
 def installation_platform(platform_name: str | None = None) -> str:
