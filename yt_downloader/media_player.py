@@ -354,7 +354,6 @@ class MediaPlaybackOwner:
         process = self._popen(  # nosec B603 - fixed argv to resolved ffplay
             [
                 self.ffplay,
-                "-nostdin",
                 "-nodisp",
                 "-autoexit",
                 "-loglevel",

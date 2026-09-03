@@ -144,6 +144,8 @@ def test_audio_playback_pause_and_close_are_owned_and_reaped(tmp_path: Path) -> 
     assert paused.status == "Paused"
     assert paused.position == 5.0
     assert commands[0][0] == "/trusted/ffplay"
+    assert "-nostdin" not in commands[0]
+    assert commands[0][1:3] == ["-nodisp", "-autoexit"]
     assert processes[0].terminated is True
     assert owner._playback_registry.processes == set()
     owner.close()
