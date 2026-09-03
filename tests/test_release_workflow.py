@@ -144,6 +144,7 @@ def test_library_player_runtime_is_self_contained_on_macos_and_windows():
         "992d19dbd0b8a7cde9167d2f7780b1ef6f92acc8a71acfa736101a21f35181e1"
         in windows_install
     )
+    assert "curl.exe --fail --location --retry 3" in windows_install
     assert '"VODFORGE_VLC_VERSION"' in windows_install
     assert (
         "fc6fac08d87f538517d44aca0c5e7a244b67c8c4cb589bf478363a7315fd5e0d"

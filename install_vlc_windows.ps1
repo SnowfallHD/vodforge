@@ -11,7 +11,10 @@ $extract = Join-Path $env:TEMP "vodforge-vlc-$version-win64"
 $vendor = Join-Path $PSScriptRoot "vendor\vlc"
 
 Write-Host "Downloading pinned libVLC $version from VideoLAN"
-Invoke-WebRequest -Uri $url -OutFile $archive
+& curl.exe --fail --location --retry 3 --output $archive $url
+if ($LASTEXITCODE -ne 0) {
+  throw "The pinned VideoLAN archive could not be downloaded."
+}
 $actualSha256 = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualSha256 -ne $expectedSha256) {
   throw "VideoLAN archive checksum mismatch: expected $expectedSha256, got $actualSha256"
