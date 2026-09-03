@@ -34,12 +34,23 @@ def _sample_engine_clock(
     backend: LibVLCPlaybackBackend,
     *,
     sample_seconds: float = 2.0,
-) -> dict[str, float | int]:
+) -> dict[str, float | int | bool]:
     """Confirm the engine clock advances smoothly without a Python frame clock."""
 
+    backend.pause()
+    seek_started = time.perf_counter()
     backend.seek(0.25)
+    _wait_for(root, lambda: 0.15 <= backend.snapshot.position <= 0.75)
+    seek_settle_ms = (time.perf_counter() - seek_started) * 1000
     backend.play()
-    _wait_for(root, lambda: backend.snapshot.status == "Playing")
+    _wait_for(
+        root,
+        lambda: backend.snapshot.status == "Playing",
+    )
+    warmup_position = backend.snapshot.position
+    warmup_started = time.perf_counter()
+    _wait_for(root, lambda: backend.snapshot.position >= warmup_position + 0.35)
+    warmup_ms = (time.perf_counter() - warmup_started) * 1000
     engine_start = backend.snapshot.position
     wall_start = time.perf_counter()
     previous = engine_start
@@ -54,15 +65,14 @@ def _sample_engine_clock(
     wall_elapsed = time.perf_counter() - wall_start
     engine_elapsed = backend.snapshot.position - engine_start
     delta = engine_elapsed - wall_elapsed
-    if regressions or abs(delta) > 0.35:
-        raise MediaPlayerError(
-            "The packaged playback clock did not advance smoothly enough."
-        )
     return {
         "wall_seconds": round(wall_elapsed, 3),
         "engine_seconds": round(engine_elapsed, 3),
         "delta_ms": round(delta * 1000, 1),
         "regressions": regressions,
+        "seek_settle_ms": round(seek_settle_ms, 2),
+        "resume_warmup_ms": round(warmup_ms, 2),
+        "within_tolerance": not regressions and abs(delta) <= 0.35,
     }
 
 
@@ -143,9 +153,12 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
             backend.set_volume(40)
             backend.set_volume(0)
             receipt["steps"].append({"action": "volume", "final": 0})
-            receipt["steps"].append(
-                {"action": "engine_clock", **_sample_engine_clock(root, backend)}
-            )
+            clock_sample = _sample_engine_clock(root, backend)
+            receipt["steps"].append({"action": "engine_clock", **clock_sample})
+            if not clock_sample["within_tolerance"]:
+                raise MediaPlayerError(
+                    "The packaged playback clock did not advance smoothly enough."
+                )
             root.geometry("940x620")
             root.update_idletasks()
             surface.refresh()
