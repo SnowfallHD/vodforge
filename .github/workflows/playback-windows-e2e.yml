@@ -1,0 +1,78 @@
+name: Windows Packaged Playback E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  packaged-playback:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install packaging tools and pinned runtimes
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          .\install_ffmpeg_windows.ps1
+          .\install_vlc_windows.ps1
+          .\install_deno_windows.ps1
+      - name: Build application and local media fixtures
+        shell: pwsh
+        env:
+          VODFORGE_BUILD_VERSION: 0.1.8-dev
+        run: |
+          .\build_windows.ps1
+          python .\scripts\generate_playback_fixtures.py `
+            --ffmpeg .\vendor\ffmpeg\bin\ffmpeg.exe `
+            --output .\build\playback-fixtures
+      - name: Exercise Windows portable application
+        shell: pwsh
+        run: |
+          $fixtures = Get-ChildItem .\build\playback-fixtures\* | Sort-Object Name
+          $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-portable.json"
+          $arguments = @("--playback-smoke") + @($fixtures.FullName)
+          $process = Start-Process .\dist\VODForge\VODForge.exe -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Portable playback failed with exit code $($process.ExitCode)." }
+          Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT
+      - name: Build, install, and exercise Windows installer
+        shell: pwsh
+        run: |
+          .\build_windows_installer.ps1 -Version "0.1.8-dev"
+          $installer = Resolve-Path .\dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe
+          $installRoot = "$PWD\build\installed\VODForge"
+          $install = Start-Process $installer -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$installRoot"
+          ) -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)." }
+          $fixtures = Get-ChildItem .\build\playback-fixtures\* | Sort-Object Name
+          $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-installer.json"
+          $arguments = @("--playback-smoke") + @($fixtures.FullName)
+          $process = Start-Process "$installRoot\VODForge.exe" -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installed playback failed with exit code $($process.ExitCode)." }
+          Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT
+      - name: Verify cleanup and record artifact evidence
+        shell: pwsh
+        run: |
+          $survivors = Get-Process VODForge,vlc,ffmpeg,ffplay -ErrorAction SilentlyContinue
+          if ($survivors) { throw "Playback left processes running: $($survivors.Name -join ', ')." }
+          Compress-Archive -Path .\dist\VODForge -DestinationPath .\dist\release\VODForge-Windows-Portable-v0.1.8-dev.zip -Force
+          $evidence = @{
+            source_sha = "${{ github.sha }}"
+            installer_sha256 = (Get-FileHash .\dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+            portable_sha256 = (Get-FileHash .\dist\release\VODForge-Windows-Portable-v0.1.8-dev.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+            installer_bytes = (Get-Item .\dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe).Length
+            portable_bytes = (Get-Item .\dist\release\VODForge-Windows-Portable-v0.1.8-dev.zip).Length
+          }
+          $evidence | ConvertTo-Json | Set-Content .\build\playback-artifacts.json
+          Get-Content .\build\playback-artifacts.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-playback-evidence
+          path: build/playback-*.json
+          if-no-files-found: error

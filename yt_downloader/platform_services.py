@@ -131,7 +131,7 @@ def runtime_executable_candidates(
         if meipass is not None:
             directories.append(meipass)
     directories.append(repo_root)
-    if tool_name in {"ffmpeg", "ffprobe", "ffplay"}:
+    if tool_name in {"ffmpeg", "ffprobe"}:
         directories.append(repo_root / "vendor" / "ffmpeg" / "bin")
     elif tool_name == "deno":
         directories.append(repo_root / "vendor" / "deno")

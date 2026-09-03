@@ -121,12 +121,17 @@ from .library_state import (
     persisted_run_deck_records,
     resolve_library_removal_plan,
 )
+from .libvlc_backend import (
+    LibVLCPlaybackBackend,
+    find_libvlc_runtime,
+    probe_libvlc_runtime,
+)
 from .media_player import (
-    MediaPlaybackOwner,
     MediaPlayerError,
     resolve_library_media_path,
 )
 from .media_player_ui import MediaPlayerWindow
+from .media_preview import MediaPreviewOwner
 from .models import (
     AUDIO_CHANNELS,
     AUDIO_SAMPLE_RATE,
@@ -9307,10 +9312,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._append_log(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
             self.download_button.config(state="disabled")
         ffmpeg = self._find_ffmpeg()
-        ffplay = self._find_ffplay()
+        libvlc = find_libvlc_runtime()
         deno = self._find_deno()
         write_diagnostic(f"runtime path: ffmpeg={ffmpeg}")
-        write_diagnostic(f"runtime path: ffplay={ffplay}")
+        write_diagnostic(f"runtime path: libvlc={libvlc.root if libvlc else None}")
         write_diagnostic(f"runtime path: deno={deno}")
         if not ffmpeg:
             self._append_log(
@@ -9318,9 +9323,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
         else:
             self._append_log(f"FFmpeg found: {ffmpeg}")
-        if not ffplay:
+        if libvlc is None:
             self._append_log(
-                "FFplay not found. Library playback will be unavailable until VODForge is reinstalled with its playback engine."
+                "The internal playback engine was not found. Library playback will be unavailable until VODForge is reinstalled."
             )
         self._append_log(f"Diagnostics log: {DIAGNOSTICS_LOG_PATH}")
 
@@ -10721,9 +10726,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if existing is not None:
             existing.close()
         ffmpeg = find_runtime_executable("ffmpeg")
-        ffprobe = find_runtime_executable("ffprobe")
-        ffplay = self._find_ffplay()
-        if not ffmpeg or not ffprobe or not ffplay:
+        libvlc_runtime = find_libvlc_runtime()
+        if not ffmpeg or libvlc_runtime is None:
             messagebox.showerror(
                 f"{APP_NAME} Player",
                 "The bundled playback engine is unavailable. Reinstall VODForge or use Open saved location.",
@@ -10736,24 +10740,35 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             duration = 0.0
         if not 0 < duration < 60 * 60 * 48:
             duration = 0.0
-        playback = MediaPlaybackOwner(
-            ffmpeg=ffmpeg,
-            ffprobe=ffprobe,
-            ffplay=ffplay,
-            diagnostic=write_diagnostic,
-        )
+        playback: LibVLCPlaybackBackend | None = None
+        previews: MediaPreviewOwner | None = None
         try:
+            playback = LibVLCPlaybackBackend(
+                runtime=libvlc_runtime,
+                diagnostic=write_diagnostic,
+            )
             playback.load(
                 media_path,
                 duration=duration,
                 audio_only=metadata_output_type(info) == OutputType.MP3,
             )
+            previews = MediaPreviewOwner(
+                ffmpeg=ffmpeg,
+                diagnostic=write_diagnostic,
+            )
+            previews.load(media_path)
         except MediaPlayerError as exc:
+            if previews is not None:
+                previews.shutdown()
+            if playback is not None:
+                playback.shutdown()
             messagebox.showerror(f"{APP_NAME} Player", str(exc), parent=self)
             return
+        assert playback is not None and previews is not None
         window = MediaPlayerWindow(
             self,
             playback=playback,
+            previews=previews,
             info=info,
             thumbnail_path=self._library_thumbnail_path(info),
         )
@@ -13919,10 +13934,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         return find_runtime_executable("ffprobe")
 
     @staticmethod
-    def _find_ffplay() -> str | None:
-        return find_runtime_executable("ffplay")
-
-    @staticmethod
     def _find_deno() -> str | None:
         return find_runtime_executable("deno")
 
@@ -14310,7 +14321,6 @@ def runtime_smoke() -> int:
     runtimes = {
         "ffmpeg": DownloaderApp._find_ffmpeg(),
         "ffprobe": DownloaderApp._find_ffprobe(),
-        "ffplay": DownloaderApp._find_ffplay(),
         "deno": DownloaderApp._find_deno(),
     }
     _runtime_smoke_output(
@@ -14332,6 +14342,22 @@ def runtime_smoke() -> int:
             failures.append(name)
         else:
             _runtime_smoke_output(f"{name}={path} version={version}")
+    libvlc_runtime = find_libvlc_runtime()
+    if libvlc_runtime is None:
+        _runtime_smoke_output("libvlc=missing")
+        failures.append("libvlc")
+    else:
+        try:
+            libvlc_version = probe_libvlc_runtime(libvlc_runtime)
+        except Exception as exc:  # noqa: BLE001 - smoke probe must receipt native failure
+            _runtime_smoke_output(
+                f"libvlc={libvlc_runtime.root} execution_failed={type(exc).__name__}: {exc}"
+            )
+            failures.append("libvlc")
+        else:
+            _runtime_smoke_output(
+                f"libvlc={libvlc_runtime.root} version={libvlc_version}"
+            )
     try:
         ytdlp_version, ejs_version, solver_resources = _smoke_ytdlp_stack()
     except Exception as exc:  # noqa: BLE001 - smoke probe must receipt any provider-stack failure
@@ -14355,6 +14381,12 @@ def runtime_smoke() -> int:
 def main() -> None:
     if len(sys.argv) == 2 and sys.argv[1] == "--runtime-smoke":
         raise SystemExit(runtime_smoke())
+    if len(sys.argv) >= 3 and sys.argv[1] == "--playback-smoke":
+        from .playback_probe import run_packaged_playback_probe
+
+        raise SystemExit(
+            run_packaged_playback_probe(tuple(Path(value) for value in sys.argv[2:]))
+        )
     if len(sys.argv) >= 3 and sys.argv[1] == "--debug-preflight":
         raise SystemExit(debug_preflight(" ".join(sys.argv[2:])))
     app = DownloaderApp()

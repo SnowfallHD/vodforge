@@ -68,27 +68,41 @@ if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng) -or -not (Test-Path
 }
 $iconArgs = @("--icon", $iconFile)
 $addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets", "--add-data", "$iconAssetDir;assets/icons/lucide")
+$addData += @("--add-data", "THIRD_PARTY_NOTICES.md;.")
 
-# Bundle the complete playback/transcode runtime from the pinned vendor family.
+# Bundle the transcode tools and the independently pinned libVLC playback runtime.
 $addBinary = @()
 $vendorBin = Join-Path $PSScriptRoot "vendor\ffmpeg\bin"
 $ffmpeg = Join-Path $vendorBin "ffmpeg.exe"
 $ffprobe = Join-Path $vendorBin "ffprobe.exe"
-$ffplay = Join-Path $vendorBin "ffplay.exe"
 if (Test-Path $ffmpeg) {
   $addBinary += @("--add-binary", "$ffmpeg;.")
   Write-Host "Bundling ffmpeg.exe from $ffmpeg"
-  if ((Test-Path $ffprobe) -and (Test-Path $ffplay)) {
+  if (Test-Path $ffprobe) {
     $addBinary += @("--add-binary", "$ffprobe;.")
-    $addBinary += @("--add-binary", "$ffplay;.")
     Write-Host "Bundling ffprobe.exe from $ffprobe"
-    Write-Host "Bundling ffplay.exe from $ffplay"
   } else {
-    throw "ffprobe.exe and ffplay.exe are required beside vendor ffmpeg.exe for a self-contained build."
+    throw "ffprobe.exe is required beside vendor ffmpeg.exe for a self-contained build."
   }
 } else {
-  throw "vendor\ffmpeg\bin must contain ffmpeg.exe, ffprobe.exe, and ffplay.exe for a self-contained build."
+  throw "vendor\ffmpeg\bin must contain ffmpeg.exe and ffprobe.exe for a self-contained build."
 }
+
+$vlcRoot = Join-Path $PSScriptRoot "vendor\vlc"
+$vlcLibrary = Join-Path $vlcRoot "libvlc.dll"
+$vlcCore = Join-Path $vlcRoot "libvlccore.dll"
+$vlcPlugins = Join-Path $vlcRoot "plugins"
+$vlcVersionMarker = Join-Path $vlcRoot "VODFORGE_VLC_VERSION"
+if (-not (Test-Path $vlcLibrary) -or -not (Test-Path $vlcCore) -or -not (Test-Path $vlcPlugins)) {
+  throw "vendor\vlc must contain libvlc.dll, libvlccore.dll, and plugins. Run install_vlc_windows.ps1."
+}
+if (-not (Test-Path $vlcVersionMarker) -or (Get-Content $vlcVersionMarker -Raw).Trim() -ne "3.0.23") {
+  throw "The Windows libVLC runtime must be pinned to 3.0.23. Run install_vlc_windows.ps1."
+}
+$addBinary += @("--add-binary", "$vlcLibrary;vlc")
+$addBinary += @("--add-binary", "$vlcCore;vlc")
+$addData += @("--add-data", "$vlcPlugins;vlc/plugins")
+Write-Host "Bundling the pinned libVLC playback runtime from $vlcRoot"
 
 $deno = Join-Path $PSScriptRoot "vendor\deno\deno.exe"
 if (Test-Path $deno) {
@@ -108,6 +122,7 @@ python -m PyInstaller `
   @versionFile `
   @addData `
   @addBinary `
+  --hidden-import vlc `
   main.py
 
 $appBinary = Join-Path $PSScriptRoot "dist\VODForge\VODForge.exe"

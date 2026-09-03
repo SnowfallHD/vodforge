@@ -44,6 +44,8 @@ if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
   echo "VODFORGE_BUILD_VERSION must use semantic versioning, for example 1.2.3."
   exit 1
 fi
+dist_dir="${VODFORGE_DIST_DIR:-dist}"
+app_bundle="$dist_dir/VODForge.app"
 build_version_dir="build/version"
 mkdir -p "$build_version_dir"
 build_version_file="$build_version_dir/VODFORGE_VERSION"
@@ -59,33 +61,37 @@ fi
 
 ffmpeg="$(command -v ffmpeg || true)"
 ffprobe="$(command -v ffprobe || true)"
-ffplay="$(command -v ffplay || true)"
 deno="$(command -v deno || true)"
-if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$ffplay" || -z "$deno" ]]; then
-  echo "FFmpeg, ffprobe, ffplay, and Deno are required for a self-contained app."
+vlc_version="3.0.23"
+vlc_root="${VODFORGE_VLC_RUNTIME:-}"
+if [[ -z "$vlc_root" && -f "vendor/vlc/VODFORGE_VLC_VERSION" ]]; then
+  vlc_root="vendor/vlc"
+fi
+vlc_root="${vlc_root:-/Applications/VLC.app/Contents/MacOS}"
+vlc_library="$vlc_root/lib/libvlc.dylib"
+vlc_core="$vlc_root/lib/libvlccore.dylib"
+vlc_plugins="$vlc_root/plugins"
+if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
+  echo "FFmpeg, ffprobe, and Deno are required for a self-contained app."
   echo "Run ./install_macos_dependencies.sh first."
   exit 1
 fi
-
-# Homebrew's current ffplay links through sdl2-compat, which opens SDL3 at
-# runtime rather than declaring it as a Mach-O dependency. PyInstaller cannot
-# discover that dlopen edge, so preserve the exact loader name beside SDL2.
-ffplay_extra_binaries=()
-ffplay_sdl2="$(/usr/bin/otool -L "$ffplay" | awk '/libSDL2/{print $1; exit}')"
-if [[ "$ffplay_sdl2" == *"sdl2-compat"* ]]; then
-  brew_bin="$(command -v brew || true)"
-  if [[ -z "$brew_bin" ]]; then
-    echo "Homebrew is required to resolve SDL3 for the installed FFplay runtime."
-    exit 1
-  fi
-  sdl3_prefix="$("$brew_bin" --prefix sdl3 2>/dev/null || true)"
-  sdl3="$sdl3_prefix/lib/libSDL3.dylib"
-  if [[ ! -f "$sdl3" ]]; then
-    echo "SDL3 is required by the installed sdl2-compat FFplay runtime."
-    echo "Run ./install_macos_dependencies.sh first."
-    exit 1
-  fi
-  ffplay_extra_binaries+=(--add-binary "$sdl3:.")
+if [[ ! -f "$vlc_library" || ! -f "$vlc_core" || ! -d "$vlc_plugins" ]]; then
+  echo "A complete libVLC runtime was not found at $vlc_root."
+  echo "Install the VLC cask or set VODFORGE_VLC_RUNTIME."
+  exit 1
+fi
+if [[ -f "$vlc_root/VODFORGE_VLC_VERSION" ]]; then
+  resolved_vlc_version="$(<"$vlc_root/VODFORGE_VLC_VERSION")"
+elif [[ -f "$vlc_root/../../Info.plist" ]]; then
+  resolved_vlc_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$vlc_root/../../Info.plist")"
+else
+  resolved_vlc_version=""
+fi
+if [[ "$resolved_vlc_version" != "$vlc_version" ]]; then
+  echo "The macOS libVLC runtime must be pinned to $vlc_version; found ${resolved_vlc_version:-unknown}."
+  echo "Run ./install_vlc_macos.sh or set VODFORGE_VLC_RUNTIME to the pinned runtime."
+  exit 1
 fi
 
 "$python_bin" -m PyInstaller \
@@ -94,26 +100,30 @@ fi
   --windowed \
   --onedir \
   --name "VODForge" \
+  --distpath "$dist_dir" \
   --collect-all yt_dlp \
   --osx-bundle-identifier "com.snowfallhd.vodforge" \
   --icon "$icon_file" \
   --add-data "$build_version_file:." \
   --add-data "$icon_png:assets" \
   --add-data "$icon_asset_dir:assets/icons/lucide" \
+  --add-data "THIRD_PARTY_NOTICES.md:." \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
-  --add-binary "$ffplay:." \
-  "${ffplay_extra_binaries[@]}" \
+  --add-binary "$vlc_library:vlc/lib" \
+  --add-binary "$vlc_core:vlc/lib" \
+  --add-data "$vlc_plugins:vlc/plugins" \
   --add-binary "$deno:." \
+  --hidden-import vlc \
   main.py
 
-app_binary="dist/VODForge.app/Contents/MacOS/VODForge"
+app_binary="$app_bundle/Contents/MacOS/VODForge"
 if [[ ! -x "$app_binary" ]]; then
   echo "Expected application executable was not created: $app_binary"
   exit 1
 fi
 
-app_plist="dist/VODForge.app/Contents/Info.plist"
+app_plist="$app_bundle/Contents/Info.plist"
 bundle_version="${build_version%%-*}"
 for version_key in CFBundleShortVersionString CFBundleVersion; do
   if /usr/libexec/PlistBuddy -c "Print :$version_key" "$app_plist" >/dev/null 2>&1; then
@@ -130,7 +140,7 @@ if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_pl
 fi
 
 bundle_icon_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app_plist")"
-bundle_icon="dist/VODForge.app/Contents/Resources/$bundle_icon_name"
+bundle_icon="$app_bundle/Contents/Resources/$bundle_icon_name"
 if [[ "$bundle_icon_name" != "VODForge.icns" ]] || [[ ! -f "$bundle_icon" ]] || ! cmp -s "$icon_file" "$bundle_icon"; then
   echo "Packaged macOS Finder and Dock icon must both use the exact VODForge.icns asset."
   exit 1
@@ -140,9 +150,9 @@ fi
 # intentionally finalized afterward. Re-sign only after every local bundle
 # mutation so the test application is structurally valid on disk. Public
 # releases still replace this ad-hoc signature with Developer ID signing.
-/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"
-/usr/bin/codesign --verify --deep --strict "dist/VODForge.app"
+/usr/bin/codesign --force --deep --sign - "$app_bundle"
+/usr/bin/codesign --verify --deep --strict "$app_bundle"
 
 "$app_binary" --runtime-smoke
-echo "Built ad-hoc signed local VODForge v${build_version}: dist/VODForge.app"
+echo "Built ad-hoc signed local VODForge v${build_version}: $app_bundle"
 echo "Developer ID signing and notarization are still required before public distribution."

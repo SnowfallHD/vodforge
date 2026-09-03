@@ -13,7 +13,7 @@ State is divided by authority:
 - A run owns its preview metadata, activity lines, terminal state, and output profile. Forge renders the selected run; it does not rewrite that run from current Settings values.
 - `history.py` owns the durable schema and sanitization. `download_history` is the durable completed-output ledger; `metadata_items` is an atomically replaced, immutable-derived Library snapshot and never an authority. Library removal changes VODForge presentation history, not media files, unless a separate file action is explicitly requested.
 - `library_annotations.py` separately owns durable user notes, tags, and categories. Categories are user-created Library collections exposed through projection-backed filtering; they do not change provider metadata or output paths.
-- `media_player.py` owns local playback state, synchronization, and its FFmpeg-family child processes. Missing-media recovery is planned by `library_media_recovery.py` from durable history and a validated saved job profile; UI code cannot reconstruct or guess an output profile.
+- `playback_backend.py` defines the immutable single-engine player contract; `libvlc_backend.py` owns decoding, audio/video timing, engine state, seeking, and volume; and `playback_surface.py` owns the native Tk-hosted render surface. `media_preview.py` separately owns bounded FFmpeg thumbnail extraction. Missing-media recovery is planned by `library_media_recovery.py` from durable history and a validated saved job profile; UI code cannot reconstruct or guess an output profile.
 - UI selection is presentation state. It must not become execution authority.
 
 ## UI seams
@@ -23,6 +23,7 @@ The composition root still owns the Forge and Library widget trees because their
 - `focus_settings.py` owns Settings dialog construction and visibility. It receives explicit variables and actions; it does not own the next-run settings values or create jobs.
 - `library_state.py` owns the single Library membership/status projection from canonical run, queue, terminal, preview, history, and annotation owners. The application atomically adopts and renders that immutable snapshot; it does not append, remove, or terminalize Library rows.
 - `library_search.py` owns render-only search/category predicates. `library_search_ui.py`, `media_player_ui.py`, annotation UI, and missing-media recovery UI each own rendering strategy for their local surface.
+- `media_player_ui.py` renders VODForge controls from immutable engine snapshots. It does not decode frames, own an audio clock, or restart playback processes for seek and volume changes.
 - `ui_layout.py` owns shared responsive geometry policy. `ui_widgets.py` owns reusable Tk controls and input behavior. `ui_theme.py` owns the shared visual tokens.
 
 These modules are not independent view models. Execution authority and cross-view selection remain explicit in `DownloaderApp` so a second state system cannot drift from the real queue.

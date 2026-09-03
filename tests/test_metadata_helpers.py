@@ -1337,21 +1337,6 @@ def test_macos_runtime_candidates_cover_bundle_vendor_and_homebrew_paths():
     assert Path("/usr/local/bin/ffmpeg") in candidates
 
 
-def test_ffplay_runtime_candidates_share_the_bundled_ffmpeg_family():
-    candidates = runtime_executable_candidates(
-        "ffplay",
-        platform_name="win32",
-        frozen=True,
-        executable=Path("C:/Program Files/VODForge/VODForge.exe"),
-        meipass=Path("C:/Program Files/VODForge/_internal"),
-        repo_root=Path("C:/source/vodforge"),
-    )
-
-    assert Path("C:/Program Files/VODForge/ffplay.exe") in candidates
-    assert Path("C:/Program Files/VODForge/_internal/ffplay.exe") in candidates
-    assert Path("C:/source/vodforge/vendor/ffmpeg/bin/ffplay.exe") in candidates
-
-
 def test_windows_runtime_candidates_keep_exe_compatibility():
     candidates = runtime_executable_candidates(
         "deno",

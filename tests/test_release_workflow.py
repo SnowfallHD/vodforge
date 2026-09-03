@@ -103,10 +103,10 @@ def test_local_macos_bundle_is_resigned_after_final_metadata_mutation():
 
     version_mutation = macos_build.index("Set :$version_key $bundle_version")
     local_signing = macos_build.index(
-        '/usr/bin/codesign --force --deep --sign - "dist/VODForge.app"'
+        '/usr/bin/codesign --force --deep --sign - "$app_bundle"'
     )
     strict_verification = macos_build.index(
-        '/usr/bin/codesign --verify --deep --strict "dist/VODForge.app"'
+        '/usr/bin/codesign --verify --deep --strict "$app_bundle"'
     )
     runtime_smoke = macos_build.index('"$app_binary" --runtime-smoke')
     assert version_mutation < local_signing < strict_verification < runtime_smoke
@@ -131,16 +131,70 @@ def test_lazy_ytdlp_runtime_is_explicitly_collected_for_both_packagers():
 def test_library_player_runtime_is_self_contained_on_macos_and_windows():
     macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
     windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
-    windows_install = (ROOT / "install_ffmpeg_windows.ps1").read_text(encoding="utf-8")
+    windows_install = (ROOT / "install_vlc_windows.ps1").read_text(encoding="utf-8")
+    macos_install = (ROOT / "install_vlc_macos.sh").read_text(encoding="utf-8")
     app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
 
-    assert '--add-binary "$ffplay:."' in macos_build
-    assert 'ffplay_sdl2="$(/usr/bin/otool -L "$ffplay"' in macos_build
-    assert 'ffplay_extra_binaries+=(--add-binary "$sdl3:.")' in macos_build
-    assert 'Join-Path $vendorBin "ffplay.exe"' in windows_build
-    assert '"--add-binary", "$ffplay;."' in windows_build
-    assert 'Copy-Item (Join-Path $bin "ffplay.exe")' in windows_install
-    assert '"ffplay": DownloaderApp._find_ffplay()' in app_source
+    assert '--add-binary "$vlc_library:vlc/lib"' in macos_build
+    assert '--add-data "$vlc_plugins:vlc/plugins"' in macos_build
+    assert 'Join-Path $vlcRoot "libvlc.dll"' in windows_build
+    assert '"--add-data", "$vlcPlugins;vlc/plugins"' in windows_build
+    assert "Get-Content $vlcVersionMarker -Raw" in windows_build
+    assert (
+        "992d19dbd0b8a7cde9167d2f7780b1ef6f92acc8a71acfa736101a21f35181e1"
+        in windows_install
+    )
+    assert '"VODFORGE_VLC_VERSION"' in windows_install
+    assert (
+        "fc6fac08d87f538517d44aca0c5e7a244b67c8c4cb589bf478363a7315fd5e0d"
+        in macos_install
+    )
+    assert (
+        "ec01530ce69d849dd057fba8876e68ac39bf279dc28de4e9c04e4aec11fc98db"
+        in macos_install
+    )
+    assert 'team_identifier" != "75GAHG3SZQ"' in macos_install
+    assert '"$vendor/plugins/libmacosx_plugin.dylib"' in macos_install
+    assert '"$vendor/plugins/libosx_notifications_plugin.dylib"' in macos_install
+    assert 'vlc_version="3.0.23"' in macos_build
+    assert "find_libvlc_runtime()" in app_source
+    assert "ffplay" not in macos_build.casefold()
+    assert "ffplay" not in windows_build.casefold()
+
+
+def test_live_playback_cannot_regress_to_python_frame_copy_or_split_audio():
+    backend = (ROOT / "yt_downloader" / "libvlc_backend.py").read_text(encoding="utf-8")
+    contract = (ROOT / "yt_downloader" / "playback_backend.py").read_text(
+        encoding="utf-8"
+    )
+    player_ui = (ROOT / "yt_downloader" / "media_player_ui.py").read_text(
+        encoding="utf-8"
+    )
+    legacy_module = (ROOT / "yt_downloader" / "media_player.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "class PlaybackBackend(Protocol)" in contract
+    assert "class LibVLCPlaybackBackend" in backend
+    assert "set_hwnd" in backend and "set_nsobject" in backend
+    combined_live_path = f"{backend}\n{player_ui}\n{legacy_module}".casefold()
+    assert "ffplay" not in combined_live_path
+    assert "rawvideo" not in combined_live_path
+    assert "latest_frame" not in combined_live_path
+    assert "image.frombytes" not in player_ui.casefold()
+
+
+def test_windows_packaged_playback_e2e_covers_portable_and_installer():
+    workflow = (ROOT / ".github" / "workflows" / "playback-windows-e2e.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "generate_playback_fixtures.py" in workflow
+    assert "--playback-smoke" in workflow
+    assert "playback-portable.json" in workflow
+    assert "playback-installer.json" in workflow
+    assert "build_windows_installer.ps1" in workflow
+    assert "Get-Process VODForge,vlc,ffmpeg,ffplay" in workflow
 
 
 def test_packaged_apps_and_windows_installer_use_vodforge_icon_assets():

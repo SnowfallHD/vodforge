@@ -9,13 +9,9 @@ from tkinter import messagebox, ttk
 from typing import Any
 
 from .history import sanitize_chapters, sanitize_heatmap
-from .media_player import (
-    PLAYER_HEIGHT,
-    PLAYER_WIDTH,
-    MediaPlaybackOwner,
-    MediaPlayerError,
-    PlaybackSnapshot,
-)
+from .media_preview import MediaPreviewOwner
+from .playback_backend import MediaPlayerError, PlaybackBackend, PlaybackSnapshot
+from .playback_surface import TkPlaybackSurfaceOwner
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, FONT_UI_SMALL, THEME
 from .ui_widgets import reveal_toplevel
@@ -65,6 +61,23 @@ def bounded_content_rows(
         lines = str(content or "").splitlines() or [""]
         count = sum(max(1, (len(line) + 35) // 36) for line in lines)
     return min(maximum, max(minimum, count))
+
+
+def apply_preview_image(label: tk.Label, image: Any) -> None:
+    """Assign a preview without retaining the placeholder's text dimensions.
+
+    Tk interprets Label ``width`` and ``height`` as character units while text is
+    displayed, but as pixels after an image is assigned.  Reassert the intended
+    pixel dimensions at the same time as the image so the placeholder's 16 x 4
+    character geometry cannot clip a 132 x 74 thumbnail.
+    """
+
+    label.configure(
+        image=image,
+        text="",
+        width=PREVIEW_WIDTH,
+        height=PREVIEW_HEIGHT,
+    )
 
 
 class PlayerVolumeControl(tk.Canvas):
@@ -177,19 +190,19 @@ class MediaPlayerWindow:
         self,
         owner: tk.Tk,
         *,
-        playback: MediaPlaybackOwner,
+        playback: PlaybackBackend,
+        previews: MediaPreviewOwner,
         info: dict[str, Any],
         thumbnail_path: Path | None = None,
     ) -> None:
         self.owner = owner
         self.playback = playback
+        self.previews = previews
         self.info = info
         self.thumbnail_path = thumbnail_path
         self._closed = False
         self._poll_after_id: str | None = None
-        self._volume_after_id: str | None = None
         self._last_snapshot: PlaybackSnapshot | None = None
-        self._frame_sequence = -1
         self._frame_image: Any | None = None
         self._source_image: Any | None = None
         self._stage_render_after_id: str | None = None
@@ -199,6 +212,7 @@ class MediaPlayerWindow:
         self._timeline_handle: int | None = None
         self._preview_queue: queue.Queue[tuple[int, bytes | None]] = queue.Queue()
         self._preview_images: list[Any] = []
+        self._surface_owner: TkPlaybackSurfaceOwner | None = None
         self._chapters = sanitize_chapters(info.get("chapters"))
         self._heatmap = sanitize_heatmap(info.get("heatmap"))
         self._audio_only = str(info.get("vodforge_output_type") or "").upper() == "MP3"
@@ -412,6 +426,7 @@ class MediaPlayerWindow:
         self.timeline.grid(row=0, column=1, columnspan=3, sticky="ew")
         self.timeline.bind("<Configure>", lambda _event: self._draw_timeline_base())
         self.timeline.bind("<Button-1>", self._timeline_clicked)
+        self.timeline.bind("<B1-Motion>", self._timeline_clicked)
         self.time_var = tk.StringVar(value="0:00 / 0:00")
         ttk.Label(transport, textvariable=self.time_var, style="Muted.TLabel").grid(
             row=1, column=1, sticky="w"
@@ -483,9 +498,17 @@ class MediaPlayerWindow:
     def show(self) -> None:
         reveal_toplevel(
             self.popup,
-            centered_toplevel_geometry(self.owner, width=1100, height=760),
+            centered_toplevel_geometry(self.owner, width=1100, height=800),
         )
         self.popup.focus_force()
+        if not self._audio_only:
+            try:
+                self._surface_owner = TkPlaybackSurfaceOwner(self.popup, self.stage)
+                self.playback.attach_render_surface(self._surface_owner.surface)
+            except MediaPlayerError as exc:
+                messagebox.showerror("VODForge Player", str(exc), parent=self.popup)
+                self.close()
+                return
         self._poll()
         if self.playback.snapshot.path is not None and not self._audio_only:
             threading.Thread(
@@ -513,36 +536,36 @@ class MediaPlayerWindow:
 
     def _seek_relative(self, amount: float) -> None:
         snapshot = self.playback.snapshot
-        self.playback.seek(snapshot.position + amount)
+        self._seek_to(snapshot.position + amount)
 
     def _timeline_clicked(self, event: tk.Event[Any]) -> None:
         width = max(1, self.timeline.winfo_width() - 20)
         fraction = min(1.0, max(0.0, (event.x - 10) / width))
-        self.playback.seek(self.playback.snapshot.duration * fraction)
+        self._seek_to(self.playback.snapshot.duration * fraction)
 
     def _chapter_selected(self, _event: tk.Event[Any]) -> None:
         if self.chapter_list is None:
             return
         selection = self.chapter_list.curselection()
         if selection and selection[0] < len(self._chapters):
-            self.playback.seek(self._chapters[selection[0]]["start_time"])
+            self._seek_to(self._chapters[selection[0]]["start_time"])
 
     def _seek_preview(self, index: int) -> None:
         duration = self.playback.snapshot.duration
-        self.playback.seek(duration * ((index + 0.5) / len(self.preview_labels)))
+        self._seek_to(duration * ((index + 0.5) / len(self.preview_labels)))
+
+    def _seek_to(self, position: float) -> None:
+        try:
+            self.playback.seek(position)
+        except MediaPlayerError as exc:
+            self.status_var.set(str(exc))
 
     def _schedule_volume(self, _value: str) -> None:
         self.volume_label_var.set(f"Volume  {self.volume_var.get()}%")
-        if self._volume_after_id is not None:
-            try:
-                self.popup.after_cancel(self._volume_after_id)
-            except tk.TclError:
-                pass
-        self._volume_after_id = self.popup.after(180, self._commit_volume)
-
-    def _commit_volume(self) -> None:
-        self._volume_after_id = None
-        self.playback.set_volume(self.volume_var.get())
+        try:
+            self.playback.set_volume(self.volume_var.get())
+        except MediaPlayerError as exc:
+            self.status_var.set(str(exc))
 
     def _draw_timeline_base(self) -> None:
         snapshot = self.playback.snapshot
@@ -638,21 +661,9 @@ class MediaPlayerWindow:
                 text=("Pause" if snapshot.status in {"Playing", "Starting"} else "Play")
             )
             self._update_timeline_value(snapshot)
-        sequence, frame = self.playback.latest_frame(self._frame_sequence)
-        if frame is not None and sequence != self._frame_sequence:
-            self._frame_sequence = sequence
-            self._render_frame(frame)
         self._drain_previews()
         self._last_snapshot = snapshot
-        self._poll_after_id = self.popup.after(50, self._poll)
-
-    def _render_frame(self, frame: bytes) -> None:
-        if Image is None or ImageOps is None or ImageTk is None:
-            return
-        self._source_image = Image.frombytes(
-            "RGB", (PLAYER_WIDTH, PLAYER_HEIGHT), frame
-        )
-        self._queue_stage_render()
+        self._poll_after_id = self.popup.after(100, self._poll)
 
     def _render_still_image(self, path: Path) -> None:
         if Image is None or ImageOps is None or ImageTk is None:
@@ -710,7 +721,7 @@ class MediaPlayerWindow:
                 return
             position = snapshot.duration * ((index + 0.5) / len(self.preview_labels))
             try:
-                data = self.playback.preview_png(position)
+                data = self.previews.preview_png(position)
             except MediaPlayerError:
                 data = None
             self._preview_queue.put((index, data))
@@ -738,7 +749,7 @@ class MediaPlayerWindow:
                 self.preview_labels[index].configure(text="No preview")
                 continue
             self._preview_images.append(rendered)
-            self.preview_labels[index].configure(image=rendered, text="")
+            apply_preview_image(self.preview_labels[index], rendered)
 
     def close(self) -> None:
         if self._closed:
@@ -754,7 +765,11 @@ class MediaPlayerWindow:
                 self.popup.after_cancel(self._stage_render_after_id)
             except tk.TclError:
                 pass
-        self.playback.close()
+        self.playback.shutdown()
+        self.previews.shutdown()
+        if self._surface_owner is not None:
+            self._surface_owner.close()
+            self._surface_owner = None
         try:
             self.popup.destroy()
         except tk.TclError:

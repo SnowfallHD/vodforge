@@ -153,7 +153,7 @@ To package an unsigned ZIP for internal testing:
 ./build_and_package_macos.sh 0.1.0
 ```
 
-The build bundles FFmpeg, ffprobe, and Deno so a Finder-launched app does not depend on shell `PATH` configuration. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
+The build bundles FFmpeg, ffprobe, Deno, and the pinned libVLC runtime so downloads and synchronized in-app playback do not depend on shell `PATH` configuration or an installed external player. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
 
 ## Release workflow
 

@@ -29,6 +29,7 @@ jobs:
         shell: pwsh
         run: |
           .\install_ffmpeg_windows.ps1
+          .\install_vlc_windows.ps1
           .\install_deno_windows.ps1
       - name: Build Windows application
         shell: pwsh
@@ -101,6 +102,7 @@ jobs:
               brew list --versions "$formula" >/dev/null
             done
           fi
+          ./install_vlc_macos.sh
           echo "$(brew --prefix python@3.13)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix ffmpeg)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix deno)/bin" >> "$GITHUB_PATH"

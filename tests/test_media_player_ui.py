@@ -1,10 +1,21 @@
 from __future__ import annotations
 
 from yt_downloader.media_player_ui import (
+    PREVIEW_HEIGHT,
+    PREVIEW_WIDTH,
+    apply_preview_image,
     bounded_content_rows,
     format_playback_time,
     heatmap_buckets,
 )
+
+
+class PreviewLabelSpy:
+    def __init__(self) -> None:
+        self.options: dict[str, object] = {}
+
+    def configure(self, **options: object) -> None:
+        self.options = options
 
 
 def test_playback_time_formats_compactly() -> None:
@@ -28,3 +39,17 @@ def test_player_detail_surfaces_stay_compact_and_bounded() -> None:
     assert bounded_content_rows(40) == 8
     assert bounded_content_rows("Short note") == 3
     assert bounded_content_rows("x" * 500) == 8
+
+
+def test_preview_image_replaces_text_dimensions_with_pixel_dimensions() -> None:
+    label = PreviewLabelSpy()
+    image = object()
+
+    apply_preview_image(label, image)  # type: ignore[arg-type]
+
+    assert label.options == {
+        "image": image,
+        "text": "",
+        "width": PREVIEW_WIDTH,
+        "height": PREVIEW_HEIGHT,
+    }

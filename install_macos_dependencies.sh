@@ -13,8 +13,9 @@ if ! command -v brew >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "Installing the macOS Python/Tk runtime, FFmpeg, and Deno..."
+echo "Installing the macOS Python/Tk runtime, FFmpeg, Deno, and libVLC..."
 brew install python@3.13 python-tk@3.13 ffmpeg deno
+./install_vlc_macos.sh
 
 python_bin="$(brew --prefix python@3.13)/bin/python3.13"
 if [[ ! -x "$python_bin" ]]; then

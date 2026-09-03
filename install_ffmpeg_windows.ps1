@@ -1,4 +1,4 @@
-# Downloads a portable FFmpeg build with ffmpeg.exe, ffprobe.exe, and ffplay.exe.
+# Downloads a portable FFmpeg build with ffmpeg.exe and ffprobe.exe.
 # Run from PowerShell on Windows before build_windows.ps1 if you want a fully bundled app.
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +23,5 @@ Remove-Item -Recurse -Force $vendor -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $vendor "bin") | Out-Null
 Copy-Item (Join-Path $bin "ffmpeg.exe") (Join-Path $vendor "bin\ffmpeg.exe") -Force
 Copy-Item (Join-Path $bin "ffprobe.exe") (Join-Path $vendor "bin\ffprobe.exe") -Force
-Copy-Item (Join-Path $bin "ffplay.exe") (Join-Path $vendor "bin\ffplay.exe") -Force
 
 Write-Host "Installed portable FFmpeg to vendor\ffmpeg\bin"
