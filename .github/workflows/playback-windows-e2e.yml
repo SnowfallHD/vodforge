@@ -49,8 +49,8 @@ jobs:
           $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-portable.json"
           $arguments = @("--playback-smoke") + @($fixtures.FullName)
           $process = Start-Process .\dist\VODForge\VODForge.exe -ArgumentList $arguments -Wait -PassThru
+          Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT -ErrorAction Continue
           if ($process.ExitCode -ne 0) { throw "Portable playback failed with exit code $($process.ExitCode)." }
-          Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT
       - name: Build, install, and exercise Windows installer
         shell: pwsh
         run: |
@@ -65,8 +65,8 @@ jobs:
           $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-installer.json"
           $arguments = @("--playback-smoke") + @($fixtures.FullName)
           $process = Start-Process "$installRoot\VODForge.exe" -ArgumentList $arguments -Wait -PassThru
+          Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT -ErrorAction Continue
           if ($process.ExitCode -ne 0) { throw "Installed playback failed with exit code $($process.ExitCode)." }
-          Get-Content $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT
       - name: Verify cleanup and record artifact evidence
         shell: pwsh
         run: |
@@ -83,6 +83,7 @@ jobs:
           $evidence | ConvertTo-Json | Set-Content .\build\playback-artifacts.json
           Get-Content .\build\playback-artifacts.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: windows-playback-evidence
           path: build/playback-*.json
