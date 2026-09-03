@@ -5,6 +5,7 @@ import importlib
 import os
 import sys
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -268,7 +269,7 @@ class LibVLCPlaybackBackend:
             try:
                 if surface is not None:
                     self._bind_provider_surface(None)
-                self._player.stop()
+                self._stop_provider()
                 media = self._instance.media_new_path(str(media_path))
                 self._player.set_media(media)
                 self._player.audio_set_volume(self._volume)
@@ -361,7 +362,7 @@ class LibVLCPlaybackBackend:
             try:
                 if surface is not None:
                     self._bind_provider_surface(None)
-                self._player.stop()
+                self._stop_provider()
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
                 return self._fail("The local playback engine could not stop.", exc)
             finally:
@@ -380,7 +381,7 @@ class LibVLCPlaybackBackend:
             # until this method returns, so this ordering is deterministic.
             self.detach_render_surface()
             try:
-                self._player.stop()
+                self._stop_provider()
             except Exception as exc:  # noqa: BLE001 - provider cleanup is best effort
                 self._diagnostic(
                     f"libVLC stop during shutdown failed: {type(exc).__name__}"
@@ -427,6 +428,64 @@ class LibVLCPlaybackBackend:
             self._player.set_nsobject(handle)
         else:  # pragma: no cover - closed by the value type
             raise MediaPlayerError("Unsupported native playback surface.")
+
+    def _stop_provider(self) -> None:
+        """Stop libVLC without blocking Cocoa's main-thread video teardown."""
+
+        if (
+            sys.platform != "darwin"
+            or threading.current_thread() is not threading.main_thread()
+        ):
+            self._player.stop()
+            return
+
+        # VLC 3's CAOpenGLLayer video output synchronously dispatches part of
+        # teardown to Cocoa's main queue. Calling stop directly from Tk's main
+        # thread can therefore deadlock: libVLC waits for a queue which Tk is
+        # no longer pumping. Keep provider ownership here, perform the blocking
+        # stop off-thread, and service only the native run loop until it ends.
+        try:
+            from Foundation import (  # type: ignore[import-untyped]
+                NSDate,
+                NSDefaultRunLoopMode,
+                NSRunLoop,
+            )
+        except ImportError as exc:  # pragma: no cover - packaged dependency contract
+            raise MediaPlayerError(
+                "The macOS playback bridge could not stop cleanly."
+            ) from exc
+
+        finished = threading.Event()
+        provider_error: list[Exception] = []
+
+        def stop_player() -> None:
+            try:
+                self._player.stop()
+            except Exception as exc:  # noqa: BLE001 - translated on the owner thread
+                provider_error.append(exc)
+            finally:
+                finished.set()
+
+        worker = threading.Thread(
+            target=stop_player,
+            name="vodforge-libvlc-stop",
+            daemon=True,
+        )
+        worker.start()
+        deadline = time.monotonic() + 5.0
+        run_loop = NSRunLoop.currentRunLoop()
+        while not finished.is_set():
+            if time.monotonic() >= deadline:
+                raise MediaPlayerError(
+                    "The local playback engine did not stop cleanly."
+                )
+            run_loop.runMode_beforeDate_(
+                NSDefaultRunLoopMode,
+                NSDate.dateWithTimeIntervalSinceNow_(0.01),
+            )
+        worker.join()
+        if provider_error:
+            raise provider_error[0]
 
     def _attach_provider_events(self) -> None:
         """Use libVLC's event edge only to apply settings when output exists."""
