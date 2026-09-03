@@ -67,6 +67,27 @@ if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$ffplay" || -z "$deno" ]]; then
   exit 1
 fi
 
+# Homebrew's current ffplay links through sdl2-compat, which opens SDL3 at
+# runtime rather than declaring it as a Mach-O dependency. PyInstaller cannot
+# discover that dlopen edge, so preserve the exact loader name beside SDL2.
+ffplay_extra_binaries=()
+ffplay_sdl2="$(/usr/bin/otool -L "$ffplay" | awk '/libSDL2/{print $1; exit}')"
+if [[ "$ffplay_sdl2" == *"sdl2-compat"* ]]; then
+  brew_bin="$(command -v brew || true)"
+  if [[ -z "$brew_bin" ]]; then
+    echo "Homebrew is required to resolve SDL3 for the installed FFplay runtime."
+    exit 1
+  fi
+  sdl3_prefix="$("$brew_bin" --prefix sdl3 2>/dev/null || true)"
+  sdl3="$sdl3_prefix/lib/libSDL3.dylib"
+  if [[ ! -f "$sdl3" ]]; then
+    echo "SDL3 is required by the installed sdl2-compat FFplay runtime."
+    echo "Run ./install_macos_dependencies.sh first."
+    exit 1
+  fi
+  ffplay_extra_binaries+=(--add-binary "$sdl3:.")
+fi
+
 "$python_bin" -m PyInstaller \
   --noconfirm \
   --clean \
@@ -82,6 +103,7 @@ fi
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
   --add-binary "$ffplay:." \
+  "${ffplay_extra_binaries[@]}" \
   --add-binary "$deno:." \
   main.py
 

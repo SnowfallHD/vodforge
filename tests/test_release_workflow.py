@@ -135,6 +135,8 @@ def test_library_player_runtime_is_self_contained_on_macos_and_windows():
     app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
 
     assert '--add-binary "$ffplay:."' in macos_build
+    assert 'ffplay_sdl2="$(/usr/bin/otool -L "$ffplay"' in macos_build
+    assert 'ffplay_extra_binaries+=(--add-binary "$sdl3:.")' in macos_build
     assert 'Join-Path $vendorBin "ffplay.exe"' in windows_build
     assert '"--add-binary", "$ffplay;."' in windows_build
     assert 'Copy-Item (Join-Path $bin "ffplay.exe")' in windows_install
