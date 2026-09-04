@@ -8,6 +8,7 @@ from yt_downloader.heycatch_telemetry import (
     HEYCATCH_INGEST_KEY,
     HEYCATCH_PROJECT_KEY,
     record_first_launch,
+    record_product_event,
 )
 
 INSTALL_ID = "f9c775b1-4c5a-47c4-87bb-81fe51881e54"
@@ -94,3 +95,40 @@ def test_first_launch_rejects_non_uuid_identity_before_network():
     else:
         raise AssertionError("invalid identity was accepted")
     assert called is False
+
+
+def test_product_event_uses_the_same_identity_and_minimal_contract():
+    captured: dict[str, Any] = {}
+
+    def opener(request: Any, *, timeout: float) -> JsonResponse:
+        captured.update(
+            payload=json.loads(request.data.decode("utf-8")),
+            timeout=timeout,
+        )
+        return JsonResponse()
+
+    assert record_product_event(
+        INSTALL_ID,
+        event_name="run_completed",
+        event_id="3100042a-a7c5-5de2-a6d7-e40215b7078e",
+        app_version="0.1.8-dev",
+        platform="macos",
+        release_channel="development",
+        run_kind="youtube",
+        output_type="mp4",
+        opener=opener,
+    )
+    assert captured["timeout"] == 4.0
+    assert captured["payload"]["distinct_id"] == INSTALL_ID
+    assert captured["payload"]["event"] == "run_completed"
+    assert captured["payload"]["properties"] == {
+        "$insert_id": "3100042a-a7c5-5de2-a6d7-e40215b7078e",
+        "app_version": "0.1.8-dev",
+        "platform": "macos",
+        "release_channel": "development",
+        "telemetry_schema_version": "1",
+        "run_kind": "youtube",
+        "output_type": "mp4",
+        "heycatch_project_key": HEYCATCH_PROJECT_KEY,
+        "$groups": {"project": HEYCATCH_PROJECT_KEY},
+    }

@@ -82,3 +82,40 @@ def record_first_launch(
         },
         opener=opener,
     )
+
+
+def record_product_event(
+    install_id: str,
+    *,
+    event_name: str,
+    event_id: str,
+    app_version: str,
+    platform: str,
+    release_channel: str,
+    run_kind: str | None = None,
+    output_type: str | None = None,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> bool:
+    allowed_events = {
+        "app_opened",
+        "run_started",
+        "run_completed",
+        "run_failed",
+        "run_stopped",
+        "playback_started",
+        "local_conversion_completed",
+    }
+    if event_name not in allowed_events:
+        raise ValueError("unsupported HeyCatch product event")
+    properties: dict[str, str | bool] = {
+        "$insert_id": str(uuid.UUID(event_id)),
+        "app_version": str(app_version),
+        "platform": str(platform),
+        "release_channel": str(release_channel),
+        "telemetry_schema_version": "1",
+    }
+    if run_kind is not None:
+        properties["run_kind"] = str(run_kind)
+    if output_type is not None:
+        properties["output_type"] = str(output_type)
+    return _capture(event_name, install_id, properties, opener=opener)

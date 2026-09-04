@@ -42,6 +42,7 @@ class InstallationState:
     attribution_claim_opened: bool = False
     attribution_claim_confirmed: bool = False
     attribution_claim_token: str | None = None
+    product_telemetry_allowed: bool = False
 
 
 def installation_state_path(*, data_dir: Path | None = None, **kwargs: Any) -> Path:
@@ -111,6 +112,12 @@ def _read_state(path: Path) -> InstallationState:
         attribution_claim_token=_parse_claim_token(
             payload.get("attribution_claim_token") if has_attribution_state else None
         ),
+        product_telemetry_allowed=(
+            payload.get("product_telemetry_allowed") is True
+            if "product_telemetry_allowed" in payload
+            else has_attribution_state
+            and payload.get("attribution_claim_confirmed") is True
+        ),
     )
 
 
@@ -126,6 +133,7 @@ def _encoded_state(state: InstallationState) -> bytes:
                 "attribution_claim_opened": state.attribution_claim_opened,
                 "attribution_claim_confirmed": state.attribution_claim_confirmed,
                 "attribution_claim_token": state.attribution_claim_token,
+                "product_telemetry_allowed": state.product_telemetry_allowed,
             },
             indent=2,
             sort_keys=True,
@@ -251,6 +259,7 @@ def mark_attribution_claim_confirmed(path: Path, install_id: str) -> Installatio
             state,
             attribution_claim_confirmed=True,
             attribution_claim_token=None,
+            product_telemetry_allowed=True,
         ),
     )
 

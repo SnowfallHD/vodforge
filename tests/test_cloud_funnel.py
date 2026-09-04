@@ -126,6 +126,7 @@ def test_existing_confirmed_install_is_not_reclassified_as_a_new_heycatch_launch
     assert state.heycatch_first_launch_confirmed is True
     assert state.attribution_claim_opened is True
     assert state.attribution_claim_confirmed is True
+    assert state.product_telemetry_allowed is False
 
 
 def test_new_installation_persists_claim_and_heycatch_delivery_state(tmp_path: Path):
@@ -142,6 +143,7 @@ def test_new_installation_persists_claim_and_heycatch_delivery_state(tmp_path: P
     assert opened.attribution_claim_opened is True
     assert claimed.attribution_claim_confirmed is True
     assert claimed.attribution_claim_token is None
+    assert claimed.product_telemetry_allowed is True
     assert delivered.heycatch_first_launch_confirmed is True
     assert load_or_create_installation_state(path) == delivered
 

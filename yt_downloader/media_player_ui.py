@@ -4,6 +4,7 @@ import io
 import queue
 import threading
 import tkinter as tk
+from collections.abc import Callable
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
@@ -194,12 +195,15 @@ class MediaPlayerWindow:
         previews: MediaPreviewOwner,
         info: dict[str, Any],
         thumbnail_path: Path | None = None,
+        on_first_play: Callable[[], None] | None = None,
     ) -> None:
         self.owner = owner
         self.playback = playback
         self.previews = previews
         self.info = info
         self.thumbnail_path = thumbnail_path
+        self._on_first_play = on_first_play
+        self._first_play_recorded = False
         self._closed = False
         self._poll_after_id: str | None = None
         self._last_snapshot: PlaybackSnapshot | None = None
@@ -530,7 +534,12 @@ class MediaPlayerWindow:
 
     def _toggle(self) -> None:
         try:
+            was_playing = self.playback.snapshot.status in {"Starting", "Playing"}
             self.playback.toggle()
+            if not was_playing and not self._first_play_recorded:
+                self._first_play_recorded = True
+                if self._on_first_play is not None:
+                    self._on_first_play()
         except MediaPlayerError as exc:
             messagebox.showerror("VODForge Player", str(exc), parent=self.popup)
 

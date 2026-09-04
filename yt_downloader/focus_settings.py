@@ -46,6 +46,7 @@ class FocusSettingsBindings:
     mp3_custom_cover_art: tk.StringVar
     appearance_theme: tk.StringVar
     custom_accent: tk.StringVar
+    anonymous_usage_analytics: tk.BooleanVar
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,7 @@ class FocusSettingsDialog:
         self._build_mp4_section(root, macos=macos)
         self._build_mp3_section(root)
         self._build_appearance_section(root)
+        self._build_privacy_section(root)
         self._build_cloud_section(root)
         self._build_footer(surface.footer)
 
@@ -607,7 +609,7 @@ class FocusSettingsDialog:
 
     def _build_cloud_section(self, root: ttk.Frame) -> None:
         cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(14, 10))
-        cloud.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        cloud.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))
         cloud.columnconfigure(0, weight=1)
         ttk.Label(
             cloud,
@@ -637,6 +639,38 @@ class FocusSettingsDialog:
             cloud_button,
             "Open the VODForge Cloud early-access signup page in your browser.",
         )
+
+    def _build_privacy_section(self, root: ttk.Frame) -> None:
+        privacy = ttk.Frame(root, style="FocusShell.TFrame")
+        privacy.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        privacy.columnconfigure(0, weight=1)
+        ttk.Label(
+            privacy,
+            text="PRIVACY",
+            style="FocusEyebrow.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 7))
+        usage = ttk.Checkbutton(
+            privacy,
+            text="Share anonymous usage analytics",
+            variable=self.bindings.anonymous_usage_analytics,
+        )
+        usage.grid(row=1, column=0, sticky="w")
+        ToolTip(
+            usage,
+            "Share coarse feature and reliability events. VODForge never sends "
+            "download URLs, titles, filenames, paths, searches, tags, or notes.",
+        )
+        ttk.Label(
+            privacy,
+            text=(
+                "This applies only after the one-time browser attribution choice allows "
+                "analytics. Turning it off clears unsent usage events. The anonymous "
+                "installation, Cloud prompt, and Cloud click counts continue separately."
+            ),
+            style="Muted.TLabel",
+            wraplength=680,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
 
     def _build_appearance_section(self, root: ttk.Frame) -> None:
         appearance = ttk.Frame(root, style="FocusShell.TFrame")

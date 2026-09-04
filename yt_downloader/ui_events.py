@@ -312,6 +312,12 @@ class _UiEventHost(Protocol):
 
     def _focus_terminal_job(self, job: DownloadJob) -> None: ...
 
+    def _record_product_run_outcome(
+        self, job: DownloadJob | None, status: str
+    ) -> None: ...
+
+    def _record_product_app_opened(self) -> None: ...
+
 
 class UiEventHandlersMixin:
     """UI-thread handlers for worker and application lifecycle events."""
@@ -625,6 +631,7 @@ class UiEventHandlersMixin:
             self._event_write_diagnostic(
                 "first successful launch confirmed once for this installation"
             )
+            self._record_product_app_opened()
         except (InstallationIdentityError, OSError) as exc:
             self._event_write_diagnostic(
                 "first launch was accepted but local confirmation "
@@ -688,6 +695,7 @@ class UiEventHandlersMixin:
         else:
             self._append_log(f"ERROR: {payload}")
         self._archive_active_terminal_job("Failed", str(payload))
+        self._record_product_run_outcome(failed_job, "Failed")
         self.progress_var.set(0)
         self.status_var.set("Failed")
         messagebox.showerror(self._event_app_name, str(payload))

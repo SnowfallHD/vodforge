@@ -29,7 +29,7 @@ from functools import partial
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from tkinter import font as tkfont
-from typing import Any
+from typing import Any, cast
 
 from . import export_planning as _export_planning
 from . import platform_services as _platform_services
@@ -179,6 +179,12 @@ from .platform_services import (
 )
 from .private_files import open_private_text_file, write_private_bytes
 from .process_lifecycle import ACTIVE_CHILD_PROCESS_REGISTRY
+from .product_telemetry import (
+    OutputKind,
+    ProductEventName,
+    ProductTelemetryOwner,
+    product_telemetry_path,
+)
 from .quality_e2e import (
     QualityE2EAttestationError,
     quality_e2e_mode_enabled,
@@ -4859,6 +4865,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 f"anonymous installation ID unavailable; Cloud funnel deduplication is disabled: {exc}"
             )
 
+        self.anonymous_usage_analytics_var = tk.BooleanVar(
+            value=_persisted_bool(saved_settings, "anonymous_usage_analytics", True)
+        )
+        self.product_telemetry = ProductTelemetryOwner(
+            state_path=product_telemetry_path(),
+            installation_state_path=self.installation_state_path,
+            app_version=__version__,
+            enabled=self.anonymous_usage_analytics_var.get(),
+            diagnostic=write_diagnostic,
+        )
+        self.anonymous_usage_analytics_var.trace_add(
+            "write",
+            lambda *_args: self.product_telemetry.set_enabled(
+                self.anonymous_usage_analytics_var.get()
+            ),
+        )
+
         self.url_var = tk.StringVar()
         self.url_list_file_var = tk.StringVar(value="No URL list loaded")
         self.batch_urls: list[str] = []
@@ -5058,6 +5081,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._check_runtime()
         self.after(100, self._pump_events)
         self.after(250, self._record_first_launch)
+        self.after(400, self._record_product_app_opened)
         self.after(25, self._start_ytdlp_preload)
         self.protocol("WM_DELETE_WINDOW", self._request_application_close)
         install_native_quit_handler(self, self._request_application_close)
@@ -7365,6 +7389,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._first_launch_worker = threading.Thread(target=worker, daemon=True)
         self._first_launch_worker.start()
 
+    def _record_product_app_opened(self) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if not self._closing and telemetry is not None:
+            telemetry.record_app_opened()
+
     def _open_cloud_early_access(self) -> None:
         state = self.installation_state
         destination = cloud_page_url(state.install_id if state is not None else None)
@@ -7413,6 +7442,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             mp3_custom_cover_art=self.mp3_custom_cover_art_var,
             appearance_theme=self.appearance_theme_var,
             custom_accent=self.custom_accent_var,
+            anonymous_usage_analytics=self.anonymous_usage_analytics_var,
         )
 
     @staticmethod
@@ -9655,6 +9685,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             for item in self.download_history
         ):
             return
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record(
+                "local_conversion_completed",
+                dedupe_key=run_id or None,
+                run_kind="local_audio_video",
+                output_type="mp4",
+            )
         if result.output_path.parent not in self.last_output_dirs:
             self.last_output_dirs.append(result.output_path.parent)
         self._append_log(f"Created local static-image MP4: {result.output_path}")
@@ -10871,6 +10909,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             previews=previews,
             info=info,
             thumbnail_path=self._library_thumbnail_path(info),
+            on_first_play=lambda: self._record_product_playback_started(info),
         )
         self._media_player_window = window
         self._media_player_source = media_path
@@ -12181,6 +12220,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             target=self._download_worker, args=(job,), daemon=True
         )
         self.worker.start()
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record(
+                "run_started",
+                dedupe_key=job.run_id,
+                run_kind="youtube",
+                output_type=cast(OutputKind, job.output_type.value.lower()),
+            )
         if hasattr(self, "focus_run_controls"):
             self._set_focus_run_controls_visible(True)
             self._apply_focus_layout(force=True)
@@ -12458,6 +12505,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "write_info_json": self.write_info_json_var,
             "appearance_theme": self.appearance_theme_var,
             "custom_accent": self.custom_accent_var,
+            "anonymous_usage_analytics": self.anonymous_usage_analytics_var,
         }
 
     def _request_application_close(self) -> None:
@@ -12473,6 +12521,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         settings_owner = self.__dict__.get("settings_persistence")
         if settings_owner is not None:
             settings_owner.flush()
+        telemetry_owner = self.__dict__.get("product_telemetry")
+        if telemetry_owner is not None:
+            telemetry_owner.flush_async()
         self._close_deadline = time.monotonic() + APPLICATION_CLOSE_TIMEOUT_SECONDS
         self.cancel_requested = True
         write_diagnostic(
@@ -12493,6 +12544,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.after(50, self._finish_application_close_when_idle)
 
     def _terminate_owned_media_work(self) -> None:
+        telemetry_owner = self.__dict__.get("product_telemetry")
+        if telemetry_owner is not None and not telemetry_owner.shutdown(
+            timeout_seconds=1.0
+        ):
+            write_diagnostic("product telemetry delivery remained pending at close")
         local_converter = self.__dict__.get("local_audio_video")
         if local_converter is not None and not local_converter.shutdown(
             timeout_seconds=6.0
@@ -14170,6 +14226,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._archive_active_completed_job(run_status, message)
         if finished_job is not None and not decision.suppressed:
             self._persist_job_activity_to_history(finished_job)
+            self._record_product_run_outcome(finished_job, run_status)
         if (
             finished_job is not None
             and not decision.stopped_without_item_terminal
@@ -14205,6 +14262,39 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._append_log_widget(self.log, line)
         if self.__dict__.get("_persist_activity", False):
             append_activity_log(line)
+
+    def _record_product_run_outcome(self, job: DownloadJob | None, status: str) -> None:
+        if job is None:
+            return
+        event_name = cast(
+            ProductEventName | None,
+            {
+                "Completed": "run_completed",
+                "Partial": "run_completed",
+                "Failed": "run_failed",
+                "Stopped": "run_stopped",
+            }.get(status),
+        )
+        if event_name is None:
+            return
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is None:
+            return
+        telemetry.record(
+            event_name,
+            dedupe_key=job.run_id,
+            run_kind="youtube",
+            output_type=cast(OutputKind, job.output_type.value.lower()),
+        )
+
+    def _record_product_playback_started(self, info: dict[str, Any]) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is None:
+            return
+        telemetry.record(
+            "playback_started",
+            output_type=cast(OutputKind, metadata_output_type(info).value.lower()),
+        )
 
     def _emit_job_log(self, job: DownloadJob, line: str) -> None:
         self.events.put(job_log_event(job, line))
