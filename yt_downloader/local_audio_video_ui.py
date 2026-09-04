@@ -20,7 +20,7 @@ from .local_audio_video import (
 )
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, THEME
-from .ui_widgets import SleekProgressbar, reveal_toplevel
+from .ui_widgets import ActionDialogSurface, SleekProgressbar, reveal_toplevel
 
 
 class LocalAudioVideoDialog:
@@ -63,14 +63,16 @@ class LocalAudioVideoDialog:
         popup.bind("<Destroy>", self._destroyed, add="+")
 
     def _build_content(self) -> None:
-        root = ttk.Frame(self.popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=26, pady=24)
+        surface = ActionDialogSurface(self.popup, padx=26, pady=24, footer_gap=16)
+        self.dialog_surface = surface
+        root = surface.body
         root.columnconfigure(0, weight=1)
         self._build_intro(root)
         self._build_choices(root)
         self._build_preview(root)
         self._build_destination(root)
-        self._build_progress_and_actions(root)
+        self._build_progress(root)
+        self._build_actions(surface.footer)
 
     @staticmethod
     def _build_intro(root: ttk.Frame) -> None:
@@ -140,7 +142,7 @@ class LocalAudioVideoDialog:
             style="Muted.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=(3, 0))
 
-    def _build_progress_and_actions(self, root: ttk.Frame) -> None:
+    def _build_progress(self, root: ttk.Frame) -> None:
         self.progress = SleekProgressbar(root, maximum=100, value=0, height=7)
         self.progress.grid(row=5, column=0, sticky="ew", pady=(22, 7))
         self.status_var = tk.StringVar(value="Choose both files to continue.")
@@ -149,15 +151,16 @@ class LocalAudioVideoDialog:
             textvariable=self.status_var,
             style="Muted.TLabel",
         ).grid(row=6, column=0, sticky="w")
-        actions = ttk.Frame(root, style="FocusShell.TFrame")
-        actions.grid(row=7, column=0, sticky="e", pady=(20, 0))
+
+    def _build_actions(self, actions: ttk.Frame) -> None:
+        actions.columnconfigure(0, weight=1)
         self.cancel_button = ttk.Button(
             actions,
             text="Cancel",
             command=self._request_close,
             style="FocusQuiet.TButton",
         )
-        self.cancel_button.pack(side="left", padx=(0, 8))
+        self.cancel_button.grid(row=0, column=1, padx=(0, 8))
         self.create_button = ttk.Button(
             actions,
             text="Create MP4",
@@ -165,7 +168,7 @@ class LocalAudioVideoDialog:
             style="Accent.TButton",
             state="disabled",
         )
-        self.create_button.pack(side="left")
+        self.create_button.grid(row=0, column=2)
 
     def _build_file_row(
         self,

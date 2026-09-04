@@ -9,7 +9,7 @@ from typing import Any
 from .models import CookieSource, OutputType
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import CUSTOM_THEME_NAME, THEME
-from .ui_widgets import SegmentedSelector, ToolTip, reveal_toplevel
+from .ui_widgets import ActionDialogSurface, SegmentedSelector, ToolTip, reveal_toplevel
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +105,9 @@ class FocusSettingsDialog:
         popup.minsize(700, 540)
         self.popup = popup
 
-        root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=22, pady=20)
+        surface = ActionDialogSurface(popup, padx=22, pady=20, footer_gap=14)
+        self.dialog_surface = surface
+        root = surface.body
         root.columnconfigure(0, weight=1)
         root.columnconfigure(1, weight=1)
         root.rowconfigure(2, weight=1)
@@ -117,7 +118,7 @@ class FocusSettingsDialog:
         self._build_mp3_section(root)
         self._build_appearance_section(root)
         self._build_cloud_section(root)
-        self._build_footer(root)
+        self._build_footer(surface.footer)
 
         popup.protocol("WM_DELETE_WINDOW", self.close)
         popup.bind("<Escape>", lambda _event: self.close())
@@ -688,9 +689,7 @@ class FocusSettingsDialog:
             self.bindings.custom_accent.set(str(selected).lower())
             self.bindings.appearance_theme.set(CUSTOM_THEME_NAME)
 
-    def _build_footer(self, root: ttk.Frame) -> None:
-        footer = ttk.Frame(root, style="FocusShell.TFrame")
-        footer.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+    def _build_footer(self, footer: ttk.Frame) -> None:
         footer.columnconfigure(0, weight=1)
         preview_button = ttk.Button(
             footer,

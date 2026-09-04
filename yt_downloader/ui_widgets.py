@@ -4,6 +4,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from collections.abc import Callable, Iterable, Mapping
 from functools import partial
+from tkinter import ttk
 from typing import Any, Literal, Protocol, cast
 
 from .models import OutputType
@@ -178,6 +179,103 @@ def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
     popup.geometry(geometry)
     popup.deiconify()
     popup.lift()
+
+
+class ActionDialogSurface:
+    """Keep a dialog's actions visible while dynamic content scrolls above them.
+
+    The footer is a sibling of the scrolling viewport, never one of its children.
+    This makes action visibility structural: wrapped labels and other expanding
+    body content can consume only the viewport, not the footer's reserved space.
+    """
+
+    def __init__(
+        self,
+        popup: tk.Toplevel,
+        *,
+        padx: int = 24,
+        pady: int = 22,
+        footer_gap: int = 18,
+    ) -> None:
+        shell = ttk.Frame(popup, style="FocusShell.TFrame")
+        shell.pack(fill="both", expand=True, padx=padx, pady=pady)
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
+
+        viewport = tk.Canvas(
+            shell,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+            takefocus=False,
+        )
+        viewport.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(shell, orient="vertical", command=viewport.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+        scrollbar.grid_remove()
+        viewport.configure(yscrollcommand=scrollbar.set)
+
+        body = ttk.Frame(viewport, style="FocusShell.TFrame")
+        body.columnconfigure(0, weight=1)
+        body_window = viewport.create_window((0, 0), window=body, anchor="nw")
+
+        footer = ttk.Frame(shell, style="FocusShell.TFrame")
+        footer.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(footer_gap, 0))
+
+        self.popup = popup
+        self.shell = shell
+        self.viewport = viewport
+        self.scrollbar = scrollbar
+        self.body = body
+        self.footer = footer
+        self._body_window = body_window
+
+        viewport.bind("<Configure>", self._viewport_resized, add="+")
+        body.bind("<Configure>", self._body_resized, add="+")
+        bind_smooth_vertical_wheel(viewport, viewport, body, mode="pixels")
+
+    def _viewport_resized(self, event: tk.Event[tk.Canvas]) -> None:
+        try:
+            self.viewport.itemconfigure(self._body_window, width=max(1, event.width))
+        except tk.TclError:
+            return
+        self._sync_overflow()
+
+    def _body_resized(self, _event: tk.Event[ttk.Frame]) -> None:
+        self._sync_overflow()
+
+    def _sync_overflow(self) -> None:
+        try:
+            bounds = self.viewport.bbox("all")
+            self.viewport.configure(scrollregion=bounds or (0, 0, 0, 0))
+            overflow = self.body.winfo_reqheight() > self.viewport.winfo_height()
+            if overflow:
+                self.scrollbar.grid()
+            else:
+                self.scrollbar.grid_remove()
+                self.viewport.yview_moveto(0.0)
+        except tk.TclError:
+            return
+
+    def action_is_visible(self, widget: tk.Misc) -> bool:
+        """Return whether a footer action is fully inside the dialog client area."""
+        try:
+            self.popup.update_idletasks()
+            popup_left = self.popup.winfo_rootx()
+            popup_top = self.popup.winfo_rooty()
+            popup_right = popup_left + self.popup.winfo_width()
+            popup_bottom = popup_top + self.popup.winfo_height()
+            widget_left = widget.winfo_rootx()
+            widget_top = widget.winfo_rooty()
+            return bool(
+                widget.winfo_ismapped()
+                and widget_left >= popup_left
+                and widget_top >= popup_top
+                and widget_left + widget.winfo_width() <= popup_right
+                and widget_top + widget.winfo_height() <= popup_bottom
+            )
+        except tk.TclError:
+            return False
 
 
 TOOLTIP_DELAY_MS = 420

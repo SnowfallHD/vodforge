@@ -261,6 +261,7 @@ from .ui_theme import (
     apply_theme_selection,
 )
 from .ui_widgets import (
+    ActionDialogSurface,
     PillAction,
     PixelScrollTable,
     RoundedIconButton,
@@ -7467,8 +7468,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         popup.configure(bg=THEME["bg"])
         popup.resizable(True, True)
         popup.minsize(480, 300)
-        frame = ttk.Frame(popup, style="FocusShell.TFrame")
-        frame.pack(fill="both", expand=True, padx=18, pady=18)
+        surface = ActionDialogSurface(popup, padx=18, pady=18, footer_gap=12)
+        frame = surface.body
+        frame.columnconfigure(0, weight=1)
         ttk.Label(frame, text="Output details", style="FocusTitle.TLabel").pack(
             anchor="w"
         )
@@ -7493,7 +7495,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         text.configure(state="disabled")
         bind_smooth_vertical_wheel(text, mode="pixels")
         ttk.Button(
-            frame, text="Done", command=popup.destroy, style="Accent.TButton"
+            surface.footer,
+            text="Done",
+            command=popup.destroy,
+            style="Accent.TButton",
         ).pack(anchor="e")
         popup.update_idletasks()
         reveal_toplevel(popup, centered_toplevel_geometry(self, 560, 360))
@@ -8227,8 +8232,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         popup.configure(bg=THEME["bg"])
         popup.resizable(True, True)
         popup.minsize(560, 520)
-        root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=20, pady=18)
+        surface = ActionDialogSurface(popup, padx=20, pady=18, footer_gap=14)
+        root = surface.body
         root.columnconfigure(0, weight=1)
         root.rowconfigure(2, minsize=135)
         root.rowconfigure(4, weight=2)
@@ -8304,17 +8309,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         description.configure(state="disabled")
         bind_smooth_vertical_wheel(description, mode="pixels")
-        popup_actions = ttk.Frame(root, style="FocusShell.TFrame")
-        popup_actions.grid(row=7, column=0, sticky="e", pady=(14, 0))
+        popup_actions = surface.footer
+        popup_actions.columnconfigure(0, weight=1)
         ttk.Button(
             popup_actions,
             text="Copy YouTube URL",
             command=lambda: self._copy_youtube_url(info),
             style="FocusQuiet.TButton",
-        ).pack(side="left", padx=(0, 8))
+        ).grid(row=0, column=1, padx=(0, 8))
         ttk.Button(
             popup_actions, text="Done", command=popup.destroy, style="Accent.TButton"
-        ).pack(side="left")
+        ).grid(row=0, column=2)
         popup.update_idletasks()
         reveal_toplevel(popup, centered_toplevel_geometry(self, 680, 620))
 

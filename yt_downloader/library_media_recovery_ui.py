@@ -10,7 +10,7 @@ from .library_media_recovery import LibraryMediaRecoveryPlan
 from .run_identity import job_output_profile
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import THEME
-from .ui_widgets import reveal_toplevel
+from .ui_widgets import ActionDialogSurface, reveal_toplevel
 
 MediaRecoveryAction = Literal["none", "open_forge", "redownload"]
 
@@ -110,8 +110,9 @@ class LibraryMediaRecoveryDialog:
         popup.resizable(False, False)
         self.popup = popup
 
-        root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=26, pady=24)
+        surface = ActionDialogSurface(popup, padx=26, pady=24)
+        self.dialog_surface = surface
+        root = surface.body
         root.columnconfigure(0, weight=1)
 
         ttk.Label(root, text=self.prompt.heading, style="FocusTitle.TLabel").grid(
@@ -140,15 +141,15 @@ class LibraryMediaRecoveryDialog:
             highlightthickness=0,
         ).pack(fill="x", padx=1, pady=1)
 
-        actions = ttk.Frame(root, style="FocusShell.TFrame")
-        actions.grid(row=3, column=0, sticky="e", pady=(20, 0))
+        actions = surface.footer
+        actions.columnconfigure(0, weight=1)
         if self.prompt.show_cancel:
             ttk.Button(
                 actions,
                 text="Not now",
                 command=self.popup.destroy,
                 style="FocusQuiet.TButton",
-            ).pack(side="left", padx=(0, 8))
+            ).grid(row=0, column=1, padx=(0, 8))
         ttk.Button(
             actions,
             text=self.prompt.primary_label,
@@ -158,7 +159,7 @@ class LibraryMediaRecoveryDialog:
                 if self.prompt.primary_action != "none"
                 else "FocusQuiet.TButton"
             ),
-        ).pack(side="left")
+        ).grid(row=0, column=2)
 
         popup.protocol("WM_DELETE_WINDOW", popup.destroy)
         popup.bind("<Escape>", lambda _event: popup.destroy())

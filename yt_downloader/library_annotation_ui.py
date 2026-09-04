@@ -7,7 +7,7 @@ from tkinter import ttk
 from .library_annotations import LibraryAnnotation
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import THEME
-from .ui_widgets import reveal_toplevel
+from .ui_widgets import ActionDialogSurface, reveal_toplevel
 
 
 class LibraryAnnotationDialog:
@@ -33,8 +33,9 @@ class LibraryAnnotationDialog:
         popup.minsize(520, 430)
         self.popup = popup
 
-        root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=24, pady=22)
+        surface = ActionDialogSurface(popup, padx=24, pady=22)
+        self.dialog_surface = surface
+        root = surface.body
         root.columnconfigure(0, weight=1)
         root.rowconfigure(9, weight=1)
 
@@ -109,20 +110,20 @@ class LibraryAnnotationDialog:
         self.note.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
         self.note.insert("1.0", annotation.note)
 
-        actions = ttk.Frame(root, style="FocusShell.TFrame")
-        actions.grid(row=10, column=0, sticky="e", pady=(18, 0))
+        actions = surface.footer
+        actions.columnconfigure(0, weight=1)
         ttk.Button(
             actions,
             text="Cancel",
             command=popup.destroy,
             style="FocusQuiet.TButton",
-        ).pack(side="left", padx=(0, 8))
+        ).grid(row=0, column=1, padx=(0, 8))
         ttk.Button(
             actions,
             text="Save details",
             command=self._save,
             style="Accent.TButton",
-        ).pack(side="left")
+        ).grid(row=0, column=2)
 
         popup.protocol("WM_DELETE_WINDOW", popup.destroy)
         popup.bind("<Escape>", lambda _event: popup.destroy())
