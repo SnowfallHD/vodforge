@@ -182,11 +182,11 @@ def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
 
 
 class ActionDialogSurface:
-    """Keep dialog actions visible independently of bounded body content.
+    """Keep essential dialog state and actions outside compressible body content.
 
-    The footer is always a sibling of the body, never one of its children. Most
-    dialogs receive a normal adaptive frame. A body scrollbar is an explicit
-    exception for feature-dense document surfaces such as Settings.
+    The protected status region and footer are siblings of the body, never its
+    children. Most dialogs receive a normal adaptive frame. A body scrollbar is
+    an explicit exception for feature-dense document surfaces such as Settings.
     """
 
     def __init__(
@@ -197,6 +197,7 @@ class ActionDialogSurface:
         pady: int = 22,
         footer_gap: int = 18,
         allow_body_scroll: bool = False,
+        protect_status: bool = False,
     ) -> None:
         shell = ttk.Frame(popup, style="FocusShell.TFrame")
         shell.pack(fill="both", expand=True, padx=padx, pady=pady)
@@ -236,14 +237,31 @@ class ActionDialogSurface:
             body.grid(row=0, column=0, sticky="nsew")
         body.columnconfigure(0, weight=1)
 
+        status: ttk.Frame | None = None
+        footer_row = 1
+        if protect_status:
+            status = ttk.Frame(shell, style="FocusShell.TFrame")
+            status.grid(
+                row=1, column=0, columnspan=2, sticky="ew", pady=(footer_gap, 0)
+            )
+            status.columnconfigure(0, weight=1)
+            footer_row = 2
+
         footer = ttk.Frame(shell, style="FocusShell.TFrame")
-        footer.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(footer_gap, 0))
+        footer.grid(
+            row=footer_row,
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(footer_gap, 0),
+        )
 
         self.popup = popup
         self.shell = shell
         self.viewport = viewport
         self.scrollbar = scrollbar
         self.body = body
+        self.status = status
         self.footer = footer
         self._body_window = body_window
 
@@ -283,8 +301,8 @@ class ActionDialogSurface:
             except tk.TclError:
                 pass
 
-    def action_is_visible(self, widget: tk.Misc) -> bool:
-        """Return whether a footer action is fully inside the dialog client area."""
+    def protected_content_is_visible(self, widget: tk.Misc) -> bool:
+        """Return whether protected status or action content is fully visible."""
         try:
             self.popup.update_idletasks()
             popup_left = self.popup.winfo_rootx()
@@ -302,6 +320,10 @@ class ActionDialogSurface:
             )
         except tk.TclError:
             return False
+
+    def action_is_visible(self, widget: tk.Misc) -> bool:
+        """Return whether a footer action is fully inside the dialog client area."""
+        return self.protected_content_is_visible(widget)
 
 
 TOOLTIP_DELAY_MS = 420

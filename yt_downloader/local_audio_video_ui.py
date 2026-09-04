@@ -80,7 +80,13 @@ class LocalAudioVideoDialog:
         popup.bind("<Destroy>", self._destroyed, add="+")
 
     def _build_content(self) -> None:
-        surface = ActionDialogSurface(self.popup, padx=26, pady=24, footer_gap=16)
+        surface = ActionDialogSurface(
+            self.popup,
+            padx=26,
+            pady=16,
+            footer_gap=10,
+            protect_status=True,
+        )
         self.dialog_surface = surface
         root = surface.body
         root.columnconfigure(0, weight=1)
@@ -88,7 +94,9 @@ class LocalAudioVideoDialog:
         self._build_choices(root)
         self._build_preview_and_profile(root)
         self._build_destination(root)
-        self._build_progress(root)
+        if surface.status is None:  # pragma: no cover - construction contract
+            raise RuntimeError("Local conversion requires protected status content")
+        self._build_progress(surface.status)
         self._build_actions(surface.footer)
 
     @staticmethod
@@ -105,7 +113,7 @@ class LocalAudioVideoDialog:
             style="Muted.TLabel",
             wraplength=650,
             justify="left",
-        ).grid(row=1, column=0, sticky="ew", pady=(5, 20))
+        ).grid(row=1, column=0, sticky="ew", pady=(5, 12))
 
     def _build_choices(self, root: ttk.Frame) -> None:
         choices = ttk.Frame(root, style="FocusShell.TFrame")
@@ -118,7 +126,7 @@ class LocalAudioVideoDialog:
 
     def _build_preview_and_profile(self, root: ttk.Frame) -> None:
         row = ttk.Frame(root, style="FocusShell.TFrame")
-        row.grid(row=3, column=0, sticky="ew", pady=(18, 18))
+        row.grid(row=3, column=0, sticky="ew", pady=(12, 12))
         row.columnconfigure(1, weight=1)
         self._build_preview(row)
         self._build_profile(row)
@@ -127,13 +135,13 @@ class LocalAudioVideoDialog:
         preview_shell = tk.Frame(
             parent,
             bg=THEME["surface"],
-            width=192,
-            height=108,
+            width=168,
+            height=94,
             bd=0,
             highlightthickness=1,
             highlightbackground=THEME["border"],
         )
-        preview_shell.grid(row=0, column=0, sticky="nw", padx=(0, 18))
+        preview_shell.grid(row=0, column=0, sticky="nw", padx=(0, 16))
         preview_shell.grid_propagate(False)
         self.preview = tk.Label(
             preview_shell,
@@ -203,13 +211,13 @@ class LocalAudioVideoDialog:
 
     def _build_progress(self, root: ttk.Frame) -> None:
         self.progress = SleekProgressbar(root, maximum=100, value=0, height=7)
-        self.progress.grid(row=5, column=0, sticky="ew", pady=(22, 7))
+        self.progress.grid(row=0, column=0, sticky="ew")
         self.status_var = tk.StringVar(value="Choose both files to continue.")
         ttk.Label(
             root,
             textvariable=self.status_var,
             style="Muted.TLabel",
-        ).grid(row=6, column=0, sticky="w")
+        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
 
     def _build_actions(self, actions: ttk.Frame) -> None:
         actions.columnconfigure(0, weight=1)
@@ -242,7 +250,7 @@ class LocalAudioVideoDialog:
         button_text = "Choose MP3" if is_audio else "Choose image"
         command = self._choose_audio if is_audio else self._choose_image
         item = ttk.Frame(parent, style="FocusShell.TFrame")
-        item.grid(row=row, column=0, sticky="ew", pady=(0, 13))
+        item.grid(row=row, column=0, sticky="ew", pady=(0, 9))
         item.columnconfigure(0, weight=1)
         ttk.Label(item, text=eyebrow, style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", columnspan=2
@@ -302,8 +310,8 @@ class LocalAudioVideoDialog:
         try:
             image = load_local_still_image(path)
             try:
-                image.thumbnail((190, 106), getattr(Image, "Resampling", Image).LANCZOS)
-                canvas = Image.new("RGB", (190, 106), THEME["surface"])
+                image.thumbnail((166, 92), getattr(Image, "Resampling", Image).LANCZOS)
+                canvas = Image.new("RGB", (166, 92), THEME["surface"])
                 canvas.paste(
                     image,
                     (
@@ -320,8 +328,8 @@ class LocalAudioVideoDialog:
             self.preview.configure(
                 image=self._preview_image,
                 text="",
-                width=190,
-                height=106,
+                width=166,
+                height=92,
             )
             return True
         except (OSError, RuntimeError, tk.TclError, ValueError):

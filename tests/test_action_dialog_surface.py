@@ -94,6 +94,12 @@ def test_required_action_is_visible_only_when_fully_inside_dialog() -> None:
     assert surface.action_is_visible(widget) is False
 
 
+def test_action_visibility_uses_the_general_protected_content_rule() -> None:
+    source = inspect.getsource(ActionDialogSurface.action_is_visible)
+
+    assert "protected_content_is_visible" in source
+
+
 def test_every_content_bearing_action_dialog_uses_the_protected_surface() -> None:
     owners = (
         FocusSettingsDialog,
@@ -111,6 +117,9 @@ def test_every_content_bearing_action_dialog_uses_the_protected_surface() -> Non
     local_content = inspect.getsource(LocalAudioVideoDialog._build_content)
     assert "self._build_actions(surface.footer)" in local_content
     assert "self._build_actions(root)" not in local_content
+    assert "protect_status=True" in local_content
+    assert "self._build_progress(surface.status)" in local_content
+    assert "self._build_progress(root)" not in local_content
 
     settings_source = inspect.getsource(FocusSettingsDialog)
     assert "allow_body_scroll=True" in settings_source
