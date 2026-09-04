@@ -126,6 +126,13 @@ from .libvlc_backend import (
     find_libvlc_runtime,
     probe_libvlc_runtime,
 )
+from .local_audio_video import (
+    LocalAudioVideoConversionOwner,
+    LocalAudioVideoResult,
+    LocalConversionRecoveryOwner,
+    local_conversion_state_path,
+)
+from .local_audio_video_ui import LocalAudioVideoDialog
 from .media_player import (
     MediaPlayerError,
     resolve_library_media_path,
@@ -4817,6 +4824,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             run_state_file_path(), diagnostic=write_diagnostic
         )
         self.library_media_recovery = LibraryMediaRecoveryOwner()
+        self.local_audio_video = LocalAudioVideoConversionOwner(
+            ffmpeg=self._find_ffmpeg(),
+            ffprobe=self._find_ffprobe(),
+            recovery=LocalConversionRecoveryOwner(
+                local_conversion_state_path(), diagnostic=write_diagnostic
+            ),
+            diagnostic=write_diagnostic,
+        )
+        self.local_audio_video.recover_interrupted()
+        self._local_audio_video_dialog: LocalAudioVideoDialog | None = None
         recovered_terminal_jobs = self.run_recovery.recover_at_startup()
         recovered_queued_jobs = self.run_recovery.queued_at_startup()
         set_active_child_process_observer(self.run_recovery.child_event)
@@ -5926,6 +5943,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             text="Preview metadata",
             command=self._fetch_metadata,
             style="FocusQuiet.TButton",
+        )
+        local_media_row = ttk.Frame(command_area, style="FocusShell.TFrame")
+        local_media_row.grid(row=1, column=0, sticky="e", pady=(8, 0))
+        ttk.Label(
+            local_media_row,
+            text="Have local audio?",
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(0, 8))
+        self.local_audio_video_button = ttk.Button(
+            local_media_row,
+            text="MP3 + image → MP4",
+            command=self._show_local_audio_video,
+            style="FocusQuiet.TButton",
+        )
+        self.local_audio_video_button.pack(side="left")
+        ToolTip(
+            self.local_audio_video_button,
+            "Create an MP4 from local MP3 audio and one still image",
         )
         self.focus_command_hint_var = tk.StringVar()
         self.focus_command_box = command_box
@@ -9571,6 +9606,46 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         else:
             self._append_log(f"Saved download history entry: {output_dir}")
 
+    def _show_local_audio_video(self) -> None:
+        dialog = self.__dict__.get("_local_audio_video_dialog")
+        if dialog is not None:
+            dialog.focus()
+            return
+        dialog = LocalAudioVideoDialog(
+            self,
+            converter=self.local_audio_video,
+            output_dir=Path(self.output_var.get()).expanduser(),
+            on_complete=self._complete_local_audio_video,
+            on_closed=self._local_audio_video_dialog_closed,
+        )
+        self._local_audio_video_dialog = dialog
+        dialog.show()
+
+    def _local_audio_video_dialog_closed(self) -> None:
+        self._local_audio_video_dialog = None
+
+    def _complete_local_audio_video(self, result: LocalAudioVideoResult) -> None:
+        metadata = dict(result.history_metadata)
+        try:
+            save_custom_cached_thumbnail_image(metadata, result.image_path)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._append_log(
+                "WARNING: The MP4 was created, but its Library artwork could not "
+                f"be cached: {exc}"
+            )
+        self._record_download_history(metadata, result.output_path.parent)
+        run_id = str(metadata.get("vodforge_run_id") or "")
+        if not any(
+            str(item.get("vodforge_run_id") or "") == run_id
+            for item in self.download_history
+        ):
+            return
+        if result.output_path.parent not in self.last_output_dirs:
+            self.last_output_dirs.append(result.output_path.parent)
+        self._append_log(f"Created local static-image MP4: {result.output_path}")
+        self.status_var.set(f"Created {result.output_path.name}")
+        self._select_focus_view("library")
+
     def _persist_job_activity_to_history(self, job: DownloadJob) -> None:
         identities = set(job.history_identities)
         if not identities:
@@ -12376,6 +12451,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         player = self.__dict__.get("_media_player_window")
         if player is not None:
             player.close()
+        local_dialog = self.__dict__.get("_local_audio_video_dialog")
+        if local_dialog is not None:
+            local_dialog.close_for_application()
         settings_owner = self.__dict__.get("settings_persistence")
         if settings_owner is not None:
             settings_owner.flush()
@@ -12393,10 +12471,20 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         except (AttributeError, tk.TclError):
             pass
         self._close_terminator = threading.Thread(
-            target=terminate_all_active_child_processes, daemon=True
+            target=self._terminate_owned_media_work, daemon=True
         )
         self._close_terminator.start()
         self.after(50, self._finish_application_close_when_idle)
+
+    def _terminate_owned_media_work(self) -> None:
+        local_converter = self.__dict__.get("local_audio_video")
+        if local_converter is not None and not local_converter.shutdown(
+            timeout_seconds=6.0
+        ):
+            write_diagnostic(
+                "local audio-to-video conversion did not confirm idle before close"
+            )
+        terminate_all_active_child_processes()
 
     def _finish_application_close_when_idle(self) -> None:
         worker_alive = self.worker is not None and self.worker.is_alive()

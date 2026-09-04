@@ -18,6 +18,7 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Embeds useful metadata and thumbnails in the MP4 when supported.
 - Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
 - Embeds standard ID3 title/artist metadata by default. Cover art defaults to **No Art**, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
+- Turns a local MP3 plus a selected still image into a validated 1080p H.264/AAC MP4 entirely offline, placing the result directly in the current Forge destination.
 - Writes a compact, readable `metadata.json` beside each video.
 - Keeps playlist and non-playlist downloads organized in collision-safe, path-length-aware folders that retain recognizable channel, playlist, and video titles.
 - Ignores playlist expansion by default so a copied watch link downloads only that video or audio item; turn **Ignore playlists** off when you intentionally want every item in a playlist.
@@ -72,6 +73,8 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 2. Choose **MP4** or **MP3** at the right edge of the URL field.
 3. Pick an output folder. For MP4, choose a quality cap and export mode. For MP3, the default is the maximum 320 kbps profile; producer-oriented sample-rate and channel controls are in Settings.
 4. Start or queue the run.
+
+For local audio, use **MP3 + image → MP4** beneath the Forge URL field. Choose one MP3 and one JPG, PNG, or WebP still; VODForge renders the image as the video for the full length of the audio. The original files are unchanged, and the finished MP4 is written directly to the selected output folder—no channel or item parent folder is added—then appears in Library's MP4 view.
 
 Forge keeps active, queued, completed, previewed, stopped, and failed attempts under separate run identities. Selecting an older card does not overwrite the current run, and changing MP4/MP3 or output settings does not rewrite the selected card's recorded format. Preview, retry, and restart actions always enter the normal sequential run queue as fresh attempts.
 
