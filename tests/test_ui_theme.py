@@ -6,6 +6,7 @@ from yt_downloader.ui_theme import (
     CUSTOM_THEME_NAME,
     DEFAULT_THEME_NAME,
     THEME,
+    ThemeRenderOwner,
     apply_theme_selection,
     normalize_hex_color,
 )
@@ -39,3 +40,26 @@ def test_unknown_theme_falls_back_without_leaking_partial_state() -> None:
 
     assert selection.name == DEFAULT_THEME_NAME
     assert THEME["accent"] == "#7170ff"
+
+
+def test_live_theme_owner_renders_only_changed_valid_snapshots() -> None:
+    renders: list[str] = []
+    owner = ThemeRenderOwner(
+        lambda _previous, _incoming: renders.append(THEME["accent"])
+    )
+
+    assert owner.request(DEFAULT_THEME_NAME, "#7170ff") is False
+    assert owner.request("Jade", "#7170ff") is True
+    assert owner.request("Jade", "#7170ff") is False
+    assert renders == ["#42d69b"]
+
+
+def test_live_custom_theme_waits_for_complete_hex_color() -> None:
+    renders: list[str] = []
+    owner = ThemeRenderOwner(
+        lambda _previous, _incoming: renders.append(THEME["accent"])
+    )
+
+    assert owner.request(CUSTOM_THEME_NAME, "#12") is False
+    assert owner.request(CUSTOM_THEME_NAME, "#123456") is True
+    assert renders == ["#123456"]

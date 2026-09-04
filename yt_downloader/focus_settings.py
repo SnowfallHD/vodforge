@@ -75,6 +75,7 @@ class FocusSettingsActions:
     open_cloud_early_access: Callable[[], object]
     preview_metadata: Callable[[], bool]
     record_cloud_cta_seen: Callable[[], object]
+    apply_appearance: Callable[[], object]
     on_closed: Callable[[], object]
 
 
@@ -96,6 +97,8 @@ class FocusSettingsDialog:
         self.options = options
         self.actions = actions
         self._closed = False
+        self._theme_selectors: list[SegmentedSelector] = []
+        self._accent_trace_id: str | None = None
 
         popup = tk.Toplevel(owner)
         popup.withdraw()
@@ -233,6 +236,7 @@ class FocusSettingsDialog:
             compact=True,
         )
         cookie_selector.grid(row=8, column=0, sticky="w")
+        self._theme_selectors.append(cookie_selector)
         ToolTip(
             cookie_selector,
             "Public uses no cookies. Choose cookies.txt or Browser only when YouTube requires sign-in.",
@@ -562,6 +566,7 @@ class FocusSettingsDialog:
             compact=True,
         )
         cover_selector.grid(row=5, column=1, sticky="w", pady=(8, 4))
+        self._theme_selectors.append(cover_selector)
         ToolTip(
             cover_selector,
             "No Art leaves the MP3 unembedded. YouTube art or Custom art writes a "
@@ -693,7 +698,7 @@ class FocusSettingsDialog:
             width=18,
         )
         theme_combo.grid(row=1, column=1, sticky="ew", padx=(0, 18))
-        self._bind_readonly_combo(theme_combo)
+        self._bind_readonly_combo(theme_combo, self.actions.apply_appearance)
         ttk.Label(appearance, text="Custom accent", style="Muted.TLabel").grid(
             row=1, column=2, sticky="w", padx=(0, 8)
         )
@@ -713,11 +718,14 @@ class FocusSettingsDialog:
         ).grid(row=0, column=1, padx=(6, 0))
         ttk.Label(
             appearance,
-            text="Choose Custom accent to use a #RRGGBB color. Appearance updates the next time VODForge opens.",
+            text="Choose Custom accent to use a #RRGGBB color. Appearance updates immediately.",
             style="Muted.TLabel",
             wraplength=680,
             justify="left",
         ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(5, 0))
+        self._accent_trace_id = self.bindings.custom_accent.trace_add(
+            "write", lambda *_args: self.actions.apply_appearance()
+        )
 
     def _choose_accent_color(self) -> None:
         _rgb, selected = colorchooser.askcolor(
@@ -728,6 +736,18 @@ class FocusSettingsDialog:
         if selected:
             self.bindings.custom_accent.set(str(selected).lower())
             self.bindings.appearance_theme.set(CUSTOM_THEME_NAME)
+            self.actions.apply_appearance()
+
+    def apply_theme(self) -> None:
+        """Patch the live Settings surface after its palette changes."""
+
+        try:
+            self.popup.configure(bg=THEME["bg"])
+        except tk.TclError:
+            return
+        self.dialog_surface.apply_theme()
+        for selector in self._theme_selectors:
+            selector.apply_theme()
 
     def _build_footer(self, footer: ttk.Frame) -> None:
         footer.columnconfigure(0, weight=1)
@@ -844,4 +864,11 @@ class FocusSettingsDialog:
         if self._closed:
             return
         self._closed = True
+        accent_trace_id = getattr(self, "_accent_trace_id", None)
+        if accent_trace_id is not None:
+            try:
+                self.bindings.custom_accent.trace_remove("write", accent_trace_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._accent_trace_id = None
         self.actions.on_closed()

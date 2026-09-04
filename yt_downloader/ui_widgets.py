@@ -227,7 +227,10 @@ class ActionDialogSurface:
             body_window = viewport.create_window((0, 0), window=body, anchor="nw")
             viewport.bind("<Configure>", self._viewport_resized, add="+")
             body.bind("<Configure>", self._body_resized, add="+")
-            bind_smooth_vertical_wheel(viewport, viewport, body, mode="pixels")
+            # Descendant controls receive pointer/trackpad events under Tk's
+            # toplevel bindtag; binding the popup keeps the scroll owner local
+            # while covering the complete Settings document surface.
+            bind_smooth_vertical_wheel(viewport, viewport, body, popup, mode="pixels")
         else:
             body = ttk.Frame(shell, style="FocusShell.TFrame")
             body.grid(row=0, column=0, sticky="nsew")
@@ -270,6 +273,15 @@ class ActionDialogSurface:
                 self.viewport.yview_moveto(0.0)
         except tk.TclError:
             return
+
+    def apply_theme(self) -> None:
+        """Patch this dialog surface without rebuilding its content."""
+
+        if self.viewport is not None:
+            try:
+                self.viewport.configure(bg=THEME["bg"])
+            except tk.TclError:
+                pass
 
     def action_is_visible(self, widget: tk.Misc) -> bool:
         """Return whether a footer action is fully inside the dialog client area."""
@@ -575,6 +587,8 @@ class SleekProgressbar(tk.Canvas):
         self._mode = mode
         self._track_color = track_color
         self._bar_color = bar_color
+        self._track_uses_theme = track_color == THEME["surface_2"]
+        self._bar_uses_theme = bar_color == THEME["accent"]
         self._phase = 0.0
         self._after_id: str | None = None
         self._variable = (
@@ -630,6 +644,16 @@ class SleekProgressbar(tk.Canvas):
         return result
 
     config = configure
+
+    def apply_theme(self) -> None:
+        """Patch palette-bound colors without replacing the progress widget."""
+
+        if self._track_uses_theme:
+            self._track_color = THEME["surface_2"]
+        if self._bar_uses_theme:
+            self._bar_color = THEME["accent"]
+        super().configure(bg=THEME["bg"])
+        self._redraw()
 
     def _on_variable_changed(self, *_args: Any) -> None:
         if not self._suspend_variable_redraw:
@@ -1400,6 +1424,17 @@ class PixelScrollTable(tk.Frame):
         except tk.TclError:
             self._redraw_after_id = None
 
+    def apply_theme(self) -> None:
+        """Patch the table canvases and redraw their current immutable model."""
+
+        try:
+            self.configure(bg=THEME["border"])
+            self._header.configure(bg=THEME["surface"])
+            self._body.configure(bg=THEME["surface"])
+        except tk.TclError:
+            return
+        self._redraw()
+
     def _select_from_pointer(self, event: tk.Event[Any]) -> None:
         row = self.identify_row(event.y)
         if row:
@@ -1551,6 +1586,8 @@ class SleekScrollbar(tk.Canvas):
         self._command = command
         self._thumb_color = thumb_color
         self._hover_color = hover_color
+        self._thumb_uses_theme = thumb_color == THEME["border"]
+        self._hover_uses_theme = hover_color == THEME["subtle"]
         self._first = 0.0
         self._last = 1.0
         self._hovered = False
@@ -1618,6 +1655,16 @@ class SleekScrollbar(tk.Canvas):
 
     def _set_hovered(self, _event: tk.Event[Any]) -> None:
         self._hovered = True
+        self._redraw()
+
+    def apply_theme(self) -> None:
+        """Patch palette-bound scrollbar colors without changing its position."""
+
+        if self._thumb_uses_theme:
+            self._thumb_color = THEME["border"]
+        if self._hover_uses_theme:
+            self._hover_color = THEME["subtle"]
+        self.configure(bg=THEME["bg"])
         self._redraw()
 
     def _set_unhovered(self, _event: tk.Event[Any]) -> None:
@@ -1756,6 +1803,16 @@ class PillAction(tk.Canvas):
         if self._icon_item is not None:
             self.coords(self._icon_item, 15, height // 2)
         self.coords(self._text_item, 18 if self._icon is None else 38, height // 2)
+
+    def apply_theme(self) -> None:
+        """Patch this control's palette while preserving its live binding."""
+
+        self.configure(bg=THEME["bg"])
+        self.itemconfigure(
+            self._text_item,
+            fill=THEME["text"] if self._hovered else THEME["muted"],
+        )
+        self._redraw()
 
 
 class RoundedIconButton(tk.Canvas):
@@ -1979,6 +2036,17 @@ class RoundedIconButton(tk.Canvas):
         except tk.TclError:
             return
 
+    def apply_theme(self) -> None:
+        """Patch this control's palette without changing interaction state."""
+
+        super().configure(bg=THEME["bg"])
+        if self._button_image is None:
+            self.itemconfigure(
+                self._content_item,
+                fill="#ffffff" if self._primary else THEME["muted"],
+            )
+        self._redraw()
+
 
 class SegmentedSelector(tk.Frame):
     """Small two-state selector with consistent rendering across Tk platforms."""
@@ -1996,6 +2064,13 @@ class SegmentedSelector(tk.Frame):
             parent, bg=THEME["border"], bd=0, highlightthickness=0, padx=1, pady=1
         )
         self._variable = variable
+        self._background_role = (
+            "bg"
+            if background == THEME["bg"]
+            else "surface"
+            if background == THEME["surface"]
+            else None
+        )
         self._background = background
         self._labels: dict[str, tk.Label] = {}
         horizontal_padding = 7 if compact else 10
@@ -2061,6 +2136,14 @@ class SegmentedSelector(tk.Frame):
                 bg=THEME["accent_dark"] if active else self._background,
                 fg="#ffffff" if active else THEME["muted"],
             )
+
+    def apply_theme(self) -> None:
+        """Patch palette-bound colors while preserving selection and bindings."""
+
+        if self._background_role is not None:
+            self._background = THEME[self._background_role]
+        self.configure(bg=THEME["border"])
+        self._sync()
 
     def destroy(self) -> None:
         try:

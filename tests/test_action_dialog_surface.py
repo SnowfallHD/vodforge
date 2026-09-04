@@ -63,6 +63,12 @@ def test_opted_in_action_surface_scrolls_without_surrendering_footer_space() -> 
     assert viewport.moves == [0.0]
 
 
+def test_scrollable_action_surface_routes_wheel_events_from_all_descendants() -> None:
+    source = inspect.getsource(ActionDialogSurface.__init__)
+
+    assert "viewport, viewport, body, popup" in source
+
+
 def test_required_action_is_visible_only_when_fully_inside_dialog() -> None:
     popup = SimpleNamespace(
         update_idletasks=lambda: None,

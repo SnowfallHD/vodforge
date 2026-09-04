@@ -265,7 +265,9 @@ from .ui_theme import (
     FONT_UI_SMALL_MEDIUM,
     THEME,
     THEME_NAMES,
+    ThemeRenderOwner,
     apply_theme_selection,
+    patch_tk_surface_palette,
 )
 from .ui_widgets import (
     ActionDialogSurface,
@@ -5061,6 +5063,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         self._apply_theme()
         self._build_ui()
+        self.theme_render_owner = ThemeRenderOwner(self._render_live_theme)
         self.settings_persistence.bind(self, self._settings_variables())
         previous_activity = load_activity_log_tail()
         if previous_activity:
@@ -5089,6 +5092,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._schedule_auto_update_check(AUTO_UPDATE_INITIAL_DELAY_MS)
 
     def _apply_theme(self) -> None:
+        self.configure(bg=THEME["bg"])
         style = ttk.Style(self)
         try:
             style.theme_use("clam")
@@ -5512,6 +5516,41 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.option_add("*TCombobox*Listbox.background", THEME["surface"])
         self.option_add("*TCombobox*Listbox.foreground", THEME["text"])
         self.option_add("*TCombobox*Listbox.selectBackground", THEME["accent_dark"])
+
+    def _render_live_theme(
+        self,
+        previous: tuple[tuple[str, str], ...],
+        incoming: tuple[tuple[str, str], ...],
+    ) -> None:
+        """Patch the existing main and Settings surfaces after a palette change."""
+
+        patch_tk_surface_palette(self, previous, incoming)
+        self._apply_theme()
+        selected_view = self.__dict__.get("_focus_selected_view", "forge")
+        if self.__dict__.get("_focus_views"):
+            self._select_focus_view(str(selected_view))
+        shell = self.__dict__.get("focus_shell")
+        pending = list(shell.winfo_children()) if shell is not None else []
+        while pending:
+            widget = pending.pop()
+            apply_widget_theme = getattr(widget, "apply_theme", None)
+            if callable(apply_widget_theme):
+                apply_widget_theme()
+            try:
+                pending.extend(widget.winfo_children())
+            except tk.TclError:
+                continue
+        dialog = self.__dict__.get("_focus_settings_dialog")
+        if dialog is not None:
+            dialog.apply_theme()
+
+    def _request_live_theme(self) -> bool:
+        owner = self.__dict__.get("theme_render_owner")
+        if owner is None:
+            return False
+        return bool(
+            owner.request(self.appearance_theme_var.get(), self.custom_accent_var.get())
+        )
 
     def _build_ui(self) -> None:
         self._build_focus_ui()
@@ -7472,6 +7511,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             open_cloud_early_access=self._open_cloud_early_access,
             preview_metadata=self._fetch_metadata,
             record_cloud_cta_seen=self._record_cloud_cta_seen,
+            apply_appearance=self._request_live_theme,
             on_closed=self._focus_settings_closed,
         )
 

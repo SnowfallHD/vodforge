@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import tkinter as tk
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Final
@@ -81,6 +83,97 @@ DEFAULT_THEME_NAME: Final = "Violet"
 class ThemeSelection:
     name: str
     custom_accent: str
+
+
+ThemePaletteSnapshot = tuple[tuple[str, str], ...]
+
+
+def theme_palette_snapshot() -> ThemePaletteSnapshot:
+    """Return the shared palette as an immutable render-comparison value."""
+
+    return tuple(sorted(THEME.items()))
+
+
+class ThemeRenderOwner:
+    """Own live theme change detection and the single render decision."""
+
+    def __init__(
+        self,
+        render: Callable[[ThemePaletteSnapshot, ThemePaletteSnapshot], None],
+    ) -> None:
+        self._render = render
+        self._committed = theme_palette_snapshot()
+
+    def request(self, name: object, custom_accent: object) -> bool:
+        """Apply and render a changed palette; make repeated requests a no-op."""
+
+        if str(name or "").strip() == CUSTOM_THEME_NAME and not re.fullmatch(
+            r"#[0-9a-fA-F]{6}", str(custom_accent or "").strip()
+        ):
+            return False
+        apply_theme_selection(name, custom_accent)
+        incoming = theme_palette_snapshot()
+        if incoming == self._committed:
+            return False
+        previous = self._committed
+        self._committed = incoming
+        self._render(previous, incoming)
+        return True
+
+
+def patch_tk_surface_palette(
+    root: tk.Misc,
+    previous: ThemePaletteSnapshot,
+    incoming: ThemePaletteSnapshot,
+) -> None:
+    """Patch classic Tk colors within one surface; ttk remains style-owned."""
+
+    before = dict(previous)
+    after = dict(incoming)
+    replacements = {
+        color: after[key]
+        for key, color in before.items()
+        if key in after and after[key] != color
+    }
+    if not replacements:
+        return
+    pending: list[tk.Misc] = [root]
+    color_options = (
+        "background",
+        "foreground",
+        "activebackground",
+        "activeforeground",
+        "highlightbackground",
+        "highlightcolor",
+        "insertbackground",
+        "selectbackground",
+        "selectforeground",
+        "troughcolor",
+    )
+    while pending:
+        widget = pending.pop()
+        for option in color_options:
+            try:
+                current = str(widget.cget(option))
+                replacement = replacements.get(current)
+                if replacement is not None:
+                    widget.configure({option: replacement})
+            except (AttributeError, tk.TclError):
+                continue
+        if isinstance(widget, tk.Canvas):
+            try:
+                for item in widget.find_all():
+                    for option in ("fill", "outline"):
+                        current = str(widget.itemcget(item, option))
+                        replacement = replacements.get(current)
+                        if replacement is not None:
+                            widget.itemconfigure(item, {option: replacement})
+            except tk.TclError:
+                pass
+        try:
+            pending.extend(widget.winfo_children())
+        except (AttributeError, tk.TclError):
+            continue
 
 
 def normalize_hex_color(value: object, fallback: str = "#7170ff") -> str:
