@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import inspect
+
 from yt_downloader.media_player_ui import (
     PREVIEW_HEIGHT,
     PREVIEW_WIDTH,
+    MediaPlayerWindow,
     apply_preview_image,
     bounded_content_rows,
     format_playback_time,
@@ -53,3 +56,14 @@ def test_preview_image_replaces_text_dimensions_with_pixel_dimensions() -> None:
         "width": PREVIEW_WIDTH,
         "height": PREVIEW_HEIGHT,
     }
+
+
+def test_player_opens_thumbnail_first_and_hides_before_native_retirement() -> None:
+    show_source = inspect.getsource(MediaPlayerWindow.show)
+    close_source = inspect.getsource(MediaPlayerWindow.close)
+
+    assert "self._toggle()" not in show_source
+    assert "attach_render_surface" not in show_source
+    assert close_source.index("self.popup.destroy()") < close_source.index(
+        "self.playback.shutdown()"
+    )

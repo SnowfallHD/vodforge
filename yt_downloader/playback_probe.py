@@ -8,7 +8,11 @@ import tkinter as tk
 from pathlib import Path
 from typing import Any
 
-from .libvlc_backend import LibVLCPlaybackBackend, find_libvlc_runtime
+from .libvlc_backend import (
+    LibVLCEngineOwner,
+    LibVLCPlaybackBackend,
+    find_libvlc_runtime,
+)
 from .playback_backend import MediaPlayerError
 from .playback_surface import TkPlaybackSurfaceOwner
 from .private_files import write_private_bytes
@@ -91,6 +95,7 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
     }
     root: tk.Tk | None = None
     backend: LibVLCPlaybackBackend | None = None
+    engine: LibVLCEngineOwner | None = None
     surface: TkPlaybackSurfaceOwner | None = None
 
     def checkpoint(phase: str) -> None:
@@ -115,8 +120,20 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
         stage.pack(fill="both", expand=True)
         root.update_idletasks()
 
+        engine = LibVLCEngineOwner(runtime=runtime)
+        engine_started = time.perf_counter()
+        engine.start()
+        _wait_for(root, lambda: engine.ready or engine.failed, timeout_seconds=10.0)
+        if not engine.ready:
+            raise MediaPlayerError("The packaged playback engine could not warm.")
+        receipt["steps"].append(
+            {
+                "action": "engine_warm",
+                "elapsed_ms": round((time.perf_counter() - engine_started) * 1000, 2),
+            }
+        )
         surface = TkPlaybackSurfaceOwner(root, stage)
-        backend = LibVLCPlaybackBackend(runtime=runtime)
+        backend = engine.create_backend()
         backend.attach_render_surface(surface.surface)
 
         for index, path in enumerate(paths):
@@ -187,9 +204,20 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
             checkpoint("resize_complete")
 
         checkpoint("shutdown_before_reopen")
-        backend.shutdown()
+        backend.detach_render_surface()
         surface.close()
-        backend = LibVLCPlaybackBackend(runtime=runtime)
+        close_started = time.perf_counter()
+        backend.shutdown()
+        close_return_ms = (time.perf_counter() - close_started) * 1000
+        receipt["steps"].append(
+            {
+                "action": "close_return",
+                "elapsed_ms": round(close_return_ms, 2),
+            }
+        )
+        if close_return_ms > 500:
+            raise MediaPlayerError("The player session blocked the UI while closing.")
+        backend = engine.create_backend()
         surface = TkPlaybackSurfaceOwner(root, stage)
         backend.attach_render_surface(surface.surface)
         backend.load(paths[0])
@@ -203,9 +231,12 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
         receipt["error"] = f"{type(exc).__name__}: {exc}"
     finally:
         if backend is not None:
+            backend.detach_render_surface()
             backend.shutdown()
         if surface is not None:
             surface.close()
+        if engine is not None:
+            engine.shutdown(timeout_seconds=8.0)
         if root is not None:
             try:
                 root.destroy()

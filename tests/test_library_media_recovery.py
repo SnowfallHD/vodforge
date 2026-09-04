@@ -81,6 +81,37 @@ def test_missing_media_rebuilds_exact_saved_job_with_fresh_run_identity(
     assert plan.previous_annotation_owner == "run:completed-run"
 
 
+def test_missing_nested_artifact_rebuilds_from_user_selected_base(
+    tmp_path: Path,
+) -> None:
+    original = _job(tmp_path)
+    record = _missing_record(original)
+    nested = original.output_dir / "Channel" / "Playlist" / "Video"
+    record["vodforge_output_dir"] = str(nested)
+    record["vodforge_output_path"] = str(nested / "Missing media.mp3")
+    owner = LibraryMediaRecoveryOwner(run_id_factory=lambda: "redownload-run")
+
+    plan = owner.plan(record)
+
+    assert plan.can_redownload is True
+    assert plan.destination == original.output_dir
+    assert plan.job is not None
+    assert plan.job.output_dir == original.output_dir
+
+
+def test_missing_artifact_outside_saved_base_is_rejected(tmp_path: Path) -> None:
+    original = _job(tmp_path)
+    record = _missing_record(original)
+    outside = tmp_path / "other" / "Channel" / "Video"
+    record["vodforge_output_dir"] = str(outside)
+    record["vodforge_output_path"] = str(outside / "Missing media.mp3")
+
+    plan = LibraryMediaRecoveryOwner().plan(record)
+
+    assert plan.kind == "invalid"
+    assert plan.can_redownload is False
+
+
 def test_missing_media_recovery_retires_only_accepted_exact_history_row(
     tmp_path: Path,
 ) -> None:

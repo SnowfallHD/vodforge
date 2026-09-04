@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from yt_downloader.libvlc_backend import LibVLCPlaybackBackend, LibVLCRuntime
+from yt_downloader.libvlc_backend import (
+    LibVLCEngineOwner,
+    LibVLCPlaybackBackend,
+    LibVLCRuntime,
+)
 from yt_downloader.playback_backend import MediaPlayerError, NativeRenderSurface
 
 
@@ -255,3 +259,35 @@ def test_provider_state_failure_becomes_an_immutable_failed_snapshot(
 
     assert backend.snapshot.status == "Failed"
     assert backend.snapshot.error == "The local playback engine stopped responding."
+
+
+def test_shared_engine_warms_once_and_retires_session_asynchronously(
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "video.mp4"
+    media.write_bytes(b"video")
+    module = FakeVLC()
+    runtime = LibVLCRuntime(Path("/vlc"), Path("/vlc/libvlc"), Path("/vlc/plugins"))
+    engine = LibVLCEngineOwner(runtime=runtime, vlc_module=module)
+
+    engine.start()
+    assert threading.Event().wait(0.01) is False
+    deadline = threading.Event()
+    for _attempt in range(100):
+        if engine.ready:
+            break
+        deadline.wait(0.01)
+    assert engine.ready is True
+
+    backend = engine.create_backend()
+    backend.load(media, duration=10)
+    backend.play()
+    backend.shutdown()
+
+    assert backend.snapshot.status == "Closed"
+    assert module.instance.released is False
+    assert engine.shutdown(timeout_seconds=1.0) is True
+    assert module.player.stop_calls >= 2
+    assert module.player.release_calls == 1
+    assert module.instance.media[0].released is True
+    assert module.instance.released is True

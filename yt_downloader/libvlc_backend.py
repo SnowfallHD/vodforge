@@ -19,6 +19,15 @@ from .playback_backend import (
 )
 
 VLC_RUNTIME_VERSION = "3.0.23"
+VLC_INSTANCE_ARGUMENTS = (
+    "--intf=dummy",
+    "--no-video-title-show",
+    "--no-osd",
+    "--no-metadata-network-access",
+    "--quiet",
+    "--avcodec-hw=any",
+    "--file-caching=120",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +148,167 @@ def probe_libvlc_runtime(runtime: LibVLCRuntime) -> str:
             instance.release()
 
 
+class LibVLCEngineOwner:
+    """Own one warm libVLC instance and asynchronous session retirement."""
+
+    def __init__(
+        self,
+        *,
+        runtime: LibVLCRuntime,
+        diagnostic: Callable[[str], None] | None = None,
+        vlc_module: Any | None = None,
+    ) -> None:
+        self.runtime = runtime
+        self._diagnostic = diagnostic or (lambda _message: None)
+        self._provided_vlc_module = vlc_module
+        self._lock = threading.RLock()
+        self._ready = threading.Event()
+        self._closed = False
+        self._initializing = False
+        self._vlc: Any | None = None
+        self._instance: Any | None = None
+        self._error: MediaPlayerError | None = None
+        self._initialize_thread: threading.Thread | None = None
+        self._retirement_threads: set[threading.Thread] = set()
+
+    @property
+    def ready(self) -> bool:
+        return self._ready.is_set() and self._error is None
+
+    @property
+    def failed(self) -> bool:
+        return self._ready.is_set() and self._error is not None
+
+    def start(self) -> None:
+        """Warm the shared native engine without blocking Tk's render thread."""
+
+        with self._lock:
+            if self._closed or self._initializing or self._ready.is_set():
+                return
+            self._initializing = True
+            worker = threading.Thread(
+                target=self._initialize,
+                name="vodforge-libvlc-initialize",
+                daemon=True,
+            )
+            self._initialize_thread = worker
+            worker.start()
+
+    def create_backend(self) -> LibVLCPlaybackBackend:
+        with self._lock:
+            if self._closed:
+                raise MediaPlayerError("The VODForge playback engine has closed.")
+            if not self._ready.is_set():
+                raise MediaPlayerError(
+                    "The offline playback engine is still preparing."
+                )
+            if self._error is not None:
+                raise self._error
+            if self._vlc is None or self._instance is None:
+                raise MediaPlayerError(
+                    "The bundled VODForge playback engine could not initialize."
+                )
+            return LibVLCPlaybackBackend(
+                runtime=self.runtime,
+                diagnostic=self._diagnostic,
+                vlc_module=self._vlc,
+                shared_engine=self,
+                shared_instance=self._instance,
+            )
+
+    def retire_session(self, player: Any, media: Any | None) -> None:
+        """Stop and release one detached player away from Tk's render thread."""
+
+        def retire() -> None:
+            try:
+                player.stop()
+            except Exception as exc:  # noqa: BLE001 - provider cleanup is best effort
+                self._diagnostic(f"libVLC session stop failed: {type(exc).__name__}")
+            for owner in (player, media):
+                if owner is None:
+                    continue
+                try:
+                    owner.release()
+                except Exception as exc:  # noqa: BLE001 - provider cleanup is best effort
+                    self._diagnostic(
+                        f"libVLC session release failed: {type(exc).__name__}"
+                    )
+            with self._lock:
+                self._retirement_threads.discard(threading.current_thread())
+
+        worker = threading.Thread(
+            target=retire,
+            name="vodforge-libvlc-session-retire",
+            daemon=True,
+        )
+        with self._lock:
+            if self._closed:
+                # Application shutdown already owns the wait, but the session
+                # still needs an explicit retirement receipt.
+                self._diagnostic("libVLC session retired during engine shutdown")
+            self._retirement_threads.add(worker)
+        worker.start()
+
+    def shutdown(self, *, timeout_seconds: float = 5.0) -> bool:
+        """Release the shared engine after every detached session is retired."""
+
+        with self._lock:
+            self._closed = True
+            initialize_thread = self._initialize_thread
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        if initialize_thread is not None and initialize_thread.is_alive():
+            initialize_thread.join(max(0.0, deadline - time.monotonic()))
+        while True:
+            with self._lock:
+                retirements = tuple(self._retirement_threads)
+            if not retirements:
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            retirements[0].join(remaining)
+        with self._lock:
+            instance = self._instance
+            self._instance = None
+        if instance is not None:
+            try:
+                instance.release()
+            except Exception as exc:  # noqa: BLE001 - provider cleanup is best effort
+                self._diagnostic(f"libVLC engine release failed: {type(exc).__name__}")
+                return False
+        return initialize_thread is None or not initialize_thread.is_alive()
+
+    def _initialize(self) -> None:
+        try:
+            vlc = self._provided_vlc_module or load_vlc_module(self.runtime)
+            instance = vlc.Instance(*VLC_INSTANCE_ARGUMENTS)
+            if instance is None:
+                raise RuntimeError("libVLC returned no instance")
+        except Exception as exc:  # noqa: BLE001 - provider failure becomes stable state
+            self._diagnostic(f"libVLC warm initialization failed: {type(exc).__name__}")
+            error = MediaPlayerError(
+                "The bundled VODForge playback engine could not initialize."
+            )
+            with self._lock:
+                self._error = error
+                self._initializing = False
+                self._ready.set()
+            return
+        with self._lock:
+            if self._closed:
+                try:
+                    instance.release()
+                except Exception as exc:  # noqa: BLE001 - provider cleanup is best effort
+                    self._diagnostic(
+                        f"libVLC late initialization release failed: {type(exc).__name__}"
+                    )
+            else:
+                self._vlc = vlc
+                self._instance = instance
+            self._initializing = False
+            self._ready.set()
+
+
 class LibVLCPlaybackBackend:
     """Own one libVLC player and expose only engine-authoritative playback state."""
 
@@ -148,6 +318,8 @@ class LibVLCPlaybackBackend:
         runtime: LibVLCRuntime,
         diagnostic: Callable[[str], None] | None = None,
         vlc_module: Any | None = None,
+        shared_engine: LibVLCEngineOwner | None = None,
+        shared_instance: Any | None = None,
     ) -> None:
         self.runtime = runtime
         self._diagnostic = diagnostic or (lambda _message: None)
@@ -160,15 +332,10 @@ class LibVLCPlaybackBackend:
         self._closed = False
         self._surface: NativeRenderSurface | None = None
         self._media: Any | None = None
+        self._shared_engine = shared_engine
         try:
-            self._instance = self._vlc.Instance(
-                "--intf=dummy",
-                "--no-video-title-show",
-                "--no-osd",
-                "--no-metadata-network-access",
-                "--quiet",
-                "--avcodec-hw=any",
-                "--file-caching=120",
+            self._instance = shared_instance or self._vlc.Instance(
+                *VLC_INSTANCE_ARGUMENTS
             )
             if self._instance is None:
                 raise RuntimeError("libVLC returned no instance")
@@ -380,15 +547,18 @@ class LibVLCPlaybackBackend:
             # shutdown. LibVLC owns playback; the surface owner remains alive
             # until this method returns, so this ordering is deterministic.
             self.detach_render_surface()
+            media = self._media
+            self._media = None
+            self._closed = True
+            if self._shared_engine is not None:
+                self._shared_engine.retire_session(self._player, media)
+                return
             try:
                 self._stop_provider()
             except Exception as exc:  # noqa: BLE001 - provider cleanup is best effort
                 self._diagnostic(
                     f"libVLC stop during shutdown failed: {type(exc).__name__}"
                 )
-            media = self._media
-            self._media = None
-            self._closed = True
             for owner in (self._player, media, self._instance):
                 if owner is None:
                     continue

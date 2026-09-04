@@ -59,6 +59,18 @@ def _normalized_path(path: Path) -> str:
     return os.path.normcase(str(resolved))
 
 
+def _path_is_within(path: Path, root: Path) -> bool:
+    """Return whether a committed artifact directory belongs to a saved base."""
+
+    normalized_path = Path(_normalized_path(path))
+    normalized_root = Path(_normalized_path(root))
+    try:
+        normalized_path.relative_to(normalized_root)
+    except ValueError:
+        return False
+    return True
+
+
 def _clean_preview(info: Mapping[str, Any]) -> dict[str, Any]:
     preview = dict(info)
     for key in (
@@ -125,7 +137,10 @@ class LibraryMediaRecoveryOwner:
             )
         if saved_job is None:
             return LibraryMediaRecoveryPlan("legacy", destination)
-        if _normalized_path(saved_job.output_dir) != _normalized_path(destination):
+        # History's location is the committed artifact parent and may include
+        # VODForge's channel/playlist/video hierarchy. The durable job owns the
+        # user-selected base destination used to reconstruct that hierarchy.
+        if not _path_is_within(destination, saved_job.output_dir):
             return LibraryMediaRecoveryPlan("invalid", destination)
         stored_signature = metadata_attempt_signature(row)
         if stored_signature and job_attempt_signature(saved_job) != stored_signature:
@@ -152,7 +167,7 @@ class LibraryMediaRecoveryOwner:
         ).strip()
         return LibraryMediaRecoveryPlan(
             "missing",
-            destination,
+            saved_job.output_dir,
             job=job,
             replaced_history_identity=history_identity(row),
             previous_annotation_owner=previous_annotation_owner,

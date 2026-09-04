@@ -122,6 +122,7 @@ from .library_state import (
     resolve_library_removal_plan,
 )
 from .libvlc_backend import (
+    LibVLCEngineOwner,
     LibVLCPlaybackBackend,
     find_libvlc_runtime,
     probe_libvlc_runtime,
@@ -4834,6 +4835,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             run_state_file_path(), diagnostic=write_diagnostic
         )
         self.library_media_recovery = LibraryMediaRecoveryOwner()
+        playback_runtime = find_libvlc_runtime()
+        self.playback_engine = (
+            LibVLCEngineOwner(
+                runtime=playback_runtime,
+                diagnostic=write_diagnostic,
+            )
+            if playback_runtime is not None
+            else None
+        )
         self.local_audio_video = LocalAudioVideoConversionOwner(
             ffmpeg=self._find_ffmpeg(),
             ffprobe=self._find_ffprobe(),
@@ -5052,6 +5062,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.library_annotations.load()
         self._media_player_window: MediaPlayerWindow | None = None
         self._media_player_source: Path | None = None
+        self._media_player_launch_generation = 0
         self._last_library_invariant_violations: tuple[Any, ...] = ()
         self.download_history: list[dict[str, Any]] = []
         self.history_path = history_file_path()
@@ -5086,6 +5097,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.after(250, self._record_first_launch)
         self.after(400, self._record_product_app_opened)
         self.after(25, self._start_ytdlp_preload)
+        if self.playback_engine is not None:
+            self.after(25, self.playback_engine.start)
         self.protocol("WM_DELETE_WINDOW", self._request_application_close)
         install_native_quit_handler(self, self._request_application_close)
         if bool(getattr(sys, "frozen", False)):
@@ -10908,12 +10921,66 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if existing is not None:
             existing.close()
         ffmpeg = find_runtime_executable("ffmpeg")
-        libvlc_runtime = find_libvlc_runtime()
-        if not ffmpeg or libvlc_runtime is None:
+        playback_engine = self.playback_engine
+        if not ffmpeg or playback_engine is None:
             messagebox.showerror(
                 f"{APP_NAME} Player",
                 "The bundled playback engine is unavailable. Reinstall VODForge or use Open saved location.",
                 parent=self,
+            )
+            return
+        self._media_player_launch_generation += 1
+        launch_generation = self._media_player_launch_generation
+        playback_engine.start()
+        self._open_library_player_when_ready(
+            info,
+            media_path,
+            ffmpeg=ffmpeg,
+            launch_generation=launch_generation,
+            deadline=time.monotonic() + 10.0,
+        )
+
+    def _open_library_player_when_ready(
+        self,
+        info: dict[str, Any],
+        media_path: Path,
+        *,
+        ffmpeg: str,
+        launch_generation: int,
+        deadline: float,
+    ) -> None:
+        """Open from the warm engine without ever waiting on Tk's render thread."""
+
+        if launch_generation != self._media_player_launch_generation or self._closing:
+            return
+        playback_engine = self.playback_engine
+        if playback_engine is None:
+            return
+        if playback_engine.failed:
+            messagebox.showerror(
+                f"{APP_NAME} Player",
+                "The bundled playback engine could not initialize. Reinstall VODForge or use Open saved location.",
+                parent=self,
+            )
+            return
+        if not playback_engine.ready:
+            if time.monotonic() >= deadline:
+                messagebox.showerror(
+                    f"{APP_NAME} Player",
+                    "The offline playback engine did not become ready in time.",
+                    parent=self,
+                )
+                return
+            self.status_var.set("Preparing the offline player…")
+            self.after(
+                50,
+                lambda: self._open_library_player_when_ready(
+                    info,
+                    media_path,
+                    ffmpeg=ffmpeg,
+                    launch_generation=launch_generation,
+                    deadline=deadline,
+                ),
             )
             return
         try:
@@ -10925,10 +10992,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         playback: LibVLCPlaybackBackend | None = None
         previews: MediaPreviewOwner | None = None
         try:
-            playback = LibVLCPlaybackBackend(
-                runtime=libvlc_runtime,
-                diagnostic=write_diagnostic,
-            )
+            playback = playback_engine.create_backend()
             playback.load(
                 media_path,
                 duration=duration,
@@ -10968,6 +11032,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._media_player_window = window
         self._media_player_source = media_path
         window.show()
+        self.status_var.set("Player ready")
 
     def _handle_missing_library_media(self, info: dict[str, Any]) -> None:
         """Render one recovery decision owned by LibraryMediaRecoveryOwner."""
@@ -12566,6 +12631,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if self._closing:
             return
         self._closing = True
+        self._media_player_launch_generation = (
+            int(self.__dict__.get("_media_player_launch_generation", 0)) + 1
+        )
         player = self.__dict__.get("_media_player_window")
         if player is not None:
             player.close()
@@ -12610,6 +12678,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             write_diagnostic(
                 "local audio-to-video conversion did not confirm idle before close"
             )
+        playback_engine = self.__dict__.get("playback_engine")
+        if playback_engine is not None and not playback_engine.shutdown(
+            timeout_seconds=6.0
+        ):
+            write_diagnostic("libVLC playback engine did not confirm idle at close")
         terminate_all_active_child_processes()
 
     def _finish_application_close_when_idle(self) -> None:

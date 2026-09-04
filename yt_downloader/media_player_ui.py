@@ -298,6 +298,13 @@ class MediaPlayerWindow:
         )
         self.stage.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
         self.stage.bind("<Configure>", self._queue_stage_render, add="+")
+        self.play_overlay = ttk.Button(
+            stage_shell,
+            text="▶  Play",
+            command=self._toggle,
+            style="Accent.TButton",
+        )
+        self.play_overlay.place(relx=0.5, rely=0.5, anchor="center")
         if self.thumbnail_path is not None:
             self._render_still_image(self.thumbnail_path)
         elif self._audio_only:
@@ -503,14 +510,6 @@ class MediaPlayerWindow:
             centered_toplevel_geometry(self.owner, width=1100, height=800),
         )
         self.popup.focus_force()
-        if not self._audio_only:
-            try:
-                self._surface_owner = TkPlaybackSurfaceOwner(self.popup, self.stage)
-                self.playback.attach_render_surface(self._surface_owner.surface)
-            except MediaPlayerError as exc:
-                messagebox.showerror("VODForge Player", str(exc), parent=self.popup)
-                self.close()
-                return
         self._poll()
         if self.playback.snapshot.path is not None and not self._audio_only:
             threading.Thread(
@@ -518,7 +517,20 @@ class MediaPlayerWindow:
                 daemon=True,
                 name="vodforge-player-previews",
             ).start()
-        self._toggle()
+
+    def _ensure_render_surface(self) -> bool:
+        if self._audio_only or self._surface_owner is not None:
+            return True
+        try:
+            self._surface_owner = TkPlaybackSurfaceOwner(self.popup, self.stage)
+            self.playback.attach_render_surface(self._surface_owner.surface)
+        except MediaPlayerError as exc:
+            messagebox.showerror("VODForge Player", str(exc), parent=self.popup)
+            if self._surface_owner is not None:
+                self._surface_owner.close()
+                self._surface_owner = None
+            return False
+        return True
 
     def focus_existing(self) -> bool:
         try:
@@ -533,11 +545,15 @@ class MediaPlayerWindow:
     def _toggle(self) -> None:
         try:
             was_playing = self.playback.snapshot.status in {"Starting", "Playing"}
+            if not was_playing and not self._ensure_render_surface():
+                return
             self.playback.toggle()
             if not was_playing and not self._first_play_recorded:
                 self._first_play_recorded = True
                 if self._on_first_play is not None:
                     self._on_first_play()
+            if not was_playing:
+                self.play_overlay.place_forget()
         except MediaPlayerError as exc:
             messagebox.showerror("VODForge Player", str(exc), parent=self.popup)
 
@@ -772,8 +788,7 @@ class MediaPlayerWindow:
                 self.popup.after_cancel(self._stage_render_after_id)
             except tk.TclError:
                 pass
-        self.playback.shutdown()
-        self.previews.shutdown()
+        self.playback.detach_render_surface()
         if self._surface_owner is not None:
             self._surface_owner.close()
             self._surface_owner = None
@@ -781,6 +796,10 @@ class MediaPlayerWindow:
             self.popup.destroy()
         except tk.TclError:
             pass
+        # Shared libVLC session retirement is asynchronous. The visible player
+        # and its native child are gone before provider teardown begins.
+        self.playback.shutdown()
+        self.previews.shutdown()
 
     def _on_destroy(self, event: tk.Event[Any]) -> None:
         if event.widget is self.popup and not self._closed:
