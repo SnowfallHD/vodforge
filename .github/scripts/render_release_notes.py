@@ -57,6 +57,12 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
+- Library now includes search, reusable category filters, and private notes and tags for saved media.
+- The internal offline player now uses bundled libVLC for synchronized MP4/MP3 playback, responsive seeking and volume, and VODForge-owned chapters and preview controls. It opens on artwork with a Play overlay; the engine warms in the background and closing the player no longer waits for runtime teardown.
+- **MP3 + image → MP4** turns local audio and a still image into a video, with independent 1080p Standard, 2160p 4K, 720p Compact, and 1080p Strict 2 Mbps CBR profiles. Output goes directly into the selected folder and appears in Library's MP4 view.
+- Missing or moved media can be re-downloaded with saved settings into the original base output folder, reusing existing folders without duplicating the channel/playlist hierarchy.
+- Theme and accent changes apply immediately. Dropdowns, checkboxes, table selection, and field borders are refined in place; Settings supports trackpad scrolling, and dialog actions and progress remain visible as content changes.
+- Anonymous website-to-install attribution respects browser analytics choices. The **Share anonymous usage analytics** setting controls new coarse app/feature events; first-party installation and Cloud funnel counts remain separate. Media URLs, filenames, searches, notes, tags, and playback positions are excluded from usage events.
 - Output destinations and export preferences now persist across app restarts, while queued runs retain their order and resume through the normal sequential launcher.
 - Closing VODForge now terminates and reaps its owned download/transcode processes. A hard exit is recovered safely on the next launch as the existing **Failed** state, with abandoned `.vfstage` transactions reconciled by the staging owner instead of leaving invisible background work.
 - Library is now a deterministic, run-ID-first projection of durable run and history state. Queued, Preparing, Downloading, Transcoding, Completed, Failed, Stopped, and retry transitions update one canonical row, eliminating orphan placeholders, temporary disappearance, and stale or duplicated terminal rows.

@@ -18,7 +18,10 @@ VODForge analyzes the available source streams, chooses a practical video/audio 
 - Embeds useful metadata and thumbnails in the MP4 when supported.
 - Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
 - Embeds standard ID3 title/artist metadata by default. Cover art defaults to **No Art**, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
-- Turns a local MP3 plus a selected still image into a validated 1080p H.264/AAC MP4 entirely offline, placing the result directly in the current Forge destination.
+- Turns a local MP3 plus a selected still image into an offline H.264/AAC MP4, with dedicated 720p, 1080p, 4K, and strict 2 Mbps profiles. Results go directly into the selected output folder.
+- Searches the Library and organizes saved items with private notes, tags, and reusable categories.
+- Plays local MP4 and MP3 files inside VODForge using bundled libVLC, with one synchronized audio/video clock, custom controls, chapters, heatmaps, and preview moments where available.
+- Offers live theme and accent-color choices while preserving the familiar Forge, Library, and Settings layout.
 - Writes a compact, readable `metadata.json` beside each video.
 - Keeps playlist and non-playlist downloads organized in collision-safe, path-length-aware folders that retain recognizable channel, playlist, and video titles.
 - Ignores playlist expansion by default so a copied watch link downloads only that video or audio item; turn **Ignore playlists** off when you intentionally want every item in a playlist.
@@ -76,9 +79,23 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 
 For local audio, use **MP3 + image → MP4** beneath the Forge URL field. Choose one MP3 and one JPG, PNG, or WebP still; VODForge renders the image as the video for the full length of the audio. The original files are unchanged, and the finished MP4 is written directly to the selected output folder—no channel or item parent folder is added—then appears in Library's MP4 view.
 
+This converter has its own saved output profile, independent of the YouTube download settings: **1080p Standard** uses efficient still-image compression, **2160p 4K** renders at 3840×2160, **720p Compact** reduces resolution, and **1080p Strict 2 Mbps CBR** provides a fixed-rate option. Each uses 30 fps H.264 with two-second keyframes and AAC audio. Increasing resolution cannot restore detail absent from the selected image.
+
 Forge keeps active, queued, completed, previewed, stopped, and failed attempts under separate run identities. Selecting an older card does not overwrite the current run, and changing MP4/MP3 or output settings does not rewrite the selected card's recorded format. Preview, retry, and restart actions always enter the normal sequential run queue as fresh attempts.
 
 Library combines saved history and metadata-only previews. Its table scrolls by pixels and its column dividers can be dragged without changing the meaning of the columns. The **Actions** menu provides copy/open commands and, where applicable, **Start download in Forge**. Removing an item removes its VODForge Library and Forge presentation history; if that row owns an exact active or queued run, that run is stopped or dequeued, while unrelated runs and media files remain untouched.
+
+Use Library search and the category filter to find items. **Organize this item** saves your own notes, tags, and category locally without changing the source's metadata. Categories are user-created collections, and saved category names can be reused for other items.
+
+**Play** opens the internal player on the saved artwork; press its Play overlay to begin. Playback works offline with no separately installed player. Chapters, heatmaps, and preview moments appear when their metadata or local media supports them. If a file was moved or deleted, the recovery prompt can send it back to Forge using its saved export settings and original base output folder. Existing channel/playlist/item folders are reused instead of nesting the same hierarchy again; older records without a usable saved profile require review.
+
+Theme presets and custom accents apply immediately in Settings. Trackpad scrolling works throughout the Settings body, with the action footer kept visible.
+
+## Privacy and usage analytics
+
+Library history, annotations, and downloaded media stay on your computer. A persistent random installation UUID supports VODForge's first-launch and optional Cloud funnel counts. These first-party installation/funnel events are separate from the **Share anonymous usage analytics** setting.
+
+That setting controls recurring coarse events such as app opens, run outcomes, playback starts, and completed local conversions, subject to the applicable analytics permission state. Events go to VODForge's telemetry service and HeyCatch; they exclude media URLs, titles, filenames, paths, searches, notes, tags, and playback positions. Turning sharing off clears pending recurring events. The first-install browser page can connect permitted website attribution to the anonymous installation ID and provides a quick-start guide. See the [privacy notice](https://getvodforge.com/privacy/) for collection details and choices.
 
 Typical output:
 
@@ -210,4 +227,4 @@ Bug reports and focused pull requests are welcome. Please include reproduction s
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+VODForge source is MIT licensed — see [LICENSE](LICENSE). Bundled runtimes have their own licenses and distribution notices; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
