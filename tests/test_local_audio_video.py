@@ -343,10 +343,11 @@ def test_dialog_output_path_is_bounded_without_hiding_its_destination() -> None:
     displayed = compact_dialog_path(path, maximum=90)
 
     assert len(displayed) <= 90
-    assert displayed.startswith("/exports/")
+    assert displayed.startswith(str(Path("/exports")) + os.sep)
     assert displayed.endswith("descriptive destination segment 11")
     assert "…" in displayed
-    assert compact_dialog_path(Path("/exports/short"), maximum=90) == "/exports/short"
+    short_path = Path("/exports/short")
+    assert compact_dialog_path(short_path, maximum=90) == str(short_path)
 
 
 def test_conversion_commits_directly_to_output_and_projects_into_mp4_library(
