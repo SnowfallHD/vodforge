@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,8 +19,91 @@ from yt_downloader.app import (
     Mp3ExportSettings,
     OutputType,
 )
+from yt_downloader.media_player_ui import MediaPlayerWindow
+from yt_downloader.playback_backend import NativeRenderSurface, PlaybackSnapshot
+from yt_downloader.ui_layout import centered_toplevel_geometry
+from yt_downloader.ui_widgets import reveal_toplevel
 
-PREVIEW_THUMBNAILS = Path(__file__).resolve().parents[1] / "assets" / "preview_thumbnails"
+PREVIEW_THUMBNAILS = (
+    Path(__file__).resolve().parents[1] / "assets" / "preview_thumbnails"
+)
+
+
+class PreviewPlaybackBackend:
+    """Deterministic, process-free backend for visual player review only."""
+
+    def __init__(self, *, audio_only: bool) -> None:
+        self._snapshot = PlaybackSnapshot(
+            path=Path("preview.mp3" if audio_only else "preview.mp4"),
+            status="Paused",
+            position=84.0,
+            duration=967.0,
+            volume=80,
+        )
+
+    @property
+    def snapshot(self) -> PlaybackSnapshot:
+        return self._snapshot
+
+    def attach_render_surface(self, _surface: NativeRenderSurface) -> None:
+        return None
+
+    def detach_render_surface(self) -> None:
+        return None
+
+    def load(
+        self,
+        path: Path,
+        *,
+        duration: float | None = None,
+        audio_only: bool | None = None,
+    ) -> PlaybackSnapshot:
+        del audio_only
+        self._snapshot = replace(
+            self._snapshot,
+            path=path,
+            duration=duration or self._snapshot.duration,
+        )
+        return self._snapshot
+
+    def play(self) -> PlaybackSnapshot:
+        self._snapshot = replace(self._snapshot, status="Playing")
+        return self._snapshot
+
+    def pause(self) -> PlaybackSnapshot:
+        self._snapshot = replace(self._snapshot, status="Paused")
+        return self._snapshot
+
+    def toggle(self) -> PlaybackSnapshot:
+        return self.pause() if self._snapshot.status == "Playing" else self.play()
+
+    def seek(self, position: float) -> PlaybackSnapshot:
+        self._snapshot = replace(
+            self._snapshot,
+            position=min(self._snapshot.duration, max(0.0, position)),
+        )
+        return self._snapshot
+
+    def set_volume(self, value: int) -> PlaybackSnapshot:
+        self._snapshot = replace(self._snapshot, volume=min(100, max(0, value)))
+        return self._snapshot
+
+    def stop(self) -> PlaybackSnapshot:
+        self._snapshot = replace(self._snapshot, status="Stopped")
+        return self._snapshot
+
+    def shutdown(self) -> None:
+        self._snapshot = replace(self._snapshot, status="Closed")
+
+
+class PreviewMediaOwner:
+    """Return one local product image for every process-free preview request."""
+
+    def preview_png(self, _position: float) -> bytes:
+        return (PREVIEW_THUMBNAILS / "alpine-lake.jpg").read_bytes()
+
+    def shutdown(self) -> None:
+        return None
 
 
 def preview_metadata() -> list[dict[str, object]]:
@@ -26,6 +111,8 @@ def preview_metadata() -> list[dict[str, object]]:
         {
             "id": "dQw4w9WgXcQ",
             "vodforge_preview_complete": True,
+            "vodforge_projection_owner": "preview:visual:0",
+            "vodforge_annotation_owner": "preview:visual:0",
             "title": "Good Desires vs. Bad Desires (How Do We Know the Difference?)",
             "uploader": "BibleProject",
             "duration": 1967,
@@ -130,13 +217,25 @@ def preview_metadata() -> list[dict[str, object]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Launch a no-download VODForge visual QA state.")
-    parser.add_argument("--view", choices=("forge", "library", "activity"), default="forge")
+    parser = argparse.ArgumentParser(
+        description="Launch a no-download VODForge visual QA state."
+    )
+    parser.add_argument(
+        "--view", choices=("forge", "library", "activity"), default="forge"
+    )
     parser.add_argument("--size", default="1180x780")
     parser.add_argument("--output-type", choices=("MP4", "MP3"), default="MP4")
-    parser.add_argument("--cover-mode", choices=("No Art", "YouTube art", "Custom art"), default="No Art")
-    parser.add_argument("--cookie-source", choices=COOKIE_SOURCE_OPTIONS, default="Public")
-    parser.add_argument("--cookie-browser", choices=COOKIE_BROWSER_OPTIONS, default="Firefox")
+    parser.add_argument(
+        "--cover-mode",
+        choices=("No Art", "YouTube art", "Custom art"),
+        default="No Art",
+    )
+    parser.add_argument(
+        "--cookie-source", choices=COOKIE_SOURCE_OPTIONS, default="Public"
+    )
+    parser.add_argument(
+        "--cookie-browser", choices=COOKIE_BROWSER_OPTIONS, default="Firefox"
+    )
     parser.add_argument("--settings", action="store_true")
     parser.add_argument("--tooltip", choices=("batch", "playlists", "cookies", "tags"))
     parser.add_argument("--run-actions", action="store_true")
@@ -145,6 +244,11 @@ def main() -> None:
     parser.add_argument("--terminal", choices=("failed", "skipped"))
     parser.add_argument("--selected-details", action="store_true")
     parser.add_argument("--output-details", action="store_true")
+    parser.add_argument("--idle", action="store_true")
+    parser.add_argument("--annotation", action="store_true")
+    parser.add_argument("--local-conversion", action="store_true")
+    parser.add_argument("--player", choices=("MP4", "MP3"))
+    parser.add_argument("--notice", choices=("warning", "error"))
     args = parser.parse_args()
 
     app = DownloaderApp()
@@ -165,7 +269,9 @@ def main() -> None:
 
     def preview_start_intent(info: dict[str, object]) -> None:
         """Exercise the UI handoff without starting provider or media work."""
-        app.status_var.set(f"Start download requested for {info.get('title') or info.get('id') or 'preview'}")
+        app.status_var.set(
+            f"Start download requested for {info.get('title') or info.get('id') or 'preview'}"
+        )
         app._select_focus_view("forge")
 
     app._start_preview_download = preview_start_intent
@@ -191,11 +297,13 @@ def main() -> None:
             terminal_message=f"Visual QA {args.terminal} run",
         )
         terminal_info = dict(app.metadata_items[0])
-        terminal_info.update({
-            "vodforge_terminal_status": terminal_status,
-            "vodforge_terminal_message": terminal_job.terminal_message,
-            "vodforge_terminal_run_id": terminal_job.run_id,
-        })
+        terminal_info.update(
+            {
+                "vodforge_terminal_status": terminal_status,
+                "vodforge_terminal_message": terminal_job.terminal_message,
+                "vodforge_terminal_run_id": terminal_job.run_id,
+            }
+        )
         terminal_job.preview_info = terminal_info
         terminal_job.metadata_keys.add((str(terminal_info["id"]), output_type.value))
         app.metadata_items[0] = terminal_info
@@ -211,23 +319,70 @@ def main() -> None:
     app._render_metadata_tree(selected_index=selected_index)
 
     app._focus_active_override = True
-    app.focus_active_title_var.set("Good Desires vs. Bad Desires (How Do We Know the Difference?)")
+    app.focus_active_title_var.set(
+        "Good Desires vs. Bad Desires (How Do We Know the Difference?)"
+    )
     app.focus_active_detail_var.set("BibleProject")
-    app.focus_active_profile_var.set("1080p Full HD  •  Auto CBR" if output_type == OutputType.MP4 else "MP3  •  320 kbps  •  Source rate")
+    app.focus_active_profile_var.set(
+        "1080p Full HD  •  Auto CBR"
+        if output_type == OutputType.MP4
+        else "MP3  •  320 kbps  •  Source rate"
+    )
     app.focus_active_duration_var.set("32:47")
     app.progress_var.set(73)
     app.status_var.set("ETA 1m 26s  •  8.7 MB/s")
-    app.focus_transfer_var.set("5.23 GB / 7.12 GB" if output_type == OutputType.MP4 else "83.4 MB / 114.2 MB")
+    app.focus_transfer_var.set(
+        "5.23 GB / 7.12 GB" if output_type == OutputType.MP4 else "83.4 MB / 114.2 MB"
+    )
     app.cancel_button.configure(state="normal")
     app.skip_video_button.configure(state="normal")
     app.skip_url_button.configure(state="normal")
     app._focus_preview_runs = [
-        ({"title": "Good Desires vs. Bad Desires", "status": f"{terminal_job.terminal_status}  •  {output_type.value}", "progress": 0, "kind": args.terminal, "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg"), "run_id": terminal_job.run_id, "job": terminal_job}
-         if terminal_job is not None else
-         {"title": "Good Desires vs. Bad Desires", "status": f"73%  •  1m 26s left  •  {output_type.value}", "progress": 73, "kind": "active", "metadata_index": selected_index, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg")}),
-        {"title": "Walk in the Spirit", "status": "Preview complete  •  MP4", "progress": 100, "kind": "preview", "metadata_index": 1, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "forest-river.jpg")},
-        {"title": "Fruit of the Spirit", "status": "Queued  •  MP3", "progress": 0, "kind": "queued", "metadata_index": 2, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "desert-sunset.jpg")},
-        {"title": "Created for Good Works", "status": "Completed  •  MP3", "progress": 100, "kind": "completed", "metadata_index": 3, "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "rainforest-falls.jpg")},
+        (
+            {
+                "title": "Good Desires vs. Bad Desires",
+                "status": f"{terminal_job.terminal_status}  •  {output_type.value}",
+                "progress": 0,
+                "kind": args.terminal,
+                "metadata_index": selected_index,
+                "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg"),
+                "run_id": terminal_job.run_id,
+                "job": terminal_job,
+            }
+            if terminal_job is not None
+            else {
+                "title": "Good Desires vs. Bad Desires",
+                "status": f"73%  •  1m 26s left  •  {output_type.value}",
+                "progress": 73,
+                "kind": "active",
+                "metadata_index": selected_index,
+                "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg"),
+            }
+        ),
+        {
+            "title": "Walk in the Spirit",
+            "status": "Preview complete  •  MP4",
+            "progress": 100,
+            "kind": "preview",
+            "metadata_index": 1,
+            "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "forest-river.jpg"),
+        },
+        {
+            "title": "Fruit of the Spirit",
+            "status": "Queued  •  MP3",
+            "progress": 0,
+            "kind": "queued",
+            "metadata_index": 2,
+            "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "desert-sunset.jpg"),
+        },
+        {
+            "title": "Created for Good Works",
+            "status": "Completed  •  MP3",
+            "progress": 100,
+            "kind": "completed",
+            "metadata_index": 3,
+            "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "rainforest-falls.jpg"),
+        },
     ]
     if args.overflow:
         for index in range(4, len(app.metadata_items)):
@@ -239,7 +394,9 @@ def main() -> None:
                     "progress": 100,
                     "kind": "completed",
                     "metadata_index": index,
-                    "preview_thumbnail_path": str(info.get("preview_thumbnail_path") or ""),
+                    "preview_thumbnail_path": str(
+                        info.get("preview_thumbnail_path") or ""
+                    ),
                 }
             )
     log_lines = "\n".join(
@@ -266,7 +423,11 @@ def main() -> None:
         )
     )
     if args.overflow:
-        log_lines = "\n".join(f"{line}  /  pass {pass_index + 1}" for pass_index in range(8) for line in log_lines.splitlines())
+        log_lines = "\n".join(
+            f"{line}  /  pass {pass_index + 1}"
+            for pass_index in range(8)
+            for line in log_lines.splitlines()
+        )
     output_lines = "\n".join(
         (
             "Format        MP4",
@@ -288,16 +449,27 @@ def main() -> None:
             "Status        Downloading",
         )
     )
+
     def apply_preview_state() -> None:
         app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        app.focus_active_title_var.set("Good Desires vs. Bad Desires (How Do We Know the Difference?)")
+        app.focus_active_title_var.set(
+            "Good Desires vs. Bad Desires (How Do We Know the Difference?)"
+        )
         app.focus_active_detail_var.set("BibleProject")
-        app.focus_active_profile_var.set("1080p Full HD  •  Auto CBR" if output_type == OutputType.MP4 else "MP3  •  320 kbps  •  Source rate")
+        app.focus_active_profile_var.set(
+            "1080p Full HD  •  Auto CBR"
+            if output_type == OutputType.MP4
+            else "MP3  •  320 kbps  •  Source rate"
+        )
         app.focus_active_duration_var.set("32:47")
         app.progress_var.set(73)
         app.status_var.set("ETA 1m 26s  •  8.7 MB/s")
         app.focus_run_status_var.set("73%  •  1m 26s left")
-        app.focus_transfer_var.set("5.23 GB / 7.12 GB" if output_type == OutputType.MP4 else "83.4 MB / 114.2 MB")
+        app.focus_transfer_var.set(
+            "5.23 GB / 7.12 GB"
+            if output_type == OutputType.MP4
+            else "83.4 MB / 114.2 MB"
+        )
         app._set_focus_update_state("Up to date", "#35d07f")
         active_art = (
             PREVIEW_THUMBNAILS / "rainforest-falls.jpg"
@@ -319,6 +491,31 @@ def main() -> None:
         app._select_focus_view(args.view)
         app._apply_focus_layout(force=True)
         app._refresh_focus_run_deck()
+        if args.idle:
+            app._focus_active_override = False
+            app._focus_preview_runs = []
+            app._focus_selected_run_id = None
+            app.focus_active_title_var.set("Ready for a new run")
+            app.focus_active_detail_var.set(
+                "Paste a YouTube URL above, then press Return to begin."
+            )
+            app.progress_var.set(0)
+            app.focus_percent_var.set("0%")
+            app.status_var.set("No run selected")
+            app.focus_transfer_var.set("")
+            app._set_text(
+                app.focus_log,
+                "Your next run will appear here with live progress and processing details.",
+                disabled=True,
+            )
+            app._set_text(
+                app.focus_summary_text,
+                "Format        MP4\nVideo         H.264\nAudio         AAC\nOutput mode   Auto CBR\nSave to       "
+                + app.output_var.get(),
+                disabled=True,
+            )
+            app._set_focus_run_controls_visible(False)
+            app._refresh_focus_run_deck()
         if args.view == "library":
             selection = app.video_tree.selection()
             if selection:
@@ -335,7 +532,12 @@ def main() -> None:
             "cookies": "focus_cookie_source_selector",
             "tags": "focus_tags_entry",
         }
-        app.after(850, lambda: getattr(app, tooltip_widgets[args.tooltip]).event_generate("<Enter>"))
+        app.after(
+            850,
+            lambda: getattr(app, tooltip_widgets[args.tooltip]).event_generate(
+                "<Enter>"
+            ),
+        )
     if args.run_actions:
         app.after(
             700,
@@ -352,6 +554,87 @@ def main() -> None:
         app.after(700, app._show_selected_metadata_details)
     if args.output_details:
         app.after(700, app._show_focus_output_details)
+    if args.annotation:
+        app.after(700, app._show_library_annotation_editor)
+    if args.local_conversion:
+        app.after(700, app._show_local_audio_video)
+    if args.player:
+
+        def show_player() -> None:
+            audio_only = args.player == "MP3"
+            player_info: dict[str, Any] = {
+                "title": (
+                    "Fruit of the Spirit"
+                    if audio_only
+                    else "Good Desires vs. Bad Desires"
+                ),
+                "uploader": "Study Archive" if audio_only else "BibleProject",
+                "vodforge_output_type": args.player,
+                "vodforge_user_category": "Study",
+                "vodforge_user_tags": ("wisdom", "archive"),
+                "vodforge_user_note": "Saved for the next editorial review.",
+                "chapters": (
+                    []
+                    if audio_only
+                    else [
+                        {
+                            "start_time": 0.0,
+                            "end_time": 240.0,
+                            "title": "Opening",
+                        },
+                        {
+                            "start_time": 240.0,
+                            "end_time": 620.0,
+                            "title": "The question",
+                        },
+                        {
+                            "start_time": 620.0,
+                            "end_time": 967.0,
+                            "title": "Closing thought",
+                        },
+                    ]
+                ),
+                "heatmap": (
+                    []
+                    if audio_only
+                    else [
+                        {"start_time": 180.0, "end_time": 210.0, "value": 0.55},
+                        {"start_time": 470.0, "end_time": 510.0, "value": 0.92},
+                        {"start_time": 760.0, "end_time": 805.0, "value": 0.70},
+                    ]
+                ),
+            }
+            window = MediaPlayerWindow(
+                app,
+                playback=PreviewPlaybackBackend(audio_only=audio_only),
+                previews=PreviewMediaOwner(),  # type: ignore[arg-type]
+                info=player_info,
+                thumbnail_path=PREVIEW_THUMBNAILS
+                / ("rainforest-falls.jpg" if audio_only else "alpine-lake.jpg"),
+            )
+            app._visual_preview_player = window
+            reveal_toplevel(
+                window.popup,
+                centered_toplevel_geometry(app, width=1100, height=800),
+            )
+            window._poll()
+            if not audio_only:
+                window._generate_previews()
+
+        app.after(650, show_player)
+    if args.notice:
+        from tkinter import messagebox
+
+        show_notice = (
+            messagebox.showwarning if args.notice == "warning" else messagebox.showerror
+        )
+        title = "VODForge warning" if args.notice == "warning" else "VODForge error"
+        detail = (
+            "The selected output folder is unavailable. Choose another folder and try again."
+            if args.notice == "warning"
+            else "VODForge could not open this saved media file. It may have been moved or deleted."
+        )
+        app.after(700, lambda: show_notice(title, detail, parent=app))
 
     def reveal_review_window() -> None:
         # Keep the no-download review harness deterministic when another signed

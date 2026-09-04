@@ -10,6 +10,7 @@ from .ui_theme import THEME
 from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
+    ProductEntry,
     bind_focus_ring,
     reveal_toplevel,
 )
@@ -59,7 +60,7 @@ class LibraryAnnotationDialog:
             row=2, column=0, sticky="w", pady=(0, 5)
         )
         self.category_var = tk.StringVar(value=annotation.category)
-        category_field: ttk.Entry | ChoiceDropdown
+        category_field: ProductEntry | ChoiceDropdown
         if categories:
             category_field = ChoiceDropdown(
                 root,
@@ -68,7 +69,7 @@ class LibraryAnnotationDialog:
                 state="normal",
             )
         else:
-            category_field = ttk.Entry(root, textvariable=self.category_var)
+            category_field = ProductEntry(root, textvariable=self.category_var)
         category_field.grid(row=3, column=0, sticky="ew")
         ttk.Label(
             root,
@@ -85,7 +86,9 @@ class LibraryAnnotationDialog:
             row=5, column=0, sticky="w", pady=(0, 5)
         )
         self.tags_var = tk.StringVar(value=", ".join(annotation.tags))
-        ttk.Entry(root, textvariable=self.tags_var).grid(row=6, column=0, sticky="ew")
+        ProductEntry(root, textvariable=self.tags_var).grid(
+            row=6, column=0, sticky="ew"
+        )
         ttk.Label(
             root,
             text="Separate tags with commas. YouTube’s original tags stay unchanged.",

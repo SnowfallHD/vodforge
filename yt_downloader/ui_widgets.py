@@ -198,6 +198,43 @@ def bind_focus_ring(widget: tk.Misc, host: tk.Misc) -> None:
     widget.bind("<FocusOut>", lambda _event: set_color(THEME["surface"]), add="+")
 
 
+class ProductEntry(tk.Entry):
+    """Flat VODForge entry that avoids platform-native corner artifacts."""
+
+    def __init__(self, parent: tk.Misc, **kwargs: Any) -> None:
+        super().__init__(
+            parent,
+            bg=THEME["surface"],
+            fg=THEME["text"],
+            insertbackground=THEME["text"],
+            selectbackground=THEME["accent_dark"],
+            selectforeground="#ffffff",
+            disabledbackground=THEME["surface"],
+            disabledforeground=THEME["subtle"],
+            readonlybackground=THEME["surface"],
+            relief="flat",
+            bd=7,
+            highlightthickness=1,
+            highlightbackground=THEME["surface"],
+            highlightcolor=THEME["accent"],
+            font=FONT_UI,
+            **kwargs,
+        )
+
+    def apply_theme(self) -> None:
+        self.configure(
+            bg=THEME["surface"],
+            fg=THEME["text"],
+            insertbackground=THEME["text"],
+            selectbackground=THEME["accent_dark"],
+            disabledbackground=THEME["surface"],
+            disabledforeground=THEME["subtle"],
+            readonlybackground=THEME["surface"],
+            highlightbackground=THEME["surface"],
+            highlightcolor=THEME["accent"],
+        )
+
+
 def _ui_icon_path(name: str) -> Path:
     frozen_root = getattr(sys, "_MEIPASS", None)
     root = Path(frozen_root) if frozen_root else Path(__file__).resolve().parents[1]
@@ -720,7 +757,7 @@ class ActionDialogSurface:
         shell.rowconfigure(0, weight=1)
 
         viewport: tk.Canvas | None = None
-        scrollbar: ttk.Scrollbar | None = None
+        scrollbar: SleekScrollbar | None = None
         body_window: int | None = None
         if allow_body_scroll:
             viewport = tk.Canvas(
@@ -731,9 +768,8 @@ class ActionDialogSurface:
                 takefocus=False,
             )
             viewport.grid(row=0, column=0, sticky="nsew")
-            scrollbar = ttk.Scrollbar(
+            scrollbar = SleekScrollbar(
                 shell,
-                orient="vertical",
                 command=viewport.yview,
             )
             scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))

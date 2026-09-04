@@ -26,6 +26,7 @@ from .ui_theme import FONT_UI_MEDIUM, THEME
 from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
+    ProductEntry,
     SleekProgressbar,
     reveal_toplevel,
 )
@@ -260,7 +261,7 @@ class LocalAudioVideoDialog:
         ttk.Label(item, text=eyebrow, style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", columnspan=2
         )
-        field = ttk.Entry(item, textvariable=variable, state="readonly")
+        field = ProductEntry(item, textvariable=variable, state="readonly")
         field.grid(row=1, column=0, sticky="ew", pady=(5, 0), padx=(0, 9))
         button = ttk.Button(
             item,

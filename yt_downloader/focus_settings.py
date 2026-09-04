@@ -13,6 +13,7 @@ from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
     ModernCheckbox,
+    ProductEntry,
     SegmentedSelector,
     ToolTip,
     reveal_toplevel,
@@ -174,7 +175,7 @@ class FocusSettingsDialog:
         destination = ttk.Frame(source, style="FocusShell.TFrame")
         destination.grid(row=1, column=0, sticky="ew")
         destination.columnconfigure(0, weight=1)
-        ttk.Entry(destination, textvariable=self.bindings.output).grid(
+        ProductEntry(destination, textvariable=self.bindings.output).grid(
             row=0,
             column=0,
             sticky="ew",
@@ -302,7 +303,7 @@ class FocusSettingsDialog:
             text="Extra tags (comma-separated)",
             style="Muted.TLabel",
         ).grid(row=11, column=0, sticky="w", pady=(0, 3))
-        tags_entry = ttk.Entry(source, textvariable=self.bindings.tags)
+        tags_entry = ProductEntry(source, textvariable=self.bindings.tags)
         tags_entry.grid(row=12, column=0, sticky="ew")
         ToolTip(
             tags_entry,
@@ -414,7 +415,7 @@ class FocusSettingsDialog:
                 style="Muted.TLabel",
             ).grid(row=0, column=0, sticky="w", pady=(0, 3))
             if values is None:
-                widget: ttk.Entry | ChoiceDropdown = ttk.Entry(
+                widget: ProductEntry | ChoiceDropdown = ProductEntry(
                     field,
                     textvariable=variable,
                 )
@@ -709,7 +710,7 @@ class FocusSettingsDialog:
         accent_controls = ttk.Frame(appearance, style="FocusShell.TFrame")
         accent_controls.grid(row=1, column=3, sticky="ew")
         accent_controls.columnconfigure(0, weight=1)
-        ttk.Entry(
+        ProductEntry(
             accent_controls,
             textvariable=self.bindings.custom_accent,
             width=12,

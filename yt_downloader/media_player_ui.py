@@ -15,7 +15,7 @@ from .playback_backend import MediaPlayerError, PlaybackBackend, PlaybackSnapsho
 from .playback_surface import TkPlaybackSurfaceOwner
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, FONT_UI_SMALL, THEME
-from .ui_widgets import reveal_toplevel
+from .ui_widgets import SleekScrollbar, reveal_toplevel
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -338,9 +338,8 @@ class MediaPlayerWindow:
                 )
             self.chapter_list.bind("<<ListboxSelect>>", self._chapter_selected)
             if len(self._chapters) > CHAPTER_ROWS_MAX:
-                scrollbar = ttk.Scrollbar(
+                scrollbar = SleekScrollbar(
                     chapter_shell,
-                    orient="vertical",
                     command=self.chapter_list.yview,
                 )
                 scrollbar.grid(row=0, column=1, sticky="ns")
@@ -399,9 +398,8 @@ class MediaPlayerWindow:
         details.insert("1.0", detail_text)
         details.configure(state="disabled")
         if bounded_content_rows(detail_text, maximum=10_000) > DETAIL_ROWS_MAX:
-            scrollbar = ttk.Scrollbar(
+            scrollbar = SleekScrollbar(
                 detail_shell,
-                orient="vertical",
                 command=details.yview,
             )
             scrollbar.grid(row=0, column=1, sticky="ns")
