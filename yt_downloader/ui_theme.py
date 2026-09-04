@@ -14,7 +14,6 @@ _BASE_THEME: Final[dict[str, str]] = {
     "panel": "#0d0f12",
     "surface": "#121419",
     "surface_2": "#1a1d24",
-    "surface_hover": "#20242d",
     "text": "#f7f8f8",
     "muted": "#9297a3",
     "subtle": "#636874",
@@ -26,19 +25,6 @@ _BASE_THEME: Final[dict[str, str]] = {
     "danger": "#ff7a7a",
     "border": "#2b2e37",
 }
-
-# The shared interior rhythm is deliberately small and finite.  Individual
-# surfaces may combine these values, but should not invent a parallel spacing
-# or control-height system.
-SPACE_1: Final = 4
-SPACE_2: Final = 8
-SPACE_3: Final = 12
-SPACE_4: Final = 16
-SPACE_6: Final = 24
-SPACE_8: Final = 32
-CONTROL_HEIGHT: Final = 40
-CARD_RADIUS: Final = 9
-DIALOG_RADIUS: Final = 12
 
 THEME_PRESETS: Final = MappingProxyType(
     {
@@ -235,7 +221,6 @@ def apply_theme_selection(
     else:
         palette.update(THEME_PRESETS[selected])
     palette["accent_surface"] = _mix_hex(palette["surface"], palette["accent"], 0.18)
-    palette["surface_hover"] = _mix_hex(palette["surface_2"], palette["text"], 0.055)
     THEME.clear()
     THEME.update(palette)
     return ThemeSelection(selected, accent)

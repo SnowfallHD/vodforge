@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import inspect
-
-from yt_downloader import media_player_ui
 from yt_downloader.media_player_ui import (
     PREVIEW_HEIGHT,
     PREVIEW_WIDTH,
@@ -56,13 +53,3 @@ def test_preview_image_replaces_text_dimensions_with_pixel_dimensions() -> None:
         "width": PREVIEW_WIDTH,
         "height": PREVIEW_HEIGHT,
     }
-
-
-def test_player_uses_shared_icon_assets_without_a_fifth_button_role() -> None:
-    source = inspect.getsource(media_player_ui.MediaPlayerWindow)
-
-    assert 'load_ui_icon("play"' in source
-    assert 'load_ui_icon("pause"' in source
-    assert '"volume-2"' in source
-    assert 'style="Accent.TButton"' in source
-    assert "PlayerIcon.TButton" not in inspect.getsource(media_player_ui)

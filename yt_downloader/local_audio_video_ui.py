@@ -26,7 +26,6 @@ from .ui_theme import FONT_UI_MEDIUM, THEME
 from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
-    ProductEntry,
     SleekProgressbar,
     reveal_toplevel,
 )
@@ -231,7 +230,7 @@ class LocalAudioVideoDialog:
             actions,
             text="Cancel",
             command=self._request_close,
-            style="FocusGhost.TButton",
+            style="FocusQuiet.TButton",
         )
         self.cancel_button.grid(row=0, column=1, padx=(0, 8))
         self.create_button = ttk.Button(
@@ -261,7 +260,7 @@ class LocalAudioVideoDialog:
         ttk.Label(item, text=eyebrow, style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", columnspan=2
         )
-        field = ProductEntry(item, textvariable=variable, state="readonly")
+        field = ttk.Entry(item, textvariable=variable, state="readonly")
         field.grid(row=1, column=0, sticky="ew", pady=(5, 0), padx=(0, 9))
         button = ttk.Button(
             item,

@@ -13,7 +13,6 @@ from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
     ModernCheckbox,
-    ProductEntry,
     SegmentedSelector,
     ToolTip,
     reveal_toplevel,
@@ -175,7 +174,7 @@ class FocusSettingsDialog:
         destination = ttk.Frame(source, style="FocusShell.TFrame")
         destination.grid(row=1, column=0, sticky="ew")
         destination.columnconfigure(0, weight=1)
-        ProductEntry(destination, textvariable=self.bindings.output).grid(
+        ttk.Entry(destination, textvariable=self.bindings.output).grid(
             row=0,
             column=0,
             sticky="ew",
@@ -303,7 +302,7 @@ class FocusSettingsDialog:
             text="Extra tags (comma-separated)",
             style="Muted.TLabel",
         ).grid(row=11, column=0, sticky="w", pady=(0, 3))
-        tags_entry = ProductEntry(source, textvariable=self.bindings.tags)
+        tags_entry = ttk.Entry(source, textvariable=self.bindings.tags)
         tags_entry.grid(row=12, column=0, sticky="ew")
         ToolTip(
             tags_entry,
@@ -415,7 +414,7 @@ class FocusSettingsDialog:
                 style="Muted.TLabel",
             ).grid(row=0, column=0, sticky="w", pady=(0, 3))
             if values is None:
-                widget: ProductEntry | ChoiceDropdown = ProductEntry(
+                widget: ttk.Entry | ChoiceDropdown = ttk.Entry(
                     field,
                     textvariable=variable,
                 )
@@ -618,7 +617,7 @@ class FocusSettingsDialog:
         self.mp3_cover_file_frame = cover_file
 
     def _build_cloud_section(self, root: ttk.Frame) -> None:
-        cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(16, 13))
+        cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(14, 10))
         cloud.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))
         cloud.columnconfigure(0, weight=1)
         ttk.Label(
@@ -629,9 +628,9 @@ class FocusSettingsDialog:
         ttk.Label(
             cloud,
             text="Run downloads even when this computer is offline.",
-            style="CloudMuted.TLabel",
+            style="FocusSurfaceMuted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
-        cloud_action = ttk.Frame(cloud, style="CloudPreview.TFrame")
+        cloud_action = ttk.Frame(cloud, style="FocusSurface.TFrame")
         cloud_action.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
         ttk.Label(
             cloud_action,
@@ -710,7 +709,7 @@ class FocusSettingsDialog:
         accent_controls = ttk.Frame(appearance, style="FocusShell.TFrame")
         accent_controls.grid(row=1, column=3, sticky="ew")
         accent_controls.columnconfigure(0, weight=1)
-        ProductEntry(
+        ttk.Entry(
             accent_controls,
             textvariable=self.bindings.custom_accent,
             width=12,
