@@ -2608,7 +2608,10 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert "self._resize_margin = 8" in pixel_table_source
     assert "self._header.grab_set()" in pixel_table_source
     assert "self._header.grab_release()" in pixel_table_source
-    assert 'else THEME["subtle"]' in pixel_table_source
+    assert "if column in {self._resize_column, self._resize_hover_column}" in (
+        pixel_table_source
+    )
+    assert 'fill=THEME["accent"]' in pixel_table_source
     assert "self._manually_resized_columns.add(column)" in pixel_table_source
     assert "self._last_manually_resized_column = column" in pixel_table_source
     assert "responsive_table_stretch_indices" in column_layout_source
@@ -2874,6 +2877,20 @@ def test_retryable_row_replaces_leading_number_only_while_hovered():
     assert table._hovered_row is None
     assert table._body.cursors[-1] == ""
     assert patches == [(None, None), (None, "stopped"), ("stopped", None)]
+
+
+def test_library_table_selection_and_hover_use_restrained_surface_tokens():
+    table = app_module.PixelScrollTable.__new__(app_module.PixelScrollTable)
+    table._selection = "selected"
+    table._hovered_row = "hovered"
+    table._leading_hover_values = {"hovered": "↻"}
+
+    assert table._row_fill("selected") == app_module.THEME["accent_surface"]
+    assert table._row_fill("hovered") == app_module.THEME["surface_2"]
+    assert table._row_fill("plain") == app_module.THEME["surface"]
+    assert table._cell_color("plain", 1) == app_module.THEME["text"]
+    assert table._cell_color("plain", 3) == app_module.THEME["muted"]
+    assert table._cell_color("hovered", 0) == app_module.THEME["accent"]
 
 
 def test_pixel_table_snapshot_is_atomic_and_idempotent():

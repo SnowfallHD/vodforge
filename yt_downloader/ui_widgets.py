@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 import tkinter.font as tkfont
 from collections.abc import Callable, Iterable, Mapping
 from functools import partial
+from pathlib import Path
 from tkinter import ttk
 from typing import Any, Literal, Protocol, cast
 
@@ -29,6 +31,8 @@ class _ImageModule(Protocol):
     LANCZOS: Any
 
     def new(self, mode: str, size: tuple[int, int], color: Any = ...) -> Any: ...
+
+    def open(self, path: str | Path) -> Any: ...
 
 
 class _ImageDrawModule(Protocol):
@@ -179,6 +183,517 @@ def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
     popup.geometry(geometry)
     popup.deiconify()
     popup.lift()
+
+
+def bind_focus_ring(widget: tk.Misc, host: tk.Misc) -> None:
+    """Give a composite field one accessible accent ring only while focused."""
+
+    def set_color(color: str) -> None:
+        try:
+            host.configure({"background": color})
+        except tk.TclError:
+            pass
+
+    widget.bind("<FocusIn>", lambda _event: set_color(THEME["accent"]), add="+")
+    widget.bind("<FocusOut>", lambda _event: set_color(THEME["surface"]), add="+")
+
+
+def _ui_icon_path(name: str) -> Path:
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    root = Path(frozen_root) if frozen_root else Path(__file__).resolve().parents[1]
+    return root / "assets" / "icons" / "lucide" / f"{name}.png"
+
+
+def _tinted_ui_icon(
+    name: str,
+    *,
+    size: tuple[int, int],
+    color: str,
+) -> Any | None:
+    """Load one bundled Lucide glyph as a palette-colored Tk image."""
+
+    if Image is None or ImageTk is None:
+        return None
+    try:
+        with Image.open(_ui_icon_path(name)) as source:
+            alpha = source.convert("RGBA").getchannel("A")
+            resampling = getattr(Image, "Resampling", Image)
+            alpha = alpha.resize(size, resampling.LANCZOS)
+        rendered = Image.new("RGBA", size, color)
+        rendered.putalpha(alpha)
+        return ImageTk.PhotoImage(rendered)
+    except (OSError, ValueError, tk.TclError):
+        return None
+
+
+class ChoiceDropdown(tk.Frame):
+    """VODForge-owned choice field with a cohesive, platform-neutral popover."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        textvariable: tk.StringVar,
+        values: Iterable[object],
+        state: str = "readonly",
+        width: int = 20,
+    ) -> None:
+        super().__init__(
+            parent,
+            bg=THEME["surface"],
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=THEME["border"],
+            highlightcolor=THEME["accent"],
+            takefocus=1,
+        )
+        self.variable = textvariable
+        self._values = tuple(str(value) for value in values)
+        self._state = str(state)
+        self._width = max(4, int(width))
+        self._hovered = False
+        self._popover: tk.Toplevel | None = None
+        self._chevron_image: Any | None = None
+
+        if self._state == "normal":
+            self._field: tk.Label | tk.Entry = tk.Entry(
+                self,
+                textvariable=textvariable,
+                width=self._width,
+                bg=THEME["surface"],
+                fg=THEME["text"],
+                insertbackground=THEME["text"],
+                selectbackground=THEME["accent_dark"],
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                font=FONT_UI,
+            )
+        else:
+            self._field = tk.Label(
+                self,
+                textvariable=textvariable,
+                width=self._width,
+                anchor="w",
+                bg=THEME["surface"],
+                fg=THEME["text"],
+                bd=0,
+                highlightthickness=0,
+                font=FONT_UI,
+            )
+        self._field.pack(side="left", fill="both", expand=True, padx=(10, 2), pady=8)
+
+        self._chevron = tk.Canvas(
+            self,
+            width=18,
+            height=18,
+            bg=THEME["surface"],
+            bd=0,
+            highlightthickness=0,
+            takefocus=False,
+        )
+        self._chevron.pack(side="right", padx=(2, 8))
+        self._chevron_item = self._chevron.create_image(9, 9, anchor="center")
+
+        for widget in (self, self._field, self._chevron):
+            widget.bind("<Enter>", lambda _event: self._set_hovered(True), add="+")
+            widget.bind("<Leave>", lambda _event: self._set_hovered(False), add="+")
+        self.bind("<FocusIn>", lambda _event: self._sync_border(), add="+")
+        self.bind("<FocusOut>", lambda _event: self._sync_border(), add="+")
+        self._field.bind("<FocusIn>", lambda _event: self._sync_border(), add="+")
+        self._field.bind("<FocusOut>", lambda _event: self._sync_border(), add="+")
+        self.bind("<Return>", self._open_from_event, add="+")
+        self.bind("<space>", self._open_from_event, add="+")
+        self.bind("<Down>", self._open_from_event, add="+")
+        self._chevron.bind("<Button-1>", self._open_from_event, add="+")
+        if self._state != "normal":
+            self._field.bind("<Button-1>", self._open_from_event, add="+")
+        self.bind("<Destroy>", self._destroyed, add="+")
+        self._render_chevron()
+
+    def _custom_option(self, key: str) -> Any:
+        if key == "values":
+            return self._values
+        if key == "state":
+            return self._state
+        if key == "width":
+            return self._width
+        if key == "textvariable":
+            return self.variable
+        raise KeyError(key)
+
+    def configure(
+        self,
+        cnf: str | Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        if isinstance(cnf, str) and not kwargs:
+            try:
+                return self._custom_option(cnf)
+            except KeyError:
+                return super().configure(cnf)
+        if isinstance(cnf, str):
+            return super().configure(cnf, **kwargs)
+        if cnf is None and not kwargs:
+            return super().configure()
+        options = dict(cnf or {})
+        options.update(kwargs)
+        if "values" in options:
+            self._values = tuple(str(value) for value in options.pop("values"))
+        if "width" in options:
+            self._width = max(4, int(options.pop("width")))
+            self._field.configure(width=self._width)
+        if "state" in options:
+            self._state = str(options.pop("state"))
+            if isinstance(self._field, tk.Entry):
+                self._field.configure(
+                    state="normal" if self._state == "normal" else "disabled"
+                )
+        result = super().configure(**options) if options else None
+        self._sync_palette()
+        return result
+
+    config = configure
+
+    def cget(self, key: str) -> Any:
+        try:
+            return self._custom_option(key)
+        except KeyError:
+            return super().cget(key)
+
+    __getitem__ = cget
+
+    def get(self) -> str:
+        return self.variable.get()
+
+    def set(self, value: object) -> None:
+        self.variable.set(str(value))
+
+    def selection_clear(self, **_kwargs: Any) -> None:
+        if isinstance(self._field, tk.Entry):
+            self._field.selection_clear()
+
+    def state(self, statespec: Iterable[str] | None = None) -> tuple[str, ...]:
+        if statespec is None:
+            return ("disabled",) if self._state == "disabled" else ()
+        requested = tuple(statespec)
+        if "disabled" in requested:
+            self.configure(state="disabled")
+        elif "!disabled" in requested:
+            self.configure(state="readonly")
+        return self.state()
+
+    def _open_from_event(self, _event: tk.Event[Any]) -> str:
+        self.focus_set()
+        self.open_popover()
+        return "break"
+
+    def open_popover(self) -> None:
+        if self._state == "disabled" or not self._values:
+            return
+        if self._popover is not None:
+            self._close_popover()
+            return
+        popup = tk.Toplevel(self)
+        popup.withdraw()
+        popup.overrideredirect(True)
+        popup.transient(self.winfo_toplevel())
+        popup.configure(bg=THEME["border"])
+        listbox = tk.Listbox(
+            popup,
+            height=min(8, len(self._values)),
+            bg=THEME["surface_2"],
+            fg=THEME["text"],
+            selectbackground=THEME["accent_surface"],
+            selectforeground=THEME["text"],
+            activestyle="none",
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            exportselection=False,
+            font=FONT_UI,
+        )
+        listbox.pack(fill="both", expand=True, padx=1, pady=1)
+        for value in self._values:
+            listbox.insert("end", value)
+        try:
+            selected_index = self._values.index(self.variable.get())
+        except ValueError:
+            selected_index = 0
+        listbox.selection_set(selected_index)
+        listbox.see(selected_index)
+        listbox.bind(
+            "<ButtonRelease-1>",
+            lambda _event: self._commit_listbox(listbox),
+            add="+",
+        )
+        listbox.bind("<Return>", lambda _event: self._commit_listbox(listbox), add="+")
+        popup.bind("<Escape>", lambda _event: self._close_popover(), add="+")
+        popup.bind("<FocusOut>", self._popover_focus_out, add="+")
+        popup.update_idletasks()
+        width = max(self.winfo_width(), popup.winfo_reqwidth())
+        height = popup.winfo_reqheight()
+        x = min(self.winfo_rootx(), max(0, self.winfo_screenwidth() - width - 8))
+        y = self.winfo_rooty() + self.winfo_height() + 4
+        if y + height > self.winfo_screenheight() - 8:
+            y = max(8, self.winfo_rooty() - height - 4)
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+        self._popover = popup
+        popup.deiconify()
+        popup.lift()
+        listbox.focus_set()
+        self._sync_border()
+
+    def _commit_listbox(self, listbox: tk.Listbox) -> str:
+        selection = listbox.curselection()
+        if selection:
+            self.variable.set(str(listbox.get(selection[0])))
+            self.event_generate("<<ComboboxSelected>>", when="tail")
+        self._close_popover()
+        return "break"
+
+    def _popover_focus_out(self, _event: tk.Event[Any]) -> None:
+        def close_if_outside() -> None:
+            popup = self._popover
+            if popup is None:
+                return
+            try:
+                focused = popup.focus_get()
+                if focused is None or focused.winfo_toplevel() is not popup:
+                    self._close_popover()
+            except tk.TclError:
+                self._close_popover()
+
+        self.after_idle(close_if_outside)
+
+    def _close_popover(self) -> None:
+        popup, self._popover = self._popover, None
+        if popup is not None:
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+        self._sync_border()
+
+    def _set_hovered(self, hovered: bool) -> None:
+        self._hovered = bool(hovered)
+        self._sync_palette()
+
+    def _sync_border(self) -> None:
+        try:
+            focused_widget = self.focus_get()
+            focused = focused_widget in {self, self._field} or self._popover is not None
+            super().configure(
+                highlightbackground=(THEME["accent"] if focused else THEME["border"])
+            )
+        except tk.TclError:
+            pass
+
+    def _render_chevron(self) -> None:
+        self._chevron_image = _tinted_ui_icon(
+            "chevron-down",
+            size=(14, 14),
+            color=THEME["subtle"] if self._state == "disabled" else THEME["muted"],
+        )
+        if self._chevron_image is not None:
+            self._chevron.itemconfigure(self._chevron_item, image=self._chevron_image)
+        else:  # pragma: no cover - packaged runtime includes Pillow and assets
+            self._chevron.delete("fallback")
+            self._chevron.create_line(
+                [4, 7, 9, 12, 14, 7],
+                fill=THEME["muted"],
+                width=2,
+                tags="fallback",
+            )
+
+    def _sync_palette(self) -> None:
+        try:
+            disabled = self._state == "disabled"
+            background = (
+                THEME["surface_2"]
+                if self._hovered and not disabled
+                else THEME["surface"]
+            )
+            foreground = THEME["subtle"] if disabled else THEME["text"]
+            super().configure(bg=background)
+            self._field.configure(bg=background, fg=foreground)
+            self._chevron.configure(bg=background)
+            self._render_chevron()
+            self._sync_border()
+        except tk.TclError:
+            pass
+
+    def apply_theme(self) -> None:
+        self._sync_palette()
+
+    def _destroyed(self, event: tk.Event[Any]) -> None:
+        if event.widget is self:
+            self._close_popover()
+
+
+class ModernCheckbox(tk.Frame):
+    """Consistent checkmark control without native X-style platform chrome."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        text: str,
+        variable: tk.BooleanVar,
+        command: Callable[[], object] | None = None,
+    ) -> None:
+        super().__init__(
+            parent,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=THEME["bg"],
+            takefocus=1,
+            cursor="hand2",
+        )
+        self.variable = variable
+        self._text = str(text)
+        self._command = command
+        self._state = "normal"
+        self._hovered = False
+        self._check_image: Any | None = None
+        self._box = tk.Canvas(
+            self,
+            width=18,
+            height=18,
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        self._box.pack(side="left", padx=(0, 7))
+        self._label = tk.Label(
+            self,
+            text=self._text,
+            bg=THEME["bg"],
+            fg=THEME["text"],
+            font=FONT_UI,
+            bd=0,
+            highlightthickness=0,
+        )
+        self._label.pack(side="left")
+        for widget in (self, self._box, self._label):
+            widget.bind("<Button-1>", self._toggle_from_event, add="+")
+            widget.bind("<Enter>", lambda _event: self._set_hovered(True), add="+")
+            widget.bind("<Leave>", lambda _event: self._set_hovered(False), add="+")
+        self.bind("<Return>", self._toggle_from_event, add="+")
+        self.bind("<space>", self._toggle_from_event, add="+")
+        self.bind("<FocusIn>", lambda _event: self._render(), add="+")
+        self.bind("<FocusOut>", lambda _event: self._render(), add="+")
+        self._trace_id = variable.trace_add("write", lambda *_args: self._render())
+        self.bind("<Destroy>", self._destroyed, add="+")
+        self._render()
+
+    def state(self, statespec: Iterable[str] | None = None) -> tuple[str, ...]:
+        if statespec is None:
+            return ("disabled",) if self._state == "disabled" else ()
+        requested = tuple(statespec)
+        if "disabled" in requested:
+            self._state = "disabled"
+        elif "!disabled" in requested:
+            self._state = "normal"
+        self._render()
+        return self.state()
+
+    def configure(
+        self,
+        cnf: str | Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        if isinstance(cnf, str) and not kwargs:
+            if cnf == "state":
+                return self._state
+            if cnf == "text":
+                return self._text
+            return super().configure(cnf)
+        if isinstance(cnf, str):
+            return super().configure(cnf, **kwargs)
+        if cnf is None and not kwargs:
+            return super().configure()
+        options = dict(cnf or {})
+        options.update(kwargs)
+        if "state" in options:
+            self._state = str(options.pop("state"))
+        if "text" in options:
+            self._text = str(options.pop("text"))
+            self._label.configure(text=self._text)
+        result = super().configure(**options) if options else None
+        self._render()
+        return result
+
+    config = configure
+
+    def _toggle_from_event(self, _event: tk.Event[Any]) -> str:
+        if self._state != "disabled":
+            self.variable.set(not bool(self.variable.get()))
+            if self._command is not None:
+                self._command()
+            self.focus_set()
+        return "break"
+
+    def _set_hovered(self, hovered: bool) -> None:
+        self._hovered = bool(hovered) and self._state != "disabled"
+        self._render()
+
+    def _render(self) -> None:
+        try:
+            selected = bool(self.variable.get())
+            disabled = self._state == "disabled"
+            background = THEME["bg"]
+            border = (
+                THEME["subtle"]
+                if disabled
+                else THEME["accent"]
+                if selected or self._hovered
+                else THEME["border"]
+            )
+            fill = (
+                THEME["accent_dark"]
+                if selected and not disabled
+                else THEME["surface_2"]
+                if self._hovered
+                else THEME["surface"]
+            )
+            super().configure(
+                bg=background,
+                cursor="arrow" if disabled else "hand2",
+                highlightbackground=(
+                    THEME["accent"] if self.focus_get() is self else background
+                ),
+            )
+            self._box.configure(bg=background, cursor="arrow" if disabled else "hand2")
+            self._label.configure(
+                bg=background,
+                fg=THEME["subtle"] if disabled else THEME["text"],
+                cursor="arrow" if disabled else "hand2",
+            )
+            self._box.delete("all")
+            self._box.create_rectangle(2, 2, 16, 16, fill=fill, outline=border, width=1)
+            if selected:
+                self._check_image = _tinted_ui_icon(
+                    "check",
+                    size=(12, 12),
+                    color="#ffffff" if not disabled else THEME["muted"],
+                )
+                if self._check_image is not None:
+                    self._box.create_image(9, 9, image=self._check_image)
+        except tk.TclError:
+            return
+
+    def apply_theme(self) -> None:
+        self._render()
+
+    def _destroyed(self, event: tk.Event[Any]) -> None:
+        if event.widget is not self:
+            return
+        try:
+            self.variable.trace_remove("write", self._trace_id)
+        except (tk.TclError, AttributeError, ValueError):
+            pass
 
 
 class ActionDialogSurface:
@@ -737,16 +1252,16 @@ class PixelScrollTable(tk.Frame):
         *,
         columns: tuple[str, ...],
         selectmode: str = "browse",
-        row_height: int = 30,
-        header_height: int = 28,
+        row_height: int = 34,
+        header_height: int = 32,
     ) -> None:
         del selectmode
         super().__init__(
             parent,
-            bg=THEME["border"],
+            bg=THEME["surface"],
             bd=0,
             highlightthickness=1,
-            highlightbackground=THEME["subtle"],
+            highlightbackground=THEME["border"],
         )
         self._columns = tuple(columns)
         self._headings = {column: column for column in columns}
@@ -777,7 +1292,7 @@ class PixelScrollTable(tk.Frame):
         self._resize_hover_column: str | None = None
         self._redraw_after_id: str | None = None
         self._redrawing = False
-        self._visible_row_items: dict[str, tuple[int, tuple[int, ...]]] = {}
+        self._visible_row_items: dict[str, tuple[int, int, tuple[int, ...]]] = {}
         # Keep the divider itself quiet while giving trackpads and high-DPI
         # pointers a forgiving target on either side of the hairline.
         self._resize_margin = 8
@@ -969,9 +1484,7 @@ class PixelScrollTable(tk.Frame):
             for item, value in raw_hover_values.items()
             if str(item) in items and str(value).strip()
         }
-        next_hovered_row = (
-            self._hovered_row if self._hovered_row in next_hover_values else None
-        )
+        next_hovered_row = self._hovered_row if self._hovered_row in items else None
         if (
             items == self._items
             and order == self._order
@@ -991,7 +1504,8 @@ class PixelScrollTable(tk.Frame):
         self._focus_item = next_selection
         self._leading_hover_values = next_hover_values
         self._hovered_row = next_hovered_row
-        self._body.configure(cursor="hand2" if next_hovered_row is not None else "")
+        if next_hovered_row not in next_hover_values:
+            self._body.configure(cursor="")
         if structure_matches:
             self._patch_rows(
                 previous_items,
@@ -1232,7 +1746,11 @@ class PixelScrollTable(tk.Frame):
 
     def _ellipsize(self, value: Any, width: int, *, font: tkfont.Font) -> str:
         text = str(value or "")
-        available = max(0, width - 16)
+        # The cell position already supplies visual padding. Compact identity
+        # columns need a smaller reserve so values such as ``001`` remain
+        # readable; normal columns retain the roomier table inset.
+        reserve = 0 if width <= 64 else 24
+        available = max(0, width - reserve)
         if font.measure(text) <= available:
             return text
         low, high = 0, len(text)
@@ -1243,6 +1761,22 @@ class PixelScrollTable(tk.Frame):
             else:
                 high = middle - 1
         return text[:low] + "…"
+
+    def _row_fill(self, item: str) -> str:
+        if item == self._selection:
+            return THEME["accent_surface"]
+        if item == self._hovered_row:
+            return THEME["surface_2"]
+        return THEME["surface"]
+
+    def _cell_color(self, item: str, value_index: int) -> str:
+        if (
+            value_index == 0
+            and item == self._hovered_row
+            and item in self._leading_hover_values
+        ):
+            return THEME["accent"]
+        return THEME["text"] if value_index == 1 else THEME["muted"]
 
     def _patch_rows(
         self,
@@ -1274,11 +1808,16 @@ class PixelScrollTable(tk.Frame):
                 rendered = self._visible_row_items.get(item)
                 if rendered is None:
                     continue
-                background_item, text_items = rendered
+                background_item, indicator_item, text_items = rendered
                 selected = item == self._selection
                 self._body.itemconfigure(
                     background_item,
-                    fill=THEME["accent_dark"] if selected else THEME["surface"],
+                    fill=self._row_fill(item),
+                )
+                self._body.itemconfigure(
+                    indicator_item,
+                    fill=THEME["accent"],
+                    state="normal" if selected else "hidden",
                 )
                 values = self._items.get(item, ())
                 for value_index, text_item in enumerate(text_items):
@@ -1289,7 +1828,7 @@ class PixelScrollTable(tk.Frame):
                     self._body.itemconfigure(
                         text_item,
                         text=self._ellipsize(value, width, font=self._font),
-                        fill="#ffffff" if selected else THEME["text"],
+                        fill=self._cell_color(item, value_index),
                     )
         except (IndexError, tk.TclError):
             self._redraw()
@@ -1330,9 +1869,9 @@ class PixelScrollTable(tk.Frame):
                     + (
                         width / 2
                         if heading_anchor == "center"
-                        else width - 10
+                        else width - 12
                         if heading_anchor == "e"
-                        else 10
+                        else 12
                     ),
                     self._header_height / 2,
                     text=self._ellipsize(
@@ -1349,19 +1888,16 @@ class PixelScrollTable(tk.Frame):
                     font=self._header_font,
                 )
                 cursor += width
-                divider_x = cursor - 1 if column == layout[-1][0] else cursor
-                self._header.create_line(
-                    divider_x,
-                    5,
-                    divider_x,
-                    self._header_height - 5,
-                    fill=THEME["accent"]
-                    if column in {self._resize_column, self._resize_hover_column}
-                    else THEME["subtle"],
-                    width=2
-                    if column in {self._resize_column, self._resize_hover_column}
-                    else 1,
-                )
+                if column in {self._resize_column, self._resize_hover_column}:
+                    divider_x = cursor - 1 if column == layout[-1][0] else cursor
+                    self._header.create_line(
+                        divider_x,
+                        5,
+                        divider_x,
+                        self._header_height - 5,
+                        fill=THEME["accent"],
+                        width=2,
+                    )
             self._header.create_line(
                 0,
                 self._header_height - 1,
@@ -1386,8 +1922,17 @@ class PixelScrollTable(tk.Frame):
                     top,
                     content_width,
                     top + self._row_height,
-                    fill=THEME["accent_dark"] if selected else THEME["surface"],
+                    fill=self._row_fill(item_id),
                     outline="",
+                )
+                indicator_item = self._body.create_rectangle(
+                    0,
+                    top + 4,
+                    3,
+                    top + self._row_height - 4,
+                    fill=THEME["accent"],
+                    outline="",
+                    state="normal" if selected else "hidden",
                 )
                 values = self._items.get(item_id, ())
                 cursor = 0
@@ -1399,9 +1944,9 @@ class PixelScrollTable(tk.Frame):
                     text_x = cursor + (
                         width / 2
                         if anchor == "center"
-                        else width - 10
+                        else width - 12
                         if anchor == "e"
-                        else 10
+                        else 12
                     )
                     text_items.append(
                         self._body.create_text(
@@ -1413,13 +1958,14 @@ class PixelScrollTable(tk.Frame):
                             else "e"
                             if anchor == "e"
                             else "w",
-                            fill="#ffffff" if selected else THEME["text"],
+                            fill=self._cell_color(item_id, value_index),
                             font=self._font,
                         )
                     )
                     cursor += width
                 self._visible_row_items[item_id] = (
                     background_item,
+                    indicator_item,
                     tuple(text_items),
                 )
             self._header.configure(
@@ -1450,7 +1996,7 @@ class PixelScrollTable(tk.Frame):
         """Patch the table canvases and redraw their current immutable model."""
 
         try:
-            self.configure(bg=THEME["border"])
+            self.configure(bg=THEME["surface"])
             self._header.configure(bg=THEME["surface"])
             self._body.configure(bg=THEME["surface"])
         except tk.TclError:
@@ -1465,10 +2011,11 @@ class PixelScrollTable(tk.Frame):
 
     def _update_row_hover(self, event: tk.Event[Any]) -> None:
         row = self.identify_row(event.y)
-        hovered = row if row in self._leading_hover_values else None
+        hovered = row or None
         cursor = (
             "hand2"
-            if hovered is not None and self.identify_column(event.x) == "#1"
+            if hovered in self._leading_hover_values
+            and self.identify_column(event.x) == "#1"
             else ""
         )
         self._body.configure(cursor=cursor)

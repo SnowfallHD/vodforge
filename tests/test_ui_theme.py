@@ -24,6 +24,7 @@ def test_preset_theme_applies_complete_curated_palette() -> None:
     assert selection.name == "Jade"
     assert THEME["accent"] == "#42d69b"
     assert THEME["bg"] == "#070b0a"
+    assert THEME["accent_surface"] == "#1a3c2f"
 
 
 def test_custom_accent_is_validated_and_darken_pair_is_derived() -> None:
@@ -32,6 +33,7 @@ def test_custom_accent_is_validated_and_darken_pair_is_derived() -> None:
     assert selection.custom_accent == "#80a0ff"
     assert THEME["accent"] == "#80a0ff"
     assert THEME["accent_dark"] == "#647dc7"
+    assert THEME["accent_surface"] == "#262d42"
     assert normalize_hex_color("not-a-color") == "#7170ff"
 
 

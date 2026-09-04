@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections.abc import Sequence
-from tkinter import ttk
 from typing import Any
 
 from .library_search import LIBRARY_ALL_CATEGORIES
 from .ui_theme import FONT_UI, THEME
+from .ui_widgets import ChoiceDropdown
 
 
 class LibrarySearchField(tk.Frame):
@@ -96,7 +96,7 @@ class LibrarySearchField(tk.Frame):
             pass
 
 
-class LibraryCategoryFilter(ttk.Combobox):
+class LibraryCategoryFilter(ChoiceDropdown):
     """Own the category-filter choices derived from immutable Library rows."""
 
     def __init__(

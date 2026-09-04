@@ -9,7 +9,14 @@ from typing import Any
 from .models import CookieSource, OutputType
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import CUSTOM_THEME_NAME, THEME
-from .ui_widgets import ActionDialogSurface, SegmentedSelector, ToolTip, reveal_toplevel
+from .ui_widgets import (
+    ActionDialogSurface,
+    ChoiceDropdown,
+    ModernCheckbox,
+    SegmentedSelector,
+    ToolTip,
+    reveal_toplevel,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,7 +104,6 @@ class FocusSettingsDialog:
         self.options = options
         self.actions = actions
         self._closed = False
-        self._theme_selectors: list[SegmentedSelector] = []
         self._accent_trace_id: str | None = None
 
         popup = tk.Toplevel(owner)
@@ -203,7 +209,7 @@ class FocusSettingsDialog:
             style="Muted.TLabel",
             wraplength=300,
         ).grid(row=4, column=0, sticky="w", pady=(4, 6))
-        ignore_playlists = ttk.Checkbutton(
+        ignore_playlists = ModernCheckbox(
             source,
             text="Ignore playlists",
             variable=self.bindings.single_video_only,
@@ -236,7 +242,6 @@ class FocusSettingsDialog:
             compact=True,
         )
         cookie_selector.grid(row=8, column=0, sticky="w")
-        self._theme_selectors.append(cookie_selector)
         ToolTip(
             cookie_selector,
             "Public uses no cookies. Choose cookies.txt or Browser only when YouTube requires sign-in.",
@@ -266,7 +271,7 @@ class FocusSettingsDialog:
         browser_frame = ttk.Frame(source, style="FocusShell.TFrame")
         browser_frame.grid(row=9, column=0, sticky="ew", pady=(7, 0))
         browser_frame.columnconfigure(0, weight=1)
-        browser_combo = ttk.Combobox(
+        browser_combo = ChoiceDropdown(
             browser_frame,
             textvariable=self.bindings.cookie_browser,
             values=self.options.cookie_browsers,
@@ -324,7 +329,7 @@ class FocusSettingsDialog:
             text="Quality ceiling",
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=4)
-        quality_combo = ttk.Combobox(
+        quality_combo = ChoiceDropdown(
             mp4_output,
             textvariable=self.bindings.quality,
             values=self.options.quality,
@@ -342,7 +347,7 @@ class FocusSettingsDialog:
             text="Output mode",
             style="Muted.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=4)
-        export_combo = ttk.Combobox(
+        export_combo = ChoiceDropdown(
             mp4_output,
             textvariable=self.bindings.export_mode_choice,
             values=self.options.export_modes,
@@ -409,12 +414,12 @@ class FocusSettingsDialog:
                 style="Muted.TLabel",
             ).grid(row=0, column=0, sticky="w", pady=(0, 3))
             if values is None:
-                widget: ttk.Entry | ttk.Combobox = ttk.Entry(
+                widget: ttk.Entry | ChoiceDropdown = ttk.Entry(
                     field,
                     textvariable=variable,
                 )
             else:
-                widget = ttk.Combobox(
+                widget = ChoiceDropdown(
                     field,
                     textvariable=variable,
                     values=values,
@@ -432,22 +437,22 @@ class FocusSettingsDialog:
         macos: bool,
     ) -> None:
         bindings = self.bindings
-        ttk.Checkbutton(
+        ModernCheckbox(
             mp4_output,
             text="Save thumbnail",
             variable=bindings.write_thumbnail,
         ).grid(row=5, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(
+        ModernCheckbox(
             mp4_output,
             text="Save compact JSON",
             variable=bindings.write_info_json,
         ).grid(row=5, column=1, sticky="w", pady=2)
-        ttk.Checkbutton(
+        ModernCheckbox(
             mp4_output,
             text="Embed thumbnail",
             variable=bindings.embed_thumbnail,
         ).grid(row=6, column=0, sticky="w", pady=2)
-        ttk.Checkbutton(
+        ModernCheckbox(
             mp4_output,
             text="Embed metadata",
             variable=bindings.embed_metadata,
@@ -455,7 +460,7 @@ class FocusSettingsDialog:
         nvenc_label = (
             "NVIDIA NVENC (Windows only)" if macos else "Use NVIDIA NVENC GPU encoding"
         )
-        nvenc = ttk.Checkbutton(
+        nvenc = ModernCheckbox(
             mp4_output,
             text=nvenc_label,
             variable=bindings.use_nvenc,
@@ -489,7 +494,7 @@ class FocusSettingsDialog:
             text="Encoding quality",
             style="Muted.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=4)
-        mp3_quality_combo = ttk.Combobox(
+        mp3_quality_combo = ChoiceDropdown(
             mp3_output,
             textvariable=bindings.mp3_quality,
             values=self.options.mp3_quality,
@@ -508,7 +513,7 @@ class FocusSettingsDialog:
             text="Sample rate",
             style="Muted.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=4)
-        sample_rate_combo = ttk.Combobox(
+        sample_rate_combo = ChoiceDropdown(
             mp3_output,
             textvariable=bindings.mp3_sample_rate,
             values=self.options.mp3_sample_rates,
@@ -527,7 +532,7 @@ class FocusSettingsDialog:
             text="Channels",
             style="Muted.TLabel",
         ).grid(row=3, column=0, sticky="w", pady=4)
-        channels_combo = ttk.Combobox(
+        channels_combo = ChoiceDropdown(
             mp3_output,
             textvariable=bindings.mp3_channels,
             values=self.options.mp3_channels,
@@ -541,7 +546,7 @@ class FocusSettingsDialog:
             "Preserve the source channel layout, or force Stereo or Mono for a "
             "specific production workflow.",
         )
-        mp3_metadata = ttk.Checkbutton(
+        mp3_metadata = ModernCheckbox(
             mp3_output,
             text="Embed title, artist, and tags",
             variable=bindings.mp3_embed_metadata,
@@ -566,7 +571,6 @@ class FocusSettingsDialog:
             compact=True,
         )
         cover_selector.grid(row=5, column=1, sticky="w", pady=(8, 4))
-        self._theme_selectors.append(cover_selector)
         ToolTip(
             cover_selector,
             "No Art leaves the MP3 unembedded. YouTube art or Custom art writes a "
@@ -654,7 +658,7 @@ class FocusSettingsDialog:
             text="PRIVACY",
             style="FocusEyebrow.TLabel",
         ).grid(row=0, column=0, sticky="w", pady=(0, 7))
-        usage = ttk.Checkbutton(
+        usage = ModernCheckbox(
             privacy,
             text="Share anonymous usage analytics",
             variable=self.bindings.anonymous_usage_analytics,
@@ -690,7 +694,7 @@ class FocusSettingsDialog:
         ttk.Label(appearance, text="Theme", style="Muted.TLabel").grid(
             row=1, column=0, sticky="w", padx=(0, 8)
         )
-        theme_combo = ttk.Combobox(
+        theme_combo = ChoiceDropdown(
             appearance,
             textvariable=self.bindings.appearance_theme,
             values=self.options.appearance_themes,
@@ -746,8 +750,16 @@ class FocusSettingsDialog:
         except tk.TclError:
             return
         self.dialog_surface.apply_theme()
-        for selector in self._theme_selectors:
-            selector.apply_theme()
+        pending = list(self.popup.winfo_children())
+        while pending:
+            widget = pending.pop()
+            apply_theme = getattr(widget, "apply_theme", None)
+            if callable(apply_theme):
+                apply_theme()
+            try:
+                pending.extend(widget.winfo_children())
+            except tk.TclError:
+                continue
 
     def _build_footer(self, footer: ttk.Frame) -> None:
         footer.columnconfigure(0, weight=1)
@@ -767,7 +779,7 @@ class FocusSettingsDialog:
 
     def _bind_readonly_combo(
         self,
-        combo: ttk.Combobox,
+        combo: ChoiceDropdown,
         command: Callable[[], object] | None = None,
     ) -> None:
         """Run the selection action without leaving native entry text selected."""

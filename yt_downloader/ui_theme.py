@@ -19,6 +19,7 @@ _BASE_THEME: Final[dict[str, str]] = {
     "subtle": "#636874",
     "accent": "#7170ff",
     "accent_dark": "#5e6ad2",
+    "accent_surface": "#20213a",
     "success": "#35d07f",
     "warning": "#e8b15e",
     "danger": "#ff7a7a",
@@ -188,6 +189,22 @@ def _darken(color: str, factor: float = 0.78) -> str:
     return "#" + "".join(f"{round(channel * factor):02x}" for channel in channels)
 
 
+def _mix_hex(background: str, foreground: str, amount: float) -> str:
+    """Blend one opaque UI color without introducing platform alpha behavior."""
+
+    ratio = max(0.0, min(1.0, float(amount)))
+    background_channels = [
+        int(background[index : index + 2], 16) for index in (1, 3, 5)
+    ]
+    foreground_channels = [
+        int(foreground[index : index + 2], 16) for index in (1, 3, 5)
+    ]
+    return "#" + "".join(
+        f"{round(base + ((top - base) * ratio)):02x}"
+        for base, top in zip(background_channels, foreground_channels, strict=True)
+    )
+
+
 def apply_theme_selection(
     name: object, custom_accent: object = "#7170ff"
 ) -> ThemeSelection:
@@ -203,6 +220,7 @@ def apply_theme_selection(
         palette.update(accent=accent, accent_dark=_darken(accent))
     else:
         palette.update(THEME_PRESETS[selected])
+    palette["accent_surface"] = _mix_hex(palette["surface"], palette["accent"], 0.18)
     THEME.clear()
     THEME.update(palette)
     return ThemeSelection(selected, accent)

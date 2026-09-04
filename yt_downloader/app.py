@@ -5143,10 +5143,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             fieldbackground=THEME["surface"],
             foreground=THEME["text"],
             insertcolor=THEME["text"],
-            bordercolor=THEME["border"],
-            lightcolor=THEME["border"],
-            darkcolor=THEME["border"],
-            padding=7,
+            bordercolor=THEME["surface"],
+            lightcolor=THEME["surface"],
+            darkcolor=THEME["surface"],
+            padding=(10, 8),
+        )
+        style.map(
+            "TEntry",
+            bordercolor=[("focus", THEME["accent"])],
+            lightcolor=[("focus", THEME["accent"])],
+            darkcolor=[("focus", THEME["accent"])],
         )
         style.configure(
             "TCombobox",
@@ -5169,7 +5175,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "TButton",
             background=THEME["surface_2"],
             foreground=THEME["text"],
-            bordercolor=THEME["border"],
+            bordercolor=THEME["surface_2"],
+            lightcolor=THEME["surface_2"],
+            darkcolor=THEME["surface_2"],
             focusthickness=0,
             focuscolor=THEME["surface_2"],
             padding=(12, 7),
@@ -5201,6 +5209,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 ("disabled", THEME["panel"]),
             ],
             foreground=[("disabled", THEME["subtle"])],
+            bordercolor=[("focus", THEME["accent"])],
+            lightcolor=[("focus", THEME["accent"])],
+            darkcolor=[("focus", THEME["accent"])],
         )
         style.configure(
             "Accent.TButton",
@@ -5407,9 +5418,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "FocusQuiet.TButton",
             background=THEME["surface"],
             foreground=THEME["muted"],
-            bordercolor=THEME["surface_2"],
-            lightcolor=THEME["surface_2"],
-            darkcolor=THEME["surface_2"],
+            bordercolor=THEME["surface"],
+            lightcolor=THEME["surface"],
+            darkcolor=THEME["surface"],
             focusthickness=0,
             focuscolor=THEME["surface"],
             relief="flat",
@@ -5420,6 +5431,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "FocusQuiet.TButton",
             background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])],
             foreground=[("active", THEME["text"])],
+            bordercolor=[("focus", THEME["accent"])],
+            lightcolor=[("focus", THEME["accent"])],
+            darkcolor=[("focus", THEME["accent"])],
         )
         style.configure(
             "CloudDisabled.TButton",

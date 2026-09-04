@@ -23,7 +23,12 @@ from .local_audio_video import (
 )
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, THEME
-from .ui_widgets import ActionDialogSurface, SleekProgressbar, reveal_toplevel
+from .ui_widgets import (
+    ActionDialogSurface,
+    ChoiceDropdown,
+    SleekProgressbar,
+    reveal_toplevel,
+)
 
 
 def compact_dialog_path(path: Path, *, maximum: int = 108) -> str:
@@ -161,7 +166,7 @@ class LocalAudioVideoDialog:
         ttk.Label(profile, text="OUTPUT PROFILE", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w"
         )
-        self.profile_combo = ttk.Combobox(
+        self.profile_combo = ChoiceDropdown(
             profile,
             textvariable=self.profile_var,
             values=LOCAL_VIDEO_PROFILE_OPTIONS,

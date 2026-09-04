@@ -7,7 +7,12 @@ from tkinter import ttk
 from .library_annotations import LibraryAnnotation
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import THEME
-from .ui_widgets import ActionDialogSurface, reveal_toplevel
+from .ui_widgets import (
+    ActionDialogSurface,
+    ChoiceDropdown,
+    bind_focus_ring,
+    reveal_toplevel,
+)
 
 
 class LibraryAnnotationDialog:
@@ -54,9 +59,9 @@ class LibraryAnnotationDialog:
             row=2, column=0, sticky="w", pady=(0, 5)
         )
         self.category_var = tk.StringVar(value=annotation.category)
-        category_field: ttk.Entry | ttk.Combobox
+        category_field: ttk.Entry | ChoiceDropdown
         if categories:
-            category_field = ttk.Combobox(
+            category_field = ChoiceDropdown(
                 root,
                 textvariable=self.category_var,
                 values=categories,
@@ -90,7 +95,7 @@ class LibraryAnnotationDialog:
         ttk.Label(root, text="NOTES", style="FocusEyebrow.TLabel").grid(
             row=8, column=0, sticky="nw", pady=(0, 5)
         )
-        note_shell = tk.Frame(root, bg=THEME["border"], bd=0)
+        note_shell = tk.Frame(root, bg=THEME["surface"], bd=0)
         note_shell.grid(row=9, column=0, sticky="nsew")
         note_shell.columnconfigure(0, weight=1)
         note_shell.rowconfigure(0, weight=1)
@@ -109,6 +114,7 @@ class LibraryAnnotationDialog:
         )
         self.note.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
         self.note.insert("1.0", annotation.note)
+        bind_focus_ring(self.note, note_shell)
 
         actions = surface.footer
         actions.columnconfigure(0, weight=1)
