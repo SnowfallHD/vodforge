@@ -11,11 +11,14 @@ from typing import Any, Literal
 from PIL import Image, ImageTk
 
 from .local_audio_video import (
+    LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoCancelled,
     LocalAudioVideoConversionOwner,
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
+    LocalVideoProfile,
     load_local_still_image,
+    local_video_profile_spec,
     new_local_audio_video_request,
 )
 from .ui_layout import centered_toplevel_geometry
@@ -44,12 +47,14 @@ class LocalAudioVideoDialog:
         *,
         converter: LocalAudioVideoConversionOwner,
         output_dir: Path,
+        profile_variable: tk.StringVar,
         on_complete: Callable[[LocalAudioVideoResult], None],
         on_closed: Callable[[], None],
     ) -> None:
         self.owner = owner
         self.converter = converter
         self.output_dir = Path(output_dir)
+        self.profile_var = profile_variable
         self.on_complete = on_complete
         self.on_closed = on_closed
         self.audio_path: Path | None = None
@@ -81,7 +86,7 @@ class LocalAudioVideoDialog:
         root.columnconfigure(0, weight=1)
         self._build_intro(root)
         self._build_choices(root)
-        self._build_preview(root)
+        self._build_preview_and_profile(root)
         self._build_destination(root)
         self._build_progress(root)
         self._build_actions(surface.footer)
@@ -95,7 +100,7 @@ class LocalAudioVideoDialog:
             root,
             text=(
                 "Pair a local MP3 with one still image. VODForge creates a "
-                "playable 1080p MP4 without changing either source file."
+                "playable MP4 without changing either source file."
             ),
             style="Muted.TLabel",
             wraplength=650,
@@ -111,9 +116,16 @@ class LocalAudioVideoDialog:
         self._build_file_row(choices, row=0, kind="audio")
         self._build_file_row(choices, row=1, kind="image")
 
-    def _build_preview(self, root: ttk.Frame) -> None:
+    def _build_preview_and_profile(self, root: ttk.Frame) -> None:
+        row = ttk.Frame(root, style="FocusShell.TFrame")
+        row.grid(row=3, column=0, sticky="ew", pady=(18, 18))
+        row.columnconfigure(1, weight=1)
+        self._build_preview(row)
+        self._build_profile(row)
+
+    def _build_preview(self, parent: ttk.Frame) -> None:
         preview_shell = tk.Frame(
-            root,
+            parent,
             bg=THEME["surface"],
             width=192,
             height=108,
@@ -121,7 +133,7 @@ class LocalAudioVideoDialog:
             highlightthickness=1,
             highlightbackground=THEME["border"],
         )
-        preview_shell.grid(row=3, column=0, sticky="w", pady=(18, 18))
+        preview_shell.grid(row=0, column=0, sticky="nw", padx=(0, 18))
         preview_shell.grid_propagate(False)
         self.preview = tk.Label(
             preview_shell,
@@ -133,6 +145,43 @@ class LocalAudioVideoDialog:
             highlightthickness=0,
         )
         self.preview.pack(fill="both", expand=True)
+
+    def _build_profile(self, parent: ttk.Frame) -> None:
+        profile = ttk.Frame(parent, style="FocusShell.TFrame")
+        profile.grid(row=0, column=1, sticky="new")
+        profile.columnconfigure(0, weight=1)
+        ttk.Label(profile, text="OUTPUT PROFILE", style="FocusEyebrow.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        self.profile_combo = ttk.Combobox(
+            profile,
+            textvariable=self.profile_var,
+            values=LOCAL_VIDEO_PROFILE_OPTIONS,
+            state="readonly",
+        )
+        self.profile_combo.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+        self.profile_description_var = tk.StringVar()
+        ttk.Label(
+            profile,
+            textvariable=self.profile_description_var,
+            style="Muted.TLabel",
+            wraplength=350,
+            justify="left",
+        ).grid(row=2, column=0, sticky="ew", pady=(7, 0))
+        self.profile_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._sync_profile_description(),
+            add="+",
+        )
+        self._sync_profile_description()
+
+    def _sync_profile_description(self) -> None:
+        try:
+            spec = local_video_profile_spec(self.profile_var.get())
+        except ValueError:
+            self.profile_var.set(LocalVideoProfile.STANDARD.value)
+            spec = local_video_profile_spec(LocalVideoProfile.STANDARD)
+        self.profile_description_var.set(spec.description)
 
     def _build_destination(self, root: ttk.Frame) -> None:
         destination = ttk.Frame(root, style="FocusShell.TFrame")
@@ -303,9 +352,11 @@ class LocalAudioVideoDialog:
             self.audio_path,
             self.image_path,
             self.output_dir,
+            profile=self.profile_var.get(),
         )
         self.audio_button.configure(state="disabled")
         self.image_button.configure(state="disabled")
+        self.profile_combo.configure(state="disabled")
         self.create_button.configure(state="disabled")
         self.cancel_button.configure(text="Stop")
         self.status_var.set("Checking local files…")
@@ -356,6 +407,7 @@ class LocalAudioVideoDialog:
                 self.cancel_button.configure(text="Cancel", state="normal")
                 self.audio_button.configure(state="normal")
                 self.image_button.configure(state="normal")
+                self.profile_combo.configure(state="readonly")
                 self._sync_ready_state(status=message)
                 if self._close_when_idle:
                     self._destroy()

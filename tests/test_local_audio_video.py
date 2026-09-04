@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import os
@@ -15,7 +16,9 @@ from yt_downloader import app as app_module
 from yt_downloader.history import upsert_history
 from yt_downloader.library_state import LibraryProjectionOwner
 from yt_downloader.local_audio_video import (
+    LOCAL_VIDEO_GOP_FRAMES,
     LOCAL_VIDEO_HEIGHT,
+    LOCAL_VIDEO_PROFILE_OPTIONS,
     LOCAL_VIDEO_WIDTH,
     LocalAudioVideoCancelled,
     LocalAudioVideoConversionOwner,
@@ -23,8 +26,11 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoResult,
     LocalAudioVideoRuntime,
     LocalConversionRecoveryOwner,
+    LocalVideoProfile,
     build_local_audio_video_command,
+    build_local_audio_video_history_metadata,
     local_video_filename,
+    local_video_profile_spec,
     new_local_audio_video_request,
 )
 from yt_downloader.local_audio_video_ui import (
@@ -192,11 +198,104 @@ def test_static_image_command_is_one_offline_mp4_encode(tmp_path: Path) -> None:
     assert command[command.index("-loop") + 1] == "1"
     assert "scale=1920:1080" in command[command.index("-vf") + 1]
     assert command[command.index("-c:v") + 1] == "libx264"
+    assert command[command.index("-g") + 1] == str(LOCAL_VIDEO_GOP_FRAMES)
+    assert command[command.index("-keyint_min") + 1] == str(LOCAL_VIDEO_GOP_FRAMES)
+    assert command[command.index("-sc_threshold") + 1] == "0"
+    assert command[command.index("-flags") + 1] == "+cgop"
+    assert command[command.index("-crf") + 1] == "18"
+    assert "-minrate" not in command
     assert command[command.index("-c:a") + 1] == "aac"
     assert "-shortest" in command
     assert command[command.index("-movflags") + 1] == "+faststart"
     assert command[-1] == str(output)
     assert not any(value.startswith(("http://", "https://")) for value in command)
+
+
+@pytest.mark.parametrize(
+    ("profile", "resolution", "audio_bitrate"),
+    [
+        (LocalVideoProfile.STANDARD, "scale=1920:1080", "192k"),
+        (LocalVideoProfile.UHD, "scale=3840:2160", "192k"),
+        (LocalVideoProfile.STRICT_CBR, "scale=1920:1080", "192k"),
+        (LocalVideoProfile.COMPACT, "scale=1280:720", "160k"),
+    ],
+)
+def test_static_video_profiles_own_their_encoding_policy(
+    tmp_path: Path,
+    profile: LocalVideoProfile,
+    resolution: str,
+    audio_bitrate: str,
+) -> None:
+    command = build_local_audio_video_command(
+        "/trusted/ffmpeg",
+        audio_path=tmp_path / "source.mp3",
+        image_path=tmp_path / "still.png",
+        output_path=tmp_path / "result.mp4",
+        profile=profile,
+    )
+
+    assert resolution in command[command.index("-vf") + 1]
+    assert command[command.index("-b:a") + 1] == audio_bitrate
+    assert command[command.index("-g") + 1] == "60"
+    if profile is LocalVideoProfile.STRICT_CBR:
+        assert command[command.index("-b:v") + 1] == "2000k"
+        assert command[command.index("-minrate") + 1] == "2000k"
+        assert command[command.index("-maxrate") + 1] == "2000k"
+        assert command[command.index("-bufsize") + 1] == "4000k"
+        assert command[command.index("-x264-params") + 1] == ("nal-hrd=cbr:force-cfr=1")
+        assert "-crf" not in command
+    else:
+        assert "-minrate" not in command
+        assert "-x264-params" not in command
+
+
+def test_profile_choice_is_captured_by_the_request_and_library_metadata(
+    tmp_path: Path,
+) -> None:
+    request = new_local_audio_video_request(
+        tmp_path / "source.mp3",
+        tmp_path / "still.png",
+        tmp_path / "exports",
+        profile=LocalVideoProfile.STRICT_CBR,
+    )
+    metadata = build_local_audio_video_history_metadata(
+        request,
+        output_path=tmp_path / "exports" / "source.mp4",
+        input_probe=_input_probe(),
+        output_probe=_output_probe(),
+    )
+
+    assert request.profile is LocalVideoProfile.STRICT_CBR
+    assert "Strict 2 Mbps CBR" in metadata["vodforge_output_profile"]
+    output = metadata["vodforge_encoding_summary"]["output"]
+    assert output["Output rate-control mode"] == "Strict CBR"
+    assert output["Target video bitrate"] == "2000 kbps"
+
+
+def test_profile_names_are_general_and_standard_is_default(tmp_path: Path) -> None:
+    request = new_local_audio_video_request(
+        tmp_path / "source.mp3",
+        tmp_path / "still.png",
+        tmp_path / "exports",
+    )
+
+    assert request.profile is LocalVideoProfile.STANDARD
+    assert LOCAL_VIDEO_PROFILE_OPTIONS[0] == "1080p Standard (Recommended)"
+    assert all("ctv" not in value.casefold() for value in LOCAL_VIDEO_PROFILE_OPTIONS)
+    assert (
+        "two-second keyframes" in local_video_profile_spec(request.profile).description
+    )
+
+
+def test_local_profile_uses_the_focused_settings_owner_and_dialog_boundary() -> None:
+    initialization = inspect.getsource(app_module.DownloaderApp.__init__)
+    persistence = inspect.getsource(app_module.DownloaderApp._settings_variables)
+    dialog_open = inspect.getsource(app_module.DownloaderApp._show_local_audio_video)
+
+    assert '"local_video_profile"' in initialization
+    assert '"local_video_profile": self.local_video_profile_var' in persistence
+    assert "profile_variable=self.local_video_profile_var" in dialog_open
+    assert "export_mode_var" not in dialog_open
 
 
 @pytest.mark.parametrize(

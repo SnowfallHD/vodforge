@@ -11,6 +11,7 @@ import uuid
 import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,8 @@ LOCAL_CONVERSION_STATE_SCHEMA = 1
 LOCAL_VIDEO_WIDTH = 1920
 LOCAL_VIDEO_HEIGHT = 1080
 LOCAL_VIDEO_FPS = 30
+LOCAL_VIDEO_GOP_SECONDS = 2
+LOCAL_VIDEO_GOP_FRAMES = LOCAL_VIDEO_FPS * LOCAL_VIDEO_GOP_SECONDS
 LOCAL_AUDIO_BITRATE_KBPS = 192
 MAX_LOCAL_IMAGE_BYTES = 50 * 1024 * 1024
 MAX_LOCAL_IMAGE_PIXELS = 40_000_000
@@ -50,12 +53,105 @@ class LocalAudioVideoCancelled(LocalAudioVideoError):
     """Raised when the user or application stops a local conversion."""
 
 
+class LocalVideoProfile(str, Enum):
+    """Stable user-facing profiles for a still-image video transaction."""
+
+    STANDARD = "1080p Standard (Recommended)"
+    UHD = "2160p 4K"
+    STRICT_CBR = "1080p Strict 2 Mbps CBR"
+    COMPACT = "720p Compact"
+
+
+LOCAL_VIDEO_PROFILE_OPTIONS = tuple(profile.value for profile in LocalVideoProfile)
+
+
+@dataclass(frozen=True, slots=True)
+class LocalVideoProfileSpec:
+    width: int
+    height: int
+    crf: int | None
+    video_bitrate_kbps: int | None
+    audio_bitrate_kbps: int
+    label: str
+    description: str
+
+    @property
+    def rate_control_label(self) -> str:
+        return (
+            "Strict CBR" if self.video_bitrate_kbps is not None else "Constant quality"
+        )
+
+    @property
+    def target_video_bitrate_label(self) -> str:
+        if self.video_bitrate_kbps is None:
+            return "Still-image optimized"
+        return f"{self.video_bitrate_kbps} kbps"
+
+
+def local_video_profile_spec(profile: LocalVideoProfile | str) -> LocalVideoProfileSpec:
+    """Resolve one immutable profile without consulting live application settings."""
+
+    selected = LocalVideoProfile(profile)
+    if selected is LocalVideoProfile.UHD:
+        return LocalVideoProfileSpec(
+            width=3840,
+            height=2160,
+            crf=18,
+            video_bitrate_kbps=None,
+            audio_bitrate_kbps=192,
+            label="2160p • 4K",
+            description=(
+                "High-quality 4K output with streaming-friendly two-second "
+                "keyframes. Smaller artwork is upscaled but gains no new detail."
+            ),
+        )
+    if selected is LocalVideoProfile.STRICT_CBR:
+        return LocalVideoProfileSpec(
+            width=1920,
+            height=1080,
+            crf=None,
+            video_bitrate_kbps=2000,
+            audio_bitrate_kbps=192,
+            label="1080p • Strict 2 Mbps CBR",
+            description=(
+                "For delivery systems that explicitly require constant bitrate. "
+                "This creates a much larger file without improving a still image."
+            ),
+        )
+    if selected is LocalVideoProfile.COMPACT:
+        return LocalVideoProfileSpec(
+            width=1280,
+            height=720,
+            crf=20,
+            video_bitrate_kbps=None,
+            audio_bitrate_kbps=160,
+            label="720p • Compact",
+            description=(
+                "A smaller 720p file for ordinary sharing, with the same "
+                "streaming-friendly two-second keyframes."
+            ),
+        )
+    return LocalVideoProfileSpec(
+        width=LOCAL_VIDEO_WIDTH,
+        height=LOCAL_VIDEO_HEIGHT,
+        crf=18,
+        video_bitrate_kbps=None,
+        audio_bitrate_kbps=LOCAL_AUDIO_BITRATE_KBPS,
+        label="1080p • Standard",
+        description=(
+            "High-quality 1080p with efficient still-image compression and "
+            "streaming-friendly two-second keyframes."
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class LocalAudioVideoRequest:
     audio_path: Path
     image_path: Path
     output_dir: Path
     run_id: str
+    profile: LocalVideoProfile = LocalVideoProfile.STANDARD
 
 
 @dataclass(frozen=True)
@@ -79,12 +175,15 @@ def new_local_audio_video_request(
     audio_path: Path,
     image_path: Path,
     output_dir: Path,
+    *,
+    profile: LocalVideoProfile | str = LocalVideoProfile.STANDARD,
 ) -> LocalAudioVideoRequest:
     return LocalAudioVideoRequest(
         audio_path=Path(audio_path),
         image_path=Path(image_path),
         output_dir=Path(output_dir),
         run_id=uuid.uuid4().hex,
+        profile=LocalVideoProfile(profile),
     )
 
 
@@ -109,9 +208,27 @@ def build_local_audio_video_command(
     audio_path: Path,
     image_path: Path,
     output_path: Path,
+    profile: LocalVideoProfile | str = LocalVideoProfile.STANDARD,
 ) -> list[str]:
     """Build one offline, shell-free static-image MP4 encode."""
 
+    spec = local_video_profile_spec(profile)
+    rate_control = (
+        ["-crf", str(spec.crf)]
+        if spec.crf is not None
+        else [
+            "-b:v",
+            f"{spec.video_bitrate_kbps}k",
+            "-minrate",
+            f"{spec.video_bitrate_kbps}k",
+            "-maxrate",
+            f"{spec.video_bitrate_kbps}k",
+            "-bufsize",
+            f"{int(spec.video_bitrate_kbps or 0) * 2}k",
+            "-x264-params",
+            "nal-hrd=cbr:force-cfr=1",
+        ]
+    )
     return [
         ffmpeg,
         "-nostdin",
@@ -134,9 +251,9 @@ def build_local_audio_video_command(
         "1",
         "-vf",
         (
-            f"scale={LOCAL_VIDEO_WIDTH}:{LOCAL_VIDEO_HEIGHT}:"
+            f"scale={spec.width}:{spec.height}:"
             "force_original_aspect_ratio=decrease,"
-            f"pad={LOCAL_VIDEO_WIDTH}:{LOCAL_VIDEO_HEIGHT}:"
+            f"pad={spec.width}:{spec.height}:"
             "(ow-iw)/2:(oh-ih)/2,setsar=1"
         ),
         "-c:v",
@@ -145,18 +262,25 @@ def build_local_audio_video_command(
         "veryfast",
         "-tune",
         "stillimage",
-        "-crf",
-        "18",
+        *rate_control,
         "-pix_fmt",
         "yuv420p",
         "-profile:v",
         "high",
         "-r",
         str(LOCAL_VIDEO_FPS),
+        "-g",
+        str(LOCAL_VIDEO_GOP_FRAMES),
+        "-keyint_min",
+        str(LOCAL_VIDEO_GOP_FRAMES),
+        "-sc_threshold",
+        "0",
+        "-flags",
+        "+cgop",
         "-c:a",
         "aac",
         "-b:a",
-        f"{LOCAL_AUDIO_BITRATE_KBPS}k",
+        f"{spec.audio_bitrate_kbps}k",
         "-ar",
         "48000",
         "-ac",
@@ -223,6 +347,7 @@ def build_local_audio_video_history_metadata(
     input_probe: Mapping[str, Any],
     output_probe: Mapping[str, Any],
 ) -> dict[str, Any]:
+    spec = local_video_profile_spec(request.profile)
     input_format = input_probe.get("format")
     input_format = input_format if isinstance(input_format, dict) else {}
     output_format = output_probe.get("format")
@@ -247,7 +372,7 @@ def build_local_audio_video_history_metadata(
         "Output resolution": (
             f"{output_video.get('width')}x{output_video.get('height')}"
             if output_video.get("width") and output_video.get("height")
-            else f"{LOCAL_VIDEO_WIDTH}x{LOCAL_VIDEO_HEIGHT}"
+            else f"{spec.width}x{spec.height}"
         ),
         "Output frame rate": str(
             output_video.get("avg_frame_rate")
@@ -255,13 +380,13 @@ def build_local_audio_video_history_metadata(
             or LOCAL_VIDEO_FPS
         ),
         "Output video codec": str(output_video.get("codec_name") or "h264"),
-        "Output rate-control mode": "Constant quality",
-        "Target video bitrate": "Still-image optimized",
+        "Output rate-control mode": spec.rate_control_label,
+        "Target video bitrate": spec.target_video_bitrate_label,
         "Measured video bitrate": _format_kbps(output_video.get("bit_rate")),
         "Pixel format": str(output_video.get("pix_fmt") or "yuv420p"),
         "H.264 profile": str(output_video.get("profile") or "High"),
         "Output audio codec": str(output_audio.get("codec_name") or "aac"),
-        "Target audio bitrate": f"{LOCAL_AUDIO_BITRATE_KBPS} kbps",
+        "Target audio bitrate": f"{spec.audio_bitrate_kbps} kbps",
         "Measured audio bitrate": _format_kbps(output_audio.get("bit_rate")),
         "Audio sample rate": str(output_audio.get("sample_rate") or "48000"),
         "Audio channels": str(output_audio.get("channels") or "2"),
@@ -269,7 +394,7 @@ def build_local_audio_video_history_metadata(
         "Output duration": f"{duration:.2f} seconds" if duration else "Not available",
         "Validation status": "Validated",
     }
-    profile = f"MP4 • {LOCAL_VIDEO_WIDTH}x{LOCAL_VIDEO_HEIGHT} • Static image"
+    profile = f"MP4 • {spec.label} • Static image"
     return {
         "id": f"local_{request.run_id}",
         "title": title,
@@ -285,13 +410,14 @@ def build_local_audio_video_history_metadata(
             (
                 profile,
                 "Output video codec: H.264",
-                f"Output audio codec: AAC • {LOCAL_AUDIO_BITRATE_KBPS} kbps",
+                f"Output rate control: {spec.rate_control_label}",
+                f"Output audio codec: AAC • {spec.audio_bitrate_kbps} kbps",
                 f"Output file path: {output_path}",
             )
         ),
         "vodforge_run_activity": [
             "Local MP3 and still image selected.",
-            "Static-image MP4 encoded and validated.",
+            f"Static-image MP4 encoded with {request.profile.value} and validated.",
             f"Committed output file: {output_path.name}",
         ],
         "vodforge_encoding_summary": {
@@ -807,12 +933,15 @@ class LocalAudioVideoConversionOwner:
             return bool(self._registry.processes)
 
     @staticmethod
-    def _validate_output_shape(probe: Mapping[str, Any]) -> None:
+    def _validate_output_shape(
+        probe: Mapping[str, Any], profile: LocalVideoProfile
+    ) -> None:
+        spec = local_video_profile_spec(profile)
         video = _stream(probe, "video")
         audio = _stream(probe, "audio")
         if (
-            int(video.get("width") or 0) != LOCAL_VIDEO_WIDTH
-            or int(video.get("height") or 0) != LOCAL_VIDEO_HEIGHT
+            int(video.get("width") or 0) != spec.width
+            or int(video.get("height") or 0) != spec.height
             or str(video.get("pix_fmt") or "").casefold() != "yuv420p"
             or str(audio.get("codec_name") or "").casefold() != "aac"
         ):
@@ -886,6 +1015,7 @@ class LocalAudioVideoConversionOwner:
             audio_path=prepared.audio_path,
             image_path=normalized_image,
             output_path=staged_output,
+            profile=request.profile,
         )
         self._diagnostic(
             "local audio-to-video encode started "
@@ -909,7 +1039,7 @@ class LocalAudioVideoConversionOwner:
             expected_audio_codec="aac",
             ffprobe_data=dict(output_probe),
         )
-        self._validate_output_shape(output_probe)
+        self._validate_output_shape(output_probe, request.profile)
         self._raise_if_cancelled()
         on_progress(LocalAudioVideoProgress(0.97, "Saving to Forge destination…"))
         output_path = self._commit_distinct_output(

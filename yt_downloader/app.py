@@ -130,6 +130,7 @@ from .local_audio_video import (
     LocalAudioVideoConversionOwner,
     LocalAudioVideoResult,
     LocalConversionRecoveryOwner,
+    LocalVideoProfile,
     local_conversion_state_path,
 )
 from .local_audio_video_ui import LocalAudioVideoDialog
@@ -4881,6 +4882,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.output_var = tk.StringVar(value=output_value)
         self.output_type_var = tk.StringVar(value=output_type_value)
+        self.local_video_profile_var = tk.StringVar(
+            value=_persisted_choice(
+                saved_settings,
+                "local_video_profile",
+                {profile.value for profile in LocalVideoProfile},
+                LocalVideoProfile.STANDARD.value,
+            )
+        )
         self.library_output_type_var = tk.StringVar(value=OutputType.MP4.value)
         self.library_search_var = tk.StringVar()
         self.library_category_var = tk.StringVar(value=LIBRARY_ALL_CATEGORIES)
@@ -9620,6 +9629,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self,
             converter=self.local_audio_video,
             output_dir=Path(self.output_var.get()).expanduser(),
+            profile_variable=self.local_video_profile_var,
             on_complete=self._complete_local_audio_video,
             on_closed=self._local_audio_video_dialog_closed,
         )
@@ -12426,6 +12436,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         return {
             "output_dir": self.output_var,
             "output_type": self.output_type_var,
+            "local_video_profile": self.local_video_profile_var,
             "quality": self.quality_var,
             "export_mode": self.export_mode_var,
             "manual_video_bitrate": self.manual_video_bitrate_var,
