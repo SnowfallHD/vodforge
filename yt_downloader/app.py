@@ -5146,6 +5146,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             bordercolor=THEME["surface"],
             lightcolor=THEME["surface"],
             darkcolor=THEME["surface"],
+            focuscolor=THEME["surface"],
+            focusthickness=0,
+            borderwidth=0,
+            relief="flat",
             padding=(10, 8),
         )
         style.map(
@@ -5180,7 +5184,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             darkcolor=THEME["surface_2"],
             focusthickness=0,
             focuscolor=THEME["surface_2"],
-            padding=(12, 7),
+            padding=(14, 8),
             font=FONT_UI_MEDIUM,
         )
         style.configure(
@@ -5295,8 +5299,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         style.configure("FocusSurface.TFrame", background=THEME["surface"])
         style.configure(
             "CloudPreview.TFrame",
-            background=THEME["surface"],
-            bordercolor=THEME["border"],
+            background=THEME["accent_surface"],
+            bordercolor=THEME["accent_surface"],
             borderwidth=1,
             relief="solid",
         )
@@ -5310,13 +5314,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "FocusTitle.TLabel",
             background=THEME["bg"],
             foreground=THEME["text"],
-            font=(FONT_UI_FAMILY, 15, "bold"),
+            font=(FONT_UI_FAMILY, 17, "bold"),
         )
         style.configure(
             "FocusActiveTitle.TLabel",
             background=THEME["bg"],
             foreground=THEME["text"],
-            font=(FONT_UI_FAMILY, 13, "bold"),
+            font=(FONT_UI_FAMILY, 14, "bold"),
         )
         style.configure(
             "FocusProfile.TLabel",
@@ -5350,15 +5354,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         style.configure(
             "CloudTitle.TLabel",
-            background=THEME["surface"],
+            background=THEME["accent_surface"],
             foreground=THEME["text"],
             font=FONT_UI_MEDIUM,
         )
         style.configure(
             "CloudBadge.TLabel",
-            background=THEME["surface"],
+            background=THEME["accent_surface"],
             foreground=THEME["accent"],
             font=FONT_UI_SMALL_MEDIUM,
+        )
+        style.configure(
+            "CloudMuted.TLabel",
+            background=THEME["accent_surface"],
+            foreground=THEME["muted"],
+            font=FONT_UI_SMALL,
         )
         style.configure(
             "FocusNav.TButton",
@@ -5424,16 +5434,47 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             focusthickness=0,
             focuscolor=THEME["surface"],
             relief="flat",
-            padding=(11, 6),
+            padding=(13, 8),
             font=FONT_UI_SMALL_MEDIUM,
         )
         style.map(
             "FocusQuiet.TButton",
-            background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])],
+            background=[
+                ("active", THEME["surface_hover"]),
+                ("pressed", THEME["panel"]),
+                ("disabled", THEME["panel"]),
+            ],
             foreground=[("active", THEME["text"])],
             bordercolor=[("focus", THEME["accent"])],
             lightcolor=[("focus", THEME["accent"])],
             darkcolor=[("focus", THEME["accent"])],
+        )
+        style.configure(
+            "FocusGhost.TButton",
+            background=THEME["bg"],
+            foreground=THEME["muted"],
+            bordercolor=THEME["bg"],
+            lightcolor=THEME["bg"],
+            darkcolor=THEME["bg"],
+            focusthickness=0,
+            focuscolor=THEME["bg"],
+            relief="flat",
+            padding=(12, 8),
+            font=FONT_UI_SMALL_MEDIUM,
+        )
+        style.map(
+            "FocusGhost.TButton",
+            background=[("active", THEME["surface"]), ("pressed", THEME["panel"])],
+            foreground=[("active", THEME["text"]), ("disabled", THEME["subtle"])],
+            bordercolor=[("focus", THEME["accent"])],
+        )
+        style.configure(
+            "Danger.TButton",
+            background=THEME["danger"],
+            foreground="#ffffff",
+            bordercolor=THEME["danger"],
+            padding=(13, 8),
+            font=FONT_UI_SMALL_MEDIUM,
         )
         style.configure(
             "CloudDisabled.TButton",
@@ -5925,7 +5966,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         parent.rowconfigure(2, weight=1)
 
         command_area = ttk.Frame(parent, style="FocusShell.TFrame")
-        command_area.grid(row=0, column=0, sticky="ew", padx=70, pady=(34, 12))
+        command_area.grid(row=0, column=0, sticky="ew", padx=70, pady=(38, 14))
         command_area.columnconfigure(0, weight=1)
         self.focus_command_area = command_area
 
@@ -6032,7 +6073,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             style="FocusQuiet.TButton",
         )
         local_media_row = ttk.Frame(command_area, style="FocusShell.TFrame")
-        local_media_row.grid(row=1, column=0, sticky="e", pady=(8, 0))
+        local_media_row.grid(row=1, column=0, sticky="e", pady=(10, 0))
         ttk.Label(
             local_media_row,
             text="Have local audio?",
@@ -6235,10 +6276,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         detail_pane.columnconfigure(1, weight=2)
         detail_pane.rowconfigure(0, weight=1)
         self.focus_detail_pane = detail_pane
-        live_frame = ttk.Frame(detail_pane, style="FocusShell.TFrame")
-        summary_frame = ttk.Frame(detail_pane, style="FocusShell.TFrame")
-        live_frame.grid(row=0, column=0, sticky="nsew")
-        summary_frame.grid(row=0, column=1, sticky="nsew")
+        live_frame = tk.Frame(
+            detail_pane, bg=THEME["surface"], bd=0, highlightthickness=0
+        )
+        summary_frame = tk.Frame(
+            detail_pane, bg=THEME["surface"], bd=0, highlightthickness=0
+        )
+        live_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        summary_frame.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         self.focus_live_frame = live_frame
         self.focus_summary_frame = summary_frame
         live_frame.columnconfigure(0, weight=1)
@@ -6251,38 +6296,39 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             width=1,
             wrap="word",
             state="disabled",
-            bg=THEME["bg"],
+            bg=THEME["surface"],
             fg=THEME["muted"],
-            insertbackground=THEME["bg"],
+            insertbackground=THEME["surface"],
             relief="flat",
             bd=0,
             highlightthickness=0,
-            padx=0,
-            pady=4,
+            padx=14,
+            pady=12,
             font=FONT_MONO,
             takefocus=0,
             insertwidth=0,
         )
-        self.focus_log.grid(row=0, column=0, sticky="nsew", padx=(0, 22))
+        self.focus_log.grid(row=0, column=0, sticky="nsew")
         self.focus_summary_text = tk.Text(
             summary_frame,
             height=4,
             width=1,
             wrap="word",
             state="disabled",
-            bg=THEME["bg"],
+            bg=THEME["surface"],
             fg=THEME["text"],
-            insertbackground=THEME["bg"],
+            insertbackground=THEME["surface"],
             relief="flat",
             bd=0,
             highlightthickness=0,
-            padx=0,
-            pady=7,
+            padx=14,
+            pady=12,
             font=FONT_MONO,
             takefocus=0,
             insertwidth=0,
         )
         self.focus_summary_text.grid(row=0, column=0, sticky="nsew")
+        self._structured_summary_widgets = {self.focus_summary_text}
         bind_smooth_vertical_wheel(self.focus_log, mode="pixels")
         bind_smooth_vertical_wheel(self.focus_summary_text, mode="pixels")
         self._set_text(
@@ -6316,12 +6362,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.focus_deck_header = deck_header
 
-        deck_border = tk.Frame(
-            deck_area, bg=THEME["border"], bd=0, highlightthickness=0
-        )
+        deck_border = tk.Frame(deck_area, bg=THEME["bg"], bd=0, highlightthickness=0)
         deck_border.grid(row=1, column=0, sticky="ew")
         deck = ttk.Frame(deck_border, style="FocusShell.TFrame")
-        deck.pack(fill="both", expand=True, padx=1, pady=1)
+        deck.pack(fill="both", expand=True)
         self.focus_run_deck = deck
         deck.bind(
             "<Configure>", self._schedule_focus_run_deck_geometry_refresh, add="+"
@@ -6344,7 +6388,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_library_view = parent
 
         actions = ttk.Frame(parent, style="FocusShell.TFrame")
-        actions.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 10))
+        actions.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 14))
         actions.columnconfigure(0, weight=1)
         heading = ttk.Frame(actions, style="FocusShell.TFrame")
         heading.grid(row=0, column=0, sticky="w")
@@ -6353,19 +6397,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ttk.Label(heading_title, text="Library", style="FocusTitle.TLabel").pack(
             side="left"
         )
+        ttk.Label(
+            heading, text="Saved downloads and metadata previews", style="Muted.TLabel"
+        ).pack(anchor="w", pady=(4, 0))
+        filter_row = ttk.Frame(actions, style="FocusShell.TFrame")
+        filter_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(14, 0))
         self.focus_library_output_type_selector = SegmentedSelector(
-            heading_title,
+            filter_row,
             variable=self.library_output_type_var,
             values=(LIBRARY_ALL_MEDIA, OutputType.MP4.value, OutputType.MP3.value),
             background=THEME["bg"],
             compact=True,
         )
-        self.focus_library_output_type_selector.pack(side="left", padx=(14, 0))
-        ttk.Label(
-            heading, text="Saved downloads and metadata previews", style="Muted.TLabel"
-        ).pack(anchor="w", pady=(3, 0))
-        action_row = ttk.Frame(actions, style="FocusShell.TFrame")
-        action_row.grid(row=0, column=1, sticky="e")
+        self.focus_library_output_type_selector.pack(side="left")
+        action_row = ttk.Frame(filter_row, style="FocusShell.TFrame")
+        action_row.pack(side="right")
         self.focus_library_category_filter = LibraryCategoryFilter(
             action_row,
             variable=self.library_category_var,
@@ -6518,12 +6564,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_selected_overview = overview
         self._focus_selected_overview_height = FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT
         self._focus_selected_overview_layout_after_id: str | None = None
-        self._focus_selected_text_width = 220
+        self._focus_selected_text_width = 208
         self._focus_selected_location_is_status = False
         self.focus_selected_title_label = ttk.Label(
             overview,
             textvariable=self.selected_title_display_var,
-            wraplength=220,
+            wraplength=208,
             justify="left",
             style="FocusActiveTitle.TLabel",
         )
@@ -6533,7 +6579,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_selected_meta_label = ttk.Label(
             overview,
             textvariable=self.selected_meta_display_var,
-            wraplength=220,
+            wraplength=208,
             justify="left",
             style="Muted.TLabel",
         )
@@ -6543,7 +6589,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_selected_location_label = ttk.Label(
             overview,
             textvariable=self.selected_location_display_var,
-            wraplength=220,
+            wraplength=208,
             justify="left",
             style="FocusProfile.TLabel",
         )
@@ -6553,15 +6599,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         thumbnail_wrap = tk.Frame(
             overview,
             bg=THEME["bg"],
-            width=144,
-            height=youtube_thumbnail_size(144)[1],
+            width=156,
+            height=youtube_thumbnail_size(156)[1],
             bd=0,
             highlightthickness=0,
         )
         thumbnail_wrap.grid(row=0, column=1, rowspan=3, sticky="ne")
         # The thumbnail label is packed inside this wrapper, so pack—not Grid—
         # owns child geometry. Disabling the correct propagation keeps the
-        # responsive 104/124/144 px artwork cap authoritative.
+        # responsive 112/136/156 px artwork cap authoritative.
         thumbnail_wrap.pack_propagate(False)
         self.focus_thumbnail_wrap = thumbnail_wrap
         self.thumbnail_label = tk.Label(
@@ -6584,7 +6630,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         def layout_selected_overview(event: tk.Event[Any]) -> None:
             artwork_width = (
-                104 if event.height < 300 else 124 if event.width < 380 else 144
+                112 if event.height < 300 else 136 if event.width < 380 else 156
             )
             thumbnail_wrap.configure(
                 width=artwork_width, height=youtube_thumbnail_size(artwork_width)[1]
@@ -6716,6 +6762,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.source_summary_text.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         self.output_summary_text.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        self._structured_summary_widgets.update(
+            {self.source_summary_text, self.output_summary_text}
+        )
         self.focus_library_summary = summary
         for text_widget in (
             self.pulled_tags_text,
@@ -6989,14 +7038,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             width=1,
             wrap="word",
             state="disabled",
-            bg=THEME["bg"],
+            bg=THEME["surface"],
             fg=THEME["muted"],
             insertbackground=THEME["text"],
             relief="flat",
             bd=0,
             highlightthickness=0,
-            padx=0,
-            pady=6,
+            padx=14,
+            pady=12,
             font=FONT_MONO,
         )
         log_scrollbar = SleekScrollbar(log_wrap, command=self.log.yview)
@@ -8591,7 +8640,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         column: int,
         visible_count: int,
     ) -> None:
-        tile_bg = THEME["bg"]
+        tile_bg = THEME["surface"]
         tile = tk.Frame(
             self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2"
         )
@@ -8602,7 +8651,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             column=column,
             sticky="nsew",
             padx=(left_pad, right_pad),
-            pady=6 if self._focus_layout == "compact" else 9,
+            pady=4 if self._focus_layout == "compact" else 6,
+            ipadx=10,
+            ipady=8,
         )
         tile.columnconfigure(1, weight=1)
         source = self._focus_thumbnail_source_for_record(record)
@@ -8773,7 +8824,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     <= pointer_y
                     < card.winfo_rooty() + card.winfo_height()
                 )
-                background = THEME["surface"] if inside else THEME["bg"]
+                background = THEME["surface_hover"] if inside else THEME["surface"]
                 for card_widget in card_widgets:
                     card_widget.configure({"bg": background})
             except tk.TclError:
@@ -11236,27 +11287,62 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._refresh_focus_run_deck()
 
     def _set_text(self, widget: tk.Text, text: str, *, disabled: bool = False) -> None:
+        if widget in self.__dict__.get("_structured_summary_widgets", set()):
+            self._set_structured_summary_text(widget, text, disabled=disabled)
+            return
         widget.config(state="normal")
         widget.delete("1.0", "end")
         widget.insert("1.0", text)
         if disabled:
             widget.config(state="disabled")
 
-    def _set_encoding_summary_text(self, widget: tk.Text, text: str) -> None:
-        widget.config(state="normal")
+    def _set_structured_summary_text(
+        self,
+        widget: tk.Text,
+        text: str,
+        *,
+        disabled: bool = True,
+    ) -> None:
+        """Render dense facts as calm label/value rows on one owned surface."""
+
+        widget.config(state="normal", tabs=(116,))
         widget.delete("1.0", "end")
+        widget.tag_configure(
+            "summary-label",
+            foreground=THEME["muted"],
+            font=FONT_UI_SMALL,
+            spacing1=2,
+            spacing3=2,
+        )
+        widget.tag_configure(
+            "summary-value",
+            foreground=THEME["text"],
+            font=FONT_MONO,
+            spacing1=2,
+            spacing3=2,
+        )
+        widget.tag_configure(
+            "summary-note",
+            foreground=THEME["muted"],
+            font=FONT_UI_SMALL,
+            spacing1=2,
+            spacing3=2,
+        )
         for line_index, line in enumerate(text.splitlines()):
             if line_index:
                 widget.insert("end", "\n")
-            label, separator, value = line.partition(":")
-            if not separator:
-                widget.insert("end", line)
+            match = re.match(r"^(.+?)(?::|\s{2,})\s*(\S.*)$", line)
+            if match is None:
+                widget.insert("end", line, "summary-note")
                 continue
-            tag_name = f"summary-label-{line_index}"
-            widget.tag_configure(tag_name, foreground=summary_label_color(label))
-            widget.insert("end", f"{label}:", tag_name)
-            widget.insert("end", value)
-        widget.config(state="disabled")
+            label, value = match.groups()
+            widget.insert("end", f"{label.strip()}\t", "summary-label")
+            widget.insert("end", value.strip(), "summary-value")
+        if disabled:
+            widget.config(state="disabled")
+
+    def _set_encoding_summary_text(self, widget: tk.Text, text: str) -> None:
+        self._set_structured_summary_text(widget, text)
 
     def _display_selected_metadata(self, index: int) -> None:
         if index < 0 or index >= len(self.metadata_items):

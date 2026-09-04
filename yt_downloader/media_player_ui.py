@@ -15,7 +15,7 @@ from .playback_backend import MediaPlayerError, PlaybackBackend, PlaybackSnapsho
 from .playback_surface import TkPlaybackSurfaceOwner
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, FONT_UI_SMALL, THEME
-from .ui_widgets import reveal_toplevel
+from .ui_widgets import SleekScrollbar, load_ui_icon, reveal_toplevel
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -230,7 +230,7 @@ class MediaPlayerWindow:
         self.popup = popup
 
         root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=22, pady=18)
+        root.pack(fill="both", expand=True, padx=24, pady=20)
         root.columnconfigure(0, weight=3)
         root.columnconfigure(1, weight=1, minsize=235)
         root.rowconfigure(1, weight=1, minsize=290)
@@ -271,13 +271,13 @@ class MediaPlayerWindow:
             header,
             text="Done",
             command=self.close,
-            style="FocusQuiet.TButton",
+            style="FocusGhost.TButton",
         ).grid(row=0, column=1, rowspan=2, sticky="e")
 
     def _build_stage(self, root: ttk.Frame) -> None:
         stage_shell = tk.Frame(
             root,
-            bg=THEME["border"],
+            bg="#000000",
             bd=0,
             width=690,
             height=388,
@@ -296,7 +296,7 @@ class MediaPlayerWindow:
             bd=0,
             highlightthickness=0,
         )
-        self.stage.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.stage.grid(row=0, column=0, sticky="nsew")
         self.stage.bind("<Configure>", self._queue_stage_render, add="+")
         if self.thumbnail_path is not None:
             self._render_still_image(self.thumbnail_path)
@@ -312,7 +312,7 @@ class MediaPlayerWindow:
         )
         self.chapter_list: tk.Listbox | None = None
         if self._chapters:
-            chapter_shell = ttk.Frame(sidebar, style="FocusShell.TFrame")
+            chapter_shell = ttk.Frame(sidebar, style="FocusSurface.TFrame")
             chapter_shell.grid(row=1, column=0, sticky="ew")
             chapter_shell.columnconfigure(0, weight=1)
             self.chapter_list = tk.Listbox(
@@ -326,8 +326,7 @@ class MediaPlayerWindow:
                 selectbackground=THEME["accent_dark"],
                 selectforeground="#ffffff",
                 bd=0,
-                highlightthickness=1,
-                highlightbackground=THEME["border"],
+                highlightthickness=0,
                 font=FONT_UI_SMALL,
             )
             self.chapter_list.grid(row=0, column=0, sticky="ew")
@@ -338,9 +337,8 @@ class MediaPlayerWindow:
                 )
             self.chapter_list.bind("<<ListboxSelect>>", self._chapter_selected)
             if len(self._chapters) > CHAPTER_ROWS_MAX:
-                scrollbar = ttk.Scrollbar(
+                scrollbar = SleekScrollbar(
                     chapter_shell,
-                    orient="vertical",
                     command=self.chapter_list.yview,
                 )
                 scrollbar.grid(row=0, column=1, sticky="ns")
@@ -380,7 +378,7 @@ class MediaPlayerWindow:
                 justify="left",
             ).grid(row=4, column=0, sticky="w")
             return
-        detail_shell = ttk.Frame(sidebar, style="FocusShell.TFrame")
+        detail_shell = ttk.Frame(sidebar, style="FocusSurface.TFrame")
         detail_shell.grid(row=4, column=0, sticky="ew")
         detail_shell.columnconfigure(0, weight=1)
         details = tk.Text(
@@ -399,9 +397,8 @@ class MediaPlayerWindow:
         details.insert("1.0", detail_text)
         details.configure(state="disabled")
         if bounded_content_rows(detail_text, maximum=10_000) > DETAIL_ROWS_MAX:
-            scrollbar = ttk.Scrollbar(
+            scrollbar = SleekScrollbar(
                 detail_shell,
-                orient="vertical",
                 command=details.yview,
             )
             scrollbar.grid(row=0, column=1, sticky="ns")
@@ -411,14 +408,20 @@ class MediaPlayerWindow:
         transport = ttk.Frame(root, style="FocusShell.TFrame")
         transport.grid(row=2, column=0, sticky="ew", padx=(0, 18), pady=(12, 0))
         transport.columnconfigure(1, weight=1)
+        self._play_icon = load_ui_icon("play", size=(18, 18), color="#ffffff")
+        self._pause_icon = load_ui_icon("pause", size=(18, 18), color="#ffffff")
+        self._volume_icon = load_ui_icon(
+            "volume-2", size=(16, 16), color=THEME["muted"]
+        )
         self.play_button = ttk.Button(
             transport,
-            text="Play",
+            text="" if self._play_icon is not None else "Play",
+            image=self._play_icon if self._play_icon is not None else "",
             command=self._toggle,
             style="Accent.TButton",
-            width=8,
+            width=3,
         )
-        self.play_button.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
+        self.play_button.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 10))
         self.timeline = tk.Canvas(
             transport,
             height=42,
@@ -441,20 +444,28 @@ class MediaPlayerWindow:
         )
         self.volume_var = tk.IntVar(value=self.playback.snapshot.volume)
         self.volume_label_var = tk.StringVar(value=f"Volume  {self.volume_var.get()}%")
+        volume_icon = ttk.Label(
+            transport,
+            image=self._volume_icon if self._volume_icon is not None else "",
+            text="Volume" if self._volume_icon is None else "",
+            style="Muted.TLabel",
+        )
+        volume_icon.grid(row=1, column=3, sticky="e", padx=(12, 5))
         ttk.Label(
             transport,
             textvariable=self.volume_label_var,
             style="Muted.TLabel",
-        ).grid(row=1, column=3, sticky="e", padx=(12, 5))
+        ).grid(row=1, column=4, sticky="e", padx=(0, 5))
         volume = PlayerVolumeControl(
             transport,
             variable=self.volume_var,
             command=self._schedule_volume,
         )
-        volume.grid(row=1, column=4, sticky="e")
+        volume.grid(row=1, column=5, sticky="e")
 
     def _build_preview_strip(self, root: ttk.Frame) -> None:
         self.preview_labels: list[tk.Label] = []
+        self._preview_positions: list[float] = []
         if self._audio_only:
             return
         strip = ttk.Frame(root, style="FocusShell.TFrame")
@@ -468,6 +479,7 @@ class MediaPlayerWindow:
         ).grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 6))
         for index in range(5):
             position = self.playback.snapshot.duration * ((index + 0.5) / 5)
+            self._preview_positions.append(position)
             label = tk.Label(
                 strip,
                 text="Loading preview…",
@@ -476,6 +488,8 @@ class MediaPlayerWindow:
                 width=16,
                 height=4,
                 bd=0,
+                highlightthickness=1,
+                highlightbackground=THEME["surface"],
                 font=FONT_UI_SMALL,
                 cursor="hand2",
             )
@@ -486,6 +500,12 @@ class MediaPlayerWindow:
                 padx=(0 if index == 0 else 4, 0),
             )
             label.bind("<Button-1>", self._preview_seek_handler(index))
+            label.bind("<Enter>", self._preview_hover_enter, add="+")
+            label.bind(
+                "<Leave>",
+                lambda _event: self._sync_preview_selection(),
+                add="+",
+            )
             self.preview_labels.append(label)
             ttk.Label(
                 strip,
@@ -498,6 +518,9 @@ class MediaPlayerWindow:
             self._seek_preview(index)
 
         return seek
+
+    def _preview_hover_enter(self, event: tk.Event[tk.Label]) -> None:
+        event.widget.configure(highlightbackground=THEME["accent_dark"])
 
     def show(self) -> None:
         reveal_toplevel(
@@ -667,12 +690,44 @@ class MediaPlayerWindow:
             )
             self.status_var.set(snapshot.status)
             self.play_button.configure(
-                text=("Pause" if snapshot.status in {"Playing", "Starting"} else "Play")
+                text=(
+                    ""
+                    if self._play_icon is not None and self._pause_icon is not None
+                    else "Pause"
+                    if snapshot.status in {"Playing", "Starting"}
+                    else "Play"
+                ),
+                image=(
+                    self._pause_icon
+                    if snapshot.status in {"Playing", "Starting"}
+                    else self._play_icon
+                )
+                if self._play_icon is not None and self._pause_icon is not None
+                else "",
             )
             self._update_timeline_value(snapshot)
+            self._sync_preview_selection()
         self._drain_previews()
         self._last_snapshot = snapshot
         self._poll_after_id = self.popup.after(100, self._poll)
+
+    def _sync_preview_selection(self) -> None:
+        if not self.preview_labels or not self._preview_positions:
+            return
+        position = self.playback.snapshot.position
+        active = min(
+            range(len(self._preview_positions)),
+            key=lambda index: abs(self._preview_positions[index] - position),
+        )
+        for index, label in enumerate(self.preview_labels):
+            try:
+                label.configure(
+                    highlightbackground=(
+                        THEME["accent"] if index == active else THEME["surface"]
+                    )
+                )
+            except tk.TclError:
+                return
 
     def _render_still_image(self, path: Path) -> None:
         if Image is None or ImageOps is None or ImageTk is None:
