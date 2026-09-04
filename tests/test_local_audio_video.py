@@ -27,7 +27,10 @@ from yt_downloader.local_audio_video import (
     local_video_filename,
     new_local_audio_video_request,
 )
-from yt_downloader.local_audio_video_ui import LocalAudioVideoDialog
+from yt_downloader.local_audio_video_ui import (
+    LocalAudioVideoDialog,
+    compact_dialog_path,
+)
 from yt_downloader.models import OutputType
 
 
@@ -231,6 +234,20 @@ def test_dialog_preserves_actionable_error_when_controls_return_idle() -> None:
         "status",
         "The selected audio is not a valid, playable MP3 file.",
     ) in values
+
+
+def test_dialog_output_path_is_bounded_without_hiding_its_destination() -> None:
+    path = Path("/exports") / "/".join(
+        f"descriptive destination segment {index}" for index in range(12)
+    )
+
+    displayed = compact_dialog_path(path, maximum=90)
+
+    assert len(displayed) <= 90
+    assert displayed.startswith("/exports/")
+    assert displayed.endswith("descriptive destination segment 11")
+    assert "…" in displayed
+    assert compact_dialog_path(Path("/exports/short"), maximum=90) == "/exports/short"
 
 
 def test_conversion_commits_directly_to_output_and_projects_into_mp4_library(

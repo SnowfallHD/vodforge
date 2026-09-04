@@ -105,7 +105,13 @@ class FocusSettingsDialog:
         popup.minsize(700, 540)
         self.popup = popup
 
-        surface = ActionDialogSurface(popup, padx=22, pady=20, footer_gap=14)
+        surface = ActionDialogSurface(
+            popup,
+            padx=22,
+            pady=20,
+            footer_gap=14,
+            allow_body_scroll=True,
+        )
         self.dialog_surface = surface
         root = surface.body
         root.columnconfigure(0, weight=1)

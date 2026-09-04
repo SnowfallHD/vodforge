@@ -182,11 +182,11 @@ def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
 
 
 class ActionDialogSurface:
-    """Keep a dialog's actions visible while dynamic content scrolls above them.
+    """Keep dialog actions visible independently of bounded body content.
 
-    The footer is a sibling of the scrolling viewport, never one of its children.
-    This makes action visibility structural: wrapped labels and other expanding
-    body content can consume only the viewport, not the footer's reserved space.
+    The footer is always a sibling of the body, never one of its children. Most
+    dialogs receive a normal adaptive frame. A body scrollbar is an explicit
+    exception for feature-dense document surfaces such as Settings.
     """
 
     def __init__(
@@ -196,28 +196,42 @@ class ActionDialogSurface:
         padx: int = 24,
         pady: int = 22,
         footer_gap: int = 18,
+        allow_body_scroll: bool = False,
     ) -> None:
         shell = ttk.Frame(popup, style="FocusShell.TFrame")
         shell.pack(fill="both", expand=True, padx=padx, pady=pady)
         shell.columnconfigure(0, weight=1)
         shell.rowconfigure(0, weight=1)
 
-        viewport = tk.Canvas(
-            shell,
-            bg=THEME["bg"],
-            bd=0,
-            highlightthickness=0,
-            takefocus=False,
-        )
-        viewport.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(shell, orient="vertical", command=viewport.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
-        scrollbar.grid_remove()
-        viewport.configure(yscrollcommand=scrollbar.set)
-
-        body = ttk.Frame(viewport, style="FocusShell.TFrame")
+        viewport: tk.Canvas | None = None
+        scrollbar: ttk.Scrollbar | None = None
+        body_window: int | None = None
+        if allow_body_scroll:
+            viewport = tk.Canvas(
+                shell,
+                bg=THEME["bg"],
+                bd=0,
+                highlightthickness=0,
+                takefocus=False,
+            )
+            viewport.grid(row=0, column=0, sticky="nsew")
+            scrollbar = ttk.Scrollbar(
+                shell,
+                orient="vertical",
+                command=viewport.yview,
+            )
+            scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+            scrollbar.grid_remove()
+            viewport.configure(yscrollcommand=scrollbar.set)
+            body = ttk.Frame(viewport, style="FocusShell.TFrame")
+            body_window = viewport.create_window((0, 0), window=body, anchor="nw")
+            viewport.bind("<Configure>", self._viewport_resized, add="+")
+            body.bind("<Configure>", self._body_resized, add="+")
+            bind_smooth_vertical_wheel(viewport, viewport, body, mode="pixels")
+        else:
+            body = ttk.Frame(shell, style="FocusShell.TFrame")
+            body.grid(row=0, column=0, sticky="nsew")
         body.columnconfigure(0, weight=1)
-        body_window = viewport.create_window((0, 0), window=body, anchor="nw")
 
         footer = ttk.Frame(shell, style="FocusShell.TFrame")
         footer.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(footer_gap, 0))
@@ -230,11 +244,9 @@ class ActionDialogSurface:
         self.footer = footer
         self._body_window = body_window
 
-        viewport.bind("<Configure>", self._viewport_resized, add="+")
-        body.bind("<Configure>", self._body_resized, add="+")
-        bind_smooth_vertical_wheel(viewport, viewport, body, mode="pixels")
-
     def _viewport_resized(self, event: tk.Event[tk.Canvas]) -> None:
+        if self.viewport is None or self._body_window is None:
+            return
         try:
             self.viewport.itemconfigure(self._body_window, width=max(1, event.width))
         except tk.TclError:
@@ -245,6 +257,8 @@ class ActionDialogSurface:
         self._sync_overflow()
 
     def _sync_overflow(self) -> None:
+        if self.viewport is None or self.scrollbar is None:
+            return
         try:
             bounds = self.viewport.bbox("all")
             self.viewport.configure(scrollregion=bounds or (0, 0, 0, 0))

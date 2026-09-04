@@ -23,6 +23,18 @@ from .ui_theme import FONT_UI_MEDIUM, THEME
 from .ui_widgets import ActionDialogSurface, SleekProgressbar, reveal_toplevel
 
 
+def compact_dialog_path(path: Path, *, maximum: int = 108) -> str:
+    """Keep an output path informative without allowing it to grow the dialog."""
+    value = str(path)
+    if len(value) <= maximum:
+        return value
+    head = max(12, maximum // 3)
+    tail = max(12, maximum - head - 1)
+    prefix = value[:head].rstrip("/\\")
+    suffix = value[-tail:].lstrip("/\\")
+    return f"{prefix}…{suffix}"
+
+
 class LocalAudioVideoDialog:
     """Own the local MP3 + still-image form and its immutable worker events."""
 
@@ -131,10 +143,8 @@ class LocalAudioVideoDialog:
         )
         ttk.Label(
             destination,
-            text=str(self.output_dir),
+            text=compact_dialog_path(self.output_dir),
             style="Muted.TLabel",
-            wraplength=650,
-            justify="left",
         ).grid(row=1, column=0, sticky="ew", pady=(5, 0))
         ttk.Label(
             destination,

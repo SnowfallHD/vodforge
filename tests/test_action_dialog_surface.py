@@ -42,7 +42,7 @@ class _FakeScrollbar:
         self.visible = False
 
 
-def test_action_surface_scrolls_body_without_surrendering_footer_space() -> None:
+def test_opted_in_action_surface_scrolls_without_surrendering_footer_space() -> None:
     viewport = _FakeViewport(height=420)
     scrollbar = _FakeScrollbar()
     surface = ActionDialogSurface.__new__(ActionDialogSurface)
@@ -105,6 +105,17 @@ def test_every_content_bearing_action_dialog_uses_the_protected_surface() -> Non
     local_content = inspect.getsource(LocalAudioVideoDialog._build_content)
     assert "self._build_actions(surface.footer)" in local_content
     assert "self._build_actions(root)" not in local_content
+
+    settings_source = inspect.getsource(FocusSettingsDialog)
+    assert "allow_body_scroll=True" in settings_source
+    for ordinary_dialog in (
+        LibraryAnnotationDialog,
+        LibraryMediaRecoveryDialog,
+        LocalAudioVideoDialog,
+        DownloaderApp._show_focus_output_details,
+        DownloaderApp._show_selected_metadata_details,
+    ):
+        assert "allow_body_scroll=True" not in inspect.getsource(ordinary_dialog)
 
 
 def test_new_action_dialog_modules_must_adopt_the_shared_surface() -> None:
