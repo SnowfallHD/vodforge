@@ -11,6 +11,7 @@ from .history import history_identity, history_output_dir, history_output_type
 from .library_annotations import LibraryAnnotation
 from .models import DownloadJob, OutputType
 from .run_identity import annotate_job_metadata
+from .thumbnail_state import matching_thumbnail_image
 
 ACTIVE_METADATA_RUN_ID_KEY = "vodforge_active_run_id"
 QUEUED_METADATA_RUN_ID_KEY = "vodforge_queued_run_id"
@@ -714,7 +715,7 @@ def persisted_run_deck_records(
                 ),
                 "job": completed_owner,
                 "preview_thumbnail_image": (
-                    completed_owner.preview_thumbnail_image
+                    matching_thumbnail_image(completed_owner, item)
                     if completed_owner is not None
                     else None
                 ),

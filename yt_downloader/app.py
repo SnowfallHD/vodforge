@@ -219,6 +219,7 @@ from .settings_store import (
     settings_file_path,
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
+from .thumbnail_state import advance_thumbnail_item
 from .ui_events import (
     UiEvent,
     UiEventHandlersMixin,
@@ -8985,11 +8986,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         return source.convert("RGBA").copy()
             except Exception as exc:  # noqa: BLE001 - persisted images may raise decoder-specific errors
                 write_diagnostic(f"run thumbnail could not be loaded ({path}): {exc}")
-        if (
-            str(record.get("kind")) == "active"
-            and self._focus_active_thumbnail_source_image is not None
-        ):
-            return self._focus_active_thumbnail_source_image
         return self._focus_brand_source_image
 
     def _focus_photo_from_source(
@@ -10358,6 +10354,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         incoming_items = [dict(item) for item in iter_video_infos(info)]
         if active_job is not None and incoming_items:
+            if advance_thumbnail_item(active_job, incoming_items[0]):
+                self._invalidate_thumbnail_request("active")
+                self._invalidate_thumbnail_request(f"run:{active_job.run_id}")
             active_job.preview_info = annotate_job_metadata(
                 active_job, incoming_items[0]
             )
@@ -10412,6 +10411,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         """Apply provider metadata only to the run that currently owns the Forge surface."""
         if job is not self.active_job:
             return
+        if advance_thumbnail_item(job, info):
+            self._invalidate_thumbnail_request("active")
+            self._invalidate_thumbnail_request(f"run:{job.run_id}")
+            job.preview_info = None
         job.preview_info = {**(job.preview_info or {}), **info}
         selected_run_id = getattr(self, "_focus_selected_run_id", None)
         selected_for_details = selected_run_id is None or selected_run_id == job.run_id
@@ -10479,7 +10482,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 target="active",
             )
         elif local_thumbnail_path is not None:
-            self._load_thumbnail_file(local_thumbnail_path, target="active")
+            self._load_thumbnail_file(
+                local_thumbnail_path, target="active", owner_run_id=job.run_id
+            )
         elif thumbnail_url:
             self._reset_active_thumbnail()
             self._load_thumbnail_preview(
@@ -11326,6 +11331,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _display_selected_metadata(self, index: int) -> None:
         if index < 0 or index >= len(self.metadata_items):
             return
+        self._invalidate_thumbnail_request("library")
         info = self.metadata_items[index]
         play_button = self.__dict__.get("focus_library_play_button")
         if play_button is not None:
@@ -11415,6 +11421,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         elif cached_thumbnail is not None and cached_thumbnail.is_file():
             self._load_thumbnail_file(cached_thumbnail, target=thumbnail_target)
         elif self.last_thumbnail_url:
+            if self.__dict__.get("_focus_brand_source_image") is not None:
+                self._render_focus_thumbnail_surfaces(
+                    self._focus_brand_source_image, placeholder=True, target="library"
+                )
             self._load_thumbnail_preview(
                 self.last_thumbnail_url,
                 target=thumbnail_target,
@@ -11574,7 +11584,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._delete_focus_native_images(*old_native)
 
     def _thumbnail_request_ids(self) -> dict[str, int]:
-        request_ids = getattr(self, "_thumbnail_preview_request_ids", None)
+        request_ids = self.__dict__.get("_thumbnail_preview_request_ids")
         if not isinstance(request_ids, dict):
             request_ids = {"active": 0, "library": 0}
             self._thumbnail_preview_request_ids = request_ids
@@ -11617,7 +11627,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if (
                 target == "active"
                 and self.active_job is not None
-                and (not owner_run_id or owner_run_id == self.active_job.run_id)
+                and owner_run_id == self.active_job.run_id
             ):
                 self.active_job.preview_thumbnail_image = image.convert("RGBA").copy()
             if hasattr(self, "focus_run_deck"):
@@ -12431,15 +12441,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             write_diagnostic(f"terminal run recovery record could not be saved: {exc}")
             self._reconcile_library_projection()
             return
-        if (
-            job.preview_thumbnail_image is None
-            and self._focus_active_thumbnail_source_image is not None
-            and not self._focus_active_thumbnail_is_placeholder
-            and self._focus_selected_run_id == job.run_id
-        ):
-            job.preview_thumbnail_image = (
-                self._focus_active_thumbnail_source_image.convert("RGBA").copy()
-            )
         self._terminal_jobs = [
             item for item in self._terminal_jobs if item.run_id != job.run_id
         ]
@@ -12454,15 +12455,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         job.terminal_status = status
         job.terminal_message = message
-        if (
-            job.preview_thumbnail_image is None
-            and self._focus_active_thumbnail_source_image is not None
-            and not self._focus_active_thumbnail_is_placeholder
-            and self._focus_selected_run_id == job.run_id
-        ):
-            job.preview_thumbnail_image = (
-                self._focus_active_thumbnail_source_image.convert("RGBA").copy()
-            )
         self._completed_jobs = [
             item for item in self._completed_jobs if item.run_id != job.run_id
         ]

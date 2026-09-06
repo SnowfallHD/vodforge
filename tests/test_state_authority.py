@@ -840,6 +840,59 @@ def test_thumbnail_request_generations_are_independent_by_surface():
     assert app._thumbnail_request_ids() == {"active": 2, "library": 1}
 
 
+def test_playlist_metadata_retires_artwork_before_projection(tmp_path):
+    job = make_job(tmp_path)
+    job.preview_info = {"id": "first", "preview_thumbnail_path": "first.jpeg"}
+    job.preview_thumbnail_image = object()
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = job
+    app.status_var = Value("Downloading")
+    app.library_output_type_var = Value("MP4")
+    app._thumbnail_preview_request_ids = {"active": 7, f"run:{job.run_id}": 3}
+    snapshots = []
+    app._reconcile_library_projection = lambda: snapshots.append(
+        (dict(job.preview_info), job.preview_thumbnail_image)
+    )
+    app._display_active_job_metadata = lambda *_args: None
+    app._display_metadata({"id": "second", "title": "Second"}, active_job=job)
+    assert snapshots[0][0]["id"] == "second"
+    assert "preview_thumbnail_path" not in snapshots[0][0]
+    assert snapshots[0][1] is None
+    assert app._thumbnail_request_ids()["active"] == 8
+    assert app._thumbnail_request_ids()[f"run:{job.run_id}"] == 4
+    # Both late first-item responses must be rejected before decoding or painting.
+    app._display_thumbnail_preview_result({"target": "active", "id": 7})
+    app._display_thumbnail_preview_result({"target": f"run:{job.run_id}", "id": 3})
+
+
+def test_preparing_card_never_borrows_forge_selected_artwork():
+    app = DownloaderApp.__new__(DownloaderApp)
+    app._focus_brand_source_image = object()
+    app._focus_active_thumbnail_source_image = object()
+    assert (
+        app._focus_thumbnail_source_for_record({"kind": "active", "run_id": "new-run"})
+        is app._focus_brand_source_image
+    )
+
+
+def test_playlist_completed_artwork_is_item_scoped(tmp_path):
+    from yt_downloader.thumbnail_state import (
+        advance_thumbnail_item,
+        matching_thumbnail_image,
+    )
+
+    job = make_job(tmp_path)
+    job.preview_info = {"id": "second"}
+    image = object()
+    job.preview_thumbnail_image = image
+    assert matching_thumbnail_image(job, {"id": "first"}) is None
+    assert matching_thumbnail_image(job, {"id": "second"}) is image
+    assert not advance_thumbnail_item(job, {"id": "second", "title": "Updated"})
+    assert job.preview_thumbnail_image is image
+    assert advance_thumbnail_item(job, {"id": "third"})
+    assert job.preview_thumbnail_image is None
+
+
 def test_thumbnail_loading_requires_an_explicit_single_surface_owner():
     file_target = inspect.signature(DownloaderApp._load_thumbnail_file).parameters[
         "target"
