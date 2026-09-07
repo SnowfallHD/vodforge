@@ -5,6 +5,16 @@ import json
 import pytest
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
+
+
+@pytest.fixture(autouse=True)
+def permitted_analytics(tmp_path, monkeypatch):
+    from yt_downloader import analytics_consent
+
+    analytics_consent.AnalyticsConsentOwner(tmp_path).choose(True)
+    monkeypatch.setattr(analytics_consent, "application_data_dir", lambda: tmp_path)
+
+
 from typing import Any, Self
 
 from yt_downloader.heycatch_telemetry import (

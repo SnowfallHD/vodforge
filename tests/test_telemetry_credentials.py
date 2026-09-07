@@ -1,6 +1,16 @@
 import json
 
+import pytest
+
 from yt_downloader import telemetry_credentials as module
+
+
+@pytest.fixture(autouse=True)
+def permitted_analytics(tmp_path, monkeypatch):
+    from yt_downloader import analytics_consent
+
+    monkeypatch.setattr(analytics_consent, "production_telemetry_allowed", lambda: True)
+    analytics_consent.AnalyticsConsentOwner(tmp_path).choose(True)
 
 
 class Response:
@@ -74,7 +84,7 @@ def test_suppressed_build_creates_no_credential_or_request(tmp_path, monkeypatch
 
     owner = module.TelemetryCredentialOwner(tmp_path, opener=forbidden)
     assert not owner.first_launch("0.1.8", "macos")
-    assert list(tmp_path.iterdir()) == []
+    assert {path.name for path in tmp_path.iterdir()} == {"analytics-consent.json"}
 
 
 def test_rate_limit_backoff_survives_owner_recreation(tmp_path, monkeypatch):

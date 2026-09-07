@@ -28,6 +28,14 @@ CLAIM_TOKEN = "A" * 43
 CLAIM_URL = f"https://getvodforge.com/claim#token={CLAIM_TOKEN}"
 
 
+@pytest.fixture(autouse=True)
+def permitted_analytics(tmp_path, monkeypatch):
+    from yt_downloader import analytics_consent
+
+    analytics_consent.AnalyticsConsentOwner(tmp_path).choose(True)
+    monkeypatch.setattr(analytics_consent, "application_data_dir", lambda: tmp_path)
+
+
 class PayloadResponse:
     status = 200
 
@@ -134,7 +142,7 @@ def test_owner_delivers_d1_then_alias_claim_then_direct_native_event(tmp_path: P
     assert len(native_calls) == 1
 
 
-def test_owner_does_not_send_native_event_when_browser_claim_expires(
+def test_permitted_native_event_is_independent_of_expired_browser_claim(
     tmp_path: Path,
 ):
     path = _state_path(tmp_path)
@@ -160,12 +168,12 @@ def test_owner_does_not_send_native_event_when_browser_claim_expires(
     assert updated.attribution_claim_opened is True
     assert updated.attribution_claim_confirmed is False
     assert updated.attribution_claim_token is None
-    assert updated.heycatch_first_launch_confirmed is False
-    assert native_calls == []
+    assert updated.heycatch_first_launch_confirmed is True
+    assert native_calls == [original.install_id]
     assert owner.needs_delivery(updated) is False
 
 
-def test_owner_keeps_pending_claim_retryable_without_sending_native_event(
+def test_owner_sends_permitted_native_event_while_claim_is_pending(
     tmp_path: Path,
 ):
     path = _state_path(tmp_path)
@@ -191,9 +199,9 @@ def test_owner_keeps_pending_claim_retryable_without_sending_native_event(
     assert updated.attribution_claim_opened is True
     assert updated.attribution_claim_confirmed is False
     assert updated.attribution_claim_token is not None
-    assert updated.heycatch_first_launch_confirmed is False
-    assert native_calls == []
-    assert owner.needs_delivery(updated) is True
+    assert updated.heycatch_first_launch_confirmed is True
+    assert native_calls == [original.install_id]
+    assert owner.needs_delivery(updated) is False
 
 
 def test_owner_retries_native_delivery_without_reopening_a_confirmed_claim(

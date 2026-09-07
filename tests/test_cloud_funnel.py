@@ -8,6 +8,15 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
+
+@pytest.fixture(autouse=True)
+def permitted_analytics(tmp_path, monkeypatch):
+    from yt_downloader import analytics_consent
+
+    analytics_consent.AnalyticsConsentOwner(tmp_path).choose(True)
+    monkeypatch.setattr(analytics_consent, "application_data_dir", lambda: tmp_path)
+
+
 from yt_downloader.cloud_funnel import (
     CLOUD_CLICK_ENDPOINT,
     CLOUD_LAUNCH_ENDPOINT,

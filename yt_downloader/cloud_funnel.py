@@ -14,6 +14,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from .analytics_consent import analytics_allowed
 from .history import application_data_dir
 from .telemetry_policy import production_telemetry_allowed
 
@@ -296,7 +297,7 @@ def installation_platform(platform_name: str | None = None) -> str:
 
 
 def cloud_page_url(install_id: str | None) -> str:
-    if not production_telemetry_allowed() or not install_id:
+    if not production_telemetry_allowed() or not analytics_allowed() or not install_id:
         return CLOUD_PAGE_URL
     return f"{CLOUD_PAGE_URL}?{urllib.parse.urlencode({'iid': _parse_install_id(install_id)})}"
 
@@ -308,7 +309,7 @@ def _post_json(
     opener: Callable[..., Any] = urllib.request.urlopen,
     timeout_seconds: float = NETWORK_TIMEOUT_SECONDS,
 ) -> bool:
-    if not production_telemetry_allowed():
+    if not production_telemetry_allowed() or not analytics_allowed():
         return False
     request = urllib.request.Request(
         url,

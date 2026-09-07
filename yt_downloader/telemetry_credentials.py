@@ -20,6 +20,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .analytics_consent import analytics_allowed
 from .cloud_funnel import load_or_create_installation_state
 from .private_files import write_private_bytes
 from .safe_output import is_symlink_or_reparse
@@ -107,7 +108,9 @@ class TelemetryCredentialOwner:
     def _post(
         self, action: str, payload: dict[str, Any], credential: dict[str, Any]
     ) -> dict[str, Any] | None:
-        if not production_telemetry_allowed():
+        if not production_telemetry_allowed() or not analytics_allowed(
+            self.path.parent
+        ):
             return None
         try:
             previous = _read(self.backoff)

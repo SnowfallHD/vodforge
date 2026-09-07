@@ -36,6 +36,8 @@ from . import platform_services as _platform_services
 from . import ui_layout as _ui_layout
 from . import ui_widgets as _ui_widgets
 from .activity_ui import ActivityLogText, ActivitySummary, terminal_activity_line
+from .analytics_consent import AnalyticsConsentOwner
+from .analytics_startup import AnalyticsStartup
 from .cloud_funnel import (
     InstallationIdentityError,
     InstallationState,
@@ -4830,7 +4832,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.installation_state_path = installation_state_path()
         self.installation_state: InstallationState | None = None
         self.installation_attribution = InstallationAttributionOwner(
-            self.installation_state_path
+            self.installation_state_path, browser_opener=lambda *_args, **_kwargs: False
         )
         self._first_launch_worker: threading.Thread | None = None
         self._cloud_seen_worker: threading.Thread | None = None
@@ -4890,11 +4892,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             enabled=self.anonymous_usage_analytics_var.get(),
             diagnostic=write_diagnostic,
         )
-        self.anonymous_usage_analytics_var.trace_add(
-            "write",
-            lambda *_args: self.product_telemetry.set_enabled(
-                self.anonymous_usage_analytics_var.get()
-            ),
+        self.analytics_consent = AnalyticsConsentOwner(
+            self.installation_state_path.parent,
+            legacy_disabled=not self.anonymous_usage_analytics_var.get(),
+        )
+        self.analytics_startup = AnalyticsStartup(
+            self,
+            self.analytics_consent,
+            self.anonymous_usage_analytics_var,
+            self._analytics_permission_changed,
         )
 
         self.url_var = tk.StringVar()
@@ -5097,7 +5103,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.after(0, self._launch_next_pending_job)
         self._check_runtime()
         self.after(100, self._pump_events)
-        self.after(250, self._record_first_launch)
+        self.after(250, self.analytics_startup.start)
         self.after(400, self._record_product_app_opened)
         self.after(25, self._start_ytdlp_preload)
         if self.playback_engine is not None:
@@ -7042,6 +7048,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         self._first_launch_worker = threading.Thread(target=worker, daemon=True)
         self._first_launch_worker.start()
+
+    def _analytics_permission_changed(self, enabled: bool) -> None:
+        self.product_telemetry.set_enabled(enabled)
+        if enabled and not self._closing:
+            self._record_first_launch()
+            self._record_product_app_opened()
 
     def _record_product_app_opened(self) -> None:
         telemetry = self.__dict__.get("product_telemetry")
@@ -12125,6 +12137,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if settings_owner is not None:
             settings_owner.flush()
         telemetry_owner = self.__dict__.get("product_telemetry")
+        startup = self.__dict__.get("analytics_startup")
+        if startup is not None:
+            startup.close()
         if telemetry_owner is not None:
             telemetry_owner.flush_async()
         self._close_deadline = time.monotonic() + APPLICATION_CLOSE_TIMEOUT_SECONDS

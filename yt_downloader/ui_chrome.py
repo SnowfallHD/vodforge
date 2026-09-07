@@ -10,9 +10,30 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 from .ui_theme import THEME, theme_palette_snapshot
+
+
+def pro_wordmark(master: tk.Misc) -> ImageTk.PhotoImage:
+    """Fixed brand colors, independent of the user's application accent.
+
+    A transparent image leaves focus, hover, keyboard and invocation with ttk.
+    Supersampling keeps the compact lettering crisp on high-density screens.
+    """
+    font = ImageFont.load_default(size=28)
+    parts = (("VOD", "#7167ff"), ("Forge", "#f5f5f7"), (" PRO", "#7167ff"))
+    widths = [font.getlength(text) for text, _color in parts]
+    width = int(sum(widths) + 2)
+    image = Image.new("RGBA", (width, 40))
+    draw = ImageDraw.Draw(image)
+    x = 0.0
+    for (text, color), advance in zip(parts, widths, strict=True):
+        draw.text((x, 20), text, font=font, fill=color, anchor="lm")
+        x += advance
+    return ImageTk.PhotoImage(
+        image.resize((width // 2, 20), Image.Resampling.LANCZOS), master=master
+    )
 
 
 class RoundedFieldBorder:

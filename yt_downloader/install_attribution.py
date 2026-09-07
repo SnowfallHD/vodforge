@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from .analytics_consent import analytics_allowed
 from .cloud_funnel import (
     CLAIM_TOKEN_PATTERN,
     InstallationState,
@@ -49,7 +50,7 @@ def _post_json_object(
     *,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> dict[str, Any] | None:
-    if not production_telemetry_allowed():
+    if not production_telemetry_allowed() or not analytics_allowed():
         return None
     request = urllib.request.Request(
         url,
@@ -91,6 +92,25 @@ def _validated_claim_url(value: Any, claim_token: str) -> str | None:
     ):
         return None
     return value
+
+
+def cancel_claim(claim_token: str) -> None:
+    """Privacy withdrawal uses only the capability, even with analytics disabled."""
+    if not production_telemetry_allowed() or not CLAIM_TOKEN_PATTERN.fullmatch(
+        claim_token
+    ):
+        return
+    request = urllib.request.Request(
+        f"{ATTRIBUTION_CLAIM_PAGE_ORIGIN}/api/attribution/claim/cancel",
+        data=json.dumps({"claim_token": claim_token}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            response.read(1024)
+    except OSError:
+        pass
 
 
 def issue_claim(
@@ -184,7 +204,9 @@ class InstallationAttributionOwner:
         app_version: str,
         platform_name: str | None = None,
     ) -> InstallationState:
-        if not production_telemetry_allowed():
+        if not production_telemetry_allowed() or not analytics_allowed(
+            self._state_path.parent
+        ):
             return state
         current = load_or_create_installation_state(self._state_path)
         platform = installation_platform(platform_name)
@@ -201,10 +223,21 @@ class InstallationAttributionOwner:
         ):
             current = mark_first_launch_confirmed(self._state_path, current.install_id)
 
-        if current.heycatch_first_launch_confirmed:
+        already_delivered = current.heycatch_first_launch_confirmed
+        if (
+            not current.heycatch_first_launch_confirmed
+            and current.first_launch_confirmed
+        ):
+            current = self._deliver_native_event(current, app_version, platform)
+        if already_delivered and not current.attribution_claim_token:
+            return current
+        if (
+            current.heycatch_first_launch_confirmed
+            and current.attribution_claim_confirmed
+        ):
             return current
         if current.attribution_claim_confirmed:
-            return self._deliver_native_event(current, app_version, platform)
+            return current
 
         claim_token = current.attribution_claim_token
         if claim_token is None:
@@ -247,6 +280,8 @@ class InstallationAttributionOwner:
             )
 
         for attempt in range(self._poll_attempts):
+            if not analytics_allowed(self._state_path.parent):
+                return current
             status = self._claim_reader(claim_token)
             if status == "claimed":
                 current = mark_attribution_claim_confirmed(
@@ -265,7 +300,9 @@ class InstallationAttributionOwner:
         app_version: str,
         platform: str,
     ) -> InstallationState:
-        if self._heycatch_recorder(
+        if state.heycatch_first_launch_confirmed:
+            return state
+        if analytics_allowed(self._state_path.parent) and self._heycatch_recorder(
             state.install_id,
             app_version=app_version,
             platform=platform,

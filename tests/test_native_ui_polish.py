@@ -54,7 +54,9 @@ def test_settings_pro_is_compact_visible_and_seen_only_when_shown(root, geometry
     dialog._record_visible_pro()
     assert seen == [True]
     button = dialog.pro_button
-    assert button.cget("text") == "VODForge Pro ↗"
+    assert button.cget("text") == "VODForge PRO"
+    assert button.cget("image")
+    assert dialog._pro_wordmark.width() > 80
     assert button.winfo_width() < 220
     button.invoke()
     assert clicked == [True]
@@ -280,3 +282,38 @@ def test_dropdown_keeps_arrow_under_width_pressure(root):
         dropdown._chevron.winfo_x() + dropdown._chevron.winfo_width()
         <= dropdown.winfo_width()
     )
+
+
+def test_analytics_prompt_actions_fit_without_scroll(root, tmp_path):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+    from yt_downloader.analytics_startup import AnalyticsStartup
+
+    startup = AnalyticsStartup(
+        root, AnalyticsConsentOwner(tmp_path), tk.BooleanVar(root), lambda _: None
+    )
+    startup._prompt()
+    popup = next(
+        child for child in root.winfo_children() if isinstance(child, tk.Toplevel)
+    )
+    popup.update_idletasks()
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    buttons = [w for w in descendants(popup) if isinstance(w, ttk.Button)]
+    assert {str(w.cget("text")) for w in buttons} == {
+        "Not now",
+        "Allow analytics",
+        "Privacy details",
+    }
+    for button in buttons:
+        assert button.winfo_ismapped()
+        assert button.winfo_rooty() >= popup.winfo_rooty()
+        assert (
+            button.winfo_rooty() + button.winfo_height()
+            <= popup.winfo_rooty() + popup.winfo_height()
+        )
+    startup.close()
+    popup.destroy()

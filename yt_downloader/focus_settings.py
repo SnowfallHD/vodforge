@@ -7,6 +7,7 @@ from tkinter import colorchooser, ttk
 from typing import Any
 
 from .models import CookieSource, OutputType
+from .ui_chrome import pro_wordmark
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import CUSTOM_THEME_NAME, THEME
 from .ui_widgets import (
@@ -166,9 +167,11 @@ class FocusSettingsDialog:
             text="Forge settings",
             style="FocusTitle.TLabel",
         ).grid(row=0, column=0, sticky="w")
+        self._pro_wordmark = pro_wordmark(heading)
         self.pro_button = ttk.Button(
             heading,
-            text="VODForge Pro ↗",
+            text="VODForge PRO",
+            image=self._pro_wordmark,
             command=self.actions.open_cloud_early_access,
             style="FocusQuiet.TButton",
         )
@@ -680,7 +683,7 @@ class FocusSettingsDialog:
         ).grid(row=0, column=0, sticky="w", pady=(0, 7))
         usage = ModernCheckbox(
             privacy,
-            text="Share anonymous usage analytics",
+            text="Share anonymous analytics",
             variable=self.bindings.anonymous_usage_analytics,
         )
         usage.grid(row=1, column=0, sticky="w")
@@ -691,11 +694,7 @@ class FocusSettingsDialog:
         )
         ttk.Label(
             privacy,
-            text=(
-                "This applies only after the one-time browser attribution choice allows "
-                "analytics. Turning it off clears unsent usage events. The anonymous "
-                "installation, Pro prompt, and Pro click counts continue separately."
-            ),
+            text=("Analytics helps improve VODForge, turn off at any time."),
             style="Muted.TLabel",
             wraplength=680,
             justify="left",

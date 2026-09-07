@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from .analytics_consent import analytics_allowed
 from .cloud_funnel import (
     InstallationIdentityError,
     installation_platform,
@@ -294,7 +295,7 @@ class ProductTelemetryOwner:
             state = load_or_create_installation_state(self._installation_state_path)
         except (InstallationIdentityError, OSError):
             return False, None
-        return state.product_telemetry_allowed, state.install_id
+        return analytics_allowed(self._installation_state_path.parent), state.install_id
 
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
@@ -440,6 +441,8 @@ class ProductTelemetryOwner:
                     "permanently rejected telemetry event discarded; not delivered"
                 )
                 continue
+            if not self._permitted()[0]:
+                return
             heycatch_delivered = event.heycatch_delivered or self._heycatch_recorder(
                 event.install_id,
                 event_name=event.event_name,
