@@ -39,6 +39,8 @@ class AnalyticsStartup:
         self.done = threading.Event()
         self.mode = "unknown"
         self.attempts = 0
+        self.region_deadline = float("inf")
+        self.permission_presented = False
         self.ticket = secrets.token_urlsafe(32)
         self.ticket_deadline = time.monotonic() + 120
         self.authorizing = threading.Lock()
@@ -71,9 +73,10 @@ class AnalyticsStartup:
             self.changed(self.owner.allowed)
 
     def start(self) -> None:
-        if self.closed or not production_telemetry_allowed():
+        if self.closed or self.attempts or not production_telemetry_allowed():
             return
         self.attempts += 1
+        self.region_deadline = time.monotonic() + 2.5
         self.done.clear()
         if self.attempts == 1:
             timer = threading.Timer(2.5, self._open_welcome)
@@ -86,7 +89,10 @@ class AnalyticsStartup:
 
     def _prepare(self) -> None:
         try:
-            self.mode = self.owner.resolve()
+            for _ in range(2):
+                self.mode = self.owner.resolve(deadline=self.region_deadline)
+                if self.mode != "unknown" or time.monotonic() >= self.region_deadline:
+                    break
             self._authorize_ticket()
         except (OSError, ValueError):
             self.mode = "unknown"
@@ -142,23 +148,22 @@ class AnalyticsStartup:
         self.closed = True
 
     def _poll(self) -> None:
-        if self.closed:
+        if self.closed or self.permission_presented:
             return
-        if not self.done.is_set():
+        if not self.done.is_set() and time.monotonic() < self.region_deadline:
             self.root.after(100, self._poll)
             return
+        self.permission_presented = True
         self._sync()
         self.changed(self.owner.allowed)
         state = self.owner.snapshot()
         if (
-            self.mode == "opt-in"
+            self.mode in {"opt-in", "unknown"}
             and not state.get("choice")
             and not state.get("prompted")
         ):
             self.owner.update(prompted=True)
             self._prompt()
-        elif self.mode == "unknown" and self.attempts < 3:
-            self.root.after(30000 * self.attempts, self.start)
 
     def _prompt(self) -> None:
         popup = tk.Toplevel(self.root)

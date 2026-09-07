@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -55,16 +56,21 @@ class AnalyticsConsentOwner:
             self.update(welcome_attempted=True)
             return True
 
-    def resolve(self, *, opener: Any = urllib.request.urlopen) -> str:
+    def resolve(
+        self, *, opener: Any = urllib.request.urlopen, deadline: float | None = None
+    ) -> str:
         """No install ID, cookie, credential or analytics payload in this request."""
         if not production_telemetry_allowed():
             return "unknown"
         self.update(mode="unknown")
+        remaining = 1.5 if deadline is None else deadline - time.monotonic()
+        if remaining <= 0:
+            return "unknown"
         request = urllib.request.Request(
             POLICY_URL, headers={"Accept": "application/json"}
         )
         try:
-            with opener(request, timeout=1.5) as response:
+            with opener(request, timeout=min(1.5, remaining)) as response:
                 raw = response.read(1025)
                 if response.status != 200 or len(raw) > 1024:
                     return "unknown"
@@ -73,6 +79,10 @@ class AnalyticsConsentOwner:
                 return "unknown"
             mode = value.get("mode") if isinstance(value, dict) else None
             if mode not in {"default-on", "opt-in"}:
+                return "unknown"
+            # Socket timeouts do not bound DNS or a slowly streaming response.
+            # A late response must not enable analytics after the fallback prompt.
+            if deadline is not None and time.monotonic() >= deadline:
                 return "unknown"
             self.update(mode=mode)
             return mode

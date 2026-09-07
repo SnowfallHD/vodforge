@@ -105,3 +105,52 @@ def test_private_build_never_opens_or_resolves(setup, monkeypatch):
     startup.start()
     startup._open_welcome()
     assert not opened and not issued
+
+
+@pytest.mark.parametrize(
+    "results,calls,prompts",
+    [
+        (["unknown", "unknown"], 2, 1),
+        (["unknown", "default-on"], 2, 0),
+        (["opt-in"], 1, 1),
+        (["default-on"], 1, 0),
+    ],
+)
+def test_bounded_retry_and_permission_fallback(
+    setup, monkeypatch, results, calls, prompts
+):
+    startup, owner, opened, _issued = setup
+    requested, shown = [], []
+    startup.region_deadline = module.time.monotonic() + 2.5
+
+    def resolve(*, deadline):
+        requested.append(deadline)
+        mode = results[len(requested) - 1]
+        owner.update(mode=mode)
+        return mode
+
+    monkeypatch.setattr(owner, "resolve", resolve)
+    monkeypatch.setattr(startup, "_prompt", lambda: shown.append(True))
+    startup._prepare()
+    startup._poll()
+    startup._poll()
+    assert len(requested) == calls
+    assert len(set(requested)) == 1
+    assert len(shown) == prompts
+    assert len(opened) == 1
+
+
+def test_slow_request_does_not_delay_prompt_or_repeat_it(setup, monkeypatch):
+    startup, owner, _opened, _issued = setup
+    shown = []
+    startup.region_deadline = 0
+    monkeypatch.setattr(startup, "_prompt", lambda: shown.append(True))
+    startup._poll()  # Worker has not completed, but the UI deadline has passed.
+    assert shown == [True]
+    assert not owner.allowed
+    owner.choose(False)
+    owner.update(mode="default-on")
+    startup.done.set()
+    startup._poll()
+    assert shown == [True]
+    assert not owner.allowed

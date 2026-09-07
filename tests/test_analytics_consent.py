@@ -66,3 +66,30 @@ def test_welcome_opportunity_is_once_and_builds_fail_closed(tmp_path, monkeypatc
 def test_legacy_opt_out_is_preserved(tmp_path):
     assert not AnalyticsConsentOwner(tmp_path, legacy_disabled=True).allowed
     assert AnalyticsConsentOwner(tmp_path).snapshot()["choice"] == "denied"
+
+
+def test_late_region_response_cannot_enable_analytics(tmp_path, monkeypatch):
+    monkeypatch.setattr(consent, "production_telemetry_allowed", lambda: True)
+    now = [0.0]
+    monkeypatch.setattr(consent.time, "monotonic", lambda: now[0])
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self, size):
+            now[0] = 4.0
+            return b'{"mode":"default-on","resolved":true}'
+
+    def opener(request, timeout):
+        assert timeout == 1.0
+        return Response()
+
+    owner = AnalyticsConsentOwner(tmp_path)
+    assert owner.resolve(opener=opener, deadline=1.0) == "unknown"
+    assert not owner.allowed
