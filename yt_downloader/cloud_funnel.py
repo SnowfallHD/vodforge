@@ -18,7 +18,7 @@ from .history import application_data_dir
 from .telemetry_policy import production_telemetry_allowed
 
 CLOUD_ORIGIN = "https://getvodforge.com"
-CLOUD_PAGE_URL = f"{CLOUD_ORIGIN}/cloud"
+CLOUD_PAGE_URL = f"{CLOUD_ORIGIN}/pro"
 CLOUD_LAUNCH_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/launch"
 CLOUD_SEEN_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/seen"
 CLOUD_CLICK_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/click"

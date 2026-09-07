@@ -237,6 +237,6 @@ def test_click_payload_and_cloud_url_contain_only_random_install_id():
     }
     assert (
         cloud_page_url(state.install_id)
-        == f"https://getvodforge.com/cloud?iid={state.install_id}"
+        == f"https://getvodforge.com/pro?iid={state.install_id}"
     )
-    assert cloud_page_url(None) == "https://getvodforge.com/cloud"
+    assert cloud_page_url(None) == "https://getvodforge.com/pro"

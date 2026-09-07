@@ -218,13 +218,6 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.configure("FocusShell.TFrame", background=THEME["bg"])
     style.configure("FocusSurface.TFrame", background=THEME["surface"])
     style.configure(
-        "CloudPreview.TFrame",
-        background=THEME["surface"],
-        bordercolor=THEME["border"],
-        borderwidth=1,
-        relief="solid",
-    )
-    style.configure(
         "FocusBrand.TLabel",
         background=THEME["bg"],
         foreground=THEME["text"],
@@ -271,18 +264,6 @@ def apply_product_styles(root: tk.Tk) -> None:
         background=THEME["surface"],
         foreground=THEME["muted"],
         font=FONT_UI_SMALL,
-    )
-    style.configure(
-        "CloudTitle.TLabel",
-        background=THEME["surface"],
-        foreground=THEME["text"],
-        font=FONT_UI_MEDIUM,
-    )
-    style.configure(
-        "CloudBadge.TLabel",
-        background=THEME["surface"],
-        foreground=THEME["accent"],
-        font=FONT_UI_SMALL_MEDIUM,
     )
     style.configure(
         "FocusNav.TButton",

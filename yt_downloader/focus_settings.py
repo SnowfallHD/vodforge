@@ -135,7 +135,6 @@ class FocusSettingsDialog:
         self._build_mp3_section(root)
         self._build_appearance_section(root)
         self._build_privacy_section(root)
-        self._build_cloud_section(root)
         self._build_footer(surface.footer)
         self._bind_responsive_copy(root)
 
@@ -167,11 +166,48 @@ class FocusSettingsDialog:
             text="Forge settings",
             style="FocusTitle.TLabel",
         ).grid(row=0, column=0, sticky="w")
+        self.pro_button = ttk.Button(
+            heading,
+            text="VODForge Pro ↗",
+            command=self.actions.open_cloud_early_access,
+            style="FocusQuiet.TButton",
+        )
+        self.pro_button.grid(row=0, column=1, sticky="e", padx=(16, 0))
+        self._pro_seen_requested = False
+        self.pro_button.bind("<Map>", self._record_visible_pro, add="+")
+        self.pro_button.bind("<Configure>", self._record_visible_pro, add="+")
         ttk.Label(
             heading,
             text="Every option is available here; the main workspace stays focused.",
             style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(3, 0))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
+
+    def _record_visible_pro(self, _event: tk.Event | None = None) -> None:
+        """Report exposure only after the complete control is in the viewport.
+
+        The telemetry owner retains durable once-per-install and build-policy
+        authority; this surface owns only whether its control is visible.
+        """
+        if self._closed or self._pro_seen_requested:
+            return
+        try:
+            button = self.pro_button
+            viewport = self.dialog_surface.viewport
+            if viewport is None or not button.winfo_viewable():
+                return
+            x, y = button.winfo_rootx(), button.winfo_rooty()
+            vx, vy = viewport.winfo_rootx(), viewport.winfo_rooty()
+            if not (
+                vx <= x
+                and vy <= y
+                and x + button.winfo_width() <= vx + viewport.winfo_width()
+                and y + button.winfo_height() <= vy + viewport.winfo_height()
+            ):
+                return
+            self._pro_seen_requested = True
+            self.actions.record_cloud_cta_seen()
+        except tk.TclError:
+            return
 
     def _build_source_section(self, root: ttk.Frame) -> None:
         source = ttk.Frame(root, style="FocusShell.TFrame")
@@ -633,39 +669,6 @@ class FocusSettingsDialog:
         ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         self.mp3_cover_file_frame = cover_file
 
-    def _build_cloud_section(self, root: ttk.Frame) -> None:
-        cloud = ttk.Frame(root, style="CloudPreview.TFrame", padding=(14, 10))
-        cloud.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(18, 0))
-        cloud.columnconfigure(0, weight=1)
-        ttk.Label(
-            cloud,
-            text="VODForge Cloud",
-            style="CloudTitle.TLabel",
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            cloud,
-            text="Run downloads even when this computer is offline.",
-            style="FocusSurfaceMuted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
-        cloud_action = ttk.Frame(cloud, style="FocusSurface.TFrame")
-        cloud_action.grid(row=0, column=1, rowspan=2, sticky="e", padx=(18, 0))
-        ttk.Label(
-            cloud_action,
-            text="EARLY ACCESS",
-            style="CloudBadge.TLabel",
-        ).pack(anchor="e", pady=(0, 4))
-        cloud_button = ttk.Button(
-            cloud_action,
-            text="Join early access",
-            command=self.actions.open_cloud_early_access,
-            style="FocusQuiet.TButton",
-        )
-        cloud_button.pack(anchor="e")
-        ToolTip(
-            cloud_button,
-            "Open the VODForge Cloud early-access signup page in your browser.",
-        )
-
     def _build_privacy_section(self, root: ttk.Frame) -> None:
         privacy = ttk.Frame(root, style="FocusShell.TFrame")
         privacy.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
@@ -691,7 +694,7 @@ class FocusSettingsDialog:
             text=(
                 "This applies only after the one-time browser attribution choice allows "
                 "analytics. Turning it off clears unsent usage events. The anonymous "
-                "installation, Cloud prompt, and Cloud click counts continue separately."
+                "installation, Pro prompt, and Pro click counts continue separately."
             ),
             style="Muted.TLabel",
             wraplength=680,
@@ -860,7 +863,7 @@ class FocusSettingsDialog:
             self.popup,
             centered_toplevel_geometry(self.owner, width, height),
         )
-        self.owner.after_idle(self.actions.record_cloud_cta_seen)
+        self.popup.after_idle(self._record_visible_pro)
 
     def focus_existing(self) -> bool:
         try:

@@ -3,6 +3,7 @@
 import os
 import tkinter as tk
 from tkinter import ttk
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,6 +28,39 @@ def root():
     apply_product_styles(window)
     yield window
     window.destroy()
+
+
+@pytest.mark.parametrize("geometry", ["700x540", "820x720"])
+def test_settings_pro_is_compact_visible_and_seen_only_when_shown(root, geometry):
+    from yt_downloader.focus_settings import FocusSettingsDialog
+    from yt_downloader.ui_widgets import ActionDialogSurface
+
+    seen, clicked = [], []
+    popup = tk.Toplevel(root)
+    popup.withdraw()
+    popup.geometry(geometry)
+    dialog = FocusSettingsDialog.__new__(FocusSettingsDialog)
+    dialog._closed = False
+    dialog.actions = SimpleNamespace(
+        record_cloud_cta_seen=lambda: seen.append(True),
+        open_cloud_early_access=lambda: clicked.append(True),
+    )
+    dialog.dialog_surface = ActionDialogSurface(popup, allow_body_scroll=True)
+    dialog._build_heading(dialog.dialog_surface.body)
+    dialog._record_visible_pro()
+    assert not seen
+    popup.deiconify()
+    root.update()
+    dialog._record_visible_pro()
+    assert seen == [True]
+    button = dialog.pro_button
+    assert button.cget("text") == "VODForge Pro ↗"
+    assert button.winfo_width() < 220
+    button.invoke()
+    assert clicked == [True]
+    dialog._record_visible_pro()
+    assert seen == [True]
+    popup.destroy()
 
 
 def test_activity_missing_icons_preserves_visible_tokens(root, monkeypatch):
