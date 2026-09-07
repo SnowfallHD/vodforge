@@ -324,6 +324,7 @@ def run_fast_gate(
         scenario=[
             "unit_static.repository_suite",
             "unit_static.bounded_mutation_history",
+            "unit_static.telemetry_isolation",
         ],
         compare=None,
         e2e_result=None,
@@ -456,6 +457,9 @@ def run_profile(
     run_root = (harness_root / ".runs" / run_id).resolve()
     run_root.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
+    from .telemetry_checks import install_telemetry_guard
+
+    install_telemetry_guard()
 
     # Import production only after private process-local homes exist. This keeps
     # history, thumbnails, diagnostics, yt-dlp state, and temp files away from

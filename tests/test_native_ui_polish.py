@@ -29,6 +29,17 @@ def root():
     window.destroy()
 
 
+def test_activity_missing_icons_preserves_visible_tokens(root, monkeypatch):
+    from yt_downloader import activity_ui
+
+    monkeypatch.setattr(activity_ui, "_tinted_ui_icon", lambda *_args, **_kwargs: None)
+    text = ActivityLogText(root)
+    text.request("[success] Done\n[info] Ready")
+    text.apply_theme()
+    assert text.get("1.0", "end-1c") == "[success] Done\n[info] Ready"
+    assert not text.tag_ranges("log-hidden")
+
+
 def test_real_facts_keep_all_values_and_noop(root):
     text = FactsText(root)
     source = "\n".join(f"Fact {n}: exact value {n}" for n in range(80))

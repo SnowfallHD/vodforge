@@ -23,6 +23,7 @@ def _fast_source_result() -> dict[str, Any]:
     }
     return {
         "scenarios": [
+            {"id": "unit_static.telemetry_isolation", "status": "passed"},
             {
                 "id": "unit_static.repository_suite",
                 "status": "failed",
@@ -57,6 +58,7 @@ def test_fast_command_passes_required_checks_without_hiding_complexity(
         assert args.scenario == [
             "unit_static.repository_suite",
             "unit_static.bounded_mutation_history",
+            "unit_static.telemetry_isolation",
         ]
         args.output_dir.mkdir(parents=True)
         json_dump(args.output_dir / "results.json", _fast_source_result())

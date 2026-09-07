@@ -274,6 +274,7 @@ def test_fast_gate_preserves_complexity_as_failed_nonblocking_debt() -> None:
             "scenarios": [
                 _static_scenario(),
                 _scenario("unit_static.bounded_mutation_history", "passed"),
+                _scenario("unit_static.telemetry_isolation", "passed"),
             ]
         }
     )
@@ -298,6 +299,13 @@ def test_missing_or_failed_required_evidence_fails_closed() -> None:
     assert new_check["required"] is True
     assert new_check["status"] == "failed"
     assert gate_outcome(checks) == "failed"
+
+
+def test_fast_telemetry_isolation_is_required() -> None:
+    scenarios = [_static_scenario(), _scenario("unit_static.bounded_mutation_history")]
+    assert gate_outcome(evaluate_fast_result({"scenarios": scenarios})) == "unproven"
+    scenarios.append(_scenario("unit_static.telemetry_isolation", "failed"))
+    assert gate_outcome(evaluate_fast_result({"scenarios": scenarios})) == "failed"
 
 
 def test_development_candidate_is_testable_but_not_release_trusted() -> None:
@@ -356,6 +364,7 @@ def test_release_receipt_allows_visible_debt_but_blocks_required_gaps() -> None:
         "scenarios": [
             _static_scenario(),
             _scenario("unit_static.bounded_mutation_history"),
+            _scenario("unit_static.telemetry_isolation"),
         ],
     }
     normal = _engineering_result("normal")

@@ -156,12 +156,13 @@ class ActivityLogText(tk.Text):
         )
         for name in self.image_names():
             if self.image_cget(name, "image") != str(self._divider):
-                self.image_configure(
-                    name,
-                    image=self._success_icon
+                icon = (
+                    self._success_icon
                     if self.image_cget(name, "image") == previous_success
-                    else self._event_icon,
+                    else self._event_icon
                 )
+                if icon is not None:
+                    self.image_configure(name, image=icon)
         self._divider.put(THEME["accent"], to=(0, 0, 1, 18))
 
     def insert(self, index: Any, chars: str, *args: Any) -> None:
@@ -175,9 +176,14 @@ class ActivityLogText(tk.Text):
         start = 0
         for match in _LOG_TOKEN.finditer(chars):
             super().insert("log-insert", chars[start : match.start()])
+            icon = (
+                self._success_icon
+                if match[0].strip().lower() == "[success]"
+                else self._event_icon
+            )
             if (
                 match[2]
-                and self._event_icon
+                and icon is not None
                 and match[0].strip().lower()
                 in {"[info]", "[download]", "[debug]", "[success]"}
             ):
@@ -186,9 +192,7 @@ class ActivityLogText(tk.Text):
                 super().insert("log-insert", match[0], "log-hidden")
                 self.image_create(
                     "log-insert",
-                    image=self._success_icon
-                    if match[0].strip().lower() == "[success]"
-                    else self._event_icon,
+                    image=icon,
                     padx=12,
                     align="center",
                 )

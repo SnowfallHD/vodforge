@@ -23,6 +23,9 @@ NONBLOCKING_DEBT_SCENARIOS = frozenset({"maintainability.change_surface"})
 
 NORMAL_REQUIRED_SCENARIOS = frozenset(
     {
+        "unit_static.telemetry_backend_suite",
+        "unit_static.telemetry_local_contract",
+        "unit_static.telemetry_isolation",
         "correctness.local_mp4_real_pipeline",
         "correctness.local_mp3_bitrate_real_pipeline",
         "correctness.local_mp4_embedding_disabled",
@@ -309,6 +312,14 @@ def evaluate_fast_result(
         _scenario_check(
             "unit_static.bounded_mutation_history",
             scenarios.get("unit_static.bounded_mutation_history"),
+            prefix=prefix,
+            required=True,
+        )
+    )
+    checks.append(
+        _scenario_check(
+            "unit_static.telemetry_isolation",
+            scenarios.get("unit_static.telemetry_isolation"),
             prefix=prefix,
             required=True,
         )

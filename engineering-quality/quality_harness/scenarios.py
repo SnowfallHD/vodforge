@@ -32,6 +32,7 @@ from .security import (
     url_secret_persistence_probe,
 )
 from .static_analysis import run_static_suite
+from .telemetry_checks import backend_suite, integration_probe, isolation_receipt
 
 _LIFECYCLE_WORKER_OBJECT_TYPES = (
     "yt_dlp.YoutubeDL.YoutubeDL",
@@ -2525,6 +2526,17 @@ def run_scenarios(
             ),
         ),
         ("packaged_app_e2e.full_journey", lambda: packaged_e2e_placeholder(e2e_result)),
+        (
+            "unit_static.telemetry_backend_suite",
+            lambda: backend_suite(repo_root, run_root / "cases" / "telemetry-backend"),
+        ),
+        (
+            "unit_static.telemetry_local_contract",
+            lambda: integration_probe(
+                repo_root, run_root / "cases" / "telemetry-local", runner, server
+            ),
+        ),
+        ("unit_static.telemetry_isolation", isolation_receipt),
     ]
     if include_public or deep:
         registry.insert(

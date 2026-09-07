@@ -1,7 +1,9 @@
 """Immutable machine-readable failure facts. Raw diagnostics stay local."""
 
 import errno
-import subprocess
+
+# Used only to classify exceptions, never to execute a process.
+import subprocess  # nosec B404
 from dataclasses import asdict, dataclass
 
 FAILURE_STAGES = frozenset({"preparation", "processing", "batch", "unknown"})

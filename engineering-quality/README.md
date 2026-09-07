@@ -225,6 +225,23 @@ Static-tool output is a signal, not proof. A security issue is reported only whe
 
 ## Current first-version boundaries
 
+### Telemetry contract checks
+
+NORMAL/DEEP include the sibling `vodforge-site` backend suite and a local-only
+Python client → production Worker owner → ephemeral D1 contract check. Set
+`VODFORGE_SITE_REPO` if the site checkout is elsewhere; it must be clean with its
+Node dependencies installed. Receipts record the site commit before/after.
+The contract exercises first launch, version updates, event deduplication, and
+real injected HTTP failures serialized through the product-event owner. It is
+source integration evidence, not deployed routing or packaged-app proof.
+
+All profile runs force telemetry suppression. A harness-process audit guard
+blocks production telemetry hosts and fails the isolation receipt even if a
+caller swallows the exception. The local Worker denies outbound fetches and
+uses only explicitly supplied local bindings/migrations; no production D1 is
+accessed. Child processes inherit suppression; the Python audit hook itself
+does not cover child processes. FAST also checks the isolation receipt.
+
 The first version makes real local MP4/MP3 output, same-run source-quality selection, HTTP 404/503, connection interruption, slow transfer, download and transcode cancellation, unwritable destinations, FFmpeg dependency failure, fresh-output validation, symlink/path, URL-secret, soak, defensive simultaneous-worker attack, static/test, bounded history mutation, maintainability, and packaged happy-path/restart journeys runnable. The packaged deep protocol includes queue and cancellation but still needs a stable repository-owned native UI automation engine.
 
 Highest-value additions are forced process-kill/restart with stale-stage accounting, low-disk volumes, real provider playlist scaling, duplicate/queue mutation through packaged UI, active-run updater shutdown, blocked-analysis slot exhaustion, multi-hour soak, actual temporary-worktree change implementations, and a wider mutation campaign.

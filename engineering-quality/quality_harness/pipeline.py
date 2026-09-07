@@ -499,6 +499,7 @@ class HeadlessPipelineRunner:
             "job_initialization_seconds": first_download_event,
             "outcome": _jsonable(outcome),
             "error": error,
+            "failure_diagnostic": _jsonable(job.failure_diagnostic),
             "cancel_requested": bool(app.cancel_requested),
             "skip_video_requested": bool(app.skip_video_requested),
             "control_request": control_request if cancel_when is not None else None,
