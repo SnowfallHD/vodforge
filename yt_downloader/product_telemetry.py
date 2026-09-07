@@ -19,6 +19,7 @@ from .cloud_funnel import (
 from .heycatch_telemetry import record_product_event as record_heycatch_event
 from .history import application_data_dir
 from .private_files import write_private_bytes
+from .telemetry_policy import production_telemetry_allowed
 
 PRODUCT_TELEMETRY_ENDPOINT = "https://getvodforge.com/api/telemetry/events"
 PRODUCT_TELEMETRY_SCHEMA_VERSION = 1
@@ -192,6 +193,8 @@ def _post_d1_event(
     *,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> bool:
+    if not production_telemetry_allowed():
+        return False
     request = urllib.request.Request(
         PRODUCT_TELEMETRY_ENDPOINT,
         data=json.dumps(
@@ -250,7 +253,7 @@ class ProductTelemetryOwner:
         self._worker: threading.Thread | None = None
 
     def _permitted(self) -> tuple[bool, str | None]:
-        if not self._enabled:
+        if not production_telemetry_allowed() or not self._enabled:
             return False, None
         try:
             state = load_or_create_installation_state(self._installation_state_path)

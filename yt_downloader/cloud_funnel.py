@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .history import application_data_dir
+from .telemetry_policy import production_telemetry_allowed
 
 CLOUD_ORIGIN = "https://getvodforge.com"
 CLOUD_PAGE_URL = f"{CLOUD_ORIGIN}/cloud"
@@ -295,7 +296,7 @@ def installation_platform(platform_name: str | None = None) -> str:
 
 
 def cloud_page_url(install_id: str | None) -> str:
-    if not install_id:
+    if not production_telemetry_allowed() or not install_id:
         return CLOUD_PAGE_URL
     return f"{CLOUD_PAGE_URL}?{urllib.parse.urlencode({'iid': _parse_install_id(install_id)})}"
 
@@ -307,6 +308,8 @@ def _post_json(
     opener: Callable[..., Any] = urllib.request.urlopen,
     timeout_seconds: float = NETWORK_TIMEOUT_SECONDS,
 ) -> bool:
+    if not production_telemetry_allowed():
+        return False
     request = urllib.request.Request(
         url,
         data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),

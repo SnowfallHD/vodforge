@@ -27,6 +27,7 @@ from .cloud_funnel import (
     record_first_launch as record_first_party_launch,
 )
 from .heycatch_telemetry import record_first_launch as record_heycatch_first_launch
+from .telemetry_policy import production_telemetry_allowed
 
 ATTRIBUTION_CLAIM_ISSUE_ENDPOINT = "https://getvodforge.com/api/attribution/claim/issue"
 ATTRIBUTION_CLAIM_STATUS_ENDPOINT = (
@@ -50,6 +51,8 @@ def _post_json_object(
     *,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> dict[str, Any] | None:
+    if not production_telemetry_allowed():
+        return None
     request = urllib.request.Request(
         url,
         data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
@@ -174,6 +177,8 @@ class InstallationAttributionOwner:
         app_version: str,
         platform_name: str | None = None,
     ) -> InstallationState:
+        if not production_telemetry_allowed():
+            return state
         current = load_or_create_installation_state(self._state_path)
         platform = installation_platform(platform_name)
         if not current.first_launch_confirmed and self._first_party_recorder(

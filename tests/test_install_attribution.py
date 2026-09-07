@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+
+import pytest
+
+pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 from pathlib import Path
 from typing import Any, Self
 

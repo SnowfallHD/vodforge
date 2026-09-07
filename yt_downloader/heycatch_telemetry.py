@@ -7,6 +7,8 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from .telemetry_policy import production_telemetry_allowed
+
 HEYCATCH_CAPTURE_ENDPOINT = "https://in.heycatch.ai/capture/"
 HEYCATCH_INGEST_KEY = "phc_oiDt6uXiBiEA2aT43SMzMAFE9D4gMVkRP3BtvYRsmHqe"
 HEYCATCH_PROJECT_KEY = "hck_pk_R3INGrBG09B3VTAx8YpycEqKLkFEVFv0"
@@ -29,6 +31,8 @@ def _capture(
     opener: Callable[..., Any] = urllib.request.urlopen,
     timeout_seconds: float = NETWORK_TIMEOUT_SECONDS,
 ) -> bool:
+    if not production_telemetry_allowed():
+        return False
     normalized_id = _uuid4(distinct_id)
     payload = {
         "api_key": HEYCATCH_INGEST_KEY,

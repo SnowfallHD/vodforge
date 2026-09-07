@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import json
+
+import pytest
+
+pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 from typing import Any, Self
 
 from yt_downloader.heycatch_telemetry import (

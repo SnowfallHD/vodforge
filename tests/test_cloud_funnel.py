@@ -6,6 +6,8 @@ from typing import Any, Self
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
+
 from yt_downloader.cloud_funnel import (
     CLOUD_CLICK_ENDPOINT,
     CLOUD_LAUNCH_ENDPOINT,

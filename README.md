@@ -161,6 +161,15 @@ Install dependencies, build the `.app`, and run its offline runtime smoke test:
 ./build_macos.sh
 ```
 
+Local/source builds disable production telemetry regardless of their version string.
+Only release builds explicitly set `VODFORGE_BUILD_TELEMETRY=production`; the
+result is bundled as `VODFORGE_TELEMETRY_POLICY` on macOS and Windows. Keep this
+unset when building a replacement app for testing, even with a stable version.
+For journeys against a release artifact, set `VODFORGE_DISABLE_TELEMETRY=1` for
+the launched process. The engineering-quality packaged E2E harness also suppresses
+telemetry through its existing `VODFORGE_QUALITY_E2E` flag. These overrides never
+mark a real first launch as delivered or change the user's analytics preference.
+
 The local unsigned application is created at:
 
 ```text

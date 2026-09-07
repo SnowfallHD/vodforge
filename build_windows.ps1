@@ -23,6 +23,13 @@ New-Item -ItemType Directory -Force -Path $buildMetadataDir | Out-Null
 $buildVersionFile = Join-Path $buildMetadataDir "VODFORGE_VERSION"
 Set-Content -Path $buildVersionFile -Value $buildVersion -NoNewline
 $addData = @("--add-data", "$buildVersionFile;.")
+$telemetryPolicy = if ($env:VODFORGE_BUILD_TELEMETRY) { $env:VODFORGE_BUILD_TELEMETRY } else { "disabled" }
+if ($telemetryPolicy -notin @("disabled", "production")) {
+  throw "VODFORGE_BUILD_TELEMETRY must be disabled or production."
+}
+$telemetryPolicyFile = Join-Path $buildMetadataDir "VODFORGE_TELEMETRY_POLICY"
+Set-Content -Path $telemetryPolicyFile -Value $telemetryPolicy -NoNewline
+$addData += @("--add-data", "$telemetryPolicyFile;.")
 
 $versionParts = $buildVersion.Split("-")[0].Split(".")
 $numericVersion = "$($versionParts[0]), $($versionParts[1]), $($versionParts[2]), 0"
