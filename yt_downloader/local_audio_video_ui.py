@@ -112,10 +112,7 @@ class LocalAudioVideoDialog:
         )
         ttk.Label(
             root,
-            text=(
-                "Pair a local MP3 with one still image. VODForge creates a "
-                "playable MP4 without changing either source file."
-            ),
+            text=("Pair an MP3 with a still image. Your originals stay unchanged."),
             style="Muted.TLabel",
             wraplength=650,
             justify="left",
@@ -204,14 +201,16 @@ class LocalAudioVideoDialog:
         ttk.Label(destination, text="OUTPUT", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w"
         )
+        self.destination_var = tk.StringVar(destination, value=str(self.output_dir))
+        self.destination_entry = ProductEntry(
+            destination,
+            textvariable=self.destination_var,
+            state="readonly",
+        )
+        self.destination_entry.grid(row=1, column=0, sticky="ew", pady=(5, 0))
         ttk.Label(
             destination,
-            text=compact_dialog_path(self.output_dir),
-            style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="ew", pady=(5, 0))
-        ttk.Label(
-            destination,
-            text="The MP4 is placed directly here. No parent folder is added.",
+            text="Your MP4 saves directly here. No extra folder.",
             style="Muted.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=(3, 0))
 

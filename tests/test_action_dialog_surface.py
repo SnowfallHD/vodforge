@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from yt_downloader.app import DownloaderApp
+from yt_downloader.detail_ui import OutputDetailsDialog
 from yt_downloader.focus_settings import FocusSettingsDialog
 from yt_downloader.library_annotation_ui import LibraryAnnotationDialog
 from yt_downloader.library_media_recovery_ui import LibraryMediaRecoveryDialog
@@ -106,7 +107,7 @@ def test_every_content_bearing_action_dialog_uses_the_protected_surface() -> Non
         LibraryAnnotationDialog,
         LibraryMediaRecoveryDialog,
         LocalAudioVideoDialog,
-        DownloaderApp._show_focus_output_details,
+        OutputDetailsDialog,
         DownloaderApp._show_selected_metadata_details,
     )
     for owner in owners:
@@ -155,6 +156,7 @@ def test_new_action_dialog_modules_must_adopt_the_shared_surface() -> None:
 
     assert {path.name for path in candidates} == {
         "app.py",
+        "detail_ui.py",
         "focus_settings.py",
         "library_annotation_ui.py",
         "library_media_recovery_ui.py",

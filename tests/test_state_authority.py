@@ -1741,11 +1741,11 @@ def test_background_run_thumbnail_decode_error_cannot_replace_selected_run_surfa
 
 def test_all_resizable_popouts_enforce_content_appropriate_minimums():
     settings_source = inspect.getsource(FocusSettingsDialog.__init__)
-    output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
+    output_source = inspect.getsource(app_module.OutputDetailsDialog.__init__)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
     assert "popup.minsize(700, 540)" in settings_source
-    assert "popup.minsize(480, 300)" in output_source
+    assert "popup.minsize(460, 320)" in output_source
     assert "popup.minsize(560, 520)" in selected_source
     assert "height=135" in selected_source
 
@@ -1942,14 +1942,18 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert 'orient="horizontal"' in library_source
     assert "xscrollcommand=tree_x_scroll.set" in library_source
     assert "video_tree.layout_columns(" in library_layout_source
-    assert '"creator": {"width": 120, "minwidth": 90, "stretch": True}' in (
-        library_layout_source
-    )
-    assert '"location": {"width": 140, "minwidth": 100, "stretch": True}' in (
-        library_layout_source
-    )
-    assert '"width": 360' in library_layout_source
-    assert '"stretchmax": None' in library_layout_source
+    columns = app_module.library_table_column_layout()
+    assert set(columns) == {
+        "index",
+        "title",
+        "profile",
+        "duration",
+        "creator",
+        "location",
+    }
+    assert all(column["minwidth"] > 0 for column in columns.values())
+    assert columns["title"]["stretch"] is True
+    assert columns["location"]["width"] >= columns["location"]["minwidth"]
     assert "width=0, minwidth=0" not in library_layout_source
     assert (
         "library_vertical_mode = focus_library_vertical_layout_mode(height)"
@@ -1973,23 +1977,16 @@ def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     assert "vertical_mode=library_vertical_mode," in layout_source
     assert 'if library_mode == "compact":' in library_layout_source
     assert "library_actions_collapsed" not in library_layout_source
-    assert '"index": {"width": 44, "minwidth": 38, "stretch": True}' in (
-        library_layout_source
-    )
-    assert '"duration": {"width": 72, "minwidth": 62, "stretch": True}' in (
-        library_layout_source
-    )
+    assert columns["index"]["minwidth"] >= 30
+    assert columns["duration"]["minwidth"] >= 50
     assert '"id": {' not in library_layout_source
     assert (
         "self.focus_metadata_content.columnconfigure(0, weight=1)"
         in library_layout_source
     )
+    assert "minsize=inspector_width" in library_layout_source
     assert (
-        "self.focus_metadata_content.columnconfigure(1, weight=0, minsize=410)"
-        in library_layout_source
-    )
-    assert (
-        "self.focus_metadata_content.columnconfigure(1, weight=0, minsize=330)"
+        'inspector_width = 350 if library_mode == "balanced" else 380'
         in library_layout_source
     )
     library_layout_call = layout_source.index("self._apply_focus_library_layout(")
@@ -2572,7 +2569,7 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
     assert "height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES" in library_source
     assert "focus_library_vertical_layout_mode(height)" in layout_source
     assert (
-        "self.focus_library_view.rowconfigure(1, weight=4, minsize=360)"
+        "self.focus_library_view.rowconfigure(1, weight=2, minsize=280)"
         in library_layout_source
     )
     assert (
@@ -2875,24 +2872,23 @@ def test_library_output_details_are_explicit_and_exclude_content_metadata(monkey
             "warnings": [],
         },
     }
-    observed: list[tuple[str, str, object]] = []
+    observed: list[tuple[object, tuple[tuple[str, str], ...]]] = []
     monkeypatch.setattr(
-        app_module.messagebox,
-        "showinfo",
-        lambda title, message, *, parent: observed.append((title, message, parent)),
+        app_module,
+        "OutputDetailsDialog",
+        lambda parent, *, title, sections: observed.append((parent, sections)),
     )
     app = DownloaderApp.__new__(DownloaderApp)
 
     app._show_library_output_details(info)
 
-    assert observed[0][0] == "VODForge Output details"
-    assert observed[0][2] is app
-    assert "REQUESTED OUTPUT" in observed[0][1]
-    assert "MP4 • 720p HD • Auto CBR" in observed[0][1]
-    assert "FINAL OUTPUT" in observed[0][1]
-    assert "Video codec: h264" in observed[0][1]
-    assert "private description sentinel" not in observed[0][1]
-    assert "content-tag-sentinel" not in observed[0][1]
+    assert observed[0][0] is app
+    sections = dict(observed[0][1])
+    assert "MP4 • 720p HD • Auto CBR" in sections["Requested output"]
+    assert "Video codec: h264" in sections["Final output"]
+    document = str(sections)
+    assert "private description sentinel" not in document
+    assert "content-tag-sentinel" not in document
 
 
 def test_retryable_row_replaces_leading_number_only_while_hovered():
@@ -2940,7 +2936,7 @@ def test_library_table_selection_and_hover_use_restrained_surface_tokens():
 
     assert table._row_fill("selected") == app_module.THEME["accent_surface"]
     assert table._row_fill("hovered") == app_module.THEME["surface_2"]
-    assert table._row_fill("plain") == app_module.THEME["surface"]
+    assert table._row_fill("plain") == app_module.THEME["panel"]
     assert table._cell_color("plain", 1) == app_module.THEME["text"]
     assert table._cell_color("plain", 3) == app_module.THEME["muted"]
     assert table._cell_color("hovered", 0) == app_module.THEME["accent"]
@@ -3491,7 +3487,7 @@ def test_metadata_preview_focuses_once_and_completion_respects_manual_selection(
 def test_custom_popouts_are_positioned_before_they_become_visible():
     settings_init_source = inspect.getsource(FocusSettingsDialog.__init__)
     settings_show_source = inspect.getsource(FocusSettingsDialog.show)
-    output_source = inspect.getsource(DownloaderApp._show_focus_output_details)
+    output_source = inspect.getsource(app_module.OutputDetailsDialog.__init__)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
     assert "popup.withdraw()" in settings_init_source
@@ -3508,7 +3504,7 @@ def test_custom_popouts_are_positioned_before_they_become_visible():
     assert (
         "centered_toplevel_geometry(self.owner, width, height)" in settings_show_source
     )
-    assert "centered_toplevel_geometry(self, 560, 360)" in output_source
+    assert "centered_toplevel_geometry(parent, 620, 700)" in output_source
     assert "centered_toplevel_geometry(self, 680, 620)" in selected_source
 
 

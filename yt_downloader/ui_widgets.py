@@ -10,6 +10,7 @@ from tkinter import ttk
 from typing import Any, Literal, Protocol, cast
 
 from .models import OutputType
+from .ui_chrome import RoundedFieldBorder
 from .ui_layout import (
     accumulated_row_scroll,
     focus_wheel_pixels,
@@ -198,41 +199,20 @@ def bind_focus_ring(widget: tk.Misc, host: tk.Misc) -> None:
     widget.bind("<FocusOut>", lambda _event: set_color(THEME["surface"]), add="+")
 
 
-class ProductEntry(tk.Entry):
-    """Flat VODForge entry that avoids platform-native corner artifacts."""
+class ProductEntry(ttk.Entry):
+    """Native editing semantics with product-owned rounded field chrome."""
 
     def __init__(self, parent: tk.Misc, **kwargs: Any) -> None:
         super().__init__(
             parent,
-            bg=THEME["surface"],
-            fg=THEME["text"],
-            insertbackground=THEME["text"],
-            selectbackground=THEME["accent_dark"],
-            selectforeground="#ffffff",
-            disabledbackground=THEME["surface"],
-            disabledforeground=THEME["subtle"],
-            readonlybackground=THEME["surface"],
-            relief="flat",
-            bd=7,
-            highlightthickness=1,
-            highlightbackground=THEME["surface"],
-            highlightcolor=THEME["accent"],
+            style="Product.TEntry",
             font=FONT_UI,
             **kwargs,
         )
 
     def apply_theme(self) -> None:
-        self.configure(
-            bg=THEME["surface"],
-            fg=THEME["text"],
-            insertbackground=THEME["text"],
-            selectbackground=THEME["accent_dark"],
-            disabledbackground=THEME["surface"],
-            disabledforeground=THEME["subtle"],
-            readonlybackground=THEME["surface"],
-            highlightbackground=THEME["surface"],
-            highlightcolor=THEME["accent"],
-        )
+        # The interpreter's ProductChromeOwner updates shared images in place.
+        self.configure(style="Product.TEntry")
 
 
 def _ui_icon_path(name: str) -> Path:
@@ -318,7 +298,8 @@ class ChoiceDropdown(tk.Frame):
                 highlightthickness=0,
                 font=FONT_UI,
             )
-        self._field.pack(side="left", fill="both", expand=True, padx=(10, 2), pady=8)
+        self.columnconfigure(0, weight=1)
+        self._field.grid(row=0, column=0, sticky="nsew", padx=(10, 2), pady=8)
 
         self._chevron = tk.Canvas(
             self,
@@ -329,7 +310,7 @@ class ChoiceDropdown(tk.Frame):
             highlightthickness=0,
             takefocus=False,
         )
-        self._chevron.pack(side="right", padx=(2, 8))
+        self._chevron.grid(row=0, column=1, padx=(2, 8))
         self._chevron_item = self._chevron.create_image(9, 9, anchor="center")
 
         for widget in (self, self._field, self._chevron):
@@ -346,6 +327,7 @@ class ChoiceDropdown(tk.Frame):
         if self._state != "normal":
             self._field.bind("<Button-1>", self._open_from_event, add="+")
         self.bind("<Destroy>", self._destroyed, add="+")
+        self._chrome = RoundedFieldBorder(self)
         self._render_chevron()
 
     def _custom_option(self, key: str) -> Any:
@@ -520,9 +502,7 @@ class ChoiceDropdown(tk.Frame):
         try:
             focused_widget = self.focus_get()
             focused = focused_widget in {self, self._field} or self._popover is not None
-            super().configure(
-                highlightbackground=(THEME["accent"] if focused else THEME["border"])
-            )
+            self._chrome.request(focused, self._hovered and self._state != "disabled")
         except tk.TclError:
             pass
 
@@ -594,6 +574,7 @@ class ModernCheckbox(tk.Frame):
         self._state = "normal"
         self._hovered = False
         self._check_image: Any | None = None
+        self._last_render_snapshot: tuple[object, ...] | None = None
         self._box = tk.Canvas(
             self,
             width=18,
@@ -680,6 +661,17 @@ class ModernCheckbox(tk.Frame):
         try:
             selected = bool(self.variable.get())
             disabled = self._state == "disabled"
+            focused = self.focus_get() is self
+            snapshot = (
+                selected,
+                disabled,
+                focused,
+                self._hovered,
+                self._text,
+                tuple(THEME.items()),
+            )
+            if snapshot == self._last_render_snapshot:
+                return
             background = THEME["bg"]
             border = (
                 THEME["subtle"]
@@ -698,9 +690,7 @@ class ModernCheckbox(tk.Frame):
             super().configure(
                 bg=background,
                 cursor="arrow" if disabled else "hand2",
-                highlightbackground=(
-                    THEME["accent"] if self.focus_get() is self else background
-                ),
+                highlightbackground=(THEME["accent"] if focused else background),
             )
             self._box.configure(bg=background, cursor="arrow" if disabled else "hand2")
             self._label.configure(
@@ -718,6 +708,7 @@ class ModernCheckbox(tk.Frame):
                 )
                 if self._check_image is not None:
                     self._box.create_image(9, 9, image=self._check_image)
+            self._last_render_snapshot = snapshot
         except tk.TclError:
             return
 
@@ -1294,7 +1285,7 @@ class PixelScrollTable(tk.Frame):
         del selectmode
         super().__init__(
             parent,
-            bg=THEME["surface"],
+            bg=THEME["panel"],
             bd=0,
             highlightthickness=1,
             highlightbackground=THEME["border"],
@@ -1319,7 +1310,7 @@ class PixelScrollTable(tk.Frame):
         self._yscrollcommand: Callable[[float, float], Any] | None = None
         self._xscrollcommand: Callable[[float, float], Any] | None = None
         self._font = tkfont.Font(font=FONT_UI)
-        self._header_font = tkfont.Font(font=FONT_UI_SMALL_MEDIUM)
+        self._header_font = tkfont.Font(font=FONT_UI_SMALL)
         self._manually_resized_columns: set[str] = set()
         self._last_manually_resized_column: str | None = None
         self._resize_column: str | None = None
@@ -1336,14 +1327,14 @@ class PixelScrollTable(tk.Frame):
         self._header = tk.Canvas(
             self,
             height=self._header_height,
-            bg=THEME["surface"],
+            bg=THEME["panel"],
             bd=0,
             highlightthickness=0,
             xscrollincrement=1,
         )
         self._body = tk.Canvas(
             self,
-            bg=THEME["surface"],
+            bg=THEME["panel"],
             bd=0,
             highlightthickness=0,
             takefocus=True,
@@ -1803,7 +1794,7 @@ class PixelScrollTable(tk.Frame):
             return THEME["accent_surface"]
         if item == self._hovered_row:
             return THEME["surface_2"]
-        return THEME["surface"]
+        return THEME["panel"]
 
     def _cell_color(self, item: str, value_index: int) -> str:
         if (
@@ -1897,7 +1888,7 @@ class PixelScrollTable(tk.Frame):
                     0,
                     cursor + width,
                     self._header_height,
-                    fill=THEME["surface"],
+                    fill=THEME["panel"],
                     outline="",
                 )
                 self._header.create_text(
@@ -2032,9 +2023,9 @@ class PixelScrollTable(tk.Frame):
         """Patch the table canvases and redraw their current immutable model."""
 
         try:
-            self.configure(bg=THEME["surface"])
-            self._header.configure(bg=THEME["surface"])
-            self._body.configure(bg=THEME["surface"])
+            self.configure(bg=THEME["panel"])
+            self._header.configure(bg=THEME["panel"])
+            self._body.configure(bg=THEME["panel"])
         except tk.TclError:
             return
         self._redraw()
@@ -2666,7 +2657,7 @@ class SegmentedSelector(tk.Frame):
         compact: bool = False,
     ) -> None:
         super().__init__(
-            parent, bg=THEME["border"], bd=0, highlightthickness=0, padx=1, pady=1
+            parent, bg=background, bd=0, highlightthickness=0, padx=0, pady=0
         )
         self._variable = variable
         self._background_role = (
@@ -2678,8 +2669,12 @@ class SegmentedSelector(tk.Frame):
         )
         self._background = background
         self._labels: dict[str, tk.Label] = {}
+        self._segment_images: dict[str, Any] = {}
+        self._segment_snapshots: dict[str, tuple[object, ...]] = {}
+        self._hovered: str | None = None
         horizontal_padding = 7 if compact else 10
         vertical_padding = 3 if compact else 4
+        self._segment_padding = (horizontal_padding, vertical_padding)
         for value in values:
             label = tk.Label(
                 self,
@@ -2724,30 +2719,63 @@ class SegmentedSelector(tk.Frame):
         self._set_hover(value, hovered)
 
     def _set_hover(self, value: str, hovered: bool) -> None:
-        if self._variable.get() == value:
-            return
-        label = self._labels.get(value)
-        if label is not None:
-            label.configure(
-                bg=THEME["surface_2"] if hovered else self._background,
-                fg=THEME["text"] if hovered else THEME["muted"],
-            )
+        self._hovered = value if hovered else None
+        self._sync()
 
     def _sync(self) -> None:
         selected = self._variable.get()
-        for value, label in self._labels.items():
+        values = tuple(self._labels)
+        for index, (value, label) in enumerate(self._labels.items()):
             active = value == selected
-            label.configure(
-                bg=THEME["accent_dark"] if active else self._background,
-                fg="#ffffff" if active else THEME["muted"],
+            fill = (
+                THEME["accent"]
+                if active
+                else (
+                    THEME["surface_2"] if self._hovered == value else self._background
+                )
             )
+            foreground = "#ffffff" if active else THEME["muted"]
+            snapshot = (fill, foreground, THEME["border"], self._background)
+            if self._segment_snapshots.get(value) == snapshot:
+                continue
+            if Image is not None and ImageDraw is not None and ImageTk is not None:
+                font = tkfont.Font(root=self, font=FONT_UI_SMALL_MEDIUM)
+                px, py = self._segment_padding
+                width = font.measure(value) + px * 2
+                height = font.metrics("linespace") + py * 2
+                image = Image.new("RGB", (width * 3, height * 3), self._background)
+                draw = ImageDraw.Draw(image)
+                draw.rounded_rectangle(
+                    (1, 1, width * 3 - 2, height * 3 - 2),
+                    radius=15,
+                    fill=fill,
+                    outline=THEME["border"],
+                    width=2,
+                )
+                if index > 0:
+                    draw.rectangle((0, 2, 15, height * 3 - 3), fill=fill)
+                if index < len(values) - 1:
+                    draw.rectangle(
+                        (width * 3 - 16, 2, width * 3, height * 3 - 3), fill=fill
+                    )
+                self._segment_images[value] = ImageTk.PhotoImage(
+                    image.resize((width, height), Image.LANCZOS)
+                )
+                label.configure(
+                    image=self._segment_images[value], compound="center", padx=0, pady=0
+                )
+            label.configure(
+                bg=self._background,
+                fg=foreground,
+            )
+            self._segment_snapshots[value] = snapshot
 
     def apply_theme(self) -> None:
         """Patch palette-bound colors while preserving selection and bindings."""
 
         if self._background_role is not None:
             self._background = THEME[self._background_role]
-        self.configure(bg=THEME["border"])
+        self.configure(bg=self._background)
         self._sync()
 
     def destroy(self) -> None:

@@ -125,8 +125,8 @@ class FocusSettingsDialog:
         )
         self.dialog_surface = surface
         root = surface.body
-        root.columnconfigure(0, weight=1)
-        root.columnconfigure(1, weight=1)
+        root.columnconfigure(0, weight=1, uniform="settings-column")
+        root.columnconfigure(1, weight=1, uniform="settings-column")
         root.rowconfigure(2, weight=1)
 
         self._build_heading(root)
@@ -137,10 +137,26 @@ class FocusSettingsDialog:
         self._build_privacy_section(root)
         self._build_cloud_section(root)
         self._build_footer(surface.footer)
+        self._bind_responsive_copy(root)
 
         popup.protocol("WM_DELETE_WINDOW", self.close)
         popup.bind("<Escape>", lambda _event: self.close())
         popup.bind("<Destroy>", self._on_destroy, add="+")
+
+    @staticmethod
+    def _bind_responsive_copy(parent: tk.Misc) -> None:
+        """Settings owns wrapping; helper copy cannot force columns offscreen."""
+        for child in parent.winfo_children():
+            if isinstance(child, ttk.Label) and int(child.cget("wraplength") or 0) > 0:
+                maximum = int(child.cget("wraplength") or 0)
+
+                def fit(event: tk.Event, label=child, limit: int = maximum) -> None:
+                    width = min(limit, max(1, event.width - 2))
+                    if int(label.cget("wraplength")) != width:
+                        label.configure(wraplength=width)
+
+                child.bind("<Configure>", fit, add="+")
+            FocusSettingsDialog._bind_responsive_copy(child)
 
     def _build_heading(self, root: ttk.Frame) -> None:
         heading = ttk.Frame(root, style="FocusShell.TFrame")
@@ -442,22 +458,22 @@ class FocusSettingsDialog:
             mp4_output,
             text="Save thumbnail",
             variable=bindings.write_thumbnail,
-        ).grid(row=5, column=0, sticky="w", pady=2)
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=5)
         ModernCheckbox(
             mp4_output,
             text="Save compact JSON",
             variable=bindings.write_info_json,
-        ).grid(row=5, column=1, sticky="w", pady=2)
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=5)
         ModernCheckbox(
             mp4_output,
             text="Embed thumbnail",
             variable=bindings.embed_thumbnail,
-        ).grid(row=6, column=0, sticky="w", pady=2)
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=5)
         ModernCheckbox(
             mp4_output,
             text="Embed metadata",
             variable=bindings.embed_metadata,
-        ).grid(row=6, column=1, sticky="w", pady=2)
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=5)
         nvenc_label = (
             "NVIDIA NVENC (Windows only)" if macos else "Use NVIDIA NVENC GPU encoding"
         )
@@ -466,7 +482,7 @@ class FocusSettingsDialog:
             text=nvenc_label,
             variable=bindings.use_nvenc,
         )
-        nvenc.grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
+        nvenc.grid(row=9, column=0, columnspan=2, sticky="w", pady=5)
         ToolTip(
             nvenc,
             "Use a supported NVIDIA GPU for MP4 encoding on Windows. "
@@ -838,8 +854,8 @@ class FocusSettingsDialog:
 
     def show(self) -> None:
         self.popup.update_idletasks()
-        width = min(820, max(700, self.popup.winfo_reqwidth()))
-        height = min(720, max(560, self.popup.winfo_reqheight()))
+        width = 820
+        height = 720
         reveal_toplevel(
             self.popup,
             centered_toplevel_geometry(self.owner, width, height),

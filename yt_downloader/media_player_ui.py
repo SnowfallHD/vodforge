@@ -15,7 +15,7 @@ from .playback_backend import MediaPlayerError, PlaybackBackend, PlaybackSnapsho
 from .playback_surface import TkPlaybackSurfaceOwner
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, FONT_UI_SMALL, THEME
-from .ui_widgets import SleekScrollbar, reveal_toplevel
+from .ui_widgets import SleekScrollbar, _tinted_ui_icon, reveal_toplevel
 
 try:
     from PIL import Image, ImageOps, ImageTk
@@ -25,7 +25,29 @@ except ImportError:  # pragma: no cover - required by production package
 PREVIEW_WIDTH = 132
 PREVIEW_HEIGHT = 74
 CHAPTER_ROWS_MAX = 8
-DETAIL_ROWS_MAX = 8
+DETAIL_ROWS_MAX = 12
+
+
+class PlayerTransportButton(ttk.Button):
+    """Image-backed native button; playback state remains engine-owned."""
+
+    def __init__(self, parent: tk.Misc, *, command: Callable[[], Any]) -> None:
+        self._icons = {
+            label: _tinted_ui_icon(icon, size=(20, 20), color=THEME["text"])
+            for label, icon in (("Play", "play"), ("Pause", "pause"))
+        }
+        super().__init__(
+            parent,
+            text="Play",
+            image=self._icons["Play"] or "",
+            command=command,
+            style="Transport.TButton",
+        )
+
+    def configure(self, cnf: Any = None, **kwargs: Any) -> Any:
+        if kwargs.get("text") in self._icons:
+            kwargs["image"] = self._icons[kwargs["text"]]
+        return super().configure(cnf, **kwargs)
 
 
 def format_playback_time(seconds: float) -> str:
@@ -252,27 +274,41 @@ class MediaPlayerWindow:
         header = ttk.Frame(root, style="FocusShell.TFrame")
         header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 14))
         header.columnconfigure(0, weight=1)
+        brand = ttk.Frame(header, style="FocusShell.TFrame")
+        brand.grid(row=0, column=0, sticky="w", pady=(0, 14))
+        ttk.Label(
+            brand,
+            text="VOD",
+            foreground=THEME["accent"],
+            font=(FONT_UI_SMALL[0], 14, "bold"),
+        ).pack(side="left")
+        ttk.Label(brand, text="Forge", font=(FONT_UI_SMALL[0], 14, "bold")).pack(
+            side="left"
+        )
+        ttk.Label(brand, text="PLAYER", style="Muted.TLabel").pack(
+            side="left", padx=(12, 0)
+        )
         ttk.Label(
             header,
             text=str(self.info.get("title") or "Saved media"),
             style="FocusTitle.TLabel",
             wraplength=720,
             justify="left",
-        ).grid(row=0, column=0, sticky="w")
+        ).grid(row=1, column=0, sticky="w")
         creator = str(
             self.info.get("uploader") or self.info.get("channel") or "Unknown creator"
         )
         category = str(self.info.get("vodforge_user_category") or "").strip()
         subtitle = creator + (f"  •  {category}" if category else "")
         ttk.Label(header, text=subtitle, style="Muted.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(3, 0)
+            row=2, column=0, sticky="w", pady=(3, 0)
         )
         ttk.Button(
             header,
             text="Done",
             command=self.close,
             style="FocusQuiet.TButton",
-        ).grid(row=0, column=1, rowspan=2, sticky="e")
+        ).grid(row=0, column=1, sticky="e")
 
     def _build_stage(self, root: ttk.Frame) -> None:
         stage_shell = tk.Frame(
@@ -328,12 +364,12 @@ class MediaPlayerWindow:
                     len(self._chapters), maximum=CHAPTER_ROWS_MAX
                 ),
                 activestyle="none",
-                bg=THEME["surface"],
+                bg=THEME["bg"],
                 fg=THEME["text"],
-                selectbackground=THEME["accent_dark"],
+                selectbackground=THEME["accent_surface"],
                 selectforeground="#ffffff",
                 bd=0,
-                highlightthickness=1,
+                highlightthickness=0,
                 highlightbackground=THEME["border"],
                 font=FONT_UI_SMALL,
             )
@@ -391,14 +427,15 @@ class MediaPlayerWindow:
         detail_shell.columnconfigure(0, weight=1)
         details = tk.Text(
             detail_shell,
+            width=1,
             height=bounded_content_rows(detail_text, maximum=DETAIL_ROWS_MAX),
             wrap="word",
-            bg=THEME["surface"],
-            fg=THEME["muted"],
+            bg=THEME["bg"],
+            fg=THEME["text"],
             bd=0,
             highlightthickness=0,
-            padx=10,
-            pady=9,
+            padx=0,
+            pady=3,
             font=FONT_UI_SMALL,
         )
         details.grid(row=0, column=0, sticky="ew")
@@ -416,13 +453,7 @@ class MediaPlayerWindow:
         transport = ttk.Frame(root, style="FocusShell.TFrame")
         transport.grid(row=2, column=0, sticky="ew", padx=(0, 18), pady=(12, 0))
         transport.columnconfigure(1, weight=1)
-        self.play_button = ttk.Button(
-            transport,
-            text="Play",
-            command=self._toggle,
-            style="Accent.TButton",
-            width=8,
-        )
+        self.play_button = PlayerTransportButton(transport, command=self._toggle)
         self.play_button.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
         self.timeline = tk.Canvas(
             transport,
@@ -446,9 +477,14 @@ class MediaPlayerWindow:
         )
         self.volume_var = tk.IntVar(value=self.playback.snapshot.volume)
         self.volume_label_var = tk.StringVar(value=f"Volume  {self.volume_var.get()}%")
+        self._volume_icon = _tinted_ui_icon(
+            "volume-2", size=(16, 16), color=THEME["muted"]
+        )
         ttk.Label(
             transport,
             textvariable=self.volume_label_var,
+            image=self._volume_icon or "",
+            compound="left",
             style="Muted.TLabel",
         ).grid(row=1, column=3, sticky="e", padx=(12, 5))
         volume = PlayerVolumeControl(

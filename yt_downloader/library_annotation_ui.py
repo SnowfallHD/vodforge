@@ -5,13 +5,13 @@ from collections.abc import Callable
 from tkinter import ttk
 
 from .library_annotations import LibraryAnnotation
+from .ui_chrome import RoundedFieldBorder
 from .ui_layout import centered_toplevel_geometry
-from .ui_theme import THEME
+from .ui_theme import FONT_UI, THEME
 from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
     ProductEntry,
-    bind_focus_ring,
     reveal_toplevel,
 )
 
@@ -102,6 +102,7 @@ class LibraryAnnotationDialog:
         note_shell.grid(row=9, column=0, sticky="nsew")
         note_shell.columnconfigure(0, weight=1)
         note_shell.rowconfigure(0, weight=1)
+        self._note_chrome = RoundedFieldBorder(note_shell)
         self.note = tk.Text(
             note_shell,
             height=8,
@@ -114,10 +115,12 @@ class LibraryAnnotationDialog:
             highlightthickness=0,
             padx=12,
             pady=10,
+            font=FONT_UI,
         )
-        self.note.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.note.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
         self.note.insert("1.0", annotation.note)
-        bind_focus_ring(self.note, note_shell)
+        self.note.bind("<FocusIn>", lambda _event: self._note_chrome.request(True))
+        self.note.bind("<FocusOut>", lambda _event: self._note_chrome.request(False))
 
         actions = surface.footer
         actions.columnconfigure(0, weight=1)

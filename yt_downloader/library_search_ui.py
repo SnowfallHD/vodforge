@@ -5,8 +5,9 @@ from collections.abc import Sequence
 from typing import Any
 
 from .library_search import LIBRARY_ALL_CATEGORIES
+from .ui_chrome import RoundedFieldBorder
 from .ui_theme import FONT_UI, THEME
-from .ui_widgets import ChoiceDropdown
+from .ui_widgets import ChoiceDropdown, _tinted_ui_icon
 
 
 class LibrarySearchField(tk.Frame):
@@ -44,9 +45,14 @@ class LibrarySearchField(tk.Frame):
             font=FONT_UI,
         )
         self.entry.pack(side="left", padx=1, pady=1, ipady=7, ipadx=9)
+        self._search_icon = _tinted_ui_icon(
+            "search", size=(16, 16), color=THEME["muted"]
+        )
         self._placeholder = tk.Label(
             self,
-            text="⌕  Search library",
+            text="  Search library",
+            image=self._search_icon or "",
+            compound="left",
             bg=THEME["surface"],
             fg=THEME["muted"],
             bd=0,
@@ -58,6 +64,7 @@ class LibrarySearchField(tk.Frame):
         self.entry.bind("<FocusOut>", self._refresh)
         self._variable_trace = variable.trace_add("write", self._refresh)
         self.bind("<Destroy>", self._destroyed, add="+")
+        self._chrome = RoundedFieldBorder(self)
         self.after_idle(self._refresh)
 
     def set_compact(self, compact: bool) -> bool:
@@ -81,9 +88,7 @@ class LibrarySearchField(tk.Frame):
                 self._placeholder.place_forget()
             else:
                 self._placeholder.place(x=10, rely=0.5, anchor="w")
-            self.configure(
-                highlightbackground=(THEME["accent"] if focused else THEME["border"])
-            )
+            self._chrome.request(focused)
         except tk.TclError:
             return
 
@@ -94,6 +99,13 @@ class LibrarySearchField(tk.Frame):
             self.variable.trace_remove("write", self._variable_trace)
         except tk.TclError:
             pass
+
+    def apply_theme(self) -> None:
+        self._search_icon = _tinted_ui_icon(
+            "search", size=(16, 16), color=THEME["muted"]
+        )
+        self._placeholder.configure(image=self._search_icon or "")
+        self._refresh()
 
 
 class LibraryCategoryFilter(ChoiceDropdown):

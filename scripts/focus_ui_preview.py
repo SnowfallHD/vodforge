@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tempfile
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -27,6 +30,54 @@ from yt_downloader.ui_widgets import reveal_toplevel
 PREVIEW_THUMBNAILS = (
     Path(__file__).resolve().parents[1] / "assets" / "preview_thumbnails"
 )
+
+
+@contextmanager
+def isolated_preview_services():
+    """Render real surfaces without user-state recovery, network, or telemetry."""
+    from yt_downloader import app as app_module
+
+    with (
+        tempfile.TemporaryDirectory(prefix="vodforge-visual-review-") as folder,
+        ExitStack() as stack,
+    ):
+        root = Path(folder)
+        for name in (
+            "installation_state_path",
+            "run_state_file_path",
+            "settings_file_path",
+            "history_file_path",
+            "library_annotations_file_path",
+            "product_telemetry_path",
+            "local_conversion_state_path",
+        ):
+            stack.enter_context(
+                patch.object(app_module, name, return_value=root / f"{name}.json")
+            )
+        for name in (
+            "reset_diagnostics_log",
+            "prepare_activity_log",
+            "write_diagnostic",
+            "append_activity_log",
+        ):
+            stack.enter_context(patch.object(app_module, name, return_value=None))
+        stack.enter_context(
+            patch.object(app_module, "load_activity_log_tail", return_value="")
+        )
+        stack.enter_context(
+            patch.object(app_module, "find_libvlc_runtime", return_value=None)
+        )
+        for name in (
+            "_record_first_launch",
+            "_record_product_app_opened",
+            "_start_ytdlp_preload",
+            "_check_runtime",
+        ):
+            stack.enter_context(patch.object(DownloaderApp, name, return_value=None))
+        stack.enter_context(
+            patch.object(app_module.ProductTelemetryOwner, "record", return_value=False)
+        )
+        yield
 
 
 class PreviewPlaybackBackend:
@@ -100,7 +151,15 @@ class PreviewMediaOwner:
     """Return one local product image for every process-free preview request."""
 
     def preview_png(self, _position: float) -> bytes:
-        return (PREVIEW_THUMBNAILS / "alpine-lake.jpg").read_bytes()
+        images = (
+            "desert-sunset.jpg",
+            "alpine-lake.jpg",
+            "forest-river.jpg",
+            "rainforest-falls.jpg",
+            "desert-sunset.jpg",
+        )
+        index = min(4, int(_position / 193.4))
+        return (PREVIEW_THUMBNAILS / images[index]).read_bytes()
 
     def shutdown(self) -> None:
         return None
@@ -216,6 +275,82 @@ def preview_metadata() -> list[dict[str, object]]:
     ]
 
 
+def approved_metadata() -> list[dict[str, Any]]:
+    """Fictional render fixtures only; never persisted or used for downloads."""
+    titles = (
+        "Alpine mornings — a quiet escape",
+        "Coastal drive — Pacific Highway",
+        "Piano session — late night",
+        "City lights — after dark",
+        "Forest walk — deep calm",
+        "Ocean waves — sleep sounds",
+        "Rain on the roof — study ambience",
+    )
+    items = []
+    for index, title in enumerate(titles):
+        path = f"/Users/coop/Downloads/{title}.mp4"
+        items.append(
+            {
+                "id": f"visual-{index}",
+                "title": title,
+                "uploader": "Northlight Studio",
+                "duration": (1967, 1695, 2710, 1865, 1678, 3600, 3012)[index],
+                "description": "A serene journey through misty alpine valleys at dawn.\nPerfect for focus, relaxation, or a peaceful reset.",
+                "tags": ["landscape", "travel", "relaxation"],
+                "vodforge_output_type": "MP4",
+                "vodforge_output_dir": "/Users/coop/Downloads",
+                "vodforge_projection_owner": f"run:visual-{index}",
+                "vodforge_annotation_owner": f"run:visual-{index}",
+                "vodforge_user_category": "Travel",
+                "vodforge_user_tags": ["mountains", "quiet", "inspiration"],
+                "vodforge_user_note": "A calming opening for the weekend playlist.",
+                "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "alpine-lake.jpg"),
+                "vodforge_encoding_summary": {
+                    "source": {
+                        "Source format selector used": "137+140",
+                        "Video format ID": "137",
+                        "Audio format ID": "140",
+                        "Source container/ext": "mp4 + m4a",
+                        "Source resolution": "1920x1080",
+                        "Source frame rate": "30 fps",
+                        "Source video codec": "avc1.640028",
+                        "Source video bitrate": "8000 kbps",
+                        "Source audio codec": "AAC",
+                        "Source audio bitrate": "128 kbps",
+                        "Source audio sample rate": "48000",
+                        "Source audio channels": "2",
+                        "HDR/SDR status": "SDR",
+                        "File size estimate": "1.94 GB",
+                        "Reason selected": "Best available within quality ceiling",
+                    },
+                    "output": {
+                        "Output container": "mp4",
+                        "Output resolution": "1920x1080",
+                        "Output frame rate": "30 fps",
+                        "Output video codec": "H.264",
+                        "Measured video bitrate": "6000 kbps",
+                        "Output audio codec": "AAC",
+                        "Measured audio bitrate": "192 kbps",
+                        "Audio sample rate": "48000",
+                        "Audio channels": "2",
+                        "Output file path": path,
+                        "Output file size": "1.94 GB",
+                        "Output status": "Completed",
+                        "Output rate-control mode": "Auto CBR",
+                        "Validation status": "Validated",
+                        "Output duration": "32:47",
+                        "H.264 profile": "High",
+                        "Pixel format": "yuv420p",
+                        "Target video bitrate": "6000 kbps",
+                        "Target audio bitrate": "192 kbps",
+                    },
+                    "warnings": [],
+                },
+            }
+        )
+    return items
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Launch a no-download VODForge visual QA state."
@@ -224,6 +359,11 @@ def main() -> None:
         "--view", choices=("forge", "library", "activity"), default="forge"
     )
     parser.add_argument("--size", default="1180x780")
+    parser.add_argument(
+        "--approved",
+        action="store_true",
+        help="Use the approved mockup's fictional review content",
+    )
     parser.add_argument("--output-type", choices=("MP4", "MP3"), default="MP4")
     parser.add_argument(
         "--cover-mode",
@@ -266,6 +406,8 @@ def main() -> None:
     app.cookie_source_var.set(args.cookie_source)
     app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     app.metadata_items = preview_metadata()
+    if args.approved:
+        app.metadata_items = approved_metadata()
 
     def preview_start_intent(info: dict[str, object]) -> None:
         """Exercise the UI handoff without starting provider or media work."""
@@ -384,6 +526,9 @@ def main() -> None:
             "preview_thumbnail_path": str(PREVIEW_THUMBNAILS / "rainforest-falls.jpg"),
         },
     ]
+    if args.approved:
+        for index, run in enumerate(app._focus_preview_runs):
+            run["title"] = app.metadata_items[index]["title"]
     if args.overflow:
         for index in range(4, len(app.metadata_items)):
             info = app.metadata_items[index]
@@ -453,9 +598,13 @@ def main() -> None:
     def apply_preview_state() -> None:
         app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         app.focus_active_title_var.set(
-            "Good Desires vs. Bad Desires (How Do We Know the Difference?)"
+            "Alpine mornings — a quiet escape"
+            if args.approved
+            else "Good Desires vs. Bad Desires (How Do We Know the Difference?)"
         )
-        app.focus_active_detail_var.set("BibleProject")
+        app.focus_active_detail_var.set(
+            "Northlight Studio" if args.approved else "BibleProject"
+        )
         app.focus_active_profile_var.set(
             "1080p Full HD  •  Auto CBR"
             if output_type == OutputType.MP4
@@ -553,11 +702,39 @@ def main() -> None:
     if args.selected_details:
         app.after(700, app._show_selected_metadata_details)
     if args.output_details:
-        app.after(700, app._show_focus_output_details)
+        app.after(
+            700,
+            lambda: (
+                app._show_library_output_details(dict(app.metadata_items[0]))
+                if args.approved
+                else app._show_focus_output_details()
+            ),
+        )
     if args.annotation:
+        if args.approved:
+            from yt_downloader.library_annotations import LibraryAnnotation
+
+            app.library_annotations.replace(
+                "run:visual-0",
+                LibraryAnnotation(
+                    category="Travel",
+                    tags=("mountains", "quiet", "inspiration"),
+                    note="A short film about finding peace in the mountains.",
+                ),
+            )
         app.after(700, app._show_library_annotation_editor)
     if args.local_conversion:
-        app.after(700, app._show_local_audio_video)
+
+        def show_conversion() -> None:
+            app._show_local_audio_video()
+            dialog = app._local_audio_video_dialog
+            if args.approved and dialog is not None:
+                dialog.audio_name_var.set("Piano session — late night.mp3")
+                dialog.image_name_var.set("Alpine mornings.jpg")
+                dialog._render_preview(PREVIEW_THUMBNAILS / "alpine-lake.jpg")
+                # Presentation only. Paths stay unset, so no job can be created.
+
+        app.after(700, show_conversion)
     if args.player:
 
         def show_player() -> None:
@@ -604,6 +781,36 @@ def main() -> None:
                     ]
                 ),
             }
+            if args.approved:
+                player_info.update(
+                    title="Alpine mornings — a quiet escape",
+                    uploader="Northlight Studio",
+                    vodforge_user_category="Travel",
+                    vodforge_user_tags=("mountains", "quiet", "inspiration"),
+                    vodforge_user_note="A calming opening for the weekend playlist.",
+                    chapters=[
+                        {
+                            "start_time": 0.0,
+                            "end_time": 190.0,
+                            "title": "Opening light",
+                        },
+                        {
+                            "start_time": 190.0,
+                            "end_time": 520.0,
+                            "title": "Along the shore",
+                        },
+                        {
+                            "start_time": 520.0,
+                            "end_time": 800.0,
+                            "title": "Into the pines",
+                        },
+                        {
+                            "start_time": 800.0,
+                            "end_time": 1100.0,
+                            "title": "The quiet trail",
+                        },
+                    ],
+                )
             window = MediaPlayerWindow(
                 app,
                 playback=PreviewPlaybackBackend(audio_only=audio_only),
@@ -613,6 +820,11 @@ def main() -> None:
                 / ("rainforest-falls.jpg" if audio_only else "alpine-lake.jpg"),
             )
             app._visual_preview_player = window
+            if args.approved:
+                # Same post-play paused state as the target, no native engine.
+                window._ensure_render_surface = lambda: True
+                window._toggle()
+                window._toggle()
             reveal_toplevel(
                 window.popup,
                 centered_toplevel_geometry(app, width=1100, height=800),
@@ -653,8 +865,38 @@ def main() -> None:
 
     app.after(40, reveal_review_window)
     app.after(520, reveal_review_window)
+    if args.approved and any(
+        (
+            args.settings,
+            args.annotation,
+            args.output_details,
+            args.local_conversion,
+            args.player,
+        )
+    ):
+
+        def isolate_review_panel() -> None:
+            import tkinter as tk
+
+            panels = [
+                child
+                for child in app.winfo_children()
+                if isinstance(child, tk.Toplevel) and child.winfo_ismapped()
+            ]
+            if panels:
+                panel = panels[-1]
+                panel.transient("")
+                app.withdraw()
+                panel.deiconify()
+                print(
+                    f"isolated review panel: {panel.title()} {panel.geometry()}",
+                    flush=True,
+                )
+
+        app.after(950, isolate_review_panel)
     app.mainloop()
 
 
 if __name__ == "__main__":
-    main()
+    with isolated_preview_services():
+        main()

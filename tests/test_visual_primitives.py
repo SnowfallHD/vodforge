@@ -46,12 +46,13 @@ def test_visible_product_surfaces_do_not_construct_native_entry_controls() -> No
 def test_product_entry_owns_flat_surface_and_focus_ring() -> None:
     source = inspect.getsource(ProductEntry)
 
-    assert "class ProductEntry(tk.Entry)" in source
-    assert 'relief="flat"' in source
-    assert "highlightthickness=1" in source
-    assert 'highlightbackground=THEME["surface"]' in source
-    assert 'highlightcolor=THEME["accent"]' in source
-    assert 'readonlybackground=THEME["surface"]' in source
+    assert "class ProductEntry(ttk.Entry)" in source
+    assert 'style="Product.TEntry"' in source
+    from yt_downloader.ui_chrome import ProductChromeOwner
+
+    chrome = inspect.getsource(ProductChromeOwner)
+    assert '"field_focus"' in chrome
+    assert '"Entry.textarea"' in chrome
     assert "def apply_theme" in source
 
 

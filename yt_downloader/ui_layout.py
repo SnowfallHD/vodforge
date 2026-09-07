@@ -274,6 +274,18 @@ def focus_layout_mode(width: int, height: int) -> str:
     return "wide"
 
 
+def library_table_column_layout() -> dict[str, dict[str, object]]:
+    """Readable six-column defaults; manual divider widths remain table-owned."""
+    return {
+        "index": {"width": 38, "minwidth": 38, "stretch": False},
+        "title": {"width": 160, "minwidth": 160, "stretch": True, "stretchmax": 560},
+        "profile": {"width": 115, "minwidth": 90, "stretch": False},
+        "duration": {"width": 56, "minwidth": 56, "stretch": False},
+        "creator": {"width": 90, "minwidth": 90, "stretch": False},
+        "location": {"width": 145, "minwidth": 110, "stretch": False},
+    }
+
+
 def focus_library_layout_mode(width: int) -> str:
     """Protect the selected item before the media table consumes medium widths."""
     if width < FOCUS_COMPACT_WIDTH:
