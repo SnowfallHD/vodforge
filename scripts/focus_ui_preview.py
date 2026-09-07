@@ -385,6 +385,11 @@ def main() -> None:
     parser.add_argument("--selected-details", action="store_true")
     parser.add_argument("--output-details", action="store_true")
     parser.add_argument("--idle", action="store_true")
+    parser.add_argument(
+        "--completed",
+        action="store_true",
+        help="Show an explicit completed activity fixture",
+    )
     parser.add_argument("--annotation", action="store_true")
     parser.add_argument("--local-conversion", action="store_true")
     parser.add_argument("--player", choices=("MP4", "MP3"))
@@ -628,6 +633,17 @@ def main() -> None:
         app._load_thumbnail_file(active_art, target="active")
         app._set_text(app.focus_log, log_lines, disabled=True)
         app._set_text(app.log, log_lines, disabled=True)
+        app.activity_summary.request(
+            title=app.focus_active_title_var.get(),
+            status="Completed" if args.completed else "Downloading",
+            detail="Review fixture — completed successfully"
+            if args.completed
+            else app.status_var.get(),
+        )
+        if args.completed:
+            completed_log = log_lines + "\n14:30:08 [success] Saved MP4 successfully"
+            app._set_text(app.focus_log, completed_log, disabled=True)
+            app._set_text(app.log, completed_log, disabled=True)
         app._set_text(app.focus_summary_text, output_lines, disabled=True)
         source_lines = (
             "Format selector: 137 + 140\nVideo: H.264 / 1920x1080 / 30fps\nAudio: AAC / 128 kbps / stereo\nSource duration: 32:47"

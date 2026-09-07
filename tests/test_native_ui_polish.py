@@ -6,7 +6,11 @@ from tkinter import ttk
 
 import pytest
 
-from yt_downloader.activity_ui import ActivityLogText
+from yt_downloader.activity_ui import (
+    ActivityLogText,
+    ActivitySummary,
+    terminal_activity_line,
+)
 from yt_downloader.detail_ui import FactsText, OutputDetailsDialog
 from yt_downloader.ui_styles import apply_product_styles
 from yt_downloader.ui_widgets import ChoiceDropdown, ProductEntry, SegmentedSelector
@@ -73,6 +77,29 @@ def test_activity_theme_refresh_retains_document_and_noop(root, compact):
         assert text.request(source) is False
     finally:
         THEME["accent"] = original
+
+
+def test_explicit_terminal_activity_and_summary(root):
+    assert (
+        terminal_activity_line("Failed", "Saved something earlier")
+        == "[error] Saved something earlier"
+    )
+    assert terminal_activity_line("Completed", "Finished") == "[success] Finished"
+    text = ActivityLogText(root)
+    source = "14:30:08 [success] Finished\n14:30:09 [error] Failed"
+    text.request(source)
+    text.apply_theme()
+    assert text.get("1.0", "end-1c") == source
+    assert any(
+        text.image_cget(name, "image") == str(text._success_icon)
+        for name in text.image_names()
+    )
+    summary = ActivitySummary(root)
+    assert summary.request(title="Run A", status="Completed", detail="Finished")
+    assert not summary.request(title="Run A", status="Completed", detail="Finished")
+    assert summary._status.get() == "Completed"
+    assert summary.request(title="Run B", status="Failed", detail="Failure")
+    assert summary._title.get() == "Run B"
 
 
 def test_input_semantics_and_one_interpreter_chrome_cache(root):

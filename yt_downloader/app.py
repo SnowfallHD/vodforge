@@ -35,7 +35,7 @@ from . import export_planning as _export_planning
 from . import platform_services as _platform_services
 from . import ui_layout as _ui_layout
 from . import ui_widgets as _ui_widgets
-from .activity_ui import ActivityLogText
+from .activity_ui import ActivityLogText, ActivitySummary, terminal_activity_line
 from .cloud_funnel import (
     InstallationIdentityError,
     InstallationState,
@@ -6557,14 +6557,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         header.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 12))
         header.columnconfigure(0, weight=1)
         title = ttk.Frame(header, style="FocusShell.TFrame")
-        title.grid(row=0, column=0, sticky="w")
+        title.grid(row=0, column=0, sticky="ew")
         ttk.Label(title, text="Activity", style="FocusTitle.TLabel").pack(anchor="w")
-        ttk.Label(
-            title, textvariable=self.focus_active_title_var, style="Accent.TLabel"
-        ).pack(anchor="w", pady=(8, 0))
-        ttk.Label(title, textvariable=self.status_var, style="Accent.TLabel").pack(
-            anchor="w", pady=(5, 8)
-        )
+        self.activity_summary = ActivitySummary(title)
+        self.activity_summary.pack(anchor="w", fill="x", pady=(8, 8))
         ttk.Button(
             header,
             text="Open log folder",
@@ -6902,6 +6898,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _sync_focus_status(self) -> None:
         if self._focus_follows_active_run():
             self.focus_display_status_var.set(self.status_var.get())
+        summary = self.__dict__.get("activity_summary")
+        job = self.__dict__.get("active_job")
+        if (
+            summary is not None
+            and isinstance(job, DownloadJob)
+            and not job.terminal_status
+        ):
+            summary.request(
+                title=download_job_display_title(job),
+                status="In progress",
+                detail=self.status_var.get(),
+            )
 
     def _focus_follows_active_run(self) -> bool:
         selected_run_id = self.__dict__.get("_focus_selected_run_id")
@@ -13814,10 +13822,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         message: str,
     ) -> None:
         finished_job = decision.finished_job
+        activity_message = terminal_activity_line(run_status, message)
+        summary = self.__dict__.get("activity_summary")
+        if summary is not None and finished_job is not None and not decision.suppressed:
+            summary.request(
+                title=download_job_display_title(finished_job),
+                status=run_status,
+                detail=message,
+            )
         if finished_job is not None and not decision.suppressed:
-            self._append_job_log(finished_job, message)
+            self._append_job_log(finished_job, activity_message)
         else:
-            self._append_log(message)
+            self._append_log(activity_message)
         if decision.stopped_without_item_terminal:
             self._archive_active_terminal_job(run_status, message)
         elif decision.archive_completed:

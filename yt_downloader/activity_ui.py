@@ -4,15 +4,93 @@ from __future__ import annotations
 
 import re
 import tkinter as tk
+from tkinter import ttk
 from typing import Any
 
 from .ui_theme import FONT_UI, THEME
 from .ui_widgets import _tinted_ui_icon
 
 _LOG_TOKEN = re.compile(
-    r"(^\d{2}:\d{2}:\d{2})|(\[(?:info|download|warning|error|debug)\][ \t]*)",
+    r"(^\d{2}:\d{2}:\d{2})|(\[(?:info|download|success|warning|error|debug)\][ \t]*)",
     re.MULTILINE | re.IGNORECASE,
 )
+
+
+def terminal_activity_line(status: str, message: str) -> str:
+    """Decorate an explicit run outcome, never infer it from message text."""
+    level = {"Completed": "success", "Failed": "error", "Partial": "warning"}.get(
+        status
+    )
+    return f"[{level}] {message}" if level else message
+
+
+class ActivitySummary(ttk.Frame):
+    """Small presentation owner for the existing run status/title bindings."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+    ) -> None:
+        super().__init__(parent, style="FocusShell.TFrame")
+        self._status = tk.StringVar(self, "Ready")
+        self._title = tk.StringVar(self, "")
+        self._detail = tk.StringVar(self, "")
+        self._snapshot: tuple[str, str, str] | None = None
+        self.columnconfigure(2, weight=1)
+        self._last_status: str | None = None
+        self._icon = ttk.Label(self, style="Accent.TLabel")
+        self._icon.grid(row=0, column=0, padx=(0, 8))
+        self._label = ttk.Label(self, textvariable=self._status, style="Accent.TLabel")
+        self._label.grid(row=0, column=1, sticky="w", padx=(0, 12))
+        self._title_label = ttk.Label(
+            self, textvariable=self._title, style="Muted.TLabel", width=1
+        )
+        self._title_label.grid(row=0, column=2, sticky="ew")
+        self._detail_label = ttk.Label(
+            self, textvariable=self._detail, style="Muted.TLabel", width=1
+        )
+        self._detail_label.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(7, 0))
+        self.bind("<Configure>", self._resize, add="+")
+        self._refresh()
+
+    def _resize(self, event: Any) -> None:
+        self._title_label.configure(wraplength=max(80, event.width - 150))
+        self._detail_label.configure(wraplength=max(80, event.width))
+
+    def request(self, *, title: str, status: str, detail: str) -> bool:
+        snapshot = (title, status, detail)
+        if snapshot == self._snapshot:
+            return False
+        self._snapshot = snapshot
+        self._title.set(title)
+        self._status.set(status)
+        self._detail.set(detail)
+        self._refresh()
+        return True
+
+    def apply_theme(self) -> None:
+        self._last_status = None
+        self._refresh()
+
+    def _refresh(self, *_args: Any) -> None:
+        status = self._status.get()
+        if status == self._last_status:
+            return
+        self._last_status = status
+        color = (
+            THEME["danger"]
+            if status == "Failed"
+            else THEME["warning"]
+            if status in {"Partial", "Stopped", "Skipped"}
+            else THEME["accent"]
+        )
+        self._image = _tinted_ui_icon(
+            "check" if status == "Completed" else "circle-dashed",
+            size=(18, 18),
+            color=color,
+        )
+        self._icon.configure(image=self._image or "")
+        self._label.configure(foreground=color)
 
 
 class ActivityLogText(tk.Text):
@@ -37,6 +115,9 @@ class ActivityLogText(tk.Text):
             "circle-dashed", size=self._icon_size, color=THEME["accent"]
         )
         self._divider = tk.PhotoImage(master=self, width=1, height=18)
+        self._success_icon = _tinted_ui_icon(
+            "check", size=self._icon_size, color=THEME["accent"]
+        )
         self._divider.put(THEME["accent"], to=(0, 0, 1, 18))
         self._snapshot: str | None = None
         self._constrained: bool | None = None
@@ -69,9 +150,18 @@ class ActivityLogText(tk.Text):
         self._event_icon = _tinted_ui_icon(
             "circle-dashed", size=self._icon_size, color=THEME["accent"]
         )
+        previous_success = str(self._success_icon)
+        self._success_icon = _tinted_ui_icon(
+            "check", size=self._icon_size, color=THEME["accent"]
+        )
         for name in self.image_names():
             if self.image_cget(name, "image") != str(self._divider):
-                self.image_configure(name, image=self._event_icon)
+                self.image_configure(
+                    name,
+                    image=self._success_icon
+                    if self.image_cget(name, "image") == previous_success
+                    else self._event_icon,
+                )
         self._divider.put(THEME["accent"], to=(0, 0, 1, 18))
 
     def insert(self, index: Any, chars: str, *args: Any) -> None:
@@ -88,13 +178,19 @@ class ActivityLogText(tk.Text):
             if (
                 match[2]
                 and self._event_icon
-                and match[0].strip().lower() in {"[info]", "[download]", "[debug]"}
+                and match[0].strip().lower()
+                in {"[info]", "[download]", "[debug]", "[success]"}
             ):
                 # Keep original tokens in the selectable document; shared
                 # theme-aware chrome never becomes log or run authority.
                 super().insert("log-insert", match[0], "log-hidden")
                 self.image_create(
-                    "log-insert", image=self._event_icon, padx=12, align="center"
+                    "log-insert",
+                    image=self._success_icon
+                    if match[0].strip().lower() == "[success]"
+                    else self._event_icon,
+                    padx=12,
+                    align="center",
                 )
             else:
                 tag = "log-time" if match[1] else "log-level"
