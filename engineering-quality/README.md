@@ -16,6 +16,35 @@ Every scenario has one of three non-interchangeable evidence tiers:
 
 A headless pass is never reported as full-application proof. If the packaged tier did not run, the report says `skipped` and leaves UI/settings/queue/lifecycle integration unproven.
 
+### Analytics permission journeys
+
+The repository suite covers bounded region retries, late response rejection,
+one-shot browser opening, durable refusal and permission-dependent telemetry.
+The `unit_static.telemetry_local_contract` scenario explicitly tests unknown and
+denied permission before granting permission and exercising real Python HTTP
+serialization against the loopback Worker/D1. No claim receipt substitutes for
+analytics permission.
+
+Run real Tk event-loop timing checks separately with:
+
+```sh
+VODFORGE_DISABLE_TELEMETRY=1 VODFORGE_NATIVE_UI_TESTS=1 PYTHONPATH=. \
+  .venv/bin/pytest -q -s tests/test_analytics_native_journey.py
+```
+
+These intercept region responses, browser opening and claim transport. They
+measure the source owner's browser-request/prompt timing, not OS browser focus.
+
+For browser regression QA, start the companion site on loopback port 4321 and
+execute `quality_harness/analytics_browser_journey.js` through Playwright's
+`browser_run_code` filename input. It uses isolated browser contexts and
+intercepts every API and external HTTPS request, covering browser consent,
+GPC, closed tabs, source persistence, separate profiles, transient errors,
+claim expiry and the final ten seconds of the permission window. Boundary
+tests use the browser's virtual clock. This is an explicit manual browser
+regression step, not an automatic NORMAL or packaged-app pass. A real-clock
+two-minute run and OS/default-browser behavior require separate receipts.
+
 ## Setup
 
 From a clean checkout:

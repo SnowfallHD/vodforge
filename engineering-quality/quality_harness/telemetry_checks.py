@@ -121,7 +121,7 @@ def _read_line(process):
 
 
 def integration_probe(repo_root: Path, case_dir: Path, runner, server):
-    from yt_downloader import product_telemetry
+    from yt_downloader import analytics_consent, product_telemetry
     from yt_downloader import telemetry_credentials as transport
     from yt_downloader.cloud_funnel import (
         load_or_create_installation_state,
@@ -174,8 +174,18 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 patch.object(
                     product_telemetry, "production_telemetry_allowed", return_value=True
                 ),
+                patch.object(
+                    analytics_consent, "production_telemetry_allowed", return_value=True
+                ),
             ):
+                consent = analytics_consent.AnalyticsConsentOwner(case_dir / "client")
                 owner = transport.TelemetryCredentialOwner(case_dir / "client")
+                assert not owner.first_launch("0.1.7", "macos"), (
+                    "Unknown permission leaked"
+                )
+                consent.choose(False)
+                assert not owner.first_launch("0.1.7", "macos"), "Refusal leaked"
+                consent.choose(True)
                 assert owner.first_launch("0.1.7", "macos"), "Initial launch rejected"
                 assert owner.first_launch("0.1.8", "macos"), "Update launch rejected"
                 assert owner.first_launch("0.1.8", "macos"), "Repeat launch rejected"
