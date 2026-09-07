@@ -262,7 +262,6 @@ from .ui_styles import apply_product_styles
 from .ui_theme import (
     DEFAULT_THEME_NAME,
     FONT_MONO,
-    FONT_MONO_FAMILY,
     FONT_UI,
     FONT_UI_FAMILY,
     FONT_UI_SMALL,
@@ -6560,8 +6559,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         title = ttk.Frame(header, style="FocusShell.TFrame")
         title.grid(row=0, column=0, sticky="w")
         ttk.Label(title, text="Activity", style="FocusTitle.TLabel").pack(anchor="w")
-        ttk.Label(title, textvariable=self.status_var, style="Muted.TLabel").pack(
-            anchor="w", pady=(3, 0)
+        ttk.Label(
+            title, textvariable=self.focus_active_title_var, style="Accent.TLabel"
+        ).pack(anchor="w", pady=(8, 0))
+        ttk.Label(title, textvariable=self.status_var, style="Accent.TLabel").pack(
+            anchor="w", pady=(5, 8)
         )
         ttk.Button(
             header,
@@ -8799,10 +8801,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             width - (2 * horizontal_pad) - (180 if show_hero_thumbnail else 0) - 150,
         )
         self.focus_active_title_label.configure(wraplength=active_title_width)
-        self.focus_log.configure(
-            font=(FONT_MONO_FAMILY, 8) if compact else FONT_MONO,
-            pady=0 if compact else 4,
-        )
+        self.focus_log.request_density(constrained=compact)
 
         active = bool(
             self._focus_active_override or (self.worker and self.worker.is_alive())

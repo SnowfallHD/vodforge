@@ -53,6 +53,28 @@ def test_log_decoration_is_character_exact_and_clear_invalidates(root):
     assert text.get("1.0", "end-1c") == source + "09:12:32 [error] appended"
 
 
+@pytest.mark.parametrize("compact", [False, True])
+def test_activity_theme_refresh_retains_document_and_noop(root, compact):
+    from yt_downloader.ui_theme import THEME
+
+    text = ActivityLogText(root, compact=compact)
+    source = (
+        "09:12:30 [info] Started\n09:12:31 [warning] Warning\n09:12:32 [error] Error"
+    )
+    text.request(source)
+    original = THEME["accent"]
+    try:
+        THEME["accent"] = "#35aabb"
+        text.apply_theme()
+        assert text.tag_cget("log-level", "foreground") == "#35aabb"
+        assert text.tag_cget("log-warning", "foreground") == THEME["warning"]
+        assert text.tag_cget("log-error", "foreground") == THEME["danger"]
+        assert text.get("1.0", "end-1c") == source
+        assert text.request(source) is False
+    finally:
+        THEME["accent"] = original
+
+
 def test_input_semantics_and_one_interpreter_chrome_cache(root):
     value = tk.StringVar(root, "initial")
     entry = ProductEntry(root, textvariable=value)
