@@ -6,6 +6,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .failure_diagnostics import FailureDiagnostic
+
 AUDIO_SAMPLE_RATE = "48000"
 AUDIO_CHANNELS = "2"
 STRICT_VIDEO_BITRATE_KBPS = 10000
@@ -138,6 +140,7 @@ class DownloadJob:
     terminal_status: str | None = None
     terminal_message: str = ""
     item_terminal_emitted: bool = False
+    failure_diagnostic: FailureDiagnostic | None = None
 
 
 @dataclass(frozen=True)

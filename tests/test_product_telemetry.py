@@ -23,6 +23,33 @@ def _permitted_installation(path: Path) -> str:
     return state.install_id
 
 
+def test_permanent_server_rejection_retires_event_without_claiming_delivery(tmp_path):
+    from yt_downloader.telemetry_credentials import RejectedTelemetryEvent
+
+    installation_path = tmp_path / "installation.json"
+    _permitted_installation(installation_path)
+    state_path = tmp_path / "product-telemetry.json"
+    calls = []
+
+    def reject(event):
+        calls.append(event.event_id)
+        raise RejectedTelemetryEvent()
+
+    owner = ProductTelemetryOwner(
+        state_path=state_path,
+        installation_state_path=installation_path,
+        app_version="0.1.8",
+        d1_recorder=reject,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    assert owner.record_app_opened()
+    assert owner.shutdown(1.0)
+    owner.flush_async()
+    assert owner.shutdown(1.0)
+    assert len(calls) == 1
+    assert not state_path.exists()
+
+
 def test_product_events_are_suppressed_without_permission_or_when_disabled(
     tmp_path: Path,
 ):

@@ -339,6 +339,15 @@ def record_cloud_seen(
     platform_name: str | None = None,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> bool:
+    if opener is urllib.request.urlopen:
+        from .telemetry_credentials import TelemetryCredentialOwner
+
+        return TelemetryCredentialOwner(installation_state_path().parent).cloud_event(
+            "cloud_seen",
+            state.install_id,
+            app_version,
+            installation_platform(platform_name),
+        )
     return _post_json(
         CLOUD_SEEN_ENDPOINT,
         {
@@ -373,6 +382,13 @@ def record_cloud_click(
     *,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> bool:
+    if opener is urllib.request.urlopen:
+        from .telemetry_credentials import TelemetryCredentialOwner
+        from .version import __version__
+
+        return TelemetryCredentialOwner(installation_state_path().parent).cloud_event(
+            "cloud_click", state.install_id, __version__, installation_platform()
+        )
     return _post_json(
         CLOUD_CLICK_ENDPOINT,
         {"install_id": state.install_id},

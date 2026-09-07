@@ -60,6 +60,7 @@ from .export_planning import (
     export_mode_from_display_name,
     mp3_sample_rate_display,
 )
+from .failure_diagnostics import capture_failure
 from .focus_settings import (
     FocusSettingsActions,
     FocusSettingsBindings,
@@ -12024,6 +12025,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             urls=[retry_url],
             run_id=uuid.uuid4().hex,
             origin_run_id=failed_job.run_id,
+            failure_diagnostic=None,
             preview_info=retry_preview,
             metadata_keys=set(),
             history_identities=set(),
@@ -12268,6 +12270,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     )
                     provider_error = exc.error
                 issue = format_ytdlp_user_error(provider_error)
+                if job.failure_diagnostic is None:
+                    job.failure_diagnostic = capture_failure(
+                        provider_error, stage="batch"
+                    )
                 failures.append((item_url, issue))
                 outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
                 append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item_url, issue)
@@ -12308,6 +12314,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
             self.events.put(_download_batch_terminal_event(batch_result, len(urls)))
         except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
+            job.failure_diagnostic = capture_failure(exc, stage="batch")
             self._active_progress_context = None
             write_diagnostic(
                 f"batch download worker error: {type(exc).__name__}: {exc}"
@@ -13229,6 +13236,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.skip_video_requested = False
             return replace(result, outcome=skipped_outcome)
 
+        job.failure_diagnostic = capture_failure(
+            error, stage="processing" if result.metadata is not None else "preparation"
+        )
         issue = format_ytdlp_user_error(error)
         if item.total <= 1:
             raise _DownloadItemExecutionError(error, result) from error
@@ -13489,6 +13499,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> DownloadOutcome:
         self._active_progress_context = None
         user_error = format_ytdlp_user_error(error)
+        job.failure_diagnostic = capture_failure(
+            error, stage="processing" if result.metadata is not None else "preparation"
+        )
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
@@ -13899,6 +13912,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             dedupe_key=job.run_id,
             run_kind="youtube",
             output_type=cast(OutputKind, job.output_type.value.lower()),
+            failure_reason=job.failure_diagnostic.reason
+            if event_name == "run_failed" and job.failure_diagnostic
+            else None,
+            failure_detail=job.failure_diagnostic.payload()
+            if event_name == "run_failed" and job.failure_diagnostic
+            else None,
         )
 
     def _record_product_playback_started(self, info: dict[str, Any]) -> None:

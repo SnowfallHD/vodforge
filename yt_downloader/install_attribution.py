@@ -23,10 +23,8 @@ from .cloud_funnel import (
     mark_first_launch_confirmed,
     mark_heycatch_first_launch_confirmed,
 )
-from .cloud_funnel import (
-    record_first_launch as record_first_party_launch,
-)
 from .heycatch_telemetry import record_first_launch as record_heycatch_first_launch
+from .telemetry_credentials import TelemetryCredentialOwner
 from .telemetry_policy import production_telemetry_allowed
 
 ATTRIBUTION_CLAIM_ISSUE_ENDPOINT = "https://getvodforge.com/api/attribution/claim/issue"
@@ -143,7 +141,7 @@ class InstallationAttributionOwner:
         self,
         state_path: Path,
         *,
-        first_party_recorder: Callable[..., bool] = record_first_party_launch,
+        first_party_recorder: Callable[..., bool] | None = None,
         heycatch_recorder: Callable[..., bool] = record_heycatch_first_launch,
         claim_issuer: Callable[..., ClaimIssueResult | None] = issue_claim,
         claim_reader: Callable[..., ClaimState] = claim_state,
@@ -152,7 +150,15 @@ class InstallationAttributionOwner:
         poll_attempts: int = POLL_ATTEMPTS,
     ) -> None:
         self._state_path = state_path
-        self._first_party_recorder = first_party_recorder
+        self._credentials = TelemetryCredentialOwner(state_path.parent)
+        self._native_delivery = first_party_recorder is None
+        self._first_party_recorder = first_party_recorder or (
+            lambda _state, *, app_version, platform_name: (
+                self._credentials.first_launch(
+                    app_version, installation_platform(platform_name)
+                )
+            )
+        )
         self._heycatch_recorder = heycatch_recorder
         self._claim_issuer = claim_issuer
         self._claim_reader = claim_reader
@@ -160,8 +166,9 @@ class InstallationAttributionOwner:
         self._sleep = sleep
         self._poll_attempts = max(0, int(poll_attempts))
 
-    @staticmethod
-    def needs_delivery(state: InstallationState) -> bool:
+    def needs_delivery(self, state: InstallationState) -> bool:
+        if self._native_delivery and not self._credentials.launch_confirmed():
+            return True
         if not state.first_launch_confirmed:
             return True
         if state.heycatch_first_launch_confirmed:
@@ -181,7 +188,13 @@ class InstallationAttributionOwner:
             return state
         current = load_or_create_installation_state(self._state_path)
         platform = installation_platform(platform_name)
-        if not current.first_launch_confirmed and self._first_party_recorder(
+        if (
+            not current.first_launch_confirmed
+            or (
+                self._native_delivery
+                and not self._credentials.launch_confirmed(app_version)
+            )
+        ) and self._first_party_recorder(
             current,
             app_version=app_version,
             platform_name=platform_name,

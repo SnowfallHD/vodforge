@@ -16,9 +16,15 @@ from .cloud_funnel import (
     installation_platform,
     load_or_create_installation_state,
 )
+from .failure_diagnostics import (
+    FAILURE_REASONS,
+    FailureDiagnostic,
+    validate_failure_detail,
+)
 from .heycatch_telemetry import record_product_event as record_heycatch_event
 from .history import application_data_dir
 from .private_files import write_private_bytes
+from .telemetry_credentials import RejectedTelemetryEvent, TelemetryCredentialOwner
 from .telemetry_policy import production_telemetry_allowed
 
 PRODUCT_TELEMETRY_ENDPOINT = "https://getvodforge.com/api/telemetry/events"
@@ -69,6 +75,8 @@ class ProductTelemetryEvent:
     schema_version: int = PRODUCT_TELEMETRY_SCHEMA_VERSION
     run_kind: RunKind | None = None
     output_type: OutputKind | None = None
+    failure_reason: str | None = None
+    failure_detail: FailureDiagnostic | None = None
     d1_delivered: bool = False
     heycatch_delivered: bool = False
 
@@ -84,6 +92,16 @@ class ProductTelemetryEvent:
             "schema_version": self.schema_version,
             "run_kind": self.run_kind,
             "output_type": self.output_type,
+            **(
+                {"failure_reason": self.failure_reason or "unknown"}
+                if self.event_name == "run_failed"
+                else {}
+            ),
+            **(
+                {"failure_detail": self.failure_detail.payload()}
+                if self.event_name == "run_failed" and self.failure_detail
+                else {}
+            ),
         }
 
 
@@ -118,6 +136,16 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
     event_name = str(value.get("event_name") or "")
     run_kind = value.get("run_kind")
     output_type = value.get("output_type")
+    failure_reason = value.get("failure_reason")
+    detail = value.get("failure_detail")
+    if detail is not None and (
+        not isinstance(detail, dict) or event_name != "run_failed"
+    ):
+        raise ValueError("invalid failure detail")
+    if failure_reason is not None and (
+        failure_reason not in FAILURE_REASONS or event_name != "run_failed"
+    ):
+        raise ValueError("invalid failure reason")
     channel = str(value.get("release_channel") or "")
     if event_name not in _EVENT_NAMES:
         raise ValueError("telemetry event name is invalid")
@@ -148,6 +176,8 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         schema_version=PRODUCT_TELEMETRY_SCHEMA_VERSION,
         run_kind=cast(RunKind | None, run_kind),
         output_type=cast(OutputKind | None, output_type),
+        failure_reason=failure_reason,
+        failure_detail=validate_failure_detail(detail) if detail is not None else None,
         d1_delivered=value.get("d1_delivered") is True,
         heycatch_delivered=value.get("heycatch_delivered") is True,
     )
@@ -245,7 +275,12 @@ class ProductTelemetryOwner:
         self._platform = installation_platform(platform_name)
         self._release_channel = release_channel(app_version)
         self._enabled = bool(enabled)
-        self._d1_recorder = d1_recorder
+        credential_owner = TelemetryCredentialOwner(installation_state_path.parent)
+        self._d1_recorder = (
+            (lambda event: credential_owner.event(event.public_payload()))
+            if d1_recorder is _post_d1_event
+            else d1_recorder
+        )
         self._heycatch_recorder = heycatch_recorder
         self._diagnostic = diagnostic or (lambda _message: None)
         self._session_id = _valid_uuid(session_id or uuid.uuid4())
@@ -281,9 +316,22 @@ class ProductTelemetryOwner:
         dedupe_key: str | None = None,
         run_kind: RunKind | None = None,
         output_type: OutputKind | None = None,
+        failure_reason: str | None = None,
+        failure_detail: dict[str, Any] | None = None,
     ) -> bool:
         if event_name not in _EVENT_NAMES:
             raise ValueError("unsupported product telemetry event")
+        if failure_detail is not None and event_name != "run_failed":
+            raise ValueError("unexpected failure detail")
+        detail = (
+            validate_failure_detail(failure_detail)
+            if failure_detail is not None
+            else None
+        )
+        if failure_reason is not None and (
+            failure_reason not in FAILURE_REASONS or event_name != "run_failed"
+        ):
+            raise ValueError("unsupported failure reason")
         if run_kind is not None and run_kind not in _RUN_KINDS:
             raise ValueError("unsupported product telemetry run kind")
         if output_type is not None and output_type not in _OUTPUT_KINDS:
@@ -308,6 +356,10 @@ class ProductTelemetryOwner:
             release_channel=self._release_channel,
             run_kind=run_kind,
             output_type=output_type,
+            failure_reason=(failure_reason or "unknown")
+            if event_name == "run_failed"
+            else None,
+            failure_detail=detail,
         )
         with self._lock:
             try:
@@ -366,7 +418,28 @@ class ProductTelemetryOwner:
                 if not events:
                     return
                 event = events[0]
-            d1_delivered = event.d1_delivered or self._d1_recorder(event)
+                # Privacy retention matches server acceptance. Expiration is a
+                # local discard, never a fabricated delivery acknowledgement.
+                if (
+                    datetime.now(timezone.utc)
+                    - datetime.fromisoformat(event.occurred_at.replace("Z", "+00:00"))
+                ).total_seconds() > 30 * 86400:
+                    _save_outbox(self._state_path, events[1:])
+                    self._diagnostic("expired telemetry event discarded after 30 days")
+                    continue
+            try:
+                d1_delivered = event.d1_delivered or self._d1_recorder(event)
+            except RejectedTelemetryEvent:
+                with self._lock:
+                    latest = _load_outbox(self._state_path)
+                    _save_outbox(
+                        self._state_path,
+                        [item for item in latest if item.event_id != event.event_id],
+                    )
+                self._diagnostic(
+                    "permanently rejected telemetry event discarded; not delivered"
+                )
+                continue
             heycatch_delivered = event.heycatch_delivered or self._heycatch_recorder(
                 event.install_id,
                 event_name=event.event_name,
