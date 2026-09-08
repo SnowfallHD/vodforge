@@ -26,7 +26,7 @@ HIGHLIGHTS = (
         "Follow your download with clear progress stages in Forge. "
         "Switch to Technical details for the full log, or open Activity.",
         "activity.png",
-        (0.10, 0.552, 0.43, 0.708),
+        (0.10, 0.552, 0.30, 0.708),
     ),
     FeatureHighlight(
         "ui-settings",
@@ -34,7 +34,7 @@ HIGHLIGHTS = (
         "Refined dropdowns, checkboxes, and buttons make Settings easier to scan. "
         "Your theme carries through the app.",
         "settings.png",
-        (0.50, 0.17, 0.96, 0.64),
+        (0.50, 0.205, 0.96, 0.495),
     ),
     FeatureHighlight(
         "ui-player",
@@ -42,7 +42,7 @@ HIGHLIGHTS = (
         "Refined playback controls, a clearer timeline, and a cleaner volume "
         "slider keep the focus on your media.",
         "player.png",
-        (0.02, 0.65, 0.73, 0.98),
+        (0.02, 0.735, 0.73, 0.98),
     ),
     FeatureHighlight(
         "activity-mode",
@@ -66,7 +66,7 @@ HIGHLIGHTS = (
         "Search your saved media. Add notes, tags, and categories to keep "
         "everything easy to find.",
         "library.png",
-        (0.03, 0.22, 0.97, 0.85),
+        (0.03, 0.235, 0.97, 0.715),
     ),
     FeatureHighlight(
         "player",

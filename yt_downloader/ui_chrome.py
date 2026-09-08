@@ -98,7 +98,7 @@ class ProductChromeOwner:
             "button": (THEME["surface_2"], THEME["border"]),
             "hover": (THEME["border"], THEME["muted"]),
             "pressed": (THEME["surface"], THEME["accent"]),
-            "focus": (THEME["surface_2"], THEME["accent"]),
+            "focus": (THEME["surface_2"], THEME["border"]),
             "disabled": (THEME["panel"], THEME["border"]),
             "accent": (THEME["accent"], THEME["accent"]),
             "accent_hover": (accent_hover, accent_hover),

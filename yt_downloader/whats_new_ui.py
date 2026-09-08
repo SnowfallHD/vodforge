@@ -238,9 +238,16 @@ class WhatsNewPanel:
         if self.closed or signature == self.paint_signature:
             return
         self.paint_signature = signature
+        if self.activity_demo is not None:
+            self.preview.itemconfigure(self.image_item, image="")
+            self._cancel_transition()
+            self._transition(0)
+            return
         if self.source_image is None:
             self.preview.itemconfigure(self.image_item, image="")
             return
+        if self.highlights[self.index].key == "ui-activity":
+            size = (min(size[0], 340), min(size[1], 140))
         self.photo = ImageTk.PhotoImage(
             ImageOps.contain(self.source_image, size), master=self.frame
         )
@@ -266,7 +273,12 @@ class WhatsNewPanel:
         )
         if self.activity_demo is not None:
             self.activity_demo.place(
-                x=10 + offset, y=0, relwidth=1, width=-38, relheight=1
+                relx=0.5,
+                rely=0.5,
+                anchor="center",
+                x=offset,
+                width=min(470, self.preview.winfo_width() - 38),
+                height=min(180, self.preview.winfo_height() - 12),
             )
         if step < 10:
             self.transition_timer = self.frame.after(

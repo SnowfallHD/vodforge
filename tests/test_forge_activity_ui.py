@@ -56,6 +56,11 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
             assert not panel.friendly.winfo_ismapped()
             assert panel.technical.winfo_height() >= panel.winfo_height() - 2
         panel.toggle.focus_force()
+        panel.toggle.apply_theme()
+        assert not any(
+            panel.toggle.type(item) == "rectangle"
+            for item in panel.toggle.find_all()
+        )
         root.update()
         panel.toggle.event_generate("<Up>")
         root.update()

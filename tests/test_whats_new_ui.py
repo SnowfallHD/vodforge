@@ -34,7 +34,8 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                 if dimensions is None:
                     dimensions = current
                 assert current == dimensions
-                assert panel.photo is not None
+                if HIGHLIGHTS[index].key != "activity-mode":
+                    assert panel.photo is not None
                 image = panel.photo
                 panel.render(index)
                 root.update()
@@ -51,6 +52,7 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                 if HIGHLIGHTS[index].key == "activity-mode":
                     demo = panel.activity_demo
                     assert demo is not None and demo.timer is not None
+                    assert panel.preview.itemcget(panel.image_item, "image") == ""
                     assert not hasattr(demo, "control")
         assert panel.next.winfo_width() == panel.next.winfo_height() == 34
         assert panel.next.instate(["disabled"])

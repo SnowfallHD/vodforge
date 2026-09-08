@@ -73,9 +73,14 @@ class ActivityModeSlider(tk.Canvas):
             15, 35, 15, 81, fill=THEME["surface_2"], width=5, capstyle="round"
         )
         y = 78 if self.technical else 38
-        self.create_oval(9, y - 6, 21, y + 6, fill=THEME["accent"], outline="")
-        if self.focus_get() is self:
-            self.create_rectangle(1, 1, 29, 115, outline=THEME["accent"])
+        self.create_oval(
+            9,
+            y - 6,
+            21,
+            y + 6,
+            fill=THEME["text"] if self.focus_get() is self else THEME["accent"],
+            outline="",
+        )
 
 
 def friendly_phase(status: str) -> str | None:

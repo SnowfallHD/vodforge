@@ -677,7 +677,7 @@ class ModernCheckbox(tk.Frame):
                 THEME["subtle"]
                 if disabled
                 else THEME["accent"]
-                if selected or self._hovered
+                if selected or self._hovered or focused
                 else THEME["border"]
             )
             fill = (
@@ -690,7 +690,8 @@ class ModernCheckbox(tk.Frame):
             super().configure(
                 bg=background,
                 cursor="arrow" if disabled else "hand2",
-                highlightbackground=(THEME["accent"] if focused else background),
+                highlightthickness=0,
+                highlightbackground=background,
             )
             self._box.configure(bg=background, cursor="arrow" if disabled else "hand2")
             self._label.configure(
