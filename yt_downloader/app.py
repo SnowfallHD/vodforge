@@ -69,6 +69,7 @@ from .focus_settings import (
     FocusSettingsDialog,
     FocusSettingsOptions,
 )
+from .forge_activity_ui import ForgeActivityPanel
 from .history import (
     RETRY_JOB_METADATA_KEY,
     HistoryError,
@@ -5846,26 +5847,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         live_frame.rowconfigure(0, weight=1)
         summary_frame.columnconfigure(0, weight=1)
         summary_frame.rowconfigure(0, weight=1)
-        self.focus_log = ActivityLogText(
-            live_frame,
-            compact=True,
-            height=4,
-            width=1,
-            wrap="word",
-            state="disabled",
-            bg=THEME["bg"],
-            fg=THEME["muted"],
-            insertbackground=THEME["bg"],
-            relief="flat",
-            bd=0,
-            highlightthickness=0,
-            padx=0,
-            pady=4,
-            font=FONT_MONO,
-            takefocus=0,
-            insertwidth=0,
-        )
-        self.focus_log.grid(row=0, column=0, sticky="nsew", padx=(0, 22))
+        self.forge_activity = ForgeActivityPanel(live_frame)
+        self.forge_activity.grid(row=0, column=0, sticky="nsew", padx=(0, 22))
+        self.focus_log = self.forge_activity.technical
         self.focus_summary_text = FactsText(
             summary_frame,
             height=4,
@@ -6922,6 +6906,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.focus_display_status_var.set(self.status_var.get())
         summary = self.__dict__.get("activity_summary")
         job = self.__dict__.get("active_job")
+        panel = self.__dict__.get("forge_activity")
+        if panel is not None and isinstance(job, DownloadJob):
+            panel.observe(job.run_id, self.status_var.get())
         if (
             summary is not None
             and isinstance(job, DownloadJob)
@@ -7466,6 +7453,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _render_focus_run_activity(self, run_id: str, text: str) -> None:
         """Render one run's activity without letting refreshes steal its viewport."""
         owner = str(run_id or "")
+        panel = self.__dict__.get("forge_activity")
+        if panel is not None:
+            panel.show(owner, text)
         widget = self.focus_log
         same_owner = self.__dict__.get("_focus_log_owner_run_id") == owner
         if same_owner and self.__dict__.get("_focus_log_rendered_text") == text:
@@ -13869,6 +13859,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> None:
         finished_job = decision.finished_job
         activity_message = terminal_activity_line(run_status, message)
+        panel = self.__dict__.get("forge_activity")
+        if panel is not None and finished_job is not None and not decision.suppressed:
+            panel.observe(finished_job.run_id, run_status)
         summary = self.__dict__.get("activity_summary")
         if summary is not None and finished_job is not None and not decision.suppressed:
             summary.request(
@@ -13977,6 +13970,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._append_log_widget(self.focus_log, line)
             self._focus_log_owner_run_id = active_job.run_id
             self._focus_log_rendered_text = "\n".join(active_job.activity_lines)
+            panel = self.__dict__.get("forge_activity")
+            if panel is not None:
+                panel.show(active_job.run_id, self._focus_log_rendered_text)
 
     @staticmethod
     def _append_log_widget(widget: Any, line: str) -> None:

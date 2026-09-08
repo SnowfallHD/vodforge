@@ -103,26 +103,19 @@ class WhatsNewPanel:
         )
         body = self.surface.body
         body.rowconfigure(2, weight=1)
-        brand = ttk.Frame(body, style="FocusShell.TFrame")
-        brand.grid(row=0, column=0, pady=(0, 10))
-        for word, color in (("VOD", THEME["accent"]), ("Forge", THEME["text"])):
-            ttk.Label(
-                brand, text=word, foreground=color, font=(FONT_UI_FAMILY, 23, "bold")
-            ).pack(side="left")
         ttk.Label(
             body,
             text="What’s new",
-            style="FocusTitle.TLabel",
-            foreground="#B9C3D0",
+            font=(FONT_UI_FAMILY, 14, "bold"),
+            foreground=THEME["accent"],
             anchor="center",
-        ).grid(row=1, column=0, sticky="ew", pady=(0, 18))
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 18))
         self.preview = tk.Canvas(
             body,
             bg=THEME["bg"],
             width=1,
             height=1,
-            highlightthickness=1,
-            highlightbackground=THEME["surface_2"],
+            highlightthickness=0,
         )
         self.preview.grid(row=2, column=0, sticky="nsew")
         self.image_item = self.preview.create_image(0, 0, anchor="center")
@@ -206,6 +199,7 @@ class WhatsNewPanel:
                 ).convert("RGB")
         except OSError:
             self.source_image = None
+        self.resize()
         self._schedule_preview()
         self.page.configure(text=f"{index + 1} of {len(self.highlights)}")
         self.back.state(["disabled"] if index == 0 else ["!disabled"])
@@ -254,6 +248,13 @@ class WhatsNewPanel:
             min(590, self.parent.winfo_width() - 40),
             min(650, self.parent.winfo_height() - 40),
         )
+        if self.source_image is not None:
+            # Fit the panel to the artwork's aspect ratio instead of leaving
+            # a tall, empty letterbox around wide screenshots. Contain the
+            # complete crop; never fill by silently cutting off controls.
+            image_width, image_height = self.source_image.size
+            fitted_height = (width - 76) * image_height / image_width
+            height = min(height, max(390, round(fitted_height + 300)))
         self.frame.place(
             relx=0.5, rely=0.5, anchor="center", width=width, height=height
         )

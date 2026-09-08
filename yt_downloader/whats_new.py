@@ -23,10 +23,10 @@ HIGHLIGHTS = (
     FeatureHighlight(
         "ui-activity",
         "UI Updates",
-        "Follow each run with clearer Activity logs, theme-colored event markers, "
-        "and easier-to-read messages. The same polish is in Forge’s per-run log.",
+        "Follow your download with clear progress stages in Forge. "
+        "Expand Technical details for the full log, or open Activity.",
         "activity.png",
-        (0.02, 0.18, 0.98, 0.73),
+        (0.10, 0.552, 0.43, 0.708),
     ),
     FeatureHighlight(
         "ui-settings",
