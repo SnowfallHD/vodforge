@@ -1,6 +1,7 @@
 """Opt-in real Tcl/Tk checks; run with VODFORGE_NATIVE_UI_TESTS=1."""
 
 import os
+import time
 import tkinter as tk
 from tkinter import ttk
 from types import SimpleNamespace
@@ -24,6 +25,14 @@ from yt_downloader.ui_widgets import (
 pytestmark = pytest.mark.skipif(
     os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1", reason="requires native Tcl/Tk"
 )
+
+
+def settle_native(window):
+    """Process native map/configure events, not only Tk idle layout callbacks."""
+    deadline = time.monotonic() + 0.2
+    while time.monotonic() < deadline:
+        window.update()
+        time.sleep(0.01)
 
 
 @pytest.fixture
@@ -58,7 +67,7 @@ def test_settings_selects_every_quality_tier_in_real_dropdown():
             )
             for index, label in enumerate(QUALITY_OPTIONS):
                 dropdown.open_popover()
-                application.update_idletasks()
+                settle_native(application)
                 listbox = dropdown._popover.winfo_children()[0]
                 listbox.selection_clear(0, "end")
                 listbox.selection_set(index)
@@ -363,6 +372,8 @@ def test_segmented_control_retains_bindings_and_noops(root):
 
 
 def test_output_document_scrolls_without_moving_done(root):
+    root.deiconify()
+    settle_native(root)
     dialog = OutputDetailsDialog(
         root,
         sections=(
@@ -373,7 +384,7 @@ def test_output_document_scrolls_without_moving_done(root):
         ),
     )
     dialog.popup.geometry("460x320")
-    dialog.popup.update_idletasks()
+    settle_native(dialog.popup)
     document = dialog.documents[0]
     assert "Field 59" in document.raw_snapshot
     document.yview_moveto(1.0)
@@ -440,7 +451,7 @@ def test_player_content_cannot_starve_stage_or_clip_previews(root, size):
     image = ImageTk.PhotoImage(Image.new("RGB", (132, 74), "#121419"), master=root)
     for label in player.preview_labels:
         apply_preview_image(label, image)
-    player.popup.update_idletasks()
+    settle_native(player.popup)
     assert player.stage.winfo_width() >= player.popup.winfo_width() * 0.60
     bottom = player.popup.winfo_rooty() + player.popup.winfo_height()
     for label in player.preview_labels:
@@ -455,7 +466,7 @@ def test_dropdown_keeps_arrow_under_width_pressure(root):
     value = tk.StringVar(root, "A very long selected option")
     dropdown = ChoiceDropdown(root, textvariable=value, values=(value.get(),), width=40)
     dropdown.pack(fill="x")
-    root.update_idletasks()
+    settle_native(root)
     assert dropdown._chevron.winfo_ismapped()
     assert (
         dropdown._chevron.winfo_x() + dropdown._chevron.winfo_width()

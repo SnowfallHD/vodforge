@@ -1319,6 +1319,7 @@ def reliability_cancel(
         case_id="reliability-cancel-slow",
         url=server.url("/slow/page"),
         output_type="MP4",
+        quality_label="720p",  # The long fixture is 540p; keep it under the ceiling.
         cancel_when=cancel_when,
         cancel_timeout_seconds=20,
     )
@@ -1399,6 +1400,7 @@ def reliability_cancel_transcode(
         case_id="reliability-cancel-transcode",
         url=server.url("/page/long"),
         output_type="MP4",
+        quality_label="720p",
         cancel_when=cancel_when,
         cancel_timeout_seconds=30,
     )
@@ -1454,6 +1456,7 @@ def reliability_interrupted_transfer(
         case_id="reliability-interrupted-transfer",
         url=server.url("/fault/interrupt/page"),
         output_type="MP4",
+        quality_label="720p",
     )
     after = server.state.snapshot()
     interruptions = int(after.get("interruptions_injected", 0)) - int(
@@ -1665,6 +1668,7 @@ def lifecycle_staging_transitions(
         case_id="lifecycle-staging-skip",
         url=server.url("/slow/page"),
         output_type="MP4",
+        quality_label="720p",
         output_dir=output_dir,
         cancel_when=skip_when,
         control_request="skip_video",
