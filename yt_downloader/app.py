@@ -8065,35 +8065,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if self._library_run_is_suppressed(terminal_job):
                 continue
             records.append(self._focus_terminal_run_record(terminal_job))
-        active_keys = (
-            self.active_job.metadata_keys if self.active_job is not None else set()
-        )
-        active_history_identities = (
-            {
-                identity
-                for identity in self.active_job.history_identities
-                if identity[0]
-                == str((self.active_job.preview_info or {}).get("id") or "")
-            }
-            if self.active_job is not None
-            else set()
-        )
-        terminal_keys = {
-            key
-            for terminal_job in self._terminal_jobs
-            for key in terminal_job.metadata_keys
-        }
         records.extend(
             persisted_run_deck_records(
                 self.metadata_items,
-                active_metadata_keys=active_keys,
-                terminal_metadata_keys=terminal_keys,
-                active_history_identities=active_history_identities,
                 completed_jobs=self.__dict__.get("_completed_jobs", []),
-                active_run_ids=(
-                    {self.active_job.run_id} if self.active_job is not None else set()
-                ),
-                terminal_run_ids={job.run_id for job in self._terminal_jobs},
             )
         )
         return records

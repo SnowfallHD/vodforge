@@ -231,7 +231,7 @@ def test_seeded_transition_sequences_preserve_projection_invariants(
             )
 
 
-def test_persisted_records_filter_live_owners_and_keep_saved_output_separate(
+def test_persisted_records_preserve_library_membership_and_order(
     tmp_path: Path,
 ) -> None:
     active_preview = {
@@ -261,19 +261,18 @@ def test_persisted_records_filter_live_owners_and_keep_saved_output_separate(
 
     records = persisted_run_deck_records(
         [active_preview, terminal_preview, saved, independent_preview],
-        active_metadata_keys={("active", "MP4")},
-        terminal_metadata_keys={("terminal", "MP3")},
-        active_history_identities=set(),
         completed_jobs=[],
     )
 
     assert [
         (record["kind"], record["title"], record["output_type"]) for record in records
     ] == [
+        ("preview", "Active metadata", "MP4"),
+        ("preview", "Terminal metadata", "MP3"),
         ("completed", "Saved MP4", "MP4"),
         ("preview", "Independent MP3", "MP3"),
     ]
-    assert records[1]["run_id"] == "preview:independent"
+    assert records[3]["run_id"] == "preview:independent"
 
 
 def test_persisted_record_uses_newest_completed_owner(tmp_path: Path) -> None:
@@ -290,15 +289,13 @@ def test_persisted_record_uses_newest_completed_owner(tmp_path: Path) -> None:
 
     records = persisted_run_deck_records(
         [saved],
-        active_metadata_keys=set(),
-        terminal_metadata_keys=set(),
-        active_history_identities=set(),
         completed_jobs=[newest, oldest],
     )
 
     assert len(records) == 1
     assert records[0]["job"] is newest
-    assert records[0]["run_id"] == newest.run_id
+    without_jobs = persisted_run_deck_records([saved], completed_jobs=[])
+    assert records[0]["run_id"] == without_jobs[0]["run_id"]
 
 
 def test_committed_item_remains_visible_while_parent_is_active(tmp_path: Path) -> None:
@@ -310,9 +307,6 @@ def test_committed_item_remains_visible_while_parent_is_active(tmp_path: Path) -
 
     records = persisted_run_deck_records(
         [saved],
-        active_metadata_keys=set(),
-        terminal_metadata_keys=set(),
-        active_history_identities=set(),
         completed_jobs=[],
     )
 
@@ -351,9 +345,6 @@ def test_skipped_playlist_child_does_not_supersede_completed_siblings(
     } == {"first", "second"}
     records = persisted_run_deck_records(
         history,
-        active_metadata_keys=set(),
-        terminal_metadata_keys=set(),
-        active_history_identities=set(),
         completed_jobs=[parent],
     )
     assert len(records) == 2

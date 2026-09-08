@@ -953,8 +953,8 @@ def test_download_jobs_receive_unique_ids_and_replace_preserves_one_run(tmp_path
     assert normalized_worker_copy.run_id == first.run_id
 
 
-def test_active_run_suppresses_its_just_committed_library_record(tmp_path: Path):
-    """History may commit before done, but that transition still renders one run card."""
+def test_active_run_does_not_hide_committed_library_records(tmp_path: Path):
+    """A committed Library row is visible even before the parent finishes."""
     active_job = make_job(tmp_path)
     active_job.preview_info = {
         "id": "authority-id",
@@ -980,9 +980,8 @@ def test_active_run_suppresses_its_just_committed_library_record(tmp_path: Path)
 
     records = app._focus_run_records()
 
-    assert [(record["kind"], record["run_id"]) for record in records] == [
-        ("active", active_job.run_id)
-    ]
+    assert [record["kind"] for record in records] == ["active", "completed"]
+    assert records[0]["run_id"] == active_job.run_id
 
     # Advancing the playlist must reveal every committed item, not hide all
     # history identities accumulated by the still-running parent.
@@ -1448,7 +1447,7 @@ def test_newest_completed_run_remains_owner_of_a_repeated_history_identity(
 
     assert len(records) == 1
     assert records[0]["job"] is newest
-    assert records[0]["run_id"] == newest.run_id
+    assert records[0]["run_id"].startswith("history:")
 
 
 def test_one_item_skip_does_not_archive_a_second_parent_terminal_card(tmp_path: Path):
@@ -3279,7 +3278,10 @@ def test_submitting_a_previewed_url_adopts_it_into_one_fresh_active_run(tmp_path
     records = app._focus_run_records()
 
     assert [(record["kind"], record["run_id"]) for record in records] == [
-        ("active", job.run_id)
+        ("active", job.run_id),
+        # This isolated fixture has not reconciled Library yet. Run Deck must
+        # reflect its supplied Library snapshot, not independently hide rows.
+        ("preview", "preview:old-presentation-id"),
     ]
     start_source = inspect.getsource(DownloaderApp._start_download)
     assert start_source.index(

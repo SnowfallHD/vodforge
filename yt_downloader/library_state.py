@@ -649,14 +649,14 @@ def resolve_library_removal_plan(
 def persisted_run_deck_records(
     metadata_items: Sequence[dict[str, Any]],
     *,
-    active_metadata_keys: AbstractSet[MetadataRunKey],
-    terminal_metadata_keys: AbstractSet[MetadataRunKey],
-    active_history_identities: AbstractSet[HistoryIdentity],
     completed_jobs: Iterable[DownloadJob],
-    active_run_ids: AbstractSet[str] = frozenset(),
-    terminal_run_ids: AbstractSet[str] = frozenset(),
 ) -> list[dict[str, Any]]:
-    """Project saved and preview Library rows into run-deck records."""
+    """Render every saved/preview Library row in its authoritative order.
+
+    Live job state may enrich a card, but cannot change Library membership.
+    Active/queued/terminal controls are separate operational cards, not a reason
+    to suppress committed Library rows.
+    """
     completed_jobs_by_identity: dict[HistoryIdentity, DownloadJob] = {}
     for owner_job in completed_jobs:
         for identity in owner_job.history_identities:
@@ -666,29 +666,9 @@ def persisted_run_deck_records(
 
     records: list[dict[str, Any]] = []
     for index, item in enumerate(metadata_items):
-        item_key = metadata_run_key(item)
         saved = history_output_dir(item)
-        item_run_id = str(
-            item.get(ACTIVE_METADATA_RUN_ID_KEY)
-            or item.get("vodforge_terminal_run_id")
-            or ""
-        )
         item_history_identity = history_identity(item) if saved is not None else None
-        if saved is None and (
-            item_run_id in active_run_ids | terminal_run_ids
-            or (
-                not item_run_id
-                and item_key is not None
-                and (
-                    item_key in active_metadata_keys
-                    or item_key in terminal_metadata_keys
-                )
-            )
-        ):
-            continue
         if saved is None and not is_metadata_preview(item):
-            continue
-        if item_history_identity in active_history_identities:
             continue
 
         output_type = metadata_output_type(item)
@@ -714,10 +694,7 @@ def persisted_run_deck_records(
                 "metadata_index": index,
                 "output_type": output_type.value,
                 "run_id": (
-                    completed_owner.run_id
-                    if completed_owner is not None
-                    and len(completed_owner.history_identities) == 1
-                    else f"history:{item_history_identity!r}"
+                    _legacy_history_owner(item)
                     if saved is not None
                     else str(item.get("vodforge_preview_run_id") or f"history:{index}")
                 ),
