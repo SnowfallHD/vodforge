@@ -11,3 +11,8 @@ Ordinary version bumps and release-note changes must not trigger it. An empty
 Capture source: `scripts/focus_ui_preview.py --approved --public-fixture`, with
 `--local-conversion`, `--annotation`, or `--player MP4`, plus `--capture PATH`.
 The player capture is a process-free visual fixture, not playback evidence.
+
+UI Updates leads the catalog with Activity (`--view activity`), Settings
+(`--settings`), and a close crop of the existing Player controls. The original
+three feature slides follow unchanged. These are editorial highlights, not a
+complete release-note list or claims about measured playback performance.

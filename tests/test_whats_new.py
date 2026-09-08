@@ -19,6 +19,19 @@ class Seen:
         self.value = value
 
 
+def test_ui_updates_lead_without_replacing_existing_features():
+    assert [h.key for h in HIGHLIGHTS] == [
+        "ui-activity",
+        "ui-settings",
+        "ui-player",
+        "local-video",
+        "library",
+        "player",
+    ]
+    assert HIGHLIGHTS[0].title == "UI Updates"
+    assert WhatsNewOwner(None, Seen("library-and-local-video"), lambda: True).pending
+
+
 def test_showcase_dismissal_survives_settings_reload(tmp_path):
     path = tmp_path / "settings.json"
     seen = Seen()

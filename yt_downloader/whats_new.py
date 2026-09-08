@@ -18,8 +18,32 @@ class FeatureHighlight:
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
 # showcase. A new app version, patch release, or release-note edit is not enough.
 # An empty highlights tuple disables the showcase. Keep copy factual and short.
-SHOWCASE_ID = "library-and-local-video"
+SHOWCASE_ID = "ui-updates-library-and-local-video"
 HIGHLIGHTS = (
+    FeatureHighlight(
+        "ui-activity",
+        "UI Updates",
+        "Follow each run with clearer Activity logs, theme-colored event markers, "
+        "and easier-to-read messages. The same polish is in Forge’s per-run log.",
+        "activity.png",
+        (0.02, 0.18, 0.55, 0.69),
+    ),
+    FeatureHighlight(
+        "ui-settings",
+        "Cleaner controls",
+        "Refined dropdowns, checkboxes, and buttons make Settings easier to scan. "
+        "Your theme carries through the app.",
+        "settings.png",
+        (0.50, 0.17, 0.96, 0.64),
+    ),
+    FeatureHighlight(
+        "ui-player",
+        "A more polished Player",
+        "Refined playback controls, a clearer timeline, and a cleaner volume "
+        "slider keep the focus on your media.",
+        "player.png",
+        (0.02, 0.65, 0.73, 0.98),
+    ),
     FeatureHighlight(
         "local-video",
         "Turn audio into video",
