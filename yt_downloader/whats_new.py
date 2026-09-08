@@ -26,7 +26,7 @@ HIGHLIGHTS = (
         "Follow each run with clearer Activity logs, theme-colored event markers, "
         "and easier-to-read messages. The same polish is in Forge’s per-run log.",
         "activity.png",
-        (0.02, 0.18, 0.55, 0.69),
+        (0.02, 0.18, 0.98, 0.73),
     ),
     FeatureHighlight(
         "ui-settings",
