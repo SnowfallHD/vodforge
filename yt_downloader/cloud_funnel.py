@@ -14,7 +14,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from .analytics_consent import analytics_allowed
 from .history import application_data_dir
 from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
 from .telemetry_transport import telemetry_urlopen
@@ -32,6 +31,14 @@ CLAIM_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _STATE_LOCK = threading.Lock()
 
 
+def analytics_allowed(directory: Path | None = None) -> bool:
+    # Permission consumes local installation state; defer this transport-side
+    # dependency until sending, not while loading the state definitions.
+    from .analytics_consent import analytics_allowed as permission_allowed
+
+    return permission_allowed(directory)
+
+
 class InstallationIdentityError(RuntimeError):
     """Raised when the anonymous local installation state cannot be used safely."""
 
@@ -46,6 +53,7 @@ class InstallationState:
     attribution_claim_confirmed: bool = False
     attribution_claim_token: str | None = None
     product_telemetry_allowed: bool = False
+    onboarding: dict[str, Any] | None = None
 
 
 def installation_state_path(*, data_dir: Path | None = None, **kwargs: Any) -> Path:
@@ -92,6 +100,11 @@ def _read_state(path: Path) -> InstallationState:
     first_launch_confirmed = payload.get("first_launch_confirmed") is True
     has_attribution_state = "heycatch_first_launch_confirmed" in payload
     return InstallationState(
+        onboarding=(
+            payload.get("onboarding")
+            if isinstance(payload.get("onboarding"), dict)
+            else None
+        ),
         install_id=_parse_install_id(payload.get("install_id")),
         first_launch_confirmed=first_launch_confirmed,
         cloud_seen_confirmed=payload.get("cloud_seen_confirmed") is True,
@@ -137,6 +150,7 @@ def _encoded_state(state: InstallationState) -> bytes:
                 "attribution_claim_confirmed": state.attribution_claim_confirmed,
                 "attribution_claim_token": state.attribution_claim_token,
                 "product_telemetry_allowed": state.product_telemetry_allowed,
+                "onboarding": state.onboarding,
             },
             indent=2,
             sort_keys=True,
@@ -186,7 +200,14 @@ def load_or_create_installation_state(path: Path | None = None) -> InstallationS
     if destination.exists():
         return _read_state(destination)
 
-    candidate = InstallationState(install_id=str(uuid.uuid4()))
+    existing_profile = any(
+        (destination.parent / name).exists()
+        for name in ("settings.json", "analytics-consent.json")
+    )
+    candidate = InstallationState(
+        install_id=str(uuid.uuid4()),
+        onboarding={"browser_eligible": not existing_profile},
+    )
     if _create_state_exclusively(destination, candidate):
         return candidate
 
@@ -222,6 +243,18 @@ def _update_state(
 def mark_cloud_seen_confirmed(path: Path, install_id: str) -> InstallationState:
     return _update_state(
         path, install_id, lambda state: replace(state, cloud_seen_confirmed=True)
+    )
+
+
+def update_onboarding(path: Path, **changes: Any) -> InstallationState:
+    """Keep onboarding updates on the canonical installation write lock."""
+    state = load_or_create_installation_state(path)
+    return _update_state(
+        path,
+        state.install_id,
+        lambda current: replace(
+            current, onboarding={**(current.onboarding or {}), **changes}
+        ),
     )
 
 

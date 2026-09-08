@@ -51,7 +51,9 @@ class AnalyticsStartup:
         initial = load_or_create_installation_state(
             owner.path.parent / "installation.json"
         )
-        self.link_eligible = not (
+        self.link_eligible = (initial.onboarding or {}).get(
+            "browser_eligible"
+        ) is True and not (
             initial.attribution_claim_opened or initial.first_launch_confirmed
         )
         self.variable.trace_add("write", self._choice)
@@ -114,6 +116,7 @@ class AnalyticsStartup:
     def _open_welcome(self) -> None:
         if (
             self.closed
+            or not self.link_eligible
             or not telemetry_collection_allowed()
             or not self.owner.take_welcome()
         ):

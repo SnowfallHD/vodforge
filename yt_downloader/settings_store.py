@@ -65,13 +65,17 @@ def save_settings(path: Path, values: Mapping[str, Any]) -> None:
         _write_settings(path, merged)
 
 
-def update_analytics_settings(path: Path, changes: Mapping[str, Any]) -> None:
+def update_analytics_settings(
+    path: Path, changes: Mapping[str, Any], *, remove: tuple[str, ...] = ()
+) -> None:
     """Patch consent without racing or replacing ordinary UI preferences."""
     with _FILE_LOCK:
         values = load_settings(path)
         current = values.get("analytics_consent", {})
         state = dict(current) if isinstance(current, dict) else {}
         state.update(changes)
+        for key in remove:
+            state.pop(key, None)
         values["analytics_consent"] = state
         _write_settings(path, values)
 

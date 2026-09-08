@@ -1,9 +1,74 @@
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from yt_downloader import analytics_startup as module
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
+from yt_downloader.cloud_funnel import load_or_create_installation_state
+from yt_downloader.settings_store import load_settings, save_settings
+
+
+@pytest.mark.parametrize("mode", ["default-on", "opt-in", "unknown"])
+@pytest.mark.parametrize("choice", [None, "denied", "granted"])
+def test_upgrade_migrates_without_browser_and_evaluates_once(
+    tmp_path, monkeypatch, mode, choice
+):
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
+    path = tmp_path / "installation.json"
+    original = load_or_create_installation_state(path)
+    old_install = json.loads(path.read_text())
+    old_install.pop("onboarding")
+    path.write_text(json.dumps(old_install))  # Old release, no confirmed ping.
+    old = {"mode": "default-on", "region_checked": True, "welcome_attempted": False}
+    if choice:
+        old["choice"] = choice
+    save_settings(
+        tmp_path / "settings.json",
+        {"analytics_consent": old, "output_dir": "/Downloads"},
+    )
+    requests, prompts = [], []
+    monkeypatch.setattr(
+        module.webbrowser,
+        "open",
+        lambda *a, **k: pytest.fail("existing user browser opened"),
+    )
+    monkeypatch.setattr(
+        module, "issue_claim", lambda *a: pytest.fail("existing user claim issued")
+    )
+    for launch in range(2):
+        owner = AnalyticsConsentOwner(tmp_path)
+        startup = module.AnalyticsStartup(
+            SimpleNamespace(after=lambda *a: None),
+            owner,
+            Variable(),
+            lambda enabled: None,
+        )
+
+        def resolve(owner=owner, **kwargs):
+            requests.append(True)
+            owner.update(mode=mode)
+            return mode
+
+        monkeypatch.setattr(owner, "resolve", resolve)
+        monkeypatch.setattr(startup, "_prompt", lambda: prompts.append(True))
+        startup._prepare()
+        startup._poll()
+        assert owner.allowed == (
+            choice == "granted" or (choice is None and mode == "default-on")
+        )
+        assert not startup.link_eligible
+    assert len(requests) == (2 if mode == "unknown" else 1)
+    assert len(prompts) == int(choice is None and mode != "default-on")
+    assert load_or_create_installation_state(path).install_id == original.install_id
+    values = load_settings(tmp_path / "settings.json")
+    assert values["output_dir"] == "/Downloads"
+    assert not set(values["analytics_consent"]) & {
+        "mode",
+        "region_checked",
+        "welcome_attempted",
+        "prompted",
+    }
 
 
 class Variable:
@@ -78,6 +143,7 @@ def test_focus_handoff_is_once_and_only_for_pending_consent(setup):
 def test_existing_local_policy_never_rechecks_region(setup, monkeypatch, state):
     startup, owner, _, _ = setup
     owner.update(**state)
+    owner.update(region_checked=True)
     startup.owner = AnalyticsConsentOwner(owner.path.parent)
     monkeypatch.setattr(
         startup.owner, "resolve", lambda **kw: pytest.fail("region checked again")

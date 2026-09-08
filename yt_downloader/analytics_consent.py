@@ -9,6 +9,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from .cloud_funnel import (
+    InstallationIdentityError,
+    load_or_create_installation_state,
+    update_onboarding,
+)
 from .history import application_data_dir
 from .settings_store import SettingsError, load_settings, update_analytics_settings
 from .telemetry_policy import telemetry_collection_allowed
@@ -16,6 +21,8 @@ from .telemetry_transport import telemetry_urlopen
 
 POLICY_URL = "https://getvodforge.com/api/analytics/policy"
 _LOCK = threading.RLock()
+_ONBOARDING_KEYS = ("mode", "region_checked", "prompted", "welcome_attempted")
+REGION_POLICY_VERSION = 1
 
 
 class AnalyticsConsentOwner:
@@ -35,20 +42,66 @@ class AnalyticsConsentOwner:
                             update_analytics_settings(self.path, old)
                 except (OSError, ValueError):
                     pass
-        if legacy_disabled and not self.snapshot():
+            installation = directory / "installation.json"
+            try:
+                state = load_or_create_installation_state(installation)
+            except (InstallationIdentityError, OSError):
+                return  # Do not replace damaged installation identity or consent.
+            onboarding = state.onboarding or {}
+            if onboarding.get("storage_version") != 1:
+                old = load_settings(self.path).get("analytics_consent", {})
+                old = old if isinstance(old, dict) else {}
+                eligible = onboarding.get("browser_eligible") is True
+                update_onboarding(
+                    installation,
+                    storage_version=1,
+                    browser_eligible=eligible,
+                    welcome_attempted=not eligible
+                    or old.get("welcome_attempted") is True,
+                    # Evaluate every pre-migration installation once under this
+                    # policy. Old defaults are not an explicit user choice.
+                    mode="unknown",
+                    region_checked=False,
+                    region_policy_version=0,
+                    prompted=old.get("choice") in {"granted", "denied"},
+                )
+            current = load_settings(self.path).get("analytics_consent", {})
+            if isinstance(current, dict) and any(
+                key in current for key in _ONBOARDING_KEYS
+            ):
+                update_analytics_settings(self.path, {}, remove=_ONBOARDING_KEYS)
+        if legacy_disabled and self.snapshot().get("choice") not in {
+            "granted",
+            "denied",
+        }:
             self.update(choice="denied")
 
     def snapshot(self) -> dict[str, Any]:
         with _LOCK:
             try:
                 value = load_settings(self.path).get("analytics_consent", {})
-                return value if isinstance(value, dict) else {}
-            except (OSError, ValueError, SettingsError):
+                settings = value if isinstance(value, dict) else {}
+                state = load_or_create_installation_state(
+                    self.path.parent / "installation.json"
+                )
+                return {**settings, **(state.onboarding or {})}
+            except (OSError, ValueError, SettingsError, InstallationIdentityError):
                 return {}
 
     def update(self, **changes: Any) -> None:
         with _LOCK:
-            update_analytics_settings(self.path, changes)
+            preference = {
+                key: value for key, value in changes.items() if key == "choice"
+            }
+            onboarding = {
+                key: value for key, value in changes.items() if key in _ONBOARDING_KEYS
+            }
+            if preference:
+                update_analytics_settings(self.path, preference)
+            if onboarding:
+                if onboarding.get("region_checked") is True:
+                    onboarding["region_policy_version"] = REGION_POLICY_VERSION
+                update_onboarding(self.path.parent / "installation.json", **onboarding)
 
     @property
     def allowed(self) -> bool:
@@ -64,15 +117,12 @@ class AnalyticsConsentOwner:
     def saved_region_mode(self) -> str | None:
         """Reuse completed policy decisions, including pre-marker installations."""
         state = self.snapshot()
-        mode = state.get("mode")
-        if mode in {"default-on", "opt-in"}:
-            return mode
         if (
-            state.get("region_checked") is True
-            or state.get("prompted") is True
-            or state.get("choice") in {"granted", "denied"}
+            state.get("region_policy_version") == REGION_POLICY_VERSION
+            and state.get("region_checked") is True
         ):
-            return "unknown"
+            mode = state.get("mode")
+            return mode if mode in {"default-on", "opt-in"} else "unknown"
         return None
 
     def take_welcome(self) -> bool:

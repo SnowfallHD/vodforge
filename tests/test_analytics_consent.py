@@ -16,7 +16,7 @@ def test_consent_migrates_into_config_and_survives_ui_saves(tmp_path):
     save_settings(path, {"output_dir": "/Downloads"})
     owner = AnalyticsConsentOwner(tmp_path)
     assert not owner.allowed
-    assert owner.saved_region_mode == "default-on"
+    assert owner.saved_region_mode is None  # New policy migration evaluates once.
     save_settings(path, {"output_dir": "/Other"})
     assert not AnalyticsConsentOwner(tmp_path).allowed
     owner.choose(True)
