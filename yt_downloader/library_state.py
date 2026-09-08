@@ -349,7 +349,7 @@ class LibraryProjectionOwner:
         superseded_history_run_ids = {
             str(job.origin_run_id).strip()
             for _kind, job in run_sources.values()
-            if str(job.origin_run_id or "").strip()
+            if str(job.origin_run_id or "").strip() and not job.item_terminal_emitted
         }
 
         history_rows: list[dict[str, Any]] = []
@@ -395,7 +395,15 @@ class LibraryProjectionOwner:
         )
         for kind, job in ordered_sources:
             run_id = str(job.run_id)
-            if run_id in committed_run_ids:
+            if run_id in committed_run_ids and (
+                kind != "active"
+                or any(
+                    str(saved.get("vodforge_run_id") or "") == run_id
+                    and metadata_run_key(saved)
+                    == metadata_run_key(job.preview_info or {})
+                    for saved in history_rows
+                )
+            ):
                 continue
             row = _clean_projection_row(job.preview_info or {})
             row.setdefault("webpage_url", job.url)
@@ -678,12 +686,9 @@ def persisted_run_deck_records(
             )
         ):
             continue
-        if (
-            item_history_identity is not None
-            and item_history_identity in active_history_identities
-        ):
-            continue
         if saved is None and not is_metadata_preview(item):
+            continue
+        if item_history_identity in active_history_identities:
             continue
 
         output_type = metadata_output_type(item)
@@ -711,6 +716,9 @@ def persisted_run_deck_records(
                 "run_id": (
                     completed_owner.run_id
                     if completed_owner is not None
+                    and len(completed_owner.history_identities) == 1
+                    else f"history:{item_history_identity!r}"
+                    if saved is not None
                     else str(item.get("vodforge_preview_run_id") or f"history:{index}")
                 ),
                 "job": completed_owner,

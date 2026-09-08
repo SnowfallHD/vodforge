@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from tkinter import messagebox
-from typing import Any, Literal, Protocol, TypeAlias, TypedDict
+from typing import Any, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 from .cloud_funnel import (
     InstallationIdentityError,
@@ -24,6 +24,7 @@ class JobLogPayload(TypedDict):
 class JobInfoPayload(TypedDict):
     job: DownloadJob
     info: dict[str, Any]
+    playlist_continues: NotRequired[bool]
 
 
 class HistoryRecordPayload(JobInfoPayload):
@@ -281,6 +282,8 @@ class _UiEventHost(Protocol):
         self,
         job: DownloadJob,
         info: dict[str, Any],
+        *,
+        playlist_continues: bool = False,
     ) -> None: ...
 
     def _display_metadata_preview_request(self, record: dict[str, Any]) -> None: ...
@@ -499,7 +502,11 @@ class UiEventHandlersMixin:
             return
         terminal_job = payload["job"]
         if not self._library_run_is_suppressed(terminal_job):
-            self._archive_item_terminal_job(terminal_job, payload["info"])
+            self._archive_item_terminal_job(
+                terminal_job,
+                payload["info"],
+                playlist_continues=bool(payload.get("playlist_continues", False)),
+            )
 
     def _handle_runtime_event(
         self: _UiEventHost,

@@ -301,7 +301,7 @@ def test_persisted_record_uses_newest_completed_owner(tmp_path: Path) -> None:
     assert records[0]["run_id"] == newest.run_id
 
 
-def test_active_saved_identity_is_hidden_until_commit_finishes(tmp_path: Path) -> None:
+def test_committed_item_remains_visible_while_parent_is_active(tmp_path: Path) -> None:
     saved = upsert_history(
         [],
         {"id": "active", "title": "Committed", "vodforge_output_type": "MP4"},
@@ -312,8 +312,49 @@ def test_active_saved_identity_is_hidden_until_commit_finishes(tmp_path: Path) -
         [saved],
         active_metadata_keys=set(),
         terminal_metadata_keys=set(),
-        active_history_identities={history_identity(saved)},
+        active_history_identities=set(),
         completed_jobs=[],
     )
 
-    assert records == []
+    assert len(records) == 1
+    assert records[0]["kind"] == "completed"
+
+
+def test_skipped_playlist_child_does_not_supersede_completed_siblings(
+    tmp_path: Path,
+) -> None:
+    parent = _job(tmp_path, video_id="next")
+    child = _job(tmp_path, video_id="skipped")
+    child.origin_run_id = parent.run_id
+    child.item_terminal_emitted = True
+    child.terminal_status = "Skipped"
+    history = [
+        upsert_history(
+            [],
+            {
+                "id": video_id,
+                "title": video_id,
+                "vodforge_run_id": parent.run_id,
+                "vodforge_output_type": "MP4",
+            },
+            tmp_path / video_id,
+        )[0]
+        for video_id in ("first", "second")
+    ]
+    projection = _projection(
+        LibraryProjectionOwner(), history=history, active=parent, terminal=[child]
+    )
+    assert {
+        row.get("id")
+        for row in projection.rows
+        if row.get("vodforge_run_id") == parent.run_id
+    } == {"first", "second"}
+    records = persisted_run_deck_records(
+        history,
+        active_metadata_keys=set(),
+        terminal_metadata_keys=set(),
+        active_history_identities=set(),
+        completed_jobs=[parent],
+    )
+    assert len(records) == 2
+    assert len({record["run_id"] for record in records}) == 2

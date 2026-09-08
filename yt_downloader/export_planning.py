@@ -547,9 +547,9 @@ def _bitrate_warning(target_kbps: float, effective_source_kbps: float) -> str | 
         return "Selected source has no reliable bitrate metadata. Output is source-limited until verified."
     ratio = target_kbps / effective_source_kbps
     if ratio <= 1.25:
-        return "Target bitrate is close to the selected source."
+        return None
     if ratio <= 2:
-        return "Target bitrate is higher than the source. This can reduce additional encoding loss or satisfy platform requirements, but it will not create new source detail."
+        return None
     if ratio <= 5:
         return "Target bitrate is much higher than the source. Output may be platform-compatible, but quality is source-limited."
     return "Source-limited encode. The output bitrate is far above the selected source quality. The file may satisfy platform requirements, but it will not become true high-bitrate quality."
@@ -697,7 +697,14 @@ def _derive_auto_encode_targets(
         evidence.effective_audio_kbps,
     )
     warnings: list[str] = []
-    if max_height >= 1080 and evidence.height != 1080:
+    width = selection.video.get("width")
+    reaches_1080_tier = bool(
+        evidence.height
+        and evidence.height >= 1080
+        or isinstance(width, int)
+        and width >= 1920
+    )
+    if max_height >= 1080 and not reaches_1080_tier:
         warnings.append(
             "This video is not available in 1080p. VODForge will export the best available lower-resolution version."
         )

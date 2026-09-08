@@ -2343,8 +2343,8 @@ def test_cancel_barrier_prevents_atomic_commit_and_preserves_existing_output(
     assert staged.read_bytes() == b"new output"
 
 
-def test_staging_output_template_never_targets_real_final_folders(tmp_path: Path):
-    template = staging_output_template(tmp_path)
+def test_staging_output_template_never_targets_real_final_folders():
+    template = staging_output_template()
 
     assert "Single Videos" not in template
     assert "%(playlist_title" not in template
@@ -6256,10 +6256,17 @@ def test_all_failed_playlist_preserves_item_and_source_metadata_layers(
         if kind in {"done", "partial", "stopped", "error"}
     ]
     assert outcome == DownloadOutcome(failure_count=2)
-    assert [payload["info"]["id"] for payload in metadata] == ["one", "two", "two"]
+    assert [payload["info"]["id"] for payload in metadata] == [
+        "one",
+        "one",
+        "two",
+        "two",
+        "two",
+    ]
     assert [
         payload["info"]["vodforge_encoding_summary"]["output"]["Failure reason"]
         for payload in metadata
+        if "vodforge_encoding_summary" in payload["info"]
     ] == [
         "provider failure one",
         "provider failure two",
@@ -6289,7 +6296,9 @@ def test_all_failed_playlist_preserves_item_and_source_metadata_layers(
     ]
     assert layered_order == [
         ("job_metadata", "one"),
+        ("job_metadata", "one"),
         ("item_terminal", "one"),
+        ("job_metadata", "two"),
         ("job_metadata", "two"),
         ("item_terminal", "two"),
         ("job_metadata", "two"),
@@ -6682,9 +6691,10 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
             assert download is True
             calls["process"] += 1
             staged = Path(
+                self.opts["paths"]["home"],
                 self.opts["outtmpl"]
                 .replace("%(id)s", "abc123")
-                .replace("%(ext)s", "mp4")
+                .replace("%(ext)s", "mp4"),
             )
             staged.parent.mkdir(parents=True, exist_ok=True)
             staged.write_bytes(b"downloaded media")
@@ -7079,9 +7089,10 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(
         def process_ie_result(self, info, *, download):
             assert download is True
             staged = Path(
+                self.opts["paths"]["home"],
                 self.opts["outtmpl"]
                 .replace("%(id)s", "abc123")
-                .replace("%(ext)s", "mp4")
+                .replace("%(ext)s", "mp4"),
             )
             staged.parent.mkdir(parents=True, exist_ok=True)
             staged.write_bytes(b"downloaded media")
@@ -7192,6 +7203,51 @@ def test_ytdlp_format_probes_use_the_per_run_staging_directory(
     assert ytdlp_module is not None
     with ytdlp_module.YoutubeDL(opts) as ydl:
         assert Path(ydl.get_output_path("temp")) == staging_dir
+        assert (
+            Path(ydl.prepare_filename({"id": "probe", "ext": "mp4"}, warn=True))
+            == staging_dir / "probe.mp4"
+        )
+    assert not any(
+        "--paths is ignored" in str(payload) for _, payload in app.events.queue
+    )
+
+
+@pytest.mark.parametrize(
+    ("index", "total", "continues"), [(1, 3, True), (3, 3, False), (1, 1, False)]
+)
+def test_skip_focus_handoff_only_with_remaining_playlist_items(
+    tmp_path, index, total, continues
+):
+    app = _worker_test_app()
+    job = _worker_test_job(tmp_path)
+    info = {
+        "id": "one",
+        "title": "One",
+        "webpage_url": "https://www.youtube.com/watch?v=one",
+    }
+    item = app_module._DownloadItemContext(
+        entry=info,
+        index=index,
+        total=total,
+        video_url=info["webpage_url"],
+        label=f"Video {index} of {total}",
+    )
+    result = app_module._DownloadItemResult(
+        outcome=DownloadOutcome(), metadata=info, plan=_worker_test_export_plan()
+    )
+    app._resolve_download_item_failure(
+        job,
+        item,
+        result,
+        app_module._DownloadControlRequestError(
+            app_module._DownloadControlKind.SKIP_ITEM
+        ),
+    )
+    terminals = [
+        payload for kind, payload in app.events.queue if kind == "item_terminal"
+    ]
+    assert len(terminals) == 1
+    assert terminals[0]["playlist_continues"] is continues
 
 
 def test_ytdlp_options_keep_hook_progress_without_terminal_progress(
@@ -7402,9 +7458,10 @@ def test_playlist_loads_cookie_source_once_and_reuses_memory_session(
             assert download is True
             assert session_cookie in self.cookiejar
             staged = Path(
+                self.opts["paths"]["home"],
                 self.opts["outtmpl"]
                 .replace("%(id)s", str(info["id"]))
-                .replace("%(ext)s", "mp4")
+                .replace("%(ext)s", "mp4"),
             )
             staged.parent.mkdir(parents=True, exist_ok=True)
             staged.write_bytes(b"downloaded media")

@@ -2520,11 +2520,10 @@ def validate_output_directory_access(output_dir: Path) -> None:
     probe_path.unlink()
 
 
-def staging_output_template(staging_dir: Path) -> str:
-    # yt-dlp writes only into this per-job staging directory. Final user-facing
-    # folders are created later from extracted metadata, so old downloads are
-    # never scanned or moved.
-    return str(staging_dir / "%(id)s.%(ext)s")
+def staging_output_template() -> str:
+    # The paths options own staging placement, including format-probe files.
+    # Final user-facing folders are created only by the commit pipeline.
+    return "%(id)s.%(ext)s"
 
 
 def iter_video_infos(info: dict[str, Any]) -> list[dict[str, Any]]:
@@ -8070,7 +8069,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.active_job.metadata_keys if self.active_job is not None else set()
         )
         active_history_identities = (
-            self.active_job.history_identities if self.active_job is not None else set()
+            {
+                identity
+                for identity in self.active_job.history_identities
+                if identity[0]
+                == str((self.active_job.preview_info or {}).get("id") or "")
+            }
+            if self.active_job is not None
+            else set()
         )
         terminal_keys = {
             key
@@ -11967,7 +11973,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         del self._completed_jobs[20:]
 
     def _archive_item_terminal_job(
-        self, job: DownloadJob, info: dict[str, Any]
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        *,
+        playlist_continues: bool = False,
     ) -> None:
         """Archive one playlist item attempt without transferring Library authority."""
         if self._library_run_is_suppressed(job):
@@ -12001,7 +12011,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._library_projection_owner().forget_run(job.run_id)
         self._reconcile_library_projection()
         if hasattr(self, "focus_run_deck"):
-            self._focus_terminal_job(job)
+            if not playlist_continues:
+                self._focus_terminal_job(job)
             self._refresh_focus_run_deck()
 
     def _focus_terminal_job(self, job: DownloadJob) -> None:
@@ -12762,6 +12773,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         info: dict[str, Any] | None,
         plan: ExportPlan | AudioExportPlan | None,
         video_url: str,
+        *,
+        playlist_continues: bool = False,
     ) -> None:
         if not isinstance(info, dict):
             return
@@ -12795,7 +12808,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         terminal_info = annotate_job_metadata(terminal_job, terminal_info)
         terminal_job.preview_info = terminal_info
-        self.events.put(job_info_event("item_terminal", terminal_job, terminal_info))
+        event = job_info_event("item_terminal", terminal_job, terminal_info)
+        event[1]["playlist_continues"] = playlist_continues
+        self.events.put(event)
 
     def _finish_download_run_outcome(
         self,
@@ -13251,6 +13266,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 result.metadata,
                 result.plan,
                 item.video_url,
+                playlist_continues=item.index < item.total,
             )
             self._emit_job_log(
                 job,
@@ -13575,6 +13591,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 max_height=max_height,
             )
             for video_index, entry in enumerate(entries, start=1):
+                if total_videos > 1:
+                    self.events.put(
+                        ("status", f"Video {video_index} of {total_videos} — preparing")
+                    )
+                    self.events.put(("progress", 0))
+                    self.events.put(
+                        job_info_event(
+                            "job_metadata",
+                            job,
+                            {
+                                **entry,
+                                "title": entry.get("title")
+                                or f"Preparing video {video_index} of {total_videos}",
+                                "webpage_url": _download_entry_url(entry, job.url),
+                                "vodforge_output_type": job.output_type.value,
+                            },
+                        )
+                    )
                 item = _DownloadItemContext(
                     entry=entry,
                     index=video_index,
@@ -13683,7 +13717,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             write_thumbnail = job_embeds_provider_thumbnail(job)
             postprocessor_args = self._metadata_args(job.tags)
 
-        outtmpl = staging_output_template(staging_dir)
+        outtmpl = staging_output_template()
         opts: dict[str, Any] = {
             "format": selected_format,
             "outtmpl": outtmpl,

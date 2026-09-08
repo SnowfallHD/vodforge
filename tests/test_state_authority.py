@@ -984,6 +984,28 @@ def test_active_run_suppresses_its_just_committed_library_record(tmp_path: Path)
         ("active", active_job.run_id)
     ]
 
+    # Advancing the playlist must reveal every committed item, not hide all
+    # history identities accumulated by the still-running parent.
+    second = upsert_history(
+        [],
+        {"id": "second", "title": "Second", "vodforge_output_type": "MP4"},
+        tmp_path / "second",
+    )[0]
+    active_job.history_identities.add(history_identity(second))
+    active_job.preview_info = {
+        "id": "third",
+        "title": "Third",
+        "vodforge_output_type": "MP4",
+    }
+    app.metadata_items = [second, saved]
+    records = app._focus_run_records()
+    assert [record["kind"] for record in records] == [
+        "active",
+        "completed",
+        "completed",
+    ]
+    assert len({record["run_id"] for record in records}) == 3
+
 
 def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     failed_job = make_job(tmp_path)
@@ -3465,6 +3487,12 @@ def test_terminal_outcomes_become_the_explicit_forge_focus(monkeypatch, tmp_path
     archive_app._archive_item_terminal_job(terminal, terminal.preview_info or {})
 
     assert archived_focus == [terminal]
+
+    archived_focus.clear()
+    archive_app._archive_item_terminal_job(
+        terminal, terminal.preview_info or {}, playlist_continues=True
+    )
+    assert archived_focus == []
 
 
 def test_metadata_preview_focuses_once_and_completion_respects_manual_selection():

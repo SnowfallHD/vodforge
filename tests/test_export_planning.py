@@ -8,6 +8,37 @@ from yt_downloader import app, export_planning
 from yt_downloader.models import ExportMode
 
 
+def test_widescreen_1080_tier_preserves_actual_dimensions_without_warning() -> None:
+    # Public format listing for 8mv2Gonsdog: 137/248/399 are labelled 1080p,
+    # all at 1920x1012; HLS 270 has those same dimensions.
+    info = {
+        "formats": [
+            {
+                "format_id": "270",
+                "width": 1920,
+                "height": 1012,
+                "fps": 25,
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "tbr": 2138,
+                "ext": "mp4",
+            },
+            {
+                "format_id": "251",
+                "vcodec": "none",
+                "acodec": "opus",
+                "abr": 146,
+                "ext": "webm",
+            },
+        ]
+    }
+    plan = export_planning.build_auto_export_plan(
+        info, mode=ExportMode.AUTO_CBR, max_height=1080
+    )
+    assert (plan.output_width, plan.output_height) == (1920, 1012)
+    assert not plan.warnings
+
+
 def test_app_preserves_export_planning_compatibility_exports() -> None:
     assert app.QUALITY_OPTIONS is export_planning.QUALITY_OPTIONS
     assert app.EXPORT_MODES is export_planning.EXPORT_MODES
