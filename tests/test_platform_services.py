@@ -33,18 +33,53 @@ def test_native_foreground_targets_wrapper_once_and_respects_refusal(
         calls.append(("foreground", hwnd))
         return accepted
 
+    def flash(pointer):
+        info = pointer._obj
+        assert info.cbSize == ctypes.sizeof(info)
+        calls.append(("flash", info.hwnd, info.dwFlags, info.uCount, info.dwTimeout))
+        return False  # The native result is previous activation, not success.
+
     monkeypatch.setattr(platform_module, "is_windows", lambda: True)
+    monkeypatch.setattr(platform_module, "is_macos", lambda: False)
     monkeypatch.setattr(
         ctypes,
         "WinDLL",
         lambda *_args, **_kwargs: SimpleNamespace(
-            GetAncestor=ancestor, SetForegroundWindow=foreground
+            GetAncestor=ancestor, SetForegroundWindow=foreground, FlashWindowEx=flash
         ),
         raising=False,
     )
     root = SimpleNamespace(lift=lambda: calls.append("lift"), winfo_id=lambda: 42)
     assert platform_module.request_window_foreground(root) is accepted
-    assert calls == ["lift", ("ancestor", 42, 2), ("foreground", 12345)]
+    expected = ["lift", ("ancestor", 42, 2), ("foreground", 12345)]
+    if not accepted:
+        expected.append(("flash", 12345, 2, 3, 0))
+    assert calls == expected
+
+
+@pytest.mark.parametrize("modern", [True, False])
+def test_macos_activation_uses_supported_appkit_api(monkeypatch, modern):
+    import sys
+
+    calls = []
+    application = SimpleNamespace(
+        respondsToSelector_=lambda selector: modern and selector == "activate",
+        activate=lambda: calls.append("activate"),
+        activateIgnoringOtherApps_=lambda flag: calls.append(("legacy", flag)),
+        isActive=lambda: True,
+    )
+    monkeypatch.setattr(platform_module, "is_macos", lambda: True)
+    monkeypatch.setitem(
+        sys.modules,
+        "AppKit",
+        SimpleNamespace(
+            NSApplication=SimpleNamespace(sharedApplication=lambda: application)
+        ),
+    )
+    assert platform_module.request_window_foreground(
+        SimpleNamespace(lift=lambda: calls.append("lift"))
+    )
+    assert calls == ["lift", "activate" if modern else ("legacy", True)]
 
 
 def test_native_quit_routes_only_macos_application_menu_through_callback():

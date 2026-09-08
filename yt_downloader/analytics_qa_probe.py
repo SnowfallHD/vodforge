@@ -7,6 +7,8 @@ same visible buttons as a user. Receipts live only in the isolated QA profile.
 from __future__ import annotations
 
 import json
+import os
+import sys
 import threading
 import time
 import tkinter as tk
@@ -65,7 +67,34 @@ def observe_startup(app: DownloaderApp, arguments: list[str]) -> None:
     def requested_focus(root: tk.Misc) -> bool:
         result = original_focus(root)
         record("native_focus_request", accepted=result, tk_window_id=root.winfo_id())
+        root.after(150, observe_native_foreground)
         return result
+
+    def observe_native_foreground() -> None:
+        if sys.platform == "darwin":
+            from AppKit import NSWorkspace
+
+            pid = (
+                NSWorkspace.sharedWorkspace().frontmostApplication().processIdentifier()
+            )
+        elif sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32")
+            user32.GetForegroundWindow.restype = wintypes.HWND
+            user32.GetWindowThreadProcessId.argtypes = [
+                wintypes.HWND,
+                ctypes.POINTER(wintypes.DWORD),
+            ]
+            observed = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(
+                user32.GetForegroundWindow(), ctypes.byref(observed)
+            )
+            pid = observed.value
+        else:
+            return
+        record("native_foreground_observed", foreground=pid == os.getpid())
 
     def descendants(widget: tk.Misc):
         for child in widget.winfo_children():

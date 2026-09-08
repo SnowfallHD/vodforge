@@ -176,23 +176,23 @@ class AnalyticsStartup:
             self.variable.set,
             lambda: webbrowser.open(f"{telemetry_site_origin()}/privacy/"),
         )
-        self.root.after(300, self._restore_consent_focus)
+        self.root.after(50, self._restore_consent_focus)
 
-    def _restore_consent_focus(self, remaining: int = 15) -> None:
+    def _restore_consent_focus(self, remaining: int = 30) -> None:
         """One bounded focus request after browser handoff, never a focus loop."""
         panel = getattr(self, "permission_panel", None)
         if self.closed or self.consent_focus_requested or panel is None or panel.closed:
             return
         if not self.welcome_finished.is_set():
             if remaining > 0:
-                self.root.after(100, lambda: self._restore_consent_focus(remaining - 1))
+                self.root.after(50, lambda: self._restore_consent_focus(remaining - 1))
             return
         self.consent_focus_requested = True
         if not self.welcome_opened:
             return
         # Browser adapters return before the new tab necessarily becomes visible.
         # Give that handoff one short grace period, then request focus exactly once.
-        self.root.after(400, self._focus_pending_consent)
+        self.root.after(100, self._focus_pending_consent)
 
     def _focus_pending_consent(self) -> None:
         panel = getattr(self, "permission_panel", None)

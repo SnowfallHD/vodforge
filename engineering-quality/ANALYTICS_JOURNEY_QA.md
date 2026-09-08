@@ -39,7 +39,7 @@ No ordinary replacement build was enabled for production telemetry.
 | Browser transient failure / closed thank-you tab / different profile | Local built-browser regression with intercepted API: passed, no guessed source or recreated tab |
 | Final-ten-second consent and expiry | Browser controlled-clock regression: both passed, no polling after grace |
 | Consent presentation | Real Windows installed screenshot: centered in-app panel, four scrim bands, all buttons dimmed behind it, explicit black backdrop pixel `[3,3,3]` |
-| Windows automatic focus | **Not guaranteed / refused in these scheduled QA launches.** Actual foreground PID remained Brave despite native activation request. Tk focus is not OS foreground proof |
+| Windows automatic focus | **Under investigation.** Actual foreground PID remained Brave after the app's initial request, but run 20's later QA-process native activation succeeded. This does not establish OS refusal of the in-app call. Tk focus is not OS foreground proof |
 
 Live D1 verification for final Windows profiles found exactly the four allowed
 installations, each with one `app_opened` event, platform windows and first/current
@@ -51,7 +51,7 @@ had actual first_launched_at values; queried UK/unknown IDs were absent.
 - `request_window_foreground` targets the Windows native wrapper once and
   respects refusal. No input-queue attachment, simulated input, persistent
   topmost, or repeated activation is used in production.
-- The visual QA runner records automatic foreground separately. When refused,
+- The visual QA runner records automatic foreground separately. When absent,
   it explicitly raises only its owned test window for capture, removes that
   test-only topmost state, and labels the screenshot accordingly.
 - Windows `SS_BLACKRECT` inherited a gray system brush. The focused backdrop

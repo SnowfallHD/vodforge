@@ -28,12 +28,24 @@ def is_macos(platform_name: str | None = None) -> bool:
 
 
 def request_window_foreground(root: Any) -> bool:
-    """Request activation once, respecting OS foreground-lock policy.
+    """Request activation once, or briefly signal taskbar attention on refusal.
 
     Tk keyboard focus alone does not activate a Windows application. Never
     attach input queues, synthesize input, or leave the window always-on-top.
     """
     root.lift()
+    if is_macos():
+        try:
+            from AppKit import NSApplication
+
+            application = NSApplication.sharedApplication()
+            if application.respondsToSelector_("activate"):
+                application.activate()  # Current AppKit cooperative activation API.
+            else:
+                application.activateIgnoringOtherApps_(True)  # macOS before 14.
+            return bool(application.isActive())
+        except (ImportError, AttributeError, RuntimeError):
+            return False  # Tk focus remains available if the bridge is unavailable.
     if not is_windows():
         return False
     import ctypes
@@ -46,7 +58,27 @@ def request_window_foreground(root: Any) -> bool:
         user32.SetForegroundWindow.argtypes = [wintypes.HWND]
         user32.SetForegroundWindow.restype = wintypes.BOOL
         hwnd = user32.GetAncestor(root.winfo_id(), 2)  # GA_ROOT: Tk's native wrapper
-        return bool(hwnd and user32.SetForegroundWindow(hwnd))
+        if not hwnd:
+            return False
+        if user32.SetForegroundWindow(hwnd):
+            return True
+
+        # Windows may withhold foreground permission after a browser handoff.
+        # FLASHW_TRAY is attention only, not activation or an infinite flash loop.
+        class FlashInfo(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.UINT),
+                ("hwnd", wintypes.HWND),
+                ("dwFlags", wintypes.DWORD),
+                ("uCount", wintypes.UINT),
+                ("dwTimeout", wintypes.DWORD),
+            ]
+
+        user32.FlashWindowEx.argtypes = [ctypes.POINTER(FlashInfo)]
+        user32.FlashWindowEx.restype = wintypes.BOOL
+        info = FlashInfo(ctypes.sizeof(FlashInfo), hwnd, 2, 3, 0)
+        user32.FlashWindowEx(ctypes.byref(info))
+        return False  # Attention is never reported as successful activation.
     except (AttributeError, OSError):
         return False
 

@@ -80,7 +80,7 @@ def test_focus_handoff_rechecks_consent_after_browser_grace(setup, closed):
     startup.welcome_opened = True
     startup._restore_consent_focus()
     startup._restore_consent_focus()
-    assert len(pending) == 1 and pending[0][0] == 400
+    assert len(pending) == 1 and pending[0][0] == 100
     startup.permission_panel.closed = closed
     pending[0][1]()
     assert calls == ([] if closed else ["lift", "focus"])
