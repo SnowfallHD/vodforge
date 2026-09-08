@@ -1,5 +1,37 @@
 # Analytics journey evidence — 2026-09-07
 
+## Earlier native activation — 2026-09-08
+
+- Production checkpoint `46fc72691c95134430e91651886f60f431fc33d2` reduces
+  prompt-to-handoff scheduling from 300 + 400 ms to 50 + 100 ms. Browser-return
+  polling retains its bounded 1.5-second budget. Dismissed/answered prompts
+  still cancel the request; no activation loop or extra browser tab is added.
+- macOS uses `NSApplication.activate()` on current systems, with the older API
+  only where that selector is unavailable. Fresh ad-hoc packaged preview passed
+  runtime/signature checks. `build/preview-journeys/sooner-mac-DE/startup-journey.json`
+  records prompt visibility at 1.690 s, native request at 1.746 s, and actual OS
+  foreground at 1.898 s. The immediate `accepted: false` is the synchronous
+  `isActive()` observation before asynchronous activation, not a rejection.
+- Windows prior installed run 21 records native `SetForegroundWindow` returning
+  false inside VODForge. A later call by the QA parent process succeeded. The
+  separate same-process Tk spike found later retries, BringWindowToTop,
+  SetWindowPos(TOP), ShowWindow, and SetActiveWindow did not activate the app.
+  Do not conflate successful Z-order calls or test-only raises with activation.
+- Windows retains the one native wrapper request and now uses three finite
+  taskbar flashes if refused. This does not report foreground success, attach
+  input queues, synthesize keys, or leave the app always on top.
+- Exact-checkpoint FAST gate passed at
+  `reports/20260908T084352195529Z-46fc7269-fast/fast-gate.json`.
+- Windows installed follow-up run `20260908000000000000000000000022` matches
+  executable SHA256 `a9915ee7f6f444eea912dd161fc6e585c8a5f37233363ac52ed5bdf835d273ce`.
+  Native request occurred at app-relative 1.626 s, after adapter return at
+  1.223 s (Tk work adds latency beyond the configured grace). Windows refused
+  activation; actual OS foreground remained Brave at 1.797 s. The later
+  QA-parent activation succeeded. Visual pass is not automatic-focus pass.
+  The shortened request, centered four-band panel, black scrim and clean exit
+  passed. No public release signing, production telemetry or user Mac app
+  replacement is included.
+
 ## Preview D1 packaged matrix — 2026-09-08 final follow-up
 
 This is **preview**, not production, release-signing, or HeyCatch certification.

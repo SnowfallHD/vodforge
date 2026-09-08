@@ -35,7 +35,13 @@ try {
   New-Item -ItemType Directory -Path $env:TEMP | Out-Null
   Set-Location $source
   if ($Suite -eq 'preview-visual') {
-    & .\.venv\Scripts\python.exe (Join-Path $root 'tools\windows-consent-visual.py') (Join-Path $root 'installed\VODForge\VODForge.exe') $run *> (Join-Path $run 'visual.log')
+    $exe = Join-Path $root 'installed\VODForge\VODForge.exe'
+    $build = Get-Content (Join-Path $root "artifacts\build-$SourceCommit.json") -Raw | ConvertFrom-Json
+    $policy = Join-Path (Split-Path $exe) '_internal\VODFORGE_TELEMETRY_POLICY'
+    if ($build.telemetry_policy -ne 'preview' -or (Get-Content $policy -Raw).Trim() -ne 'preview') { throw 'Not a preview candidate' }
+    if ((Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $build.executable_sha256) { throw 'Candidate executable mismatch' }
+    $result.executable_sha256 = $build.executable_sha256
+    & .\.venv\Scripts\python.exe (Join-Path $root 'tools\windows-consent-visual.py') $exe $run *> (Join-Path $run 'visual.log')
     if ($LASTEXITCODE -ne 0) { throw 'Packaged consent visual capture failed' }
     $visual = Get-Content (Join-Path $run 'visual.json') -Raw | ConvertFrom-Json
     if (-not $visual.passed) { throw $visual.error }

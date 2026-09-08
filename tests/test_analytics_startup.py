@@ -100,6 +100,20 @@ def test_failed_browser_handoff_does_not_request_focus(setup):
     assert pending == []
 
 
+def test_focus_wait_stays_bounded_when_browser_adapter_never_returns(setup):
+    startup, _, _, _ = setup
+    pending, delays = [], []
+    startup.root = SimpleNamespace(
+        after=lambda delay, callback: (delays.append(delay), pending.append(callback))
+    )
+    startup.permission_panel = SimpleNamespace(closed=False)
+    startup._restore_consent_focus()
+    while pending:
+        pending.pop(0)()
+    assert delays == [50] * 30
+    assert not startup.consent_focus_requested
+
+
 @pytest.mark.parametrize("mode", ["default-on", "opt-in", "unknown"])
 def test_welcome_once_and_no_prepermission_identity(setup, mode):
     startup, owner, opened, issued = setup
