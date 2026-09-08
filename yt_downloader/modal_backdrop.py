@@ -51,6 +51,36 @@ class ModalBackdrop:
                 from ctypes import wintypes
 
                 self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+                # SS_BLACKRECT follows COLOR_WINDOWFRAME, which may be gray.
+                # Own the brush instead of inheriting any system theme color.
+                class WindowClass(ctypes.Structure):
+                    _fields_ = [
+                        ("style", wintypes.UINT),
+                        ("procedure", ctypes.c_void_p),
+                        ("class_extra", ctypes.c_int),
+                        ("window_extra", ctypes.c_int),
+                        ("instance", wintypes.HINSTANCE),
+                        ("icon", wintypes.HICON),
+                        ("cursor", wintypes.HANDLE),
+                        ("brush", wintypes.HBRUSH),
+                        ("menu", wintypes.LPCWSTR),
+                        ("name", wintypes.LPCWSTR),
+                    ]
+
+                gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
+                gdi32.GetStockObject.argtypes = (ctypes.c_int,)
+                gdi32.GetStockObject.restype = wintypes.HANDLE
+                window_class = WindowClass()
+                window_class.procedure = ctypes.cast(
+                    self.user32.DefWindowProcW, ctypes.c_void_p
+                ).value
+                window_class.brush = gdi32.GetStockObject(4)  # BLACK_BRUSH
+                window_class.name = "VODForgeModalBackdrop"
+                self.user32.RegisterClassW.argtypes = (ctypes.POINTER(WindowClass),)
+                if not self.user32.RegisterClassW(ctypes.byref(window_class)):
+                    if ctypes.get_last_error() != 1410:  # already registered
+                        raise OSError("Could not register modal backdrop")
                 create = self.user32.CreateWindowExW
                 create.restype = wintypes.HWND
                 create.argtypes = (
@@ -84,12 +114,12 @@ class ModalBackdrop:
                 )
                 self.user32.DestroyWindow.argtypes = (wintypes.HWND,)
                 for _ in range(4):
-                    # Layered child STATIC/BLACKRECT, never a separate OS window.
+                    # Layered child surface, never a separate OS window.
                     hwnd = create(
                         0x80000,
-                        "STATIC",
+                        "VODForgeModalBackdrop",
                         None,
-                        0x40000004,
+                        0x40000000,
                         0,
                         0,
                         0,

@@ -40,7 +40,7 @@ def request_window_foreground(root: Any) -> bool:
     from ctypes import wintypes
 
     try:
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
         user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
         user32.GetAncestor.restype = wintypes.HWND
         user32.SetForegroundWindow.argtypes = [wintypes.HWND]
