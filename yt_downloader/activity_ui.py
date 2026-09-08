@@ -11,7 +11,9 @@ from .ui_theme import FONT_UI, THEME
 from .ui_widgets import _tinted_ui_icon
 
 _LOG_TOKEN = re.compile(
-    r"(^\d{2}:\d{2}:\d{2})|(\[(?:info|download|success|warning|error|debug)\][ \t]*)",
+    r"(^\d{2}:\d{2}:\d{2})|(\[(?:info|download|success|warning|error|debug)\][ \t]*)"
+    r"|(^WARNING:|^ERROR:)"
+    r"|(^(?=\S)(?!\d{2}:\d{2}:\d{2}|\[(?:info|download|success|warning|error|debug)\]))",
     re.MULTILINE | re.IGNORECASE,
 )
 
@@ -176,6 +178,28 @@ class ActivityLogText(tk.Text):
         start = 0
         for match in _LOG_TOKEN.finditer(chars):
             super().insert("log-insert", chars[start : match.start()])
+            if match[3] or match[4] is not None:
+                # Live providers emit plain lines, not the timestamped tokens
+                # used by older logs. Decorate each actual line once, without
+                # inventing timestamps or changing the underlying document.
+                if self.index("log-insert").endswith(".0"):
+                    self.image_create(
+                        "log-insert", image=self._divider, padx=10, align="center"
+                    )
+                    if self._event_icon is not None:
+                        self.image_create(
+                            "log-insert",
+                            image=self._event_icon,
+                            padx=12,
+                            align="center",
+                        )
+                if match[3]:
+                    tag = (
+                        "log-warning" if match[3].upper() == "WARNING:" else "log-error"
+                    )
+                    super().insert("log-insert", match[0], tag)
+                start = match.end()
+                continue
             icon = (
                 self._success_icon
                 if match[0].strip().lower() == "[success]"

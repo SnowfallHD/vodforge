@@ -105,6 +105,53 @@ def test_log_decoration_is_character_exact_and_clear_invalidates(root):
 
 
 @pytest.mark.parametrize("compact", [False, True])
+def test_real_pipeline_activity_is_decorated_losslessly(root, compact):
+    text = ActivityLogText(root, compact=compact)
+    lines = [
+        "Video 1 of 1: downloading\n",
+        "WARNING: Target bitrate is close to the selected source.\n",
+        "Video 1 of 1: FFmpeg command started (1/1) using CPU libx264\n",
+        "ERROR: Encoder failed\n",
+        "[success] MP4 download complete\n",
+    ]
+    for line in lines:
+        text.insert("end", line)
+    source = "".join(lines)
+    assert text.get("1.0", "end-1c") == source
+    assert len(text.image_names()) == 9  # Four divider/marker pairs plus success.
+    assert text.tag_ranges("log-warning")
+    assert text.tag_ranges("log-error")
+    text.request(source)
+    images = text.image_names()
+    assert not text.request(source)
+    text.apply_theme()
+    assert text.image_names() == images
+    assert text.get("1.0", "end-1c") == source
+
+
+def test_log_fragment_does_not_create_an_extra_event(root):
+    text = ActivityLogText(root)
+    text.insert("end", "Video 1:")
+    images = text.image_names()
+    text.insert("end", " downloading")
+    assert text.image_names() == images
+    assert text.get("1.0", "end-1c") == "Video 1: downloading"
+
+
+def test_appended_event_after_snapshot_starts_a_new_line(root):
+    from yt_downloader.app import DownloaderApp
+
+    text = ActivityLogText(root)
+    text.request("Video 1: downloading")
+    DownloaderApp._append_log_widget(text, "Video 1: transcoding")
+    DownloaderApp._append_log_widget(text, "Video 1: validating")
+    assert text.get("1.0", "end-1c") == (
+        "Video 1: downloading\nVideo 1: transcoding\nVideo 1: validating\n"
+    )
+    assert len(text.image_names()) == 6
+
+
+@pytest.mark.parametrize("compact", [False, True])
 def test_activity_theme_refresh_retains_document_and_noop(root, compact):
     from yt_downloader.ui_theme import THEME
 

@@ -584,11 +584,13 @@ def test_run_log_updates_activity_and_only_the_selected_active_run(tmp_path: Pat
     app._focus_selected_run_id = active_job.run_id
     app.log = TextBuffer()
     app.focus_log = TextBuffer()
+    app.focus_log.value = "Preparing this run…"
 
     app._append_job_log(worker_copy, "active-only line")
 
     assert "active-only line" in app.log.value
     assert "active-only line" in app.focus_log.value
+    assert "Preparing this run" not in app.focus_log.value
     assert active_job.activity_lines == ["active-only line"]
 
     app._focus_selected_run_id = "completed-run"

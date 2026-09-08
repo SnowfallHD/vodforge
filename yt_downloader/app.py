@@ -13972,6 +13972,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         active_job.activity_lines.append(line.rstrip())
         if getattr(self, "_focus_selected_run_id", None) == active_job.run_id:
+            if len(active_job.activity_lines) == 1:
+                self._set_text(self.focus_log, "", disabled=True)
             self._append_log_widget(self.focus_log, line)
             self._focus_log_owner_run_id = active_job.run_id
             self._focus_log_rendered_text = "\n".join(active_job.activity_lines)
@@ -13990,6 +13992,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             # for those cases rather than dropping live-tail behavior.
             pass
         widget.config(state="normal")
+        # Re-selected run snapshots need not end in a newline. An appended
+        # event must still begin on its own line, never join the last event.
+        if widget.get("end-2c", "end-1c") not in {"", "\n"}:
+            widget.insert("end", "\n")
         widget.insert("end", line.rstrip() + "\n")
         if follow_tail:
             widget.see("end")
