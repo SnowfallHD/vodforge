@@ -62,17 +62,29 @@ def save_settings(path: Path, values: Mapping[str, Any]) -> None:
         existing = load_settings(path)
         if "analytics_consent" in existing:
             merged["analytics_consent"] = existing["analytics_consent"]
+            merged.pop("anonymous_usage_analytics", None)
         _write_settings(path, merged)
 
 
 def update_analytics_settings(
-    path: Path, changes: Mapping[str, Any], *, remove: tuple[str, ...] = ()
+    path: Path,
+    changes: Mapping[str, Any],
+    *,
+    remove: tuple[str, ...] = (),
+    migrate_legacy: bool = False,
 ) -> None:
     """Patch consent without racing or replacing ordinary UI preferences."""
     with _FILE_LOCK:
         values = load_settings(path)
         current = values.get("analytics_consent", {})
         state = dict(current) if isinstance(current, dict) else {}
+        if migrate_legacy:
+            if (
+                state.get("choice") not in {"granted", "denied"}
+                and values.get("anonymous_usage_analytics") is False
+            ):
+                state["choice"] = "denied"
+            values.pop("anonymous_usage_analytics", None)
         state.update(changes)
         for key in remove:
             state.pop(key, None)

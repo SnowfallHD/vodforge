@@ -94,8 +94,34 @@ def test_welcome_opportunity_is_once_and_builds_fail_closed(tmp_path, monkeypatc
 
 
 def test_legacy_opt_out_is_preserved(tmp_path):
-    assert not AnalyticsConsentOwner(tmp_path, legacy_disabled=True).allowed
+    save_settings(tmp_path / "settings.json", {"anonymous_usage_analytics": False})
+    assert not AnalyticsConsentOwner(tmp_path).allowed
     assert AnalyticsConsentOwner(tmp_path).snapshot()["choice"] == "denied"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("choice", [None, "granted", "denied"])
+def test_retire_legacy_toggle_once_without_overriding_choice(tmp_path, legacy, choice):
+    path = tmp_path / "settings.json"
+    prefs = {"anonymous_usage_analytics": legacy, "output_dir": "/Downloads"}
+    if choice is not None:
+        prefs["analytics_consent"] = {"choice": choice}
+    save_settings(path, prefs)
+    owner = AnalyticsConsentOwner(tmp_path)
+    expected = choice if choice is not None else ("denied" if legacy is False else None)
+    assert owner.snapshot().get("choice") == expected
+    assert "anonymous_usage_analytics" not in load_settings(path)
+    assert load_settings(path)["output_dir"] == "/Downloads"
+    owner.choose(True)
+    save_settings(path, {"output_dir": "/Other", "anonymous_usage_analytics": False})
+    assert "anonymous_usage_analytics" not in load_settings(path)
+    assert AnalyticsConsentOwner(tmp_path).allowed
+
+
+def test_fresh_profile_never_writes_legacy_toggle(tmp_path):
+    owner = AnalyticsConsentOwner(tmp_path)
+    owner.choose(False)
+    assert "anonymous_usage_analytics" not in load_settings(tmp_path / "settings.json")
 
 
 def test_late_region_response_cannot_enable_analytics(tmp_path, monkeypatch):

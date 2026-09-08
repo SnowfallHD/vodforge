@@ -26,7 +26,7 @@ REGION_POLICY_VERSION = 1
 
 
 class AnalyticsConsentOwner:
-    def __init__(self, directory: Path, *, legacy_disabled: bool = False) -> None:
+    def __init__(self, directory: Path) -> None:
         self.path = directory / "settings.json"
         legacy = directory / "analytics-consent.json"
         with _LOCK:
@@ -48,6 +48,8 @@ class AnalyticsConsentOwner:
             except (InstallationIdentityError, OSError):
                 return  # Do not replace damaged installation identity or consent.
             onboarding = state.onboarding or {}
+            if "anonymous_usage_analytics" in values:
+                update_analytics_settings(self.path, {}, migrate_legacy=True)
             if onboarding.get("storage_version") != 1:
                 old = load_settings(self.path).get("analytics_consent", {})
                 old = old if isinstance(old, dict) else {}
@@ -70,11 +72,6 @@ class AnalyticsConsentOwner:
                 key in current for key in _ONBOARDING_KEYS
             ):
                 update_analytics_settings(self.path, {}, remove=_ONBOARDING_KEYS)
-        if legacy_disabled and self.snapshot().get("choice") not in {
-            "granted",
-            "denied",
-        }:
-            self.update(choice="denied")
 
     def snapshot(self) -> dict[str, Any]:
         with _LOCK:

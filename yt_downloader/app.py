@@ -4884,7 +4884,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
 
         self.anonymous_usage_analytics_var = tk.BooleanVar(
-            value=_persisted_bool(saved_settings, "anonymous_usage_analytics", True)
+            value=False  # AnalyticsStartup synchronizes the canonical consent choice.
         )
         self.product_telemetry = ProductTelemetryOwner(
             state_path=product_telemetry_path(),
@@ -4895,7 +4895,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.analytics_consent = AnalyticsConsentOwner(
             self.installation_state_path.parent,
-            legacy_disabled=not self.anonymous_usage_analytics_var.get(),
         )
         self.analytics_startup = AnalyticsStartup(
             self,
@@ -12133,7 +12132,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "write_info_json": self.write_info_json_var,
             "appearance_theme": self.appearance_theme_var,
             "custom_accent": self.custom_accent_var,
-            "anonymous_usage_analytics": self.anonymous_usage_analytics_var,
             "whats_new_seen": self.whats_new_seen_var,
         }
 
