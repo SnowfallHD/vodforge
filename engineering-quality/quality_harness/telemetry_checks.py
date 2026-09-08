@@ -168,14 +168,14 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             with (
                 patch.object(transport, "ENDPOINT", url + "api/telemetry/v2/"),
                 patch.object(
-                    transport, "production_telemetry_allowed", return_value=True
+                    transport, "telemetry_collection_allowed", return_value=True
                 ),
                 patch.object(transport, "__version__", "0.1.8"),
                 patch.object(
-                    product_telemetry, "production_telemetry_allowed", return_value=True
+                    product_telemetry, "telemetry_collection_allowed", return_value=True
                 ),
                 patch.object(
-                    analytics_consent, "production_telemetry_allowed", return_value=True
+                    analytics_consent, "telemetry_collection_allowed", return_value=True
                 ),
             ):
                 consent = analytics_consent.AnalyticsConsentOwner(case_dir / "client")

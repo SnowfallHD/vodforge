@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from tkinter import ttk
 
@@ -35,7 +36,7 @@ class _ArrowButton(tk.Canvas):
         self.circle = self.create_oval(1, 1, 33, 33, width=1)
         points = (19, 12, 14, 17, 19, 22) if direction < 0 else (15, 12, 20, 17, 15, 22)
         self.arrow = self.create_line(
-            *points, width=2, capstyle="round", joinstyle="round"
+            list(points), width=2, capstyle="round", joinstyle="round"
         )
         self.bind("<Button-1>", self.invoke)
         self.bind("<Return>", self.invoke)
@@ -127,7 +128,8 @@ class WhatsNewPanel:
         self.paint_timer: str | None = None
         self.paint_signature: tuple | None = None
         self.preview.bind("<Configure>", lambda _e: self._schedule_preview())
-        assert self.surface.status is not None
+        if self.surface.status is None:
+            raise RuntimeError("What's New requires a protected caption region")
         # Reserve the same caption space for every slide, including wrapped copy.
         self.surface.status.configure(height=135)
         self.surface.status.pack_propagate(False)
@@ -163,10 +165,12 @@ class WhatsNewPanel:
         for control in (self.back, self.next):
             control.pack(side="left", padx=5)
         self.controls = (self.dismiss_button, self.back, self.next)
-        for index, control in enumerate(self.controls):
-            control.bind("<Tab>", lambda _e, i=index: self.focus((i + 1) % 3))
-            control.bind("<Shift-Tab>", lambda _e, i=index: self.focus((i - 1) % 3))
-            control.bind("<Escape>", lambda _e: self.close())
+        for index, focus_control in enumerate(self.controls):
+            focus_control.bind("<Tab>", partial(self._focus_event, (index + 1) % 3))
+            focus_control.bind(
+                "<Shift-Tab>", partial(self._focus_event, (index - 1) % 3)
+            )
+            focus_control.bind("<Escape>", lambda _e: self.close())
         self.frame.bind("<Escape>", lambda _e: self.close())
         self.frame.bind("<Tab>", lambda _e: self.focus(2))
         self.binding = parent.bind("<Configure>", self.resize, add="+")
@@ -177,6 +181,9 @@ class WhatsNewPanel:
         self.frame.lift()
         self.frame.grab_set()
         self.next.focus_set()
+
+    def _focus_event(self, index: int, _event: tk.Event) -> str:
+        return self.focus(index)
 
     def focus(self, index: int) -> str:
         self.controls[index].focus_set()

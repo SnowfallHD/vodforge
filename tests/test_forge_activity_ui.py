@@ -58,8 +58,7 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
         panel.toggle.focus_force()
         panel.toggle.apply_theme()
         assert not any(
-            panel.toggle.type(item) == "rectangle"
-            for item in panel.toggle.find_all()
+            panel.toggle.type(item) == "rectangle" for item in panel.toggle.find_all()
         )
         root.update()
         panel.toggle.event_generate("<Up>")
