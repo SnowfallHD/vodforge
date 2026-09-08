@@ -21,9 +21,19 @@ def test_carousel_native_child_resize_noop_and_dismissal():
         for geometry in ("1180x780", "860x600"):
             root.geometry(geometry)
             root.update()
+            dimensions = None
             for index in range(len(HIGHLIGHTS)):
                 panel.render(index)
                 root.update()
+                current = (
+                    panel.frame.winfo_width(),
+                    panel.frame.winfo_height(),
+                    panel.preview.winfo_width(),
+                    panel.preview.winfo_height(),
+                )
+                if dimensions is None:
+                    dimensions = current
+                assert current == dimensions
                 assert panel.photo is not None
                 image = panel.photo
                 panel.render(index)
@@ -38,6 +48,10 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                         <= panel.frame.winfo_rooty() + panel.frame.winfo_height()
                     )
                 assert panel.preview.winfo_height() > 100
+                if HIGHLIGHTS[index].key == "activity-mode":
+                    demo = panel.activity_demo
+                    assert demo is not None and demo.timer is not None
+                    assert not hasattr(demo, "control")
         assert panel.next.winfo_width() == panel.next.winfo_height() == 34
         assert panel.next.instate(["disabled"])
         assert panel.back.winfo_width() == panel.back.winfo_height() == 34

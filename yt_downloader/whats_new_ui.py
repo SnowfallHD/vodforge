@@ -13,6 +13,7 @@ from .modal_backdrop import ModalBackdrop
 from .ui_theme import FONT_UI_FAMILY, THEME
 from .ui_widgets import ActionDialogSurface
 from .whats_new import FeatureHighlight
+from .whats_new_activity_demo import ActivityDemo
 
 
 class _ArrowButton(tk.Canvas):
@@ -87,6 +88,8 @@ class WhatsNewPanel:
             raise ValueError("A showcase needs at least one feature")
         self.parent, self.highlights, self.dismissed = parent, highlights, dismissed
         self.index = -1
+        self.activity_demo: ActivityDemo | None = None
+        self.transition_timer: str | None = None
         self.closed = False
         self.previous_focus = parent.focus_get()
         self.backdrop = ModalBackdrop(parent)
@@ -125,6 +128,9 @@ class WhatsNewPanel:
         self.paint_signature: tuple | None = None
         self.preview.bind("<Configure>", lambda _e: self._schedule_preview())
         assert self.surface.status is not None
+        # Reserve the same caption space for every slide, including wrapped copy.
+        self.surface.status.configure(height=135)
+        self.surface.status.pack_propagate(False)
         self.title = ttk.Label(
             self.surface.status, style="FocusTitle.TLabel", anchor="center"
         )
@@ -180,6 +186,11 @@ class WhatsNewPanel:
         index = max(0, min(index, len(self.highlights) - 1))
         if index == self.index:
             return
+        self._cancel_transition()
+        self.preview.itemconfigure(self.image_item, image="")
+        if self.activity_demo is not None:
+            self.activity_demo.destroy()
+            self.activity_demo = None
         self.index = index
         feature = self.highlights[index]
         self.title.configure(text=feature.title)
@@ -201,6 +212,8 @@ class WhatsNewPanel:
             self.source_image = None
         self.resize()
         self._schedule_preview()
+        if feature.key == "activity-mode":
+            self.activity_demo = ActivityDemo(self.preview)
         self.page.configure(text=f"{index + 1} of {len(self.highlights)}")
         self.back.state(["disabled"] if index == 0 else ["!disabled"])
         self.next.state(
@@ -232,11 +245,33 @@ class WhatsNewPanel:
             ImageOps.contain(self.source_image, size), master=self.frame
         )
         self.preview.itemconfigure(self.image_item, image=self.photo)
+        self._cancel_transition()
+        self._transition(0)
+
+    def _cancel_transition(self) -> None:
+        if self.transition_timer is not None:
+            self.frame.after_cancel(self.transition_timer)
+            self.transition_timer = None
+
+    def _transition(self, step: int) -> None:
+        """Translate content gently; never resize the card or its image viewport."""
+        self.transition_timer = None
+        if self.closed:
+            return
+        offset = round(18 * (1 - step / 10) ** 3)
         self.preview.coords(
             self.image_item,
-            self.preview.winfo_width() / 2,
+            self.preview.winfo_width() / 2 + offset,
             self.preview.winfo_height() / 2,
         )
+        if self.activity_demo is not None:
+            self.activity_demo.place(
+                x=10 + offset, y=0, relwidth=1, width=-38, relheight=1
+            )
+        if step < 10:
+            self.transition_timer = self.frame.after(
+                16, lambda: self._transition(step + 1)
+            )
 
     def advance(self) -> None:
         self.render(self.index + 1)
@@ -246,15 +281,8 @@ class WhatsNewPanel:
             return
         width, height = (
             min(590, self.parent.winfo_width() - 40),
-            min(650, self.parent.winfo_height() - 40),
+            min(560, self.parent.winfo_height() - 40),
         )
-        if self.source_image is not None:
-            # Fit the panel to the artwork's aspect ratio instead of leaving
-            # a tall, empty letterbox around wide screenshots. Contain the
-            # complete crop; never fill by silently cutting off controls.
-            image_width, image_height = self.source_image.size
-            fitted_height = (width - 76) * image_height / image_width
-            height = min(height, max(390, round(fitted_height + 300)))
         self.frame.place(
             relx=0.5, rely=0.5, anchor="center", width=width, height=height
         )
@@ -266,6 +294,7 @@ class WhatsNewPanel:
         if self.closed:
             return "break"
         self.closed = True
+        self._cancel_transition()
         if self.paint_timer is not None:
             self.frame.after_cancel(self.paint_timer)
             self.paint_timer = None
