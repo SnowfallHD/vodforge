@@ -19,4 +19,9 @@ def production_telemetry_contract(monkeypatch):
         install_attribution,
         product_telemetry,
     ):
-        monkeypatch.setattr(module, "production_telemetry_allowed", lambda: True)
+        name = (
+            "production_telemetry_allowed"
+            if module is heycatch_telemetry
+            else "telemetry_collection_allowed"
+        )
+        monkeypatch.setattr(module, name, lambda: True)

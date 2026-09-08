@@ -9,7 +9,7 @@ from yt_downloader import telemetry_credentials as module
 def permitted_analytics(tmp_path, monkeypatch):
     from yt_downloader import analytics_consent
 
-    monkeypatch.setattr(analytics_consent, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(analytics_consent, "telemetry_collection_allowed", lambda: True)
     analytics_consent.AnalyticsConsentOwner(tmp_path).choose(True)
 
 
@@ -32,7 +32,7 @@ class Response:
 def test_version_observation_is_browserless_and_only_repeats_on_version_change(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     calls = []
 
     def opener(request, **_kwargs):
@@ -65,7 +65,7 @@ def test_version_observation_is_browserless_and_only_repeats_on_version_change(
 def test_unacknowledged_version_is_retried_without_regenerating_identity(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     owner = module.TelemetryCredentialOwner(
         tmp_path, opener=lambda *_a, **_k: Response({"ok": False})
     )
@@ -77,7 +77,7 @@ def test_unacknowledged_version_is_retried_without_regenerating_identity(
 
 
 def test_suppressed_build_creates_no_credential_or_request(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: False)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: False)
 
     def forbidden(*_a, **_k):
         raise AssertionError("network must be suppressed")
@@ -90,7 +90,7 @@ def test_suppressed_build_creates_no_credential_or_request(tmp_path, monkeypatch
 def test_rate_limit_backoff_survives_owner_recreation(tmp_path, monkeypatch):
     from urllib.error import HTTPError
 
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     calls = []
 
     def failing(request, **_kwargs):

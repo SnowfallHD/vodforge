@@ -51,7 +51,12 @@ def test_disabled_transports_never_call_network(monkeypatch):
         install_attribution,
         product_telemetry,
     ):
-        monkeypatch.setattr(module, "production_telemetry_allowed", lambda: False)
+        name = (
+            "production_telemetry_allowed"
+            if module is heycatch_telemetry
+            else "telemetry_collection_allowed"
+        )
+        monkeypatch.setattr(module, name, lambda: False)
     assert not cloud_funnel._post_json("https://getvodforge.com", {}, opener=forbidden)
     assert not heycatch_telemetry._capture(
         "first_launch", "unused", {}, opener=forbidden

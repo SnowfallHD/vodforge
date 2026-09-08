@@ -26,7 +26,8 @@ from .heycatch_telemetry import record_product_event as record_heycatch_event
 from .history import application_data_dir
 from .private_files import write_private_bytes
 from .telemetry_credentials import RejectedTelemetryEvent, TelemetryCredentialOwner
-from .telemetry_policy import production_telemetry_allowed
+from .telemetry_policy import preview_telemetry_allowed, telemetry_collection_allowed
+from .telemetry_transport import telemetry_urlopen
 
 PRODUCT_TELEMETRY_ENDPOINT = "https://getvodforge.com/api/telemetry/events"
 PRODUCT_TELEMETRY_SCHEMA_VERSION = 1
@@ -222,9 +223,9 @@ def _save_outbox(path: Path, events: list[ProductTelemetryEvent]) -> None:
 def _post_d1_event(
     event: ProductTelemetryEvent,
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> bool:
-    if not production_telemetry_allowed():
+    if not telemetry_collection_allowed():
         return False
     request = urllib.request.Request(
         PRODUCT_TELEMETRY_ENDPOINT,
@@ -289,7 +290,7 @@ class ProductTelemetryOwner:
         self._worker: threading.Thread | None = None
 
     def _permitted(self) -> tuple[bool, str | None]:
-        if not production_telemetry_allowed() or not self._enabled:
+        if not telemetry_collection_allowed() or not self._enabled:
             return False, None
         try:
             state = load_or_create_installation_state(self._installation_state_path)
@@ -462,13 +463,12 @@ class ProductTelemetryOwner:
                 latest = _load_outbox(self._state_path)
                 if not latest or latest[0].event_id != event.event_id:
                     continue
-                remaining = (
-                    latest[1:]
-                    if d1_delivered and heycatch_delivered
-                    else [updated, *latest[1:]]
+                delivery_complete = d1_delivered and (
+                    heycatch_delivered or preview_telemetry_allowed()
                 )
+                remaining = latest[1:] if delivery_complete else [updated, *latest[1:]]
                 _save_outbox(self._state_path, remaining)
-            if not (d1_delivered and heycatch_delivered):
+            if not delivery_complete:
                 return
 
     def shutdown(self, timeout_seconds: float = 1.0) -> bool:

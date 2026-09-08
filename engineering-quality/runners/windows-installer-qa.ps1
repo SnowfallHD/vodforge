@@ -20,13 +20,16 @@ $env:VODFORGE_DISABLE_TELEMETRY = '1'
 $env:TEMP = Join-Path $root 'tools\temp'
 $env:TMP = $env:TEMP
 Set-Location $source
-& .\build_windows_installer.ps1 -Version '0.1.8-dev'
+$build = Get-Content (Join-Path $root "artifacts\build-$SourceCommit.json") -Raw | ConvertFrom-Json
+$version = if ($build.app_version) { $build.app_version } else { '0.1.8-dev' }
+if ($build.telemetry_policy -notin @('disabled','preview')) { throw 'Not an isolated candidate' }
+& .\build_windows_installer.ps1 -Version $version
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-$installer = Join-Path $source 'dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe'
+$installer = Join-Path $source "dist\release\VODForge-Windows-Setup-v$version.exe"
 $installRoot = Join-Path $root 'installed\VODForge'
 $setup = Start-Process $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$installRoot") -Wait -PassThru
 if ($setup.ExitCode -ne 0) { throw 'VODForge installer failed' }
 $installed = Join-Path $installRoot 'VODForge.exe'
 $expected = (Get-FileHash (Join-Path $source 'dist\VODForge\VODForge.exe')).Hash
 if ((Get-FileHash $installed).Hash -ne $expected) { throw 'Installed executable mismatch' }
-@{source_commit=$SourceCommit;installed=$installed;executable_sha256=$expected;installer_sha256=(Get-FileHash $installer).Hash;telemetry='disabled';release=$false} | ConvertTo-Json | Set-Content (Join-Path $root "artifacts\installer-$SourceCommit.json")
+@{source_commit=$SourceCommit;installed=$installed;executable_sha256=$expected;installer_sha256=(Get-FileHash $installer).Hash;telemetry=$build.telemetry_policy;release=$false} | ConvertTo-Json | Set-Content (Join-Path $root "artifacts\installer-$SourceCommit.json")

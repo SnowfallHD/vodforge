@@ -51,8 +51,8 @@ mkdir -p "$build_version_dir"
 build_version_file="$build_version_dir/VODFORGE_VERSION"
 printf '%s' "$build_version" > "$build_version_file"
 telemetry_policy="${VODFORGE_BUILD_TELEMETRY:-disabled}"
-if [[ "$telemetry_policy" != "disabled" && "$telemetry_policy" != "production" ]]; then
-  echo "VODFORGE_BUILD_TELEMETRY must be disabled or production."
+if [[ "$telemetry_policy" != "disabled" && "$telemetry_policy" != "production" && "$telemetry_policy" != "preview" ]]; then
+  echo "VODFORGE_BUILD_TELEMETRY must be disabled, production, or preview."
   exit 1
 fi
 printf '%s' "$telemetry_policy" > "$build_version_dir/VODFORGE_TELEMETRY_POLICY"

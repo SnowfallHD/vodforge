@@ -40,7 +40,7 @@ def test_real_event_loop_permission_journey(tmp_path, monkeypatch, scenario):
         return mode
 
     monkeypatch.setattr(owner, "resolve", resolve)
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     monkeypatch.setattr(
         module.webbrowser,
         "open",

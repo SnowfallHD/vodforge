@@ -17,7 +17,7 @@ from .cloud_funnel import (
     mark_attribution_claim_opened,
 )
 from .install_attribution import cancel_claim, issue_claim
-from .telemetry_policy import production_telemetry_allowed
+from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
 from .ui_widgets import ActionDialogSurface
 
 
@@ -73,7 +73,7 @@ class AnalyticsStartup:
             self.changed(self.owner.allowed)
 
     def start(self) -> None:
-        if self.closed or self.attempts or not production_telemetry_allowed():
+        if self.closed or self.attempts or not telemetry_collection_allowed():
             return
         self.attempts += 1
         self.region_deadline = time.monotonic() + 2.5
@@ -103,7 +103,7 @@ class AnalyticsStartup:
     def _open_welcome(self) -> None:
         if (
             self.closed
-            or not production_telemetry_allowed()
+            or not telemetry_collection_allowed()
             or not self.owner.take_welcome()
         ):
             return
@@ -113,7 +113,7 @@ class AnalyticsStartup:
             if state.attribution_claim_opened or state.first_launch_confirmed:
                 return
             mark_attribution_claim_opened(path, state.install_id)
-            url = f"https://getvodforge.com/claim/#ticket={self.ticket}"
+            url = f"{telemetry_site_origin()}/claim/#ticket={self.ticket}"
             webbrowser.open(url, new=2, autoraise=False)
         except Exception:  # noqa: BLE001 - browser adapters differ; welcome is best effort
             return

@@ -16,10 +16,11 @@ from typing import Any
 
 from .analytics_consent import analytics_allowed
 from .history import application_data_dir
-from .telemetry_policy import production_telemetry_allowed
+from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
+from .telemetry_transport import telemetry_urlopen
 
 CLOUD_ORIGIN = "https://getvodforge.com"
-CLOUD_PAGE_URL = f"{CLOUD_ORIGIN}/pro"
+CLOUD_PAGE_URL = f"{telemetry_site_origin()}/pro"
 CLOUD_LAUNCH_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/launch"
 CLOUD_SEEN_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/seen"
 CLOUD_CLICK_ENDPOINT = f"{CLOUD_ORIGIN}/api/funnel/click"
@@ -297,7 +298,7 @@ def installation_platform(platform_name: str | None = None) -> str:
 
 
 def cloud_page_url(install_id: str | None) -> str:
-    if not production_telemetry_allowed() or not analytics_allowed() or not install_id:
+    if not telemetry_collection_allowed() or not analytics_allowed() or not install_id:
         return CLOUD_PAGE_URL
     return f"{CLOUD_PAGE_URL}?{urllib.parse.urlencode({'iid': _parse_install_id(install_id)})}"
 
@@ -306,10 +307,10 @@ def _post_json(
     url: str,
     payload: dict[str, str],
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
     timeout_seconds: float = NETWORK_TIMEOUT_SECONDS,
 ) -> bool:
-    if not production_telemetry_allowed() or not analytics_allowed():
+    if not telemetry_collection_allowed() or not analytics_allowed():
         return False
     request = urllib.request.Request(
         url,
@@ -338,9 +339,9 @@ def record_cloud_seen(
     *,
     app_version: str,
     platform_name: str | None = None,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> bool:
-    if opener is urllib.request.urlopen:
+    if opener is telemetry_urlopen:
         from .telemetry_credentials import TelemetryCredentialOwner
 
         return TelemetryCredentialOwner(installation_state_path().parent).cloud_event(
@@ -365,7 +366,7 @@ def record_first_launch(
     *,
     app_version: str,
     platform_name: str | None = None,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> bool:
     return _post_json(
         CLOUD_LAUNCH_ENDPOINT,
@@ -381,9 +382,9 @@ def record_first_launch(
 def record_cloud_click(
     state: InstallationState,
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> bool:
-    if opener is urllib.request.urlopen:
+    if opener is telemetry_urlopen:
         from .telemetry_credentials import TelemetryCredentialOwner
         from .version import __version__
 

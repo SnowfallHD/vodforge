@@ -26,6 +26,36 @@ def _permitted_installation(path: Path) -> str:
     return state.install_id
 
 
+@pytest.mark.parametrize("preview_mode", [False, True])
+def test_preview_excludes_provider_without_fabricating_delivery(
+    tmp_path, monkeypatch, preview_mode
+):
+    from yt_downloader import product_telemetry
+
+    monkeypatch.setattr(
+        product_telemetry, "preview_telemetry_allowed", lambda: preview_mode
+    )
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    queue = tmp_path / "product-telemetry.json"
+    owner = ProductTelemetryOwner(
+        state_path=queue,
+        installation_state_path=installation,
+        app_version="0.1.8",
+        d1_recorder=lambda _event: True,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    assert owner.record_app_opened()
+    assert owner.shutdown(2)
+    if preview_mode:
+        assert not queue.exists()
+    else:
+        events = product_telemetry._load_outbox(queue)
+        assert len(events) == 1
+        assert events[0].d1_delivered
+        assert not events[0].heycatch_delivered
+
+
 def test_permanent_server_rejection_retires_event_without_claiming_delivery(tmp_path):
     from yt_downloader.telemetry_credentials import RejectedTelemetryEvent
 

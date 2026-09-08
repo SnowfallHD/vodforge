@@ -11,7 +11,8 @@ from typing import Any
 
 from .history import application_data_dir
 from .private_files import write_private_bytes
-from .telemetry_policy import production_telemetry_allowed
+from .telemetry_policy import telemetry_collection_allowed
+from .telemetry_transport import telemetry_urlopen
 
 POLICY_URL = "https://getvodforge.com/api/analytics/policy"
 _LOCK = threading.RLock()
@@ -57,10 +58,10 @@ class AnalyticsConsentOwner:
             return True
 
     def resolve(
-        self, *, opener: Any = urllib.request.urlopen, deadline: float | None = None
+        self, *, opener: Any = telemetry_urlopen, deadline: float | None = None
     ) -> str:
         """No install ID, cookie, credential or analytics payload in this request."""
-        if not production_telemetry_allowed():
+        if not telemetry_collection_allowed():
             return "unknown"
         self.update(mode="unknown")
         remaining = 1.5 if deadline is None else deadline - time.monotonic()
@@ -92,7 +93,7 @@ class AnalyticsConsentOwner:
 
 def analytics_allowed(directory: Path | None = None) -> bool:
     return (
-        production_telemetry_allowed()
+        telemetry_collection_allowed()
         and AnalyticsConsentOwner(
             directory if directory is not None else application_data_dir()
         ).allowed

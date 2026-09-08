@@ -26,7 +26,8 @@ from .cloud_funnel import (
 )
 from .heycatch_telemetry import record_first_launch as record_heycatch_first_launch
 from .telemetry_credentials import TelemetryCredentialOwner
-from .telemetry_policy import production_telemetry_allowed
+from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
+from .telemetry_transport import telemetry_urlopen
 
 ATTRIBUTION_CLAIM_ISSUE_ENDPOINT = "https://getvodforge.com/api/attribution/claim/issue"
 ATTRIBUTION_CLAIM_STATUS_ENDPOINT = (
@@ -48,9 +49,9 @@ def _post_json_object(
     url: str,
     payload: dict[str, str],
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> dict[str, Any] | None:
-    if not production_telemetry_allowed() or not analytics_allowed():
+    if not telemetry_collection_allowed() or not analytics_allowed():
         return None
     request = urllib.request.Request(
         url,
@@ -91,12 +92,12 @@ def _validated_claim_url(value: Any, claim_token: str) -> str | None:
         or parsed.fragment != f"token={claim_token}"
     ):
         return None
-    return value
+    return f"{telemetry_site_origin()}/claim#token={claim_token}"
 
 
 def cancel_claim(claim_token: str) -> None:
     """Privacy withdrawal uses only the capability, even with analytics disabled."""
-    if not production_telemetry_allowed() or not CLAIM_TOKEN_PATTERN.fullmatch(
+    if not telemetry_collection_allowed() or not CLAIM_TOKEN_PATTERN.fullmatch(
         claim_token
     ):
         return
@@ -109,7 +110,7 @@ def cancel_claim(claim_token: str) -> None:
     try:
         # Fixed HTTPS origin/path; the validated capability is JSON body data,
         # never a caller-controlled URL or scheme.
-        with urllib.request.urlopen(request, timeout=2) as response:  # nosec B310
+        with telemetry_urlopen(request, timeout=2) as response:  # nosec B310
             response.read(1024)
     except OSError:
         pass
@@ -119,7 +120,7 @@ def issue_claim(
     install_id: str,
     claim_token: str,
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> ClaimIssueResult | None:
     if not CLAIM_TOKEN_PATTERN.fullmatch(claim_token):
         return None
@@ -137,7 +138,7 @@ def issue_claim(
 def claim_state(
     claim_token: str,
     *,
-    opener: Callable[..., Any] = urllib.request.urlopen,
+    opener: Callable[..., Any] = telemetry_urlopen,
 ) -> ClaimState:
     if not CLAIM_TOKEN_PATTERN.fullmatch(claim_token):
         return "unknown"
@@ -206,7 +207,7 @@ class InstallationAttributionOwner:
         app_version: str,
         platform_name: str | None = None,
     ) -> InstallationState:
-        if not production_telemetry_allowed() or not analytics_allowed(
+        if not telemetry_collection_allowed() or not analytics_allowed(
             self._state_path.parent
         ):
             return state
@@ -270,7 +271,7 @@ class InstallationAttributionOwner:
         elif not current.attribution_claim_opened:
             # A prior process persisted the capability before it could hand it
             # to the browser. Reissue it to recover that narrow interruption.
-            claim_url = f"{ATTRIBUTION_CLAIM_PAGE_ORIGIN}/claim#token={claim_token}"
+            claim_url = f"{telemetry_site_origin()}/claim#token={claim_token}"
             try:
                 opened = bool(self._browser_opener(claim_url, new=2, autoraise=False))
             except Exception:  # noqa: BLE001 - platform browser adapters vary

@@ -24,8 +24,8 @@ $buildVersionFile = Join-Path $buildMetadataDir "VODFORGE_VERSION"
 Set-Content -Path $buildVersionFile -Value $buildVersion -NoNewline
 $addData = @("--add-data", "$buildVersionFile;.")
 $telemetryPolicy = if ($env:VODFORGE_BUILD_TELEMETRY) { $env:VODFORGE_BUILD_TELEMETRY } else { "disabled" }
-if ($telemetryPolicy -notin @("disabled", "production")) {
-  throw "VODFORGE_BUILD_TELEMETRY must be disabled or production."
+if ($telemetryPolicy -notin @("disabled", "production", "preview")) {
+  throw "VODFORGE_BUILD_TELEMETRY must be disabled, production, or preview."
 }
 $telemetryPolicyFile = Join-Path $buildMetadataDir "VODFORGE_TELEMETRY_POLICY"
 Set-Content -Path $telemetryPolicyFile -Value $telemetryPolicy -NoNewline

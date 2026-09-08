@@ -10,7 +10,7 @@ from yt_downloader.analytics_consent import AnalyticsConsentOwner
     "mode,allowed", [("default-on", True), ("opt-in", False), ("unknown", False)]
 )
 def test_policy_defaults_and_durable_opt_out(tmp_path, monkeypatch, mode, allowed):
-    monkeypatch.setattr(consent, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: True)
     owner = AnalyticsConsentOwner(tmp_path)
     owner.update(mode=mode)
     assert owner.allowed is allowed
@@ -22,7 +22,7 @@ def test_policy_defaults_and_durable_opt_out(tmp_path, monkeypatch, mode, allowe
 
 
 def test_region_request_has_no_identity_and_is_bounded(tmp_path, monkeypatch):
-    monkeypatch.setattr(consent, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: True)
 
     class Response:
         status = 200
@@ -59,7 +59,7 @@ def test_welcome_opportunity_is_once_and_builds_fail_closed(tmp_path, monkeypatc
     assert owner.take_welcome()
     assert not AnalyticsConsentOwner(tmp_path).take_welcome()
     owner.choose(True)
-    monkeypatch.setattr(consent, "production_telemetry_allowed", lambda: False)
+    monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: False)
     assert not consent.analytics_allowed(tmp_path)
 
 
@@ -69,7 +69,7 @@ def test_legacy_opt_out_is_preserved(tmp_path):
 
 
 def test_late_region_response_cannot_enable_analytics(tmp_path, monkeypatch):
-    monkeypatch.setattr(consent, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(consent, "telemetry_collection_allowed", lambda: True)
     now = [0.0]
     monkeypatch.setattr(consent.time, "monotonic", lambda: now[0])
 

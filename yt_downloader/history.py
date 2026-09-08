@@ -136,6 +136,10 @@ def application_data_dir(
     xdg_data_home: str | None = None,
 ) -> Path:
     """Return the conventional per-user application-data directory."""
+    from .telemetry_policy import preview_telemetry_allowed
+
+    if preview_telemetry_allowed():
+        return Path(os.environ["VODFORGE_QA_PROFILE"])
     platform_name = sys.platform if platform_name is None else platform_name
     home = Path.home() if home is None else home
     if platform_name.startswith("win"):

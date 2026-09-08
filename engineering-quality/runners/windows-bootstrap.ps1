@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$SourceCommit,
-  [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ArchiveSha256
+  [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{64}$')][string]$ArchiveSha256,
+  [switch]$PreviewTelemetry
 )
 $ErrorActionPreference = 'Stop'
 $root = 'E:\VODForgeQA'
@@ -15,6 +16,10 @@ Expand-Archive -LiteralPath $archive -DestinationPath $source
 $env:VODFORGE_DISABLE_TELEMETRY = '1'
 $env:VODFORGE_BUILD_TELEMETRY = 'disabled'
 $env:VODFORGE_BUILD_VERSION = '0.1.8-dev'
+if ($PreviewTelemetry) {
+  $env:VODFORGE_BUILD_TELEMETRY = 'preview'
+  $env:VODFORGE_BUILD_VERSION = '0.1.8'
+}
 $env:PIP_CACHE_DIR = Join-Path $root 'tools\pip-cache'
 $env:PYINSTALLER_CONFIG_DIR = Join-Path $root 'tools\pyinstaller-cache'
 $env:LOCALAPPDATA = Join-Path $root "profiles\build-$SourceCommit"
@@ -32,7 +37,8 @@ $receipt = @{
   source_archive_sha256=$ArchiveSha256
   executable=(Join-Path $source 'dist\VODForge\VODForge.exe')
   executable_sha256=(Get-FileHash '.\dist\VODForge\VODForge.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-  telemetry_policy='disabled'
+  telemetry_policy=$env:VODFORGE_BUILD_TELEMETRY
+  app_version=$env:VODFORGE_BUILD_VERSION
   signed_release=$false
 }
 $receipt | ConvertTo-Json | Set-Content (Join-Path $root "artifacts\build-$SourceCommit.json")

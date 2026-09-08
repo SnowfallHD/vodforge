@@ -24,7 +24,8 @@ from .analytics_consent import analytics_allowed
 from .cloud_funnel import load_or_create_installation_state
 from .private_files import write_private_bytes
 from .safe_output import is_symlink_or_reparse
-from .telemetry_policy import production_telemetry_allowed
+from .telemetry_policy import telemetry_collection_allowed
+from .telemetry_transport import telemetry_urlopen
 from .version import __version__
 
 ENDPOINT = "https://getvodforge.com/api/telemetry/v2/"
@@ -68,7 +69,7 @@ def _create_once(path: Path, value: dict[str, Any]) -> None:
 
 class TelemetryCredentialOwner:
     def __init__(
-        self, directory: Path, *, opener: Callable[..., Any] = urllib.request.urlopen
+        self, directory: Path, *, opener: Callable[..., Any] = telemetry_urlopen
     ):
         self.path = directory / "telemetry-credential.json"
         self.receipt = directory / "telemetry-launch-receipt.json"
@@ -108,7 +109,7 @@ class TelemetryCredentialOwner:
     def _post(
         self, action: str, payload: dict[str, Any], credential: dict[str, Any]
     ) -> dict[str, Any] | None:
-        if not production_telemetry_allowed() or not analytics_allowed(
+        if not telemetry_collection_allowed() or not analytics_allowed(
             self.path.parent
         ):
             return None
@@ -181,7 +182,7 @@ class TelemetryCredentialOwner:
             return None
 
     def first_launch(self, app_version: str, platform: str) -> bool:
-        if not production_telemetry_allowed():
+        if not telemetry_collection_allowed():
             return False
         try:
             credential = self._credential()
@@ -226,7 +227,7 @@ class TelemetryCredentialOwner:
             return False
 
     def event(self, payload: dict[str, Any]) -> bool:
-        if not production_telemetry_allowed():
+        if not telemetry_collection_allowed():
             return False
         if not self.first_launch(__version__, str(payload["platform"])):
             return False
@@ -245,7 +246,7 @@ class TelemetryCredentialOwner:
     ) -> bool:
         if (
             action not in {"cloud_seen", "cloud_click"}
-            or not production_telemetry_allowed()
+            or not telemetry_collection_allowed()
         ):
             return False
         if not self.first_launch(app_version, platform):

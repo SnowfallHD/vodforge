@@ -14242,6 +14242,17 @@ def main() -> None:
     if len(sys.argv) >= 3 and sys.argv[1] == "--debug-preflight":
         raise SystemExit(debug_preflight(" ".join(sys.argv[2:])))
     app = DownloaderApp()
+    if len(sys.argv) > 1 and sys.argv[1] == "--analytics-qa":
+        from .analytics_qa_probe import observe_startup
+
+        try:
+            observe_startup(app, sys.argv[2:])
+        except ValueError:
+            app.destroy()
+            raise
+        app.bind(
+            "<<QAObservationFinished>>", lambda _event: app._request_application_close()
+        )
     try:
         write_quality_e2e_startup_attestation(
             app,

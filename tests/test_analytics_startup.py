@@ -25,7 +25,7 @@ class Variable:
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: True)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     opened, issued = [], []
     monkeypatch.setattr(
         module.webbrowser, "open", lambda url, **kwargs: opened.append((url, kwargs))
@@ -101,7 +101,7 @@ def test_browser_failure_never_reopens_on_retry(setup, monkeypatch):
 
 def test_private_build_never_opens_or_resolves(setup, monkeypatch):
     startup, _owner, opened, issued = setup
-    monkeypatch.setattr(module, "production_telemetry_allowed", lambda: False)
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: False)
     startup.start()
     startup._open_welcome()
     assert not opened and not issued
