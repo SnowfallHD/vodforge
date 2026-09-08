@@ -4,6 +4,36 @@ import pytest
 
 from yt_downloader import analytics_consent as consent
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
+from yt_downloader.settings_store import load_settings, save_settings
+
+
+def test_consent_migrates_into_config_and_survives_ui_saves(tmp_path):
+    legacy = tmp_path / "analytics-consent.json"
+    legacy.write_text(
+        json.dumps({"choice": "denied", "mode": "default-on", "region_checked": True})
+    )
+    path = tmp_path / "settings.json"
+    save_settings(path, {"output_dir": "/Downloads"})
+    owner = AnalyticsConsentOwner(tmp_path)
+    assert not owner.allowed
+    assert owner.saved_region_mode == "default-on"
+    save_settings(path, {"output_dir": "/Other"})
+    assert not AnalyticsConsentOwner(tmp_path).allowed
+    owner.choose(True)
+    assert load_settings(path)["output_dir"] == "/Other"
+    assert AnalyticsConsentOwner(tmp_path).allowed
+    # The old file is a recovery copy, never authority after migration.
+    assert json.loads(legacy.read_text())["choice"] == "denied"
+
+
+def test_new_consent_uses_only_config_json(tmp_path):
+    owner = AnalyticsConsentOwner(tmp_path)
+    owner.choose(False)
+    assert not (tmp_path / "analytics-consent.json").exists()
+    assert (
+        load_settings(tmp_path / "settings.json")["analytics_consent"]["choice"]
+        == "denied"
+    )
 
 
 @pytest.mark.parametrize(

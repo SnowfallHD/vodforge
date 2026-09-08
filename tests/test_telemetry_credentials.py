@@ -84,7 +84,7 @@ def test_suppressed_build_creates_no_credential_or_request(tmp_path, monkeypatch
 
     owner = module.TelemetryCredentialOwner(tmp_path, opener=forbidden)
     assert not owner.first_launch("0.1.8", "macos")
-    assert {path.name for path in tmp_path.iterdir()} == {"analytics-consent.json"}
+    assert {path.name for path in tmp_path.iterdir()} == {"settings.json"}
 
 
 def test_rate_limit_backoff_survives_owner_recreation(tmp_path, monkeypatch):

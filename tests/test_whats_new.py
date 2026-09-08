@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from yt_downloader.settings_store import load_settings, save_settings
 from yt_downloader.whats_new import HIGHLIGHTS, SHOWCASE_ID, WhatsNewOwner
 
 
@@ -16,6 +17,19 @@ class Seen:
 
     def set(self, value):
         self.value = value
+
+
+def test_showcase_dismissal_survives_settings_reload(tmp_path):
+    path = tmp_path / "settings.json"
+    seen = Seen()
+    owner = WhatsNewOwner(None, seen, lambda: True)
+    assert owner.pending
+    owner._dismissed()
+    save_settings(path, {"whats_new_seen": seen.get()})
+    restarted = WhatsNewOwner(
+        None, Seen(load_settings(path)["whats_new_seen"]), lambda: True
+    )
+    assert not restarted.pending
 
 
 def test_catalog_is_curated_immutable_and_has_bundled_artwork():

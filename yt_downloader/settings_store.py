@@ -11,6 +11,7 @@ from .private_files import write_private_bytes
 
 SETTINGS_SCHEMA_VERSION = 1
 MAX_SETTINGS_FILE_BYTES = 64 * 1024
+_FILE_LOCK = threading.RLock()
 
 
 class SettingsError(RuntimeError):
@@ -56,6 +57,26 @@ def load_settings(path: Path) -> dict[str, Any]:
 
 def save_settings(path: Path, values: Mapping[str, Any]) -> None:
     """Atomically persist non-secret preferences with private permissions."""
+    with _FILE_LOCK:
+        merged = dict(values)
+        existing = load_settings(path)
+        if "analytics_consent" in existing:
+            merged["analytics_consent"] = existing["analytics_consent"]
+        _write_settings(path, merged)
+
+
+def update_analytics_settings(path: Path, changes: Mapping[str, Any]) -> None:
+    """Patch consent without racing or replacing ordinary UI preferences."""
+    with _FILE_LOCK:
+        values = load_settings(path)
+        current = values.get("analytics_consent", {})
+        state = dict(current) if isinstance(current, dict) else {}
+        state.update(changes)
+        values["analytics_consent"] = state
+        _write_settings(path, values)
+
+
+def _write_settings(path: Path, values: Mapping[str, Any]) -> None:
 
     payload = {
         "schema_version": SETTINGS_SCHEMA_VERSION,

@@ -65,6 +65,31 @@ def test_focus_handoff_is_once_and_only_for_pending_consent(setup):
     assert calls == ["lift", "focus"]
 
 
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"mode": "default-on"},
+        {"mode": "opt-in", "prompted": True},
+        {"mode": "unknown", "region_checked": True, "prompted": True},
+        {"choice": "denied"},
+        {"choice": "granted"},
+    ],
+)
+def test_existing_local_policy_never_rechecks_region(setup, monkeypatch, state):
+    startup, owner, _, _ = setup
+    owner.update(**state)
+    startup.owner = AnalyticsConsentOwner(owner.path.parent)
+    monkeypatch.setattr(
+        startup.owner, "resolve", lambda **kw: pytest.fail("region checked again")
+    )
+    monkeypatch.setattr(startup, "_prompt", lambda: pytest.fail("prompt repeated"))
+    startup._prepare()
+    startup._poll()
+    assert startup.owner.allowed is (
+        state.get("choice") == "granted" or state.get("mode") == "default-on"
+    )
+
+
 @pytest.mark.parametrize("closed", [False, True])
 def test_focus_handoff_rechecks_consent_after_browser_grace(setup, closed):
     startup, _, _, _ = setup

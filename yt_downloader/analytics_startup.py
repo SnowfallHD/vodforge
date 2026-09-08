@@ -92,10 +92,18 @@ class AnalyticsStartup:
 
     def _prepare(self) -> None:
         try:
-            for _ in range(2):
-                self.mode = self.owner.resolve(deadline=self.region_deadline)
-                if self.mode != "unknown" or time.monotonic() >= self.region_deadline:
-                    break
+            saved_mode = self.owner.saved_region_mode
+            if saved_mode is not None:
+                self.mode = saved_mode
+            else:
+                for _ in range(2):
+                    self.mode = self.owner.resolve(deadline=self.region_deadline)
+                    if (
+                        self.mode != "unknown"
+                        or time.monotonic() >= self.region_deadline
+                    ):
+                        break
+                self.owner.update(region_checked=True)
             self._authorize_ticket()
         except (OSError, ValueError):
             self.mode = "unknown"
@@ -159,6 +167,9 @@ class AnalyticsStartup:
             self.root.after(100, self._poll)
             return
         self.permission_presented = True
+        # Persist the bounded unknown fallback too; never repeat region lookup
+        # merely because the first session was offline or resolution timed out.
+        self.owner.update(region_checked=True)
         self._sync()
         self.changed(self.owner.allowed)
         state = self.owner.snapshot()

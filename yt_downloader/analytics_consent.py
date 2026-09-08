@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .history import application_data_dir
-from .private_files import write_private_bytes
+from .settings_store import SettingsError, load_settings, update_analytics_settings
 from .telemetry_policy import telemetry_collection_allowed
 from .telemetry_transport import telemetry_urlopen
 
@@ -20,25 +20,35 @@ _LOCK = threading.RLock()
 
 class AnalyticsConsentOwner:
     def __init__(self, directory: Path, *, legacy_disabled: bool = False) -> None:
-        self.path = directory / "analytics-consent.json"
-        if legacy_disabled and not self.path.exists():
+        self.path = directory / "settings.json"
+        legacy = directory / "analytics-consent.json"
+        with _LOCK:
+            try:
+                values = load_settings(self.path)
+            except SettingsError:
+                return  # Preserve malformed config; permission reads fail closed.
+            if "analytics_consent" not in values and legacy.exists():
+                try:
+                    if legacy.stat().st_size <= 4096:
+                        old = json.loads(legacy.read_text())
+                        if isinstance(old, dict):
+                            update_analytics_settings(self.path, old)
+                except (OSError, ValueError):
+                    pass
+        if legacy_disabled and not self.snapshot():
             self.update(choice="denied")
 
     def snapshot(self) -> dict[str, Any]:
         with _LOCK:
             try:
-                if self.path.stat().st_size > 4096:
-                    return {}
-                value = json.loads(self.path.read_text())
+                value = load_settings(self.path).get("analytics_consent", {})
                 return value if isinstance(value, dict) else {}
-            except (OSError, ValueError):
+            except (OSError, ValueError, SettingsError):
                 return {}
 
     def update(self, **changes: Any) -> None:
         with _LOCK:
-            value = self.snapshot()
-            value.update(changes)
-            write_private_bytes(self.path, json.dumps(value).encode())
+            update_analytics_settings(self.path, changes)
 
     @property
     def allowed(self) -> bool:
@@ -49,6 +59,21 @@ class AnalyticsConsentOwner:
 
     def choose(self, enabled: bool) -> None:
         self.update(choice="granted" if enabled else "denied", prompted=True)
+
+    @property
+    def saved_region_mode(self) -> str | None:
+        """Reuse completed policy decisions, including pre-marker installations."""
+        state = self.snapshot()
+        mode = state.get("mode")
+        if mode in {"default-on", "opt-in"}:
+            return mode
+        if (
+            state.get("region_checked") is True
+            or state.get("prompted") is True
+            or state.get("choice") in {"granted", "denied"}
+        ):
+            return "unknown"
+        return None
 
     def take_welcome(self) -> bool:
         with _LOCK:

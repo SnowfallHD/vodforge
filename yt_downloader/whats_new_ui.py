@@ -15,6 +15,67 @@ from .ui_widgets import ActionDialogSurface
 from .whats_new import FeatureHighlight
 
 
+class _ArrowButton(tk.Canvas):
+    """Compact circular navigation owned by the showcase surface."""
+
+    def __init__(self, parent: tk.Misc, direction: int, command: Callable[[], None]):
+        super().__init__(
+            parent,
+            width=34,
+            height=34,
+            bg=THEME["bg"],
+            highlightthickness=0,
+            takefocus=True,
+            cursor="hand2",
+        )
+        self.command = command
+        self.disabled = False
+        self.hover = False
+        self.circle = self.create_oval(1, 1, 33, 33, width=1)
+        points = (19, 12, 14, 17, 19, 22) if direction < 0 else (15, 12, 20, 17, 15, 22)
+        self.arrow = self.create_line(
+            *points, width=2, capstyle="round", joinstyle="round"
+        )
+        self.bind("<Button-1>", self.invoke)
+        self.bind("<Return>", self.invoke)
+        self.bind("<space>", self.invoke)
+        self.bind("<Enter>", lambda _e: self._hover(True))
+        self.bind("<Leave>", lambda _e: self._hover(False))
+        self.bind("<FocusIn>", lambda _e: self.paint())
+        self.bind("<FocusOut>", lambda _e: self.paint())
+        self.paint()
+
+    def _hover(self, value: bool) -> None:
+        self.hover = value
+        self.paint()
+
+    def invoke(self, _event=None):
+        if not self.disabled:
+            self.command()
+        return "break"
+
+    def state(self, states):
+        self.disabled = "disabled" in states
+        self.configure(
+            takefocus=not self.disabled, cursor="" if self.disabled else "hand2"
+        )
+        self.paint()
+
+    def instate(self, states):
+        return self.disabled if "disabled" in states else not self.disabled
+
+    def paint(self):
+        active = not self.disabled and (self.hover or self.focus_get() is self)
+        self.itemconfigure(
+            self.circle,
+            fill=THEME["surface_2"] if active else THEME["bg"],
+            outline=THEME["accent"] if active else THEME["surface_2"],
+        )
+        self.itemconfigure(
+            self.arrow, fill=THEME["surface_2"] if self.disabled else THEME["text"]
+        )
+
+
 class WhatsNewPanel:
     def __init__(
         self,
@@ -84,16 +145,24 @@ class WhatsNewPanel:
         self.page.pack(fill="x", pady=(0, 10))
         actions = ttk.Frame(self.surface.footer, style="FocusShell.TFrame")
         actions.pack()
-        self.skip = ttk.Button(actions, text="Not now", command=self.close)
-        self.back = ttk.Button(
-            actions, text="Back", command=lambda: self.render(self.index - 1)
+        self.dismiss_button = tk.Label(
+            self.frame,
+            text="×",
+            bg=THEME["bg"],
+            fg=THEME["text"],
+            font=(FONT_UI_FAMILY, 20),
+            cursor="hand2",
+            takefocus=True,
         )
-        self.next = ttk.Button(
-            actions, text="Next", style="Accent.TButton", command=self.advance
-        )
-        for control in (self.skip, self.back, self.next):
+        self.dismiss_button.bind("<Button-1>", lambda _e: self.close())
+        self.dismiss_button.bind("<Return>", lambda _e: self.close())
+        self.dismiss_button.bind("<space>", lambda _e: self.close())
+        self.dismiss_button.place(relx=1, x=-12, y=8, anchor="ne", width=30, height=30)
+        self.back = _ArrowButton(actions, -1, lambda: self.render(self.index - 1))
+        self.next = _ArrowButton(actions, 1, self.advance)
+        for control in (self.back, self.next):
             control.pack(side="left", padx=5)
-        self.controls = (self.skip, self.back, self.next)
+        self.controls = (self.dismiss_button, self.back, self.next)
         for index, control in enumerate(self.controls):
             control.bind("<Tab>", lambda _e, i=index: self.focus((i + 1) % 3))
             control.bind("<Shift-Tab>", lambda _e, i=index: self.focus((i - 1) % 3))
@@ -139,8 +208,8 @@ class WhatsNewPanel:
         self._schedule_preview()
         self.page.configure(text=f"{index + 1} of {len(self.highlights)}")
         self.back.state(["disabled"] if index == 0 else ["!disabled"])
-        self.next.configure(
-            text="Done" if index == len(self.highlights) - 1 else "Next"
+        self.next.state(
+            ["disabled"] if index == len(self.highlights) - 1 else ["!disabled"]
         )
 
     def _schedule_preview(self) -> None:
@@ -175,10 +244,7 @@ class WhatsNewPanel:
         )
 
     def advance(self) -> None:
-        if self.index == len(self.highlights) - 1:
-            self.close()
-        else:
-            self.render(self.index + 1)
+        self.render(self.index + 1)
 
     def resize(self, event: tk.Event | None = None) -> None:
         if event is not None and event.widget is not self.parent:

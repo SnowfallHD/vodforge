@@ -38,8 +38,13 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                         <= panel.frame.winfo_rooty() + panel.frame.winfo_height()
                     )
                 assert panel.preview.winfo_height() > 100
-        assert panel.next.cget("text") == "Done"
-        panel.advance()
+        assert panel.next.winfo_width() == panel.next.winfo_height() == 34
+        assert panel.next.instate(["disabled"])
+        assert panel.back.winfo_width() == panel.back.winfo_height() == 34
+        panel.frame.focus_force()
+        root.update()
+        panel.frame.event_generate("<Escape>")
+        root.update()
         panel.close()
         assert dismissed == [True]
         assert root.grab_current() is None
