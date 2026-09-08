@@ -42,10 +42,19 @@ foreach ($kind in @('installed','portable')) {
     if ($opens.Count -ne 1) { throw 'Expected exactly one welcome request' }
     if (-not $Extended -and (($case[0] -eq 'US') -eq ($prompts.Count -gt 0))) { throw 'Wrong permission prompt state' }
     if ($Extended -and $prompts.Count -ne 1) { throw 'Unknown region must ask permission' }
+    if ($prompts.Count -gt 0) {
+      $surface = @($receipt.events | Where-Object kind -eq 'permission_surface')
+      if ($surface.Count -ne 1 -or -not $surface[0].centered -or $surface[0].native_backdrop_bands -ne 4) { throw 'Incomplete native consent presentation' }
+    }
+    if ($case[1] -ne 'none' -and @($receipt.events | Where-Object kind -eq 'permission_choice').Count -ne 1) { throw 'Consent choice was not exercised' }
     $receipts += @{kind=$kind;country=$case[0];journey=$receipt;executable_sha256=$build.executable_sha256}
     if ($Extended -and $case[0] -eq 'US') {
       Copy-Item (Join-Path $env:VODFORGE_QA_PROFILE 'startup-journey.json') (Join-Path $env:VODFORGE_QA_PROFILE 'offline-startup.json')
       Remove-Item Env:HTTPS_PROXY,Env:HTTP_PROXY
+      $backoff = Get-Content (Join-Path $env:VODFORGE_QA_PROFILE 'telemetry-backoff.json') -Raw | ConvertFrom-Json
+      $remaining = [Math]::Ceiling($backoff.until - [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) + 1
+      if ($remaining -gt 120) { throw 'Unexpectedly long offline retry backoff' }
+      if ($remaining -gt 0) { Start-Sleep -Seconds $remaining }
       $process = Start-Process $exe -ArgumentList @('--analytics-qa','none','0','18') -PassThru
       if (-not $process.WaitForExit(45000)) { Stop-Process -Id $process.Id -Force; throw 'Offline recovery timed out' }
       $retry = Get-Content (Join-Path $env:VODFORGE_QA_PROFILE 'startup-journey.json') -Raw | ConvertFrom-Json

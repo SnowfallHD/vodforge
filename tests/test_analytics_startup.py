@@ -25,6 +25,7 @@ class Variable:
 
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "request_window_foreground", lambda root: root.lift())
     monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     opened, issued = [], []
     monkeypatch.setattr(

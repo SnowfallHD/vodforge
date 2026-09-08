@@ -17,6 +17,7 @@ from .cloud_funnel import (
     mark_attribution_claim_opened,
 )
 from .install_attribution import cancel_claim, issue_claim
+from .platform_services import request_window_foreground
 from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
 
 
@@ -198,7 +199,7 @@ class AnalyticsStartup:
         if self.closed or panel is None or panel.closed:
             return
         try:
-            self.root.winfo_toplevel().lift()
+            request_window_foreground(self.root.winfo_toplevel())
             panel.frame.focus_force()
         except tk.TclError:
             pass

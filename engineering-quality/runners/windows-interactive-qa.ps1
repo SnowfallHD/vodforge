@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$SourceCommit,
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{32}$')][string]$JobId,
-  [ValidateSet('native','playback','portable-playback','installed-playback','browser','app','preview','preview-extended')][string]$Suite = 'native',
+  [ValidateSet('native','playback','portable-playback','installed-playback','browser','app','preview','preview-extended','preview-visual')][string]$Suite = 'native',
   [switch]$Worker
 )
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ if (-not $Worker) {
   $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -SourceCommit $SourceCommit -JobId $JobId -Suite $Suite -Worker"
   $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
   $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
   Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings | Out-Null
   Start-ScheduledTask -TaskName $taskName
   @{task=$taskName;run=$run} | ConvertTo-Json -Compress
@@ -34,7 +34,13 @@ try {
   $env:TMP = $env:TEMP
   New-Item -ItemType Directory -Path $env:TEMP | Out-Null
   Set-Location $source
-  if ($Suite -in @('preview','preview-extended')) {
+  if ($Suite -eq 'preview-visual') {
+    & .\.venv\Scripts\python.exe (Join-Path $root 'tools\windows-consent-visual.py') (Join-Path $root 'installed\VODForge\VODForge.exe') $run *> (Join-Path $run 'visual.log')
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged consent visual capture failed' }
+    $visual = Get-Content (Join-Path $run 'visual.json') -Raw | ConvertFrom-Json
+    if (-not $visual.passed) { throw $visual.error }
+    $result.passed = $true
+  } elseif ($Suite -in @('preview','preview-extended')) {
     & (Join-Path $root 'tools\windows-preview-journey.ps1') -SourceCommit $SourceCommit -RunDirectory $run -Extended:($Suite -eq 'preview-extended')
     # PowerShell scripts signal failure by throwing; LASTEXITCODE belongs to
     # native executables and may be null/stale here.

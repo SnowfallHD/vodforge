@@ -18,6 +18,12 @@ if(new URL(url).origin!==origin) throw Error('Only the fixed preview origin is a
     if(mode==='denied') localStorage.setItem('vodforge-analytics-consent-v1','denied');
    },mode);
    await context.route('**/*',r=>new URL(r.request().url()).origin===origin ? r.continue() : r.abort());
+   if(mode==='allowed') {
+    const landing=await context.newPage();
+    await landing.goto(origin+'/?ref=qa-preview-matrix');
+    await landing.waitForFunction(()=>localStorage.getItem('vodforge-attribution-source-v1'));
+    await landing.close(); // Attribution must survive closing the download tab.
+   }
    const page=await context.newPage(); let consumes=0, payload;
    page.on('request',r=>{if(r.url().endsWith('/claim/consume')) {consumes++; payload=r.postDataJSON();}});
    const delivered = mode==='allowed' ? page.waitForResponse(r=>r.url().endsWith('/claim/consume')&&r.status()===200,{timeout:20000}) : null;
@@ -25,10 +31,11 @@ if(new URL(url).origin!==origin) throw Error('Only the fixed preview origin is a
    if(mode==='allowed') {
     await delivered;
     if(consumes!==1) throw Error('Expected one consume');
+    if(payload.source!=='qa-preview-matrix') throw Error('Campaign source did not survive tab closure');
     const same=await context.request.post(origin+'/api/attribution/claim/consume',{data:payload});
     const other=await context.request.post(origin+'/api/attribution/claim/consume',{data:{...payload,browser_id:require('node:crypto').randomUUID()}});
     if(same.status()!==200||other.status()!==404) throw Error('Replay isolation failed');
-    results.cases.push({mode,consumes,same_identity_retry:same.status(),different_identity_replay:other.status()});
+    results.cases.push({mode,consumes,source:payload.source,download_tab_closed:true,same_identity_retry:same.status(),different_identity_replay:other.status()});
    } else {
     await page.waitForTimeout(2500);
     if(consumes!==0) throw Error('Denied browser attempted attribution');

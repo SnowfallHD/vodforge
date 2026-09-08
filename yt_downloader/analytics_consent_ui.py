@@ -80,7 +80,9 @@ class AnalyticsConsentPanel:
                 )
                 icon.create_line([12, 17, 16, 21, 24, 13], **stroke)
             elif index == 1:
-                icon.create_line([3, 19, 10, 19, 14, 8, 21, 29, 26, 17, 33, 17], **stroke)
+                icon.create_line(
+                    [3, 19, 10, 19, 14, 8, 21, 29, 26, 17, 33, 17], **stroke
+                )
             elif index == 2:
                 icon.create_line(6, 29, 6, 22, **stroke)
                 icon.create_line(16, 29, 16, 16, **stroke)

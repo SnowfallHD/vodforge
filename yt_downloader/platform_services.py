@@ -27,6 +27,30 @@ def is_macos(platform_name: str | None = None) -> bool:
     return value == "darwin"
 
 
+def request_window_foreground(root: Any) -> bool:
+    """Request activation once, respecting OS foreground-lock policy.
+
+    Tk keyboard focus alone does not activate a Windows application. Never
+    attach input queues, synthesize input, or leave the window always-on-top.
+    """
+    root.lift()
+    if not is_windows():
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        user32.SetForegroundWindow.restype = wintypes.BOOL
+        hwnd = user32.GetAncestor(root.winfo_id(), 2)  # GA_ROOT: Tk's native wrapper
+        return bool(hwnd and user32.SetForegroundWindow(hwnd))
+    except (AttributeError, OSError):
+        return False
+
+
 def install_native_quit_handler(
     root: Any,
     callback: Callable[[], None],

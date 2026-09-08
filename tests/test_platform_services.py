@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,6 +15,36 @@ from yt_downloader.platform_services import (
     open_path,
     output_directory_failure_guidance,
 )
+
+
+@pytest.mark.parametrize("accepted", [False, True])
+def test_native_foreground_targets_wrapper_once_and_respects_refusal(
+    monkeypatch, accepted
+):
+    import ctypes
+
+    calls = []
+
+    def ancestor(hwnd, flag):
+        calls.append(("ancestor", hwnd, flag))
+        return 12345
+
+    def foreground(hwnd):
+        calls.append(("foreground", hwnd))
+        return accepted
+
+    monkeypatch.setattr(platform_module, "is_windows", lambda: True)
+    monkeypatch.setattr(
+        ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            GetAncestor=ancestor, SetForegroundWindow=foreground
+        ),
+        raising=False,
+    )
+    root = SimpleNamespace(lift=lambda: calls.append("lift"), winfo_id=lambda: 42)
+    assert platform_module.request_window_foreground(root) is accepted
+    assert calls == ["lift", ("ancestor", 42, 2), ("foreground", 12345)]
 
 
 def test_native_quit_routes_only_macos_application_menu_through_callback():
