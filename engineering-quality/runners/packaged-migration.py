@@ -22,6 +22,11 @@ def main():
     parser.add_argument("exe", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("key", type=Path)
+    parser.add_argument(
+        "--fresh",
+        action="store_true",
+        help="Use empty profiles to guard new-user behavior",
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     key = args.key.read_text().strip()
@@ -74,6 +79,12 @@ def main():
                 },
             )
             env = dict(os.environ)
+            if args.fresh:
+                # These are only the fixture files created immediately above in
+                # a newly allocated directory, never an existing user profile.
+                (profile / "installation.json").unlink()
+                (profile / "settings.json").unlink()
+                write(profile / "before.json", {"fresh_profile": True})
             env.pop("VODFORGE_DISABLE_TELEMETRY", None)
             env.update(
                 VODFORGE_QA_ACCESS_KEY=key,
@@ -115,7 +126,8 @@ def main():
                 }
                 write(profile / f"after-{launch}.json", snapshot)
                 events = journey["events"]
-                assert not any(e["kind"] == "browser_requested" for e in events)
+                opens = [e for e in events if e["kind"] == "browser_requested"]
+                assert len(opens) == int(args.fresh and launch == 0), opens
                 prompts = [
                     e for e in events if e["kind"] == "permission_prompt_visible"
                 ]
@@ -123,15 +135,23 @@ def main():
                     name,
                     prompts,
                 )
+                if args.fresh and launch == 0:
+                    install_id = state["install_id"]
                 assert state["install_id"] == install_id
-                assert state["attribution_claim_token"] is None
+                if args.fresh and name != "unknown":
+                    assert (
+                        state["attribution_claim_token"]
+                        or state["attribution_claim_confirmed"]
+                    ), "Permitted fresh install did not issue a claim"
+                else:
+                    assert state["attribution_claim_token"] is None
                 onboarding = state["onboarding"]
                 assert (
                     onboarding["region_checked"]
                     and onboarding["region_policy_version"] == 1
                 )
                 assert (
-                    not onboarding["browser_eligible"]
+                    onboarding["browser_eligible"] == args.fresh
                     and onboarding["welcome_attempted"]
                 )
                 expected = {
@@ -163,7 +183,9 @@ def main():
                 "expected": 6,
                 "passed": len(results) == 6,
                 "executable_sha256": hashlib.sha256(args.exe.read_bytes()).hexdigest(),
-                "scope": "packaged startup over v0.1.8 schema fixtures; not updater UI",
+                "scope": "fresh packaged startup"
+                if args.fresh
+                else "packaged startup over v0.1.8 schema fixtures; not updater UI",
             },
         )
 
