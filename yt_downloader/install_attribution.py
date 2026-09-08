@@ -242,6 +242,13 @@ class InstallationAttributionOwner:
         if current.attribution_claim_confirmed:
             return current
 
+        onboarding = current.onboarding or {}
+        if onboarding.get("storage_version") == 1:
+            # Migrated existing users may retry telemetry delivery, but must
+            # never enroll a fresh browser claim as a side effect of that retry.
+            if not onboarding.get("browser_eligible"):
+                return current
+
         claim_token = current.attribution_claim_token
         if claim_token is None:
             if current.attribution_claim_opened:

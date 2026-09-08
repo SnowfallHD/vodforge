@@ -13,6 +13,7 @@ from yt_downloader.cloud_funnel import (
     load_or_create_installation_state,
     mark_attribution_claim_confirmed,
     mark_first_launch_confirmed,
+    update_onboarding,
 )
 from yt_downloader.install_attribution import (
     ATTRIBUTION_CLAIM_ISSUE_ENDPOINT,
@@ -26,6 +27,27 @@ from yt_downloader.install_attribution import (
 INSTALL_ID = "f9c775b1-4c5a-47c4-87bb-81fe51881e54"
 CLAIM_TOKEN = "A" * 43
 CLAIM_URL = f"https://getvodforge.com/claim#token={CLAIM_TOKEN}"
+
+
+def test_existing_profile_delivery_never_issues_browser_claim(tmp_path):
+    path = tmp_path / "installation.json"
+    state = update_onboarding(path, storage_version=1, browser_eligible=False)
+    delivered = []
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Existing profile must not create a browser handoff")
+
+    owner = InstallationAttributionOwner(
+        path,
+        first_party_recorder=lambda *a, **kw: delivered.append(True) or True,
+        heycatch_recorder=lambda *a, **kw: True,
+        claim_issuer=forbidden,
+        browser_opener=forbidden,
+    )
+    result = owner.deliver_first_launch(state, app_version="0.1.8")
+    assert delivered == [True]
+    assert result.first_launch_confirmed
+    assert result.attribution_claim_token is None
 
 
 @pytest.fixture(autouse=True)
