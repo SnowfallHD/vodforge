@@ -12,11 +12,15 @@ import time
 import tkinter as tk
 import webbrowser
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .telemetry_policy import preview_telemetry_allowed
 
+if TYPE_CHECKING:
+    from .app import DownloaderApp
 
-def observe_startup(app: tk.Tk, arguments: list[str]) -> None:
+
+def observe_startup(app: DownloaderApp, arguments: list[str]) -> None:
     if not preview_telemetry_allowed():
         raise ValueError("Startup observation requires an isolated preview artifact")
     if len(arguments) != 3 or arguments[0] not in {"allow", "deny", "none"}:
