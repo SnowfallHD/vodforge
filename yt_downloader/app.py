@@ -303,6 +303,7 @@ from .updates import (
     verify_windows_authenticode,
 )
 from .version import __version__
+from .whats_new import WhatsNewOwner
 
 # Compatibility re-exports keep the long-standing ``yt_downloader.app``
 # helper surface stable while implementation ownership moves to focused UI
@@ -4902,6 +4903,20 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.anonymous_usage_analytics_var,
             self._analytics_permission_changed,
         )
+        self.whats_new_seen_var = tk.StringVar(
+            value=str(saved_settings.get("whats_new_seen", ""))[:128]
+        )
+        self.whats_new = WhatsNewOwner(
+            self,
+            self.whats_new_seen_var,
+            lambda: (
+                (
+                    not self.analytics_startup.attempts
+                    or self.analytics_startup.permission_presented
+                )
+                and self.active_job is None
+            ),
+        )
 
         self.url_var = tk.StringVar()
         self.url_list_file_var = tk.StringVar(value="No URL list loaded")
@@ -5111,6 +5126,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._request_application_close)
         install_native_quit_handler(self, self._request_application_close)
         if bool(getattr(sys, "frozen", False)):
+            self.whats_new.start()
             self._schedule_auto_update_check(AUTO_UPDATE_INITIAL_DELAY_MS)
 
     def _apply_theme(self) -> None:
@@ -12118,12 +12134,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "appearance_theme": self.appearance_theme_var,
             "custom_accent": self.custom_accent_var,
             "anonymous_usage_analytics": self.anonymous_usage_analytics_var,
+            "whats_new_seen": self.whats_new_seen_var,
         }
 
     def _request_application_close(self) -> None:
         if self._closing:
             return
         self._closing = True
+        whats_new = self.__dict__.get("whats_new")
+        if whats_new is not None:
+            whats_new.close()
         self._media_player_launch_generation = (
             int(self.__dict__.get("_media_player_launch_generation", 0)) + 1
         )

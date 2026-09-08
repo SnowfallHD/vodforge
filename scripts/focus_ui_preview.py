@@ -378,6 +378,15 @@ def main() -> None:
     )
     parser.add_argument("--settings", action="store_true")
     parser.add_argument("--consent", action="store_true")
+    parser.add_argument("--whats-new", action="store_true")
+    parser.add_argument(
+        "--capture", type=Path, help="Save an owned macOS review window and exit"
+    )
+    parser.add_argument(
+        "--public-fixture",
+        action="store_true",
+        help="Use a generic output path in feature artwork",
+    )
     parser.add_argument("--tooltip", choices=("batch", "playlists", "cookies", "tags"))
     parser.add_argument("--run-actions", action="store_true")
     parser.add_argument("--all-runs", action="store_true")
@@ -688,9 +697,13 @@ def main() -> None:
                 app._display_selected_metadata(int(selection[0]))
 
     apply_preview_state()
+    if args.public_fixture:
+        app.output_var.set("/Downloads")
     app.after(450, apply_preview_state)
     if args.consent:
         app.after(600, app.analytics_startup._prompt)
+    if args.whats_new:
+        app.after(600, app.whats_new.show)
     if args.settings:
         app.after(300, app._show_focus_settings)
     if args.settings and args.tooltip:
@@ -913,6 +926,40 @@ def main() -> None:
                 )
 
         app.after(950, isolate_review_panel)
+    if args.capture:
+
+        def capture_review() -> None:
+            import os
+            import subprocess
+
+            import Quartz
+
+            windows = Quartz.CGWindowListCopyWindowInfo(
+                Quartz.kCGWindowListOptionOnScreenOnly, 0
+            )
+            owned = [
+                w
+                for w in windows
+                if w.get("kCGWindowOwnerPID") == os.getpid()
+                and w.get("kCGWindowLayer") == 0
+            ]
+            if not owned:
+                raise RuntimeError("No owned visible review window")
+            args.capture.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                [
+                    "/usr/sbin/screencapture",
+                    "-x",
+                    "-o",
+                    "-l",
+                    str(owned[0]["kCGWindowNumber"]),
+                    str(args.capture),
+                ],
+                check=True,
+            )
+            app._request_application_close()
+
+        app.after(2200, capture_review)
     app.mainloop()
 
 

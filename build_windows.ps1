@@ -75,6 +75,7 @@ if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng) -or -not (Test-Path
 }
 $iconArgs = @("--icon", $iconFile)
 $addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets", "--add-data", "$iconAssetDir;assets/icons/lucide")
+$addData += @("--add-data", "assets/whats-new;assets/whats-new")
 $addData += @("--add-data", "THIRD_PARTY_NOTICES.md;.")
 
 # Bundle the transcode tools and the independently pinned libVLC playback runtime.
