@@ -3492,10 +3492,7 @@ def test_custom_popouts_are_positioned_before_they_become_visible():
 
     assert "popup.withdraw()" in settings_init_source
     assert "reveal_toplevel(" in settings_show_source
-    assert (
-        "self.popup.after_idle(self._record_visible_pro)"
-        in settings_show_source
-    )
+    assert "self.popup.after_idle(self._record_visible_pro)" in settings_show_source
     for source in (output_source, selected_source):
         assert "popup.withdraw()" in source
         assert "reveal_toplevel(popup," in source

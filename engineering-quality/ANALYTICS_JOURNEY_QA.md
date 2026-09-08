@@ -1,5 +1,62 @@
 # Analytics journey evidence — 2026-09-07
 
+## Genesis Windows follow-up — 2026-09-08 UTC
+
+Windows 10 Pro x64, console session 1 on desktop-genesis. Source archive
+`d3b631269d4fd9a878531dd93d4b21a53f0398aa`; private executable SHA-256
+`fa07680f492ac12afbfeb4a16b05aff0eef9b1e569854774df71c33c8686c719`.
+Builds, installed candidate and receipts are retained under `E:\VODForgeQA`.
+The build has telemetry disabled and is not a signed public release.
+
+- Native permission/startup tests: 24 passed on Windows; the same 24 passed on
+  macOS. Region transport and browser opening are simulated in these tests.
+- Real installed executable: visible in 0.840s / 0.833s on fresh launch/reopen,
+  both normal exits zero. Its isolated profile created no credential/outbox.
+  The actual screenshot is `build/windows-genesis/installed-app.png`.
+- Real libVLC packaged journeys passed from the build directory, installed EXE,
+  and freshly extracted portable ZIP. They cover play/pause, seek, volume,
+  resize, MP4/MP3 switching and close/reopen. These are backend probes, not
+  complete Forge/download UI journeys or long-duration sync certification.
+- Installer SHA-256:
+  `e4dc41f5045312c17ab56168270a900834ef1f1fdb75032428acd622f828d13f`.
+  Portable ZIP SHA-256:
+  `3c3885d8841a05732a9c82527c0af1d50e19d45d7baa3a13b48d79fd4edf462e`.
+- Actual OS default-browser loopback page loaded in 0.375s. It was not the
+  foreground window when checked. This is one observed outcome, not a promise
+  that Windows will never focus a browser. A background test tab may remain;
+  the probe intentionally does not manipulate unrelated browser tabs.
+- Built site at `vodforge-site` commit `8f82d50` passed all ten browser scenarios
+  in isolated Windows Brave. Real 135.128s expiry run: 13 polls, zero consumes,
+  no polling after expiry. All API/external HTTPS calls were intercepted.
+- Fresh Brave reports GPC=true. It correctly suppressed the initial no-GPC
+  fixture. The shared policy matrix now explicitly sets simulated privacy
+  signals per scenario rather than inheriting browser defaults. Production
+  behavior was not changed. This disproves any expectation that all US visits
+  should link regardless of browser privacy signals.
+- A stale pre-fix static site build was detected and rebuilt before acceptance.
+- FAST passed after correcting test formatting and documenting the fixed-HTTPS
+  cancellation URL at the Bandit callsite. NORMAL ran 29 pass / 2 fail / 1 skip;
+  DEEP ran 30 pass / 2 fail / 1 skip with 19/19 pipeline scenarios passing.
+  DEEP's only failed commands were known complexity debt; its other failure is
+  change-surface debt. Full packaged journey remains skipped, not green.
+
+Evidence is in `build/windows-genesis/` and
+`reports/20260908T042401499849Z-d3b63126-deep/`. These runs include uncommitted
+runner/comment/format changes and are not exact clean release checkpoints.
+Completed disposable scheduled tasks were removed; Kryden was untouched.
+Initial packaging used PyInstaller's default C: cache before the runner was
+corrected to keep future cache/runtime diagnostics on E: as well.
+
+**Still unproven:** one combined packaged first-launch → real browser → deployed
+Worker/D1/HeyCatch journey. Cloudflare D1 environments use separate database
+bindings, not row labels. Current site config has only production DB binding;
+remote database inventory failed with Cloudflare authentication error 10000.
+An isolated test Worker/database plus build-bound test transport is the next
+step. Never enable production collection to bypass this gap. The current
+macOS-specific full-journey recorder does not certify these Windows probes.
+
+## Earlier controlled local verification
+
 Controlled local verification, not a packaged macOS/Windows release signoff.
 Desktop base: `7f5d48e`; website base: `f6b73db`, plus the boundary fix in this checkpoint.
 

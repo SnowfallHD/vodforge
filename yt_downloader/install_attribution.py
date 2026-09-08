@@ -107,7 +107,9 @@ def cancel_claim(claim_token: str) -> None:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=2) as response:
+        # Fixed HTTPS origin/path; the validated capability is JSON body data,
+        # never a caller-controlled URL or scheme.
+        with urllib.request.urlopen(request, timeout=2) as response:  # nosec B310
             response.read(1024)
     except OSError:
         pass

@@ -6,6 +6,12 @@ async function journey(page) {
     const context = await page.context().browser().newContext();
     const requests = [];
     let consumeAttempts = 0;
+    // Policy fixtures must not accidentally inherit Brave's default GPC.
+    // Production privacy signals are never changed; these are isolated contexts.
+    await context.addInitScript(({gpc})=>{
+      Object.defineProperty(navigator,'globalPrivacyControl',{value:gpc});
+      Object.defineProperty(navigator,'doNotTrack',{value:null});
+    }, {gpc:scenario==='gpc'});
     await context.route('https://**', route => route.fulfill({status:204}));
     await context.route('**/api/**', route => {
       const url = route.request().url();
@@ -18,7 +24,6 @@ async function journey(page) {
       }
       return route.fulfill({status:404});
     });
-    if (scenario==='gpc') await context.addInitScript(()=>Object.defineProperty(navigator,'globalPrivacyControl',{value:true}));
     if (scenario==='denied') await context.addInitScript(()=>localStorage.setItem('vodforge-analytics-consent-v1','denied'));
     let tab = await context.newPage();
     // Seed only the original profile; a different browser/profile intentionally
@@ -51,6 +56,10 @@ async function journey(page) {
   }
   for (const late of [true, false]) {
     const context = await page.context().browser().newContext();
+    await context.addInitScript(()=>{
+      Object.defineProperty(navigator,'globalPrivacyControl',{value:false});
+      Object.defineProperty(navigator,'doNotTrack',{value:null});
+    });
     let ready = false, consumed = 0, polls = 0;
     await context.route('https://**', r=>r.fulfill({status:204}));
     await context.route('**/api/analytics/policy', r=>r.fulfill({json:{mode:'default-on'}}));

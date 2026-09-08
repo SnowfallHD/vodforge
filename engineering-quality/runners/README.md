@@ -1,5 +1,32 @@
 # Packaged-app UI driver protocol
 
+## Windows Genesis probes
+
+The `windows-*.ps1` / `windows-*-probe.py` runners use `E:\VODForgeQA` and
+explicit source/run identities. Bootstrap accepts an exact Git archive plus
+SHA-256, builds a telemetry-disabled development executable, and records its
+hash. The installer runner requires authorization to replace the machine's
+existing VODForge registration; it must not be used on an ordinary user's PC.
+Its Inno compiler download must pass Authenticode publisher verification.
+
+`windows-interactive-qa.ps1 -SourceCommit <40hex> -JobId <32hex> -Suite <suite>`
+creates a disposable task in the logged-in interactive session (never session
+0). Suites are `native`, `playback`, `portable-playback`, `installed-playback`,
+`browser`, and `app`. Read `runs/<JobId>/receipt.json`, the suite-specific
+receipt/log, and screenshots before concluding success. Dispatch success is
+not test success. After completion, unregister only that exact task. Preserve
+failed evidence and use a fresh JobId for retries. Do not stop unrelated apps.
+
+Browser matrix scripts need a freshly built site ZIP in
+`artifacts/site-client-current.zip`; they use a separate Brave process/profile,
+intercept external/API traffic, and exercise the built claim-page JavaScript.
+The default-browser probe is separately loopback-only and never reads cookies
+or changes browser configuration. These receipts are **not** interchangeable
+with the strict full-app E2E recorder below. See `ANALYTICS_JOURNEY_QA.md` for
+executed coverage and remaining combined-journey gaps.
+
+## Canonical full-app recorder
+
 `./engineering-quality/run packaged-e2e --candidate <candidate-artifact.json>` freshly extracts the frozen candidate ZIP, then launches the real packaged VODForge application with isolated state, a loopback legal-media origin, and a versioned evidence session. It deliberately does not replace VODForge's UI or worker with test doubles.
 
 Do not drive the app until `session.json` reports `driver_ready: true`. At that point the direct child PID, process group, executable path/hash, full bundle tree, runtime version, environment, state paths, nonce, and app-written startup attestation agree. The window title contains the launch-specific token from `current_launch`.
