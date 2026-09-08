@@ -118,7 +118,7 @@ def test_real_pipeline_activity_is_decorated_losslessly(root, compact):
         text.insert("end", line)
     source = "".join(lines)
     assert text.get("1.0", "end-1c") == source
-    assert len(text.image_names()) == 9  # Four divider/marker pairs plus success.
+    assert len(text.image_names()) == 10  # Every marker uses the same gutter.
     assert text.tag_ranges("log-warning")
     assert text.tag_ranges("log-error")
     text.request(source)
@@ -136,6 +136,30 @@ def test_log_fragment_does_not_create_an_extra_event(root):
     text.insert("end", " downloading")
     assert text.image_names() == images
     assert text.get("1.0", "end-1c") == "Video 1: downloading"
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_activity_wrapping_and_success_share_message_column(root, compact):
+    root.deiconify()
+    root.geometry("420x420")
+    text = ActivityLogText(root, compact=compact, wrap="word")
+    text.pack(fill="both", expand=True)
+    source = "Video saved " + "long path segment " * 8 + "\n[success] Completed\n"
+    text.request(source)
+    root.update()
+    start = text.search("Video", "1.0")
+    # display linestart must be requested explicitly, not logical linestart.
+    continuation = text.index(f"{start} +1 display lines display linestart")
+    done = text.search("Completed", "1.0")
+    assert text.bbox(start)[0] == text.bbox(continuation)[0] == text.bbox(done)[0]
+    icons = [
+        name
+        for name in text.image_names()
+        if text.image_cget(name, "image") != str(text._divider)
+    ]
+    assert len(icons) == 2
+    assert text.bbox(icons[0])[0] == text.bbox(icons[1])[0]
+    assert text.get("1.0", "end-1c") == source
 
 
 def test_appended_event_after_snapshot_starts_a_new_line(root):

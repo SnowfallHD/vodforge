@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import ttk
 from typing import Any
 
@@ -173,8 +174,26 @@ class ActivityLogText(tk.Text):
             super().insert(index, chars, *args)
             return
         # A right-gravity mark preserves order even when inserting at 1.0.
-        self.mark_set("log-insert", index)
+        self.mark_set("log-insert", "end-1c" if index == "end" else index)
         self.mark_gravity("log-insert", "right")
+        indents: dict[str, int] = {}
+
+        def remember_text_start() -> None:
+            line = self.index("log-insert").split(".")[0] + ".0"
+            width = 0
+            font = tkfont.Font(self, font=self.cget("font"))
+            for kind, value, position in self.dump(
+                line, "log-insert", text=True, image=True
+            ):
+                if kind == "image":
+                    width += int(
+                        self.tk.call("image", "width", self.image_cget(value, "image"))
+                    )
+                    width += 2 * int(self.image_cget(value, "padx"))
+                elif "log-hidden" not in self.tag_names(position):
+                    width += font.measure(value)
+            indents[line] = width
+
         start = 0
         for match in _LOG_TOKEN.finditer(chars):
             super().insert("log-insert", chars[start : match.start()])
@@ -193,6 +212,7 @@ class ActivityLogText(tk.Text):
                             padx=12,
                             align="center",
                         )
+                    remember_text_start()
                 if match[3]:
                     tag = (
                         "log-warning" if match[3].upper() == "WARNING:" else "log-error"
@@ -213,6 +233,10 @@ class ActivityLogText(tk.Text):
             ):
                 # Keep original tokens in the selectable document; shared
                 # theme-aware chrome never becomes log or run authority.
+                if self.index("log-insert").endswith(".0"):
+                    self.image_create(
+                        "log-insert", image=self._divider, padx=10, align="center"
+                    )
                 super().insert("log-insert", match[0], "log-hidden")
                 self.image_create(
                     "log-insert",
@@ -220,6 +244,7 @@ class ActivityLogText(tk.Text):
                     padx=12,
                     align="center",
                 )
+                remember_text_start()
             else:
                 tag = "log-time" if match[1] else "log-level"
                 if match[0].strip().lower() == "[warning]":
@@ -233,6 +258,10 @@ class ActivityLogText(tk.Text):
                     )
             start = match.end()
         super().insert("log-insert", chars[start:])
+        for line, width in indents.items():
+            tag = f"log-indent-{width}"
+            self.tag_configure(tag, lmargin2=width)
+            self.tag_add(tag, line, f"{line} lineend +1c")
         self.mark_unset("log-insert")
 
     def delete(self, index1: Any, index2: Any = None) -> None:
