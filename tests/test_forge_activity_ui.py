@@ -53,6 +53,23 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
                 <= root.winfo_rooty() + root.winfo_height()
             )
             assert panel.technical.winfo_height() > 20
+            assert not panel.friendly.winfo_ismapped()
+            assert panel.technical.winfo_height() >= panel.winfo_height() - 2
+        panel.toggle.focus_force()
+        root.update()
+        panel.toggle.event_generate("<Up>")
+        root.update()
+        assert panel.friendly.winfo_ismapped()
+        assert not panel.technical.winfo_ismapped()
+        panel.toggle.event_generate("<Down>")
+        root.update()
+        assert panel.technical.winfo_ismapped()
+        panel.toggle.event_generate("<Button-1>", x=15, y=13)
+        root.update()
+        assert panel.friendly.winfo_ismapped()
+        panel.toggle.event_generate("<B1-Motion>", x=15, y=103)
+        root.update()
+        assert panel.technical.winfo_ismapped()
         assert panel.technical.image_names()
         from yt_downloader.app import DownloaderApp
 

@@ -24,7 +24,7 @@ HIGHLIGHTS = (
         "ui-activity",
         "UI Updates",
         "Follow your download with clear progress stages in Forge. "
-        "Expand Technical details for the full log, or open Activity.",
+        "Switch to Technical details for the full log, or open Activity.",
         "activity.png",
         (0.10, 0.552, 0.43, 0.708),
     ),
@@ -43,6 +43,14 @@ HIGHLIGHTS = (
         "slider keep the focus on your media.",
         "player.png",
         (0.02, 0.65, 0.73, 0.98),
+    ),
+    FeatureHighlight(
+        "activity-mode",
+        "Friendly or technical. Your call.",
+        "Slide up to the happy face for simple progress. Slide down to the "
+        "frowny face for the live technical log. Same run, your preferred detail.",
+        "activity-mode.png",
+        (0.01, 0.19, 0.78, 0.94),
     ),
     FeatureHighlight(
         "local-video",

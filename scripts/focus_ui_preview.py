@@ -379,6 +379,7 @@ def main() -> None:
     parser.add_argument("--settings", action="store_true")
     parser.add_argument("--consent", action="store_true")
     parser.add_argument("--whats-new", action="store_true")
+    parser.add_argument("--whats-new-slide", type=int, default=1)
     parser.add_argument(
         "--capture", type=Path, help="Save an owned macOS review window and exit"
     )
@@ -704,6 +705,14 @@ def main() -> None:
         app.after(600, app.analytics_startup._prompt)
     if args.whats_new:
         app.after(600, app.whats_new.show)
+        app.after(
+            800,
+            lambda: (
+                app.whats_new.panel.render(args.whats_new_slide - 1)
+                if app.whats_new.panel is not None
+                else None
+            ),
+        )
     if args.settings:
         app.after(300, app._show_focus_settings)
     if args.settings and args.tooltip:

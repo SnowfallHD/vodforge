@@ -10,7 +10,72 @@ from typing import Any
 from .activity_ui import ActivityLogText
 from .library_state import library_phase_from_status
 from .ui_theme import THEME
-from .ui_widgets import bind_smooth_vertical_wheel
+from .ui_widgets import ToolTip, bind_smooth_vertical_wheel
+
+
+class ActivityModeSlider(tk.Canvas):
+    """Small two-position control, drawn consistently on both desktop platforms."""
+
+    def __init__(self, parent: tk.Misc, command: Any) -> None:
+        super().__init__(
+            parent,
+            width=30,
+            height=116,
+            bg=THEME["bg"],
+            highlightthickness=0,
+            takefocus=True,
+            cursor="hand2",
+        )
+        self.command = command
+        self.technical = False
+        self.bind("<Button-1>", self._pointer)
+        self.bind("<B1-Motion>", self._pointer)
+        self.bind("<Up>", lambda _e: self._choose(False))
+        self.bind("<Down>", lambda _e: self._choose(True))
+        self.bind("<space>", lambda _e: self._choose(not self.technical))
+        self.bind("<Return>", lambda _e: self._choose(not self.technical))
+        self.bind("<FocusIn>", lambda _e: self.apply_theme())
+        self.bind("<FocusOut>", lambda _e: self.apply_theme())
+        ToolTip(
+            self,
+            "Top: friendly progress\nBottom: technical details\nClick, drag, or use ↑ / ↓",
+        )
+        self.apply_theme()
+
+    def _pointer(self, event: tk.Event) -> str:
+        self.focus_set()
+        return self._choose(event.y >= 58)
+
+    def _choose(self, technical: bool) -> str:
+        self.command(technical)
+        return "break"
+
+    def apply_theme(self) -> None:
+        self.configure(bg=THEME["bg"])
+        self.delete("all")
+        for cy, technical in ((13, False), (103, True)):
+            color = THEME["accent"] if technical == self.technical else THEME["muted"]
+            self.create_oval(5, cy - 10, 25, cy + 10, outline=color, width=1.5)
+            for x in (11, 19):
+                self.create_oval(x - 1, cy - 3, x + 1, cy - 1, fill=color, outline="")
+            self.create_arc(
+                10,
+                cy + (2 if technical else -3),
+                20,
+                cy + (8 if technical else 5),
+                start=0 if technical else 180,
+                extent=180,
+                style="arc",
+                outline=color,
+                width=1.5,
+            )
+        self.create_line(
+            15, 35, 15, 81, fill=THEME["surface_2"], width=5, capstyle="round"
+        )
+        y = 78 if self.technical else 38
+        self.create_oval(9, y - 6, 21, y + 6, fill=THEME["accent"], outline="")
+        if self.focus_get() is self:
+            self.create_rectangle(1, 1, 29, 115, outline=THEME["accent"])
 
 
 def friendly_phase(status: str) -> str | None:
@@ -43,11 +108,11 @@ def friendly_phase(status: str) -> str | None:
 
 
 class ForgeActivityPanel(ttk.Frame):
-    """Own one bounded friendly view and its pinned technical disclosure."""
+    """Switch one full-height viewport between friendly and technical activity."""
 
     def __init__(self, parent: tk.Misc) -> None:
         super().__init__(parent, style="FocusShell.TFrame")
-        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
         self._runs: dict[str, list[str]] = {}
         self._selected = ""
@@ -69,31 +134,31 @@ class ForgeActivityPanel(ttk.Frame):
             "takefocus": 0,
         }
         self.friendly = ActivityLogText(self, **options)
-        self.friendly.grid(row=0, column=0, sticky="nsew")
+        self.friendly.grid(row=0, column=1, sticky="nsew")
         self.technical = ActivityLogText(self, **options)
-        self.toggle = ttk.Button(
-            self,
-            text="▸ Technical details",
-            style="FocusQuiet.TButton",
-            command=self.toggle_details,
-        )
-        self.toggle.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.toggle = ActivityModeSlider(self, self.set_technical)
+        self.toggle.grid(row=0, column=0, padx=(0, 8))
         bind_smooth_vertical_wheel(self.friendly, mode="pixels")
         bind_smooth_vertical_wheel(self.technical, mode="pixels")
 
     def toggle_details(self) -> None:
-        self.expanded = not self.expanded
-        self.rowconfigure(1, weight=2 if self.expanded else 0)
+        self.set_technical(not self.expanded)
+
+    def set_technical(self, enabled: bool) -> None:
+        if self.expanded == enabled:
+            return
+        self.expanded = enabled
         if self.expanded:
-            self.technical.grid(row=1, column=0, sticky="nsew")
+            self.friendly.grid_remove()
+            self.technical.grid(row=0, column=1, sticky="nsew")
             if not self._opened:
                 self._opened = True
                 self.technical.after_idle(lambda: self.technical.see("end"))
         else:
             self.technical.grid_remove()
-        self.toggle.configure(
-            text=("▾" if self.expanded else "▸") + " Technical details"
-        )
+            self.friendly.grid(row=0, column=1, sticky="nsew")
+        self.toggle.technical = enabled
+        self.toggle.apply_theme()
 
     def observe(self, run_id: str, status: str) -> None:
         label = friendly_phase(status)

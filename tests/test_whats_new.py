@@ -24,6 +24,7 @@ def test_ui_updates_lead_without_replacing_existing_features():
         "ui-activity",
         "ui-settings",
         "ui-player",
+        "activity-mode",
         "local-video",
         "library",
         "player",

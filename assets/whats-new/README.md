@@ -7,6 +7,11 @@ observed production worker statuses, not scripted review lines or fabricated tim
 The other captures use sample media and review fixtures, not user media or
 personal paths. They are bundled locally and require no network access.
 The catalog and normalized crops live in `yt_downloader/whats_new.py`.
+`activity-mode.png` is a native component excerpt using observed statuses from
+the same completed run receipt. It illustrates the mode slider and friendly
+stages only, omitting technical-log context and its warning notice. The actual
+app keeps warnings visible; this is a curated feature excerpt, not a complete
+run-log screenshot. The faces are drawn controls, not platform emoji.
 The Activity highlight intentionally crops to five observed friendly phases:
 preparing, downloading, converting, validating, and successful completion. It excludes warnings,
 the page heading, media title, URLs, paths, folder action, and scrollbar without
