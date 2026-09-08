@@ -111,8 +111,9 @@ class WhatsNewPanel:
             ).pack(side="left")
         ttk.Label(
             body,
-            text="What’s new in VODForge",
+            text="What’s new",
             style="FocusTitle.TLabel",
+            foreground="#B9C3D0",
             anchor="center",
         ).grid(row=1, column=0, sticky="ew", pady=(0, 18))
         self.preview = tk.Canvas(
