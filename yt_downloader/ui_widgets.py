@@ -734,7 +734,7 @@ class ActionDialogSurface:
 
     def __init__(
         self,
-        popup: tk.Toplevel,
+        popup: tk.Misc,
         *,
         padx: int = 24,
         pady: int = 22,

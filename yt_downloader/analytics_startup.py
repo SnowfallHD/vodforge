@@ -8,9 +8,9 @@ import time
 import tkinter as tk
 import webbrowser
 from collections.abc import Callable
-from tkinter import ttk
 
 from .analytics_consent import AnalyticsConsentOwner
+from .analytics_consent_ui import AnalyticsConsentPanel
 from .cloud_funnel import (
     load_or_create_installation_state,
     mark_attribution_claim_issued,
@@ -18,7 +18,6 @@ from .cloud_funnel import (
 )
 from .install_attribution import cancel_claim, issue_claim
 from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origin
-from .ui_widgets import ActionDialogSurface
 
 
 class AnalyticsStartup:
@@ -45,6 +44,9 @@ class AnalyticsStartup:
         self.ticket_deadline = time.monotonic() + 120
         self.authorizing = threading.Lock()
         self.closed = False
+        self.welcome_finished = threading.Event()
+        self.welcome_opened = False
+        self.consent_focus_requested = False
         initial = load_or_create_installation_state(
             owner.path.parent / "installation.json"
         )
@@ -114,9 +116,11 @@ class AnalyticsStartup:
                 return
             mark_attribution_claim_opened(path, state.install_id)
             url = f"{telemetry_site_origin()}/claim/#ticket={self.ticket}"
-            webbrowser.open(url, new=2, autoraise=False)
+            self.welcome_opened = bool(webbrowser.open(url, new=2, autoraise=False))
         except Exception:  # noqa: BLE001 - browser adapters differ; welcome is best effort
             return
+        finally:
+            self.welcome_finished.set()
 
     def _authorize_ticket(self) -> None:
         if not self.authorizing.acquire(blocking=False):
@@ -166,37 +170,35 @@ class AnalyticsStartup:
             self._prompt()
 
     def _prompt(self) -> None:
-        popup = tk.Toplevel(self.root)
-        popup.title("Help improve VODForge?")
-        popup.resizable(False, False)
-        surface = ActionDialogSurface(popup)
-        body = surface.body
-        ttk.Label(body, text="Help improve VODForge?", style="FocusTitle.TLabel").pack(
-            anchor="w"
+        self.permission_panel = AnalyticsConsentPanel(
+            self.root,
+            self.variable.set,
+            lambda: webbrowser.open(f"{telemetry_site_origin()}/privacy/"),
         )
-        ttk.Label(
-            body,
-            text="Share anonymous analytics about installations, app versions, feature use, and errors. Your downloads, URLs, filenames, and personal content aren’t included.",
-            wraplength=420,
-        ).pack(anchor="w", pady=16)
-        ttk.Label(body, text="You can change this anytime in Settings.").pack(
-            anchor="w"
-        )
-        actions = surface.footer
+        self.root.after(300, self._restore_consent_focus)
 
-        def choose(enabled: bool) -> None:
-            self.variable.set(enabled)
-            popup.destroy()
+    def _restore_consent_focus(self, remaining: int = 15) -> None:
+        """One bounded focus request after browser handoff, never a focus loop."""
+        panel = getattr(self, "permission_panel", None)
+        if self.closed or self.consent_focus_requested or panel is None or panel.closed:
+            return
+        if not self.welcome_finished.is_set():
+            if remaining > 0:
+                self.root.after(100, lambda: self._restore_consent_focus(remaining - 1))
+            return
+        self.consent_focus_requested = True
+        if not self.welcome_opened:
+            return
+        # Browser adapters return before the new tab necessarily becomes visible.
+        # Give that handoff one short grace period, then request focus exactly once.
+        self.root.after(400, self._focus_pending_consent)
 
-        popup.protocol("WM_DELETE_WINDOW", lambda: choose(False))
-        ttk.Button(actions, text="Not now", command=lambda: choose(False)).pack(
-            side="left"
-        )
-        ttk.Button(actions, text="Allow analytics", command=lambda: choose(True)).pack(
-            side="right"
-        )
-        ttk.Button(
-            body,
-            text="Privacy details",
-            command=lambda: webbrowser.open("https://getvodforge.com/privacy/"),
-        ).pack(anchor="w", pady=(8, 0))
+    def _focus_pending_consent(self) -> None:
+        panel = getattr(self, "permission_panel", None)
+        if self.closed or panel is None or panel.closed:
+            return
+        try:
+            self.root.winfo_toplevel().lift()
+            panel.frame.focus_force()
+        except tk.TclError:
+            pass

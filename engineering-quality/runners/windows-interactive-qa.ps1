@@ -1,7 +1,7 @@
 param(
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{40}$')][string]$SourceCommit,
   [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9]{32}$')][string]$JobId,
-  [ValidateSet('native','playback','portable-playback','installed-playback','browser','app')][string]$Suite = 'native',
+  [ValidateSet('native','playback','portable-playback','installed-playback','browser','app','preview','preview-extended')][string]$Suite = 'native',
   [switch]$Worker
 )
 $ErrorActionPreference = 'Stop'
@@ -34,7 +34,15 @@ try {
   $env:TMP = $env:TEMP
   New-Item -ItemType Directory -Path $env:TEMP | Out-Null
   Set-Location $source
-  if ($Suite -in @('playback','portable-playback','installed-playback')) {
+  if ($Suite -in @('preview','preview-extended')) {
+    & (Join-Path $root 'tools\windows-preview-journey.ps1') -SourceCommit $SourceCommit -RunDirectory $run -Extended:($Suite -eq 'preview-extended')
+    # PowerShell scripts signal failure by throwing; LASTEXITCODE belongs to
+    # native executables and may be null/stale here.
+    $matrix = Get-Content (Join-Path $run 'preview-matrix.json') -Raw | ConvertFrom-Json
+    $expected = if ($Suite -eq 'preview-extended') {4} else {8}
+    if (@($matrix).Count -ne $expected) { throw "Incomplete preview journey receipt: expected $expected, found $(@($matrix).Count)" }
+    $result.passed = $true
+  } elseif ($Suite -in @('playback','portable-playback','installed-playback')) {
     $env:LOCALAPPDATA = Join-Path $run 'local-app-data'
     & .\.venv\Scripts\python.exe scripts/generate_playback_fixtures.py --ffmpeg vendor/ffmpeg/bin/ffmpeg.exe --output (Join-Path $run 'fixtures') *> (Join-Path $run 'fixtures.log')
     if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed' }

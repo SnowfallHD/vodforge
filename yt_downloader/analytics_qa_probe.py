@@ -38,7 +38,11 @@ def observe_startup(app: tk.Tk, arguments: list[str]) -> None:
     def record(kind: str, **values: object) -> None:
         with lock:
             events.append(
-                {"kind": kind, "seconds": round(time.monotonic() - started, 3), **values}
+                {
+                    "kind": kind,
+                    "seconds": round(time.monotonic() - started, 3),
+                    **values,
+                }
             )
             temporary = receipt.with_suffix(".tmp")
             temporary.write_text(
@@ -65,13 +69,40 @@ def observe_startup(app: tk.Tk, arguments: list[str]) -> None:
                 continue
             label = str(widget.cget("text"))
             if (
-                label == "Allow analytics"
+                label == "Share analytics"
                 and widget.winfo_ismapped()
                 and not prompt_seen
             ):
                 prompt_seen = True
                 record("permission_prompt_visible")
-            target = "Allow analytics" if choice == "allow" else "Not now"
+                panel = app.analytics_startup.permission_panel
+                record(
+                    "permission_surface",
+                    native_backdrop_bands=len(panel.backdrop.views),
+                    centered=(
+                        abs(
+                            panel.frame.winfo_x()
+                            + panel.frame.winfo_width() / 2
+                            - app.winfo_width() / 2
+                        )
+                        <= 2
+                        and abs(
+                            panel.frame.winfo_y()
+                            + panel.frame.winfo_height() / 2
+                            - app.winfo_height() / 2
+                        )
+                        <= 2
+                    ),
+                )
+                app.after(
+                    1200,
+                    lambda: record(
+                        "permission_focus_observed",
+                        focused=app.focus_displayof() is not None,
+                        requested=app.analytics_startup.consent_focus_requested,
+                    ),
+                )
+            target = "Share analytics" if choice == "allow" else "Not now"
             if (
                 choice != "none"
                 and not chosen

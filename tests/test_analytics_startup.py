@@ -28,7 +28,9 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
     opened, issued = [], []
     monkeypatch.setattr(
-        module.webbrowser, "open", lambda url, **kwargs: opened.append((url, kwargs))
+        module.webbrowser,
+        "open",
+        lambda url, **kwargs: opened.append((url, kwargs)) or True,
     )
     monkeypatch.setattr(
         module, "issue_claim", lambda iid, token: issued.append((iid, token)) or True
@@ -43,6 +45,58 @@ def setup(tmp_path, monkeypatch):
         lambda _enabled: None,
     )
     return startup, owner, opened, issued
+
+
+def test_focus_handoff_is_once_and_only_for_pending_consent(setup):
+    startup, _, _, _ = setup
+    calls = []
+    startup.root = SimpleNamespace(
+        winfo_toplevel=lambda: SimpleNamespace(lift=lambda: calls.append("lift")),
+        after=lambda _delay, callback: callback(),
+    )
+    startup.permission_panel = SimpleNamespace(
+        closed=False, frame=SimpleNamespace(focus_force=lambda: calls.append("focus"))
+    )
+    startup.welcome_finished.set()
+    startup.welcome_opened = True
+    startup._restore_consent_focus()
+    startup._restore_consent_focus()
+    assert calls == ["lift", "focus"]
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_focus_handoff_rechecks_consent_after_browser_grace(setup, closed):
+    startup, _, _, _ = setup
+    pending, calls = [], []
+    startup.root = SimpleNamespace(
+        after=lambda delay, callback: pending.append((delay, callback)),
+        winfo_toplevel=lambda: SimpleNamespace(lift=lambda: calls.append("lift")),
+    )
+    startup.permission_panel = SimpleNamespace(
+        closed=False, frame=SimpleNamespace(focus_force=lambda: calls.append("focus"))
+    )
+    startup.welcome_finished.set()
+    startup.welcome_opened = True
+    startup._restore_consent_focus()
+    startup._restore_consent_focus()
+    assert len(pending) == 1 and pending[0][0] == 400
+    startup.permission_panel.closed = closed
+    pending[0][1]()
+    assert calls == ([] if closed else ["lift", "focus"])
+
+
+def test_failed_browser_handoff_does_not_request_focus(setup):
+    startup, _, _, _ = setup
+    pending = []
+    startup.root = SimpleNamespace(after=lambda *args: pending.append(args))
+    startup.permission_panel = SimpleNamespace(closed=False)
+    startup.welcome_finished.set()
+    startup._restore_consent_focus()
+    assert pending == []
+    startup.consent_focus_requested = False
+    startup.permission_panel.closed = True
+    startup._restore_consent_focus()
+    assert pending == []
 
 
 @pytest.mark.parametrize("mode", ["default-on", "opt-in", "unknown"])

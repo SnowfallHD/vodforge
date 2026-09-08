@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
-from PIL import Image, ImageDraw, ImageFont, ImageTk
+from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageTk
 
 from .ui_theme import THEME, theme_palette_snapshot
 
@@ -90,6 +90,10 @@ class ProductChromeOwner:
         snapshot = theme_palette_snapshot()
         if self._committed == snapshot:
             return
+        accent_hover = "#" + "".join(
+            f"{round(channel + (255 - channel) * 0.22):02x}"
+            for channel in ImageColor.getrgb(THEME["accent"])
+        )
         roles = {
             "button": (THEME["surface_2"], THEME["border"]),
             "hover": (THEME["border"], THEME["muted"]),
@@ -97,7 +101,7 @@ class ProductChromeOwner:
             "focus": (THEME["surface_2"], THEME["accent"]),
             "disabled": (THEME["panel"], THEME["border"]),
             "accent": (THEME["accent"], THEME["accent"]),
-            "accent_hover": (THEME["accent"], THEME["accent"]),
+            "accent_hover": (accent_hover, accent_hover),
             "field": (THEME["surface"], THEME["border"]),
             "field_focus": (THEME["surface"], THEME["accent"]),
             "transport": (THEME["bg"], THEME["accent"]),

@@ -377,6 +377,7 @@ def main() -> None:
         "--cookie-browser", choices=COOKIE_BROWSER_OPTIONS, default="Firefox"
     )
     parser.add_argument("--settings", action="store_true")
+    parser.add_argument("--consent", action="store_true")
     parser.add_argument("--tooltip", choices=("batch", "playlists", "cookies", "tags"))
     parser.add_argument("--run-actions", action="store_true")
     parser.add_argument("--all-runs", action="store_true")
@@ -688,6 +689,8 @@ def main() -> None:
 
     apply_preview_state()
     app.after(450, apply_preview_state)
+    if args.consent:
+        app.after(600, app.analytics_startup._prompt)
     if args.settings:
         app.after(300, app._show_focus_settings)
     if args.settings and args.tooltip:
