@@ -26,7 +26,7 @@ class LibrarySearchField(tk.Frame):
             bd=0,
             highlightthickness=1,
             highlightbackground=THEME["border"],
-            highlightcolor=THEME["accent"],
+            highlightcolor=THEME["border"],
         )
         self.variable = variable
         self._regular_width = max(10, int(width))

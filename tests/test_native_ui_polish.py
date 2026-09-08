@@ -30,6 +30,32 @@ def root():
     window.destroy()
 
 
+def test_shared_fields_do_not_draw_focus_rings(root):
+    """Settings, search, notes and entries share the ring-free chrome contract."""
+    from yt_downloader.ui_chrome import RoundedFieldBorder
+    from yt_downloader.ui_theme import THEME
+
+    root.deiconify()
+    field = tk.Frame(root, width=220, height=40)
+    field.pack()
+    root.update()
+    chrome = RoundedFieldBorder(field)
+    chrome.request(False)
+    before = chrome._committed
+    image_before = chrome._image
+    chrome.request(True)
+    assert chrome._committed == before
+    assert chrome._image is image_before
+    styles = ttk.Style(root)
+    for name in ("TEntry", "TButton", "FocusQuiet.TButton"):
+        for option in ("bordercolor", "lightcolor", "darkcolor"):
+            assert styles.lookup(name, option, ("focus",)) != THEME["accent"]
+    owner = root._product_chrome_owner
+    assert root.tk.call(str(owner.images["field"]), "get", 1, 20) == root.tk.call(
+        str(owner.images["field_focus"]), "get", 1, 20
+    )
+
+
 @pytest.mark.parametrize("geometry", ["700x540", "820x720"])
 def test_settings_pro_is_compact_visible_and_seen_only_when_shown(root, geometry):
     from yt_downloader.focus_settings import FocusSettingsDialog

@@ -71,7 +71,9 @@ class _ArrowButton(tk.Canvas):
         self.itemconfigure(
             self.circle,
             fill=THEME["surface_2"] if active else THEME["bg"],
-            outline=THEME["accent"] if active else THEME["surface_2"],
+            outline=THEME["accent"]
+            if self.hover and not self.disabled
+            else THEME["surface_2"],
         )
         self.itemconfigure(
             self.arrow, fill=THEME["surface_2"] if self.disabled else THEME["text"]

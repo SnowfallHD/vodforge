@@ -62,7 +62,7 @@ class RoundedFieldBorder:
         self.focused, self.hovered = focused, hovered
         width, height = self.field.winfo_width(), self.field.winfo_height()
         fill = THEME["surface_2"] if hovered else THEME["surface"]
-        outline = THEME["accent"] if focused else THEME["border"]
+        outline = THEME["border"]
         snapshot = (width, height, fill, outline, THEME["bg"])
         if snapshot == self._committed or width < 2 or height < 2:
             return
@@ -103,7 +103,7 @@ class ProductChromeOwner:
             "accent": (THEME["accent"], THEME["accent"]),
             "accent_hover": (accent_hover, accent_hover),
             "field": (THEME["surface"], THEME["border"]),
-            "field_focus": (THEME["surface"], THEME["accent"]),
+            "field_focus": (THEME["surface"], THEME["border"]),
             "transport": (THEME["bg"], THEME["accent"]),
             "transport_hover": (THEME["surface_2"], THEME["accent"]),
         }

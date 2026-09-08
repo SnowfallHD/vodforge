@@ -74,9 +74,9 @@ def apply_product_styles(root: tk.Tk) -> None:
     )
     style.map(
         "TEntry",
-        bordercolor=[("focus", THEME["accent"])],
-        lightcolor=[("focus", THEME["accent"])],
-        darkcolor=[("focus", THEME["accent"])],
+        bordercolor=[("focus", THEME["surface"])],
+        lightcolor=[("focus", THEME["surface"])],
+        darkcolor=[("focus", THEME["surface"])],
     )
     style.configure(
         "TCombobox",
@@ -133,9 +133,9 @@ def apply_product_styles(root: tk.Tk) -> None:
             ("disabled", THEME["panel"]),
         ],
         foreground=[("disabled", THEME["subtle"])],
-        bordercolor=[("focus", THEME["accent"])],
-        lightcolor=[("focus", THEME["accent"])],
-        darkcolor=[("focus", THEME["accent"])],
+        bordercolor=[("focus", THEME["border"])],
+        lightcolor=[("focus", THEME["border"])],
+        darkcolor=[("focus", THEME["border"])],
     )
     style.configure(
         "Accent.TButton",
@@ -336,9 +336,9 @@ def apply_product_styles(root: tk.Tk) -> None:
         "FocusQuiet.TButton",
         background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])],
         foreground=[("active", THEME["text"])],
-        bordercolor=[("focus", THEME["accent"])],
-        lightcolor=[("focus", THEME["accent"])],
-        darkcolor=[("focus", THEME["accent"])],
+        bordercolor=[("focus", THEME["surface"])],
+        lightcolor=[("focus", THEME["surface"])],
+        darkcolor=[("focus", THEME["surface"])],
     )
     style.configure(
         "CloudDisabled.TButton",

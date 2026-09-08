@@ -66,7 +66,7 @@ HIGHLIGHTS = (
         "Search your saved media. Add notes, tags, and categories to keep "
         "everything easy to find.",
         "library.png",
-        (0.03, 0.235, 0.97, 0.715),
+        (0.03, 0.235, 0.97, 0.87),
     ),
     FeatureHighlight(
         "player",

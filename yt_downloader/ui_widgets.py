@@ -186,19 +186,6 @@ def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
     popup.lift()
 
 
-def bind_focus_ring(widget: tk.Misc, host: tk.Misc) -> None:
-    """Give a composite field one accessible accent ring only while focused."""
-
-    def set_color(color: str) -> None:
-        try:
-            host.configure({"background": color})
-        except tk.TclError:
-            pass
-
-    widget.bind("<FocusIn>", lambda _event: set_color(THEME["accent"]), add="+")
-    widget.bind("<FocusOut>", lambda _event: set_color(THEME["surface"]), add="+")
-
-
 class ProductEntry(ttk.Entry):
     """Native editing semantics with product-owned rounded field chrome."""
 
@@ -261,7 +248,7 @@ class ChoiceDropdown(tk.Frame):
             bd=0,
             highlightthickness=1,
             highlightbackground=THEME["border"],
-            highlightcolor=THEME["accent"],
+            highlightcolor=THEME["border"],
             takefocus=1,
         )
         self.variable = textvariable
@@ -677,14 +664,14 @@ class ModernCheckbox(tk.Frame):
                 THEME["subtle"]
                 if disabled
                 else THEME["accent"]
-                if selected or self._hovered or focused
+                if selected or self._hovered
                 else THEME["border"]
             )
             fill = (
                 THEME["accent_dark"]
                 if selected and not disabled
                 else THEME["surface_2"]
-                if self._hovered
+                if self._hovered or focused
                 else THEME["surface"]
             )
             super().configure(
