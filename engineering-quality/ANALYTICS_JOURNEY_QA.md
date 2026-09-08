@@ -1,5 +1,85 @@
 # Analytics journey evidence — 2026-09-07
 
+## Preview D1 packaged matrix — 2026-09-08 final follow-up
+
+This is **preview**, not production, release-signing, or HeyCatch certification.
+Database `vodforge_preview` (`924640fb-3be3-47ca-992c-1c7745bd8469`) has migrations
+0001–0010. The deployed preview Worker is
+`849bc20e-c719-4322-ab82-5e7f1f767924`. Private QA key/profile gates remain required.
+No ordinary replacement build was enabled for production telemetry.
+
+### Artifact provenance
+
+- macOS arm64: `bd23274a86a9e46f23a0539af006ae8d82b35154`, built as preview
+  version 0.1.8, ad-hoc signed, runtime smoke and strict signature verification
+  passed. Fresh DMG mount/copy is `build/preview-focus-dmg-installed/VODForge.app`.
+- Windows x64 final base/visual matrix: `e2f28404ad22d725222baf2c6703caa48fcdb3c0`;
+  executable SHA256 `43d688ca74d734f81692f713e8becf234bc717bf0638f6a4a796ac9d68abf3c7`.
+  Real Inno installer into `E:\VODForgeQA\installed\VODForge`, plus freshly
+  zipped/extracted portable. Both are unsigned QA artifacts, not public releases.
+- Windows real-clock extended matrix used the preceding `bd23274` artifact
+  (`cfb09dfb355de245d2eb1f7db3839e4809e504178dba24670d35f399a2a4c664`).
+  The subsequent production change only replaces the Windows scrim brush;
+  consent/transport behavior is unchanged. Do not describe every row below as
+  an exact-final-artifact run.
+
+### Executed evidence
+
+| Case | Evidence / result |
+| --- | --- |
+| US default-on | Mac DMG and Windows installer/portable: one welcome, no prompt; actual D1 launch and current version recorded |
+| EU allow | Same packages: actual Share analytics button invoked; D1 launch recorded after permission |
+| UK / unknown deny | Same packages: prompt and Not now exercised; queried final IDs absent from installations; no product events |
+| Windows base matrix | Run `20260908000000000000000000000017`, 8/8 cases passed |
+| Real two-minute expiry | Mac DMG and Windows installer/portable: allow at 125s, observe through 140s; launch may proceed, expired browser link does not; no second welcome |
+| Offline first launch/recovery | Mac prior final-DMG candidate and Windows installed/portable run `20260908000000000000000000000015`: real HTTP proxy failure, backoff respected, online reopen delivers without reopening welcome |
+| Closed original download tab | Real built preview site, fresh packaged Windows claim: source `qa-preview-matrix` survives tab closure, reaches installations.source |
+| Browser denial / GPC | Same live preview browser contract: zero consume requests for each |
+| Claim replay | Same identity retry HTTP 200; different browser identity HTTP 404 |
+| Browser transient failure / closed thank-you tab / different profile | Local built-browser regression with intercepted API: passed, no guessed source or recreated tab |
+| Final-ten-second consent and expiry | Browser controlled-clock regression: both passed, no polling after grace |
+| Consent presentation | Real Windows installed screenshot: centered in-app panel, four scrim bands, all buttons dimmed behind it, explicit black backdrop pixel `[3,3,3]` |
+| Windows automatic focus | **Not guaranteed / refused in these scheduled QA launches.** Actual foreground PID remained Brave despite native activation request. Tk focus is not OS foreground proof |
+
+Live D1 verification for final Windows profiles found exactly the four allowed
+installations, each with one `app_opened` event, platform windows and first/current
+version 0.1.8. The four refused profiles were absent. Mac US and EU IDs likewise
+had actual first_launched_at values; queried UK/unknown IDs were absent.
+
+### Regressions and evidence limits
+
+- `request_window_foreground` targets the Windows native wrapper once and
+  respects refusal. No input-queue attachment, simulated input, persistent
+  topmost, or repeated activation is used in production.
+- The visual QA runner records automatic foreground separately. When refused,
+  it explicitly raises only its owned test window for capture, removes that
+  test-only topmost state, and labels the screenshot accordingly.
+- Windows `SS_BLACKRECT` inherited a gray system brush. The focused backdrop
+  owner now registers an explicit black-brush child class. A pixel assertion
+  catches this regression; geometry-only success is insufficient.
+- Preview fresh-install tests twice exhausted the real 20/IP/day quota. Only
+  the exact QA `new_ip` counter was reset; production was untouched. Earlier
+  quota-refused runs remain failures, not successful launch evidence.
+- A launch may already have a validated credential receipt and D1 row before
+  the legacy local first_launch_confirmed flag is set by its separate caller.
+  Local flags alone are not delivery proof; D1 and the credential receipt are
+  checked independently. Server idempotency prevents duplicate rows.
+- Whole-browser closure and browser-unavailable behavior retain source/isolated
+  browser coverage, not a new full packaged/default-browser run on both OSes.
+  Attempting `BROWSER=/usr/bin/false` on Mac did not override its default adapter
+  and is **not** accepted as an unavailable-browser test.
+- No claim of macOS Intel execution, signed/notarized release artifacts,
+  actual HeyCatch delivery, or universal OS focus behavior is made.
+
+Local receipts: `build/windows-genesis/final-preview-matrix.json`,
+`extended-preview-matrix.json`, `final-browser-contract.json`,
+`consent-black-scrim.png`, `build/preview-browser-regression-final.json`, and
+`build/preview-journeys/focus-dmg-*`. Windows raw runs remain under E:\VODForgeQA.
+FAST passed at `reports/20260908T081031941051Z-e2f28404-fast/fast-gate.json`:
+907 repository tests passed, 25 display-dependent tests skipped in that run;
+native rendering was verified separately. Existing nonblocking complexity debt
+remains visible. This does not turn older NORMAL/DEEP runs into current E2E proof.
+
 ## Genesis Windows follow-up — 2026-09-08 UTC
 
 Windows 10 Pro x64, console session 1 on desktop-genesis. Source archive

@@ -28,6 +28,7 @@ def observe_startup(app: DownloaderApp, arguments: list[str]) -> None:
     choice, delay, duration = arguments[0], float(arguments[1]), float(arguments[2])
     if not 0 <= delay <= 180 or not 1 <= duration <= 240:
         raise ValueError("Observation duration is out of bounds")
+    from . import analytics_startup
     from .history import application_data_dir
 
     receipt = Path(application_data_dir()) / "startup-journey.json"
@@ -35,6 +36,7 @@ def observe_startup(app: DownloaderApp, arguments: list[str]) -> None:
     started = time.monotonic()
     events: list[dict[str, object]] = []
     original_open = webbrowser.open
+    original_focus = analytics_startup.request_window_foreground
     chosen = False
     prompt_seen = False
     lock = threading.Lock()
@@ -58,6 +60,11 @@ def observe_startup(app: DownloaderApp, arguments: list[str]) -> None:
         record("browser_requested", url=url, autoraise=autoraise)
         result = original_open(url, new=new, autoraise=autoraise)
         record("browser_adapter_returned", result=result)
+        return result
+
+    def requested_focus(root: tk.Misc) -> bool:
+        result = original_focus(root)
+        record("native_focus_request", accepted=result, tk_window_id=root.winfo_id())
         return result
 
     def descendants(widget: tk.Misc):
@@ -123,10 +130,12 @@ def observe_startup(app: DownloaderApp, arguments: list[str]) -> None:
                 "observation_finished", prompt_seen=prompt_seen, choice_invoked=chosen
             )
             webbrowser.open = original_open
+            analytics_startup.request_window_foreground = original_focus
             app.event_generate("<<QAObservationFinished>>", when="tail")
         else:
             app.after(50, poll)
 
     webbrowser.open = opened
+    analytics_startup.request_window_foreground = requested_focus
     record("app_constructed")
     app.after(50, poll)

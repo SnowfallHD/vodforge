@@ -89,7 +89,7 @@ try {
     $result.exit_code = $LASTEXITCODE
     $result.passed = $LASTEXITCODE -eq 0
   } else {
-  & .\.venv\Scripts\python.exe -m pytest -q -s tests/test_analytics_native_journey.py tests/test_analytics_consent.py tests/test_analytics_startup.py *> (Join-Path $run 'tests.log')
+  & .\.venv\Scripts\python.exe -m pytest -q -s tests/test_analytics_native_journey.py tests/test_analytics_consent.py tests/test_analytics_startup.py tests/test_analytics_consent_ui.py tests/test_modal_backdrop.py *> (Join-Path $run 'tests.log')
   $result.exit_code = $LASTEXITCODE
   $result.passed = $LASTEXITCODE -eq 0
   }

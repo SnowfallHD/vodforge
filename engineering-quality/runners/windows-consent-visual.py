@@ -28,6 +28,10 @@ user32.GetWindowThreadProcessId.argtypes = [
 ]
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.restype = wintypes.BOOL
+user32.BringWindowToTop.argtypes = [wintypes.HWND]
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.SetWindowPos.argtypes = [
     wintypes.HWND,
     wintypes.HWND,
@@ -41,7 +45,21 @@ raised = None
 process = subprocess.Popen([str(exe), "--analytics-qa", "none", "0", "15"], env=env)
 result = {"passed": False, "pid": process.pid}
 try:
-    time.sleep(4)
+    history = []
+    began = time.monotonic()
+    while time.monotonic() - began < 4:
+        foreground = user32.GetForegroundWindow()
+        foreground_pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(foreground, ctypes.byref(foreground_pid))
+        if not history or history[-1]["pid"] != foreground_pid.value:
+            history.append(
+                {
+                    "seconds": round(time.monotonic() - began, 3),
+                    "pid": foreground_pid.value,
+                }
+            )
+        time.sleep(0.05)
+    result["foreground_history"] = history
     hwnd = user32.GetForegroundWindow()
     pid = wintypes.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -71,6 +89,16 @@ try:
         if len(owned) != 1:
             raise RuntimeError("Could not unambiguously identify the owned QA window")
         hwnd = raised = owned[0]
+        result["owned_hwnd"] = hwnd
+        result["late_native_request"] = bool(user32.SetForegroundWindow(hwnd))
+        time.sleep(0.25)
+        result["late_native_foreground"] = user32.GetForegroundWindow() == hwnd
+        if not result["late_native_foreground"]:
+            user32.ShowWindow(hwnd, 9)  # QA comparison: SW_RESTORE
+            result["bring_to_top"] = bool(user32.BringWindowToTop(hwnd))
+            result["restore_native_request"] = bool(user32.SetForegroundWindow(hwnd))
+            time.sleep(0.25)
+            result["restore_native_foreground"] = user32.GetForegroundWindow() == hwnd
         if not user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x13):
             raise RuntimeError("Could not raise owned QA window for visual inspection")
         result["explicit_qa_raise"] = True
@@ -78,9 +106,13 @@ try:
     rect = wintypes.RECT()
     if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
         raise RuntimeError("Could not resolve owned window bounds")
-    ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.bottom)).save(
-        run / "consent.png"
-    )
+    capture = ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.bottom))
+    capture.save(run / "consent.png")
+    # Default-theme quiet canvas, outside the modal and native title bar.
+    sample = capture.convert("RGB").getpixel((20, 200))
+    result["backdrop_sample_rgb"] = sample
+    if max(sample) >= 32:
+        raise RuntimeError("Backdrop is not dark; native system brush regression")
     if raised:
         user32.SetWindowPos(raised, -2, 0, 0, 0, 0, 0x13)
         raised = None

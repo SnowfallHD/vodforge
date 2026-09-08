@@ -78,9 +78,11 @@ class ModalBackdrop:
                 window_class.brush = gdi32.GetStockObject(4)  # BLACK_BRUSH
                 window_class.name = "VODForgeModalBackdrop"
                 self.user32.RegisterClassW.argtypes = (ctypes.POINTER(WindowClass),)
-                if not self.user32.RegisterClassW(ctypes.byref(window_class)):
-                    if ctypes.get_last_error() != 1410:  # already registered
-                        raise OSError("Could not register modal backdrop")
+                if (
+                    not self.user32.RegisterClassW(ctypes.byref(window_class))
+                    and ctypes.get_last_error() != 1410  # already registered
+                ):
+                    raise OSError("Could not register modal backdrop")
                 create = self.user32.CreateWindowExW
                 create.restype = wintypes.HWND
                 create.argtypes = (
