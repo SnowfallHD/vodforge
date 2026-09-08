@@ -241,7 +241,10 @@ class MediaPlayerWindow:
         self._surface_owner: TkPlaybackSurfaceOwner | None = None
         self._chapters = sanitize_chapters(info.get("chapters"))
         self._heatmap = sanitize_heatmap(info.get("heatmap"))
-        self._audio_only = str(info.get("vodforge_output_type") or "").upper() == "MP3"
+        self._audio_only = str(info.get("vodforge_output_type") or "").upper() in {
+            "MP3",
+            "ORIGINAL AUDIO",
+        }
 
         popup = tk.Toplevel(owner)
         popup.withdraw()

@@ -14,7 +14,12 @@ from yt_downloader.activity_ui import (
 )
 from yt_downloader.detail_ui import FactsText, OutputDetailsDialog
 from yt_downloader.ui_styles import apply_product_styles
-from yt_downloader.ui_widgets import ChoiceDropdown, ProductEntry, SegmentedSelector
+from yt_downloader.ui_widgets import (
+    ChoiceDropdown,
+    ChoiceMenu,
+    ProductEntry,
+    SegmentedSelector,
+)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1", reason="requires native Tcl/Tk"
@@ -78,6 +83,33 @@ def test_settings_selects_every_quality_tier_in_real_dropdown():
                 assert selected["format_id"] == str(ceiling)
         finally:
             application.destroy()
+
+
+def test_shared_choice_menu_navigation_hover_and_identical_render(root):
+    root.deiconify()
+    value = tk.StringVar(root, value="Choice 0")
+    dropdown = ChoiceDropdown(
+        root, textvariable=value, values=[f"Choice {i}" for i in range(12)]
+    )
+    dropdown.pack()
+    root.update()
+    dropdown.open_popover()
+    root.update()
+    menu = dropdown._popover.winfo_children()[0]
+    assert isinstance(menu, ChoiceMenu)
+    items = menu.find_all()
+    menu.selection_set(0)
+    assert menu.find_all() == items
+    menu._move(11)
+    assert menu.selected == 11 and menu.top == 4
+    menu._hover(SimpleNamespace(y=7))
+    assert menu.selected == 4
+    dropdown._commit_listbox(menu)
+    assert value.get() == "Choice 4"
+    assert dropdown._popover is None
+    dropdown.configure(state="disabled")
+    dropdown.open_popover()
+    assert dropdown._popover is None
 
 
 def test_shared_fields_do_not_draw_focus_rings(root):
@@ -438,21 +470,16 @@ def test_analytics_prompt_actions_fit_without_scroll(root, tmp_path):
     startup = AnalyticsStartup(
         root, AnalyticsConsentOwner(tmp_path), tk.BooleanVar(root), lambda _: None
     )
+    root.geometry("1180x780")
+    root.deiconify()
+    root.update()
     startup._prompt()
-    popup = next(
-        child for child in root.winfo_children() if isinstance(child, tk.Toplevel)
-    )
-    popup.update_idletasks()
-
-    def descendants(widget):
-        for child in widget.winfo_children():
-            yield child
-            yield from descendants(child)
-
-    buttons = [w for w in descendants(popup) if isinstance(w, ttk.Button)]
+    popup = startup.permission_panel.frame
+    root.update()
+    buttons = startup.permission_panel.controls
     assert {str(w.cget("text")) for w in buttons} == {
         "Not now",
-        "Allow analytics",
+        "Share analytics",
         "Privacy details",
     }
     for button in buttons:
@@ -463,4 +490,4 @@ def test_analytics_prompt_actions_fit_without_scroll(root, tmp_path):
             <= popup.winfo_rooty() + popup.winfo_height()
         )
     startup.close()
-    popup.destroy()
+    startup.permission_panel.finish(False)

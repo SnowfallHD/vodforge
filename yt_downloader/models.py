@@ -17,6 +17,14 @@ STRICT_AUDIO_BITRATE_KBPS = 320
 class OutputType(str, Enum):
     MP4 = "MP4"
     MP3 = "MP3"
+    ORIGINAL = "Original audio"
+
+    @classmethod
+    def _missing_(cls, value: object) -> OutputType | None:
+        return next(
+            (item for item in cls if item.value.casefold() == str(value).casefold()),
+            None,
+        )
 
 
 class CookieSource(str, Enum):
@@ -95,6 +103,7 @@ class AudioExportPlan:
     embed_metadata: bool
     embed_cover_art: bool
     cover_art_source: str
+    output_extension: str = ".mp3"
     warnings: list[str] = field(default_factory=list)
     summary: str = ""
 

@@ -176,7 +176,10 @@ def _probe_outputs(paths: list[Path], ffprobe: str | None) -> list[dict[str, Any
             "size_bytes": path.stat().st_size,
             "sha256": sha256_file(path),
         }
-        if path.suffix.lower() in {".mp4", ".mp3", ".m4a", ".webm", ".mov"} and ffprobe:
+        if (
+            path.suffix.lower() in {".mp4", ".mp3", ".opus", ".m4a", ".webm", ".mov"}
+            and ffprobe
+        ):
             try:
                 entry["ffprobe"] = run_ffprobe_json(ffprobe, path)
                 entry["readable"] = True
@@ -450,7 +453,7 @@ class HeadlessPipelineRunner:
         media_outputs = [
             entry
             for entry in output_probes
-            if Path(entry["path"]).suffix.lower() in {".mp4", ".mp3"}
+            if Path(entry["path"]).suffix.lower() in {".mp4", ".mp3", ".opus", ".m4a"}
         ]
         first_download_event = next(
             (

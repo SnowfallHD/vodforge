@@ -34,12 +34,14 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                 if dimensions is None:
                     dimensions = current
                 assert current == dimensions
-                if HIGHLIGHTS[index].key != "activity-mode":
-                    assert panel.photo is not None
-                image = panel.photo
+                assert panel.activity_demo is not None
+                assert (
+                    not panel.preview.find_all()
+                )  # No screenshot layer behind native widgets.
+                image = panel.activity_demo
                 panel.render(index)
                 root.update()
-                assert panel.photo is image
+                assert panel.activity_demo is image
                 assert panel.frame.winfo_toplevel() is root
                 assert root.grab_current() is panel.frame
                 for widget in (*panel.controls, panel.description):
@@ -52,7 +54,7 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                 if HIGHLIGHTS[index].key == "activity-mode":
                     demo = panel.activity_demo
                     assert demo is not None and demo.timer is not None
-                    assert panel.preview.itemcget(panel.image_item, "image") == ""
+                    assert not panel.preview.find_all()
                     assert not hasattr(demo, "control")
         assert panel.next.winfo_width() == panel.next.winfo_height() == 34
         assert panel.next.instate(["disabled"])

@@ -230,6 +230,113 @@ def _tinted_ui_icon(
         return None
 
 
+class ChoiceMenu(tk.Canvas):
+    """Shared theme-owned menu rows; no platform Listbox rendering."""
+
+    def __init__(self, parent: tk.Misc, values: tuple[str, ...]) -> None:
+        self.values = values
+        self.selected = 0
+        self.top = 0
+        self.rows = min(8, len(values))
+        self.row_height = 34
+        self._paint_snapshot: tuple[Any, ...] | None = None
+        font = tkfont.Font(font=FONT_UI)
+        width = max((font.measure(value) for value in values), default=80) + 52
+        super().__init__(
+            parent,
+            width=width,
+            height=self.rows * self.row_height + 12,
+            bg=THEME["bg"],
+            highlightthickness=0,
+            bd=0,
+            takefocus=True,
+        )
+        self.bind("<Configure>", lambda _e: self._paint())
+        self.bind("<Motion>", self._hover)
+        self.bind("<Up>", lambda _e: self._move(-1))
+        self.bind("<Down>", lambda _e: self._move(1))
+        self.bind("<Home>", lambda _e: self._move(-len(self.values)))
+        self.bind("<End>", lambda _e: self._move(len(self.values)))
+        self.bind("<MouseWheel>", lambda e: self._move(-1 if e.delta > 0 else 1))
+        self.bind("<Button-4>", lambda _e: self._move(-1))
+        self.bind("<Button-5>", lambda _e: self._move(1))
+
+    def _move(self, amount: int) -> str:
+        self.selection_set(max(0, min(len(self.values) - 1, self.selected + amount)))
+        self.see(self.selected)
+        return "break"
+
+    def _hover(self, event: tk.Event) -> None:
+        index = self.top + (event.y - 6) // self.row_height
+        if self.top <= index < min(len(self.values), self.top + self.rows):
+            self.selection_set(index)
+
+    def selection_set(self, index: int) -> None:
+        self.selected = max(0, min(len(self.values) - 1, int(index)))
+        self._paint()
+
+    def selection_clear(self, *_args: Any, **_kwargs: Any) -> None:
+        pass
+
+    def curselection(self) -> tuple[int, ...]:
+        return (self.selected,)
+
+    def get(self, index: int) -> str:
+        return self.values[index]
+
+    def see(self, index: int) -> None:
+        self.top = (
+            max(0, min(self.top, index))
+            if index < self.top
+            else max(self.top, index - self.rows + 1)
+        )
+        self._paint()
+
+    def _paint(self) -> None:
+        from PIL import Image, ImageDraw, ImageTk
+
+        width = max(self.winfo_width(), self.winfo_reqwidth())
+        height = self.rows * self.row_height + 12
+        snapshot = (width, height, self.selected, self.top, tuple(THEME.items()))
+        if snapshot == self._paint_snapshot:
+            return
+        self._paint_snapshot = snapshot
+        scale = 2
+        surface = Image.new("RGB", (width * scale, height * scale), THEME["bg"])
+        draw = ImageDraw.Draw(surface)
+        draw.rounded_rectangle(
+            (1, 1, width * scale - 2, height * scale - 2),
+            radius=20,
+            fill=THEME["surface_2"],
+            outline=THEME["border"],
+            width=2,
+        )
+        row = self.selected - self.top
+        if 0 <= row < self.rows:
+            y = 6 + row * self.row_height
+            draw.rounded_rectangle(
+                (10, y * scale, width * scale - 10, (y + self.row_height) * scale),
+                radius=12,
+                fill=THEME["accent_surface"],
+            )
+        self._menu_image = ImageTk.PhotoImage(
+            surface.resize((width, height), Image.Resampling.LANCZOS), master=self
+        )
+        self.delete("all")
+        self.create_image(0, 0, image=self._menu_image, anchor="nw")
+        for row, index in enumerate(
+            range(self.top, min(len(self.values), self.top + self.rows))
+        ):
+            self.create_text(
+                18,
+                6 + row * self.row_height + self.row_height / 2,
+                text=self.values[index],
+                anchor="w",
+                fill=THEME["text"],
+                font=FONT_UI,
+            )
+
+
 class ChoiceDropdown(tk.Frame):
     """VODForge-owned choice field with a cohesive, platform-neutral popover."""
 
@@ -404,24 +511,9 @@ class ChoiceDropdown(tk.Frame):
         popup.withdraw()
         popup.overrideredirect(True)
         popup.transient(self.winfo_toplevel())
-        popup.configure(bg=THEME["border"])
-        listbox = tk.Listbox(
-            popup,
-            height=min(8, len(self._values)),
-            bg=THEME["surface_2"],
-            fg=THEME["text"],
-            selectbackground=THEME["accent_surface"],
-            selectforeground=THEME["text"],
-            activestyle="none",
-            relief="flat",
-            bd=0,
-            highlightthickness=0,
-            exportselection=False,
-            font=FONT_UI,
-        )
-        listbox.pack(fill="both", expand=True, padx=1, pady=1)
-        for value in self._values:
-            listbox.insert("end", value)
+        popup.configure(bg=THEME["bg"])
+        listbox = ChoiceMenu(popup, self._values)
+        listbox.pack(fill="both", expand=True)
         try:
             selected_index = self._values.index(self.variable.get())
         except ValueError:
@@ -450,7 +542,7 @@ class ChoiceDropdown(tk.Frame):
         listbox.focus_set()
         self._sync_border()
 
-    def _commit_listbox(self, listbox: tk.Listbox) -> str:
+    def _commit_listbox(self, listbox: ChoiceMenu) -> str:
         selection = listbox.curselection()
         if selection:
             self.variable.set(str(listbox.get(selection[0])))

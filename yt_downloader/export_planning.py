@@ -487,14 +487,6 @@ def build_mp3_export_plan(
     source_sample_rate = _source_numeric_text(audio.get("asr"))
     source_channels_value = audio.get("audio_channels") or audio.get("channels")
     source_channels = _source_numeric_text(source_channels_value)
-    quality_note = (
-        "The 320 kbps setting minimizes additional MP3 encoding loss"
-        if settings.bitrate_kbps == 320
-        else f"The {settings.bitrate_kbps} kbps setting trades fidelity for a smaller file"
-    )
-    warnings = [
-        f"YouTube audio is already compressed. {quality_note} but cannot restore detail absent from the source."
-    ]
     return AudioExportPlan(
         output_type=OutputType.MP3,
         audio_format_id=audio_id,
@@ -518,7 +510,7 @@ def build_mp3_export_plan(
             if settings.embed_cover_art
             else "None (no art)"
         ),
-        warnings=warnings,
+        warnings=[],
         summary=(
             f"Selected the highest-quality available audio source and will create a {settings.bitrate_kbps} kbps CBR MP3"
             f" at {settings.sample_rate or 'the source sample rate'} with {settings.channels or 'the source channel layout'}."
@@ -727,7 +719,11 @@ def _derive_auto_encode_targets(
                 "Strict Compliance target is far above the selected source quality. The output may satisfy platform requirements, but it will not become true high-bitrate quality."
             )
     warn = _bitrate_warning(video_bitrate, evidence.effective_video_kbps)
-    if warn and warn not in warnings:
+    if warn and not (
+        mode == ExportMode.STRICT_COMPLIANCE
+        and evidence.effective_video_kbps > 0
+        and video_bitrate / evidence.effective_video_kbps > 2
+    ):
         warnings.append(warn)
     if (
         evidence.effective_audio_kbps

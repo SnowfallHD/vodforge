@@ -27,6 +27,8 @@ def resolve_library_media_path(record: dict[str, Any]) -> Path | None:
     output_dir = history_output_dir(record)
     if output_dir is None:
         return None
+    if history_output_type(record) == "Original audio":
+        return None  # Never substitute a nearby MP4 for an incomplete audio record.
     extension = ".mp3" if history_output_type(record) == "MP3" else ".mp4"
     try:
         candidates = sorted(

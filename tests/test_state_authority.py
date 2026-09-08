@@ -1833,6 +1833,7 @@ def test_focus_settings_dialog_owns_conditional_widget_visibility():
     dialog = FocusSettingsDialog.__new__(FocusSettingsDialog)
     dialog.mp4_frame = Frame()
     dialog.mp3_frame = Frame()
+    dialog.original_audio_frame = Frame()
     dialog.manual_frame = Frame()
     dialog.cookie_file_frame = Frame()
     dialog.cookie_browser_frame = Frame()

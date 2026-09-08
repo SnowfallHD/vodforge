@@ -59,6 +59,8 @@ def job_output_settings(job: DownloadJob) -> dict[str, Any]:
         "batch_mode": job.batch_mode,
         "tags": sorted({str(tag).strip() for tag in job.tags if str(tag).strip()}),
     }
+    if job.output_type is OutputType.ORIGINAL:
+        return common
     if job.output_type is OutputType.MP3:
         common["mp3"] = {
             "bitrate_kbps": job.mp3_settings.bitrate_kbps,
@@ -124,6 +126,8 @@ def matching_attempt(
 
 
 def job_output_profile(job: DownloadJob) -> str:
+    if job.output_type is OutputType.ORIGINAL:
+        return "Original audio • No re-encoding"
     if job.output_type is OutputType.MP3:
         return f"MP3 • {job.mp3_settings.bitrate_kbps} kbps"
     return f"MP4 • {job.quality_label} • {job.export_mode.value}"
@@ -132,6 +136,8 @@ def job_output_profile(job: DownloadJob) -> str:
 def job_output_profile_details(job: DownloadJob) -> str:
     settings = job_output_settings(job)
     lines = [job_output_profile(job), f"Destination: {job.output_dir}"]
+    if job.output_type is OutputType.ORIGINAL:
+        return "\n".join(lines)
     if job.output_type is OutputType.MP3:
         mp3 = settings["mp3"]
         lines.extend(
@@ -185,6 +191,8 @@ def metadata_output_profile(info: dict[str, Any]) -> str:
     summary = info.get("vodforge_encoding_summary")
     output = summary.get("output") if isinstance(summary, dict) else None
     output = output if isinstance(output, dict) else {}
+    if output_type == "ORIGINAL AUDIO":
+        return "Original audio • No re-encoding"
     if output_type == "MP3":
         bitrate = str(output.get("Target audio bitrate") or "").strip()
         return f"MP3 • {bitrate}" if bitrate else "MP3"

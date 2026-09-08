@@ -5,16 +5,13 @@ from __future__ import annotations
 import tkinter as tk
 from collections.abc import Callable
 from functools import partial
-from pathlib import Path
 from tkinter import ttk
-
-from PIL import Image, ImageOps, ImageTk
 
 from .modal_backdrop import ModalBackdrop
 from .ui_theme import FONT_UI_FAMILY, THEME
 from .ui_widgets import ActionDialogSurface
 from .whats_new import FeatureHighlight
-from .whats_new_activity_demo import ActivityDemo
+from .whats_new_feature_preview import render_native_preview
 
 
 class _ArrowButton(tk.Canvas):
@@ -91,7 +88,7 @@ class WhatsNewPanel:
             raise ValueError("A showcase needs at least one feature")
         self.parent, self.highlights, self.dismissed = parent, highlights, dismissed
         self.index = -1
-        self.activity_demo: ActivityDemo | None = None
+        self.activity_demo: tk.Widget | None = None
         self.transition_timer: str | None = None
         self.closed = False
         self.previous_focus = parent.focus_get()
@@ -124,9 +121,6 @@ class WhatsNewPanel:
             highlightthickness=0,
         )
         self.preview.grid(row=2, column=0, sticky="nsew")
-        self.image_item = self.preview.create_image(0, 0, anchor="center")
-        self.source_image: Image.Image | None = None
-        self.photo: ImageTk.PhotoImage | None = None
         self.paint_timer: str | None = None
         self.paint_signature: tuple | None = None
         self.preview.bind("<Configure>", lambda _e: self._schedule_preview())
@@ -196,7 +190,6 @@ class WhatsNewPanel:
         if index == self.index:
             return
         self._cancel_transition()
-        self.preview.itemconfigure(self.image_item, image="")
         if self.activity_demo is not None:
             self.activity_demo.destroy()
             self.activity_demo = None
@@ -204,25 +197,9 @@ class WhatsNewPanel:
         feature = self.highlights[index]
         self.title.configure(text=feature.title)
         self.description.configure(text=feature.description)
-        path = (
-            Path(__file__).resolve().parents[1]
-            / "assets"
-            / "whats-new"
-            / feature.artwork
-        )
-        try:
-            with Image.open(path) as source:
-                w, h = source.size
-                x1, y1, x2, y2 = feature.crop
-                self.source_image = source.crop(
-                    (x1 * w, y1 * h, x2 * w, y2 * h)
-                ).convert("RGB")
-        except OSError:
-            self.source_image = None
         self.resize()
         self._schedule_preview()
-        if feature.key == "activity-mode":
-            self.activity_demo = ActivityDemo(self.preview)
+        self.activity_demo = render_native_preview(self.preview, feature.preview)
         self.page.configure(text=f"{index + 1} of {len(self.highlights)}")
         self.back.state(["disabled"] if index == 0 else ["!disabled"])
         self.next.state(
@@ -248,21 +225,9 @@ class WhatsNewPanel:
             return
         self.paint_signature = signature
         if self.activity_demo is not None:
-            self.preview.itemconfigure(self.image_item, image="")
             self._cancel_transition()
             self._transition(0)
             return
-        if self.source_image is None:
-            self.preview.itemconfigure(self.image_item, image="")
-            return
-        if self.highlights[self.index].key == "ui-activity":
-            size = (min(size[0], 340), min(size[1], 140))
-        self.photo = ImageTk.PhotoImage(
-            ImageOps.contain(self.source_image, size), master=self.frame
-        )
-        self.preview.itemconfigure(self.image_item, image=self.photo)
-        self._cancel_transition()
-        self._transition(0)
 
     def _cancel_transition(self) -> None:
         if self.transition_timer is not None:
@@ -275,19 +240,20 @@ class WhatsNewPanel:
         if self.closed:
             return
         offset = round(18 * (1 - step / 10) ** 3)
-        self.preview.coords(
-            self.image_item,
-            self.preview.winfo_width() / 2 + offset,
-            self.preview.winfo_height() / 2,
-        )
         if self.activity_demo is not None:
             self.activity_demo.place(
                 relx=0.5,
                 rely=0.5,
                 anchor="center",
                 x=offset,
-                width=min(470, self.preview.winfo_width() - 38),
-                height=min(180, self.preview.winfo_height() - 12),
+                width=min(
+                    getattr(self.activity_demo, "preferred_width", 470),
+                    self.preview.winfo_width() - 38,
+                ),
+                height=min(
+                    getattr(self.activity_demo, "preferred_height", 180),
+                    self.preview.winfo_height() - 12,
+                ),
             )
         if step < 10:
             self.transition_timer = self.frame.after(

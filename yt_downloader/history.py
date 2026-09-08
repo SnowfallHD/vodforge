@@ -362,6 +362,8 @@ def history_output_path(record: dict[str, Any]) -> Path | None:
 
 def history_output_type(record: dict[str, Any]) -> str:
     raw = str(record.get("vodforge_output_type") or "").strip().upper()
+    if raw == "ORIGINAL AUDIO":
+        return "Original audio"
     if raw in {"MP4", "MP3"}:
         return raw
     summary = record.get("vodforge_encoding_summary")
@@ -445,6 +447,8 @@ def history_media_file_state(record: dict[str, Any]) -> str:
             if stat.S_ISREG(output_stat.st_mode) and output_stat.st_size > 0
             else HISTORY_MEDIA_MISSING
         )
+    if history_output_type(record) == "Original audio":
+        return HISTORY_MEDIA_MISSING  # New audio records require their exact committed path.
     extension = ".mp3" if history_output_type(record) == "MP3" else ".mp4"
     try:
         directory_stat = output_dir.stat()

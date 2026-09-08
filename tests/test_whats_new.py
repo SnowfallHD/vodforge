@@ -1,11 +1,16 @@
 from dataclasses import FrozenInstanceError
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from yt_downloader.settings_store import load_settings, save_settings
-from yt_downloader.whats_new import HIGHLIGHTS, SHOWCASE_ID, WhatsNewOwner
+from yt_downloader.whats_new import (
+    HIGHLIGHTS,
+    SHOWCASE_ID,
+    FeatureHighlight,
+    NativePreview,
+    WhatsNewOwner,
+)
 
 
 class Seen:
@@ -26,6 +31,7 @@ def test_ui_updates_lead_without_replacing_existing_features():
         "ui-player",
         "activity-mode",
         "local-video",
+        "original-audio",
         "library",
         "player",
     ]
@@ -46,14 +52,10 @@ def test_showcase_dismissal_survives_settings_reload(tmp_path):
     assert not restarted.pending
 
 
-def test_catalog_is_curated_immutable_and_has_bundled_artwork():
+def test_catalog_is_curated_immutable_and_native_only():
     assert len({h.key for h in HIGHLIGHTS}) == len(HIGHLIGHTS)
     for feature in HIGHLIGHTS:
-        assert (
-            Path(__file__).parents[1] / "assets/whats-new" / feature.artwork
-        ).is_file()
-        x1, y1, x2, y2 = feature.crop
-        assert 0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1
+        assert isinstance(feature.preview, NativePreview)
         assert len(feature.description) < 180
     with pytest.raises(FrozenInstanceError):
         HIGHLIGHTS[0].title = "changed"
@@ -64,6 +66,12 @@ def test_seen_showcase_does_not_repeat_for_an_app_version_change():
     assert not owner.pending  # Eligibility deliberately has no app-version input.
     new = WhatsNewOwner(None, owner.seen, lambda: True, showcase_id="next-feature")
     assert new.pending
+
+
+def test_future_slides_cannot_fall_back_to_screenshot_artwork():
+    with pytest.raises(TypeError, match="native preview"):
+        FeatureHighlight("future", "Future", "A feature", "screenshot.png")
+    assert {feature.preview for feature in HIGHLIGHTS} == set(NativePreview)
 
 
 def test_release_without_curated_highlights_is_silent():

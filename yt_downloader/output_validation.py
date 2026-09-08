@@ -606,6 +606,29 @@ def validate_output_artifact(
     view = _probe_view(data)
     _validate_duration(view, expected_duration_seconds)
 
+    if output_type == OutputType.ORIGINAL:
+        if not isinstance(plan, AudioExportPlan) or plan.output_type != output_type:
+            raise RuntimeError("Original audio requires its source preservation plan.")
+        expected_codec = "opus" if plan.output_extension == ".opus" else "aac"
+        expected_container = "ogg" if expected_codec == "opus" else "m4a"
+        if (
+            not view.audio
+            or view.audio.get("codec_name") != expected_codec
+            or view.video_streams
+        ):
+            raise RuntimeError("Original audio codec or stream structure changed.")
+        if expected_container not in view.container_tokens:
+            raise RuntimeError(
+                "Original audio container does not match its source codec."
+            )
+        for key, expected in (
+            ("sample_rate", plan.source_sample_rate),
+            ("channels", plan.source_channels),
+        ):
+            if expected and str(view.audio.get(key)) != str(expected):
+                raise RuntimeError(f"Original audio {key} changed.")
+        return data
+
     if output_type == OutputType.MP3:
         _validate_mp3_structure(view, plan)
         if plan is not None:

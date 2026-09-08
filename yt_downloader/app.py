@@ -163,6 +163,11 @@ from .models import (
     Mp3ExportSettings,
     OutputType,
 )
+from .original_audio import (
+    build_original_audio_plan,
+    original_audio_extension,
+    original_audio_options,
+)
 from .output_validation import (
     output_artifact_plan_mismatches as _output_artifact_plan_mismatches,
 )
@@ -278,6 +283,7 @@ from .ui_theme import (
 )
 from .ui_widgets import (
     ActionDialogSurface,
+    ChoiceDropdown,
     PillAction,
     PixelScrollTable,
     RoundedIconButton,
@@ -1402,7 +1408,7 @@ def build_encoding_summary_metadata(
             output["Validation status"] = validation_status or "Validated"
         elif validation_status:
             output["Validation status"] = validation_status
-        enriched["vodforge_output_type"] = OutputType.MP3.value
+        enriched["vodforge_output_type"] = plan.output_type.value
         enriched["vodforge_encoding_summary"] = {
             "source": source,
             "output": output,
@@ -1542,10 +1548,16 @@ def _planned_output_summary(
         return {
             "Output status": "Planned Output",
             "Output file path": str(output_path) if output_path else "Pending",
-            "Output container": "mp3",
-            "Output rate-control mode": "CBR",
-            "Output audio codec": "MP3 (libmp3lame)",
-            "Target audio bitrate": f"{plan.audio_bitrate_kbps} kbps",
+            "Output container": plan.output_extension.lstrip("."),
+            "Output rate-control mode": "Stream copy"
+            if plan.output_type == OutputType.ORIGINAL
+            else "CBR",
+            "Output audio codec": plan.audio_codec
+            if plan.output_type == OutputType.ORIGINAL
+            else "MP3 (libmp3lame)",
+            "Target audio bitrate": "Preserve source"
+            if plan.output_type == OutputType.ORIGINAL
+            else f"{plan.audio_bitrate_kbps} kbps",
             "Measured audio bitrate": "Pending",
             "Audio sample rate": plan.output_sample_rate or "Preserve source",
             "Audio channels": plan.output_channels or "Preserve source",
@@ -1726,7 +1738,7 @@ def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
     output_lines: list[str] = []
     rows = (
         AUDIO_SUMMARY_COMPARISON_ROWS
-        if metadata_output_type(info) == OutputType.MP3
+        if metadata_output_type(info) != OutputType.MP4
         else SUMMARY_COMPARISON_ROWS
     )
     for label, source_key, output_key in rows:
@@ -1753,7 +1765,7 @@ def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
                 f"Embedded cover art: {_display_value(output.get('Embedded cover art'), 'Not available')}",
             ]
         )
-    else:
+    elif metadata_output_type(info) == OutputType.MP4:
         output_lines.append(
             f"H.264 profile: {_display_value(output.get('H.264 profile'), 'Not available')}"
         )
@@ -1849,6 +1861,8 @@ def validate_embedded_thumbnail_sources(
 
 
 def job_embeds_provider_thumbnail(job: DownloadJob) -> bool:
+    if job.output_type == OutputType.ORIGINAL:
+        return False
     if job.output_type == OutputType.MP3:
         return bool(
             job.mp3_settings.embed_cover_art
@@ -2398,7 +2412,7 @@ def find_valid_existing_output(
         expected_tags=expected_tags,
         expected_duration_seconds=expected_duration_seconds,
     )
-    extension = ".mp3" if output_type == OutputType.MP3 else ".mp4"
+    extension = plan.output_extension if isinstance(plan, AudioExportPlan) else ".mp4"
     target_file_name = video_file_name(info, extension)
     try:
         target_dir, target_file_name = resolved_video_output_target(
@@ -4120,7 +4134,7 @@ def download_job_display_title(job: DownloadJob, *, queued: bool = False) -> str
     if title:
         return title
     state = "Queued" if queued else "Preparing"
-    media = "audio" if job.output_type == OutputType.MP3 else "video"
+    media = "video" if job.output_type == OutputType.MP4 else "audio"
     return f"{state} {media} run"
 
 
@@ -4671,6 +4685,8 @@ def _build_download_item_plan(
     *,
     max_height: int,
 ) -> ExportPlan | AudioExportPlan:
+    if job.output_type == OutputType.ORIGINAL:
+        return build_original_audio_plan(preflight_info)
     if job.output_type == OutputType.MP3:
         return build_mp3_export_plan(preflight_info, job.mp3_settings)
     plan = build_auto_export_plan(
@@ -4704,7 +4720,9 @@ def _download_item_plan_log_lines(
                     f"~{plan.source_audio_kbps:.0f} kbps."
                 ),
                 (
-                    f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art "
+                    f"{label}: preserve original audio without re-encoding."
+                    if plan.output_type == OutputType.ORIGINAL
+                    else f"{label}: MP3 target {plan.audio_bitrate_kbps} kbps CBR; cover art "
                     f"{'embedded' if plan.embed_cover_art else 'not embedded'}."
                 ),
             )
@@ -5599,14 +5617,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=7)
         self.focus_url_entry.bind("<Return>", lambda _event: self._start_download())
-        self.focus_output_type_selector = SegmentedSelector(
+        self.focus_output_type_selector = ChoiceDropdown(
             command_inner,
-            variable=self.output_type_var,
-            background=THEME["surface"],
-            compact=True,
+            textvariable=self.output_type_var,
+            values=tuple(kind.value for kind in OutputType),
+            width=11,
         )
         self.focus_output_type_selector.grid(row=0, column=2, sticky="e", padx=(12, 1))
-        ToolTip(self.focus_output_type_selector, "Choose MP4 video or MP3 audio")
+        ToolTip(
+            self.focus_output_type_selector,
+            "MP4 video, MP3 audio, or original audio without re-encoding",
+        )
         sliders_icon = self._load_focus_icon("sliders-horizontal", 20, THEME["muted"])
         self.focus_options_button = RoundedIconButton(
             command_row,
@@ -5941,7 +5962,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_library_output_type_selector = SegmentedSelector(
             heading_title,
             variable=self.library_output_type_var,
-            values=(LIBRARY_ALL_MEDIA, OutputType.MP4.value, OutputType.MP3.value),
+            values=(LIBRARY_ALL_MEDIA, *(kind.value for kind in OutputType)),
             background=THEME["bg"],
             compact=True,
         )
@@ -6800,6 +6821,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         export_mode: ExportMode | None = None,
     ) -> str:
         output_type = output_type or self._selected_output_type()
+        if output_type == OutputType.ORIGINAL:
+            return "Original audio  •  No re-encoding"
         if output_type == OutputType.MP3:
             settings = mp3_settings or self._mp3_export_settings()
             rate = f"{settings.bitrate_kbps} kbps"
@@ -6843,14 +6866,20 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.library_output_type_var.set(output_type.value)
         if hasattr(self, "focus_library_media_label_var"):
             self.focus_library_media_label_var.set(
-                "MP4 MEDIA" if output_type == OutputType.MP4 else "MP3 AUDIO"
+                "MP4 MEDIA"
+                if output_type == OutputType.MP4
+                else "ORIGINAL AUDIO"
+                if output_type == OutputType.ORIGINAL
+                else "MP3 AUDIO"
             )
         if hasattr(self, "video_tree"):
             self._render_metadata_tree()
 
     def _sync_focus_settings_summary(self) -> None:
         output_type = self._selected_output_type()
-        if output_type == OutputType.MP3:
+        if output_type == OutputType.ORIGINAL:
+            summary = "Press Return to start  /  Original audio  /  No re-encoding"
+        elif output_type == OutputType.MP3:
             cover = self.mp3_cover_art_mode_var.get()
             summary = f"Press Return to start  /  MP3 audio  /  {self.mp3_quality_var.get()}  /  {self.mp3_sample_rate_var.get()}  /  {cover}"
         else:
@@ -6946,6 +6975,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _focus_next_run_summary(self, output_type: OutputType) -> str:
         """Describe pending input settings without borrowing from a run snapshot."""
+        if output_type == OutputType.ORIGINAL:
+            return f"Format        Original audio\nAudio         Best available Opus or AAC\nOutput mode   Stream copy\nSave to       {self.output_var.get()}"
         if output_type == OutputType.MP3:
             return "\n".join(
                 (
@@ -6972,6 +7003,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
 
     def _focus_next_run_transfer_text(self, output_type: OutputType) -> str:
+        if output_type == OutputType.ORIGINAL:
+            return "Original audio  /  No re-encoding"
         if output_type == OutputType.MP3:
             return "Audio-only MP3  /  best YouTube audio source"
         return f"VOD-ready MP4 / H.264 video / {self._focus_next_run_mp4_audio_codec()} audio"
@@ -7517,7 +7550,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_percent_var.set("Queued")
         self.focus_display_status_var.set(f"Showing queued run: {title}")
         self.focus_transfer_var.set("Queued  /  Waiting for the current run")
-        if job.output_type == OutputType.MP3:
+        if job.output_type == OutputType.ORIGINAL:
+            summary = f"Format          Original audio\nEncoding        Stream copy\nSave to         {job.output_dir}\nStatus          Queued"
+        elif job.output_type == OutputType.MP3:
             sample_rate = mp3_sample_rate_display(
                 job.mp3_settings.sample_rate,
                 source_label="Preserve source",
@@ -7689,7 +7724,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_percent_var.set(f"{float(self.progress_var.get()):.0f}%")
         self.focus_display_status_var.set(self.status_var.get())
         self.focus_transfer_var.set(
-            "Active MP3 run  /  highest-quality audio source"
+            "Original audio  /  No re-encoding"
+            if job.output_type == OutputType.ORIGINAL
+            else "Active MP3 run  /  highest-quality audio source"
             if job.output_type == OutputType.MP3
             else f"Active MP4 run  /  H.264 video and {job.manual_settings.audio_codec.value if job.export_mode == ExportMode.MANUAL_OVERRIDE else 'AAC'} audio"
         )
@@ -9941,7 +9978,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         duration = format_duration(info.get("duration"))
         self.focus_active_duration_var.set("" if duration == "—" else duration)
         _source, output, _warnings = _encoding_summary_sections(info)
-        if job.output_type == OutputType.MP3:
+        if job.output_type == OutputType.ORIGINAL:
+            self.focus_active_profile_var.set("Original audio  •  No re-encoding")
+        elif job.output_type == OutputType.MP3:
             bitrate = _display_value(
                 output.get("Target audio bitrate"),
                 f"{job.mp3_settings.bitrate_kbps} kbps",
@@ -10481,7 +10520,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             playback.load(
                 media_path,
                 duration=duration,
-                audio_only=metadata_output_type(info) == OutputType.MP3,
+                audio_only=metadata_output_type(info) != OutputType.MP4,
             )
             previews = MediaPreviewOwner(
                 ffmpeg=ffmpeg,
@@ -13048,7 +13087,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ffmpeg = self._find_ffmpeg()
         if not ffmpeg:
             required_output = (
-                "MP3 audio"
+                "original audio"
+                if job.output_type == OutputType.ORIGINAL
+                else "MP3 audio"
                 if isinstance(plan, AudioExportPlan)
                 else f"H.264 / {plan.output_audio_codec.value} MP4 video"
             )
@@ -13125,7 +13166,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         control_check: Callable[[], None],
     ) -> _PreparedStagingItem:
         """Bind expected staged media and optional cover art before validation."""
-        expected_extension = ".mp3" if job.output_type == OutputType.MP3 else ".mp4"
+        expected_extension = (
+            original_audio_extension(str(downloaded_item.metadata.get("acodec") or ""))
+            if job.output_type == OutputType.ORIGINAL
+            else ".mp3"
+            if job.output_type == OutputType.MP3
+            else ".mp4"
+        )
         staged_media = collect_staged_media_files(
             staging_dir,
             downloaded_item.metadata,
@@ -13388,7 +13435,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
             self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
             result_label = (
-                "MP3 audio" if job.output_type == OutputType.MP3 else "MP4 video"
+                "Original audio"
+                if job.output_type == OutputType.ORIGINAL
+                else "MP3 audio"
+                if job.output_type == OutputType.MP3
+                else "MP4 video"
             )
             self.events.put(("status", f"{item.label} complete — {result_label}"))
             self._emit_job_log(job, f"{item.label} complete — {result_label}")
@@ -13717,6 +13768,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "concurrent_fragment_downloads": 1,
             "ignore_no_formats_error": True,
         }
+        if job.output_type == OutputType.ORIGINAL:
+            opts.update(original_audio_options(format_selector))
         apply_ytdlp_network_retry_policy(opts, source_analysis=False)
         if job.output_type == OutputType.MP4:
             opts["merge_output_format"] = "mp4"

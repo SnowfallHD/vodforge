@@ -134,6 +134,7 @@ class FocusSettingsDialog:
         self._build_source_section(root)
         self._build_mp4_section(root, macos=macos)
         self._build_mp3_section(root)
+        self._build_original_audio_section(root)
         self._build_appearance_section(root)
         self._build_privacy_section(root)
         self._build_footer(surface.footer)
@@ -530,6 +531,35 @@ class FocusSettingsDialog:
         if macos:
             nvenc.state(["disabled"])
 
+    def _build_original_audio_section(self, root: ttk.Frame) -> None:
+        frame = ttk.Frame(root, style="FocusShell.TFrame")
+        frame.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        frame.columnconfigure(0, weight=1)
+        ttk.Label(frame, text="ORIGINAL AUDIO", style="FocusEyebrow.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 12)
+        )
+        ttk.Label(
+            frame,
+            text="Keep the source. Skip the extra compression.",
+            style="FocusSection.TLabel",
+            wraplength=330,
+        ).grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        ttk.Label(
+            frame,
+            text="Saves the best available Opus or AAC audio stream without re-encoding. The codec, sample rate, and channels stay unchanged.",
+            style="Muted.TLabel",
+            wraplength=330,
+            justify="left",
+        ).grid(row=2, column=0, sticky="ew")
+        ttk.Label(
+            frame,
+            text="Opus saves as .opus. AAC saves as .m4a.\nNo bitrate or conversion settings needed.",
+            style="Muted.TLabel",
+            wraplength=330,
+            justify="left",
+        ).grid(row=3, column=0, sticky="ew", pady=(16, 0))
+        self.original_audio_frame = frame
+
     def _build_mp3_section(self, root: ttk.Frame) -> None:
         mp3_output = ttk.Frame(root, style="FocusShell.TFrame")
         mp3_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
@@ -662,9 +692,8 @@ class FocusSettingsDialog:
         ttk.Label(
             mp3_output,
             text=(
-                "Maximum 320 kbps minimizes additional encoding loss. Preserve source "
-                "avoids unnecessary resampling; choose 44.1 or 48 kHz only when your "
-                "music or DAW workflow requires it."
+                "YouTube audio is already compressed. MP3 adds another encoding step; "
+                "320 kbps reduces that loss but cannot restore missing detail."
             ),
             style="Muted.TLabel",
             wraplength=330,
@@ -834,6 +863,9 @@ class FocusSettingsDialog:
     def refresh_output_sections(self, output_type: OutputType) -> None:
         self._set_frame_visible(self.mp4_frame, output_type == OutputType.MP4)
         self._set_frame_visible(self.mp3_frame, output_type == OutputType.MP3)
+        self._set_frame_visible(
+            self.original_audio_frame, output_type == OutputType.ORIGINAL
+        )
 
     def refresh_manual_settings(self, manual_override: bool) -> None:
         self._set_frame_visible(self.manual_frame, manual_override)
