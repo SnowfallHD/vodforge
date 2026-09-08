@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -254,6 +255,16 @@ def _is_single_file_http_transport(fmt: dict[str, Any]) -> bool:
     return str(fmt.get("protocol") or "").strip().lower() in {"http", "https"}
 
 
+def video_quality_tier(fmt: dict[str, Any]) -> int:
+    """Use the extractor's named quality tier, not a guessed aspect ratio."""
+    note = str(fmt.get("format_note") or "")
+    match = re.match(r"^(144|240|360|480|720|1080|1440|2160|4320)p(?:\b|\d)", note)
+    if match:
+        return int(match.group(1))
+    height = fmt.get("height")
+    return height if isinstance(height, int) and height > 0 else 0
+
+
 def choose_best_video_format(
     formats: list[dict[str, Any]], max_height: int = DEFAULT_MAX_HEIGHT
 ) -> dict[str, Any] | None:
@@ -276,8 +287,8 @@ def choose_best_video_format(
     ) -> dict[str, Any] | None:
         candidates = []
         for fmt in formats:
-            height = fmt.get("height")
-            if not isinstance(height, int) or height <= 0 or height > max_height:
+            height = video_quality_tier(fmt)
+            if height <= 0 or height > max_height:
                 continue
             if _is_none_codec(fmt.get("vcodec")):
                 continue
@@ -310,11 +321,7 @@ def choose_best_video_format(
             )
         if not candidates:
             return None
-        target_height = (
-            1080
-            if any(item[0] == 1080 for item in candidates) and max_height >= 1080
-            else max(item[0] for item in candidates)
-        )
+        target_height = max(item[0] for item in candidates)
         same_res = [item for item in candidates if item[0] == target_height]
         best_effective = max(item[1] for item in same_res)
         close = [item for item in same_res if item[1] >= best_effective * 0.85]
@@ -349,8 +356,8 @@ def choose_best_progressive_format(
 ) -> dict[str, Any] | None:
     candidates = []
     for fmt in formats:
-        height = fmt.get("height")
-        if not isinstance(height, int) or height <= 0 or height > max_height:
+        height = video_quality_tier(fmt)
+        if height <= 0 or height > max_height:
             continue
         if _is_none_codec(fmt.get("vcodec")) or _is_none_codec(fmt.get("acodec")):
             continue
@@ -378,11 +385,7 @@ def choose_best_progressive_format(
         )
     if not candidates:
         return None
-    target_height = (
-        1080
-        if any(item[0] == 1080 for item in candidates) and max_height >= 1080
-        else max(item[0] for item in candidates)
-    )
+    target_height = max(item[0] for item in candidates)
     same_res = [item for item in candidates if item[0] == target_height]
     best_effective = max(item[1] for item in same_res)
     close = [item for item in same_res if item[1] >= best_effective * 0.85]
@@ -581,6 +584,16 @@ class _AutoEncodeTargets:
 def _choose_auto_video_source(
     formats: list[dict[str, Any]], max_height: int
 ) -> tuple[dict[str, Any] | None, bool]:
+    # Resolve the ceiling before codec/transport preferences or fallback passes.
+    # No fallback may silently download a tier above the user's maximum.
+    eligible = [
+        fmt
+        for fmt in formats
+        if not _is_none_codec(fmt.get("vcodec"))
+        and 0 < video_quality_tier(fmt) <= max_height
+    ]
+    highest = max((video_quality_tier(fmt) for fmt in eligible), default=0)
+    formats = [fmt for fmt in eligible if video_quality_tier(fmt) == highest]
     video = choose_best_video_format(formats, max_height=max_height)
     if video is not None:
         return video, False
@@ -589,7 +602,7 @@ def _choose_auto_video_source(
     if video is not None:
         return video, True
 
-    # Last resort: pick *any* format with a video codec, ignoring all quality filters.
+    # Last resort still stays inside the resolved quality tier.
     video = next(
         (fmt for fmt in formats if not _is_none_codec(fmt.get("vcodec"))),
         None,
@@ -697,19 +710,12 @@ def _derive_auto_encode_targets(
         evidence.effective_audio_kbps,
     )
     warnings: list[str] = []
-    width = selection.video.get("width")
-    reaches_1080_tier = bool(
-        evidence.height
-        and evidence.height >= 1080
-        or isinstance(width, int)
-        and width >= 1920
-    )
-    if max_height >= 1080 and not reaches_1080_tier:
+    if video_quality_tier(selection.video) < max_height:
         warnings.append(
-            "This video is not available in 1080p. VODForge will export the best available lower-resolution version."
+            f"This video is not available in {max_height}p. VODForge will export the best available lower-quality tier."
         )
     if mode == ExportMode.STRICT_COMPLIANCE:
-        if evidence.height and evidence.height < 1080:
+        if video_quality_tier(selection.video) < 1080:
             warnings.append(
                 "Strict Compliance uses high-bitrate output settings, but the selected source is below 1080p. This will not create true 1080p detail."
             )
@@ -786,7 +792,7 @@ def build_auto_export_plan(
     )
     summary = _auto_plan_summary(
         mode,
-        height,
+        video_quality_tier(video),
         targets.video_bitrate_kbps,
         targets.audio_bitrate_kbps,
     )

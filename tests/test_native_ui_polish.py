@@ -30,6 +30,56 @@ def root():
     window.destroy()
 
 
+def test_settings_selects_every_quality_tier_in_real_dropdown():
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp, _quality_max_height
+    from yt_downloader.export_planning import QUALITY_OPTIONS, choose_best_video_format
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application._show_focus_settings()
+            application.update()
+            dropdown = next(
+                widget
+                for widget in descendants(application)
+                if isinstance(widget, ChoiceDropdown)
+                and tuple(widget.cget("values")) == tuple(QUALITY_OPTIONS)
+            )
+            for index, label in enumerate(QUALITY_OPTIONS):
+                dropdown.open_popover()
+                application.update_idletasks()
+                listbox = dropdown._popover.winfo_children()[0]
+                listbox.selection_clear(0, "end")
+                listbox.selection_set(index)
+                listbox.event_generate("<ButtonRelease-1>")
+                application.update()
+                assert dropdown.get() == label
+                ceiling = _quality_max_height(dropdown.get())
+                selected = choose_best_video_format(
+                    [
+                        {
+                            "format_id": str(tier),
+                            "format_note": f"{tier}p",
+                            "height": tier,
+                            "vcodec": "avc1",
+                            "acodec": "none",
+                            "tbr": 5000,
+                        }
+                        for tier in (360, 480, 720, 1080, 1440, 2160)
+                    ],
+                    max_height=ceiling,
+                )
+                assert selected["format_id"] == str(ceiling)
+        finally:
+            application.destroy()
+
+
 def test_shared_fields_do_not_draw_focus_rings(root):
     """Settings, search, notes and entries share the ring-free chrome contract."""
     from yt_downloader.ui_chrome import RoundedFieldBorder

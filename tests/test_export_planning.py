@@ -17,6 +17,7 @@ def test_widescreen_1080_tier_preserves_actual_dimensions_without_warning() -> N
                 "format_id": "270",
                 "width": 1920,
                 "height": 1012,
+                "format_note": "1080p",
                 "fps": 25,
                 "vcodec": "avc1.640028",
                 "acodec": "none",
@@ -37,6 +38,69 @@ def test_widescreen_1080_tier_preserves_actual_dimensions_without_warning() -> N
     )
     assert (plan.output_width, plan.output_height) == (1920, 1012)
     assert not plan.warnings
+
+
+@pytest.mark.parametrize("label", list(export_planning.QUALITY_OPTIONS))
+@pytest.mark.parametrize("progressive", [False, True])
+def test_every_quality_option_selects_highest_provider_tier(label, progressive):
+    ceiling = app._quality_max_height(label)
+    formats = [
+        {
+            "format_id": str(tier),
+            "format_note": f"{tier}p",
+            "height": round(tier * 1012 / 1080),
+            "width": round(tier * 1920 / 1080),
+            "vcodec": "avc1",
+            "acodec": "aac" if progressive else "none",
+            "vbr": 5000,
+            "abr": 128,
+            "fps": 30,
+            "ext": "mp4",
+        }
+        for tier in [360, 480, 720, 1080, 1440, 2160]
+    ]
+    choose = (
+        export_planning.choose_best_progressive_format
+        if progressive
+        else export_planning.choose_best_video_format
+    )
+    selected = choose(formats, max_height=ceiling)
+    assert selected is not None
+    assert selected["format_id"] == str(ceiling)
+    assert selected["height"] == round(ceiling * 1012 / 1080)
+    # A missing exact tier falls back below the ceiling, never above it.
+    if ceiling > 360:
+        selected = choose(
+            [fmt for fmt in formats if fmt["format_id"] != str(ceiling)],
+            max_height=ceiling,
+        )
+        assert selected is not None
+        assert export_planning.video_quality_tier(selected) == max(
+            tier for tier in [360, 480, 720, 1080, 1440, 2160] if tier < ceiling
+        )
+
+
+def test_unlabelled_wide_video_does_not_invent_quality_tier():
+    assert export_planning.video_quality_tier({"width": 3840, "height": 720}) == 720
+
+
+def test_auto_fallback_never_exceeds_ceiling_and_prefers_top_tier():
+    formats = [
+        {
+            "format_id": "low",
+            "height": 1080,
+            "vcodec": "avc1",
+            "acodec": "none",
+            "tbr": 4000,
+        },
+        {"format_id": "high", "height": 2160, "vcodec": "vp9", "acodec": "none"},
+    ]
+    selected, _ = export_planning._choose_auto_video_source(formats, 2160)
+    assert selected["format_id"] == "high"
+    selected, _ = export_planning._choose_auto_video_source(formats, 1080)
+    assert selected["format_id"] == "low"
+    selected, _ = export_planning._choose_auto_video_source(formats, 720)
+    assert selected is None
 
 
 def test_app_preserves_export_planning_compatibility_exports() -> None:
