@@ -57,34 +57,17 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
-- Library now includes search, reusable category filters, and private notes and tags for saved media.
-- The internal offline player now uses bundled libVLC for synchronized MP4/MP3 playback, responsive seeking and volume, and VODForge-owned chapters and preview controls. It opens on artwork with a Play overlay; the engine warms in the background and closing the player no longer waits for runtime teardown.
-- **MP3 + image → MP4** turns local audio and a still image into a video, with independent 1080p Standard, 2160p 4K, 720p Compact, and 1080p Strict 2 Mbps CBR profiles. Output goes directly into the selected folder and appears in Library's MP4 view.
-- Missing or moved media can be re-downloaded with saved settings into the original base output folder, reusing existing folders without duplicating the channel/playlist hierarchy.
-- Theme and accent changes apply immediately. Dropdowns, checkboxes, table selection, and field borders are refined in place; Settings supports trackpad scrolling, and dialog actions and progress remain visible as content changes.
-- Anonymous website-to-install attribution respects browser analytics choices. The **Share anonymous usage analytics** setting controls new coarse app/feature events; first-party installation and Cloud funnel counts remain separate. Media URLs, filenames, searches, notes, tags, and playback positions are excluded from usage events.
-- Output destinations and export preferences now persist across app restarts, while queued runs retain their order and resume through the normal sequential launcher.
-- Closing VODForge now terminates and reaps its owned download/transcode processes. A hard exit is recovered safely on the next launch as the existing **Failed** state, with abandoned `.vfstage` transactions reconciled by the staging owner instead of leaving invisible background work.
-- Library is now a deterministic, run-ID-first projection of durable run and history state. Queued, Preparing, Downloading, Transcoding, Completed, Failed, Stopped, and retry transitions update one canonical row, eliminating orphan placeholders, temporary disappearance, and stale or duplicated terminal rows.
-- Exact duplicate submissions now focus or supersede the correct attempt, reuse an already-valid output without retranscoding, repair missing metadata or thumbnail sidecars, and keep genuinely distinct settings or destinations as distinct Library artifacts.
-- Fast cancellation and restart are durable even before provider metadata arrives. Stopped attempts remain visible after relaunch, while retry and output-detail actions stay attached to the exact run they control.
-- Run Deck, Library table, and progress surfaces now have local render owners that no-op on identical immutable snapshots, patch value-only changes, and rebuild only for real structural changes. Active download progress beside queued MP3 work no longer causes card flicker.
-- Window resizing and responsive Library transitions are substantially smoother on macOS and Windows, with breakpoint changes applied during the drag instead of after release.
-- The pixel-scrolling Library table keeps draggable, session-persistent columns while making divider placement, hit tracking, and large MP4/MP3 list switches more responsive.
-- Selected Library details now use a bounded responsive rail with clearer title, metadata, saved-location, thumbnail, tags, and description hierarchy. Tags and descriptions retain usable independently scrollable space, and ultrawide layouts no longer stretch the table into empty space.
-- Library and Forge menus now include **Copy YouTube URL** using a canonical item or playlist link without unrelated query data, Library actions stay behind one stable **Actions** menu at every size, and the Run Deck fills its available card capacity consistently.
-- MP4 **Manual Override** can select AAC or MP3 audio inside the MP4 container, with codec-aware bitrate validation, FFmpeg output, retry, history, and final-output summaries.
-- Removing a Library item now stops its exact active run or removes its exact queued run before it starts, then removes the matching Library and Forge presentation history. Downloaded media and folders remain untouched, and unrelated work is preserved.
-- Forge's MP4/MP3 selector and output settings configure only the next run; a selected active, queued, completed, failed, stopped, or preview item keeps its own format and output details.
-- Failed downloads retain **Retry Download**, while skipped or stopped downloads retain **Restart Download**. Preview items retain direct **Start download** actions in Forge and Library.
-- Path-safe output folders preserve recognizable channel, playlist, and video titles within Windows path limits instead of falling back to opaque hashes, while retaining compatibility with older saved locations.
-- Forge, Library, and the Run Deck now share a bounded private thumbnail cache, so moved media can retain its artwork. Re-downloading a genuinely missing item replaces the stale saved location instead of creating a duplicate, while temporarily unavailable external storage remains preserved.
-- Downloads still use isolated same-volume staging, contract validation, and an atomic final commit so cancellation or a failed encode cannot replace a valid destination with a partial file.
-- Download either **MP4 video** or **MP3 audio** from the same Forge field. Bundled yt-dlp, Deno, and EJS format discovery continues to find 1080p and 4K sources when the video provides them, while **Library** keeps the original YouTube source and final VODForge output details together.
-- The optional **VODForge Cloud** early-access funnel remains privacy-narrow: one random anonymous installation identifier records the seen → clicked → joined journey alongside only OS family and app version.
-- VODForge continues to check stable GitHub Releases automatically and verifies approved updates before installation.
-- Windows downloads are signed by Kryden Ventures, LLC.
-- Mac downloads are Developer ID signed, notarized, and provided separately for Apple silicon and Intel-based Macs.
+- **Original audio** preserves the best available supported Opus or AAC source without another lossy encode. Outputs use .opus or .m4a, with Library filtering and built-in playback.
+- Choose **MP4**, **MP3**, or **Original audio** from one polished dropdown. Shared dropdown styling is consistent throughout the app on macOS and Windows.
+- Forge now offers clear, friendly progress stages and a smile/frown slider for the detailed technical log. Activity keeps the full technical view with aligned event markers and readable wrapped lines.
+- A native **What's new** showcase introduces selected features with sharp, locally rendered exhibits. X or Escape dismisses the current showcase; ordinary version changes do not reopen it.
+- Run Deck reflects completed Library items during a playlist instead of waiting for the whole playlist. Skipping a non-final item immediately follows the next item, and thumbnails remain attached to the correct video.
+- Quality caps honor YouTube's named quality tiers, including wide-aspect 1080p streams whose height is not exactly 1080 pixels. Routine bitrate and temporary-file messages no longer appear as misleading failure warnings.
+- The optional analytics choice now governs installation, update, attribution, and usage telemetry. Existing installations evaluate the region policy once if needed; opt-in and unknown regions require consent. Saved choices persist, and existing users do not restart the first-install browser-link flow.
+- Usage sharing uses an in-app, centered prompt with a fully dimmed backdrop. The first-install thank-you page remains independent of analytics permission.
+- Refined Forge, Library, Settings, and Player surfaces improve spacing, typography, hover states, and control consistency.
+- Downloads continue to use isolated staging, output validation, and atomic final commits. Stable updates are verified before installation.
+- Windows downloads are signed by Kryden Ventures, LLC. Mac downloads are Developer ID signed, notarized, and available separately for Apple silicon and Intel Macs.
 
 Checksums for every download are available in `SHA256SUMS.txt` below.
 """
