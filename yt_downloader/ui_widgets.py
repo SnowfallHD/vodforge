@@ -423,6 +423,9 @@ class ChoiceDropdown(tk.Frame):
             self._field.bind("<Button-1>", self._open_from_event, add="+")
         self.bind("<Destroy>", self._destroyed, add="+")
         self._chrome = RoundedFieldBorder(self)
+        if self._state != "normal":
+            self.bind("<Button-1>", self._open_from_event, add="+")
+            self._chrome.canvas.bind("<Button-1>", self._open_from_event, add="+")
         self._render_chevron()
 
     def _custom_option(self, key: str) -> Any:
@@ -540,6 +543,9 @@ class ChoiceDropdown(tk.Frame):
         self._popover = popup
         popup.place(x=x, y=y, width=width, height=height)
         popup.lift()
+        # Tk cannot focus an unmapped child. Complete layout before handing
+        # focus to the menu, or the pending old-field FocusOut closes it again.
+        popup.update_idletasks()
         listbox.focus_set()
         popup.watch()
         self._sync_border()

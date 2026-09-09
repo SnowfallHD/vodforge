@@ -47,6 +47,30 @@ def test_outside_click_dismisses_even_when_target_breaks_dispatch(surface, kind)
     assert target.bindtags() == original
 
 
+@pytest.mark.parametrize("target", ["_field", "_chevron", "padding"])
+@pytest.mark.parametrize("secondary", [False, True])
+def test_first_click_opens_after_focus_moves_to_another_field(
+    surface, target, secondary
+):
+    root, _original = surface
+    owner = tk.Toplevel(root) if secondary else root
+    field = ChoiceDropdown(
+        owner, textvariable=tk.StringVar(owner, "MP4"), values=("MP4", "MP3")
+    )
+    field.pack()
+    other = tk.Entry(owner)
+    other.pack()
+    root.update()
+    other.focus_force()
+    root.update()
+    clicked = field._chrome.canvas if target == "padding" else getattr(field, target)
+    clicked.event_generate("<ButtonPress-1>", x=4, y=4)
+    clicked.event_generate("<ButtonRelease-1>", x=4, y=4)
+    root.update()
+    assert field._popover is not None
+    assert field.focus_get() is field._popover.winfo_children()[0]
+
+
 @pytest.mark.parametrize(
     "action", ["escape", "hide_anchor", "hide_window", "other_window", "destroy_anchor"]
 )
