@@ -26,6 +26,32 @@ def _permitted_installation(path: Path) -> str:
     return state.install_id
 
 
+@pytest.mark.parametrize("permitted", [False, True])
+def test_original_audio_events_obey_deployed_vocabulary(tmp_path, permitted):
+    from yt_downloader.models import OutputType
+    from yt_downloader.product_telemetry import product_output_kind
+
+    installation = tmp_path / "installation.json"
+    if permitted:
+        _permitted_installation(installation)
+    else:
+        load_or_create_installation_state(installation)
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.1.9",
+        d1_recorder=lambda _event: True,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    for output in OutputType:
+        kind = product_output_kind(output.value)
+        assert kind in ("mp4", "mp3", None)
+        for event in ("run_started", "run_completed", "playback_started"):
+            assert owner.record(event, output_type=kind) is permitted
+    assert product_output_kind("Original audio") is None
+    assert owner.shutdown(2)
+
+
 @pytest.mark.parametrize("preview_mode", [False, True])
 def test_preview_excludes_provider_without_fabricating_delivery(
     tmp_path, monkeypatch, preview_mode

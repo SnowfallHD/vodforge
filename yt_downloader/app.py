@@ -192,9 +192,9 @@ from .platform_services import (
 from .private_files import open_private_text_file, write_private_bytes
 from .process_lifecycle import ACTIVE_CHILD_PROCESS_REGISTRY
 from .product_telemetry import (
-    OutputKind,
     ProductEventName,
     ProductTelemetryOwner,
+    product_output_kind,
     product_telemetry_path,
 )
 from .quality_e2e import (
@@ -11880,7 +11880,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "run_started",
                 dedupe_key=job.run_id,
                 run_kind="youtube",
-                output_type=cast(OutputKind, job.output_type.value.lower()),
+                output_type=product_output_kind(job.output_type.value),
             )
         if hasattr(self, "focus_run_controls"):
             self._set_focus_run_controls_visible(True)
@@ -13999,7 +13999,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             event_name,
             dedupe_key=job.run_id,
             run_kind="youtube",
-            output_type=cast(OutputKind, job.output_type.value.lower()),
+            output_type=product_output_kind(job.output_type.value),
             failure_reason=job.failure_diagnostic.reason
             if event_name == "run_failed" and job.failure_diagnostic
             else None,
@@ -14014,7 +14014,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         telemetry.record(
             "playback_started",
-            output_type=cast(OutputKind, metadata_output_type(info).value.lower()),
+            output_type=product_output_kind(metadata_output_type(info).value),
         )
 
     def _emit_job_log(self, job: DownloadJob, line: str) -> None:

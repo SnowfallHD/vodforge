@@ -65,6 +65,16 @@ _RELEASE_CHANNELS = {"production", "development", "test"}
 _PLATFORMS = {"macos", "windows", "linux", "unknown"}
 
 
+def product_output_kind(value: str) -> OutputKind | None:
+    """Project app formats onto the deployed v1 telemetry vocabulary.
+
+    New formats still emit their permitted lifecycle events with no format label;
+    never mislabel Original audio as MP3 or send an unsupported server enum.
+    """
+    normalized = value.lower()
+    return cast(OutputKind, normalized) if normalized in _OUTPUT_KINDS else None
+
+
 @dataclass(frozen=True, slots=True)
 class ProductTelemetryEvent:
     event_id: str
