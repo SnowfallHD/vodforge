@@ -15,6 +15,7 @@ from .fault_server import FixtureHTTPServer
 from .maintainability import change_surface_probe
 from .metrics import LifecycleCheckpointRecorder, lifecycle_growth_summary
 from .mutation import run_bounded_mutation_campaign
+from .native_ui_checks import native_surface_contract
 from .pipeline import (
     HeadlessPipelineRunner,
     TracingQueue,
@@ -2541,6 +2542,12 @@ def run_scenarios(
             ),
         ),
         ("unit_static.telemetry_isolation", isolation_receipt),
+        (
+            "unit_static.native_surface_contract",
+            lambda: native_surface_contract(
+                repo_root, run_root / "cases" / "native-ui"
+            ),
+        ),
     ]
     if include_public or deep:
         registry.insert(

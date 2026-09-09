@@ -36,6 +36,34 @@ def pro_wordmark(master: tk.Misc) -> ImageTk.PhotoImage:
     )
 
 
+def field_border_image(
+    width: int, height: int, *, hovered: bool = False
+) -> Image.Image:
+    """Canonical field chrome for ttk slices and full-size Canvas adapters.
+
+    Focus never changes the border; editing/focus semantics remain widget-owned.
+    Transparent corners work against the actual containing surface.
+    """
+    scale = 3
+    image = Image.new("RGBA", (width * scale, height * scale))
+    ImageDraw.Draw(image).rounded_rectangle(
+        (2, 2, width * scale - 3, height * scale - 3),
+        radius=24,
+        fill=THEME["surface_2"] if hovered else THEME["surface"],
+        outline=THEME["border"],
+        width=scale,
+    )
+    return image.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def accent_hover_color() -> str:
+    """Shared accent interaction color, including custom user themes."""
+    return "#" + "".join(
+        f"{round(channel + (255 - channel) * 0.22):02x}"
+        for channel in ImageColor.getrgb(THEME["accent"])
+    )
+
+
 class RoundedFieldBorder:
     """Chrome only; the existing field retains editing and choice ownership."""
 
@@ -49,7 +77,9 @@ class RoundedFieldBorder:
         self.canvas = tk.Canvas(
             field, bd=0, highlightthickness=0, takefocus=False, bg=THEME["bg"]
         )
-        self.canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        # Chrome covers the entire shell, including its content padding. The
+        # default inside mode exposes a square strip of the shell around it.
+        self.canvas.place(x=0, y=0, relwidth=1, relheight=1, bordermode="outside")
         field.tk.call("lower", str(self.canvas))
         self.item = self.canvas.create_image(0, 0, anchor="nw")
         field.bind(
@@ -66,15 +96,8 @@ class RoundedFieldBorder:
         snapshot = (width, height, fill, outline, THEME["bg"])
         if snapshot == self._committed or width < 2 or height < 2:
             return
-        image = Image.new("RGB", (width * 2, height * 2), THEME["bg"])
-        ImageDraw.Draw(image).rounded_rectangle(
-            (1, 1, width * 2 - 2, height * 2 - 2),
-            radius=16,
-            fill=fill,
-            outline=outline,
-            width=2,
-        )
-        image = image.resize((width, height), Image.Resampling.LANCZOS)
+        self.canvas.configure(bg=THEME["bg"])
+        image = field_border_image(width, height, hovered=hovered)
         self._image = ImageTk.PhotoImage(image, master=self.field)
         self.canvas.itemconfigure(self.item, image=self._image)
         self._committed = snapshot
@@ -90,10 +113,7 @@ class ProductChromeOwner:
         snapshot = theme_palette_snapshot()
         if self._committed == snapshot:
             return
-        accent_hover = "#" + "".join(
-            f"{round(channel + (255 - channel) * 0.22):02x}"
-            for channel in ImageColor.getrgb(THEME["accent"])
-        )
+        accent_hover = accent_hover_color()
         roles = {
             "button": (THEME["surface_2"], THEME["border"]),
             "hover": (THEME["border"], THEME["muted"]),
@@ -110,18 +130,20 @@ class ProductChromeOwner:
         first = not self.images
         for name, (fill, outline) in roles.items():
             is_transport = name.startswith("transport")
-            pixels = 120 if is_transport else 84
-            image = Image.new("RGBA", (pixels, pixels))
-            draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle(
-                (2, 2, pixels - 3, pixels - 3),
-                radius=60 if is_transport else 24,
-                fill=fill,
-                outline=outline,
-                width=3,
-            )
             size = 40 if is_transport else 28
-            image = image.resize((size, size), Image.Resampling.LANCZOS)
+            if name in ("field", "field_focus"):
+                image = field_border_image(size, size)
+            else:
+                pixels = size * 3
+                image = Image.new("RGBA", (pixels, pixels))
+                ImageDraw.Draw(image).rounded_rectangle(
+                    (2, 2, pixels - 3, pixels - 3),
+                    radius=60 if is_transport else 24,
+                    fill=fill,
+                    outline=outline,
+                    width=3,
+                )
+                image = image.resize((size, size), Image.Resampling.LANCZOS)
             if name in self.images:
                 self.images[name].paste(image)
             else:

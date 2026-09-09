@@ -9,8 +9,9 @@ from pathlib import Path
 from tkinter import ttk
 from typing import Any, Literal, Protocol, cast
 
+from .choice_popover import ChoicePopover
 from .models import OutputType
-from .ui_chrome import RoundedFieldBorder
+from .ui_chrome import RoundedFieldBorder, accent_hover_color
 from .ui_layout import (
     accumulated_row_scroll,
     focus_wheel_pixels,
@@ -353,7 +354,7 @@ class ChoiceDropdown(tk.Frame):
             parent,
             bg=THEME["surface"],
             bd=0,
-            highlightthickness=1,
+            highlightthickness=0,
             highlightbackground=THEME["border"],
             highlightcolor=THEME["border"],
             takefocus=1,
@@ -363,7 +364,7 @@ class ChoiceDropdown(tk.Frame):
         self._state = str(state)
         self._width = max(4, int(width))
         self._hovered = False
-        self._popover: tk.Toplevel | None = None
+        self._popover: ChoicePopover | None = None
         self._chevron_image: Any | None = None
 
         if self._state == "normal":
@@ -507,11 +508,7 @@ class ChoiceDropdown(tk.Frame):
         if self._popover is not None:
             self._close_popover()
             return
-        popup = tk.Toplevel(self)
-        popup.withdraw()
-        popup.overrideredirect(True)
-        popup.transient(self.winfo_toplevel())
-        popup.configure(bg=THEME["bg"])
+        popup = ChoicePopover(self, self._close_popover, bg=THEME["bg"])
         listbox = ChoiceMenu(popup, self._values)
         listbox.pack(fill="both", expand=True)
         try:
@@ -526,20 +523,25 @@ class ChoiceDropdown(tk.Frame):
             add="+",
         )
         listbox.bind("<Return>", lambda _event: self._commit_listbox(listbox), add="+")
-        popup.bind("<Escape>", lambda _event: self._close_popover(), add="+")
-        popup.bind("<FocusOut>", self._popover_focus_out, add="+")
+        listbox.bind("<Escape>", lambda _event: self._close_popover(), add="+")
         popup.update_idletasks()
         width = max(self.winfo_width(), popup.winfo_reqwidth())
         height = popup.winfo_reqheight()
-        x = min(self.winfo_rootx(), max(0, self.winfo_screenwidth() - width - 8))
-        y = self.winfo_rooty() + self.winfo_height() + 4
-        if y + height > self.winfo_screenheight() - 8:
-            y = max(8, self.winfo_rooty() - height - 4)
-        popup.geometry(f"{width}x{height}+{x}+{y}")
+        owner = self.winfo_toplevel()
+        width = min(width, max(1, owner.winfo_width() - 16))
+        height = min(height, max(1, owner.winfo_height() - 16))
+        x = min(
+            self.winfo_rootx() - owner.winfo_rootx(),
+            max(0, owner.winfo_width() - width - 8),
+        )
+        y = self.winfo_rooty() - owner.winfo_rooty() + self.winfo_height() + 4
+        if y + height > owner.winfo_height() - 8:
+            y = max(8, self.winfo_rooty() - owner.winfo_rooty() - height - 4)
         self._popover = popup
-        popup.deiconify()
+        popup.place(x=x, y=y, width=width, height=height)
         popup.lift()
         listbox.focus_set()
+        popup.watch()
         self._sync_border()
 
     def _commit_listbox(self, listbox: ChoiceMenu) -> str:
@@ -549,20 +551,6 @@ class ChoiceDropdown(tk.Frame):
             self.event_generate("<<ComboboxSelected>>", when="tail")
         self._close_popover()
         return "break"
-
-    def _popover_focus_out(self, _event: tk.Event[Any]) -> None:
-        def close_if_outside() -> None:
-            popup = self._popover
-            if popup is None:
-                return
-            try:
-                focused = popup.focus_get()
-                if focused is None or focused.winfo_toplevel() is not popup:
-                    self._close_popover()
-            except tk.TclError:
-                self._close_popover()
-
-        self.after_idle(close_if_outside)
 
     def _close_popover(self) -> None:
         popup, self._popover = self._popover, None
@@ -1369,6 +1357,7 @@ class PixelScrollTable(tk.Frame):
             bd=0,
             highlightthickness=1,
             highlightbackground=THEME["border"],
+            highlightcolor=THEME["border"],
         )
         self._columns = tuple(columns)
         self._headings = {column: column for column in columns}
@@ -2651,7 +2640,7 @@ class RoundedIconButton(tk.Canvas):
                 elif self._pressed:
                     fill = THEME["accent_dark"]
                 elif self._hovered:
-                    fill = "#8584ff"
+                    fill = accent_hover_color()
                 else:
                     fill = THEME["accent"]
             else:

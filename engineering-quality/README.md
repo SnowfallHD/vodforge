@@ -1,5 +1,21 @@
 # VODForge engineering-quality harness
 
+## Native control lifecycle gate
+
+`unit_static.native_surface_contract` runs the opt-in source-native control suite
+with a real Tk display. NORMAL/DEEP release evaluation requires this scenario.
+Missing, empty, skipped, or failing native evidence is not a pass. Coverage includes
+outside clicks (including targets that stop event propagation), Escape, owner/anchor
+unmapping, window focus transfer, repeated cleanup, field chrome coverage and
+Canvas/ttk field-image parity. These checks complement, not replace, packaged
+Mac/Windows interaction evidence and actual cross-application switching.
+
+The earlier choice-control audit excluded `tk.Menu` command/context menus and
+checked selection rather than dismissal lifetime. Native command menus remain
+intentional separate controls, not migrated choice fields. Do not describe that
+inventory as all menus. Standard fields share `ui_chrome.field_border_image`;
+adapters retain native editing/layout mechanics, not separate border designs.
+
 This directory is an isolated adversarial test system for answering a bounded question with receipts:
 
 > Is VODForge actually well engineered, performant, reliable, secure, and maintainable under the scenarios we executed?

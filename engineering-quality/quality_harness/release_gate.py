@@ -26,6 +26,7 @@ NORMAL_REQUIRED_SCENARIOS = frozenset(
         "unit_static.telemetry_backend_suite",
         "unit_static.telemetry_local_contract",
         "unit_static.telemetry_isolation",
+        "unit_static.native_surface_contract",
         "correctness.local_mp4_real_pipeline",
         "correctness.local_mp3_bitrate_real_pipeline",
         "correctness.local_mp4_embedding_disabled",

@@ -67,7 +67,8 @@ def test_choice_dropdown_owns_one_cohesive_surface_and_local_popover() -> None:
     source = inspect.getsource(ChoiceDropdown)
 
     assert "class ChoiceDropdown(tk.Frame)" in source
-    assert "popup.overrideredirect(True)" in source
+    assert "ChoicePopover(" in source
+    assert "overrideredirect" not in source
     assert '"chevron-down"' in source
     assert 'self.event_generate("<<ComboboxSelected>>"' in source
     assert "self._popover" in source
