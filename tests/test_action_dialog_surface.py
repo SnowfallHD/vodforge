@@ -161,4 +161,5 @@ def test_new_action_dialog_modules_must_adopt_the_shared_surface() -> None:
         "library_annotation_ui.py",
         "library_media_recovery_ui.py",
         "local_audio_video_ui.py",
+        "support_ui.py",
     }

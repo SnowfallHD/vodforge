@@ -25,6 +25,16 @@ from .whats_new_audio_demo import OriginalAudioDemo
 
 def render_native_preview(parent: tk.Misc, preview: NativePreview) -> tk.Widget:
     """Single entry point for every present and future carousel exhibit."""
+    if preview is NativePreview.WELCOME_ACTIVITY:
+        from .forge_activity_ui import ForgeActivityPanel
+
+        panel = ForgeActivityPanel(parent)
+        panel.show("welcome-example", "")
+        panel.observe("welcome-example", "Video 1 of 1 — downloading")
+        panel.technical.request(
+            "Video 1 of 1: selected format 137+251\nVideo 1 of 1: downloading\nExample only — no download is running."
+        )
+        return panel
     if preview is NativePreview.ACTIVITY_MODE:
         return ActivityDemo(parent)
     if preview is NativePreview.ORIGINAL_AUDIO:

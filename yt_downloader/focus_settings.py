@@ -86,6 +86,7 @@ class FocusSettingsActions:
     record_cloud_cta_seen: Callable[[], object]
     apply_appearance: Callable[[], object]
     on_closed: Callable[[], object]
+    help_feedback: Callable[[], object] | None = None
 
 
 class FocusSettingsDialog:
@@ -818,12 +819,16 @@ class FocusSettingsDialog:
             style="FocusQuiet.TButton",
         )
         preview_button.grid(row=0, column=0, sticky="w")
+        if self.actions.help_feedback is not None:
+            ttk.Button(
+                footer, text="Help & feedback", command=self.actions.help_feedback
+            ).grid(row=0, column=1, padx=8)
         ttk.Button(
             footer,
             text="Done",
             command=self.close,
             style="Accent.TButton",
-        ).grid(row=0, column=1, sticky="e")
+        ).grid(row=0, column=2, sticky="e")
 
     def _bind_readonly_combo(
         self,

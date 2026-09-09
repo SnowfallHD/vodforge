@@ -71,7 +71,11 @@ def test_seen_showcase_does_not_repeat_for_an_app_version_change():
 def test_future_slides_cannot_fall_back_to_screenshot_artwork():
     with pytest.raises(TypeError, match="native preview"):
         FeatureHighlight("future", "Future", "A feature", "screenshot.png")
-    assert {feature.preview for feature in HIGHLIGHTS} == set(NativePreview)
+    from yt_downloader.engagement_state import WELCOME_SLIDES
+
+    assert {feature.preview for feature in (*HIGHLIGHTS, *WELCOME_SLIDES)} == set(
+        NativePreview
+    )
 
 
 def test_release_without_curated_highlights_is_silent():

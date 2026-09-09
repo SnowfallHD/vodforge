@@ -48,6 +48,7 @@ from .cloud_funnel import (
     record_cloud_seen,
 )
 from .detail_ui import FactsText, OutputDetailsDialog
+from .engagement_ui import EngagementUI
 from .export_planning import (
     DEFAULT_MAX_HEIGHT,
     EXPORT_MODES,
@@ -4922,15 +4923,31 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.whats_new_seen_var = tk.StringVar(
             value=str(saved_settings.get("whats_new_seen", ""))[:128]
         )
+        from .whats_new import SHOWCASE_ID
+
+        self.engagement = EngagementUI(
+            self,
+            self.installation_state_path,
+            ready=lambda: (
+                self.analytics_startup.stage_finished
+                and self.active_job is None
+                and not self.pending_jobs
+                and (
+                    self._media_player_window is None
+                    or self._media_player_window.closed
+                )
+                and self._local_audio_video_dialog is None
+                and not self._closing
+            ),
+            suppress_showcase=lambda: self.whats_new_seen_var.set(SHOWCASE_ID),
+        )
         self.whats_new = WhatsNewOwner(
             self,
             self.whats_new_seen_var,
             lambda: (
-                (
-                    not self.analytics_startup.attempts
-                    or self.analytics_startup.permission_presented
-                )
+                (self.analytics_startup.stage_finished)
                 and self.active_job is None
+                and not self.engagement.blocks_announcements
             ),
         )
 
@@ -5135,6 +5152,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._check_runtime()
         self.after(100, self._pump_events)
         self.after(250, self.analytics_startup.start)
+        self.engagement.start()
         self.after(400, self._record_product_app_opened)
         self.after(25, self._start_ytdlp_preload)
         if self.playback_engine is not None:
@@ -5375,6 +5393,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             takefocus=1,
         )
         self.focus_settings_button.pack(side="left")
+        help_button = ttk.Button(
+            utilities, text="Help & feedback", style="FocusQuiet.TButton"
+        )
+        help_button.configure(command=lambda: self.engagement.menu(help_button))
+        help_button.pack(side="left", padx=(10, 0))
         self.focus_settings_button.bind(
             "<Button-1>", lambda _event: self._show_focus_settings(), add="+"
         )
@@ -7179,7 +7202,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             record_cloud_cta_seen=self._record_cloud_cta_seen,
             apply_appearance=self._request_live_theme,
             on_closed=self._focus_settings_closed,
+            help_feedback=self._settings_help_feedback,
         )
+
+    def _settings_help_feedback(self) -> None:
+        if self._focus_settings_dialog is not None:
+            self._focus_settings_dialog.close()
+        self.after_idle(self.engagement.feedback)
 
     def _focus_settings_closed(self) -> None:
         self._focus_settings_dialog = None
@@ -11946,6 +11975,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if self._closing:
             return
         self._closing = True
+        engagement = self.__dict__.get("engagement")
+        if engagement is not None:
+            engagement.close()
         whats_new = self.__dict__.get("whats_new")
         if whats_new is not None:
             whats_new.close()
@@ -13685,6 +13717,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             suppressed=self._library_run_is_suppressed(finished_job),
         )
         self._record_finished_run_before_handoff(decision, run_status, message)
+        engagement = self.__dict__.get("engagement")
+        if engagement is not None and not decision.suppressed:
+            engagement.finished(finished_job, run_status, message)
         if progress is not None:
             self.progress_var.set(progress)
         self.status_var.set(message)

@@ -22,7 +22,7 @@ in a searchable Library with built-in playback.
 > [latest public download](https://github.com/SnowfallHD/vodforge/releases/latest).
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·
-[Privacy](#privacy-and-usage-analytics) · [Development](#development) ·
+[Privacy](#privacy-and-usage-analytics) · [Welcome & feedback (development)](docs/welcome-feedback-reviews.md) · [Development](#development) ·
 [Architecture](docs/architecture.md)
 
 ## What it does

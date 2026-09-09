@@ -83,11 +83,15 @@ class WhatsNewPanel:
         parent: tk.Misc,
         highlights: tuple[FeatureHighlight, ...],
         dismissed: Callable[[], None],
+        *,
+        heading: str = "What’s new",
+        finish_label: str | None = None,
     ) -> None:
         if not highlights:
             raise ValueError("A showcase needs at least one feature")
         self.parent, self.highlights, self.dismissed = parent, highlights, dismissed
         self.index = -1
+        self.finish_label = finish_label
         self.activity_demo: tk.Widget | None = None
         self.transition_timer: str | None = None
         self.closed = False
@@ -108,7 +112,7 @@ class WhatsNewPanel:
         body.rowconfigure(2, weight=1)
         ttk.Label(
             body,
-            text="What’s new",
+            text=heading,
             font=(FONT_UI_FAMILY, 14, "bold"),
             foreground=THEME["accent"],
             anchor="center",
@@ -160,12 +164,25 @@ class WhatsNewPanel:
         self.next = _ArrowButton(actions, 1, self.advance)
         for control in (self.back, self.next):
             control.pack(side="left", padx=5)
-        self.controls = (self.dismiss_button, self.back, self.next)
+        self.finish_button = ttk.Button(
+            actions,
+            text=finish_label or "Done",
+            command=self.close,
+            style="Accent.TButton",
+        )
+        self.skip_button = ttk.Button(actions, text="Skip tour", command=self.close)
+        if finish_label:
+            self.skip_button.pack(side="left", padx=8)
+        self.controls = (
+            self.dismiss_button,
+            self.back,
+            self.next,
+            self.skip_button,
+            self.finish_button,
+        )
         for index, focus_control in enumerate(self.controls):
-            focus_control.bind("<Tab>", partial(self._focus_event, (index + 1) % 3))
-            focus_control.bind(
-                "<Shift-Tab>", partial(self._focus_event, (index - 1) % 3)
-            )
+            focus_control.bind("<Tab>", partial(self._cycle_focus, index, 1))
+            focus_control.bind("<Shift-Tab>", partial(self._cycle_focus, index, -1))
             focus_control.bind("<Escape>", lambda _e: self.close())
         self.frame.bind("<Escape>", lambda _e: self.close())
         self.frame.bind("<Tab>", lambda _e: self.focus(2))
@@ -178,11 +195,19 @@ class WhatsNewPanel:
         self.frame.grab_set()
         self.next.focus_set()
 
-    def _focus_event(self, index: int, _event: tk.Event) -> str:
-        return self.focus(index)
+    def _cycle_focus(self, index: int, direction: int, _event: tk.Event) -> str:
+        for offset in range(1, len(self.controls) + 1):
+            candidate = self.controls[(index + direction * offset) % len(self.controls)]
+            if candidate.winfo_viewable():
+                candidate.focus_set()
+                break
+        return "break"
 
     def focus(self, index: int) -> str:
-        self.controls[index].focus_set()
+        if index == 2 and self.finish_label and self.index == len(self.highlights) - 1:
+            self.finish_button.focus_set()
+        else:
+            self.controls[index].focus_set()
         return "break"
 
     def render(self, index: int) -> None:
@@ -205,6 +230,15 @@ class WhatsNewPanel:
         self.next.state(
             ["disabled"] if index == len(self.highlights) - 1 else ["!disabled"]
         )
+        if self.finish_label:
+            if index == len(self.highlights) - 1:
+                self.next.pack_forget()
+                self.skip_button.pack_forget()
+                self.finish_button.pack(side="left", padx=8)
+            else:
+                self.finish_button.pack_forget()
+                self.next.pack(side="left", padx=5)
+                self.skip_button.pack(side="left", padx=8)
 
     def _schedule_preview(self) -> None:
         if not self.closed and self.paint_timer is None:

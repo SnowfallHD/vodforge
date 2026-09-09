@@ -7,11 +7,8 @@ UUID is a compatibility link, not proof of ownership of an old installation.
 from __future__ import annotations
 
 import json
-import os
 import re
 import secrets
-import stat
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -23,7 +20,8 @@ from typing import Any
 from .analytics_consent import analytics_allowed
 from .cloud_funnel import load_or_create_installation_state
 from .private_files import write_private_bytes
-from .safe_output import is_symlink_or_reparse
+from .private_json import create_private_json_once as _create_once
+from .private_json import read_private_json as _read
 from .telemetry_policy import telemetry_collection_allowed
 from .telemetry_transport import telemetry_urlopen
 from .version import __version__
@@ -34,37 +32,6 @@ SECRET_RE = re.compile(r"[A-Za-z0-9_-]{43}")
 
 class RejectedTelemetryEvent(RuntimeError):
     """Server rejected this event permanently; never mark it delivered."""
-
-
-def _read(path: Path) -> dict[str, Any]:
-    before = path.lstat()
-    if is_symlink_or_reparse(before) or not stat.S_ISREG(before.st_mode):
-        raise OSError("Unsafe telemetry credential file")
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-    with os.fdopen(fd, "rb") as stream:
-        if not os.path.samestat(before, os.fstat(stream.fileno())):
-            raise OSError("Telemetry credential changed")
-        value = json.loads(stream.read(4097))
-    if not isinstance(value, dict):
-        raise TypeError("Invalid telemetry credential")
-    return value
-
-
-def _create_once(path: Path, value: dict[str, Any]) -> None:
-    """Publish a complete private file atomically; concurrent creators cannot replace it."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(prefix=".telemetry-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(json.dumps(value).encode("utf-8"))
-            stream.flush()
-            os.fsync(stream.fileno())
-        try:
-            os.link(name, path)
-        except FileExistsError:
-            pass
-    finally:
-        os.unlink(name)
 
 
 class TelemetryCredentialOwner:

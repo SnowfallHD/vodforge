@@ -202,11 +202,14 @@ def load_or_create_installation_state(path: Path | None = None) -> InstallationS
 
     existing_profile = any(
         (destination.parent / name).exists()
-        for name in ("settings.json", "analytics-consent.json")
+        for name in ("settings.json", "analytics-consent.json", "download-history.json")
     )
     candidate = InstallationState(
         install_id=str(uuid.uuid4()),
-        onboarding={"browser_eligible": not existing_profile},
+        onboarding={
+            "browser_eligible": not existing_profile,
+            "welcome_eligible": not existing_profile,
+        },
     )
     if _create_state_exclusively(destination, candidate):
         return candidate
@@ -256,6 +259,26 @@ def update_onboarding(path: Path, **changes: Any) -> InstallationState:
             current, onboarding={**(current.onboarding or {}), **changes}
         ),
     )
+
+
+def record_rating_success(path: Path, run_id: str) -> InstallationState:
+    """Atomically retain at most three distinct successful operation IDs."""
+    state = load_or_create_installation_state(path)
+
+    def record(current: InstallationState) -> InstallationState:
+        onboarding = dict(current.onboarding or {})
+        saved = onboarding.get("rating_successes", [])
+        ids = (
+            [value for value in saved if isinstance(value, str)][:3]
+            if isinstance(saved, list)
+            else []
+        )
+        if run_id and run_id not in ids and len(ids) < 3:
+            ids.append(run_id)
+        onboarding["rating_successes"] = ids
+        return replace(current, onboarding=onboarding)
+
+    return _update_state(path, state.install_id, record)
 
 
 def mark_first_launch_confirmed(path: Path, install_id: str) -> InstallationState:

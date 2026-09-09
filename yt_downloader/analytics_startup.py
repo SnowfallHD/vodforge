@@ -22,6 +22,14 @@ from .telemetry_policy import telemetry_collection_allowed, telemetry_site_origi
 
 
 class AnalyticsStartup:
+    @property
+    def stage_finished(self) -> bool:
+        """Presentation is not completion: wait for the user's panel to close."""
+        if not telemetry_collection_allowed():
+            return True
+        panel = getattr(self, "permission_panel", None)
+        return self.permission_presented and (panel is None or panel.closed)
+
     def __init__(
         self,
         root: tk.Misc,

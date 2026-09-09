@@ -813,6 +813,10 @@ class MediaPlayerWindow:
             self._preview_images.append(rendered)
             apply_preview_image(self.preview_labels[index], rendered)
 
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
     def close(self) -> None:
         if self._closed:
             return
