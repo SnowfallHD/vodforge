@@ -110,13 +110,32 @@ class WhatsNewPanel:
         )
         body = self.surface.body
         body.rowconfigure(2, weight=1)
-        ttk.Label(
-            body,
-            text=heading,
-            font=(FONT_UI_FAMILY, 14, "bold"),
-            foreground=THEME["accent"],
-            anchor="center",
-        ).grid(row=0, column=0, sticky="ew", pady=(0, 18))
+        heading_row = ttk.Frame(body, style="FocusShell.TFrame")
+        heading_row.grid(row=0, column=0, pady=(0, 18))
+        self.heading_labels = []
+        # Preserve the two-tone brand wherever this heading includes it.
+        parts = heading.partition("VODForge")
+        segments = (
+            [
+                (parts[0], "accent"),
+                ("VOD", "accent"),
+                ("Forge", "text"),
+                (parts[2], "accent"),
+            ]
+            if parts[1]
+            else [(heading, "accent")]
+        )
+        for text, color in segments:
+            if not text:
+                continue
+            label = ttk.Label(
+                heading_row,
+                text=text,
+                font=(FONT_UI_FAMILY, 14, "bold"),
+                foreground=THEME[color],
+            )
+            label.pack(side="left")
+            self.heading_labels.append(label)
         self.preview = tk.Canvas(
             body,
             bg=THEME["bg"],

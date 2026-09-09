@@ -236,7 +236,10 @@ class SupportPanel:
             rely=0.5,
             anchor="center",
             width=min(580, max(340, self.parent.winfo_width() - 36)),
-            height=min(570, max(400, self.parent.winfo_height() - 36)),
+            height=min(
+                510 if self.kind == "feedback" else 460,
+                max(400, self.parent.winfo_height() - 36),
+            ),
         )
         self.backdrop.refresh(self.frame)
 

@@ -58,6 +58,7 @@ def test_forms_footer_consent_limits_and_dismissal(root, kind, size):
         assert panel.payload()["display_name"] == "Anonymous"
         assert panel.payload()["publication_consent"] is False
     root.update()
+    assert panel.frame.winfo_height() <= (510 if kind == "feedback" else 460)
     bottom = panel.frame.winfo_rooty() + panel.frame.winfo_height()
     assert panel.backdrop.last == (
         root.winfo_width(),
@@ -84,6 +85,12 @@ def test_welcome_all_slides_native_and_finish(root):
         heading="Welcome to VODForge",
         finish_label="Start using VODForge",
     )
+    from yt_downloader.ui_theme import THEME
+
+    forge = next(
+        label for label in panel.heading_labels if label.cget("text") == "Forge"
+    )
+    assert str(forge.cget("foreground")) == THEME["text"]
     for index in range(len(WELCOME_SLIDES)):
         panel.render(index)
         root.update()
