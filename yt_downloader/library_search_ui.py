@@ -44,7 +44,9 @@ class LibrarySearchField(tk.Frame):
             highlightthickness=0,
             font=FONT_UI,
         )
-        self.entry.pack(side="left", padx=1, pady=1, ipady=7, ipadx=9)
+        # External spacing protects the rounded chrome; internal padding expands
+        # the opaque native Entry and can paint over the shell's corner stroke.
+        self.entry.pack(side="left", padx=10, pady=8)
         self._search_icon = _tinted_ui_icon(
             "search", size=(16, 16), color=THEME["muted"]
         )

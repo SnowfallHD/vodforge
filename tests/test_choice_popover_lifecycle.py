@@ -131,3 +131,71 @@ def test_canvas_and_ttk_field_adapters_share_identical_chrome(surface):
     assert ImageTk.getimage(chrome._image).tobytes() == expected
     assert ImageTk.getimage(owner.images["field"]).tobytes() == expected
     assert ImageTk.getimage(owner.images["field_focus"]).tobytes() == expected
+
+
+@pytest.mark.parametrize("kind", ["search", "choice"])
+@pytest.mark.parametrize("width", [200, 480])
+@pytest.mark.parametrize("text", ["", "Long input text " * 12])
+def test_real_field_contents_never_cover_border_edges(surface, kind, width, text):
+    from yt_downloader.library_search_ui import LibrarySearchField
+
+    root, _field = surface
+    value = tk.StringVar(root, text)
+    if kind == "search":
+        field = LibrarySearchField(root, variable=value)
+    else:
+        field = ChoiceDropdown(
+            root, textvariable=value, values=("Travel",), state="normal"
+        )
+    field.place(x=30, y=120, width=width, height=40)
+    root.update()
+    for focused in (False, True):
+        (field if focused else root).focus_force()
+        root.update()
+        w, h = field.winfo_width(), field.winfo_height()
+        # Check straight strokes AND curved corners against actual stacked
+        # widgets, not only equality of uncomposited background images.
+        for x, y in (
+            (w // 2, 1),
+            (w // 2, h - 2),
+            (1, h // 2),
+            (w - 2, h // 2),
+            (3, 3),
+            (3, h - 4),
+            (w - 4, 3),
+            (w - 4, h - 4),
+        ):
+            painted = root.winfo_containing(
+                field.winfo_rootx() + x, field.winfo_rooty() + y
+            )
+            assert painted is field._chrome.canvas, (kind, focused, x, y, painted)
+
+
+@pytest.mark.parametrize("geometry", ["520x430", "700x560"])
+def test_notes_edges_remain_visible_in_actual_annotation_dialog(surface, geometry):
+    from yt_downloader.library_annotation_ui import LibraryAnnotationDialog
+    from yt_downloader.library_annotations import LibraryAnnotation
+    from yt_downloader.ui_styles import apply_product_styles
+
+    root, _field = surface
+    apply_product_styles(root)
+    dialog = LibraryAnnotationDialog(
+        root,
+        title="Example",
+        annotation=LibraryAnnotation(note="A long note. " * 100),
+        categories=("Travel",),
+        on_save=lambda _: False,
+    )
+    dialog.popup.geometry(geometry)
+    dialog.popup.deiconify()
+    dialog.note.focus_force()
+    root.update()
+    chrome = dialog._note_chrome
+    shell = chrome.field
+    w, h = shell.winfo_width(), shell.winfo_height()
+    for x, y in ((w // 2, 1), (w // 2, h - 2), (1, h // 2), (w - 2, h // 2)):
+        assert (
+            root.winfo_containing(shell.winfo_rootx() + x, shell.winfo_rooty() + y)
+            is chrome.canvas
+        )
+    dialog.popup.destroy()
