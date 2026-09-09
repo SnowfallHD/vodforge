@@ -45,6 +45,26 @@ tests use the browser's virtual clock. This is an explicit manual browser
 regression step, not an automatic NORMAL or packaged-app pass. A real-clock
 two-minute run and OS/default-browser behavior require separate receipts.
 
+### Original audio verification
+
+With the harness dependencies installed and `ffmpeg` / `ffprobe` on `PATH`, run:
+
+```sh
+PYTHONPATH=.:engineering-quality .venv/bin/python scripts/verify_original_audio.py
+```
+
+On Windows, set `$env:PYTHONPATH = ".;engineering-quality"` and use
+`.venv\Scripts\python.exe scripts\verify_original_audio.py`.
+
+This networked probe downloads a single public test video through the production
+worker with telemetry disabled and isolated persistence. Controlled source-family
+filters exercise Opus and AAC availability separately; production Original audio
+does not force either codec. It compares compressed packet hashes before and
+after packaging, fully decodes the result, and records output counts, child
+processes, and staging residue in `build/original-audio-verification/receipt.json`.
+This is headless pipeline evidence, not packaged UI or playback proof. Use an
+empty probe output directory for a fresh run; preserve older receipts separately.
+
 ## Setup
 
 From a clean checkout:

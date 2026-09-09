@@ -1,12 +1,17 @@
-# Curated feature showcase
+# Historical showcase captures
+
+> Superseded by the [native exhibit renderer](../../docs/whats-new-native-previews.md).
+> These PNGs are historical QA references, not the current slide assets. Do not
+> add screenshots of controls for new highlights. The notes below describe the
+> former capture workflow. Current public screenshots are in [assets/readme](../readme/README.md).
 
 These are native VODForge UI captures, not generated UI mockups. Activity is a
 direct Forge capture after a real YouTube download (DMSUSyAy0qM), with telemetry
 disabled and an isolated output directory. Its friendly stages are derived from
 observed production worker statuses, not scripted review lines or fabricated timestamps.
 The other captures use sample media and review fixtures, not user media or
-personal paths. They are bundled locally and require no network access.
-The catalog and normalized crops live in `yt_downloader/whats_new.py`.
+personal paths. The former carousel bundled them locally without network access.
+The current catalog lives in `yt_downloader/whats_new.py` and uses native exhibits.
 `activity-mode.png` is a native component excerpt using observed statuses from
 the same completed run receipt. It illustrates the mode slider and friendly
 stages only, omitting technical-log context and its warning notice. The actual

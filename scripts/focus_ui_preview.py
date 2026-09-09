@@ -288,7 +288,7 @@ def approved_metadata() -> list[dict[str, Any]]:
     )
     items = []
     for index, title in enumerate(titles):
-        path = f"/Users/coop/Downloads/{title}.mp4"
+        path = f"/Downloads/{title}.mp4"
         items.append(
             {
                 "id": f"visual-{index}",
@@ -298,7 +298,7 @@ def approved_metadata() -> list[dict[str, Any]]:
                 "description": "A serene journey through misty alpine valleys at dawn.\nPerfect for focus, relaxation, or a peaceful reset.",
                 "tags": ["landscape", "travel", "relaxation"],
                 "vodforge_output_type": "MP4",
-                "vodforge_output_dir": "/Users/coop/Downloads",
+                "vodforge_output_dir": "/Downloads",
                 "vodforge_projection_owner": f"run:visual-{index}",
                 "vodforge_annotation_owner": f"run:visual-{index}",
                 "vodforge_user_category": "Travel",
@@ -613,6 +613,8 @@ def main() -> None:
 
     def apply_preview_state() -> None:
         app.url_var.set("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        if args.public_fixture:
+            app.url_var.set("")
         app.focus_active_title_var.set(
             "Alpine mornings — a quiet escape"
             if args.approved
@@ -643,6 +645,8 @@ def main() -> None:
         )
         app._load_thumbnail_file(active_art, target="active")
         app._set_text(app.focus_log, log_lines, disabled=True)
+        if args.public_fixture:
+            app.forge_activity.set_technical(True)
         app._set_text(app.log, log_lines, disabled=True)
         app.activity_summary.request(
             title=app.focus_active_title_var.get(),
@@ -655,14 +659,19 @@ def main() -> None:
             completed_log = log_lines + "\n14:30:08 [success] Saved MP4 successfully"
             app._set_text(app.focus_log, completed_log, disabled=True)
             app._set_text(app.log, completed_log, disabled=True)
-        app._set_text(app.focus_summary_text, output_lines, disabled=True)
+        visible_output = (
+            output_lines.replace("/Users/coop/Downloads", "/Downloads")
+            if args.public_fixture
+            else output_lines
+        )
+        app._set_text(app.focus_summary_text, visible_output, disabled=True)
         source_lines = (
             "Format selector: 137 + 140\nVideo: H.264 / 1920x1080 / 30fps\nAudio: AAC / 128 kbps / stereo\nSource duration: 32:47"
             if output_type == OutputType.MP4
             else "Format selector: 251\nAudio: Opus / 160 kbps / stereo\nSample rate: 48 kHz\nReason selected: highest-quality available audio source"
         )
         app._set_text(app.source_summary_text, source_lines, disabled=True)
-        app._set_text(app.output_summary_text, output_lines, disabled=True)
+        app._set_text(app.output_summary_text, visible_output, disabled=True)
         app._set_focus_run_controls_visible(True)
         app._select_focus_view(args.view)
         app._apply_focus_layout(force=True)

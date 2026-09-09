@@ -1,5 +1,9 @@
 # Analytics journey evidence — 2026-09-07
 
+> Historical, checkpoint-specific receipts. Timing and focus observations below
+> are not guarantees for every OS/browser or proof for a newer build. Current
+> behavior and state ownership are described in [architecture](../docs/architecture.md#privacy-and-onboarding-state).
+
 ## Earlier native activation — 2026-09-08
 
 - Production checkpoint `46fc72691c95134430e91651886f60f431fc33d2` reduces

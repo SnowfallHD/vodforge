@@ -22,9 +22,13 @@ The composition root still owns the Forge and Library widget trees because their
 
 - `focus_settings.py` owns Settings dialog construction and visibility. It receives explicit variables and actions; it does not own the next-run settings values or create jobs.
 - `library_state.py` owns the single Library membership/status projection from canonical run, queue, terminal, preview, history, and annotation owners. The application atomically adopts and renders that immutable snapshot; it does not append, remove, or terminalize Library rows.
+- Run Deck derives its latest items from that same projection, including each committed playlist item while its successor runs. It has no parallel completed-item ledger.
 - `library_search.py` owns render-only search/category predicates. `library_search_ui.py`, `media_player_ui.py`, annotation UI, and missing-media recovery UI each own rendering strategy for their local surface.
 - `media_player_ui.py` renders VODForge controls from immutable engine snapshots. It does not decode frames, own an audio clock, or restart playback processes for seek and volume changes.
 - `ui_layout.py` owns shared responsive geometry policy. `ui_widgets.py` owns reusable Tk controls and input behavior. `ui_theme.py` owns the shared visual tokens.
+- `ChoiceDropdown` and `ChoiceMenu` own application choice fields/popovers on both platforms. System file pickers remain OS-owned.
+- `activity_ui.py` owns shared styled technical logs. `forge_activity_ui.py` adds a session-derived friendly-phase view in the same viewport; Activity remains technical. Neither view owns durable run state.
+- `whats_new.py` owns the curated catalog and eligibility; `whats_new_ui.py` owns the fixed carousel and lifetime. Native exhibits reuse production widgets without downloads, persistence or playback side effects. See [native preview authoring](whats-new-native-previews.md).
 
 These modules are not independent view models. Execution authority and cross-view selection remain explicit in `DownloaderApp` so a second state system cannot drift from the real queue.
 
@@ -46,7 +50,38 @@ Cancellation and skip requests are checked during provider work and child-proces
 
 The provider-network primary lease intentionally covers source analysis through existing-output reuse or yt-dlp transfer. It is released before independent FFmpeg processing. This prevents optional metadata or queued-preview extraction from overlapping the primary provider path while allowing bounded thumbnail work to remain independent.
 
-`export_planning.py` builds the canonical plan. `output_validation.py` is the single plan-matching contract for both reused and freshly staged media.
+`export_planning.py` builds MP4/MP3 plans. `original_audio.py` selects a supported
+original stream through the shared audio selection logic and supplies stream-copy
+options. It emits `AudioExportPlan`, not a separate worker pipeline: Opus becomes
+`.opus`, AAC becomes `.m4a`; unsupported source codecs fail closed.
+`output_validation.py` owns plan matching for reused and freshly staged media.
+Original audio checks codec/source properties rather than an MP3 target bitrate.
+Missing exact Original audio paths cannot fall through to legacy MP4 file guessing.
+
+Quality selection resolves the highest eligible provider tier before codec and
+transport preferences. A named 1080p stream need not have exactly 1080 image rows.
+Fallbacks must not exceed the selected ceiling.
+
+## Privacy and onboarding state
+
+- `settings_store.py` owns `settings.json`, including the user's
+  `analytics_consent.choice` and the acknowledged showcase ID.
+- `cloud_funnel.py` owns `installation.json`: identity, first-launch delivery
+  state, and onboarding markers for region policy, browser eligibility, and the
+  welcome attempt.
+- `analytics_consent.py` joins those owners and migrates legacy fields.
+  `analytics-consent.json` is a migration input, not an ongoing third authority;
+  successful migration retires it.
+- `analytics_startup.py` coordinates bounded region resolution, the in-app
+  permission panel, and one-time welcome handoff. Updating existing installations
+  does not make them eligible for first-install attribution.
+- Build provenance and consent are both required for optional telemetry. Source
+  and ordinary private packages fail closed even with release-like versions.
+  Functional update checks are separate from analytics delivery.
+
+Files live in the platform application-data directory. Saved denial persists;
+unknown/opt-in policy does not grant permission. Malformed state is preserved and
+fails closed instead of replacing identity or implicitly granting consent.
 
 ## Worker-to-UI event flow
 

@@ -10,7 +10,8 @@ Library integration.
 Live playback no longer uses FFmpeg raw RGB frames or a separate FFplay audio
 process. libVLC owns decoding, audio output, video output, the shared clock,
 seeking, volume, and hardware-decoder selection. FFmpeg remains a separate,
-bounded owner for offline preview-thumbnail extraction only.
+bounded owner for offline preview-thumbnail extraction within the player. The
+download/export pipeline also uses FFmpeg independently for conversion and packaging.
 
 ## Candidate findings
 
@@ -30,7 +31,7 @@ without constructing `DownloaderApp`:
 3. seek repeatedly near the beginning, middle, and end;
 4. change volume without restarting playback;
 5. resize the Tk-hosted native surface;
-6. switch between files, including MP3;
+6. switch between files, including MP3 and Original audio (`.opus` / `.m4a`);
 7. destroy the active backend and surface;
 8. create a new backend and reopen media; and
 9. verify clean process exit.
