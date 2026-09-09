@@ -15,6 +15,7 @@ from yt_downloader.activity_ui import (
 )
 from yt_downloader.detail_ui import FactsText, OutputDetailsDialog
 from yt_downloader.ui_styles import apply_product_styles
+from yt_downloader.ui_theme import THEME
 from yt_downloader.ui_widgets import (
     ChoiceDropdown,
     ChoiceMenu,
@@ -222,6 +223,40 @@ def test_log_decoration_is_character_exact_and_clear_invalidates(root):
 
 
 @pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize(
+    "severity,color", [("warning", "warning"), ("error", "danger")]
+)
+def test_severity_spellings_share_visible_layout_and_lossless_source(
+    root, compact, severity, color
+):
+    root.deiconify()
+    text = ActivityLogText(root, compact=compact)
+    text.pack()
+    text.configure(width=36)
+    body = (
+        "A long diagnostic message with enough words to wrap onto another display line."
+    )
+    source = f"[{severity}] {body}\n{severity.upper()}: {body}\n"
+    text.insert("end", source)
+    settle_native(root)
+    assert text.get("1.0", "end-1c") == source
+    assert len(text.image_names()) == 4
+    labels = [child for child in text.winfo_children() if isinstance(child, tk.Label)]
+    assert [label.cget("text") for label in labels] == [severity.upper() + ": "] * 2
+    assert all(label.cget("fg") == THEME[color] for label in labels)
+    assert labels[0].winfo_x() == labels[1].winfo_x()
+    indents = [
+        {tag for tag in text.tag_names(f"{line}.0") if tag.startswith("log-indent-")}
+        for line in (1, 2)
+    ]
+    assert indents[0] and indents[0] == indents[1]
+    text.apply_theme()
+    assert all(label.cget("fg") == THEME[color] for label in labels)
+    text.delete("1.0", "end")
+    assert not text.winfo_children()
+
+
+@pytest.mark.parametrize("compact", [False, True])
 def test_real_pipeline_activity_is_decorated_losslessly(root, compact):
     text = ActivityLogText(root, compact=compact)
     lines = [
@@ -277,6 +312,34 @@ def test_activity_wrapping_and_success_share_message_column(root, compact):
     assert len(icons) == 2
     assert text.bbox(icons[0])[0] == text.bbox(icons[1])[0]
     assert text.get("1.0", "end-1c") == source
+
+
+@pytest.mark.parametrize("compact", [False, True])
+def test_warning_error_dividers_icons_and_wrapped_lines_align_with_normal_events(
+    root, compact
+):
+    root.deiconify()
+    root.geometry("460x620")
+    text = ActivityLogText(root, compact=compact, wrap="word")
+    text.pack(fill="both", expand=True)
+    body = "A diagnostic message " * 6
+    source = f"Ordinary event\n[warning] {body}\nERROR: {body}\n"
+    text.insert("end", source)
+    settle_native(root)
+    message_x = text.bbox(text.search("Ordinary", "1.0"))[0]
+    labels = [child for child in text.winfo_children() if isinstance(child, tk.Label)]
+    for label in labels:
+        assert text.bbox(str(label))[0] == message_x
+        continuation = text.index(f"{label!s} +1 display lines display linestart")
+        assert text.bbox(continuation)[0] == message_x
+    for divider in (True, False):
+        names = [
+            name
+            for name in text.image_names()
+            if (text.image_cget(name, "image") == str(text._divider)) == divider
+        ]
+        assert len(names) == 3
+        assert len({text.bbox(name)[0] for name in names}) == 1
 
 
 def test_appended_event_after_snapshot_starts_a_new_line(root):

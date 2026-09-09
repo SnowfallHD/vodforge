@@ -13,7 +13,7 @@ from .ui_widgets import _tinted_ui_icon
 
 _LOG_TOKEN = re.compile(
     r"(^\d{2}:\d{2}:\d{2})|(\[(?:info|download|success|warning|error|debug)\][ \t]*)"
-    r"|(^WARNING:|^ERROR:)"
+    r"|(^WARNING:[ \t]*|^ERROR:[ \t]*)"
     r"|(^(?=\S)(?!\d{2}:\d{2}:\d{2}|\[(?:info|download|success|warning|error|debug)\]))",
     re.MULTILINE | re.IGNORECASE,
 )
@@ -122,6 +122,14 @@ class ActivityLogText(tk.Text):
             "check", size=self._icon_size, color=THEME["accent"]
         )
         self._divider.put(THEME["accent"], to=(0, 0, 1, 18))
+        for child in self.winfo_children():
+            if isinstance(child, tk.Label):
+                child.configure(
+                    bg=self.cget("bg"),
+                    fg=THEME["warning"]
+                    if child.cget("text") == "WARNING: "
+                    else THEME["danger"],
+                )
         self._snapshot: str | None = None
         self._constrained: bool | None = None
 
@@ -197,7 +205,37 @@ class ActivityLogText(tk.Text):
         start = 0
         for match in _LOG_TOKEN.finditer(chars):
             super().insert("log-insert", chars[start : match.start()])
-            if match[3] or match[4] is not None:
+            severity = match[0].strip().strip("[]:").lower()
+            if severity in {"warning", "error"}:
+                if self.index("log-insert").endswith(".0"):
+                    self.image_create(
+                        "log-insert", image=self._divider, padx=10, align="center"
+                    )
+                if self._event_icon is not None:
+                    self.image_create(
+                        "log-insert", image=self._event_icon, padx=12, align="center"
+                    )
+                remember_text_start()
+                # Preserve the source token in the document, but give every
+                # producer spelling the same visible severity label.
+                super().insert(
+                    "log-insert", match[0], ("log-hidden", f"log-{severity}")
+                )
+                label = tk.Label(
+                    self,
+                    text=severity.upper() + ": ",
+                    font=self.cget("font"),
+                    bg=self.cget("bg"),
+                    fg=THEME["warning"] if severity == "warning" else THEME["danger"],
+                    bd=0,
+                    padx=0,
+                    pady=0,
+                    highlightthickness=0,
+                )
+                self.window_create("log-insert", window=label, align="center")
+                start = match.end()
+                continue
+            if match[4] is not None:
                 # Live providers emit plain lines, not the timestamped tokens
                 # used by older logs. Decorate each actual line once, without
                 # inventing timestamps or changing the underlying document.
@@ -213,11 +251,6 @@ class ActivityLogText(tk.Text):
                             align="center",
                         )
                     remember_text_start()
-                if match[3]:
-                    tag = (
-                        "log-warning" if match[3].upper() == "WARNING:" else "log-error"
-                    )
-                    super().insert("log-insert", match[0], tag)
                 start = match.end()
                 continue
             icon = (
@@ -247,10 +280,6 @@ class ActivityLogText(tk.Text):
                 remember_text_start()
             else:
                 tag = "log-time" if match[1] else "log-level"
-                if match[0].strip().lower() == "[warning]":
-                    tag = "log-warning"
-                elif match[0].strip().lower() == "[error]":
-                    tag = "log-error"
                 super().insert("log-insert", match[0], tag)
                 if match[1]:
                     self.image_create(
@@ -266,4 +295,8 @@ class ActivityLogText(tk.Text):
 
     def delete(self, index1: Any, index2: Any = None) -> None:
         self._snapshot = None
+        end = index2 if index2 is not None else f"{self.index(index1)} +1c"
+        for kind, value, _position in self.dump(index1, end, window=True):
+            if kind == "window" and value:
+                self.nametowidget(value).destroy()
         super().delete(index1, index2)
