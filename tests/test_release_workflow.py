@@ -296,7 +296,9 @@ def test_release_notes_lead_with_clear_user_facing_platform_choices():
     assert "opt-in and unknown regions require consent" in notes
     assert "atomic final commits" in notes
     assert "Quality caps honor YouTube's named quality tiers" in notes
-    assert "first-party installation and Cloud funnel counts remain separate" not in notes
+    assert (
+        "first-party installation and Cloud funnel counts remain separate" not in notes
+    )
 
 
 def test_draft_release_notes_keep_the_release_team_safety_gate():
