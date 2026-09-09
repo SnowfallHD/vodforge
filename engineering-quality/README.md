@@ -276,6 +276,20 @@ Static-tool output is a signal, not proof. A security issue is reported only whe
 
 ### Telemetry contract checks
 
+Ownership is a cross-entry-point invariant, not an enrollment-only test. The local
+contract exercises fresh, claim, cloud-seen, cloud-click, legacy-launch and waitlist
+creation before enrollment. It requires authenticated retries, second-credential
+rejection, exactly one durable credential, and no legacy mutation after enrollment.
+An omitted matrix case fails the receipt. Harness self-tests reject green delivery
+results with duplicate credentials or unauthorized writes. The site suite adds
+reverse order, concurrent enrollment and revoked-credential coverage.
+
+The gap addressed here was split fixtures: claim-first tested metadata while
+exclusive ownership was tested only on a fresh row. The old loopback probe never
+issued a real claim and read only version/event counts. Future identity or durable
+row creators must be added to both matrices; these checks do not imply exhaustive
+security verification or official-binary attestation.
+
 NORMAL/DEEP include the sibling `vodforge-site` backend suite and a local-only
 Python client → production Worker owner → ephemeral D1 contract check. Set
 `VODFORGE_SITE_REPO` if the site checkout is elsewhere; it must be clean with its

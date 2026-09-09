@@ -8,14 +8,101 @@ import queue
 import subprocess
 import sys
 import threading
+import uuid
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from .util import machine_snapshot, run_command
 
 _BLOCKED_ATTEMPTS: list[str] = []
 _GUARD_INSTALLED = False
+_OWNERSHIP_ORIGINS = (
+    "fresh",
+    "claim",
+    "cloud_seen",
+    "cloud_click",
+    "legacy_launch",
+    "waitlist",
+)
+
+
+def _validate_ownership_cases(cases):
+    """Missing coverage is failure, not a vacuously green delivery receipt."""
+    if [case["origin"] for case in cases] != list(_OWNERSHIP_ORIGINS):
+        raise AssertionError("Incomplete ownership entry-point matrix")
+    for case in cases:
+        if case["statuses"] != [200, 200, 409, 401]:
+            raise AssertionError(f"Credential isolation failed: {case['origin']}")
+        if case["client_count"] != 1 or case["legacy"] != {
+            "unchanged": True,
+            "accepted": 0,
+        }:
+            raise AssertionError(f"Durable ownership failed: {case['origin']}")
+
+
+def _ownership_probe(url, process):
+    if urlsplit(url).hostname != "127.0.0.1":
+        raise AssertionError("Ownership probe is not loopback-only")
+
+    def post(action, body):
+        request = Request(
+            url + action,
+            data=json.dumps(body).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + "a" * 43,
+            },
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                return response.status, json.load(response)
+        except HTTPError as error:
+            with error:
+                return error.code, json.load(error)
+
+    cases = []
+    for origin in _OWNERSHIP_ORIGINS:
+        install_id, credential_id = str(uuid.uuid4()), str(uuid.uuid4())
+        status, _ = post("ownership-seed", {"kind": origin, "installId": install_id})
+        if status != 200:
+            raise AssertionError(f"Ownership seed failed: {origin}")
+        body = {
+            "credential_id": credential_id,
+            "install_id": install_id,
+            "platform": "macos",
+            "app_version": "0.1.8",
+            "schema_version": 1,
+        }
+        statuses = [post("enroll", body)[0], post("enroll", body)[0]]
+        other = str(uuid.uuid4())
+        statuses.append(post("enroll", {**body, "credential_id": other})[0])
+        statuses.append(
+            post("launch", {"credential_id": other, "app_version": "0.1.8"})[0]
+        )
+        if (
+            post("launch", {"credential_id": credential_id, "app_version": "0.1.8"})[0]
+            != 200
+        ):
+            raise AssertionError("Legitimate launch failed")
+        _, legacy = post("ownership-legacy", {"installId": install_id})
+        process.stdin.write('{"op":"snapshot"}\n')
+        process.stdin.flush()
+        saved = _read_line(process)
+        cases.append(
+            {
+                "origin": origin,
+                "statuses": statuses,
+                "legacy": legacy,
+                "client_count": sum(
+                    c["install_id"] == install_id for c in saved["clients"]
+                ),
+            }
+        )
+    _validate_ownership_cases(cases)
+    return cases
 
 
 def install_telemetry_guard() -> None:
@@ -266,6 +353,8 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     and "http://" not in encoded
                     and "127.0.0.1" not in encoded
                 )
+                snapshot["ownership_matrix"] = _ownership_probe(url, process)
+                artifact.write_text(json.dumps(snapshot, indent=2))
         except Exception:
             import traceback
 
@@ -293,6 +382,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             "Real Python HTTP → real Worker owner → local D1 migrations.",
             "One installation, one observed update, exact failure retries deduplicated.",
             "Real 404/500 worker failures stored only bounded machine facts.",
+            "Six real installation entry points: retry, second actor, durable credential count, legacy write exclusion.",
         ],
         [artifact],
     )
