@@ -104,6 +104,8 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 
 For local audio, use **MP3 + image → MP4** beneath the Forge URL field. Choose one MP3 and one JPG, PNG, or WebP still; VODForge renders the image as the video for the full length of the audio. The original files are unchanged, and the finished MP4 is written directly to the selected output folder—no channel or item parent folder is added—then appears in Library's MP4 view.
 
+On current main, the dialog reserves its full Image preview frame before selection. **Choose folder** changes the shared save directory, and **All N runs** opens Library. The composer's format dropdown is inline after a divider; these refinements are not yet in the published 0.1.9 release.
+
 This converter has its own saved output profile, independent of the YouTube download settings: **1080p Standard** uses efficient still-image compression, **2160p 4K** renders at 3840×2160, **720p Compact** reduces resolution, and **1080p Strict 2 Mbps CBR** provides a fixed-rate option. Each uses 30 fps H.264 with two-second keyframes and AAC audio. Increasing resolution cannot restore detail absent from the selected image.
 
 Forge keeps active, queued, completed, previewed, stopped, and failed attempts under separate run identities. Selecting an older card does not overwrite the current run, and changing the output type or settings does not rewrite the selected card's recorded format. Preview, retry, and restart actions always enter the normal sequential run queue as fresh attempts.

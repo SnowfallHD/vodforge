@@ -47,6 +47,69 @@ def test_outside_click_dismisses_even_when_target_breaks_dispatch(surface, kind)
     assert target.bindtags() == original
 
 
+def test_inline_choice_sizes_to_selection_and_retains_shared_dismissal(surface):
+    root, _ = surface
+    value = tk.StringVar(root, "MP4")
+    field = ChoiceDropdown(
+        root, textvariable=value, values=("MP4", "Original audio"), inline=True
+    )
+    field.pack()
+    root.update()
+    compact_width = field.winfo_width()
+    value.set("Original audio")
+    root.update()
+    assert field.winfo_width() > compact_width
+    assert field._chrome is None
+    field._field.event_generate("<ButtonPress-1>", x=4, y=4)
+    root.update()
+    assert field._popover is not None
+    root.event_generate("<ButtonPress-1>", x=1, y=1)
+    root.update()
+    assert field._popover is None
+
+
+def test_local_preview_reserves_full_area_and_output_uses_shared_callback(
+    surface, tmp_path
+):
+    from yt_downloader.local_audio_video_ui import LocalAudioVideoDialog
+    from yt_downloader.ui_styles import apply_product_styles
+
+    root, _ = surface
+    apply_product_styles(root)
+    shared_output = tk.StringVar(root, str(tmp_path))
+    destination = tmp_path / "selected"
+    calls = []
+
+    def choose():
+        calls.append(True)
+        shared_output.set(str(destination))
+        return destination
+
+    dialog = LocalAudioVideoDialog(
+        root,
+        converter=None,
+        output_dir=tmp_path,
+        profile_variable=tk.StringVar(root, "1080p Standard (Recommended)"),
+        on_complete=lambda result: None,
+        on_closed=lambda: None,
+        choose_output=choose,
+    )
+    dialog.popup.deiconify()
+    dialog.popup.geometry("700x560")
+    root.update()
+    assert dialog.preview.cget("text") == "Image preview"
+    assert dialog.preview.master.winfo_width() == 168
+    assert dialog.preview.master.winfo_height() == 94
+    dialog.destination_button.invoke()
+    assert dialog.output_dir == destination
+    assert dialog.destination_var.get() == shared_output.get()
+    dialog._worker = object()
+    dialog._choose_output()
+    assert len(calls) == 1
+    dialog._worker = None
+    dialog._destroy()
+
+
 @pytest.mark.parametrize("target", ["_field", "_chevron", "padding"])
 @pytest.mark.parametrize("secondary", [False, True])
 def test_first_click_opens_after_focus_moves_to_another_field(

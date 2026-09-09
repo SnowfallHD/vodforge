@@ -349,6 +349,7 @@ class ChoiceDropdown(tk.Frame):
         values: Iterable[object],
         state: str = "readonly",
         width: int = 20,
+        inline: bool = False,
     ) -> None:
         super().__init__(
             parent,
@@ -362,7 +363,8 @@ class ChoiceDropdown(tk.Frame):
         self.variable = textvariable
         self._values = tuple(str(value) for value in values)
         self._state = str(state)
-        self._width = max(4, int(width))
+        self._width = 0 if inline else max(4, int(width))
+        self._inline = inline
         self._hovered = False
         self._popover: ChoicePopover | None = None
         self._chevron_image: Any | None = None
@@ -422,10 +424,11 @@ class ChoiceDropdown(tk.Frame):
         if self._state != "normal":
             self._field.bind("<Button-1>", self._open_from_event, add="+")
         self.bind("<Destroy>", self._destroyed, add="+")
-        self._chrome = RoundedFieldBorder(self)
+        self._chrome = None if inline else RoundedFieldBorder(self)
         if self._state != "normal":
             self.bind("<Button-1>", self._open_from_event, add="+")
-            self._chrome.canvas.bind("<Button-1>", self._open_from_event, add="+")
+            if self._chrome is not None:
+                self._chrome.canvas.bind("<Button-1>", self._open_from_event, add="+")
         self._render_chevron()
 
     def _custom_option(self, key: str) -> Any:
@@ -575,7 +578,10 @@ class ChoiceDropdown(tk.Frame):
         try:
             focused_widget = self.focus_get()
             focused = focused_widget in {self, self._field} or self._popover is not None
-            self._chrome.request(focused, self._hovered and self._state != "disabled")
+            if self._chrome is not None:
+                self._chrome.request(
+                    focused, self._hovered and self._state != "disabled"
+                )
         except tk.TclError:
             pass
 
@@ -601,7 +607,7 @@ class ChoiceDropdown(tk.Frame):
             disabled = self._state == "disabled"
             background = (
                 THEME["surface_2"]
-                if self._hovered and not disabled
+                if self._hovered and not disabled and not self._inline
                 else THEME["surface"]
             )
             foreground = THEME["subtle"] if disabled else THEME["text"]

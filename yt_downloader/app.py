@@ -4784,9 +4784,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     _event_subtle_color = THEME["subtle"]
     video_tree: PixelScrollTable
     _focus_icon_images: dict[tuple[str, int, str], Any]
-    _focus_run_list_close_after_id: str | None
-    _focus_run_list_window: tk.Frame | None
-    _focus_run_list_cleanup: Callable[[], None] | None
 
     def _event_write_diagnostic(self, message: str) -> None:
         write_diagnostic(message)
@@ -5258,9 +5255,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._library_suppressed_run_ids: set[str] = set()
         self._thumbnail_preview_request_ids = {"active": 0, "library": 0}
         self._focus_icon_images = {}
-        self._focus_run_list_close_after_id = None
-        self._focus_run_list_window = None
-        self._focus_run_list_cleanup = None
 
         self.focus_active_title_var = tk.StringVar(value="Ready for a new run")
         self.focus_active_detail_var = tk.StringVar(
@@ -5617,13 +5611,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=7)
         self.focus_url_entry.bind("<Return>", lambda _event: self._start_download())
+        tk.Frame(command_inner, bg=THEME["border"], width=1, height=22).grid(
+            row=0, column=2, padx=(12, 4)
+        )
         self.focus_output_type_selector = ChoiceDropdown(
             command_inner,
             textvariable=self.output_type_var,
             values=tuple(kind.value for kind in OutputType),
-            width=11,
+            inline=True,
         )
-        self.focus_output_type_selector.grid(row=0, column=2, sticky="e", padx=(12, 1))
+        self.focus_output_type_selector.grid(row=0, column=3, sticky="e", padx=(0, 1))
         ToolTip(
             self.focus_output_type_selector,
             "MP4 video, MP3 audio, or original audio without re-encoding",
@@ -5910,16 +5907,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.focus_run_overflow_button = ttk.Button(
             deck_header,
             text="All runs",
-            command=self._show_focus_run_menu,
+            command=lambda: self._select_focus_view("library"),
             style="FocusQuiet.TButton",
         )
         self.focus_run_overflow_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
-        self.focus_run_overflow_button.bind(
-            "<Enter>", lambda _event: self._show_focus_run_menu(), add="+"
-        )
-        self.focus_run_overflow_button.bind(
-            "<Leave>", lambda _event: self._schedule_focus_run_menu_close(), add="+"
-        )
         self.focus_deck_header = deck_header
 
         deck_border = tk.Frame(
@@ -7207,237 +7198,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             else self.focus_summary_text.get("1.0", "end").strip()
         )
         OutputDetailsDialog(self, sections=(("Current output", content),))
-
-    def _cancel_focus_run_menu_close(self) -> None:
-        after_id = self.__dict__.pop("_focus_run_list_close_after_id", None)
-        if after_id is not None:
-            try:
-                self.after_cancel(after_id)
-            except tk.TclError:
-                pass
-
-    def _schedule_focus_run_menu_close(self) -> None:
-        self._cancel_focus_run_menu_close()
-
-        def close_if_pointer_left() -> None:
-            self._focus_run_list_close_after_id = None
-            popup = self.__dict__.get("_focus_run_list_window")
-            if popup is None or not popup.winfo_exists():
-                return
-            button = self.focus_run_overflow_button
-            try:
-                pointer_x, pointer_y = self.winfo_pointerxy()
-                hovered = self.winfo_containing(pointer_x, pointer_y)
-                hovered_path = str(hovered or "")
-                inside_popup = hovered_path == str(popup) or hovered_path.startswith(
-                    f"{popup}."
-                )
-                if hovered is button or inside_popup:
-                    return
-            except tk.TclError:
-                return
-            cleanup = self.__dict__.get("_focus_run_list_cleanup")
-            if callable(cleanup):
-                cleanup()
-
-        # A tiny bridge lets the pointer cross the visual gap between the
-        # button and its drop-up without flicker; closure is still immediate
-        # once the pointer is outside both surfaces.
-        self._focus_run_list_close_after_id = self.after(40, close_if_pointer_left)
-
-    def _show_focus_run_menu(self) -> None:
-        records = self._focus_run_records()
-        existing = self.__dict__.get("_focus_run_list_window")
-        if existing is not None and existing.winfo_exists():
-            self._cancel_focus_run_menu_close()
-            return
-
-        # Keep the drop-up inside the application window. Aqua does not
-        # reliably deliver trackpad gestures to an override-redirect Toplevel,
-        # while in-window widgets follow the same working wheel path as the
-        # Library table. The list remains capped at five visible rows.
-        popup = tk.Frame(self, bg=THEME["border"], bd=0, highlightthickness=0)
-        self._focus_run_list_window = popup
-
-        def close_drop_up() -> None:
-            self._cancel_focus_run_menu_close()
-            if self.__dict__.get("_focus_run_list_cleanup") is close_drop_up:
-                self._focus_run_list_cleanup = None
-            self._focus_run_list_window = None
-            try:
-                popup.destroy()
-            except tk.TclError:
-                pass
-
-        root = tk.Frame(popup, bg=THEME["surface"], bd=0, highlightthickness=0)
-        root.pack(fill="both", expand=True, padx=1, pady=1)
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(0, weight=1)
-        visible_rows = min(5, max(1, len(records)))
-        row_height = 31
-        run_list = tk.Canvas(
-            root,
-            height=visible_rows * row_height,
-            width=1,
-            bg=THEME["surface"],
-            relief="flat",
-            bd=0,
-            highlightthickness=0,
-            yscrollincrement=1,
-            takefocus=True,
-        )
-        run_scroll = SleekScrollbar(root, command=run_list.yview)
-        run_list.configure(yscrollcommand=run_scroll.set)
-        run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)
-        run_scroll.grid(row=0, column=1, sticky="ns", padx=(0, 8), pady=10)
-
-        selected_run_id = str(self._focus_selected_run_id or "").strip()
-        selected_index = next(
-            (
-                index
-                for index, record in enumerate(records)
-                if selected_run_id
-                and str(record.get("run_id") or "").strip() == selected_run_id
-            ),
-            -1,
-        )
-        row_rectangles: list[int] = []
-        if records:
-            for index, record in enumerate(records):
-
-                def choose_run(
-                    _event: tk.Event[Any],
-                    item: dict[str, Any] = record,
-                ) -> None:
-                    self._focus_select_run_record(item)
-                    close_drop_up()
-
-                title = str(record.get("title") or "Untitled run")
-                status = str(record.get("status") or "Ready")
-                row_tag = f"run-row-{index}"
-                top = index * row_height
-                rectangle = run_list.create_rectangle(
-                    0,
-                    top,
-                    1,
-                    top + row_height - 1,
-                    fill=THEME["accent_dark"]
-                    if index == selected_index
-                    else THEME["surface"],
-                    outline="",
-                    tags=(row_tag,),
-                )
-                row_rectangles.append(rectangle)
-                label = f"{title}  —  {status}"
-                if len(label) > 58:
-                    label = f"{label[:55]}..."
-                run_list.create_text(
-                    10,
-                    top + (row_height / 2),
-                    text=label,
-                    anchor="w",
-                    fill=THEME["text"],
-                    font=FONT_UI,
-                    tags=(row_tag,),
-                )
-                run_list.tag_bind(
-                    row_tag,
-                    "<Button-1>",
-                    choose_run,
-                )
-
-                def show_hover(
-                    _event: Any,
-                    *,
-                    item_index: int = index,
-                    item_rectangle: int = rectangle,
-                ) -> None:
-                    if item_index != selected_index:
-                        run_list.itemconfigure(item_rectangle, fill=THEME["surface_2"])
-
-                def hide_hover(
-                    _event: Any,
-                    *,
-                    item_index: int = index,
-                    item_rectangle: int = rectangle,
-                ) -> None:
-                    fill = (
-                        THEME["accent_dark"]
-                        if item_index == selected_index
-                        else THEME["surface"]
-                    )
-                    run_list.itemconfigure(item_rectangle, fill=fill)
-
-                run_list.tag_bind(row_tag, "<Enter>", show_hover)
-                run_list.tag_bind(row_tag, "<Leave>", hide_hover)
-        else:
-            run_list.create_text(
-                10,
-                row_height / 2,
-                text="No runs yet",
-                anchor="w",
-                fill=THEME["muted"],
-                font=FONT_UI,
-            )
-
-        run_list.configure(
-            scrollregion=(0, 0, 1, max(row_height, len(records) * row_height))
-        )
-
-        def resize_rows(event: tk.Event[Any]) -> None:
-            for index, rectangle in enumerate(row_rectangles):
-                top = index * row_height
-                run_list.coords(
-                    rectangle, 0, top, max(1, event.width), top + row_height - 1
-                )
-            run_list.configure(
-                scrollregion=(
-                    0,
-                    0,
-                    max(1, event.width),
-                    max(row_height, len(records) * row_height),
-                )
-            )
-
-        run_list.bind("<Configure>", resize_rows, add="+")
-
-        self._focus_run_list_cleanup = close_drop_up
-
-        run_list.bind("<Escape>", lambda _event: close_drop_up())
-        bind_smooth_vertical_wheel(
-            run_list,
-            popup,
-            root,
-            run_list,
-            run_scroll,
-            mode="increments",
-        )
-        popup.bind("<Escape>", lambda _event: close_drop_up())
-        popup.bind(
-            "<Enter>", lambda _event: self._cancel_focus_run_menu_close(), add="+"
-        )
-        popup.bind(
-            "<Leave>", lambda _event: self._schedule_focus_run_menu_close(), add="+"
-        )
-
-        button = self.focus_run_overflow_button
-        button.update_idletasks()
-        popup.update_idletasks()
-        width = min(440, max(340, self.winfo_width() - 48))
-        height = min(184, max(78, popup.winfo_reqheight()))
-        x = button.winfo_rootx() - self.winfo_rootx() + button.winfo_width() - width
-        x = min(self.winfo_width() - width - 12, max(12, x))
-        # The in-window drop-up can sit flush with the trigger. This removes
-        # the geometric dead zone instead of asking a short timer to hide it.
-        y = button.winfo_rooty() - self.winfo_rooty() - height + 1
-        if y < 20:
-            y = min(
-                self.winfo_height() - height - 20,
-                button.winfo_rooty() - self.winfo_rooty() + button.winfo_height() - 1,
-            )
-        popup.place(x=x, y=y, width=width, height=height)
-        popup.lift()
-        run_list.focus_set()
 
     def _focus_select_run_record(self, record: dict[str, Any]) -> None:
         run_id = str(record.get("run_id") or "")
@@ -9237,6 +8997,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if dialog is not None:
             dialog.focus()
             return
+
+        def choose_output() -> Path:
+            self._browse_output()
+            return Path(self.output_var.get()).expanduser()
+
         dialog = LocalAudioVideoDialog(
             self,
             converter=self.local_audio_video,
@@ -9244,6 +9009,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             profile_variable=self.local_video_profile_var,
             on_complete=self._complete_local_audio_video,
             on_closed=self._local_audio_video_dialog_closed,
+            choose_output=choose_output,
         )
         self._local_audio_video_dialog = dialog
         dialog.show()

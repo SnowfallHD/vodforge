@@ -1903,54 +1903,12 @@ def test_focus_settings_duplicate_open_focuses_the_existing_window():
     assert dialog.popup.focus_count == 1
 
 
-def test_all_runs_uses_bounded_anchored_drop_up_with_internal_scrolling():
-    run_list_source = inspect.getsource(DownloaderApp._show_focus_run_menu)
-    forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
-    close_source = inspect.getsource(DownloaderApp._schedule_focus_run_menu_close)
+def test_all_runs_navigates_to_library_without_hover_popup():
+    source = inspect.getsource(DownloaderApp._build_focus_forge_view)
+    assert 'command=lambda: self._select_focus_view("library")' in source
+    assert "self.focus_run_overflow_button.bind(" not in source
+    assert not hasattr(DownloaderApp, "_show_focus_run_menu")
 
-    assert 'popup = tk.Frame(self, bg=THEME["border"]' in run_list_source
-    assert "popup.overrideredirect(True)" not in run_list_source
-    assert "popup.transient(self)" not in run_list_source
-    assert "visible_rows = min(5, max(1, len(records)))" in run_list_source
-    assert "tk.Canvas(" in run_list_source
-    assert "yscrollincrement=1" in run_list_source
-    assert "SleekScrollbar(root, command=run_list.yview)" in run_list_source
-    assert (
-        'run_list.grid(row=0, column=0, sticky="nsew", padx=(14, 6), pady=12)'
-        in run_list_source
-    )
-    assert "bind_smooth_vertical_wheel(" in run_list_source
-    assert 'mode="increments"' in run_list_source
-    assert "button.winfo_rooty() - self.winfo_rooty() - height + 1" in run_list_source
-    assert "popup.place(x=x, y=y, width=width, height=height)" in run_list_source
-    assert "width = min(440" in run_list_source
-    assert "height = min(184" in run_list_source
-    assert re.search(
-        r'self\.focus_run_overflow_button\.bind\(\s*"<Enter>"', forge_source
-    )
-    assert re.search(
-        r'self\.focus_run_overflow_button\.bind\(\s*"<Leave>"', forge_source
-    )
-    assert "self._cancel_focus_run_menu_close()" in run_list_source
-    assert "existing.destroy()" not in run_list_source
-    assert re.search(r'popup\.bind\(\s*"<Enter>"', run_list_source)
-    assert re.search(r'popup\.bind\(\s*"<Leave>"', run_list_source)
-    assert "hovered is button or inside_popup" in close_source
-    assert "self.after(40, close_if_pointer_left)" in close_source
-    assert (
-        'selected_run_id = str(self._focus_selected_run_id or "").strip()'
-        in run_list_source
-    )
-    assert "selected_index = next(" in run_list_source
-    assert (
-        'str(record.get("run_id") or "").strip() == selected_run_id' in run_list_source
-    )
-    assert run_list_source.index("selected_index = next(") < run_list_source.index(
-        "for index, record in enumerate(records):"
-    )
-
-
-def test_library_table_and_run_picker_keep_all_items_reachable_at_every_size():
     focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)

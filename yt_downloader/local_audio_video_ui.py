@@ -56,6 +56,7 @@ class LocalAudioVideoDialog:
         profile_variable: tk.StringVar,
         on_complete: Callable[[LocalAudioVideoResult], None],
         on_closed: Callable[[], None],
+        choose_output: Callable[[], Path] | None = None,
     ) -> None:
         self.owner = owner
         self.converter = converter
@@ -63,6 +64,7 @@ class LocalAudioVideoDialog:
         self.profile_var = profile_variable
         self.on_complete = on_complete
         self.on_closed = on_closed
+        self.choose_output = choose_output
         self.audio_path: Path | None = None
         self.image_path: Path | None = None
         self._events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -145,10 +147,10 @@ class LocalAudioVideoDialog:
             highlightbackground=THEME["border"],
         )
         preview_shell.grid(row=0, column=0, sticky="nw", padx=(0, 16))
-        preview_shell.grid_propagate(False)
+        preview_shell.pack_propagate(False)
         self.preview = tk.Label(
             preview_shell,
-            text="Still preview",
+            text="Image preview",
             bg=THEME["surface"],
             fg=THEME["subtle"],
             font=FONT_UI_MEDIUM,
@@ -208,6 +210,14 @@ class LocalAudioVideoDialog:
             state="readonly",
         )
         self.destination_entry.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+        self.destination_button = ttk.Button(
+            destination,
+            text="Choose folder",
+            command=self._choose_output,
+            style="FocusQuiet.TButton",
+            state="normal" if self.choose_output is not None else "disabled",
+        )
+        self.destination_button.grid(row=1, column=1, padx=(10, 0), pady=(5, 0))
         ttk.Label(
             destination,
             text="Your MP4 saves directly here. No extra folder.",
@@ -354,6 +364,12 @@ class LocalAudioVideoDialog:
             )
         )
 
+    def _choose_output(self) -> None:
+        if self._worker is not None or self.choose_output is None:
+            return
+        self.output_dir = self.choose_output()
+        self.destination_var.set(str(self.output_dir))
+
     def _start(self) -> None:
         if (
             self.audio_path is None
@@ -369,6 +385,7 @@ class LocalAudioVideoDialog:
         )
         self.audio_button.configure(state="disabled")
         self.image_button.configure(state="disabled")
+        self.destination_button.configure(state="disabled")
         self.profile_combo.configure(state="disabled")
         self.create_button.configure(state="disabled")
         self.cancel_button.configure(text="Stop")
@@ -420,6 +437,9 @@ class LocalAudioVideoDialog:
                 self.cancel_button.configure(text="Cancel", state="normal")
                 self.audio_button.configure(state="normal")
                 self.image_button.configure(state="normal")
+                self.destination_button.configure(
+                    state="normal" if self.choose_output is not None else "disabled"
+                )
                 self.profile_combo.configure(state="readonly")
                 self._sync_ready_state(status=message)
                 if self._close_when_idle:
