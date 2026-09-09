@@ -42,7 +42,7 @@ def test_missing_media_prompt_exposes_exact_profile_and_redownload_action(
 
     assert prompt.primary_action == "redownload"
     assert prompt.primary_label == "Redownload"
-    assert "MP3 • 256 kbps" in prompt.detail
+    assert "MP3 • 256 kbps" in prompt.output_settings
     assert str(job.output_dir) in prompt.detail
     assert "exact saved output profile" in prompt.message
 
@@ -60,4 +60,5 @@ def test_legacy_and_unavailable_prompts_fail_closed(tmp_path: Path) -> None:
         "Open in Forge",
     )
     assert unavailable.primary_action == "none"
+    assert legacy.output_settings == "No saved output settings detected"
     assert "Reconnect" in unavailable.heading

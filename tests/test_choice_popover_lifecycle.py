@@ -47,6 +47,30 @@ def test_outside_click_dismisses_even_when_target_breaks_dispatch(surface, kind)
     assert target.bindtags() == original
 
 
+def test_recovery_sections_keep_long_path_and_footer_bounded(surface):
+    from pathlib import Path
+
+    from yt_downloader.library_media_recovery import LibraryMediaRecoveryPlan
+    from yt_downloader.library_media_recovery_ui import LibraryMediaRecoveryDialog
+    from yt_downloader.ui_styles import apply_product_styles
+
+    root, _ = surface
+    apply_product_styles(root)
+    path = Path("/downloads") / ("long-folder-" * 80)
+    dialog = LibraryMediaRecoveryDialog(
+        root, plan=LibraryMediaRecoveryPlan("legacy", path), on_action=lambda _: None
+    )
+    dialog.show()
+    root.update()
+    assert dialog.path_variable.get() == str(path)
+    assert dialog.path_entry.winfo_width() < dialog.popup.winfo_width()
+    for button in dialog.dialog_surface.footer.winfo_children():
+        assert button.winfo_rooty() + button.winfo_height() <= (
+            dialog.popup.winfo_rooty() + dialog.popup.winfo_height()
+        )
+    dialog.popup.destroy()
+
+
 def test_inline_choice_sizes_to_selection_and_retains_shared_dismissal(surface):
     root, _ = surface
     value = tk.StringVar(root, "MP4")

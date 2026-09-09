@@ -10,7 +10,7 @@ from .library_media_recovery import LibraryMediaRecoveryPlan
 from .run_identity import job_output_profile
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import THEME
-from .ui_widgets import ActionDialogSurface, reveal_toplevel
+from .ui_widgets import ActionDialogSurface, ProductEntry, reveal_toplevel
 
 MediaRecoveryAction = Literal["none", "open_forge", "redownload"]
 
@@ -26,6 +26,7 @@ class LibraryMediaRecoveryPrompt:
     primary_label: str
     primary_action: MediaRecoveryAction
     show_cancel: bool = False
+    output_settings: str | None = None
 
 
 def library_media_recovery_prompt(
@@ -62,10 +63,11 @@ def library_media_recovery_prompt(
                 "The original download root could not be confirmed. Choose the "
                 "base folder for the new download, not the old video's nested "
                 "folder. Your saved media location will remain unchanged.",
-                "Review the output settings in Forge before downloading again.",
+                "Choose a download folder",
                 "Choose folder and open Forge",
                 "open_forge",
                 True,
+                "Saved output settings require review",
             )
         return LibraryMediaRecoveryPrompt(
             "Media file not found",
@@ -77,6 +79,7 @@ def library_media_recovery_prompt(
             "Open in Forge",
             "open_forge",
             True,
+            "No saved output settings detected",
         )
     if plan.can_redownload and plan.job is not None:
         return LibraryMediaRecoveryPrompt(
@@ -84,10 +87,11 @@ def library_media_recovery_prompt(
             "This media was moved or deleted",
             "VODForge can download it again with the exact saved output profile and "
             "replace this Library item when the new file is ready.",
-            f"{job_output_profile(plan.job)}\n{destination}",
+            destination,
             "Redownload",
             "redownload",
             True,
+            job_output_profile(plan.job),
         )
     return LibraryMediaRecoveryPrompt(
         "Media file not found",
@@ -138,20 +142,28 @@ class LibraryMediaRecoveryDialog:
             justify="left",
         ).grid(row=1, column=0, sticky="ew", pady=(7, 18))
 
-        detail_shell = tk.Frame(root, bg=THEME["border"], bd=0)
+        detail_shell = ttk.Frame(root, style="FocusShell.TFrame")
         detail_shell.grid(row=2, column=0, sticky="ew")
-        tk.Label(
-            detail_shell,
-            text=self.prompt.detail,
-            bg=THEME["surface"],
-            fg=THEME["muted"],
-            wraplength=450,
-            justify="left",
-            padx=12,
-            pady=10,
-            bd=0,
-            highlightthickness=0,
-        ).pack(fill="x", padx=1, pady=1)
+        detail_shell.columnconfigure(0, weight=1)
+        if self.prompt.output_settings is not None:
+            ttk.Label(
+                detail_shell, text="Output settings", style="FocusEyebrow.TLabel"
+            ).grid(row=0, column=0, sticky="w")
+            ttk.Label(
+                detail_shell,
+                text=self.prompt.output_settings,
+                style="Muted.TLabel",
+                wraplength=450,
+                justify="left",
+            ).grid(row=1, column=0, sticky="ew", pady=(5, 16))
+        ttk.Label(detail_shell, text="Output path", style="FocusEyebrow.TLabel").grid(
+            row=2, column=0, sticky="w"
+        )
+        self.path_variable = tk.StringVar(popup, self.prompt.detail)
+        self.path_entry = ProductEntry(
+            detail_shell, textvariable=self.path_variable, state="readonly"
+        )
+        self.path_entry.grid(row=3, column=0, sticky="ew", pady=(5, 0))
 
         actions = surface.footer
         actions.columnconfigure(0, weight=1)
@@ -183,9 +195,12 @@ class LibraryMediaRecoveryDialog:
             self.on_action(action)
 
     def show(self) -> None:
+        self.popup.update_idletasks()
         reveal_toplevel(
             self.popup,
-            centered_toplevel_geometry(self.owner, width=560, height=330),
+            centered_toplevel_geometry(
+                self.owner, width=540, height=self.popup.winfo_reqheight()
+            ),
         )
         self.popup.grab_set()
         self.popup.focus_force()
