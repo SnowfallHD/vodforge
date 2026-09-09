@@ -5485,8 +5485,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.progress_var.trace_add("write", lambda *_args: self._sync_focus_progress())
         self.status_var.trace_add("write", lambda *_args: self._sync_focus_status())
         self.output_var.trace_add(
-            "write", lambda *_args: self._sync_focus_destination()
+            "write", lambda *_args: self._default_destination_changed()
         )
+        self.url_var.trace_add("write", lambda *_args: self._sync_focus_destination())
         self.quality_var.trace_add(
             "write", lambda *_args: self._sync_focus_settings_summary()
         )
@@ -6671,8 +6672,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 add="+",
             )
 
+    def _default_destination_changed(self) -> None:
+        self.library_media_recovery.clear_destination()
+        self._sync_focus_destination()
+
+    def _submission_output_text(self) -> str:
+        owner = self.__dict__.get("library_media_recovery")
+        default = self.output_var.get()
+        if owner is None or self.__dict__.get("batch_urls"):
+            return default
+        return owner.destination_for(self.url_var.get(), default)
+
     def _sync_focus_destination(self) -> None:
-        path = self.output_var.get().strip() or "Choose destination"
+        path = self._submission_output_text().strip() or "Choose destination"
         max_chars = 34 if self._focus_layout == "compact" else 52
         if len(path) > max_chars:
             path = "..." + path[-(max_chars - 3) :]
@@ -6683,7 +6695,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ):
             current = self.focus_summary_text.get("1.0", "end").strip().splitlines()
             retained = [line for line in current if not line.startswith("Save to")]
-            retained.append(f"Save to       {self.output_var.get()}")
+            retained.append(f"Save to       {self._submission_output_text()}")
             self._set_text(self.focus_summary_text, "\n".join(retained), disabled=True)
 
     def _selected_output_type(self) -> OutputType:
@@ -6969,7 +6981,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _focus_next_run_summary(self, output_type: OutputType) -> str:
         """Describe pending input settings without borrowing from a run snapshot."""
         if output_type == OutputType.ORIGINAL:
-            return f"Format        Original audio\nAudio         Best available Opus or AAC\nOutput mode   Stream copy\nSave to       {self.output_var.get()}"
+            return f"Format        Original audio\nAudio         Best available Opus or AAC\nOutput mode   Stream copy\nSave to       {self._submission_output_text()}"
         if output_type == OutputType.MP3:
             return "\n".join(
                 (
@@ -6977,7 +6989,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     "Audio         Best YouTube source",
                     f"Output mode   {self.mp3_quality_var.get()}",
                     f"Sample rate   {self.mp3_sample_rate_var.get()}",
-                    f"Save to       {self.output_var.get()}",
+                    f"Save to       {self._submission_output_text()}",
                 )
             )
         try:
@@ -6991,7 +7003,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "Video         H.264",
                 f"Audio         {audio_codec}",
                 f"Output mode   {export_mode.value}",
-                f"Save to       {self.output_var.get()}",
+                f"Save to       {self._submission_output_text()}",
             )
         )
 
@@ -10369,9 +10381,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             destination = Path(folder)
         source_url = canonical_youtube_url(info)
         if source_url:
+            self._reset_source_input_after_send()
             self.url_var.set(source_url)
-        if destination is not None:
-            self.output_var.set(str(destination))
+        if destination is not None and source_url:
+            self.library_media_recovery.prepare_destination(source_url, destination)
+            self._sync_focus_destination()
         self.output_type_var.set(metadata_output_type(info).value)
         self._select_focus_view("forge")
         self.status_var.set(
@@ -11194,7 +11208,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         return normalized_urls
 
     def _validated_submission_output_directory(self) -> Path | None:
-        output_text = self.output_var.get().strip()
+        output_text = self._submission_output_text().strip()
         if not output_text:
             messagebox.showerror(APP_NAME, "Choose an output folder.")
             return None

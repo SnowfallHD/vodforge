@@ -115,6 +115,20 @@ def test_unrecognized_legacy_path_does_not_guess_parent(tmp_path):
     assert plan.requires_destination_choice
 
 
+def test_recovery_destination_is_session_only_and_expires_with_source(tmp_path):
+    owner = LibraryMediaRecoveryOwner()
+    default = str(tmp_path / "default")
+    chosen = tmp_path / "one-download"
+    owner.prepare_destination("source", chosen)
+    assert owner.destination_for("source", default) == str(chosen)
+    assert owner.destination_for("source", default) == str(chosen)
+    assert owner.destination_for("", default) == default
+    assert owner.destination_for("source", default) == default
+    owner.prepare_destination("source", chosen)
+    owner.clear_destination()
+    assert owner.destination_for("source", default) == default
+
+
 def test_cancelling_unknown_root_does_not_change_forge():
     from types import SimpleNamespace
     from unittest.mock import Mock

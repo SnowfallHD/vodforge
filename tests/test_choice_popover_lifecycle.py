@@ -71,6 +71,66 @@ def test_recovery_sections_keep_long_path_and_footer_bounded(surface):
     dialog.popup.destroy()
 
 
+def test_recovery_destination_reaches_job_without_changing_saved_default(tmp_path):
+    import subprocess
+    import sys
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import runpy,sys; from pathlib import Path; "
+                "runpy.run_path('tests/test_choice_popover_lifecycle.py')"
+                "['_check_recovery_destination'](Path(sys.argv[1]))"
+            ),
+            str(tmp_path),
+        ],
+        check=True,
+        timeout=30,
+    )
+
+
+def _check_recovery_destination(tmp_path):
+    from unittest.mock import patch
+
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.library_media_recovery import LibraryMediaRecoveryPlan
+    from yt_downloader.models import OutputType
+
+    with isolated_preview_services():
+        app = DownloaderApp()
+        try:
+            app.update()
+            default = app.output_var.get()
+            url = "https://www.youtube.com/watch?v=8mv2Gonsdog"
+            with patch.object(
+                app, "_pick_output_directory", return_value=str(tmp_path)
+            ):
+                app._open_missing_media_in_forge(
+                    {"webpage_url": url, "vodforge_output_type": "MP4"},
+                    LibraryMediaRecoveryPlan(
+                        "legacy", None, requires_destination_choice=True
+                    ),
+                )
+            app.update()
+            assert app.output_var.get() == default
+            assert app._submission_output_text() == str(tmp_path)
+            job = app._build_download_job_from_current_settings(
+                [url],
+                output_type=OutputType.MP4,
+                single_video_only=True,
+                batch_mode=False,
+            )
+            assert job is not None and job.output_dir == tmp_path
+            assert app.output_var.get() == default
+            app._reset_source_input_after_send()
+            assert app._submission_output_text() == default
+        finally:
+            app._request_application_close()
+
+
 def test_inline_choice_sizes_to_selection_and_retains_shared_dismissal(surface):
     root, _ = surface
     value = tk.StringVar(root, "MP4")

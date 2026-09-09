@@ -103,6 +103,21 @@ class LibraryMediaRecoveryOwner:
     ) -> None:
         self._run_id_factory = run_id_factory or (lambda: uuid.uuid4().hex)
         self._artifact_directory = artifact_directory
+        self._draft_destination: tuple[str, Path] | None = None
+
+    def prepare_destination(self, source_url: str, destination: Path) -> None:
+        """Session-only recovery draft; durable settings and history are untouched."""
+        self._draft_destination = (source_url.strip(), destination)
+
+    def clear_destination(self) -> None:
+        self._draft_destination = None
+
+    def destination_for(self, source_url: str, default: str) -> str:
+        draft = self._draft_destination
+        if draft is not None and draft[0] == source_url.strip():
+            return str(draft[1])
+        self.clear_destination()
+        return default
 
     def _legacy_root(self, directory: Path, row: dict[str, Any]) -> Path | None:
         # Reverse only an exact production-generated suffix, never a channel-name

@@ -60,9 +60,8 @@ def library_media_recovery_prompt(
             return LibraryMediaRecoveryPrompt(
                 "Media file not found",
                 "Choose the download folder",
-                "The original download root could not be confirmed. Choose the "
-                "base folder for the new download, not the old video's nested "
-                "folder. Your saved media location will remain unchanged.",
+                "The original download root could not be confirmed. Choose a "
+                "location. Your saved default media location will remain unchanged.",
                 "Choose a download folder",
                 "Choose folder and open Forge",
                 "open_forge",
