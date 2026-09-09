@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from yt_downloader.app import video_output_dir
 from yt_downloader.history import RETRY_JOB_METADATA_KEY, history_identity
 from yt_downloader.library_media_recovery import LibraryMediaRecoveryOwner
 from yt_downloader.models import (
@@ -59,6 +62,81 @@ def _missing_record(job: DownloadJob) -> dict[str, object]:
     record[RETRY_JOB_METADATA_KEY] = serialize_download_job(job)
     record["vodforge_annotation_owner"] = f"run:{job.run_id}"
     return record
+
+
+@pytest.mark.parametrize("playlist", [False, True])
+def test_legacy_generated_location_restores_root_without_rewriting_history(
+    tmp_path, playlist
+):
+    original = _job(tmp_path)
+    record = _missing_record(original)
+    record.pop(RETRY_JOB_METADATA_KEY)
+    record.update(channel="Channel", title="Video", id="missing")
+    if playlist:
+        record.update(playlist_title="Playlist", playlist_id="PL-example")
+    location = video_output_dir(original.output_dir, record)
+    record["vodforge_output_dir"] = str(location)
+    record["vodforge_output_path"] = str(location / "Video.mp3")
+    before = dict(record)
+    owner = LibraryMediaRecoveryOwner(artifact_directory=video_output_dir)
+    for _ in range(2):
+        plan = owner.plan(record)
+        assert plan.destination == original.output_dir
+        assert not plan.requires_destination_choice
+        assert not plan.can_redownload  # Missing profile still requires review.
+        assert record == before
+
+
+@pytest.mark.parametrize("saved_job", [False, True])
+def test_nested_legacy_root_requires_choice_even_after_new_retry_record(
+    tmp_path, saved_job
+):
+    original = _job(tmp_path)
+    metadata = {"channel": "Channel", "title": "Video", "id": "missing"}
+    original.output_dir = video_output_dir(original.output_dir, metadata)
+    record = _missing_record(original)
+    record.update(metadata)
+    nested = video_output_dir(original.output_dir, record)
+    record["vodforge_output_dir"] = str(nested)
+    record["vodforge_output_path"] = str(nested / "Video.mp3")
+    if not saved_job:
+        record.pop(RETRY_JOB_METADATA_KEY)
+    plan = LibraryMediaRecoveryOwner(artifact_directory=video_output_dir).plan(record)
+    assert plan.requires_destination_choice
+    assert plan.destination is None
+    assert not plan.can_redownload
+
+
+def test_unrecognized_legacy_path_does_not_guess_parent(tmp_path):
+    record = _missing_record(_job(tmp_path))
+    record.pop(RETRY_JOB_METADATA_KEY)
+    plan = LibraryMediaRecoveryOwner(artifact_directory=video_output_dir).plan(record)
+    assert plan.destination is None
+    assert plan.requires_destination_choice
+
+
+def test_cancelling_unknown_root_does_not_change_forge():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.library_media_recovery import LibraryMediaRecoveryPlan
+
+    app = SimpleNamespace(
+        _pick_output_directory=Mock(return_value=None),
+        url_var=Mock(),
+        output_var=Mock(),
+        output_type_var=Mock(),
+        _select_focus_view=Mock(),
+    )
+    DownloaderApp._open_missing_media_in_forge(
+        app,
+        {},
+        LibraryMediaRecoveryPlan("legacy", None, requires_destination_choice=True),
+    )
+    app.url_var.set.assert_not_called()
+    app.output_var.set.assert_not_called()
+    app._select_focus_view.assert_not_called()
 
 
 def test_missing_media_rebuilds_exact_saved_job_with_fresh_run_identity(

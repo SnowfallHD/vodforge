@@ -55,6 +55,18 @@ def library_media_recovery_prompt(
             "none",
         )
     if plan.kind == "legacy":
+        if plan.requires_destination_choice:
+            return LibraryMediaRecoveryPrompt(
+                "Media file not found",
+                "Choose the download folder",
+                "The original download root could not be confirmed. Choose the "
+                "base folder for the new download, not the old video's nested "
+                "folder. Your saved media location will remain unchanged.",
+                "Review the output settings in Forge before downloading again.",
+                "Choose folder and open Forge",
+                "open_forge",
+                True,
+            )
         return LibraryMediaRecoveryPrompt(
             "Media file not found",
             "This media was moved or deleted",

@@ -45,6 +45,7 @@ class LibraryMediaRecoveryPlan:
     job: DownloadJob | None = None
     replaced_history_identity: tuple[str, str, str] | None = None
     previous_annotation_owner: str = ""
+    requires_destination_choice: bool = False
 
     @property
     def can_redownload(self) -> bool:
@@ -94,8 +95,24 @@ def _clean_preview(info: Mapping[str, Any]) -> dict[str, Any]:
 class LibraryMediaRecoveryOwner:
     """Reconstruct exact redownload work without making a Library row authoritative."""
 
-    def __init__(self, *, run_id_factory: Callable[[], str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        run_id_factory: Callable[[], str] | None = None,
+        artifact_directory: Callable[[Path, dict[str, Any]], Path] | None = None,
+    ) -> None:
         self._run_id_factory = run_id_factory or (lambda: uuid.uuid4().hex)
+        self._artifact_directory = artifact_directory
+
+    def _legacy_root(self, directory: Path, row: dict[str, Any]) -> Path | None:
+        # Reverse only an exact production-generated suffix, never a channel-name
+        # substring or a fixed count of parents. Repeated suffixes are ambiguous.
+        if self._artifact_directory is None or not row.get("id"):
+            return None
+        for parent in directory.parents:
+            if self._artifact_directory(parent, row) == directory:
+                return parent
+        return None
 
     def plan(
         self,
@@ -136,7 +153,12 @@ class LibraryMediaRecoveryOwner:
                 None,
             )
         if saved_job is None:
-            return LibraryMediaRecoveryPlan("legacy", destination)
+            root = self._legacy_root(destination, row)
+            if root is not None and self._legacy_root(root, row) is not None:
+                root = None
+            return LibraryMediaRecoveryPlan(
+                "legacy", root, requires_destination_choice=root is None
+            )
         # History's location is the committed artifact parent and may include
         # VODForge's channel/playlist/video hierarchy. The durable job owns the
         # user-selected base destination used to reconstruct that hierarchy.
@@ -145,6 +167,13 @@ class LibraryMediaRecoveryOwner:
         stored_signature = metadata_attempt_signature(row)
         if stored_signature and job_attempt_signature(saved_job) != stored_signature:
             return LibraryMediaRecoveryPlan("invalid", destination)
+
+        if self._legacy_root(saved_job.output_dir, row) is not None:
+            # A previous legacy recovery may already have saved a nested base.
+            # Do not silently reinterpret a durable job or alter its signature.
+            return LibraryMediaRecoveryPlan(
+                "legacy", None, requires_destination_choice=True
+            )
 
         previous_run_id = str(row.get("vodforge_run_id") or saved_job.run_id).strip()
         preview = _clean_preview(row)

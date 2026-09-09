@@ -4855,7 +4855,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.run_recovery = RunRecoveryOwner(
             run_state_file_path(), diagnostic=write_diagnostic
         )
-        self.library_media_recovery = LibraryMediaRecoveryOwner()
+        self.library_media_recovery = LibraryMediaRecoveryOwner(
+            artifact_directory=video_output_dir
+        )
         playback_runtime = find_libvlc_runtime()
         self.playback_engine = (
             LibVLCEngineOwner(
@@ -9129,6 +9131,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
 
     def _browse_output(self) -> None:
+        folder = self._pick_output_directory()
+        if folder:
+            self.output_var.set(folder)
+
+    def _pick_output_directory(self) -> str | None:
         initial_dir = self.output_var.get() or str(Path.home())
         try:
             folder = choose_output_directory(
@@ -9144,9 +9151,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 APP_NAME,
                 f"{output_directory_failure_guidance()}\n\nDetails: {exc}",
             )
-            return
-        if folder:
-            self.output_var.set(folder)
+            return None
+        return folder or None
 
     def _open_folder(self) -> None:
         saved = self._selected_saved_folder()
@@ -10355,11 +10361,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         info: dict[str, Any],
         plan: LibraryMediaRecoveryPlan,
     ) -> None:
+        destination = plan.destination
+        if plan.requires_destination_choice:
+            folder = self._pick_output_directory()
+            if not folder:
+                return
+            destination = Path(folder)
         source_url = canonical_youtube_url(info)
         if source_url:
             self.url_var.set(source_url)
-        if plan.destination is not None:
-            self.output_var.set(str(plan.destination))
+        if destination is not None:
+            self.output_var.set(str(destination))
         self.output_type_var.set(metadata_output_type(info).value)
         self._select_focus_view("forge")
         self.status_var.set(
