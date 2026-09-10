@@ -4515,61 +4515,9 @@ def windows_chromium_cookie_warning(
 
 
 def format_ytdlp_user_error(error: Any) -> str:
-    message = str(error)
-    lower = message.lower()
-    if (
-        "could not copy chrome cookie database" in lower
-        or "github.com/yt-dlp/yt-dlp/issues/7271" in lower
-    ):
-        return f"{WINDOWS_CHROMIUM_COOKIE_MESSAGE}\n\nOriginal yt-dlp error: {message}"
-    if "http error 503" in lower or "503: service unavailable" in lower:
-        return (
-            "YouTube returned HTTP 503 Service Unavailable after retries. This is usually temporary, rate-limit/CDN related, "
-            "or a sign that YouTube wants authenticated cookies. Retry once; if it persists, choose cookies.txt under YouTube access with an exported "
-            "YouTube cookies.txt file or Firefox browser cookies.\n\n"
-            f"Original yt-dlp error: {message}"
-        )
-    if (
-        "video unavailable" in lower
-        or "this video is not available" in lower
-        or "this content isn't available" in lower
-    ):
-        return (
-            "YouTube reported this video as unavailable. Common causes:\n"
-            "• The video is private, deleted, or region-restricted.\n"
-            "• The video is marked 'for kids' and yt-dlp's fallback client cannot access it.\n"
-            "• No JavaScript runtime (Deno 2.x) is installed, which limits which YouTube clients yt-dlp can use.\n"
-            "Try: 1) Retry, 2) Install Deno 2.x, 3) Choose cookies.txt or Browser under YouTube access, 4) Verify the video plays in a browser.\n\n"
-            f"Original yt-dlp error: {message}"
-        )
-    if "no video formats found" in lower or "no usable" in lower and "video" in lower:
-        return (
-            "yt-dlp could not find any downloadable video formats. This usually means:\n"
-            "• No JavaScript runtime (Deno 2.x) is installed — YouTube returns very limited formats without one.\n"
-            "• YouTube is rate-limiting the connection — try again later or use cookies.\n"
-            "• The video requires authentication — choose cookies.txt under YouTube access and load an exported cookie file.\n\n"
-            f"Original yt-dlp error: {message}"
-        )
-    if "no supported javascript runtime" in lower or "js runtime" in lower:
-        return (
-            "No JavaScript runtime was found. YouTube extraction without a JS runtime (Deno 2.x) is deprecated "
-            "and causes some videos to fail. Install Deno 2.0+ or use --js-runtimes node as a fallback.\n\n"
-            f"Original yt-dlp error: {message}"
-        )
-    if "requested format is not available" in lower:
-        return (
-            "The format selected during analysis is no longer available for download. This can happen when "
-            "YouTube rotates format IDs between analysis and download. VODForge will retry with a broader "
-            "format fallback. If this persists, try a different quality setting.\n\n"
-            f"Original yt-dlp error: {message}"
-        )
-    if "sign in to confirm" in lower or "confirm you're not a bot" in lower:
-        return (
-            "YouTube is asking for sign-in confirmation (bot detection). Choose cookies.txt under YouTube access with an exported "
-            "YouTube cookie file, or choose Browser to read an authorized local browser profile.\n\n"
-            f"Original yt-dlp error: {message}"
-        )
-    return message
+    from .download_error_presentation import download_error_message
+
+    return download_error_message(error)
 
 
 def apply_ytdlp_cookie_options(
@@ -12165,7 +12113,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     )
                 failures.append((item_url, issue))
                 outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
-                append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item_url, issue)
+                append_batch_failure_report(
+                    BATCH_FAILURE_REPORT_PATH, item_url, provider_error
+                )
                 write_diagnostic(
                     f"batch URL {index} of {len(urls)} failed but batch will continue: "
                     f"{type(provider_error).__name__}: {provider_error}"
@@ -12208,9 +12158,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             write_diagnostic(
                 f"batch download worker error: {type(exc).__name__}: {exc}"
             )
-            self.events.put(
-                ("error", f"{exc}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}")
-            )
+            self.events.put(("error", format_ytdlp_user_error(exc)))
 
     def _try_reuse_existing_output(
         self,
@@ -13158,7 +13106,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             result.plan,
             item.video_url,
         )
-        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, issue)
+        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, error)
         self._emit_job_log(
             job,
             f"WARNING: {item.label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
@@ -13412,9 +13360,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
             raise _DownloadItemExecutionError(error, result) from error
-        self.events.put(
-            ("error", f"{user_error}\n\nDiagnostics log: {DIAGNOSTICS_LOG_PATH}")
-        )
+        self.events.put(("error", user_error))
         return result.outcome
 
     def _download_worker_single(

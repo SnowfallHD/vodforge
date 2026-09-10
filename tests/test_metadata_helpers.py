@@ -5600,10 +5600,10 @@ def test_ytdlp_cookie_and_503_errors_are_rewritten_for_users():
         "ERROR: [download] Got error HTTP Error 503: Service Unavailable. Giving up after 10 retries"
     )
 
-    assert "exported YouTube cookies.txt" in cookie_message
-    assert "Firefox browser cookies" in cookie_message
-    assert "YouTube returned HTTP 503" in unavailable_message
-    assert "cookies.txt" in unavailable_message
+    assert "cookies.txt" in cookie_message
+    assert "Firefox" in cookie_message
+    assert "temporarily refusing" in unavailable_message
+    assert "YouTube access → Browser" in unavailable_message
 
 
 def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_aac(
@@ -5999,7 +5999,7 @@ def test_single_worker_missing_ytdlp_emits_exactly_one_terminal(
     ]
     assert len(terminals) == 1
     assert terminals[0][0] == "error"
-    assert "yt-dlp import failed: injected missing runtime" in str(terminals[0][1])
+    assert "Technical details" in str(terminals[0][1])
 
 
 @pytest.mark.parametrize(
@@ -6045,7 +6045,7 @@ def test_provider_error_control_words_do_not_gain_user_authority(
     assert outcome == DownloadOutcome()
     assert len(terminals) == 1
     assert terminals[0][0] == "error"
-    assert provider_message in str(terminals[0][1])
+    assert "Technical details" in str(terminals[0][1])
     assert app.cancel_requested is False
     assert app.skip_url_requested is False
     assert app.skip_video_requested is False
@@ -6271,12 +6271,9 @@ def test_all_failed_playlist_preserves_item_and_source_metadata_layers(
         for payload in metadata
         if "vodforge_encoding_summary" in payload["info"]
     ] == [
-        "provider failure one",
-        "provider failure two",
-        (
-            "No valid MP4 output was produced; 2 item(s) failed. Failure report: "
-            f"{app_module.BATCH_FAILURE_REPORT_PATH}"
-        ),
+        format_ytdlp_user_error("provider failure one"),
+        format_ytdlp_user_error("provider failure two"),
+        format_ytdlp_user_error("No valid MP4 output was produced"),
     ]
     assert [payload["info"]["id"] for payload in item_terminals] == ["one", "two"]
     assert [payload["job"].terminal_status for payload in item_terminals] == [
@@ -6284,8 +6281,8 @@ def test_all_failed_playlist_preserves_item_and_source_metadata_layers(
         "Failed",
     ]
     assert [payload["job"].terminal_message for payload in item_terminals] == [
-        "provider failure one",
-        "provider failure two",
+        format_ytdlp_user_error("provider failure one"),
+        format_ytdlp_user_error("provider failure two"),
     ]
     layered_order = [
         (
@@ -8073,22 +8070,22 @@ def test_format_ytdlp_user_error_catches_video_unavailable():
     """'Video unavailable' errors should include actionable guidance."""
     error = RuntimeError("[youtube] abc123: Video unavailable")
     result = format_ytdlp_user_error(error)
-    assert "marked 'for kids'" in result
-    assert "Deno" in result
-    assert "Original yt-dlp error" in result
+    assert "video is unavailable" in result
+    assert "YouTube access → Browser" in result
+    assert "yt-dlp" not in result
 
 
 def test_format_ytdlp_user_error_catches_no_video_formats():
     """'No video formats found' errors should include actionable guidance."""
     error = RuntimeError("ERROR: [youtube] abc123: No video formats found!")
     result = format_ytdlp_user_error(error)
-    assert "JavaScript runtime" in result
-    assert "Original yt-dlp error" in result
+    assert "No downloadable video" in result
+    assert "YouTube access → Browser" in result
 
 
 def test_format_ytdlp_user_error_catches_sign_in_to_confirm():
     """Bot detection errors should guide users to use cookies."""
     error = RuntimeError("Sign in to confirm you're not a bot")
     result = format_ytdlp_user_error(error)
-    assert "cookies" in result.lower()
-    assert "Original yt-dlp error" in result
+    assert "confirm your sign-in" in result
+    assert "select your browser" in result
