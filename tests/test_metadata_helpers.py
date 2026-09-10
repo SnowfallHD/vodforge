@@ -5616,9 +5616,9 @@ def test_ytdlp_cookie_and_503_errors_are_rewritten_for_users():
     )
 
     assert "cookies.txt" in cookie_message
-    assert "Firefox" in cookie_message
-    assert "temporarily refusing" in unavailable_message
-    assert "YouTube access → Browser" in unavailable_message
+    assert "another browser" in cookie_message
+    assert "connection failed" in unavailable_message
+    assert "wait and try later" in unavailable_message
 
 
 def test_sanity_different_audio_codec_selects_best_available_audio_and_outputs_aac(
@@ -6291,6 +6291,11 @@ def test_all_failed_playlist_preserves_item_and_source_metadata_layers(
         format_ytdlp_user_error("No valid MP4 output was produced"),
     ]
     assert [payload["info"]["id"] for payload in item_terminals] == ["one", "two"]
+    for payload in item_terminals:
+        detail = "\n".join(payload["job"].activity_lines)
+        assert f"provider failure {payload['info']['id']}" in detail
+        assert "Next step:" in detail
+
     assert [payload["job"].terminal_status for payload in item_terminals] == [
         "Failed",
         "Failed",
@@ -8085,8 +8090,8 @@ def test_format_ytdlp_user_error_catches_video_unavailable():
     """'Video unavailable' errors should include actionable guidance."""
     error = RuntimeError("[youtube] abc123: Video unavailable")
     result = format_ytdlp_user_error(error)
-    assert "video is unavailable" in result
-    assert "YouTube access → Browser" in result
+    assert "source is unavailable" in result
+    assert "Open the link in your browser" in result
     assert "yt-dlp" not in result
 
 
@@ -8122,5 +8127,5 @@ def test_worker_failure_keeps_cause_in_run_log_and_friendly_terminal(
     logs = [payload["line"] for kind, payload in events if kind == "job_log"]
     assert any(cause in line for line in logs)
     assert [(kind, payload) for kind, payload in events if kind == "error"] == [
-        ("error", "The download could not finish. See Technical details for the cause.")
+        ("error", format_ytdlp_user_error(RuntimeError(cause)))
     ]

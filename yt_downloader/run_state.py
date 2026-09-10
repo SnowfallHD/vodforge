@@ -12,6 +12,7 @@ from .history import (
     sanitize_durable_text,
     sanitize_durable_thumbnail_record,
     sanitize_durable_url,
+    sanitize_run_activity,
 )
 from .models import (
     DownloadJob,
@@ -219,6 +220,16 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
     if not job.run_id:
         raise RunStateError("The interrupted run record has no run identity.")
     return job
+
+
+def _terminal_activity(activity_lines: list[str] | None, message: str) -> list[str]:
+    """Keep the latest bounded cause with the terminal summary, not the whole log."""
+    details = [
+        line
+        for line in (activity_lines or [])
+        if line.startswith(("Failure category:", "Failure details:"))
+    ]
+    return sanitize_run_activity(details[-1:] + [message])
 
 
 class ActiveRunStore:
@@ -446,7 +457,9 @@ class ActiveRunStore:
                 ]
             self._write_unlocked(payload)
 
-    def mark_terminal(self, status: str, message: str) -> DownloadJob:
+    def mark_terminal(
+        self, status: str, message: str, *, activity_lines: list[str] | None = None
+    ) -> DownloadJob:
         if status not in PERSISTED_TERMINAL_STATUSES:
             raise RunStateError(f"Unsupported durable terminal status: {status}")
         with self._lock:
@@ -456,7 +469,7 @@ class ActiveRunStore:
             job = deserialize_download_job(payload["job"])
             job.terminal_status = status
             job.terminal_message = message
-            job.activity_lines = [message]
+            job.activity_lines = _terminal_activity(activity_lines, message)
             failures = self._failure_records(payload)
             failures = [
                 record
@@ -469,6 +482,7 @@ class ActiveRunStore:
                     "terminal_status": status,
                     "terminal_message": message,
                     "failure_message": message,
+                    "activity_lines": _terminal_activity(job.activity_lines, message),
                 }
             )
             self._write_unlocked(
@@ -510,6 +524,7 @@ class ActiveRunStore:
                     "terminal_status": status,
                     "terminal_message": message,
                     "failure_message": message,
+                    "activity_lines": _terminal_activity(job.activity_lines, message),
                 }
             )
             payload["recovered_failures"] = failures
@@ -533,7 +548,12 @@ class ActiveRunStore:
                 )
                 job.terminal_status = status
                 job.terminal_message = message
-                job.activity_lines = [message]
+                job.activity_lines = sanitize_run_activity(
+                    record.get("activity_lines")
+                ) or [
+                    message,
+                    "No additional technical detail was saved for this older run.",
+                ]
                 jobs.append(job)
             return jobs
 
@@ -733,8 +753,10 @@ class RunRecoveryOwner:
     def failed(self, message: str) -> None:
         self.store.mark_failed(message)
 
-    def terminal(self, status: str, message: str) -> None:
-        self.store.mark_terminal(status, message)
+    def terminal(
+        self, status: str, message: str, *, activity_lines: list[str] | None = None
+    ) -> None:
+        self.store.mark_terminal(status, message, activity_lines=activity_lines)
 
     def terminal_attempt(self, job: DownloadJob, status: str, message: str) -> None:
         self.store.record_terminal_attempt(job, status, message)

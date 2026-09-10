@@ -365,3 +365,30 @@ def test_removing_queued_run_does_not_disturb_active_owner(tmp_path: Path) -> No
     assert payload["state"] == "active"
     assert payload["job"]["run_id"] == active.run_id
     assert store.load_queued_jobs() == []
+
+
+@pytest.mark.parametrize("child", [False, True])
+def test_terminal_cause_and_next_step_survive_reopen(tmp_path, child):
+    from yt_downloader.download_error_presentation import (
+        download_error_message,
+        technical_download_error,
+    )
+
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    job = _job(tmp_path)
+    store.begin(job)
+    error = RuntimeError("No space left on device")
+    message = download_error_message(error)
+    job.activity_lines = ["old progress" * 1000, technical_download_error(error)]
+    if child:
+        job.run_id = "failed-child"
+        store.record_terminal_attempt(job, "Failed", message)
+        assert store.load()["state"] == "active"
+    else:
+        store.mark_terminal("Failed", message, activity_lines=job.activity_lines)
+    restored = ActiveRunStore(store.path).load_terminal_jobs()[0]
+    assert restored.run_id == job.run_id
+    assert restored.terminal_message == message
+    assert "No space left on device" in "\n".join(restored.activity_lines)
+    assert "Free space" in "\n".join(restored.activity_lines)
+    assert "old progress" not in "\n".join(restored.activity_lines)

@@ -70,7 +70,8 @@ MetadataUiEvent: TypeAlias = (
 )
 RuntimeUiEvent: TypeAlias = (
     tuple[Literal["metadata_fetch_done"], None]
-    | tuple[Literal["metadata_error", "runtime_error", "update_check_error"], str]
+    | tuple[Literal["metadata_error"], str | dict[str, str]]
+    | tuple[Literal["runtime_error", "update_check_error"], str]
     | tuple[Literal["download_folders"], list[Path]]
     | tuple[Literal["update_check_result"], ReleaseInfo]
     | tuple[Literal["update_ready"], Path | MacUpdatePlan]
@@ -540,6 +541,14 @@ class UiEventHandlersMixin:
             self.preview_metadata_button.config(state="normal")
 
     def _handle_metadata_error(self: _UiEventHost, payload: Any) -> None:
+        details = str(payload.get("details") or "") if isinstance(payload, dict) else ""
+        payload = (
+            str(
+                payload.get("message") or "Metadata preview failed. Try the link again."
+            )
+            if isinstance(payload, dict)
+            else payload
+        )
         if self.__dict__.get("_closing", False):
             self._append_log(
                 f"Metadata preview ended during application close: {payload}"
@@ -554,6 +563,7 @@ class UiEventHandlersMixin:
                     f"{preview_request.get('output_type') or 'MP4'}",
                     "kind": "preview_failed",
                     "message": str(payload),
+                    "details": details,
                 }
             )
             self._refresh_focus_run_deck()
@@ -562,6 +572,8 @@ class UiEventHandlersMixin:
             ):
                 self._display_metadata_preview_request(preview_request)
         self.status_var.set("Metadata preview failed")
+        if details:
+            self._append_log(details)
         self._append_log(f"ERROR: {payload}")
         messagebox.showerror(self._event_app_name, str(payload))
 

@@ -190,6 +190,8 @@ def classify_failure(message: str) -> str:
                 "yt-dlp import failed",
                 "deno not found",
                 "missing runtime",
+                "javascript runtime",
+                "js runtime",
             ),
         ),
         ("disk_full", ("no space left", "disk full", "not enough space")),
@@ -234,6 +236,9 @@ def classify_failure(message: str) -> str:
                 "network",
                 "unable to resolve",
                 "name resolution",
+                "http error 502",
+                "http error 503",
+                "http error 504",
             ),
         ),
         (
@@ -277,7 +282,21 @@ def classify_failure(message: str) -> str:
                 "javascript challenge",
             ),
         ),
-        ("validation", ("validation", "ffprobe", "invalid output", "corrupt")),
+        (
+            "validation",
+            (
+                "validation",
+                "ffprobe",
+                "invalid output",
+                "corrupt",
+                "does not match its export plan",
+                "output duration",
+                "output container",
+                "output file is missing or empty",
+                "output does not contain",
+                "completed without producing the expected",
+            ),
+        ),
         ("transcoding", ("ffmpeg", "encoder", "transcod", "conversion failed")),
     ):
         if any(marker in text for marker in markers):

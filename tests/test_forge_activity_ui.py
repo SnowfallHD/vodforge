@@ -110,7 +110,7 @@ def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
     monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
     app = _worker_test_app()
-    cause = "the measured audio bitrate (unavailable kbps) does not match 160 kbps"
+    cause = "the MP4 output does not match its export plan: the measured audio bitrate (unavailable kbps) does not match 160 kbps"
     app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
         RuntimeError(cause)
     )
@@ -125,13 +125,15 @@ def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path
     panel = ForgeActivityPanel(root)
     panel.pack(fill="both", expand=True)
     try:
-        panel.observe(job.run_id, "Failed")
+        message = app_module.format_ytdlp_user_error(RuntimeError(cause))
+        panel.observe(job.run_id, "Failed", message)
         panel.technical.request(raw)
         panel.show(job.run_id, raw)
         root.update()
         friendly = panel.friendly.get("1.0", "end-1c")
         assert cause not in friendly
-        assert "Download failed. Open Technical details for the cause." in friendly
+        assert message in friendly
+        assert "same settings" in friendly
         panel.set_technical(True)
         root.update()
         assert panel.technical.winfo_ismapped()

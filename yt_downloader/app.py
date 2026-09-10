@@ -4355,7 +4355,8 @@ def _download_batch_terminal_event(
             "partial",
             f"Batch completed with issues — {outcome.success_count} valid output(s), "
             f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
-            f"{outcome.sidecar_failure_count} optional sidecar failure(s)."
+            f"{outcome.sidecar_failure_count} optional sidecar failure(s). "
+            "Keep the valid files. Review Technical details for each issue and its next step."
             + (
                 f" Failure report: {BATCH_FAILURE_REPORT_PATH}"
                 if result.failures
@@ -6950,7 +6951,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         job = self.__dict__.get("active_job")
         panel = self.__dict__.get("forge_activity")
         if panel is not None and isinstance(job, DownloadJob):
-            panel.observe(job.run_id, self.status_var.get())
+            panel.observe(job.run_id, self.status_var.get(), job.terminal_message)
         if (
             summary is not None
             and isinstance(job, DownloadJob)
@@ -7484,8 +7485,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             or ("Metadata preview failed." if failed else "Fetching metadata preview…")
         )
         self._set_text(self.focus_summary_text, message, disabled=True)
+        panel = self.__dict__.get("forge_activity")
+        if failed and panel is not None:
+            panel.observe(
+                str(record.get("run_id") or "metadata-preview"), "Failed", message
+            )
         self._render_focus_run_activity(
-            str(record.get("run_id") or "metadata-preview"), message
+            str(record.get("run_id") or "metadata-preview"),
+            str(record.get("details") or message),
         )
         self._reset_active_thumbnail()
 
@@ -7582,6 +7589,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if isinstance(job, DownloadJob)
             else sanitize_run_activity(info.get("vodforge_run_activity"))
         )
+        panel = self.__dict__.get("forge_activity")
+        if panel is not None and terminal_status in {"Failed", "Partial"}:
+            panel.observe(
+                str(record.get("run_id") or metadata_run_key(info)),
+                terminal_status,
+                str(
+                    info.get("vodforge_terminal_message")
+                    or (job.terminal_message if isinstance(job, DownloadJob) else "")
+                ),
+            )
         self._render_focus_run_activity(
             str(record.get("run_id") or metadata_run_key(info)),
             "\n".join(activity)
@@ -9336,7 +9353,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.events.put(
                 (
                     "metadata_error",
-                    f"Metadata fetch failed: yt-dlp import failed: {YTDLP_IMPORT_ERROR}",
+                    {
+                        "message": format_ytdlp_user_error(
+                            f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}"
+                        ),
+                        "details": technical_download_error(
+                            f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}"
+                        ),
+                    },
                 )
             )
             self.events.put(("metadata_fetch_done", None))
@@ -9403,13 +9427,26 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.events.put(("metadata", info))
             else:
                 self.events.put(
-                    ("metadata_error", "Metadata preview returned no usable item.")
+                    (
+                        "metadata_error",
+                        {
+                            "message": format_ytdlp_user_error(
+                                "Metadata preview returned no usable item."
+                            ),
+                            "details": technical_download_error(
+                                "Metadata preview returned no usable item."
+                            ),
+                        },
+                    )
                 )
         except Exception as exc:  # noqa: BLE001 - worker converts provider failures into UI events
             self.events.put(
                 (
                     "metadata_error",
-                    f"Metadata fetch failed: {format_ytdlp_user_error(exc)}",
+                    {
+                        "message": f"Metadata fetch failed: {format_ytdlp_user_error(exc)}",
+                        "details": technical_download_error(exc),
+                    },
                 )
             )
         finally:
@@ -11768,7 +11805,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         recovery_owner = self.__dict__.get("run_recovery")
         try:
             if recovery_owner is not None:
-                recovery_owner.terminal(status, message)
+                recovery_owner.terminal(
+                    status, message, activity_lines=job.activity_lines
+                )
         except RunStateError as exc:
             write_diagnostic(f"terminal run recovery record could not be saved: {exc}")
             self._reconcile_library_projection()
@@ -12268,6 +12307,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job, f"{label}: refreshed private Library artwork cache"
                 )
         except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
+            self._emit_job_log(job, technical_download_error(exc))
             reuse_outcome = reuse_outcome.combined_with(
                 DownloadOutcome(sidecar_failure_count=1)
             )
@@ -12281,6 +12321,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     existing_path.parent, reused_info, job.tags
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
+                self._emit_job_log(job, technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -12296,6 +12337,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     source_url=job.url,
                 )
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
+                self._emit_job_log(job, technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -12498,6 +12540,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"{label}: cached {artwork_source} privately for Forge and Library",
                 )
         except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
+            self._emit_job_log(job, technical_download_error(exc))
             outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
             write_diagnostic(
                 f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}"
@@ -12525,6 +12568,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"{label}: saved compact video metadata {metadata_path}",
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
+                self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -12545,6 +12589,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if thumb_path:
                     self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
+                self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -12611,6 +12656,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         video_url: str,
         *,
         playlist_continues: bool = False,
+        failure_details: str = "",
     ) -> None:
         if not isinstance(info, dict):
             return
@@ -12637,7 +12683,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 {key} if (key := metadata_run_key(terminal_info)) is not None else set()
             ),
             history_identities=set(),
-            activity_lines=[message],
+            activity_lines=([failure_details] if failure_details else []) + [message],
             terminal_status=status,
             terminal_message=message,
             item_terminal_emitted=True,
@@ -12683,7 +12729,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                             f"{job.output_type.value} completed with issues — "
                             f"{outcome.success_count} valid output(s), "
                             f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
-                            f"{outcome.sidecar_failure_count} optional sidecar failure(s)."
+                            f"{outcome.sidecar_failure_count} optional sidecar failure(s). "
+                            "Keep the valid files. Review Technical details for each issue and its next step."
                         ),
                     )
                 )
@@ -13139,6 +13186,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             result.metadata,
             result.plan,
             item.video_url,
+            failure_details=technical_download_error(error),
         )
         append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, error)
         self._emit_job_log(
@@ -13748,7 +13796,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         activity_message = terminal_activity_line(run_status, message)
         panel = self.__dict__.get("forge_activity")
         if panel is not None and finished_job is not None and not decision.suppressed:
-            panel.observe(finished_job.run_id, run_status)
+            panel.observe(finished_job.run_id, run_status, message)
         summary = self.__dict__.get("activity_summary")
         if summary is not None and finished_job is not None and not decision.suppressed:
             summary.request(

@@ -165,10 +165,12 @@ class ForgeActivityPanel(ttk.Frame):
         self.toggle.technical = enabled
         self.toggle.apply_theme()
 
-    def observe(self, run_id: str, status: str) -> None:
+    def observe(self, run_id: str, status: str, message: str = "") -> None:
         label = friendly_phase(status)
         if not run_id or label is None:
             return
+        if status in {"Failed", "Partial"} and message:
+            label = ("ERROR: " if status == "Failed" else "WARNING: ") + message
         rows = self._runs.setdefault(run_id, [])
         if label not in rows and not (rows and rows[-1].endswith(" · " + label)):
             rows.append(label)

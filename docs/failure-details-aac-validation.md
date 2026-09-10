@@ -48,3 +48,36 @@ ffprobe, then decodes without errors. Evidence is retained locally under
 `build/aac-failure-repro/`, including before-test failures, exact-source
 probe/result and native receipts. This is source/native and real-media
 verification, not a rebuilt installed app or a new public release.
+
+## Actionable failure follow-up
+
+The subsequent request expands friendly presentation: failures now pair a
+bounded explanation with a next step. The existing failure classifier supplies
+all 17 categories, and the presentation mapping is checked against that closed
+vocabulary. Disk-space failures recommend freeing space or choosing another
+drive; rate limiting recommends waiting; unavailable formats recommend another
+format or lower quality. Validation failures recommend one retry with the same
+settings and feedback with diagnostics if repeated. No measured bitrate is
+turned into a guessed manual setting. Unknown failures advise checking Library
+before retrying and reporting a repeat failure with diagnostics.
+
+Technical includes a category, bounded redacted exception detail, nested causes
+and process stderr where supplied, plus the recommendation. Process command
+arguments are excluded. Empty exceptions explicitly say no further detail was
+provided. This is available for single and batch failures, playlist children,
+metadata previews and optional-file failures. Partial results retain the valid
+media and direct users to the individual issues. Friendly uses terminal summaries
+rather than raw technical log text.
+
+Failed playlist child snapshots now carry their own cause. The existing run
+journal retains the latest bounded technical block with its terminal summary,
+rather than a complete log, and restores it when reopening. Older records with
+no detail explicitly report that limitation; no historical reason is invented.
+No retry, settings change, or diagnostics submission is automatic.
+
+Verification: 488 focused presentation, worker, state-authority, recovery and
+failure-classifier tests passed; the required native gate passed all 91 checks.
+The broader repository/harness run passed 1058 tests with 99 skips and one
+sandbox-blocked loopback case, which passed on permitted retry. The final focused
+run includes the subsequently added preview separation test. Ruff, formatting,
+canonical mypy (76 files) and Bandit pass. This follow-up remains source-only.
