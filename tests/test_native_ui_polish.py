@@ -112,7 +112,8 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             settle_native(application)
             owner = application.focus_run_hover_menu
             record = {"title": "Wide title 漢字 " * 20, "status": "Completed"}
-            owner.records = lambda: [record] * 5
+            records = [dict(record, id=i) for i in range(47)]
+            owner.records = lambda: records
             application._focus_run_records = owner.records
             selected = []
             owner.select = selected.append
@@ -141,9 +142,14 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             for item in menu.find_all():
                 if menu.type(item) == "text":
                     assert menu.bbox(item)[2] <= menu.winfo_width()
+            assert len(menu.values) == 47
+            for _ in range(60):
+                menu.event_generate("<MouseWheel>", delta=-1)
+            assert menu.top == 42
+            menu.event_generate("<End>")
             menu.event_generate("<Return>")
             application.update()
-            assert selected == [record]
+            assert selected == [records[-1]]
             assert owner.popup is None
             owner.show()
             application.update()
