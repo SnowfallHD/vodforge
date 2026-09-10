@@ -40,8 +40,8 @@ WELCOME_SLIDES = (
     FeatureHighlight(
         "youtube-access",
         "Age Restricted Content",
-        "In Settings → YouTube access, try Browser and select your browser. "
-        "Use your YouTube sign-in; age verification may still be required. "
+        "In Settings → YouTube access, try Browser and select your browser where "
+        "YouTube is signed in. Your computer may ask for a password — "
         "cookies.txt is a manual alternative.",
         NativePreview.YOUTUBE_ACCESS,
     ),
