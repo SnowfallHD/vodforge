@@ -1,6 +1,7 @@
 """Native lifetime contracts; no download, production telemetry, or user state."""
 
 import os
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -13,6 +14,44 @@ from yt_downloader.ui_widgets import ChoiceDropdown, PixelScrollTable
 pytestmark = pytest.mark.skipif(
     os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1", reason="native display required"
 )
+
+
+def test_scrolled_dropdown_tracks_flips_and_closes(surface):
+    root, unused = surface
+    unused.pack_forget()
+    canvas = tk.Canvas(root, width=500, height=320, highlightthickness=0)
+    canvas.pack()
+    body = tk.Frame(canvas, width=500, height=900)
+    canvas.create_window(0, 0, anchor="nw", window=body)
+    canvas.configure(scrollregion=(0, 0, 500, 900))
+    field = ChoiceDropdown(
+        body, textvariable=tk.StringVar(root, "A"), values=("A", "B", "C")
+    )
+    field.place(x=30, y=210, width=200)
+    root.update()
+    field.open_popover()
+    root.update()
+    popup = field._popover
+    assert popup is not None
+    assert popup.winfo_rooty() + popup.winfo_height() == field.winfo_rooty() - 4
+    canvas.yview_moveto(0.16)
+    root.update()
+    time.sleep(0.03)
+    root.update()
+    assert field._popover is popup
+    assert popup.winfo_rooty() == field.winfo_rooty() + field.winfo_height() + 4
+    canvas.yview_moveto(0.5)
+    root.update()
+    time.sleep(0.03)
+    root.update()
+    assert field._popover is None
+    canvas.yview_moveto(0)
+    canvas.configure(height=180)
+    field.place_configure(y=70)
+    root.update()
+    field.open_popover()
+    root.update()
+    assert field._popover is None  # Neither side can contain the full menu.
 
 
 @pytest.fixture
@@ -201,6 +240,7 @@ def test_first_click_opens_after_focus_moves_to_another_field(
 ):
     root, _original = surface
     owner = tk.Toplevel(root) if secondary else root
+    owner.geometry("600x400")
     field = ChoiceDropdown(
         owner, textvariable=tk.StringVar(owner, "MP4"), values=("MP4", "MP3")
     )

@@ -531,20 +531,9 @@ class ChoiceDropdown(tk.Frame):
         listbox.bind("<Return>", lambda _event: self._commit_listbox(listbox), add="+")
         listbox.bind("<Escape>", lambda _event: self._close_popover(), add="+")
         popup.update_idletasks()
-        width = max(self.winfo_width(), popup.winfo_reqwidth())
-        height = popup.winfo_reqheight()
-        owner = popup.master
-        width = min(width, max(1, owner.winfo_width() - 16))
-        height = min(height, max(1, owner.winfo_height() - 16))
-        x = min(
-            self.winfo_rootx() - owner.winfo_rootx(),
-            max(0, owner.winfo_width() - width - 8),
-        )
-        y = self.winfo_rooty() - owner.winfo_rooty() + self.winfo_height() + 4
-        if y + height > owner.winfo_height() - 8:
-            y = max(8, self.winfo_rooty() - owner.winfo_rooty() - height - 4)
         self._popover = popup
-        popup.place(x=x, y=y, width=width, height=height)
+        if not popup.reposition():
+            return
         popup.lift()
         # Tk cannot focus an unmapped child. Complete layout before handing
         # focus to the menu, or the pending old-field FocusOut closes it again.

@@ -23,6 +23,8 @@ class ChoicePopover(tk.Frame):
         self._tagged: list[tk.Misc] = []
         self._bindings: list[tuple[str, str]] = []
         self._pending: str | None = None
+        self._tracking: str | None = None
+        self._placement: tuple[int, int, int, int] | None = None
         self._click_binding: str | None = None
         # A modal frame's grab excludes sibling popovers from pointer delivery.
         # Keep the menu inside that grab subtree without stealing the grab.
@@ -34,7 +36,57 @@ class ChoicePopover(tk.Frame):
             host = grabbed
         super().__init__(host, bd=0, highlightthickness=0, **options)
 
+    def reposition(self) -> bool:
+        """Keep the complete menu attached within the anchor's visible viewport."""
+        anchor, host = self._anchor, self.master
+        if not anchor.winfo_ismapped():
+            self.close()
+            return False
+        left, top = host.winfo_rootx(), host.winfo_rooty()
+        right, bottom = left + host.winfo_width(), top + host.winfo_height()
+        ancestor = anchor.master
+        while ancestor is not None and ancestor is not host:
+            if isinstance(ancestor, tk.Canvas):
+                left = max(left, ancestor.winfo_rootx())
+                top = max(top, ancestor.winfo_rooty())
+                right = min(right, ancestor.winfo_rootx() + ancestor.winfo_width())
+                bottom = min(bottom, ancestor.winfo_rooty() + ancestor.winfo_height())
+            ancestor = ancestor.master
+        ax, ay = anchor.winfo_rootx(), anchor.winfo_rooty()
+        aw, ah = anchor.winfo_width(), anchor.winfo_height()
+        width = max(aw, self.winfo_reqwidth())
+        height = self.winfo_reqheight()
+        if ax < left or ax + aw > right or ay < top or ay + ah > bottom:
+            self.close()
+            return False
+        below, above = ay + ah + 4, ay - height - 4
+        if below + height <= bottom - 8:
+            y = below
+        elif above >= top + 8:
+            y = above
+        else:
+            self.close()
+            return False
+        if width > right - left:
+            self.close()
+            return False
+        x = max(left, min(ax, right - width))
+        placement = (x - host.winfo_rootx(), y - host.winfo_rooty(), width, height)
+        if placement != self._placement:
+            self.place(x=placement[0], y=placement[1], width=width, height=height)
+            self._placement = placement
+        return True
+
+    def _track_anchor(self) -> None:
+        self._tracking = None
+        if self.reposition():
+            # Canvas scrolling may move only an ancestor, without configuring
+            # the anchor itself. Track actual coordinates while the menu lives.
+            self._tracking = self.after(16, self._track_anchor)
+
     def watch(self) -> None:
+        self._tracking = self.after(16, self._track_anchor)
+
         def visit(widget: tk.Misc) -> None:
             if widget is self or widget.winfo_toplevel() is not self.owner:
                 return
@@ -82,6 +134,9 @@ class ChoicePopover(tk.Frame):
             self.close()
 
     def destroy(self) -> None:
+        if self._tracking is not None:
+            self.after_cancel(self._tracking)
+            self._tracking = None
         if self._pending is not None:
             self.after_cancel(self._pending)
             self._pending = None
