@@ -128,7 +128,7 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             button.event_generate("<Enter>")
             settle_native(application)
             assert owner.popup is not None
-            menu = owner.popup.winfo_children()[0]
+            menu = owner.menu
             popup = owner.popup
             assert (
                 popup.winfo_rootx() + popup.winfo_width()
@@ -142,11 +142,12 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             for item in menu.find_all():
                 if menu.type(item) == "text":
                     assert menu.bbox(item)[2] <= menu.winfo_width()
-            assert len(menu.values) == 47
+            assert int(menu.cget("scrollregion").split()[-1]) == 47 * 31
+            assert menu.bind("<TouchpadScroll>")
             for _ in range(60):
-                menu.event_generate("<MouseWheel>", delta=-1)
-            assert menu.top == 42
-            menu.event_generate("<End>")
+                menu.event_generate("<MouseWheel>", delta=-120)
+            assert menu.yview()[1] == 1.0
+            menu.event_generate("<Motion>", x=20, y=menu.winfo_height()-5)
             menu.event_generate("<Return>")
             application.update()
             assert selected == [records[-1]]

@@ -2,11 +2,13 @@
 
 import tkinter as tk
 from collections.abc import Callable
+from tkinter import font as tkfont
 from typing import Any
 
 from .choice_popover import ChoicePopover
-from .ui_theme import THEME
-from .ui_widgets import ChoiceMenu, SleekScrollbar
+from .ui_chrome import RoundedFieldBorder
+from .ui_theme import FONT_UI, THEME
+from .ui_widgets import SleekScrollbar, bind_smooth_vertical_wheel
 
 
 class RunHoverMenu:
@@ -39,50 +41,77 @@ class RunHoverMenu:
             self.button, self.close, gap=0, align_right=True, bg=THEME["bg"]
         )
         self.popup = popup
-        menu = ChoiceMenu(popup, labels)
-        menu.rows = min(5, len(labels))
-        menu.configure(width=400, height=menu.rows * menu.row_height + 12)
-        menu.pack(side="left", fill="both", expand=True)
-        scrollbar = None
+        self.chrome = RoundedFieldBorder(popup)
+        body = tk.Frame(popup, bg=THEME["surface"])
+        body.pack(fill="both", expand=True, padx=9, pady=9)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+        row_height = 31
+        menu = tk.Canvas(
+            body,
+            width=400,
+            height=min(5, len(labels)) * row_height,
+            bg=THEME["surface"],
+            bd=0,
+            highlightthickness=0,
+            yscrollincrement=1,
+            takefocus=True,
+        )
+        self.menu = menu
+        menu.grid(row=0, column=0, sticky="nsew", padx=(5, 6), pady=3)
+        scrollbar = SleekScrollbar(body, command=menu.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns", pady=1)
+        menu.configure(yscrollcommand=scrollbar.set)
+        selected = 0
+        font = tkfont.Font(font=FONT_UI)
 
-        def scroll(action: str, value: str, units: str = "units") -> None:
-            if action == "moveto":
-                top = round(float(value) * len(labels))
-            else:
-                top = menu.top + int(value) * (menu.rows if units == "pages" else 1)
-            menu.top = max(0, min(len(labels) - menu.rows, top))
-            menu.selected = max(menu.top, min(menu.selected, menu.top + menu.rows - 1))
-            menu._paint()
-            if scrollbar is not None:
-                scrollbar.set(
-                    menu.top / len(labels), (menu.top + menu.rows) / len(labels)
+        def paint(event: Any = None) -> None:
+            width = menu.winfo_width()
+            menu.delete("all")
+            for index, label in enumerate(labels):
+                top = index * row_height
+                menu.create_rectangle(
+                    0,
+                    top,
+                    width,
+                    top + row_height - 1,
+                    fill=THEME["surface_2"] if index == selected else THEME["surface"],
+                    outline="",
                 )
+                shortened = label
+                while shortened and font.measure(shortened + "…") > width - 20:
+                    shortened = shortened[:-1]
+                menu.create_text(
+                    10,
+                    top + row_height / 2,
+                    anchor="w",
+                    font=FONT_UI,
+                    fill=THEME["text"],
+                    text=label if shortened == label else shortened + "…",
+                )
+            menu.configure(scrollregion=(0, 0, width, len(labels) * row_height))
 
-        if len(labels) > menu.rows:
-            scrollbar = SleekScrollbar(popup, command=scroll)
-            scrollbar.pack(side="right", fill="y")
-            scroll("moveto", "0")
-
-        def wheel(event: tk.Event) -> str:
-            direction = -1 if event.num == 4 or event.delta > 0 else 1
-            scroll("scroll", str(direction))
-            return "break"
-
-        for widget in (menu, scrollbar):
-            if widget is not None:
-                for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-                    widget.bind(sequence, wheel)
+        def hover(event: tk.Event) -> None:
+            nonlocal selected
+            selected = max(
+                0, min(len(labels) - 1, int(menu.canvasy(event.y) // row_height))
+            )
+            paint()
 
         def choose(_event: object) -> None:
-            index = menu.selected
             self.close()
             if records:
-                self.select(records[index])
+                self.select(records[selected])
 
+        menu.bind("<Configure>", paint)
+        menu.bind("<Motion>", hover)
         menu.bind("<ButtonRelease-1>", choose)
         menu.bind("<Return>", choose)
         menu.bind("<Escape>", lambda _e: self.close())
-        for widget in (popup, menu, *([scrollbar] if scrollbar is not None else [])):
+        bind_smooth_vertical_wheel(
+            menu, popup, body, menu, scrollbar, mode="increments"
+        )
+        for widget in (popup, body, menu, scrollbar):
             widget.bind("<Enter>", lambda _e: self.cancel_close(), add="+")
             widget.bind("<Leave>", self.schedule_close, add="+")
         popup.update_idletasks()
