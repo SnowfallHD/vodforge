@@ -19,8 +19,10 @@ Implemented on the feature branch; not part of the published 0.1.9 app.
   operations. A playlist counts once; partial, failed, and cancelled operations do
   not count. Prompts wait for idle state and other dialogs to close. Manual rating
   remains available through Help. Names default to Anonymous; comments are optional.
-- Publishing a review requires separate unchecked permission and server-side
-  moderation. A rating is not automatically a public testimonial.
+- Ratings explicitly submit public reviews: the form discloses website publication
+  of the rating, comment and display name, and the action is Submit public review.
+  That action records publication permission; there is no preselected checkbox.
+  Server-side moderation still gates publication. Help & feedback remains private.
 
 ## Ownership and delivery
 

@@ -56,9 +56,11 @@ def test_forms_footer_consent_limits_and_dismissal(root, kind, size):
         panel.star_buttons[0].invoke()
         assert panel.payload()["stars"] == 1
         assert panel.payload()["display_name"] == "Anonymous"
-        assert panel.payload()["publication_consent"] is False
+        assert panel.payload()["publication_consent"] is True
+        assert panel.send.cget("text") == "Submit public review"
+        assert not hasattr(panel, "publish")
     root.update()
-    assert panel.frame.winfo_height() <= (510 if kind == "feedback" else 460)
+    assert panel.frame.winfo_height() <= (510 if kind == "feedback" else 480)
     bottom = panel.frame.winfo_rooty() + panel.frame.winfo_height()
     assert panel.backdrop.last == (
         root.winfo_width(),

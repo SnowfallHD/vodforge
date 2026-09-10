@@ -92,7 +92,6 @@ class SupportPanel:
         self.reply = tk.BooleanVar(parent, False)
         self.diagnostics = tk.BooleanVar(parent, False)
         self.video_url = tk.BooleanVar(parent, False)
-        self.publish = tk.BooleanVar(parent, False)
         if kind == "feedback":
             ChoiceDropdown(
                 body, textvariable=self.reason, values=REASONS, state="readonly"
@@ -181,18 +180,19 @@ class SupportPanel:
             ProductEntry(options, textvariable=self.name).grid(
                 row=1, column=0, sticky="ew", pady=5
             )
-            ModernCheckbox(
+            ttk.Label(
                 options,
-                text="You may publish my review and display name as a testimonial.",
-                variable=self.publish,
-            ).grid(row=2, column=0, sticky="w", pady=5)
+                text="Your rating, comment, and display name may appear publicly on the VODForge website. Leave your name blank to appear as Anonymous.",
+                style="Muted.TLabel",
+                wraplength=490,
+            ).grid(row=2, column=0, sticky="ew", pady=5)
         if self.surface.status is None:
             raise RuntimeError("Support forms require protected status.")
         self.status = ttk.Label(
             self.surface.status,
             text="No logs, cookies, or credentials are sent automatically."
             if kind == "feedback"
-            else "Your review stays private unless you permit publication.",
+            else "Public reviews are reviewed before publication.",
             style="Muted.TLabel",
             wraplength=490,
         )
@@ -206,7 +206,7 @@ class SupportPanel:
         self.cancel.pack(side="left")
         self.send = ttk.Button(
             footer,
-            text="Send feedback" if kind == "feedback" else "Submit rating",
+            text="Send feedback" if kind == "feedback" else "Submit public review",
             style="Accent.TButton",
             command=self._submit,
         )
@@ -237,7 +237,7 @@ class SupportPanel:
             anchor="center",
             width=min(580, max(340, self.parent.winfo_width() - 36)),
             height=min(
-                510 if self.kind == "feedback" else 460,
+                510 if self.kind == "feedback" else 480,
                 max(400, self.parent.winfo_height() - 36),
             ),
         )
@@ -342,7 +342,8 @@ class SupportPanel:
             "stars": self.stars.get(),
             "comment": message,
             "display_name": self.name.get().strip() or "Anonymous",
-            "publication_consent": self.publish.get(),
+            # Delivery occurs only after the explicitly labelled public-review action.
+            "publication_consent": True,
         }
 
     def _submit(self) -> None:
