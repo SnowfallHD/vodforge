@@ -208,6 +208,23 @@ def test_real_facts_keep_all_values_and_noop(root):
     assert str(text.cget("state")) == "disabled"
 
 
+def test_facts_wrapped_values_keep_value_column(root):
+    root.deiconify()
+    text = FactsText(root)
+    text.pack(fill="both", expand=True)
+    value = "/Users/example/Downloads/" + "a long folder name/" * 15
+    text.request("Output file path: " + value)
+    for width in (650, 420):
+        root.geometry(f"{width}x400")
+        settle_native(root)
+        first = text.bbox("1.17")  # First value character after label and tab.
+        continuation = text.dlineinfo("1.0 + 1 display lines")
+        assert first is not None and continuation is not None
+        assert abs(first[0] - continuation[0]) <= 1
+        assert int(text.tag_cget("fact-row", "lmargin2")) == text._layout_width
+        assert text.get("1.0", "end-1c") == "Output file path\t" + value
+
+
 def test_log_decoration_is_character_exact_and_clear_invalidates(root):
     text = ActivityLogText(root)
     source = "09:12:30  [info] unicode →\n09:12:31 [warning] C:\\a path\\b\n"

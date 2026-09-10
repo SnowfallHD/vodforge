@@ -91,8 +91,8 @@ class FactsText(tk.Text):
             if index:
                 self.insert("end", "\n")
             if line.label:
-                self.insert("end", line.label, "fact-label")
-                self.insert("end", "\t" + line.value)
+                self.insert("end", line.label, ("fact-row", "fact-label"))
+                self.insert("end", "\t" + line.value, "fact-row")
             else:
                 self.insert("end", line.raw)
         self.configure(state="disabled")
@@ -107,6 +107,7 @@ class FactsText(tk.Text):
         if stop == self._layout_width:
             return
         self.configure(tabs=(stop, "left"), tabstyle="wordprocessor")
+        self.tag_configure("fact-row", lmargin2=stop)
         self._layout_width = stop
 
 
