@@ -5627,14 +5627,27 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             style="FocusQuiet.TButton",
         )
         local_media_row = ttk.Frame(command_area, style="FocusShell.TFrame")
-        local_media_row.grid(row=1, column=0, sticky="e", pady=(8, 0))
-        ttk.Label(
+        local_media_row.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.load_url_list_button = ttk.Button(
             local_media_row,
+            text="Load URL list",
+            command=self._load_url_list_file,
+            style="FocusQuiet.TButton",
+        )
+        self.load_url_list_button.pack(side="left")
+        ToolTip(
+            self.load_url_list_button,
+            "Load a text file of links to download in sequence",
+        )
+        local_audio_actions = ttk.Frame(local_media_row, style="FocusShell.TFrame")
+        local_audio_actions.pack(side="right")
+        ttk.Label(
+            local_audio_actions,
             text="Have local audio?",
             style="Muted.TLabel",
         ).pack(side="left", padx=(0, 8))
         self.local_audio_video_button = ttk.Button(
-            local_media_row,
+            local_audio_actions,
             text="MP3 + image → MP4",
             command=self._show_local_audio_video,
             style="FocusQuiet.TButton",

@@ -45,6 +45,33 @@ def root():
     window.destroy()
 
 
+def test_forge_url_list_shortcut_uses_existing_action(monkeypatch):
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+
+    calls = []
+    monkeypatch.setattr(
+        DownloaderApp, "_load_url_list_file", lambda self: calls.append(True)
+    )
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            for size in ("1180x780", "820x560"):
+                application.geometry(size)
+                settle_native(application)
+                button = application.load_url_list_button
+                audio = application.local_audio_video_button
+                assert button.winfo_ismapped()
+                assert (
+                    button.winfo_rootx() + button.winfo_width() <= audio.winfo_rootx()
+                )
+                assert abs(button.winfo_rooty() - audio.winfo_rooty()) <= 2
+                button.invoke()
+            assert calls == [True, True]
+        finally:
+            application.destroy()
+
+
 def test_settings_selects_every_quality_tier_in_real_dropdown():
     from scripts.focus_ui_preview import isolated_preview_services
     from yt_downloader.app import DownloaderApp, _quality_max_height
