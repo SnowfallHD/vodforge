@@ -5900,6 +5900,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             style="FocusQuiet.TButton",
         )
         self.focus_run_overflow_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        from .run_hover_menu import RunHoverMenu
+
+        self.focus_run_hover_menu = RunHoverMenu(
+            self.focus_run_overflow_button,
+            self._focus_run_records,
+            self._focus_select_run_record,
+        )
         self.focus_deck_header = deck_header
 
         deck_border = tk.Frame(
@@ -6605,6 +6612,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             control.grid_remove()
 
     def _select_focus_view(self, name: str) -> None:
+        if menu := getattr(self, "focus_run_hover_menu", None):
+            menu.close()
         frame = self._focus_views.get(name)
         if frame is None:
             return

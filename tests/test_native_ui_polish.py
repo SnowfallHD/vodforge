@@ -72,6 +72,54 @@ def test_forge_url_list_shortcut_uses_existing_action(monkeypatch):
             application.destroy()
 
 
+def test_all_runs_hover_and_click_remain_independent(monkeypatch):
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application.geometry("1180x780")
+            settle_native(application)
+            owner = application.focus_run_hover_menu
+            record = {"title": "Example run", "status": "Completed"}
+            owner.records = lambda: [record]
+            application._focus_run_records = owner.records
+            selected = []
+            owner.select = selected.append
+            button = application.focus_run_overflow_button
+            application._select_focus_view("forge")
+            button.grid()
+            application.focus_deck_header.grid()
+            application.focus_force()
+            application.update()
+            assert button.winfo_ismapped()
+            monkeypatch.setattr(button, "winfo_containing", lambda *_: button)
+            button.event_generate("<Enter>")
+            settle_native(application)
+            assert owner.popup is not None
+            menu = owner.popup.winfo_children()[0]
+            menu.event_generate("<Return>")
+            application.update()
+            assert selected == [record]
+            assert owner.popup is None
+            owner.show()
+            application.update()
+            assert owner.popup is not None
+            views = []
+            original = application._select_focus_view
+            application._select_focus_view = lambda name: (
+                views.append(name),
+                original(name),
+            )
+            button.invoke()
+            application.update()
+            assert views == ["library"]
+            assert owner.popup is None
+        finally:
+            application.destroy()
+
+
 def test_settings_selects_every_quality_tier_in_real_dropdown():
     from scripts.focus_ui_preview import isolated_preview_services
     from yt_downloader.app import DownloaderApp, _quality_max_height
