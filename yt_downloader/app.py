@@ -1745,12 +1745,18 @@ def build_encoding_summary_display(info: dict[str, Any]) -> tuple[str, str]:
         else SUMMARY_COMPARISON_ROWS
     )
     for label, source_key, output_key in rows:
+        source_label = label
+        output_label = label
+        if output_key in {"Target audio bitrate", "Target video bitrate"}:
+            media = "audio" if output_key == "Target audio bitrate" else "video"
+            source_label = f"Effective {media}"
+            output_label = f"{media.capitalize()} target"
         source_lines.append(
-            f"{label}: {_display_value(source.get(source_key), 'Not available')}"
+            f"{source_label}: {_display_value(source.get(source_key), 'Not available')}"
         )
         if output_key is not None:
             output_lines.append(
-                f"{label}: {_display_value(output.get(output_key), 'Not available')}"
+                f"{output_label}: {_display_value(output.get(output_key), 'Not available')}"
             )
     output_lines.extend(
         [

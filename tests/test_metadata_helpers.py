@@ -3830,6 +3830,9 @@ def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
         info, plan, output_path=Path("Producer Beat.mp3")
     )
     source_text, output_text = build_encoding_summary_display(enriched)
+    assert "Audio target:" in output_text
+    assert "Effective/target audio bitrate:" not in output_text
+    assert "Effective audio:" in source_text
 
     assert isinstance(plan, AudioExportPlan)
     assert plan.output_type == OutputType.MP3
@@ -3841,7 +3844,7 @@ def test_mp3_plan_uses_highest_quality_audio_only_source_and_truthful_summary():
     assert plan.cover_art_source == "None (no art)"
     assert metadata_output_type(enriched) == OutputType.MP3
     assert "Audio format ID: 251" in source_text
-    assert "Effective/target audio bitrate: 320 kbps" in output_text
+    assert "Audio target: 320 kbps" in output_text
     assert "Embedded cover art: None (no art)" in output_text
     assert "Video format ID" not in source_text + output_text
 
