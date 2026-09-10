@@ -72,6 +72,35 @@ def test_forge_url_list_shortcut_uses_existing_action(monkeypatch):
             application.destroy()
 
 
+@pytest.mark.parametrize("size", ["1180x780", "820x560"])
+def test_forge_error_guidance_wraps_beside_retry(size):
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp, format_ytdlp_user_error
+
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application.geometry(size)
+            settle_native(application)
+            message = format_ytdlp_user_error("No usable video source was found")
+            application.focus_active_detail_var.set(message)
+            application.focus_preview_start_button.configure(text="Retry Download")
+            application.focus_percent_label.grid_remove()
+            application.focus_preview_start_button.grid()
+            settle_native(application)
+            label = application.focus_active_detail_label
+            assert label.cget("text") == message
+            assert float(label.cget("wraplength")) <= label.master.winfo_width()
+            assert label.winfo_height() >= label.winfo_reqheight()
+            assert label.winfo_height() > 30
+            assert (
+                label.winfo_rootx() + label.winfo_width()
+                <= application.focus_preview_start_button.winfo_rootx()
+            )
+        finally:
+            application.destroy()
+
+
 def test_all_runs_hover_and_click_remain_independent(monkeypatch):
     from scripts.focus_ui_preview import isolated_preview_services
     from yt_downloader.app import DownloaderApp

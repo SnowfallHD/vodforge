@@ -5716,9 +5716,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             justify="left",
         )
         self.focus_active_title_label.grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            title_block, textvariable=self.focus_active_detail_var, style="Muted.TLabel"
-        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.focus_active_detail_label = ttk.Label(
+            title_block,
+            textvariable=self.focus_active_detail_var,
+            style="Muted.TLabel",
+            justify="left",
+            wraplength=260,
+        )
+        self.focus_active_detail_label.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        title_block.bind(
+            "<Configure>",
+            lambda event: self.focus_active_detail_label.configure(
+                wraplength=max(1, event.width - 2)
+            ),
+            add="+",
+        )
         ttk.Label(
             title_block,
             textvariable=self.focus_active_profile_var,
