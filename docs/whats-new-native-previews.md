@@ -18,6 +18,13 @@ To announce a feature:
    samples, not replicas of the full app layout.
 4. The carousel owns centering, fixed viewport, transitions, caption, and footer.
    Do not resize the card per slide or put navigation inside the exhibit.
+   Each exhibit owns a compact content envelope: its preferred width and height
+   must describe the visible content, not an oversized empty production viewport.
+   Center that envelope horizontally and vertically in the preview. Internal
+   text may remain left-aligned for readability; unused trailing space must not
+   make the visible group appear left-heavy. Apply this to welcome slides too,
+   including interactive states. Pagination stays centered independently of
+   secondary dismissal text, which belongs at the footer's trailing edge.
 5. Exercise all slides at normal and minimum window sizes with
    `VODFORGE_NATIVE_UI_TESTS=1 pytest tests/test_whats_new_ui.py`, and inspect
    captures from `scripts/focus_ui_preview.py --approved --public-fixture
@@ -26,6 +33,9 @@ To announce a feature:
 Animated exhibits own and cancel their timers on destruction. Re-rendering the
 same slide preserves its widget instance. Escape and X acknowledge the showcase;
 app shutdown does not. Adding a preview must not change these persistence rules.
+The welcome activity-mode exhibit reuses ActivityDemo at 200 ms per phase
+(a three-second loop), automatically switching the real slider and activity view.
+It remains offline and cancels its loop when the slide is removed.
 
 The old `assets/whats-new` screenshots are retained as before/after visual QA
 references for this migration, but are no longer bundled or rendered. Both build

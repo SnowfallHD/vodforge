@@ -11,10 +11,13 @@ from .forge_activity_ui import ForgeActivityPanel
 class ActivityDemo(ttk.Frame):
     """Own exactly one cancellable timer; never run download or telemetry services."""
 
-    def __init__(self, parent: tk.Misc) -> None:
+    def __init__(self, parent: tk.Misc, *, interval_ms: int = 500) -> None:
         super().__init__(parent, style="FocusShell.TFrame")
         self.panel = ForgeActivityPanel(self)
         self.panel.pack(fill="both", expand=True)
+        self.interval_ms = interval_ms
+        self.preferred_width = 470
+        self.preferred_height = 180
         self.timer: str | None = None
         self.step = 0
         self.cycle = 0
@@ -61,4 +64,4 @@ class ActivityDemo(ttk.Frame):
         elif self.step == 12:
             self.panel.set_technical(False)
         self.step = (self.step + 1) % 15
-        self.timer = self.after(500, self._tick)
+        self.timer = self.after(self.interval_ms, self._tick)

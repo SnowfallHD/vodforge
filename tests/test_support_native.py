@@ -99,13 +99,76 @@ def test_welcome_all_slides_native_and_finish(root):
         assert panel.activity_demo is not None
         if index == 2:
             demo = panel.activity_demo
-            demo.toggle._choose(True)
-            assert demo.toggle.technical is True
+            demo.panel.toggle._choose(True)
+            assert demo.panel.toggle.technical is True
+            assert demo.interval_ms == 200
+            demo._cancel()
+            demo.step = 12
+            demo._tick()
+            assert demo.panel.toggle.technical is False
+            demo._cancel()
+            demo.step = 6
+            demo._tick()
+            assert demo.panel.toggle.technical is True
     root.update()
     assert panel.finish_button.winfo_viewable()
     panel.finish_button.invoke()
     assert dismissed == [True]
     assert root.grab_current() is None
+
+
+@pytest.mark.parametrize("size", ["1000x700", "620x560"])
+def test_welcome_content_and_navigation_centered(root, size):
+    root.geometry(size)
+    root.update()
+    panel = WhatsNewPanel(
+        root, WELCOME_SLIDES, lambda: None, finish_label="Start using VODForge"
+    )
+    for index in (0, 2):
+        panel.render(index)
+        root.update()
+        panel._cancel_transition()
+        panel._transition(10)
+        root.update()
+        demo = panel.activity_demo
+        assert demo is not None
+        assert demo.winfo_width() <= 300
+        assert (
+            abs(
+                demo.winfo_x()
+                + demo.winfo_width() / 2
+                - panel.preview.winfo_width() / 2
+            )
+            <= 1
+        )
+        assert (
+            abs(
+                demo.winfo_y()
+                + demo.winfo_height() / 2
+                - panel.preview.winfo_height() / 2
+            )
+            <= 1
+        )
+        arrows_center = (
+            panel.back.winfo_rootx()
+            + panel.next.winfo_rootx()
+            + panel.next.winfo_width()
+        ) / 2
+        assert (
+            abs(
+                arrows_center
+                - (panel.frame.winfo_rootx() + panel.frame.winfo_width() / 2)
+            )
+            <= 2
+        )
+        assert isinstance(panel.skip_button, tk.Label)
+        assert (
+            panel.skip_button.winfo_rootx()
+            > panel.next.winfo_rootx() + panel.next.winfo_width()
+        )
+    panel.skip_button.event_generate("<Button-1>")
+    root.update()
+    assert panel.closed
 
 
 def test_submission_freezes_consent_preserves_failure_and_confirms_receipt(root):

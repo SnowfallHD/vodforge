@@ -26,14 +26,10 @@ from .whats_new_audio_demo import OriginalAudioDemo
 def render_native_preview(parent: tk.Misc, preview: NativePreview) -> tk.Widget:
     """Single entry point for every present and future carousel exhibit."""
     if preview is NativePreview.WELCOME_ACTIVITY:
-        from .forge_activity_ui import ForgeActivityPanel
-
-        panel = ForgeActivityPanel(parent)
-        panel.show("welcome-example", "")
-        panel.observe("welcome-example", "Video 1 of 1 — downloading")
-        panel.technical.request(
-            "Video 1 of 1: selected format 137+251\nVideo 1 of 1: downloading\nExample only — no download is running."
-        )
+        panel = ActivityDemo(parent, interval_ms=200)
+        # Center the visible compact exhibit, not a wide empty log viewport.
+        panel.preferred_width = 300
+        panel.preferred_height = 130
         return panel
     if preview is NativePreview.ACTIVITY_MODE:
         return ActivityDemo(parent)
@@ -52,8 +48,8 @@ class FeaturePreview(ttk.Frame):
         self.preferred_width = 430
         self.preferred_height = 190
         if key == "ui-activity":
-            self.preferred_width = 340
-            self.preferred_height = 145
+            self.preferred_width = 280
+            self.preferred_height = 130
             log = ActivityLogText(
                 self,
                 compact=True,

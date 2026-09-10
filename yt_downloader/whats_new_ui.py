@@ -164,8 +164,12 @@ class WhatsNewPanel:
             self.surface.footer, style="Muted.TLabel", anchor="center"
         )
         self.page.pack(fill="x", pady=(0, 10))
-        actions = ttk.Frame(self.surface.footer, style="FocusShell.TFrame")
-        actions.pack()
+        navigation = ttk.Frame(self.surface.footer, style="FocusShell.TFrame")
+        navigation.pack(fill="x")
+        navigation.columnconfigure(0, weight=1, uniform="flank")
+        navigation.columnconfigure(2, weight=1, uniform="flank")
+        actions = ttk.Frame(navigation, style="FocusShell.TFrame")
+        actions.grid(row=0, column=1)
         self.dismiss_button = tk.Label(
             self.frame,
             text="×",
@@ -189,15 +193,23 @@ class WhatsNewPanel:
             command=self.close,
             style="Accent.TButton",
         )
-        self.skip_button = ttk.Button(actions, text="Skip tour", command=self.close)
+        self.skip_button = tk.Label(
+            navigation,
+            text="Skip tour",
+            bg=THEME["bg"],
+            fg=THEME["muted"],
+            font=(FONT_UI_FAMILY, 10),
+            cursor="hand2",
+            takefocus=True,
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        for sequence in ("<Button-1>", "<Return>", "<space>"):
+            self.skip_button.bind(sequence, lambda _e: self.close())
         if finish_label:
-            self.skip_button.pack(side="left", padx=8)
-        self.controls = (
-            self.dismiss_button,
-            self.back,
-            self.next,
-            self.skip_button,
-            self.finish_button,
+            self.skip_button.grid(row=0, column=2, sticky="e")
+        self.controls = (self.dismiss_button, self.back, self.next) + (
+            (self.skip_button, self.finish_button) if finish_label else ()
         )
         for index, focus_control in enumerate(self.controls):
             focus_control.bind("<Tab>", partial(self._cycle_focus, index, 1))
@@ -252,12 +264,12 @@ class WhatsNewPanel:
         if self.finish_label:
             if index == len(self.highlights) - 1:
                 self.next.pack_forget()
-                self.skip_button.pack_forget()
+                self.skip_button.grid_remove()
                 self.finish_button.pack(side="left", padx=8)
             else:
                 self.finish_button.pack_forget()
                 self.next.pack(side="left", padx=5)
-                self.skip_button.pack(side="left", padx=8)
+                self.skip_button.grid(row=0, column=2, sticky="e")
 
     def _schedule_preview(self) -> None:
         if not self.closed and self.paint_timer is None:
