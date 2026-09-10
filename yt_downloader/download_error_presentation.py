@@ -48,3 +48,12 @@ def download_error_message(error: object) -> str:
     else:
         return "The download could not finish. See Technical details for the cause."
     return f"{issue} {BROWSER_GUIDANCE}"
+
+
+def technical_download_error(error: object) -> str:
+    """Keep a bounded, redacted cause in the existing run-owned technical log."""
+    from .support_diagnostics import redact_line
+
+    lines = str(error).splitlines() or [type(error).__name__]
+    detail = "\n".join(redact_line(line) for line in lines[:12])
+    return f"Failure details: {type(error).__name__}: {detail}"

@@ -35,3 +35,18 @@ def test_explicit_age_restriction_has_specific_issue():
     assert download_error_message("Sign in to confirm your age").startswith(
         "YouTube requires age verification"
     )
+
+
+def test_technical_cause_is_bounded_and_redacts_sensitive_lines():
+    from yt_downloader.download_error_presentation import technical_download_error
+
+    detail = technical_download_error(
+        RuntimeError(
+            "Validation failed\nAuthorization: Bearer private-secret\nhttps://example.com/private?token=hidden\n"
+            + "x" * 5000
+        )
+    )
+    assert "Validation failed" in detail
+    assert "private-secret" not in detail
+    assert "hidden" not in detail
+    assert len(detail) < 4000

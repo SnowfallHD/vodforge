@@ -302,7 +302,7 @@ def test_plan_mismatch_aggregation_order_remains_deterministic() -> None:
                 "codec_name": "opus",
                 "sample_rate": "44100",
                 "channels": 1,
-                "bit_rate": "32000",
+                "bit_rate": "0",
             },
         ],
     }
@@ -329,7 +329,7 @@ def test_plan_mismatch_aggregation_order_remains_deterministic() -> None:
         "the output width does not match 640",
         "the output height does not match 360",
         "the measured video bitrate does not match 1500 kbps",
-        "the measured audio bitrate does not match 320 kbps",
+        "the measured audio bitrate (0.0 kbps) does not match 320 kbps",
         "the audio sample rate does not match 48000 Hz",
         "the audio channel count does not match 2",
     ]
@@ -372,3 +372,13 @@ def test_incompatible_plan_rejection_precedes_container_and_stream_errors(
             plan=plan,
             ffprobe_data=malformed_probe,
         )
+
+
+@pytest.mark.parametrize("bitrate", [None, "0", "-1", "999999"])
+def test_aac_invalid_or_excessive_bitrate_still_fails(bitrate):
+    probe = _mp4_probe()
+    probe["streams"][1]["bit_rate"] = bitrate
+    assert any(
+        "measured audio bitrate" in issue
+        for issue in output_artifact_plan_mismatches(probe, _mp4_plan())
+    )

@@ -5396,7 +5396,7 @@ def test_output_validator_enforces_source_limited_mp4_plan(tmp_path: Path):
         ({**video_stream, "profile": "Baseline"}, audio_stream),
         ({**video_stream, "pix_fmt": "yuv444p"}, audio_stream),
         ({**video_stream, "bit_rate": "100000"}, audio_stream),
-        (video_stream, {**audio_stream, "bit_rate": "32000"}),
+        (video_stream, {**audio_stream, "bit_rate": "0"}),
         (video_stream, {**audio_stream, "sample_rate": "22050"}),
         (video_stream, {**audio_stream, "channels": 1}),
     )
@@ -8104,3 +8104,23 @@ def test_format_ytdlp_user_error_catches_sign_in_to_confirm():
     result = format_ytdlp_user_error(error)
     assert "confirm your sign-in" in result
     assert "select your browser" in result
+
+
+def test_worker_failure_keeps_cause_in_run_log_and_friendly_terminal(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app = _worker_test_app()
+    cause = "the MP4 output does not match its export plan: the measured audio bitrate does not match 160 kbps"
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        RuntimeError(cause)
+    )
+    job = _worker_test_job(tmp_path)
+    app._download_worker_single(job)
+    events = list(app.events.queue)
+    logs = [payload["line"] for kind, payload in events if kind == "job_log"]
+    assert any(cause in line for line in logs)
+    assert [(kind, payload) for kind, payload in events if kind == "error"] == [
+        ("error", "The download could not finish. See Technical details for the cause.")
+    ]

@@ -225,7 +225,7 @@ def _audio_plan_mismatches(
         relative=0.12,
     ):
         mismatches.append(
-            f"the measured audio bitrate does not match {plan.audio_bitrate_kbps} kbps"
+            f"the measured audio bitrate ({measured_kbps if measured_kbps is not None else 'unavailable'} kbps) does not match {plan.audio_bitrate_kbps} kbps"
         )
     if plan.output_sample_rate and not _exact_numeric(
         view.audio.get("sample_rate"),
@@ -257,10 +257,11 @@ def _mp4_audio_bitrate_matches(
             relative=0.18,
         )
     # FFmpeg's native AAC encoder treats -b:a as a target rather than a
-    # constant-rate guarantee. Low-complexity audio can legitimately measure
-    # near half that target, while a grossly wrong encode still fails closed.
+    # constant-rate guarantee. Silence can encode at only a few kbps, so no
+    # target-relative lower bound proves correctness. Stream presence, codec,
+    # duration, sample rate and channels are validated independently.
     target_kbps = float(plan.audio_bitrate_kbps)
-    return target_kbps * 0.40 <= measured_audio_kbps <= target_kbps * 1.25
+    return 0 < measured_audio_kbps <= target_kbps * 1.25
 
 
 def _video_sidecar_target_mismatches(
@@ -359,7 +360,7 @@ def _video_rate_and_audio_shape_mismatches(
     measured_audio_kbps = _stream_kbps(view, view.audio)
     if not _mp4_audio_bitrate_matches(measured_audio_kbps, plan):
         mismatches.append(
-            f"the measured audio bitrate does not match {plan.audio_bitrate_kbps} kbps"
+            f"the measured audio bitrate ({measured_audio_kbps if measured_audio_kbps is not None else 'unavailable'} kbps) does not match {plan.audio_bitrate_kbps} kbps"
         )
     if plan.audio_sample_rate and not _exact_numeric(
         view.audio.get("sample_rate"),

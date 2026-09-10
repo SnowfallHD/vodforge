@@ -97,3 +97,47 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
         assert "saved activity" in panel.friendly.get("1.0", "end")
     finally:
         root.destroy()
+
+
+@pytest.mark.skipif(
+    os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1", reason="native Tk"
+)
+def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path):
+    from test_metadata_helpers import _worker_test_app, _worker_test_job
+
+    import yt_downloader.app as app_module
+
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app = _worker_test_app()
+    cause = "the measured audio bitrate (unavailable kbps) does not match 160 kbps"
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        RuntimeError(cause)
+    )
+    job = _worker_test_job(tmp_path)
+    app._download_worker_single(job)
+    raw = "\n".join(
+        payload["line"] for kind, payload in app.events.queue if kind == "job_log"
+    )
+    assert cause in raw
+    root = tk.Tk()
+    root.geometry("620x260")
+    panel = ForgeActivityPanel(root)
+    panel.pack(fill="both", expand=True)
+    try:
+        panel.observe(job.run_id, "Failed")
+        panel.technical.request(raw)
+        panel.show(job.run_id, raw)
+        root.update()
+        friendly = panel.friendly.get("1.0", "end-1c")
+        assert cause not in friendly
+        assert "Download failed. Open Technical details for the cause." in friendly
+        panel.set_technical(True)
+        root.update()
+        assert panel.technical.winfo_ismapped()
+        assert cause in panel.technical.get("1.0", "end-1c")
+        panel.set_technical(False)
+        root.update()
+        assert panel.friendly.get("1.0", "end-1c") == friendly
+    finally:
+        root.destroy()

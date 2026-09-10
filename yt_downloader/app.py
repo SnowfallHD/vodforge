@@ -48,6 +48,7 @@ from .cloud_funnel import (
     record_cloud_seen,
 )
 from .detail_ui import FactsText, OutputDetailsDialog
+from .download_error_presentation import technical_download_error
 from .engagement_ui import EngagementUI
 from .export_planning import (
     DEFAULT_MAX_HEIGHT,
@@ -12189,6 +12190,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             write_diagnostic(
                 f"batch download worker error: {type(exc).__name__}: {exc}"
             )
+            self._emit_job_log(job, technical_download_error(exc))
             self.events.put(("error", format_ytdlp_user_error(exc)))
 
     def _try_reuse_existing_output(
@@ -13123,6 +13125,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         issue = format_ytdlp_user_error(error)
         if item.total <= 1:
             raise _DownloadItemExecutionError(error, result) from error
+        self._emit_job_log(job, technical_download_error(error))
         self._emit_failed_download_item_metadata(job, result, issue)
         write_diagnostic(
             f"{item.label} failed but playlist will continue: "
@@ -13387,6 +13390,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         job.failure_diagnostic = capture_failure(
             error, stage="processing" if result.metadata is not None else "preparation"
         )
+        self._emit_job_log(job, technical_download_error(error))
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
