@@ -24,7 +24,15 @@ class ChoicePopover(tk.Frame):
         self._bindings: list[tuple[str, str]] = []
         self._pending: str | None = None
         self._click_binding: str | None = None
-        super().__init__(self.owner, bd=0, highlightthickness=0, **options)
+        # A modal frame's grab excludes sibling popovers from pointer delivery.
+        # Keep the menu inside that grab subtree without stealing the grab.
+        host = self.owner
+        grabbed = anchor.grab_current()
+        if grabbed is not None and (
+            anchor is grabbed or str(anchor).startswith(str(grabbed) + ".")
+        ):
+            host = grabbed
+        super().__init__(host, bd=0, highlightthickness=0, **options)
 
     def watch(self) -> None:
         def visit(widget: tk.Misc) -> None:

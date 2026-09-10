@@ -533,7 +533,7 @@ class ChoiceDropdown(tk.Frame):
         popup.update_idletasks()
         width = max(self.winfo_width(), popup.winfo_reqwidth())
         height = popup.winfo_reqheight()
-        owner = self.winfo_toplevel()
+        owner = popup.master
         width = min(width, max(1, owner.winfo_width() - 16))
         height = min(height, max(1, owner.winfo_height() - 16))
         x = min(

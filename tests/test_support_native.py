@@ -44,6 +44,10 @@ def test_forms_footer_consent_limits_and_dismissal(root, kind, size):
     root.update()
     panel.message.insert("1.0", "hello")
     if kind == "feedback":
+        assert panel.reason.get() == "Select one…"
+        with pytest.raises(ValueError, match="select a reason"):
+            panel.payload()
+        panel.reason.set("Download problem")
         assert panel.payload()["diagnostics"] == ""
         assert panel.payload()["video_url"] == ""
         panel.diagnostics.set(True)
@@ -115,6 +119,29 @@ def test_welcome_all_slides_native_and_finish(root):
     panel.finish_button.invoke()
     assert dismissed == [True]
     assert root.grab_current() is None
+
+
+def test_feedback_dropdown_belongs_to_modal_grab(root):
+    from yt_downloader.ui_widgets import ChoiceDropdown
+
+    panel = SupportPanel(root, kind="feedback", transport=None, closed=lambda: None)
+    root.update()
+    field = next(
+        w for w in panel.surface.body.winfo_children() if isinstance(w, ChoiceDropdown)
+    )
+    field.open_popover()
+    root.update()
+    popup = field._popover
+    assert popup is not None
+    assert popup.master is root.grab_current() is panel.frame
+    menu = popup.winfo_children()[0]
+    menu.selection_set(1)
+    menu.event_generate("<ButtonRelease-1>")
+    root.update()
+    assert panel.reason.get() == "Playback problem"
+    assert field._popover is None
+    assert root.grab_current() is panel.frame
+    panel.close()
 
 
 @pytest.mark.parametrize("size", ["1000x700", "620x560"])
@@ -203,6 +230,7 @@ def test_submission_freezes_consent_preserves_failure_and_confirms_receipt(root)
         root, kind="feedback", transport=transport, closed=lambda: None
     )
     panel.message.insert("1.0", "Reproduction steps")
+    panel.reason.set("Other")
     for expected in (False, True):
         panel._submit()
         assert panel.message.cget("state") == "disabled"

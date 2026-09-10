@@ -85,7 +85,7 @@ class SupportPanel:
             style="Muted.TLabel",
             wraplength=490,
         ).grid(row=1, column=0, sticky="w", pady=(0, 12))
-        self.reason = tk.StringVar(parent, REASONS[0] if context else REASONS[-1])
+        self.reason = tk.StringVar(parent, "Select one…")
         self.stars = tk.IntVar(parent, 0)
         self.name = tk.StringVar(parent, "")
         self.email = tk.StringVar(parent, "")
@@ -312,6 +312,8 @@ class SupportPanel:
         common = {"app_version": __version__, "platform": platform.system()}
         message = self.message.get("1.0", "end-1c").strip()
         if self.kind == "feedback":
+            if self.reason.get() not in REASONS:
+                raise ValueError("Please select a reason.")
             email = self.email.get().strip() if self.reply.get() else ""
             if not message:
                 raise ValueError("Please enter a message.")
