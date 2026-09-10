@@ -123,6 +123,7 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
             "audio_channels": job.manual_settings.audio_channels,
             "audio_codec": job.manual_settings.audio_codec.value,
             "x264_preset": job.manual_settings.x264_preset,
+            "video_crf": job.manual_settings.video_crf,
         },
         "mp3_settings": {
             "bitrate_kbps": job.mp3_settings.bitrate_kbps,
@@ -184,6 +185,9 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
                 audio_channels=str(manual.get("audio_channels")),
                 audio_codec=ManualAudioCodec(str(manual.get("audio_codec"))),
                 x264_preset=str(manual.get("x264_preset")),
+                video_crf=_required_int(manual, "video_crf")
+                if manual.get("video_crf") is not None
+                else None,
             ),
             mp3_settings=Mp3ExportSettings(
                 bitrate_kbps=_required_int(mp3, "bitrate_kbps"),

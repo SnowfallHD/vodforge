@@ -707,3 +707,63 @@ def test_analytics_prompt_actions_fit_without_scroll(root, tmp_path):
         )
     startup.close()
     startup.permission_panel.finish(False)
+
+
+def test_task_presets_use_real_dropdown_and_custom_quality_controls():
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.export_planning import (
+        EXPORT_MODES,
+        export_mode_from_display_name,
+    )
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            assert application.export_mode_choice_var.get() == "Everyday"
+            application._show_focus_settings()
+            settle_native(application)
+            dialog = application._focus_settings_dialog
+            dropdown = next(
+                w
+                for w in descendants(application)
+                if isinstance(w, ChoiceDropdown)
+                and tuple(w.cget("values")) == tuple(EXPORT_MODES)
+            )
+            for index, label in enumerate(EXPORT_MODES):
+                dropdown.open_popover()
+                settle_native(application)
+                choices = dropdown._popover.winfo_children()[0]
+                choices.selection_clear(0, "end")
+                choices.selection_set(index)
+                choices.event_generate("<ButtonRelease-1>")
+                settle_native(application)
+                assert (
+                    application.export_mode_var.get()
+                    == export_mode_from_display_name(label).value
+                )
+                assert application.export_mode_description_var.get()
+                assert bool(dialog.manual_frame.winfo_ismapped()) == (label == "Custom")
+            application.manual_rate_control_var.set("Quality")
+            application.manual_crf_var.set("19")
+            application.manual_video_bitrate_var.set("unused value")
+            settle_native(application)
+            assert str(dialog._custom_rate_widgets["CBR"].cget("state")) == "disabled"
+            assert application._manual_export_settings().video_crf == 19
+            application.manual_video_bitrate_var.set("7000")
+            application.manual_rate_control_var.set("CBR")
+            assert application._manual_export_settings().video_bitrate_kbps == 7000
+            assert application._manual_export_settings().video_crf is None
+            dialog.close()
+            # Closing removes the dialog-owned trace; preference remains usable.
+            application.manual_rate_control_var.set("Quality")
+            application._show_focus_settings()
+            settle_native(application)
+            assert application.manual_crf_var.get() == "19"
+        finally:
+            application.destroy()

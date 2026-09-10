@@ -62,6 +62,8 @@ class FocusSettingsBindings:
     appearance_theme: tk.StringVar
     custom_accent: tk.StringVar
     anonymous_usage_analytics: tk.BooleanVar
+    manual_rate_control: tk.StringVar | None = None
+    manual_crf: tk.StringVar | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,7 +411,7 @@ class FocusSettingsDialog:
         )
         ttk.Label(
             mp4_output,
-            text="Output mode",
+            text="Optimize for",
             style="Muted.TLabel",
         ).grid(row=2, column=0, sticky="w", pady=4)
         export_combo = ChoiceDropdown(
@@ -438,8 +440,21 @@ class FocusSettingsDialog:
         manual.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3, 8))
         manual.columnconfigure(0, weight=1, uniform="manual-field")
         manual.columnconfigure(1, weight=1, uniform="manual-field")
-        manual_fields = (
-            ("Video bitrate (kbps)", bindings.manual_video_bitrate, None),
+        quality_fields = (
+            (
+                (
+                    "Video rate control",
+                    bindings.manual_rate_control,
+                    ("CBR", "Quality"),
+                ),
+                ("Video quality (CRF, 1–51)", bindings.manual_crf, None),
+            )
+            if bindings.manual_rate_control is not None
+            and bindings.manual_crf is not None
+            else ()
+        )
+        manual_fields = quality_fields + (
+            ("CBR video bitrate (kbps)", bindings.manual_video_bitrate, None),
             ("Audio bitrate (kbps)", bindings.manual_audio_bitrate, None),
             (
                 "Audio codec",
@@ -463,6 +478,7 @@ class FocusSettingsDialog:
                 ),
             ),
         )
+        self._custom_rate_widgets: dict[str, ProductEntry | ChoiceDropdown] = {}
         for index, (label, variable, values) in enumerate(manual_fields):
             field = ttk.Frame(manual, style="FocusShell.TFrame")
             field.grid(
@@ -493,7 +509,30 @@ class FocusSettingsDialog:
                 )
                 self._bind_readonly_combo(widget)
             widget.grid(row=1, column=0, sticky="ew")
+            if variable is bindings.manual_video_bitrate:
+                self._custom_rate_widgets["CBR"] = widget
+            elif variable is bindings.manual_crf:
+                self._custom_rate_widgets["Quality"] = widget
+                ToolTip(
+                    widget,
+                    "Lower CRF preserves more detail and usually creates a larger file. 18–25 is a useful starting range.",
+                )
         self.manual_frame = manual
+        if bindings.manual_rate_control is not None:
+            self._manual_rate_trace: str | None = (
+                bindings.manual_rate_control.trace_add(
+                    "write", lambda *_args: self._refresh_custom_rate_controls()
+                )
+            )
+            self._refresh_custom_rate_controls()
+
+    def _refresh_custom_rate_controls(self) -> None:
+        variable = self.bindings.manual_rate_control
+        if variable is not None:
+            for mode, widget in self._custom_rate_widgets.items():
+                widget.configure(
+                    state="normal" if variable.get() == mode else "disabled"
+                )
 
     def _build_mp4_output_flags(
         self,
@@ -523,7 +562,9 @@ class FocusSettingsDialog:
             variable=bindings.embed_metadata,
         ).grid(row=8, column=0, columnspan=2, sticky="w", pady=5)
         nvenc_label = (
-            "NVIDIA NVENC (Windows only)" if macos else "Use NVIDIA NVENC GPU encoding"
+            "NVIDIA NVENC for CBR (Windows only)"
+            if macos
+            else "Use NVIDIA NVENC for CBR encoding"
         )
         nvenc = ModernCheckbox(
             mp4_output,
@@ -939,6 +980,10 @@ class FocusSettingsDialog:
         if self._closed:
             return
         self._closed = True
+        rate_trace = getattr(self, "_manual_rate_trace", None)
+        if rate_trace is not None and self.bindings.manual_rate_control is not None:
+            self.bindings.manual_rate_control.trace_remove("write", rate_trace)
+            self._manual_rate_trace = None
         accent_trace_id = getattr(self, "_accent_trace_id", None)
         if accent_trace_id is not None:
             try:

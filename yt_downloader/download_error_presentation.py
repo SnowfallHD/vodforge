@@ -45,6 +45,8 @@ def download_error_message(error: object) -> str:
         return FAILURE_GUIDANCE[reason]
     if reason in {"disk_full", "permission_denied", "filesystem", "resource_exhausted"}:
         return FAILURE_GUIDANCE[reason]
+    if "only an hdr video source" in text:
+        return "This video is only available in HDR. Choose a video with an SDR version for these MP4 presets, then retry."
     if "no valid" in text and "output" in text:
         return "No valid output was produced. Review each failed item's reason and next step in Technical details, then retry the failed sources."
     if "could not copy chrome cookie database" in text or "issues/7271" in text:

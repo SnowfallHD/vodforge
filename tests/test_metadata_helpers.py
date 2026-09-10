@@ -3732,7 +3732,7 @@ def test_encoding_summary_metadata_includes_source_and_planned_output():
     assert source["Reason selected"] == "true 1080p available; preferred H.264 source"
     assert output["Output file path"] == str(Path("C:/Videos/video [abc123].mp4"))
     assert output["Output rate-control mode"] == "Auto CBR"
-    assert output["Target video bitrate"] == "2000 kbps"
+    assert output["Target video bitrate"] == "2500 kbps"
     assert output["Validation status"] == "Pending"
 
 
@@ -4073,20 +4073,23 @@ def test_auto_export_plan_calculates_source_aware_1080p_cbr_floor_and_audio():
     assert plan.audio_format_id == "140"
     assert plan.output_width == 1920
     assert plan.output_height == 1080
-    assert plan.video_bitrate_kbps == 2000
+    assert plan.video_bitrate_kbps == 2500
     assert plan.audio_bitrate_kbps in {160, 192}
     assert plan.format_selector == "137+140"
     assert "/137" not in plan.format_selector
-    assert "true 1080p source" in plan.summary
+    assert "1080p-tier source" in plan.summary
 
 
 def test_export_mode_labels_mark_auto_recommended_without_changing_canonical_values():
     assert EXPORT_MODES == [
-        "Auto CBR (Recommended)",
-        "Strict Compliance",
-        "Manual Override",
+        "Everyday",
+        "Streaming",
+        "Editing",
+        "Sharing",
+        "CTV",
+        "Custom",
     ]
-    assert export_mode_display_name(ExportMode.AUTO_CBR) == "Auto CBR (Recommended)"
+    assert export_mode_display_name(ExportMode.AUTO_CBR) == "CTV"
     assert (
         export_mode_from_display_name("Auto CBR (Recommended)") == ExportMode.AUTO_CBR
     )
@@ -4100,14 +4103,12 @@ def test_export_mode_descriptions_state_the_actual_rate_control_behavior():
     strict = export_mode_description(ExportMode.STRICT_COMPLIANCE)
     manual = export_mode_description(ExportMode.MANUAL_OVERRIDE)
 
-    assert auto.startswith("Recommended.")
-    assert "source quality and resolution" in auto
+    assert "CBR upload master" in auto
+    assert "2,000 kbps" in auto
     assert "10 Mbps video" in strict
     assert "320 kbps audio" in strict
     assert "cannot add detail" in strict
-    assert (
-        "exact video bitrate, audio codec, audio bitrate, and encoding speed" in manual
-    )
+    assert "video quality or CBR bitrate" in manual
 
 
 def test_manual_override_keeps_source_selection_but_replaces_encode_settings():
@@ -4276,7 +4277,7 @@ def test_sanity_high_quality_1080p_calculates_above_minimum_floor():
     assert plan.video_format_id == "hq1080"
     assert plan.output_height == 1080
     assert plan.video_bitrate_kbps > 2000
-    assert plan.video_bitrate_kbps == 6000
+    assert plan.video_bitrate_kbps == 8000
 
 
 def test_strict_compliance_uses_fixed_requested_profile_with_source_limited_warnings():
@@ -6747,7 +6748,7 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
                 "pix_fmt": "yuv420p",
                 "width": 1920,
                 "height": 1080,
-                "bit_rate": "4000000",
+                "bit_rate": "5000000",
             },
             {
                 "codec_type": "audio",

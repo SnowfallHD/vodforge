@@ -87,5 +87,5 @@ def test_job_annotation_persists_profile_without_secret_url_data(
 
     assert annotated["vodforge_attempt_signature"] == job_attempt_signature(job)
     assert annotated["vodforge_output_profile"] == job_output_profile(job)
-    assert annotated["vodforge_output_profile"] == "MP4 • 1080p Full HD • Auto CBR"
+    assert annotated["vodforge_output_profile"] == "MP4 • 1080p Full HD • CTV"
     assert "tracking" not in str(annotated)

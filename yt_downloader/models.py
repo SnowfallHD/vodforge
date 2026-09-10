@@ -34,6 +34,11 @@ class CookieSource(str, Enum):
 
 
 class ExportMode(str, Enum):
+    EVERYDAY = "Everyday"
+    STREAMING = "Streaming"
+    EDITING = "Editing"
+    SHARING = "Sharing"
+    # Keep durable values for existing settings, retry snapshots and identities.
     AUTO_CBR = "Auto CBR"
     STRICT_COMPLIANCE = "Strict Compliance"
     MANUAL_OVERRIDE = "Manual Override"
@@ -75,6 +80,22 @@ class ExportPlan:
     audio_codec: str = "unknown"
     warnings: list[str] = field(default_factory=list)
     summary: str = ""
+    video_crf: int | None = None
+    keyframe_seconds: float | None = None
+    constant_frame_rate: bool = False
+    video_maxrate_kbps: int | None = None
+    source_quality_tier: int = 0
+
+    @property
+    def video_target_label(self) -> str:
+        if self.video_crf is None:
+            return f"{self.video_bitrate_kbps} kbps"
+        cap = (
+            f", VBV max {self.video_maxrate_kbps} kbps"
+            if self.video_maxrate_kbps
+            else ""
+        )
+        return f"Quality CRF {self.video_crf} (variable bitrate{cap})"
 
 
 @dataclass(frozen=True)
@@ -116,6 +137,7 @@ class ManualExportSettings:
     audio_channels: str = AUDIO_CHANNELS
     audio_codec: ManualAudioCodec = ManualAudioCodec.AAC
     x264_preset: str = "medium"
+    video_crf: int | None = None
 
 
 @dataclass

@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .export_planning import QUALITY_PRESETS, export_mode_display_name
 from .history import sanitize_durable_url
 from .models import DownloadJob, ExportMode, OutputType
 
@@ -79,7 +80,12 @@ def job_output_settings(job: DownloadJob) -> dict[str, Any]:
     common["mp4"] = {
         "quality_label": job.quality_label,
         "export_mode": job.export_mode.value,
-        "use_nvenc": job.use_nvenc,
+        "use_nvenc": job.use_nvenc
+        and job.export_mode not in QUALITY_PRESETS
+        and not (
+            job.export_mode == ExportMode.MANUAL_OVERRIDE
+            and job.manual_settings.video_crf is not None
+        ),
         "embed_thumbnail": job.embed_thumbnail,
         "write_thumbnail": job.write_thumbnail,
         "embed_metadata": job.embed_metadata,
@@ -94,6 +100,9 @@ def job_output_settings(job: DownloadJob) -> dict[str, Any]:
             "audio_codec": job.manual_settings.audio_codec.value,
             "x264_preset": job.manual_settings.x264_preset,
         }
+        if job.manual_settings.video_crf is not None:
+            common["mp4"]["manual"]["video_crf"] = job.manual_settings.video_crf
+            common["mp4"]["manual"].pop("video_bitrate_kbps")
     return common
 
 
@@ -130,7 +139,7 @@ def job_output_profile(job: DownloadJob) -> str:
         return "Original audio • No re-encoding"
     if job.output_type is OutputType.MP3:
         return f"MP3 • {job.mp3_settings.bitrate_kbps} kbps"
-    return f"MP4 • {job.quality_label} • {job.export_mode.value}"
+    return f"MP4 • {job.quality_label} • {export_mode_display_name(job.export_mode)}"
 
 
 def job_output_profile_details(job: DownloadJob) -> str:
@@ -153,7 +162,9 @@ def job_output_profile_details(job: DownloadJob) -> str:
         if manual := mp4.get("manual"):
             lines.extend(
                 (
-                    f"Video bitrate: {manual['video_bitrate_kbps']} kbps",
+                    f"Video quality: CRF {manual['video_crf']}"
+                    if "video_crf" in manual
+                    else f"Video bitrate: {manual['video_bitrate_kbps']} kbps",
                     f"Audio: {manual['audio_codec']} • {manual['audio_bitrate_kbps']} kbps",
                     f"Sample rate/channels: {manual['audio_sample_rate']} Hz • {manual['audio_channels']}",
                 )

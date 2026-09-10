@@ -62,6 +62,7 @@ from .export_planning import (
     export_mode_description,
     export_mode_display_name,
     export_mode_from_display_name,
+    migrate_export_preferences,
     mp3_sample_rate_display,
 )
 from .failure_diagnostics import capture_failure
@@ -1585,7 +1586,11 @@ def _planned_output_summary(
         "Output frame rate": _format_fractional_fps(plan.fps),
         "Output video codec": "H.264",
         "Output rate-control mode": plan.mode.value,
-        "Target video bitrate": f"{plan.video_bitrate_kbps} kbps",
+        "Target video bitrate": plan.video_target_label,
+        "Video rate control": "Quality" if plan.video_crf is not None else "CBR",
+        "Keyframe interval": f"{plan.keyframe_seconds:g} seconds"
+        if plan.keyframe_seconds
+        else "Encoder default",
         "Measured video bitrate": "Pending",
         "Pixel format": "yuv420p",
         "H.264 profile": "High",
@@ -2839,8 +2844,17 @@ def build_vod_ffmpeg_command(
     use_nvenc: bool = False,
     preserve_attached_picture: bool = False,
     preserve_metadata: bool | None = None,
+    video_crf: int | None = None,
+    keyframe_seconds: float | None = None,
+    fps: float | None = None,
+    constant_frame_rate: bool = False,
+    video_maxrate_kbps: int | None = None,
 ) -> list[str]:
-    """Return the constrained-CBR command for one calculated MP4 export plan."""
+    """Encode the selected quality or constrained-CBR contract."""
+    if video_crf is not None and not 1 <= video_crf <= 51:
+        raise ValueError("Video CRF must be between 1 and 51 for H.264 High profile.")
+    # NVENC CQ is not x264 CRF. Preserve the calibrated quality contract on CPU.
+    use_nvenc = use_nvenc and video_crf is None
     video_bitrate = f"{int(video_bitrate_kbps)}k"
     audio_bitrate = f"{int(audio_bitrate_kbps)}k"
     buffer_size = f"{int(video_bitrate_kbps) * 2}k"
@@ -2899,6 +2913,42 @@ def build_vod_ffmpeg_command(
             "nal-hrd=cbr:force-cfr=1",
         ]
     )
+    if video_crf is not None:
+        video_args = [
+            codec_option,
+            "libx264",
+            preset_option,
+            x264_preset,
+            "-crf:v:0",
+            str(video_crf),
+            pixel_format_option,
+            "yuv420p",
+            profile_option,
+            "high",
+        ]
+        if video_maxrate_kbps is not None:
+            if video_maxrate_kbps <= 0:
+                raise ValueError("Maximum video bitrate must be positive.")
+            video_args.extend(
+                [
+                    maxrate_option,
+                    f"{video_maxrate_kbps}k",
+                    buffer_option,
+                    f"{video_maxrate_kbps * 2}k",
+                ]
+            )
+    if keyframe_seconds is not None:
+        if keyframe_seconds <= 0 or not math.isfinite(keyframe_seconds):
+            raise ValueError("Keyframe interval must be finite and positive.")
+        video_args.extend(
+            ["-force_key_frames:v:0", f"expr:gte(t,n_forced*{keyframe_seconds:g})"]
+        )
+        if fps and math.isfinite(fps) and fps > 0:
+            video_args.extend(["-g:v:0", str(max(1, round(fps * keyframe_seconds)))])
+    if constant_frame_rate:
+        video_args.extend(["-fps_mode:v:0", "cfr"])
+        if fps and math.isfinite(fps) and fps > 0:
+            video_args.extend(["-r:v:0", f"{fps:.8f}"])
     primary_video_map = "0:V:0" if preserve_attached_picture else "0:v:0"
     map_args = ["-map", primary_video_map, "-map", "0:a:0?"]
     artwork_args: list[str] = []
@@ -3532,7 +3582,8 @@ def transcode_to_vod_streaming_settings(
     audio_codec = plan.output_audio_codec if plan else ManualAudioCodec.AAC
     audio_codec_label = audio_codec.value
     x264_preset = plan.x264_preset if plan else "medium"
-    failure_prefix = f"VODForge H.264/{audio_codec_label} CBR transcode failed"
+    rate_label = "quality" if plan and plan.video_crf is not None else "CBR"
+    failure_prefix = f"VODForge H.264/{audio_codec_label} {rate_label} transcode failed"
 
     cleanup_legacy_encode_sidecars(path)
     if temp_output.exists():
@@ -3554,6 +3605,11 @@ def transcode_to_vod_streaming_settings(
             use_nvenc=use_nvenc,
             preserve_attached_picture=preserve_attached_picture,
             preserve_metadata=preserve_metadata,
+            video_crf=plan.video_crf if plan else None,
+            keyframe_seconds=plan.keyframe_seconds if plan else None,
+            fps=plan.fps if plan else None,
+            constant_frame_rate=plan.constant_frame_rate if plan else False,
+            video_maxrate_kbps=plan.video_maxrate_kbps if plan else None,
         )
         process_result = _run_cancellable_transcode_process(
             command,
@@ -4660,7 +4716,7 @@ def _download_item_plan_log_lines(
     lines: list[str] = []
     if job.export_mode == ExportMode.MANUAL_OVERRIDE and isinstance(plan, ExportPlan):
         lines.append(
-            f"{label}: Manual Override settings {plan.video_bitrate_kbps} kbps video + "
+            f"{label}: Custom settings {plan.video_target_label} video + "
             f"{plan.audio_bitrate_kbps} kbps audio, {plan.audio_sample_rate} Hz, "
             f"{plan.audio_channels} channel(s), x264 preset {plan.x264_preset}."
         )
@@ -4681,11 +4737,7 @@ def _download_item_plan_log_lines(
             )
         )
     else:
-        target_label = (
-            "Manual target"
-            if job.export_mode == ExportMode.MANUAL_OVERRIDE
-            else "Auto CBR target"
-        )
+        target_label = f"{export_mode_display_name(plan.mode)} target"
         lines.extend(
             (
                 (
@@ -4694,7 +4746,7 @@ def _download_item_plan_log_lines(
                     f"~{plan.source_audio_kbps:.0f} kbps."
                 ),
                 (
-                    f"{label}: {target_label} {plan.video_bitrate_kbps} kbps video + "
+                    f"{label}: {target_label} {plan.video_target_label} video + "
                     f"{plan.audio_bitrate_kbps} kbps audio."
                 ),
             )
@@ -4836,7 +4888,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.settings_persistence = SettingsPersistenceOwner(
             settings_file_path(), diagnostic=write_diagnostic
         )
-        saved_settings = self.settings_persistence.load()
+        saved_settings = migrate_export_preferences(self.settings_persistence.load())
         theme_selection = apply_theme_selection(
             saved_settings.get("appearance_theme", DEFAULT_THEME_NAME),
             saved_settings.get("custom_accent", "#7170ff"),
@@ -4923,7 +4975,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             saved_settings,
             "export_mode",
             {item.value for item in ExportMode},
-            ExportMode.AUTO_CBR.value,
+            ExportMode.EVERYDAY.value,
         )
         self.output_var = tk.StringVar(value=output_value)
         self.output_type_var = tk.StringVar(value=output_type_value)
@@ -4947,6 +4999,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.export_mode_description_var = tk.StringVar(
             value=export_mode_description(ExportMode(export_mode_value))
+        )
+        self.manual_rate_control_var = tk.StringVar(
+            value=_persisted_choice(
+                saved_settings, "manual_rate_control", {"CBR", "Quality"}, "CBR"
+            )
+        )
+        self.manual_crf_var = tk.StringVar(
+            value=_persisted_int_text(
+                saved_settings, "manual_crf", 21, minimum=1, maximum=51
+            )
         )
         self.manual_video_bitrate_var = tk.StringVar(
             value=_persisted_int_text(
@@ -5234,7 +5296,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             value="Paste a YouTube URL above, then press Return to begin."
         )
         self.focus_active_profile_var = tk.StringVar(
-            value=f"{self.quality_var.get()}  •  {self.export_mode_var.get()}"
+            value=f"{self.quality_var.get()}  •  {export_mode_display_name(self.export_mode_var.get())}"
         )
         self.focus_active_duration_var = tk.StringVar(value="")
         self.focus_percent_var = tk.StringVar(value="0%")
@@ -5894,7 +5956,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         bind_smooth_vertical_wheel(self.focus_summary_text, mode="pixels")
         self._set_text(
             self.focus_summary_text,
-            "Format        MP4\nVideo         H.264\nAudio         AAC\nOutput mode   Auto CBR\nSave to       "
+            "Format        MP4\nVideo         H.264\nAudio         AAC\nOutput mode   Everyday\nSave to       "
             + self.output_var.get(),
             disabled=True,
         )
@@ -6846,7 +6908,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 source_label="Source rate",
             )
             return f"MP3  •  {rate}  •  {sample_rate}"
-        return f"{quality_label or self.quality_var.get()}  •  {(export_mode or ExportMode(self.export_mode_var.get())).value}"
+        return f"{quality_label or self.quality_var.get()}  •  {export_mode_display_name(export_mode or ExportMode(self.export_mode_var.get()))}"
 
     def _on_output_type_changed(self) -> None:
         self._sync_focus_settings_summary()
@@ -7012,7 +7074,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "Format        MP4",
                 "Video         H.264",
                 f"Audio         {audio_codec}",
-                f"Output mode   {export_mode.value}",
+                f"Output mode   {export_mode_display_name(export_mode)}",
                 f"Save to       {self._submission_output_text()}",
             )
         )
@@ -7143,6 +7205,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             manual_sample_rate=self.manual_sample_rate_var,
             manual_channels=self.manual_channels_var,
             manual_preset=self.manual_preset_var,
+            manual_rate_control=self.manual_rate_control_var,
+            manual_crf=self.manual_crf_var,
             write_thumbnail=self.write_thumbnail_var,
             write_info_json=self.write_info_json_var,
             embed_thumbnail=self.embed_thumbnail_var,
@@ -7367,7 +7431,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 (
                     "Format          MP4",
                     f"Quality ceiling {job.quality_label}",
-                    f"Output mode     {job.export_mode.value}",
+                    f"Output mode     {export_mode_display_name(job.export_mode)}",
                     f"Save to         {job.output_dir}",
                     "Status          Queued",
                 )
@@ -9142,7 +9206,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             except ValueError as exc:
                 raise ValueError(f"{label} must be a whole number.") from exc
             if parsed < low or parsed > high:
-                raise ValueError(f"{label} must be between {low} and {high} kbps.")
+                unit = "" if label == "Video quality CRF" else " kbps"
+                raise ValueError(f"{label} must be between {low} and {high}{unit}.")
             return parsed
 
         channels_label = self.manual_channels_var.get()
@@ -9163,15 +9228,26 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "MP3 audio bitrate must be one of the encoder-supported values: "
                 f"{choices} kbps."
             )
+        quality_control = (
+            self.__dict__.get("manual_rate_control_var") is not None
+            and self.manual_rate_control_var.get() == "Quality"
+        )
         return ManualExportSettings(
             video_bitrate_kbps=positive_int(
                 self.manual_video_bitrate_var.get(), "Manual video bitrate", 100, 100000
-            ),
+            )
+            if not quality_control
+            else STRICT_VIDEO_BITRATE_KBPS,
             audio_bitrate_kbps=audio_bitrate_kbps,
             audio_sample_rate=self.manual_sample_rate_var.get() or AUDIO_SAMPLE_RATE,
             audio_channels=channels,
             audio_codec=audio_codec,
             x264_preset=self.manual_preset_var.get() or "medium",
+            video_crf=positive_int(
+                self.manual_crf_var.get(), "Video quality CRF", 1, 51
+            )
+            if quality_control
+            else None,
         )
 
     def _browse_output(self) -> None:
@@ -11991,6 +12067,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "manual_sample_rate": self.manual_sample_rate_var,
             "manual_channels": self.manual_channels_var,
             "manual_preset": self.manual_preset_var,
+            "manual_rate_control": self.manual_rate_control_var,
+            "manual_crf": self.manual_crf_var,
             "mp3_quality": self.mp3_quality_var,
             "mp3_sample_rate": self.mp3_sample_rate_var,
             "mp3_channels": self.mp3_channels_var,
@@ -12376,14 +12454,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ):
                 control_check()
                 self.events.put(("status", f"{label} — transcoding"))
-                encoder_label = "NVIDIA NVENC GPU" if job.use_nvenc else "CPU libx264"
+                encoder_label = (
+                    "NVIDIA NVENC GPU"
+                    if job.use_nvenc and plan.video_crf is None
+                    else "CPU libx264"
+                )
                 self._emit_job_log(
                     job,
                     f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}",
                 )
                 write_diagnostic(
                     f"{label} ffmpeg command: "
-                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata)}"
+                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata, video_crf=plan.video_crf, keyframe_seconds=plan.keyframe_seconds, fps=plan.fps, constant_frame_rate=plan.constant_frame_rate, video_maxrate_kbps=plan.video_maxrate_kbps)}"
                 )
                 progress_callback((encode_index - 1) / total_mp4)
                 transcode_started = time.monotonic()

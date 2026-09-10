@@ -22,6 +22,7 @@ from yt_downloader.app import (
     Mp3ExportSettings,
     OutputType,
 )
+from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.media_player_ui import MediaPlayerWindow
 from yt_downloader.playback_backend import NativeRenderSurface, PlaybackSnapshot
 from yt_downloader.ui_layout import centered_toplevel_geometry
@@ -377,6 +378,7 @@ def main() -> None:
         "--cookie-browser", choices=COOKIE_BROWSER_OPTIONS, default="Firefox"
     )
     parser.add_argument("--settings", action="store_true")
+    parser.add_argument("--preset", choices=EXPORT_MODES, default="Everyday")
     parser.add_argument("--consent", action="store_true")
     parser.add_argument("--whats-new", action="store_true")
     parser.add_argument("--whats-new-slide", type=int, default=1)
@@ -408,6 +410,7 @@ def main() -> None:
     args = parser.parse_args()
 
     app = DownloaderApp()
+    app.export_mode_choice_var.set(args.preset)
     app.title("VODForge — UI Review")
     app.geometry(args.size)
     output_type = OutputType(args.output_type)

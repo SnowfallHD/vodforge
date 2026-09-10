@@ -79,7 +79,11 @@ def export_mode_display_name(mode: ExportMode | str) -> str:
     """Return the user-facing selector label without changing stored mode values."""
     parsed = mode if isinstance(mode, ExportMode) else ExportMode(mode)
     if parsed == ExportMode.AUTO_CBR:
-        return "Auto CBR (Recommended)"
+        return "CTV"
+    if parsed == ExportMode.MANUAL_OVERRIDE:
+        return "Custom"
+    if parsed == ExportMode.STRICT_COMPLIANCE:
+        return "CTV (legacy fixed bitrate)"
     return parsed.value
 
 
@@ -88,6 +92,8 @@ def export_mode_from_display_name(value: ExportMode | str) -> ExportMode:
     if isinstance(value, ExportMode):
         return value
     text = str(value).strip()
+    if text == "Auto CBR (Recommended)":
+        return ExportMode.AUTO_CBR
     for mode in ExportMode:
         if text in {mode.value, export_mode_display_name(mode)}:
             return mode
@@ -99,18 +105,57 @@ def export_mode_description(mode: ExportMode | str) -> str:
     parsed = export_mode_from_display_name(mode)
     if parsed == ExportMode.AUTO_CBR:
         return (
-            "Recommended. Chooses a bitrate for each video from its source quality and resolution, "
-            "so a larger file is not created when a higher bitrate would not help."
+            "Prepare a CBR upload master for a CTV network. Adapts to the source, "
+            "with at least 2,000 kbps video for the 1080p tier and two-second keyframes."
         )
     if parsed == ExportMode.STRICT_COMPLIANCE:
         return (
             "Uses the same 10 Mbps video and 320 kbps audio delivery profile for every MP4. "
             "It cannot add detail missing from the YouTube source."
         )
-    return "Uses the exact video bitrate, audio codec, audio bitrate, and encoding speed you choose below."
+    descriptions = {
+        ExportMode.EVERYDAY: "Recommended for general use. Balances detail and file size, adapting bitrate to the pictures. Uses CPU encoding for consistent quality.",
+        ExportMode.STREAMING: "Prepare local clips for livestreams and reactions. Clear detail, consistent frame timing and two-second keyframes. Uses CPU encoding.",
+        ExportMode.EDITING: "Preserve detail for another export, with one-second keyframes for easier seeking. Larger MP4 files; uses CPU encoding.",
+        ExportMode.SHARING: "Create smaller MP4 files for sending and uploading, accepting some detail loss. Keeps your resolution ceiling; uses CPU encoding.",
+    }
+    return descriptions.get(
+        parsed,
+        "Choose video quality or CBR bitrate, audio settings and encoding speed below. Quality mode uses CPU encoding.",
+    )
 
 
-EXPORT_MODES = [export_mode_display_name(mode) for mode in ExportMode]
+EXPORT_MODES = [
+    export_mode_display_name(mode)
+    for mode in ExportMode
+    if mode != ExportMode.STRICT_COMPLIANCE
+]
+
+# CRF controls content-dependent allocation; source bitrate is not a quality cap.
+# Calibrated with scripts/benchmark_export_presets.py; see docs/export-presets.md.
+QUALITY_PRESETS = {
+    ExportMode.EVERYDAY: (21, 5.0, False),
+    ExportMode.STREAMING: (20, 2.0, True),
+    ExportMode.EDITING: (18, 1.0, True),
+    ExportMode.SHARING: (25, 5.0, False),
+}
+
+
+def migrate_export_preferences(saved: dict[str, Any]) -> dict[str, Any]:
+    """Preserve the old fixed delivery contract when removing it from the menu."""
+    if saved.get("export_mode") != ExportMode.STRICT_COMPLIANCE.value:
+        return saved
+    return {
+        **saved,
+        "export_mode": ExportMode.MANUAL_OVERRIDE.value,
+        "manual_video_bitrate": STRICT_VIDEO_BITRATE_KBPS,
+        "manual_audio_bitrate": STRICT_AUDIO_BITRATE_KBPS,
+        "manual_audio_codec": "AAC",
+        "manual_sample_rate": "48000",
+        "manual_channels": "Stereo",
+        "manual_preset": "medium",
+        "manual_rate_control": "CBR",
+    }
 
 
 def mp3_sample_rate_display(
@@ -682,8 +727,25 @@ def _auto_target_bitrates(
 ) -> tuple[int, int]:
     if mode in {ExportMode.STRICT_COMPLIANCE, ExportMode.MANUAL_OVERRIDE}:
         return STRICT_VIDEO_BITRATE_KBPS, STRICT_AUDIO_BITRATE_KBPS
+    if mode in QUALITY_PRESETS:
+        audio_bounds = {
+            ExportMode.EVERYDAY: (128, 192),
+            ExportMode.STREAMING: (160, 192),
+            ExportMode.EDITING: (192, 256),
+            ExportMode.SHARING: (96, 128),
+        }
+        low, high = audio_bounds[mode]
+        return (0, max(low, min(high, choose_audio_bitrate_kbps(effective_audio_kbps))))
     return (
-        calculate_auto_video_bitrate_kbps(video),
+        max(
+            2500,
+            min(
+                10000,
+                _round_clean_bitrate(calculate_auto_video_bitrate_kbps(video) * 1.25),
+            ),
+        )
+        if video_quality_tier(video) == 1080
+        else calculate_auto_video_bitrate_kbps(video),
         choose_audio_bitrate_kbps(effective_audio_kbps) if audio else 160,
     )
 
@@ -718,7 +780,11 @@ def _derive_auto_encode_targets(
             warnings.append(
                 "Strict Compliance target is far above the selected source quality. The output may satisfy platform requirements, but it will not become true high-bitrate quality."
             )
-    warn = _bitrate_warning(video_bitrate, evidence.effective_video_kbps)
+    warn = (
+        _bitrate_warning(video_bitrate, evidence.effective_video_kbps)
+        if mode not in QUALITY_PRESETS
+        else None
+    )
     if warn and not (
         mode == ExportMode.STRICT_COMPLIANCE
         and evidence.effective_video_kbps > 0
@@ -745,13 +811,16 @@ def _auto_plan_summary(
     video_bitrate_kbps: int,
     audio_bitrate_kbps: int,
 ) -> str:
+    if mode in QUALITY_PRESETS:
+        crf, interval, _cfr = QUALITY_PRESETS[mode]
+        return f"{mode.value}: selected the best suitable {height or 'unknown'}p source; H.264 quality CRF {crf}, variable video bitrate, up to {interval:g} seconds between keyframes, AAC target {audio_bitrate_kbps} kbps."
     if mode == ExportMode.STRICT_COMPLIANCE:
         return f"Strict Compliance selected the best practical {height or 'unknown'}p source and will export fixed H.264 CBR {video_bitrate_kbps / 1000:g} Mbps + AAC {audio_bitrate_kbps} kbps."
     if mode == ExportMode.MANUAL_OVERRIDE:
         return f"Manual Override selected the best practical {height or 'unknown'}p source; user-selected encode settings will be applied before transcode."
     if height == 1080:
-        return f"Auto mode selected a true 1080p source and recommends {video_bitrate_kbps / 1000:g} Mbps CBR based on source quality and the platform's 1080p minimum."
-    return f"Auto mode selected the best available {height or 'unknown'}p source and will export at that truthful resolution."
+        return f"CTV selected a 1080p-tier source and targets {video_bitrate_kbps / 1000:g} Mbps CBR based on source quality and the network's 2 Mbps video minimum."
+    return f"CTV selected the best available {height or 'unknown'}p source and targets {video_bitrate_kbps / 1000:g} Mbps CBR without upscaling."
 
 
 def build_auto_export_plan(
@@ -759,11 +828,15 @@ def build_auto_export_plan(
     mode: ExportMode | str = ExportMode.AUTO_CBR,
     max_height: int = DEFAULT_MAX_HEIGHT,
 ) -> ExportPlan:
-    mode = ExportMode(mode)
+    mode = export_mode_from_display_name(mode)
     formats = [fmt for fmt in info.get("formats") or [] if isinstance(fmt, dict)]
     selection = _select_auto_sources(formats, max_height)
     video = selection.video
     audio = selection.audio
+    if _is_hdr_format(video):
+        raise RuntimeError(
+            "Unsupported format: only an HDR video source is available. These H.264 presets require SDR; choose a video with an SDR version to avoid incorrect colors."
+        )
     source_video_kbps = _format_video_kbps(video)
     effective_video_kbps = source_video_kbps * video_codec_multiplier(
         video.get("vcodec")
@@ -792,6 +865,9 @@ def build_auto_export_plan(
         targets.video_bitrate_kbps,
         targets.audio_bitrate_kbps,
     )
+    crf, keyframe_seconds, constant_frame_rate = QUALITY_PRESETS.get(
+        mode, (None, 2.0, True)
+    )
     return ExportPlan(
         mode=mode,
         video_format_id=selection.video_id,
@@ -810,6 +886,13 @@ def build_auto_export_plan(
         audio_codec=str((audio or {}).get("acodec") or "unknown"),
         warnings=list(targets.warnings),
         summary=summary,
+        video_crf=crf,
+        keyframe_seconds=keyframe_seconds,
+        constant_frame_rate=constant_frame_rate,
+        video_maxrate_kbps=_resolution_cap_kbps(height, fps)
+        if mode == ExportMode.STREAMING
+        else None,
+        source_quality_tier=video_quality_tier(video),
     )
 
 
@@ -834,12 +917,14 @@ def apply_manual_export_settings(
         audio_channels=settings.audio_channels,
         output_audio_codec=settings.audio_codec,
         x264_preset=settings.x264_preset,
+        video_crf=settings.video_crf,
+        source_quality_tier=plan.source_quality_tier,
         fps=plan.fps,
         video_codec=plan.video_codec,
         audio_codec=plan.audio_codec,
         warnings=list(plan.warnings),
         summary=(
-            f"Manual Override will export H.264 CBR {settings.video_bitrate_kbps / 1000:g} Mbps "
+            f"Custom will export H.264 {'quality CRF ' + str(settings.video_crf) if settings.video_crf is not None else 'CBR ' + str(settings.video_bitrate_kbps / 1000) + ' Mbps'} "
             f"+ {settings.audio_codec.value} {settings.audio_bitrate_kbps} kbps, {settings.audio_sample_rate} Hz, "
             f"{settings.audio_channels} channel(s)."
         ),

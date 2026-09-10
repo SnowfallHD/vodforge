@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import AudioExportPlan, ExportPlan, ManualAudioCodec, OutputType
+from .models import (
+    AudioExportPlan,
+    ExportMode,
+    ExportPlan,
+    ManualAudioCodec,
+    OutputType,
+)
 
 
 @dataclass(frozen=True)
@@ -278,8 +285,7 @@ def _video_sidecar_target_mismatches(
         mismatches.append("the saved video rate-control mode does not match")
     if (
         require_sidecar
-        and str(summary.get("Target video bitrate") or "")
-        != f"{plan.video_bitrate_kbps} kbps"
+        and str(summary.get("Target video bitrate") or "") != plan.video_target_label
     ):
         mismatches.append("the saved target video bitrate does not match")
     if (
@@ -349,13 +355,32 @@ def _video_rate_and_audio_shape_mismatches(
 ) -> list[str]:
     mismatches: list[str] = []
     measured_video_kbps = _stream_kbps(view, view.video)
-    if measured_video_kbps is None or not _close_numeric(
-        measured_video_kbps,
-        plan.video_bitrate_kbps,
-        relative=0.18,
+    if plan.video_crf is not None:
+        video_rate_matches = (
+            measured_video_kbps is not None
+            and math.isfinite(measured_video_kbps)
+            and measured_video_kbps > 0
+        )
+        if video_rate_matches and plan.video_maxrate_kbps is not None:
+            video_rate_matches = (
+                float(measured_video_kbps or 0) <= plan.video_maxrate_kbps * 1.18
+            )
+    else:
+        video_rate_matches = measured_video_kbps is not None and _close_numeric(
+            measured_video_kbps, plan.video_bitrate_kbps, relative=0.18
+        )
+    if not video_rate_matches:
+        mismatches.append(
+            f"the measured video bitrate ({measured_video_kbps} kbps) does not match {plan.video_target_label}"
+        )
+    if (
+        plan.mode == ExportMode.AUTO_CBR
+        and plan.source_quality_tier == 1080
+        and measured_video_kbps is not None
+        and measured_video_kbps < 2000
     ):
         mismatches.append(
-            f"the measured video bitrate does not match {plan.video_bitrate_kbps} kbps"
+            "CTV 1080p-tier video must measure at least 2000 kbps; choose Custom with a higher CBR video bitrate"
         )
     measured_audio_kbps = _stream_kbps(view, view.audio)
     if not _mp4_audio_bitrate_matches(measured_audio_kbps, plan):

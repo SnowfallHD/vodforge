@@ -564,10 +564,10 @@ def test_neutral_manual_mp4_summary_and_transfer_follow_the_selected_audio_codec
 
     app._sync_focus_settings_summary()
 
-    assert app.focus_active_profile_var.get() == "1080p Full HD  •  Manual Override"
+    assert app.focus_active_profile_var.get() == "1080p Full HD  •  Custom"
     assert app.focus_transfer_var.get() == "VOD-ready MP4 / H.264 video / MP3 audio"
     assert "Audio         MP3" in app.focus_summary_text.value
-    assert "Output mode   Manual Override" in app.focus_summary_text.value
+    assert "Output mode   Custom" in app.focus_summary_text.value
     focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
     assert re.search(
         r'self\.manual_audio_codec_var\.trace_add\(\s*"write",\s*'
@@ -1844,7 +1844,7 @@ def test_focus_settings_keep_manual_controls_in_the_mp4_flow_and_release_combo_s
     assert "textvariable=self.bindings.export_mode_description" in mode_source
     assert "manual = ttk.Frame(root" not in manual_source
     assert 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"' in manual_source
-    assert '"Video bitrate (kbps)"' in manual_source
+    assert '"CBR video bitrate (kbps)"' in manual_source
     assert '"Audio bitrate (kbps)"' in manual_source
     assert '"Audio codec",' in manual_source
     assert "bindings.manual_audio_codec" in manual_source

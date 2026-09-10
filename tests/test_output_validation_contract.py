@@ -328,7 +328,7 @@ def test_plan_mismatch_aggregation_order_remains_deterministic() -> None:
         "the output H.264 profile is not High",
         "the output width does not match 640",
         "the output height does not match 360",
-        "the measured video bitrate does not match 1500 kbps",
+        "the measured video bitrate (100.0 kbps) does not match 1500 kbps",
         "the measured audio bitrate (0.0 kbps) does not match 320 kbps",
         "the audio sample rate does not match 48000 Hz",
         "the audio channel count does not match 2",
