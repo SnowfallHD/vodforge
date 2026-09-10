@@ -35,7 +35,9 @@ class RunHoverMenu:
             + str(record.get("status") or "Ready")
             for record in records
         ) or ("No runs yet",)
-        popup = ChoicePopover(self.button, self.close, bg=THEME["bg"])
+        popup = ChoicePopover(
+            self.button, self.close, gap=0, align_right=True, bg=THEME["bg"]
+        )
         self.popup = popup
         menu = ChoiceMenu(popup, labels)
         menu.rows = min(5, len(labels))

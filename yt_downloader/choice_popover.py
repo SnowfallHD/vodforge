@@ -11,9 +11,16 @@ class ChoicePopover(tk.Frame):
     """A child surface cannot outlive or float above its native owner window."""
 
     def __init__(
-        self, anchor: tk.Widget, close: Callable[[], None], **options: Any
+        self,
+        anchor: tk.Widget,
+        close: Callable[[], None],
+        *,
+        gap: int = 4,
+        align_right: bool = False,
+        **options: Any,
     ) -> None:
         self._anchor = anchor
+        self.gap, self.align_right = gap, align_right
         self.owner = anchor.winfo_toplevel()
         self._interpreter_root: tk.Misc = self.owner
         while self._interpreter_root.master is not None:
@@ -59,7 +66,7 @@ class ChoicePopover(tk.Frame):
         if ax < left or ax + aw > right or ay < top or ay + ah > bottom:
             self.close()
             return False
-        below, above = ay + ah + 4, ay - height - 4
+        below, above = ay + ah + self.gap, ay - height - self.gap
         if below + height <= bottom - 8:
             y = below
         elif above >= top + 8:
@@ -70,7 +77,7 @@ class ChoicePopover(tk.Frame):
         if width > right - left:
             self.close()
             return False
-        x = max(left, min(ax, right - width))
+        x = max(left, min(ax + aw - width if self.align_right else ax, right - width))
         placement = (x - host.winfo_rootx(), y - host.winfo_rooty(), width, height)
         if placement != self._placement:
             self.place(x=placement[0], y=placement[1], width=width, height=height)

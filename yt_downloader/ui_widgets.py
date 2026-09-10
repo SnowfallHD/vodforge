@@ -328,10 +328,22 @@ class ChoiceMenu(tk.Canvas):
         for row, index in enumerate(
             range(self.top, min(len(self.values), self.top + self.rows))
         ):
+            label = self.values[index]
+            font = tkfont.Font(font=FONT_UI)
+            available = max(0, width - 36)
+            if font.measure(label) > available:
+                low, high = 0, len(label)
+                while low < high:
+                    mid = (low + high + 1) // 2
+                    if font.measure(label[:mid] + "…") <= available:
+                        low = mid
+                    else:
+                        high = mid - 1
+                label = label[:low] + "…"
             self.create_text(
                 18,
                 6 + row * self.row_height + self.row_height / 2,
-                text=self.values[index],
+                text=label,
                 anchor="w",
                 fill=THEME["text"],
                 font=FONT_UI,

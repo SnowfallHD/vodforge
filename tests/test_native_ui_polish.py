@@ -111,8 +111,8 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             application.geometry("1180x780")
             settle_native(application)
             owner = application.focus_run_hover_menu
-            record = {"title": "Example run", "status": "Completed"}
-            owner.records = lambda: [record]
+            record = {"title": "Wide title 漢字 " * 20, "status": "Completed"}
+            owner.records = lambda: [record] * 5
             application._focus_run_records = owner.records
             selected = []
             owner.select = selected.append
@@ -128,6 +128,19 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             settle_native(application)
             assert owner.popup is not None
             menu = owner.popup.winfo_children()[0]
+            popup = owner.popup
+            assert (
+                popup.winfo_rootx() + popup.winfo_width()
+                <= application.winfo_rootx() + application.winfo_width()
+            )
+            assert (
+                popup.winfo_rootx() + popup.winfo_width()
+                == button.winfo_rootx() + button.winfo_width()
+            )
+            assert popup.winfo_rooty() + popup.winfo_height() == button.winfo_rooty()
+            for item in menu.find_all():
+                if menu.type(item) == "text":
+                    assert menu.bbox(item)[2] <= menu.winfo_width()
             menu.event_generate("<Return>")
             application.update()
             assert selected == [record]
@@ -200,6 +213,7 @@ def test_settings_selects_every_quality_tier_in_real_dropdown():
 
 
 def test_shared_choice_menu_navigation_hover_and_identical_render(root):
+    root.geometry("600x400")
     root.deiconify()
     value = tk.StringVar(root, value="Choice 0")
     dropdown = ChoiceDropdown(
