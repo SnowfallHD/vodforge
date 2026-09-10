@@ -224,6 +224,24 @@ It additionally requires visible receipts for a throttled active run, a second r
 
 The UI driver is observation/control only. It does not call production Python helpers, forge outputs, or synthesize worker events. VODForge exposes real-user view shortcuts (`Command+1/2/3` on macOS, `Ctrl+1/2/3` on Windows/Linux) through the same canonical view authority as the visible navigation. This gives native drivers a stable route when Tk children are not exposed through accessibility. Missing Library evidence still fails the tier instead of being replaced by shortcut existence or headless evidence.
 
+### Native driver keyboard fallback
+
+If a coordinate click only changes hover and does not invoke the control, stop
+repeating it. A hover screenshot is not proof of activation or an app click defect.
+Use ordinary keyboard navigation and observe the resulting window:
+
+- With focus in the Forge URL entry, press Tab twice (format selector, then
+  Settings) and Space. Verify that **VODForge Settings** actually opens before
+  recording `settings_observed`. This route was observed in the signed 0.2.0
+  macOS arm64 candidate; recheck focus/order for other layouts and platforms.
+- Escape closes Settings. Verify the Forge window before continuing.
+- Use the existing view shortcuts above for Library and Activity.
+
+Do not assume Command-comma is implemented or use invisible callback invocation
+as a substitute. Keep failed/limited runs intact; retry with new session evidence.
+The keyboard Settings observation alone does not prove download, completion,
+Library, or restart steps.
+
 ## Corpus policy
 
 The tracked [manifest](corpus/manifest.json) separates generated, default-download public, external-boundary, and optional platform candidates.
