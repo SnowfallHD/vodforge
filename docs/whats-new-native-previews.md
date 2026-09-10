@@ -1,5 +1,16 @@
 # Native What’s New previews
 
+Release editorial selection: `SHOWCASE_MODE` in `whats_new.py` selects
+`whats-new` or `did-you-know`. Only change it when requested for a release;
+assign a new `SHOWCASE_ID` when enabling that release's announcement. The tip
+replaces release highlights rather than adding a second startup popup. Both use
+the same seen setting, consent/modal readiness gate, and fresh-user welcome
+suppression. Routine updates do not reset acknowledgement. The prepared tip is
+not enabled by adding its catalog entry alone.
+
+The expanded access exhibit uses an embedded production ChoiceMenu with three
+visible rows (scroll for other browsers). Browser/Chrome are local examples only.
+
 Every `FeatureHighlight` must declare a `NativePreview`. Screenshot artwork and
 crop coordinates are no longer part of the slide contract. Unsupported preview
 types fail at construction rather than silently rendering a blurry/blank image.

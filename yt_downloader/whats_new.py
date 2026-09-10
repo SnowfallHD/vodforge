@@ -8,6 +8,7 @@ from typing import Any
 
 
 class NativePreview(str, Enum):
+    YOUTUBE_ACCESS_EXPANDED = "youtube-access-expanded"
     PLAYLISTS = "playlists"
     YOUTUBE_ACCESS = "youtube-access"
     WELCOME_ACTIVITY = "welcome-activity"
@@ -97,6 +98,20 @@ HIGHLIGHTS = (
 )
 
 
+# Release editorial switch: choose one surface, never both. Keep the current
+# mode until a release explicitly opts into the tip and changes SHOWCASE_ID.
+SHOWCASE_MODE = "whats-new"
+DID_YOU_KNOW_HIGHLIGHTS = (
+    FeatureHighlight(
+        "youtube-access-tip",
+        "Age-restricted & sign-in-required videos",
+        "Did you know? YouTube access can help download videos your account "
+        "can access. Find it in Settings and try Browser!",
+        NativePreview.YOUTUBE_ACCESS_EXPANDED,
+    ),
+)
+
+
 class WhatsNewOwner:
     """Own one showcase's eligibility and lifetime; settings own persistence."""
 
@@ -107,10 +122,19 @@ class WhatsNewOwner:
         ready: Any,
         *,
         showcase_id: str = SHOWCASE_ID,
-        highlights: tuple[FeatureHighlight, ...] = HIGHLIGHTS,
+        highlights: tuple[FeatureHighlight, ...] | None = None,
+        mode: str = SHOWCASE_MODE,
     ) -> None:
         self.parent, self.seen, self.ready = parent, seen, ready
-        self.showcase_id, self.highlights = showcase_id, highlights
+        if mode not in {"whats-new", "did-you-know"}:
+            raise ValueError("Unknown showcase mode")
+        self.heading = "Did you know?" if mode == "did-you-know" else "What’s new"
+        self.showcase_id = showcase_id
+        self.highlights = (
+            highlights
+            if highlights is not None
+            else (DID_YOU_KNOW_HIGHLIGHTS if mode == "did-you-know" else HIGHLIGHTS)
+        )
         self.panel: Any = None
         self.closed = False
         self.timer: Any = None
@@ -144,7 +168,9 @@ class WhatsNewOwner:
             return
         from .whats_new_ui import WhatsNewPanel
 
-        self.panel = WhatsNewPanel(self.parent, self.highlights, self._dismissed)
+        self.panel = WhatsNewPanel(
+            self.parent, self.highlights, self._dismissed, heading=self.heading
+        )
 
     def _dismissed(self) -> None:
         self.seen.set(self.showcase_id)

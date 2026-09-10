@@ -18,11 +18,17 @@ from .local_audio_video import LOCAL_VIDEO_PROFILE_OPTIONS
 from .media_player_ui import PlayerTransportButton, PlayerVolumeControl
 from .models import CookieSource
 from .ui_theme import THEME
-from .ui_widgets import ChoiceDropdown, ModernCheckbox, ProductEntry, SegmentedSelector
+from .ui_widgets import (
+    ChoiceDropdown,
+    ChoiceMenu,
+    ModernCheckbox,
+    ProductEntry,
+    SegmentedSelector,
+)
 from .whats_new import NativePreview
 from .whats_new_activity_demo import ActivityDemo
-from .whats_new_audio_demo import OriginalAudioDemo
-from .youtube_access import COOKIE_BROWSER_OPTIONS, COOKIE_SOURCE_OPTIONS
+from .whats_new_audio_demo import OriginalAudioDemo, _ExpandedDemoField
+from .youtube_access import ACCESS_TITLE, COOKIE_BROWSER_OPTIONS, COOKIE_SOURCE_OPTIONS
 
 
 def render_native_preview(parent: tk.Misc, preview: NativePreview) -> tk.Widget:
@@ -84,12 +90,12 @@ class FeaturePreview(ttk.Frame):
             ModernCheckbox(
                 self, text="Ignore playlists", variable=ignore_playlists
             ).grid(row=1, column=0, sticky="w", pady=5)
-        elif key == "youtube-access":
+        elif key in {"youtube-access", "youtube-access-expanded"}:
             self.preferred_width = 340
             self.preferred_height = 110
             access = tk.StringVar(self, CookieSource.BROWSER.value)
             self.variables.append(access)
-            self._label("YOUTUBE ACCESS", 0)
+            self._label(ACCESS_TITLE, 0)
             SegmentedSelector(
                 self,
                 variable=access,
@@ -97,7 +103,36 @@ class FeaturePreview(ttk.Frame):
                 background=THEME["bg"],
                 compact=True,
             ).grid(row=1, column=0, sticky="w", pady=(0, 8))
-            self._choice("Chrome", tuple(COOKIE_BROWSER_OPTIONS), 2)
+            if key == "youtube-access":
+                self._choice("Chrome", tuple(COOKIE_BROWSER_OPTIONS), 2)
+            else:
+                self.preferred_height = 230
+                browser = tk.StringVar(self, "Chrome")
+                self.variables.append(browser)
+                values = tuple(COOKIE_BROWSER_OPTIONS)
+                _ExpandedDemoField(self, textvariable=browser, values=values).grid(
+                    row=2, column=0, sticky="ew"
+                )
+                menu = ChoiceMenu(self, values)
+                menu.rows = 3
+                menu.configure(height=menu.rows * menu.row_height + 12)
+                menu.selection_set(values.index("Chrome"))
+                menu.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+
+                def fit_menu(event: tk.Event) -> None:
+                    rows = max(
+                        1,
+                        min(3, (event.height - menu.winfo_y() - 12) // menu.row_height),
+                    )
+                    if rows != menu.rows:
+                        menu.rows = rows
+                        menu.configure(height=rows * menu.row_height + 12)
+                        menu.see(menu.selected)
+
+                self.bind("<Configure>", fit_menu, add="+")
+                menu.bind(
+                    "<ButtonRelease-1>", lambda _e: browser.set(menu.get(menu.selected))
+                )
         elif key == "library":
             self.preferred_height = 210
             self._label("CATEGORY", 0)

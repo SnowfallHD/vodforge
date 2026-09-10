@@ -5,6 +5,7 @@ import pytest
 
 from yt_downloader.settings_store import load_settings, save_settings
 from yt_downloader.whats_new import (
+    DID_YOU_KNOW_HIGHLIGHTS,
     HIGHLIGHTS,
     SHOWCASE_ID,
     FeatureHighlight,
@@ -73,9 +74,24 @@ def test_future_slides_cannot_fall_back_to_screenshot_artwork():
         FeatureHighlight("future", "Future", "A feature", "screenshot.png")
     from yt_downloader.engagement_state import WELCOME_SLIDES
 
-    assert {feature.preview for feature in (*HIGHLIGHTS, *WELCOME_SLIDES)} == set(
-        NativePreview
+    assert {
+        feature.preview
+        for feature in (*HIGHLIGHTS, *WELCOME_SLIDES, *DID_YOU_KNOW_HIGHLIGHTS)
+    } == set(NativePreview)
+
+
+def test_tip_uses_same_once_seen_owner_and_replaces_release_slides():
+    seen = Seen()
+    owner = WhatsNewOwner(
+        None, seen, lambda: True, mode="did-you-know", showcase_id="tip-release"
     )
+    assert owner.heading == "Did you know?"
+    assert owner.highlights == DID_YOU_KNOW_HIGHLIGHTS
+    assert owner.pending
+    owner._dismissed()
+    assert not WhatsNewOwner(
+        None, seen, lambda: True, mode="did-you-know", showcase_id="tip-release"
+    ).pending
 
 
 def test_release_without_curated_highlights_is_silent():

@@ -28,6 +28,40 @@ def root():
 
 
 @pytest.mark.parametrize("size", ["1000x700", "620x560"])
+def test_did_you_know_access_menu_is_native_and_contained(root, size):
+    from yt_downloader.ui_widgets import ChoiceMenu
+    from yt_downloader.whats_new import DID_YOU_KNOW_HIGHLIGHTS
+    from yt_downloader.youtube_access import ACCESS_TITLE
+
+    root.geometry(size)
+    panel = WhatsNewPanel(
+        root, DID_YOU_KNOW_HIGHLIGHTS, lambda: None, heading="Did you know?"
+    )
+    root.update()
+    panel._cancel_transition()
+    panel._transition(10)
+    root.update()
+    demo = panel.activity_demo
+    assert demo.variables[0].get() == "Browser"
+    assert demo.variables[1].get() == "Chrome"
+    assert any(
+        str(child.cget("text")) == ACCESS_TITLE
+        for child in demo.winfo_children()
+        if "text" in child.keys()  # noqa: SIM118 -- Tk keys(), not a mapping
+    )
+    menu = next(
+        child for child in demo.winfo_children() if isinstance(child, ChoiceMenu)
+    )
+    assert menu.winfo_ismapped()
+    assert menu.winfo_y() + menu.winfo_height() <= demo.winfo_height()
+    assert (
+        abs(demo.winfo_x() + demo.winfo_width() / 2 - panel.preview.winfo_width() / 2)
+        <= 1
+    )
+    panel.close()
+
+
+@pytest.mark.parametrize("size", ["1000x700", "620x560"])
 def test_playlist_welcome_example_is_off_and_centered(root, size):
     from yt_downloader.whats_new import NativePreview
 
