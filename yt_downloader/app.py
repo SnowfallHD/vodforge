@@ -1649,8 +1649,10 @@ def _ffprobe_output_summary(
         "Pixel format": _display_value(video.get("pix_fmt")),
         "H.264 profile": _display_value(video.get("profile")),
         "Output audio codec": _display_value(audio.get("codec_name")),
-        "Measured audio bitrate": _format_bits_per_second_as_kbps(
-            audio.get("bit_rate")
+        "Measured audio bitrate": (
+            f"{ffprobe_data['measured_audio_packet_bps'] / 1000:.1f} kbps (average)"
+            if ffprobe_data.get("measured_audio_packet_bps") is not None
+            else _format_bits_per_second_as_kbps(audio.get("bit_rate"))
         ),
         "Audio sample rate": _display_value(audio.get("sample_rate")),
         "Audio channels": _display_value(audio.get("channels")),
@@ -2973,9 +2975,18 @@ def run_ffprobe_json(
         "format=format_name,size,duration:format_tags:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate,bit_rate,pix_fmt,profile,sample_rate,channels:stream_disposition",
         str(path),
     ]
-    if control_check is None:
+
+    def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if control_check is not None:
+            return run_cancellable_process_capture(
+                command,
+                timeout_seconds=timeout_seconds,
+                control_check=control_check,
+                check=True,
+                **process_options,
+            )
         # The media path is one argv entry; no provider metadata becomes a command string.
-        result = subprocess.run(  # nosec B603
+        return subprocess.run(  # nosec B603
             command,
             check=True,
             capture_output=True,
@@ -2985,19 +2996,19 @@ def run_ffprobe_json(
             timeout=timeout_seconds,
             **process_options,
         )
-    else:
-        result = run_cancellable_process_capture(
-            command,
-            timeout_seconds=timeout_seconds,
-            control_check=control_check,
-            check=True,
-            **process_options,
-        )
+
+    result = run(command)
     data = json.loads(result.stdout or "{}")
     if not isinstance(data, dict):
         raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
             "ffprobe returned an invalid top-level result"
         )
+    from .audio_bitrate import measure_packet_average, needs_packet_average
+
+    if needs_packet_average(data):
+        average = measure_packet_average(ffprobe, path, run)
+        if average is not None:
+            data["measured_audio_packet_bps"] = average
     return data
 
 
