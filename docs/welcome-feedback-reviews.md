@@ -58,3 +58,33 @@ privacy, and delivery contracts. The required native surface gate also runs
 `test/support.spec.ts` exercises real isolated Worker/D1 writes, ownership races,
 consent, quotas, and replay. Packaged macOS/Windows and live endpoint checks remain
 separate release evidence.
+
+## Opt-in remote preview journey
+
+Run `VODFORGE_DISABLE_TELEMETRY=1 .venv/bin/python -m
+scripts.support_preview_journey --output build/support-preview-journey-<unique-run>
+--qa-key build/qa-access-key` with native display/network permission. This is an
+explicit remote-write QA command, never an automatic unit test. It refuses any
+HTTP target other than the fixed preview support endpoint; SQL uses only preview
+D1 `924640fb-3be3-47ca-992c-1c7745bd8469`. Production transport code is unchanged:
+the driver substitutes the destination and adds the existing preview admission key.
+
+The driver exercises production native forms, real transport, deployed routes and
+direct remote D1 readback. It covers all eight feedback permission combinations,
+five reasons, five star values (including lowering five stars), optional names and
+comments, anonymous defaults, maximum lengths, invalid/empty forms, cancellation,
+exact retries, and real quotas. Response-loss injection occurs only AFTER the real
+server commit; retry must match the original request and one durable row. There
+are no fabricated success responses. Existing receipt cases can be resumed without
+resending them; preview's normal credential/IP/day limits still apply to new runs.
+
+Evidence is written to the run's receipt.json, containing synthetic submitted rows,
+not bearer secrets. Review edits share one row per credential, so each version is
+read back before the next edit. Test profiles and synthetic preview rows are retained
+for inspection; do not mistake these for customer submissions. Never check the
+private credentials or preview database export into Git.
+
+This is source-native form-to-remote-D1 evidence, not packaged macOS/Windows proof.
+Preview uses its QA access gate with human verification disabled. Real browser
+Turnstile completion remains unverified; local verification-provider contract tests
+do not replace that live step. Production support remains disabled.
