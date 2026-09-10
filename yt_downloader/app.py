@@ -312,6 +312,12 @@ from .updates import (
 )
 from .version import __version__
 from .whats_new import WhatsNewOwner
+from .youtube_access import (
+    COOKIE_BROWSER_OPTIONS,
+    COOKIE_BROWSER_PLACEHOLDER,
+    COOKIE_BROWSER_VALUES,
+    COOKIE_SOURCE_OPTIONS,
+)
 
 # Compatibility re-exports keep the long-standing ``yt_downloader.app``
 # helper surface stable while implementation ownership moves to focused UI
@@ -4111,27 +4117,6 @@ def _plans_by_video_id(
     return plans
 
 
-COOKIE_BROWSER_PLACEHOLDER = "Choose a browser"
-COOKIE_BROWSER_OPTIONS = [
-    COOKIE_BROWSER_PLACEHOLDER,
-    "Chrome",
-    "Edge",
-    "Firefox",
-    "Brave",
-    "Chromium",
-    "Opera",
-    "Vivaldi",
-]
-COOKIE_SOURCE_OPTIONS = tuple(source.value for source in CookieSource)
-COOKIE_BROWSER_VALUES = {
-    "Chrome": "chrome",
-    "Edge": "edge",
-    "Firefox": "firefox",
-    "Brave": "brave",
-    "Chromium": "chromium",
-    "Opera": "opera",
-    "Vivaldi": "vivaldi",
-}
 WINDOWS_CHROMIUM_COOKIE_BROWSERS = {
     "brave",
     "chrome",

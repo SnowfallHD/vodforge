@@ -37,6 +37,14 @@ WELCOME_SLIDES = (
         "Play and organize saved media in Library. Recent items appear in Run Deck. Help & feedback is always available above.",
         NativePreview.LIBRARY,
     ),
+    FeatureHighlight(
+        "youtube-access",
+        "Age Restricted Content",
+        "In Settings → YouTube access, try Browser and select your browser. "
+        "Use your YouTube sign-in; age verification may still be required. "
+        "cookies.txt is a manual alternative.",
+        NativePreview.YOUTUBE_ACCESS,
+    ),
 )
 
 

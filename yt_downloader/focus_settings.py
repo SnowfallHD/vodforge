@@ -19,6 +19,12 @@ from .ui_widgets import (
     ToolTip,
     reveal_toplevel,
 )
+from .youtube_access import (
+    ACCESS_DESCRIPTION,
+    ACCESS_TITLE,
+    ACCESS_TOOLTIP,
+    BROWSER_TOOLTIP,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,12 +288,14 @@ class FocusSettingsDialog:
     def _build_access_controls(self, source: ttk.Frame) -> None:
         ttk.Label(
             source,
-            text="YOUTUBE ACCESS",
+            text=ACCESS_TITLE,
             style="FocusEyebrow.TLabel",
+            wraplength=300,
+            justify="left",
         ).grid(row=6, column=0, sticky="w", pady=(16, 5))
         ttk.Label(
             source,
-            text="Optional — use an authorized account only when public access is not enough.",
+            text=ACCESS_DESCRIPTION,
             style="Muted.TLabel",
             wraplength=300,
             justify="left",
@@ -302,7 +310,7 @@ class FocusSettingsDialog:
         cookie_selector.grid(row=8, column=0, sticky="w")
         ToolTip(
             cookie_selector,
-            "Public uses no cookies. Choose cookies.txt or Browser only when YouTube requires sign-in.",
+            ACCESS_TOOLTIP,
         )
 
         cookie_file = ttk.Frame(source, style="FocusShell.TFrame")
@@ -323,7 +331,7 @@ class FocusSettingsDialog:
         cookie_file_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
         ToolTip(
             cookie_file_button,
-            "Use an exported YouTube cookies.txt file for content that requires your authorized account.",
+            "Manual alternative: choose an exported YouTube cookies.txt file. Try Browser first for easier setup.",
         )
 
         browser_frame = ttk.Frame(source, style="FocusShell.TFrame")
@@ -343,8 +351,7 @@ class FocusSettingsDialog:
         )
         ToolTip(
             browser_combo,
-            "Read YouTube cookies directly from the selected local browser. "
-            "VODForge does not save their contents.",
+            BROWSER_TOOLTIP,
         )
         self.cookie_file_frame = cookie_file
         self.cookie_browser_frame = browser_frame

@@ -37,6 +37,12 @@ The welcome activity-mode exhibit reuses ActivityDemo at 200 ms per phase
 (a three-second loop), automatically switching the real slider and activity view.
 It remains offline and cancels its loop when the slide is removed.
 
+The Age Restricted Content welcome exhibit uses the shared access choice catalog:
+Public, Browser, cookies.txt. Browser and Chrome are illustrative local selections,
+not changes to the saved Public default or authorization to read browser storage.
+Its browser dropdown uses the production choices and stays inside a compact,
+centered content envelope. Copy must not promise to bypass age verification.
+
 The old `assets/whats-new` screenshots are retained as before/after visual QA
 references for this migration, but are no longer bundled or rendered. Both build
 scripts bundle only the media artwork used by the native player exhibit.

@@ -16,11 +16,13 @@ from .activity_ui import ActivityLogText
 from .export_planning import EXPORT_MODES, QUALITY_OPTIONS
 from .local_audio_video import LOCAL_VIDEO_PROFILE_OPTIONS
 from .media_player_ui import PlayerTransportButton, PlayerVolumeControl
+from .models import CookieSource
 from .ui_theme import THEME
-from .ui_widgets import ChoiceDropdown, ModernCheckbox, ProductEntry
+from .ui_widgets import ChoiceDropdown, ModernCheckbox, ProductEntry, SegmentedSelector
 from .whats_new import NativePreview
 from .whats_new_activity_demo import ActivityDemo
 from .whats_new_audio_demo import OriginalAudioDemo
+from .youtube_access import COOKIE_BROWSER_OPTIONS, COOKIE_SOURCE_OPTIONS
 
 
 def render_native_preview(parent: tk.Misc, preview: NativePreview) -> tk.Widget:
@@ -73,6 +75,20 @@ class FeaturePreview(ttk.Frame):
             ModernCheckbox(self, text="Save thumbnail", variable=value).grid(
                 row=3, column=0, sticky="w", pady=5
             )
+        elif key == "youtube-access":
+            self.preferred_width = 340
+            self.preferred_height = 110
+            access = tk.StringVar(self, CookieSource.BROWSER.value)
+            self.variables.append(access)
+            self._label("YOUTUBE ACCESS", 0)
+            SegmentedSelector(
+                self,
+                variable=access,
+                values=COOKIE_SOURCE_OPTIONS,
+                background=THEME["bg"],
+                compact=True,
+            ).grid(row=1, column=0, sticky="w", pady=(0, 8))
+            self._choice("Chrome", tuple(COOKIE_BROWSER_OPTIONS), 2)
         elif key == "library":
             self.preferred_height = 210
             self._label("CATEGORY", 0)

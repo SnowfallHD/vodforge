@@ -27,6 +27,49 @@ def root():
     app.destroy()
 
 
+@pytest.mark.parametrize("size", ["1000x700", "620x560"])
+def test_access_tour_uses_browser_example_and_centered_controls(root, size):
+    from yt_downloader.ui_widgets import ChoiceDropdown
+    from yt_downloader.youtube_access import (
+        COOKIE_BROWSER_OPTIONS,
+        COOKIE_SOURCE_OPTIONS,
+    )
+
+    assert COOKIE_SOURCE_OPTIONS == ("Public", "Browser", "cookies.txt")
+    root.geometry(size)
+    panel = WhatsNewPanel(
+        root, WELCOME_SLIDES, lambda: None, finish_label="Start using VODForge"
+    )
+    index = next(
+        i for i, slide in enumerate(WELCOME_SLIDES) if slide.key == "youtube-access"
+    )
+    panel.render(index)
+    root.update()
+    panel._cancel_transition()
+    panel._transition(10)
+    root.update()
+    demo = panel.activity_demo
+    assert demo.variables[0].get() == "Browser"
+    assert demo.variables[1].get() == "Chrome"
+    dropdown = next(
+        child for child in demo.winfo_children() if isinstance(child, ChoiceDropdown)
+    )
+    assert tuple(dropdown.cget("values")) == tuple(COOKIE_BROWSER_OPTIONS)
+    assert (
+        abs(demo.winfo_x() + demo.winfo_width() / 2 - panel.preview.winfo_width() / 2)
+        <= 1
+    )
+    assert (
+        dropdown.winfo_rooty() + dropdown.winfo_height()
+        <= demo.winfo_rooty() + demo.winfo_height()
+    )
+    assert (
+        panel.finish_button.winfo_rooty() + panel.finish_button.winfo_height()
+        <= root.winfo_rooty() + root.winfo_height()
+    )
+    panel.close()
+
+
 @pytest.mark.parametrize("kind", ["feedback", "review"])
 @pytest.mark.parametrize("size", ["1000x700", "760x600"])
 def test_forms_footer_consent_limits_and_dismissal(root, kind, size):
