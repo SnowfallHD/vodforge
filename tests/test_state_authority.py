@@ -1028,6 +1028,11 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
 
     app._launch_download_job = launch
 
+    app._selected_output_type = lambda: failed_job.output_type
+    app.single_video_only_var = Value(True)
+    app._build_download_job_from_current_settings = lambda *_args, **_kwargs: replace(
+        failed_job
+    )
     app._retry_terminal_job(failed_job)
 
     assert len(launched) == 1
@@ -1035,6 +1040,35 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     assert launched[0].metadata_keys == set()
     assert launched[0].history_identities == set()
     assert launched[0].terminal_status is None
+
+
+@pytest.mark.parametrize("status", ["Completed", "Failed"])
+def test_retry_settings_validation_preserves_prior_run(tmp_path, status):
+    previous = make_job(tmp_path)
+    previous.terminal_status = status
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = None
+    app.worker = None
+    app._terminal_jobs = [previous]
+    app._selected_output_type = lambda: OutputType.MP3
+    app.single_video_only_var = Value(True)
+    builds = []
+    app._build_download_job_from_current_settings = lambda *args, **kwargs: (
+        builds.append(kwargs)
+    )
+    launched = []
+    app._launch_download_job = lambda job, **kwargs: launched.append(job) or False
+    app._retry_terminal_job(previous)
+    assert app._terminal_jobs == [previous]
+    if status == "Completed":
+        assert builds == []
+        assert launched[0].output_type == previous.output_type
+        assert launched[0].output_dir == previous.output_dir
+        assert launched[0].quality_label == previous.quality_label
+    else:
+        assert len(builds) == 1
+        assert builds[0]["output_type"] == OutputType.MP3
+        assert launched == []
 
 
 def test_retry_preserves_playlist_identity_and_reuses_the_terminal_row(
@@ -1067,6 +1101,11 @@ def test_retry_preserves_playlist_identity_and_reuses_the_terminal_row(
 
     app._launch_download_job = launch
 
+    app._selected_output_type = lambda: failed_job.output_type
+    app.single_video_only_var = Value(True)
+    app._build_download_job_from_current_settings = lambda *_args, **_kwargs: replace(
+        failed_job
+    )
     app._retry_terminal_job(failed_job)
 
     assert len(launched) == 1
@@ -1190,6 +1229,11 @@ def test_retry_joins_latest_queue_position_with_fresh_authority(tmp_path: Path):
     app._refresh_focus_run_deck = lambda: None
     app._append_log = lambda _line: None
 
+    app._selected_output_type = lambda: failed.output_type
+    app.single_video_only_var = Value(True)
+    app._build_download_job_from_current_settings = lambda *_args, **_kwargs: replace(
+        failed
+    )
     app._retry_terminal_job(failed)
 
     assert app.pending_jobs[0] is queued

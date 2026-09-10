@@ -9,6 +9,7 @@ import time
 from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
@@ -642,7 +643,7 @@ def test_failed_run_replaces_its_ephemeral_metadata_card(tmp_path: Path):
     assert records[0]["job"] is failed_job
 
 
-def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(
+def test_failed_run_retry_creates_a_fresh_run_identity_with_current_settings(
     tmp_path: Path,
 ):
     failed_job = DownloadJob(
@@ -677,6 +678,17 @@ def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(
     launched: list[DownloadJob] = []
     app._launch_download_job = lambda job, **_kwargs: launched.append(job) or True
 
+    app._selected_output_type = lambda: OutputType.ORIGINAL
+    app.single_video_only_var = SimpleNamespace(get=lambda: True)
+    current = replace(
+        failed_job,
+        output_type=OutputType.ORIGINAL,
+        use_cookies=True,
+        cookie_browser="chrome",
+        output_dir=tmp_path / "new",
+        tags=["current"],
+    )
+    app._build_download_job_from_current_settings = lambda *_args, **_kwargs: current
     app._retry_terminal_job(failed_job)
 
     assert app._terminal_jobs == []
@@ -684,9 +696,12 @@ def test_failed_run_retry_creates_a_fresh_run_identity_with_the_same_settings(
     retry_job = launched[0]
     assert retry_job.run_id != failed_job.run_id
     assert retry_job.url == failed_job.url
-    assert retry_job.output_type == OutputType.MP3
+    assert retry_job.output_type == OutputType.ORIGINAL
+    assert retry_job.cookie_browser == "chrome"
+    assert retry_job.use_cookies is True
+    assert retry_job.output_dir == tmp_path / "new"
     assert retry_job.mp3_settings.bitrate_kbps == 320
-    assert retry_job.tags == ["producer"]
+    assert retry_job.tags == ["current"]
     assert retry_job.metadata_keys == set()
     assert retry_job.terminal_status is None
 

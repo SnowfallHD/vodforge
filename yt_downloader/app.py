@@ -6624,7 +6624,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             control.grid_remove()
 
     def _select_focus_view(self, name: str) -> None:
-        if menu := getattr(self, "focus_run_hover_menu", None):
+        if menu := self.__dict__.get("focus_run_hover_menu"):
             menu.close()
         frame = self._focus_views.get(name)
         if frame is None:
@@ -11856,6 +11856,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _retry_terminal_job(self, failed_job: DownloadJob) -> None:
         recovery_owner = self.__dict__.get("run_recovery")
         retry_url = retry_url_for_item(failed_job.preview_info or {}, failed_job.url)
+        settings_job = failed_job
+        if failed_job.terminal_status == "Failed":
+            current_job = self._build_download_job_from_current_settings(
+                [retry_url],
+                output_type=self._selected_output_type(),
+                single_video_only=self.single_video_only_var.get(),
+                batch_mode=False,
+            )
+            if current_job is None:
+                return
+            settings_job = current_job
         retry_preview = dict(failed_job.preview_info or {})
         for key in (
             ACTIVE_METADATA_RUN_ID_KEY,
@@ -11867,7 +11878,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ):
             retry_preview.pop(key, None)
         retry_job = replace(
-            failed_job,
+            settings_job,
             url=retry_url,
             urls=[retry_url],
             run_id=uuid.uuid4().hex,
