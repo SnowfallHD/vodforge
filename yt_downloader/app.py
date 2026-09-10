@@ -4899,6 +4899,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 and self.active_job is None
                 and not self.engagement.blocks_announcements
             ),
+            open_settings=self._show_focus_settings,
         )
 
         self.url_var = tk.StringVar()

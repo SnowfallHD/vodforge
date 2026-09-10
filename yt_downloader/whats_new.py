@@ -106,7 +106,8 @@ DID_YOU_KNOW_HIGHLIGHTS = (
         "youtube-access-tip",
         "Age-restricted & sign-in-required videos",
         "Did you know? YouTube access can help download videos your account "
-        "can access. Find it in Settings and try Browser!",
+        "can access. In Settings → YouTube access, choose Browser and select "
+        "the browser where you are signed in to YouTube.",
         NativePreview.YOUTUBE_ACCESS_EXPANDED,
     ),
 )
@@ -124,11 +125,14 @@ class WhatsNewOwner:
         showcase_id: str = SHOWCASE_ID,
         highlights: tuple[FeatureHighlight, ...] | None = None,
         mode: str = SHOWCASE_MODE,
+        open_settings: Any = None,
     ) -> None:
         self.parent, self.seen, self.ready = parent, seen, ready
         if mode not in {"whats-new", "did-you-know"}:
             raise ValueError("Unknown showcase mode")
         self.heading = "Did you know?" if mode == "did-you-know" else "What’s new"
+        self.open_settings = open_settings
+        self.is_tip = mode == "did-you-know"
         self.showcase_id = showcase_id
         self.highlights = (
             highlights
@@ -169,7 +173,12 @@ class WhatsNewOwner:
         from .whats_new_ui import WhatsNewPanel
 
         self.panel = WhatsNewPanel(
-            self.parent, self.highlights, self._dismissed, heading=self.heading
+            self.parent,
+            self.highlights,
+            self._dismissed,
+            heading=self.heading,
+            finish_label="Try it" if self.is_tip else None,
+            on_finish=self.open_settings if self.is_tip else None,
         )
 
     def _dismissed(self) -> None:

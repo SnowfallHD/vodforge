@@ -86,12 +86,14 @@ class WhatsNewPanel:
         *,
         heading: str = "What’s new",
         finish_label: str | None = None,
+        on_finish: Callable[[], None] | None = None,
     ) -> None:
         if not highlights:
             raise ValueError("A showcase needs at least one feature")
         self.parent, self.highlights, self.dismissed = parent, highlights, dismissed
         self.index = -1
         self.finish_label = finish_label
+        self.on_finish = on_finish
         self.activity_demo: tk.Widget | None = None
         self.transition_timer: str | None = None
         self.closed = False
@@ -190,7 +192,7 @@ class WhatsNewPanel:
         self.finish_button = ttk.Button(
             actions,
             text=finish_label or "Done",
-            command=self.close,
+            command=self.finish,
             style="Accent.TButton",
         )
         # Balance the back arrow so the final CTA, not the combined group, centers.
@@ -231,7 +233,14 @@ class WhatsNewPanel:
         self.render(0)
         self.frame.lift()
         self.frame.grab_set()
-        self.next.focus_set()
+        self.focus(2)
+
+    def finish(self) -> None:
+        if self.closed:
+            return
+        self.close()
+        if self.on_finish is not None:
+            self.on_finish()
 
     def _cycle_focus(self, index: int, direction: int, _event: tk.Event) -> str:
         for offset in range(1, len(self.controls) + 1):
@@ -274,6 +283,10 @@ class WhatsNewPanel:
                 self.skip_button.grid_remove()
                 self.finish_button.pack(side="left", padx=8)
                 self.finish_balance.pack(side="left")
+                if len(self.highlights) == 1:
+                    self.page.pack_forget()
+                    self.back.pack_forget()
+                    self.finish_balance.pack_forget()
             else:
                 self.finish_button.pack_forget()
                 self.finish_balance.pack_forget()

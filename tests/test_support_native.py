@@ -61,6 +61,31 @@ def test_did_you_know_access_menu_is_native_and_contained(root, size):
     panel.close()
 
 
+def test_tip_try_it_dismisses_before_opening_settings(root):
+    from yt_downloader.whats_new import WhatsNewOwner
+
+    seen = tk.StringVar(root, "")
+    calls = []
+    owner = WhatsNewOwner(
+        root,
+        seen,
+        lambda: True,
+        mode="did-you-know",
+        open_settings=lambda: calls.append((root.grab_current(), seen.get())),
+    )
+    owner.show()
+    root.update()
+    panel = owner.panel
+    assert panel.finish_button.cget("text") == "Try it"
+    assert panel.finish_button.winfo_ismapped()
+    assert not any(w.winfo_ismapped() for w in (panel.page, panel.back, panel.next))
+    panel.finish_button.invoke()
+    assert calls == [(None, owner.showcase_id)]
+    assert owner.panel is None
+    panel.finish()
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("size", ["1000x700", "620x560"])
 def test_playlist_welcome_example_is_off_and_centered(root, size):
     from yt_downloader.whats_new import NativePreview
