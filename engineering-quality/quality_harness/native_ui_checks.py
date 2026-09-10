@@ -53,10 +53,11 @@ def native_surface_contract(repo_root, output_dir):
             else "failed",
             "duration_seconds": 0,
             "metrics": {},
-            "evidence": {
-                "native_process": result.as_dict(),
-                "scope": "source-native; not packaged or cross-platform proof",
-            },
+            "evidence": [
+                f"Native pytest exit code: {result.returncode}",
+                result.stdout,
+                "source-native; not packaged or cross-platform proof",
+            ],
             "artifacts": [str(report)],
             "error": None,
         },

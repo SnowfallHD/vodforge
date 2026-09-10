@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import subprocess
+import subprocess  # nosec B404 - exception type only; the existing runner owns execution.
 import tempfile
 from collections.abc import Callable, Iterable
 from pathlib import Path

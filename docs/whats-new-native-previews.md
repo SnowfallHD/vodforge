@@ -6,7 +6,9 @@ assign a new `SHOWCASE_ID` when enabling that release's announcement. The tip
 replaces release highlights rather than adding a second startup popup. Both use
 the same seen setting, consent/modal readiness gate, and fresh-user welcome
 suppression. Routine updates do not reset acknowledgement. The prepared tip is
-not enabled by adding its catalog entry alone.
+not enabled by adding its catalog entry alone. Release 0.2.0 explicitly selects
+`did-you-know` with ID `0.2.0-youtube-access-tip`; its centered Try it action
+dismisses the tip and opens Settings.
 
 The expanded access exhibit uses an embedded production ChoiceMenu with three
 visible rows (scroll for other browsers). Browser/Chrome are local examples only.

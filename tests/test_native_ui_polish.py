@@ -147,7 +147,7 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
             for _ in range(60):
                 menu.event_generate("<MouseWheel>", delta=-120)
             assert menu.yview()[1] == 1.0
-            menu.event_generate("<Motion>", x=20, y=menu.winfo_height()-5)
+            menu.event_generate("<Motion>", x=20, y=menu.winfo_height() - 5)
             menu.event_generate("<Return>")
             application.update()
             assert selected == [records[-1]]

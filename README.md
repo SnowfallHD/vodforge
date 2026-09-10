@@ -48,7 +48,8 @@ in a searchable Library with built-in playback.
 - Combines private local download history across app restarts with current-session metadata previews, output-type filters, a pixel-scrolling table, and draggable session-persistent columns.
 - Keeps each Forge run's format and output details stable while the output dropdown and Settings configure only the next run.
 - Reflects the latest Library items in Run Deck as playlist items finish, without waiting for the entire playlist. Skipping an item follows the next playlist item when one remains.
-- Showcases selected features in an in-app **What's new** carousel. Routine version bumps do not trigger a new showcase; X or Escape dismisses the current showcase durably.
+- Introduces new users with a native welcome tour. Release-selected **Did you know?** tips or **What's new** highlights share once-seen tracking; 0.2.0 features YouTube access and age restrictions with a **Try it** shortcut to Settings.
+- The **All N runs** button opens Library on click and a scrollable run list on hover. Failed-run retries use current settings; redownloading previously successful media preserves its saved output profile.
 - Lets preview items start downloads directly, failed items retry, skipped or stopped items restart as fresh runs, and Library removal stop only the exact active or queued run it owns without deleting downloaded media.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
 

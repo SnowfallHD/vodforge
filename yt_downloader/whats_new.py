@@ -37,7 +37,7 @@ class FeatureHighlight:
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
 # showcase. A new app version, patch release, or release-note edit is not enough.
 # An empty highlights tuple disables the showcase. Keep copy factual and short.
-SHOWCASE_ID = "ui-updates-library-and-local-video"
+SHOWCASE_ID = "0.2.0-youtube-access-tip"
 HIGHLIGHTS = (
     FeatureHighlight(
         "ui-activity",
@@ -100,7 +100,7 @@ HIGHLIGHTS = (
 
 # Release editorial switch: choose one surface, never both. Keep the current
 # mode until a release explicitly opts into the tip and changes SHOWCASE_ID.
-SHOWCASE_MODE = "whats-new"
+SHOWCASE_MODE = "did-you-know"
 DID_YOU_KNOW_HIGHLIGHTS = (
     FeatureHighlight(
         "youtube-access-tip",

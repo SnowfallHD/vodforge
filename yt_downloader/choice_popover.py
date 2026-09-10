@@ -51,7 +51,7 @@ class ChoicePopover(tk.Frame):
             return False
         left, top = host.winfo_rootx(), host.winfo_rooty()
         right, bottom = left + host.winfo_width(), top + host.winfo_height()
-        ancestor = anchor.master
+        ancestor: tk.Misc | None = anchor.master
         while ancestor is not None and ancestor is not host:
             if isinstance(ancestor, tk.Canvas):
                 left = max(left, ancestor.winfo_rootx())

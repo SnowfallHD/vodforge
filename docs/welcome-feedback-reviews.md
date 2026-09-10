@@ -1,13 +1,15 @@
 # Welcome, feedback, and ratings
 
-Implemented on the feature branch; not part of the published 0.1.9 app.
+Introduced for the 0.2.0 release; not part of the published 0.1.9 app.
 
 ## User journeys
 
-- Fresh profiles see the native four-slide welcome tour after the analytics choice
+- Fresh profiles see the native six-slide welcome tour after the analytics choice
   finishes (or immediately after that stage is bypassed). Existing profiles do not.
   Closing, skipping, or finishing marks it seen; Help can replay it. Its detail
-  slider is interactive but changes only the illustrative preview.
+  slider animates the illustrative preview. Playlist and YouTube-access examples
+  do not change saved settings. Existing users receive the release-selected
+  Did you know? tip; Try it dismisses the tip and opens Settings.
 - Help & feedback is available in the header and Settings. Feedback has a reason,
   a 2,000-character message, and optional reply email. It does not enable analytics.
 - Recent failure diagnostics are optional and unchecked. Review shows the bounded,
@@ -42,8 +44,8 @@ can lose the unsent form; there is deliberately no durable diagnostics queue.
 When human verification is required, submitting opens the trusted VODForge browser
 check. After completing it, return to the preserved form and submit again. The
 browser receives a short-lived one-use challenge, never the report or credential.
-Verification alone is not a delivery receipt. Production keys and an authorized
-live verification journey are required before activation.
+Verification alone is not a delivery receipt. Production activation for 0.2.0
+uses managed Turnstile on getvodforge.com and retains server-side quotas.
 
 ## Activation and evidence
 
@@ -87,4 +89,8 @@ private credentials or preview database export into Git.
 This is source-native form-to-remote-D1 evidence, not packaged macOS/Windows proof.
 Preview uses its QA access gate with human verification disabled. Real browser
 Turnstile completion remains unverified; local verification-provider contract tests
-do not replace that live step. Production support remains disabled.
+do not replace that live step. The subsequent authorized 0.2.0 production check
+completed real Turnstile verification, then submitted synthetic feedback and a
+private review through HTTPS. Direct D1 readback verified exact retry receipts,
+Anonymous normalization and pending moderation. Test content was removed and its
+credential revoked. This is live service proof, not packaged native-form proof.
