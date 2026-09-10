@@ -8,6 +8,7 @@ from typing import Any
 
 
 class NativePreview(str, Enum):
+    PLAYLISTS = "playlists"
     YOUTUBE_ACCESS = "youtube-access"
     WELCOME_ACTIVITY = "welcome-activity"
     ACTIVITY = "ui-activity"

@@ -38,6 +38,13 @@ WELCOME_SLIDES = (
         NativePreview.LIBRARY,
     ),
     FeatureHighlight(
+        "playlists",
+        "Download full playlists",
+        "In Settings, turn off Ignore playlists. Paste a video link connected to "
+        "a playlist, or paste a playlist link directly, to download the full playlist.",
+        NativePreview.PLAYLISTS,
+    ),
+    FeatureHighlight(
         "youtube-access",
         "Age Restricted Content",
         "In Settings → YouTube access, try Browser and select your browser where "

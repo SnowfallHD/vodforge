@@ -28,6 +28,35 @@ def root():
 
 
 @pytest.mark.parametrize("size", ["1000x700", "620x560"])
+def test_playlist_welcome_example_is_off_and_centered(root, size):
+    from yt_downloader.whats_new import NativePreview
+
+    assert WELCOME_SLIDES[4].key == "playlists"
+    assert WELCOME_SLIDES[5].key == "youtube-access"
+    assert WELCOME_SLIDES[4].preview is NativePreview.PLAYLISTS
+    root.geometry(size)
+    panel = WhatsNewPanel(
+        root, WELCOME_SLIDES, lambda: None, finish_label="Start using VODForge"
+    )
+    panel.render(4)
+    root.update()
+    panel._cancel_transition()
+    panel._transition(10)
+    root.update()
+    demo = panel.activity_demo
+    assert demo.variables[0].get() is False
+    assert (
+        abs(demo.winfo_x() + demo.winfo_width() / 2 - panel.preview.winfo_width() / 2)
+        <= 1
+    )
+    assert (
+        abs(demo.winfo_y() + demo.winfo_height() / 2 - panel.preview.winfo_height() / 2)
+        <= 1
+    )
+    panel.close()
+
+
+@pytest.mark.parametrize("size", ["1000x700", "620x560"])
 def test_access_tour_uses_browser_example_and_centered_controls(root, size):
     from yt_downloader.ui_widgets import ChoiceDropdown
     from yt_downloader.youtube_access import (

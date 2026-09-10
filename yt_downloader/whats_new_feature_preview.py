@@ -75,6 +75,15 @@ class FeaturePreview(ttk.Frame):
             ModernCheckbox(self, text="Save thumbnail", variable=value).grid(
                 row=3, column=0, sticky="w", pady=5
             )
+        elif key == "playlists":
+            self.preferred_width = 220
+            self.preferred_height = 65
+            self._label("BATCH AND PLAYLISTS", 0)
+            ignore_playlists = tk.BooleanVar(self, False)
+            self.variables.append(ignore_playlists)
+            ModernCheckbox(
+                self, text="Ignore playlists", variable=ignore_playlists
+            ).grid(row=1, column=0, sticky="w", pady=5)
         elif key == "youtube-access":
             self.preferred_width = 340
             self.preferred_height = 110
