@@ -166,6 +166,20 @@ def test_welcome_content_and_navigation_centered(root, size):
             panel.skip_button.winfo_rootx()
             > panel.next.winfo_rootx() + panel.next.winfo_width()
         )
+    panel.render(len(WELCOME_SLIDES) - 1)
+    root.update()
+    assert (
+        abs(
+            panel.finish_button.winfo_rootx()
+            + panel.finish_button.winfo_width() / 2
+            - (panel.frame.winfo_rootx() + panel.frame.winfo_width() / 2)
+        )
+        <= 2
+    )
+    assert panel.back.winfo_viewable()
+    panel.render(2)
+    root.update()
+    assert not panel.finish_balance.winfo_ismapped()
     panel.skip_button.event_generate("<Button-1>")
     root.update()
     assert panel.closed

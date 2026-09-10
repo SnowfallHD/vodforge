@@ -193,6 +193,13 @@ class WhatsNewPanel:
             command=self.close,
             style="Accent.TButton",
         )
+        # Balance the back arrow so the final CTA, not the combined group, centers.
+        self.finish_balance = ttk.Frame(
+            actions,
+            width=self.back.winfo_reqwidth() + 10,
+            height=1,
+            style="FocusShell.TFrame",
+        )
         self.skip_button = tk.Label(
             navigation,
             text="Skip tour",
@@ -266,8 +273,10 @@ class WhatsNewPanel:
                 self.next.pack_forget()
                 self.skip_button.grid_remove()
                 self.finish_button.pack(side="left", padx=8)
+                self.finish_balance.pack(side="left")
             else:
                 self.finish_button.pack_forget()
+                self.finish_balance.pack_forget()
                 self.next.pack(side="left", padx=5)
                 self.skip_button.grid(row=0, column=2, sticky="e")
 
