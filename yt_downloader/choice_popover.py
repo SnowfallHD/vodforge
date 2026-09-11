@@ -53,7 +53,9 @@ class ChoicePopover(tk.Frame):
         right, bottom = left + host.winfo_width(), top + host.winfo_height()
         ancestor: tk.Misc | None = anchor.master
         while ancestor is not None and ancestor is not host:
-            if isinstance(ancestor, tk.Canvas):
+            # Decorative canvases (such as the composer chrome) are not
+            # scrolling viewports. Only an explicit scrollregion bounds menus.
+            if isinstance(ancestor, tk.Canvas) and ancestor.cget("scrollregion"):
                 left = max(left, ancestor.winfo_rootx())
                 top = max(top, ancestor.winfo_rooty())
                 right = min(right, ancestor.winfo_rootx() + ancestor.winfo_width())

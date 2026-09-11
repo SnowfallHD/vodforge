@@ -767,3 +767,38 @@ def test_task_presets_use_real_dropdown_and_custom_quality_controls():
             assert application.manual_crf_var.get() == "19"
         finally:
             application.destroy()
+
+
+@pytest.mark.parametrize("size", ["1180x780", "820x560"])
+def test_composer_format_menu_opens_and_selects_every_format(size, monkeypatch):
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.analytics_startup import AnalyticsStartup
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.engagement_ui import EngagementUI
+    from yt_downloader.models import OutputType
+
+    # This is an existing-user composer journey, without first-launch modals.
+    monkeypatch.setattr(AnalyticsStartup, "start", lambda self: None)
+    monkeypatch.setattr(EngagementUI, "start", lambda self: None)
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application.geometry(size)
+            settle_native(application)
+            dropdown = application.focus_output_type_selector
+            for kind in OutputType:
+                application.focus_url_entry.focus_force()
+                settle_native(application)
+                dropdown._field.event_generate("<ButtonPress-1>", x=4, y=4)
+                dropdown._field.event_generate("<ButtonRelease-1>", x=4, y=4)
+                settle_native(application)
+                assert dropdown._popover is not None, kind
+                assert dropdown._popover.winfo_ismapped()
+                menu = dropdown._popover.winfo_children()[0]
+                menu.selection_set(dropdown._values.index(kind.value))
+                menu.event_generate("<Return>")
+                settle_native(application)
+                assert application.output_type_var.get() == kind.value
+                assert dropdown._popover is None
+        finally:
+            application.destroy()
