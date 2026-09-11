@@ -84,11 +84,13 @@ def _ownership_probe(url, process):
         statuses.append(
             post("launch", {"credential_id": other, "app_version": "0.1.8"})[0]
         )
-        if (
-            post("launch", {"credential_id": credential_id, "app_version": "0.1.8"})[0]
-            != 200
-        ):
-            raise AssertionError("Legitimate launch failed")
+        launch_status, launch_body = post(
+            "launch", {"credential_id": credential_id, "app_version": "0.1.8"}
+        )
+        if launch_status != 200:
+            raise AssertionError(
+                f"Legitimate launch failed: {launch_status} {launch_body}"
+            )
         _, legacy = post("ownership-legacy", {"installId": install_id})
         process.stdin.write('{"op":"snapshot"}\n')
         process.stdin.flush()

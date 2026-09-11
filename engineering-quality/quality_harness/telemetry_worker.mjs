@@ -77,11 +77,13 @@ const mf = new Miniflare(
     ratelimits: {
       TELEMETRY_ENROLL_LIMITER: {
         namespace_id: "1001",
-        simple: { limit: 120, period: 60 },
+        simple: { limit: 1000, period: 60 },
       },
+      // This contract probe intentionally replays the full vocabulary and then
+      // checks ownership. This fixture does not verify production rate thresholds.
       TELEMETRY_EVENT_LIMITER: {
         namespace_id: "1002",
-        simple: { limit: 120, period: 60 },
+        simple: { limit: 1000, period: 60 },
       },
     },
     outboundService: () => {
@@ -106,7 +108,7 @@ try {
     const clients = await db.prepare("SELECT credential_id,install_id,revoked_at FROM telemetry_clients").all();
     const events = await db
       .prepare(
-        "SELECT event_id,event_name,occurred_at,run_kind,output_type,from_version,to_version,failure_reason,failure_detail FROM product_events",
+        "SELECT event_id,event_name,occurred_at,run_kind,output_type,from_version,to_version,failure_reason,failure_detail,schema_version,attempt_id,retry_of,feature,action,dimensions FROM product_events",
       )
       .all();
     console.log(
