@@ -87,9 +87,9 @@ production Worker configuration and exports no credentials or contact data.
 Use the corresponding baseline session for `update_before.json`.
 
 `expected-counts.json` is the explicit event-name/count mapping from the UI ledger;
-all seven product events must be present with positive counts. Do not copy counts
-from D1 to make a failed journey pass. Original audio remains an unlabeled format
-in schema v1; it must still produce lifecycle and playback events.
+all current product events must be present with positive counts. Do not copy counts
+from D1 to make a failed journey pass. Original audio is explicitly labeled `original` in schema v2; legacy schema-v1
+acceptance is covered independently.
 
 ```sh
 ./engineering-quality/run telemetry-verify \
@@ -107,3 +107,47 @@ Pass both platform results as repeated `--telemetry-result` arguments to
 last seen, missing or duplicate events, missing update evidence, or privacy writes.
 Final publication still requires the ordinary signature, updater, media, UI and
 artifact-integrity checks. A review-only draft upload is not publication.
+
+## Schema v2 feature coverage
+
+The canonical desktop vocabulary is `yt_downloader/telemetry_features.py`, with
+product event names owned by `product_telemetry.py`. Backend normalization must
+match that vocabulary; widening an enum requires a contract test, a migration if
+needed, a real producer test, and an updated native preview journey. Never add
+arbitrary property bags, search text, URLs, media titles, notes, category names,
+paths, raw accent colors, or hardware identifiers.
+
+For current candidates, require schema v2 and explicit `original` format. The
+older schema-v1 contract stays accepted for released clients and pending outboxes;
+its unlabeled formats must not be backfilled by guessing.
+
+The release verifier now requires every feature/action pair, all six MP4 presets,
+CPU exports and Windows NVIDIA exports, and the added queue, skip, local-conversion
+and per-media export events. Native screenshots must cover the corresponding
+`*_observed` actions in the telemetry recorder. Exercise actual failed and cancelled
+local conversions, partial playlists, queue removal, a skipped item, retries,
+Library search/filter/selection/removal, notes/tags/categories, playback completion
+and failure, seeking/chapters/heatmaps/previews, missing-file recovery, What’s New
+Try it, Technical view, appearance changes, and update/Repair outcomes. UI action
+and expected counts must be recorded before reading D1, never inferred from rows.
+
+Compare `attempt_id` across start/outcome and `retry_of` to the previous attempt.
+They are installation-scoped opaque UUIDs, independent of content and local paths.
+One attempt may produce multiple `media_exported` events in a playlist. Each must
+represent validated, committed media. Check actual encoder/rate-control and
+bucketed resolution, duration, processing time, queue wait and size; configuration
+intent cannot substitute for output facts. Timing unavailable after a restart is
+omitted rather than fabricated. Original audio reports stream copy.
+
+Engagement feature/actions are recorded once per consent-enabled process session,
+not per keystroke or poll. Update actions are individual observations. Relaunch
+confirmation requires the helper receipt and the currently executing file's hash;
+a download or handoff is not update completion. Keep detached-helper repair/failure
+and ordinary app-start cases in both platform updater regressions.
+
+All new events and properties must also pass unknown/denied/off suppression,
+allow-list rejection, outbox restart, exact delivery retry/conflict and credential
+isolation checks. A direct serializer-to-preview-D1 test establishes transport and
+storage only; it does not replace native source callbacks or final signed-artifact
+UI evidence. Preview excludes the external provider; provider serialization and
+consent regressions remain separate.

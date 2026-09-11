@@ -232,6 +232,7 @@ from .settings_store import (
     SettingsPersistenceOwner,
     settings_file_path,
 )
+from .telemetry_features import committed_export_dimensions, export_dimensions
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .thumbnail_state import advance_thumbnail_item
 from .ui_events import (
@@ -5000,6 +5001,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 and not self.engagement.blocks_announcements
             ),
             open_settings=self._show_focus_settings,
+            on_feature=lambda action: self._record_feature("announcement", action),
         )
 
         self.url_var = tk.StringVar()
@@ -5215,6 +5217,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.after(250, self.analytics_startup.start)
         self.engagement.start()
         self.after(400, self._record_product_app_opened)
+        self.after(6000, self._record_update_telemetry_receipt)
         self.after(25, self._start_ytdlp_preload)
         if self.playback_engine is not None:
             self.after(25, self.playback_engine.start)
@@ -5234,6 +5237,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> None:
         """Patch the existing main and Settings surfaces after a palette change."""
 
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            theme = self.appearance_theme_var.get().lower()
+            telemetry.record_feature(
+                "appearance",
+                "changed",
+                dimensions={"theme": "custom" if theme == "custom accent" else theme},
+            )
         patch_tk_surface_palette(self, previous, incoming)
         self._apply_theme()
         selected_view = self.__dict__.get("_focus_selected_view", "forge")
@@ -5591,10 +5602,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             "write", lambda *_args: self._on_library_output_type_changed()
         )
         self.library_search_var.trace_add(
-            "write", lambda *_args: self._render_metadata_tree()
+            "write", lambda *_args: self._library_filter_changed("searched")
         )
         self.library_category_var.trace_add(
-            "write", lambda *_args: self._render_metadata_tree()
+            "write", lambda *_args: self._library_filter_changed("filtered")
         )
         self.mp3_quality_var.trace_add(
             "write", lambda *_args: self._sync_focus_settings_summary()
@@ -5976,7 +5987,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         live_frame.rowconfigure(0, weight=1)
         summary_frame.columnconfigure(0, weight=1)
         summary_frame.rowconfigure(0, weight=1)
-        self.forge_activity = ForgeActivityPanel(live_frame)
+        self.forge_activity = ForgeActivityPanel(
+            live_frame,
+            on_technical=lambda: self._record_feature("guidance", "technical_opened"),
+        )
         self.forge_activity.grid(row=0, column=0, sticky="nsew", padx=(0, 22))
         self.focus_log = self.forge_activity.technical
         self.focus_summary_text = FactsText(
@@ -6741,6 +6755,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         frame = self._focus_views.get(name)
         if frame is None:
             return
+        if name == "library" and self.__dict__.get("_focus_selected_view") != name:
+            self._record_feature("library", "opened")
         frame.tkraise()
         for view_name, button in self._focus_nav_buttons.items():
             active = view_name == name
@@ -6975,7 +6991,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.export_mode_var.set(mode.value)
         self._refresh_manual_settings_visibility()
 
+    def _library_filter_changed(self, action: str) -> None:
+        if action != "searched" or self.library_search_var.get().strip():
+            self._record_feature("library", action)
+        self._render_metadata_tree()
+
     def _on_library_output_type_changed(self) -> None:
+        self._record_feature("library", "filtered")
         selected = self.library_output_type_var.get()
         if selected == LIBRARY_ALL_MEDIA:
             if hasattr(self, "focus_library_media_label_var"):
@@ -7212,6 +7234,67 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if enabled and not self._closing:
             self._record_first_launch()
             self._record_product_app_opened()
+            self.after(6000, self._record_update_telemetry_receipt)
+
+    def _record_feature(
+        self, feature: str, action: str, *, dimensions: dict[str, str] | None = None
+    ) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record_feature(feature, action, dimensions=dimensions)
+
+    def _record_update_telemetry_receipt(self) -> None:
+        from .updates import (
+            confirmed_update_telemetry_receipt,
+            pending_update_telemetry_receipts,
+        )
+
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is None or self._closing or not telemetry.permitted():
+            return
+        receipts = list(
+            pending_update_telemetry_receipts(
+                application_data_dir() / "updates", Path(sys.executable)
+            )
+        )
+        raw = os.environ.get("VODFORGE_UPDATE_RECEIPT")
+        if raw:
+            path = Path(raw)
+            receipt = confirmed_update_telemetry_receipt(path, Path(sys.executable))
+            if (
+                receipt is not None
+                and not path.with_suffix(
+                    "." + receipt[2] + ".telemetry-queued"
+                ).exists()
+                and all(existing != path for existing, _ in receipts)
+            ):
+                receipts.append((path, receipt))
+        for path, (token, repair, action, stage) in receipts:
+            accepted = telemetry.record(
+                "feature_used",
+                dedupe_key=token + ":" + action,
+                feature="updater",
+                action=action,
+                dimensions={"update_stage": stage},
+            )
+            if repair:
+                accepted = (
+                    telemetry.record(
+                        "feature_used",
+                        dedupe_key=token + ":repair",
+                        feature="updater",
+                        action="repair_completed",
+                    )
+                    and accepted
+                )
+            if accepted:
+                try:
+                    path.with_suffix("." + action + ".telemetry-queued").write_text(
+                        "queued\n"
+                    )
+                except OSError:
+                    pass
+        os.environ.pop("VODFORGE_UPDATE_RECEIPT", None)
 
     def _record_product_app_opened(self) -> None:
         telemetry = self.__dict__.get("product_telemetry")
@@ -9005,6 +9088,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self._start_update_download(release)
 
     def _start_update_download(self, release: ReleaseInfo) -> None:
+        self._update_stage = "download"
+        self._update_repair_requested = False
+        self._record_feature("updater", "download_started")
         self.update_button.config(state="disabled")
         self._set_focus_update_state("Downloading update…", THEME["accent"])
         self.status_var.set(f"Downloading and verifying VODForge {release.tag_name}…")
@@ -9014,6 +9100,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.update_worker.start()
 
     def _repair_update(self) -> None:
+        self._update_stage = "downloading_repair"
+        self._update_repair_requested = True
+        self._record_feature("guidance", "recovery_selected")
+        self._record_feature("updater", "repair_started")
         self.update_check_silent = False
         self.update_button.config(state="disabled")
         self._set_focus_update_state("Preparing repair…", THEME["accent"])
@@ -9024,6 +9114,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.update_worker.start()
 
     def _show_update_recovery(self, detail: str) -> None:
+        self._record_feature(
+            "updater",
+            "failed",
+            dimensions={"update_stage": self.__dict__.get("_update_stage", "check")},
+        )
         self._set_focus_update_state("Update needs attention", THEME["danger"])
         self.update_button.config(state="normal")
         self.status_var.set(
@@ -9048,6 +9143,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 payload = prepare_macos_update(path, target_app)
             elif is_windows():
                 verify_windows_authenticode(path)
+            self._record_feature("updater", "download_completed")
             self.events.put(("update_ready", payload))
         except Exception as exc:  # noqa: BLE001 - worker reports any verified-update failure
             self.events.put(("update_install_error", str(exc)))
@@ -9076,9 +9172,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         self._set_focus_update_state("Preparing update…", THEME["accent"])
         self.update_button.config(state="disabled")
+        telemetry = self.__dict__.get("product_telemetry")
+        telemetry_permitted = telemetry is not None and telemetry.permitted()
+        self._update_stage = "handoff"
         try:
             if isinstance(update, MacUpdatePlan):
-                launch_macos_update(update)
+                launch_macos_update(
+                    update, repair=self.__dict__.get("_update_repair_requested", False)
+                )
             else:
                 bounds = (
                     (
@@ -9090,11 +9191,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     if self.__dict__.get("tk") is not None
                     else None
                 )
-                receipt = launch_windows_update(update, window_bounds=bounds)
+                receipt = launch_windows_update(
+                    update,
+                    window_bounds=bounds,
+                    repair=self.__dict__.get("_update_repair_requested", False),
+                    telemetry_permitted=telemetry_permitted,
+                )
                 write_diagnostic(f"Windows update handoff log: {receipt}")
         except Exception as exc:  # noqa: BLE001 - keep launcher failures visible and the app open
             self._show_update_recovery(str(exc))
             return
+        self._record_feature("updater", "handoff")
         self._set_focus_update_state("Installing update…", THEME["accent"])
         self.status_var.set(
             "Verified update ready. VODForge will close safely and reopen after installation."
@@ -9190,10 +9297,35 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             profile_variable=self.local_video_profile_var,
             on_complete=self._complete_local_audio_video,
             on_closed=self._local_audio_video_dialog_closed,
+            on_telemetry=self._record_local_conversion_event,
             choose_output=choose_output,
         )
         self._local_audio_video_dialog = dialog
         dialog.show()
+
+    def _record_local_conversion_event(self, event: str, run_id: str) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record(
+                cast(ProductEventName, event),
+                dedupe_key=run_id,
+                attempt_key=run_id,
+                run_kind="local_audio_video",
+                output_type="mp4",
+            )
+
+    def _record_queue_event(self, event: str, job: DownloadJob) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record(
+                cast(ProductEventName, event),
+                dedupe_key=job.run_id,
+                attempt_key=job.run_id,
+                retry_key=getattr(job, "retry_of_run_id", None),
+                run_kind="youtube",
+                output_type=product_output_kind(job.output_type.value),
+                dimensions=export_dimensions(job),
+            )
 
     def _local_audio_video_dialog_closed(self) -> None:
         self._local_audio_video_dialog = None
@@ -9213,12 +9345,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             str(item.get("vodforge_run_id") or "") == run_id
             for item in self.download_history
         ):
+            telemetry = self.__dict__.get("product_telemetry")
+            if telemetry is not None:
+                telemetry.record(
+                    "local_conversion_failed",
+                    dedupe_key=run_id or None,
+                    attempt_key=run_id or None,
+                    run_kind="local_audio_video",
+                    output_type="mp4",
+                )
             return
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is not None:
             telemetry.record(
                 "local_conversion_completed",
                 dedupe_key=run_id or None,
+                attempt_key=run_id or None,
+                dimensions=getattr(result, "telemetry_dimensions", {}),
                 run_kind="local_audio_video",
                 output_type="mp4",
             )
@@ -10178,6 +10321,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
 
     def _on_video_selected(self, _event: Any = None) -> None:
+        self._record_feature("library", "selected")
         selection = self.video_tree.selection()
         if selection:
             try:
@@ -10362,6 +10506,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
         )
 
+        previous_annotation = self.library_annotations.annotation_for(owner)
+
         def save(annotation: LibraryAnnotation) -> bool:
             try:
                 self.library_annotations.replace(owner, annotation)
@@ -10369,6 +10515,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 messagebox.showerror(APP_NAME, str(exc), parent=self)
                 return False
             self._reconcile_library_projection(selected_index=selected_index)
+            for field, action in (
+                ("notes", "notes_saved"),
+                ("tags", "tags_saved"),
+                ("category", "category_saved"),
+            ):
+                if getattr(annotation, field, None) != getattr(
+                    previous_annotation, field, None
+                ):
+                    self._record_feature("organization", action)
             self.status_var.set("Library notes and organization saved.")
             return True
 
@@ -10535,6 +10690,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             info=info,
             thumbnail_path=self._library_thumbnail_path(info),
             on_first_play=lambda: self._record_product_playback_started(info),
+            on_feature=lambda action: self._record_feature("player", action),
         )
         self._media_player_window = window
         self._media_player_source = media_path
@@ -10548,6 +10704,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             info,
             completed_jobs=tuple(self.__dict__.get("_completed_jobs", ())),
         )
+        self._record_feature("missing_media", "offered")
         LibraryMediaRecoveryDialog(
             self,
             plan=plan,
@@ -10595,9 +10752,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         job = plan.job
         if job is None:
             return
+        job.recovery_reason = "missing_media"
         accepted = self._start_or_queue_download_job(job, clear_source=False)
         if not accepted:
             return
+        self._record_feature("missing_media", "accepted")
         previous_owner = plan.previous_annotation_owner
         if previous_owner:
             try:
@@ -10691,6 +10850,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             save_history(self.history_path, prospective_history)
             self.download_history = prospective_history
 
+        self._record_feature("library", "removed")
         removed_run_ids = set(plan.execution_run_ids)
         if removed_run_ids:
             self.__dict__.setdefault("_library_suppressed_run_ids", set()).update(
@@ -10711,6 +10871,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     "The queued run could not be removed safely because its private "
                     f"recovery record could not be updated: {exc}"
                 ) from exc
+            for removed_job in self.pending_jobs:
+                if removed_job.run_id in plan.queued_run_ids:
+                    self._record_queue_event("run_dequeued", removed_job)
             self.pending_jobs = remaining_jobs
         if plan.active_run_id is not None:
             self._cancel()
@@ -11587,6 +11750,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 cleanup_recovery=False,
             )
             self.pending_jobs = queued_jobs
+            self._record_queue_event("run_queued", job)
             if hasattr(self, "focus_run_deck"):
                 self.focus_engine_var.set(
                     f"1 active  /  {len(self.pending_jobs)} queued  /  runs process one at a time"
@@ -11872,6 +12036,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             telemetry.record(
                 "run_started",
                 dedupe_key=job.run_id,
+                attempt_key=job.run_id,
+                retry_key=getattr(job, "retry_of_run_id", None),
+                dimensions=export_dimensions(job),
                 run_kind="youtube",
                 output_type=product_output_kind(job.output_type.value),
             )
@@ -11907,6 +12074,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ]
         self._terminal_jobs.insert(0, job)
         self._reconcile_library_projection(selected_index=0)
+        self._record_product_run_outcome(job, status)
         self.status_var.set(f"Restored a {status} run in Library.")
         self._append_log(message)
         self._focus_terminal_job(job)
@@ -12073,6 +12241,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             urls=[retry_url],
             run_id=uuid.uuid4().hex,
             origin_run_id=failed_job.run_id,
+            execution_run_id=None,
+            retry_of_run_id=failed_job.execution_run_id or failed_job.run_id,
             failure_diagnostic=None,
             preview_info=retry_preview,
             metadata_keys=set(),
@@ -12105,6 +12275,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 cleanup_recovery=False,
             )
             self.pending_jobs = queued_jobs
+            self._record_queue_event("run_queued", retry_job)
             self._enqueue_queue_preview(retry_job)
             self._refresh_focus_run_deck()
             return
@@ -12661,6 +12832,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ffprobe_data=ffprobe_data,
             validation_status="Validated",
         )
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record(
+                "media_exported",
+                dedupe_key=job.run_id + ":" + str(primary_output),
+                attempt_key=job.run_id,
+                retry_key=job.retry_of_run_id,
+                run_kind="youtube",
+                output_type=product_output_kind(job.output_type.value),
+                dimensions=committed_export_dimensions(
+                    job,
+                    plan,
+                    ffprobe_data,
+                    source_height=_float_or_none(info.get("height")),
+                ),
+            )
         self.events.put(job_info_event("job_metadata", job, committed_info))
         return _CommittedMedia(
             metadata=committed_info,
@@ -12835,6 +13022,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             preview_info=terminal_info,
             run_id=terminal_run_id,
             origin_run_id=job.run_id,
+            execution_run_id=job.run_id,
+            retry_of_run_id=None,
             metadata_keys=(
                 {key} if (key := metadata_run_key(terminal_info)) is not None else set()
             ),
@@ -13283,6 +13472,15 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     result=result,
                 ) from error
 
+            telemetry = self.__dict__.get("product_telemetry")
+            if telemetry is not None:
+                telemetry.record(
+                    "run_skipped",
+                    dedupe_key=job.run_id + ":" + str(item.index),
+                    attempt_key=job.run_id,
+                    run_kind="youtube",
+                    output_type=product_output_kind(job.output_type.value),
+                )
             skipped_outcome = result.outcome.combined_with(
                 DownloadOutcome(skipped_count=1)
             )
@@ -14024,9 +14222,25 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is None:
             return
+        if (
+            status == "Completed"
+            and getattr(job, "recovery_reason", None) == "missing_media"
+        ):
+            telemetry.record_feature("missing_media", "completed")
         telemetry.record(
             event_name,
             dedupe_key=job.run_id,
+            attempt_key=job.run_id,
+            retry_key=getattr(job, "retry_of_run_id", None),
+            dimensions={
+                **export_dimensions(job),
+                "outcome": {
+                    "Completed": "complete",
+                    "Partial": "partial",
+                    "Failed": "failed",
+                    "Stopped": "stopped",
+                }[status],
+            },
             run_kind="youtube",
             output_type=product_output_kind(job.output_type.value),
             failure_reason=job.failure_diagnostic.reason

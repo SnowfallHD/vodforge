@@ -24,17 +24,10 @@ CHECKPOINTS = (
     "disabled",
     "unknown",
 )
-EVENTS = frozenset(
-    {
-        "app_opened",
-        "run_started",
-        "run_completed",
-        "run_failed",
-        "run_stopped",
-        "playback_started",
-        "local_conversion_completed",
-    }
-)
+from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
+from yt_downloader.telemetry_features import FEATURE_ACTIONS, validate_dimensions
+
+EVENTS = PRODUCT_EVENT_NAMES
 
 
 def read_preview_snapshot(site: Path, install_id: str) -> dict[str, Any]:
@@ -54,7 +47,7 @@ def read_preview_snapshot(site: Path, install_id: str) -> dict[str, Any]:
     statements = [
         f"SELECT install_id,platform,first_app_version,current_app_version,created_at,first_launched_at,last_seen_at,first_seen_at,cloud_clicked_at,source FROM installations WHERE install_id='{install_id}'",
         f"SELECT COUNT(*) AS count FROM telemetry_clients WHERE install_id='{install_id}'",
-        f"SELECT event_id,event_name,occurred_at,received_at,app_version,platform,release_channel,run_kind,output_type,failure_reason,from_version,to_version FROM product_events WHERE install_id='{install_id}' ORDER BY occurred_at,event_id",
+        f"SELECT event_id,event_name,occurred_at,received_at,app_version,platform,release_channel,run_kind,output_type,failure_reason,from_version,to_version,schema_version,attempt_id,retry_of,feature,action,dimensions FROM product_events WHERE install_id='{install_id}' ORDER BY occurred_at,event_id",
     ]
     command = [
         "node",
@@ -147,13 +140,98 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
     events = complete.get("events", [])
     if len({e["event_id"] for e in events}) != len(events):
         errors.append("Duplicate event IDs")
-    for output in ("mp4", "mp3", None):
+    for output in ("mp4", "mp3", "original"):
         for name in ("run_started", "run_completed", "playback_started"):
             if not any(
                 e["event_name"] == name and e.get("output_type") == output
                 for e in events
             ):
                 errors.append(f"Missing {name}/{output or 'Original audio'} journey")
+    observed_actions = {
+        (event.get("feature"), event.get("action"))
+        for event in [
+            *events,
+            *data.get("update", {}).get("after", {}).get("events", []),
+        ]
+        if event.get("event_name") == "feature_used"
+    }
+    required_actions = {
+        (feature, action)
+        for feature, actions in FEATURE_ACTIONS.items()
+        for action in actions
+    }
+    if not required_actions <= observed_actions:
+        errors.append(
+            "Missing feature/action preview-D1 observations: "
+            + str(sorted(required_actions - observed_actions))
+        )
+    attempts: dict[str, set[str]] = {}
+    presets: set[str] = set()
+    encoders: set[str] = set()
+    for event in events:
+        if event.get("schema_version") != 2:
+            errors.append("Current candidate must emit schema v2")
+        try:
+            dimensions = validate_dimensions(
+                json.loads(event.get("dimensions") or "{}")
+            )
+        except (ValueError, TypeError):
+            errors.append("Invalid or private telemetry dimensions")
+            continue
+        if dimensions.get("preset"):
+            presets.add(dimensions["preset"])
+        if dimensions.get("encoder"):
+            encoders.add(dimensions["encoder"])
+        attempt = event.get("attempt_id")
+        if event["event_name"].startswith(("run_", "local_conversion_")):
+            try:
+                uuid.UUID(attempt)
+            except (ValueError, TypeError, AttributeError):
+                errors.append("Lifecycle event missing opaque attempt identifier")
+            else:
+                attempts.setdefault(attempt, set()).add(event["event_name"])
+    for attempt, names in attempts.items():
+        if (
+            len(names & {"run_completed", "run_failed", "run_stopped"}) > 1
+            or len(
+                names
+                & {
+                    "local_conversion_completed",
+                    "local_conversion_failed",
+                    "local_conversion_stopped",
+                }
+            )
+            > 1
+        ):
+            errors.append("An attempt has conflicting terminal outcomes")
+        if (
+            names & {"run_completed", "run_failed", "run_stopped"}
+            and "run_started" not in names
+        ):
+            errors.append("Run outcome has no matching start")
+        if (
+            names
+            & {
+                "local_conversion_completed",
+                "local_conversion_failed",
+                "local_conversion_stopped",
+            }
+            and "local_conversion_started" not in names
+        ):
+            errors.append("Local conversion outcome has no matching start")
+    if not any(
+        event.get("retry_of") in attempts
+        and event.get("retry_of") != event.get("attempt_id")
+        and event["event_name"] == "run_completed"
+        for event in events
+    ):
+        errors.append("A successful retry must link to its earlier attempt")
+    if not {"everyday", "streaming", "editing", "sharing", "ctv", "custom"} <= presets:
+        errors.append("All six export presets require observed telemetry")
+    if "cpu" not in encoders or (
+        data.get("platform") == "windows" and "nvidia" not in encoders
+    ):
+        errors.append("Actual CPU and Windows NVIDIA export observations required")
     if not last.get("first_seen_at") or not last.get("cloud_clicked_at"):
         errors.append("Settings impression and Cloud-interest observations required")
     for name in ("denied", "disabled"):

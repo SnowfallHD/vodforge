@@ -284,12 +284,14 @@ class MediaPlayerWindow:
         info: dict[str, Any],
         thumbnail_path: Path | None = None,
         on_first_play: Callable[[], None] | None = None,
+        on_feature: Callable[[str], None] | None = None,
     ) -> None:
         self.owner = owner
         self.playback = playback
         self.previews = previews
         self.info = info
         self.thumbnail_path = thumbnail_path
+        self._on_feature = on_feature or (lambda _action: None)
         self._on_first_play = on_first_play
         self._first_play_recorded = False
         self._closed = False
@@ -665,6 +667,8 @@ class MediaPlayerWindow:
         width = max(1, self.timeline.winfo_width() - 20)
         fraction = min(1.0, max(0.0, (event.x - 10) / width))
         self._seek_to(self.playback.snapshot.duration * fraction)
+        if self._heatmap and event.y < 29:
+            self._on_feature("heatmap")
 
     def _chapter_selected(self, _event: tk.Event[Any]) -> None:
         if self.chapter_list is None:
@@ -672,14 +676,17 @@ class MediaPlayerWindow:
         selection = self.chapter_list.curselection()
         if selection and selection[0] < len(self._chapters):
             self._seek_to(self._chapters[selection[0]]["start_time"])
+            self._on_feature("chapter")
 
     def _seek_preview(self, index: int) -> None:
         duration = self.playback.snapshot.duration
         self._seek_to(duration * ((index + 0.5) / len(self.preview_labels)))
+        self._on_feature("preview")
 
     def _seek_to(self, position: float) -> None:
         try:
             self.playback.seek(position)
+            self._on_feature("seek")
         except MediaPlayerError as exc:
             self.status_var.set(str(exc))
 
@@ -765,6 +772,10 @@ class MediaPlayerWindow:
             return
         snapshot = self.playback.snapshot
         previous = self._last_snapshot
+        if (
+            previous is None or previous.status != snapshot.status
+        ) and snapshot.status in {"Ended", "Failed"}:
+            self._on_feature("completed" if snapshot.status == "Ended" else "failed")
         if previous is None or (
             snapshot.status,
             round(snapshot.position, 1),

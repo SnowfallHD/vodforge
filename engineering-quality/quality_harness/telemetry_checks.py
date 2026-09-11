@@ -159,11 +159,45 @@ def isolation_receipt():
     )
 
 
+def assert_feature_vocabulary(site: Path) -> None:
+    """Fail the maintained backend gate if either language's contract drifts."""
+    import re
+
+    from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
+    from yt_downloader.telemetry_features import DIMENSION_CHOICES, FEATURE_ACTIONS
+
+    source = (site / "src/lib/product-telemetry.ts").read_text()
+    for name, expected in (
+        ("FEATURE_ACTIONS", FEATURE_ACTIONS),
+        ("DIMENSION_CHOICES", DIMENSION_CHOICES),
+    ):
+        match = re.search(
+            r"export const " + name + r": Record<string, readonly string\[\]> = (.*?);",
+            source,
+        )
+        if (
+            match is None
+            or {
+                key: frozenset(values)
+                for key, values in json.loads(match.group(1)).items()
+            }
+            != expected
+        ):
+            raise AssertionError("Desktop/backend vocabulary drift: " + name)
+    names = re.search(r"PRODUCT_EVENT_NAMES = \[(.*?)\] as const", source, re.DOTALL)
+    if (
+        names is None
+        or set(re.findall(r'"([^"\n]+)"', names.group(1))) != PRODUCT_EVENT_NAMES
+    ):
+        raise AssertionError("Desktop/backend product event vocabulary drift")
+
+
 def backend_suite(repo_root: Path, case_dir: Path):
     site = Path(
         os.environ.get("VODFORGE_SITE_REPO", str(repo_root.parent / "vodforge-site"))
     ).resolve()
     case_dir.mkdir(parents=True, exist_ok=True)
+    assert_feature_vocabulary(site)
     _, before = machine_snapshot(site)
     result = run_command(["npm", "test"], cwd=site, timeout=180)
     _, after = machine_snapshot(site)
@@ -334,7 +368,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     ("app_opened", {}),
                     *[
                         (name, {"run_kind": "youtube", "output_type": output})
-                        for output in ("mp4", "mp3", None)
+                        for output in ("mp4", "mp3", "original")
                         for name in ("run_started", "run_completed", "run_stopped")
                     ],
                     ("playback_started", {"output_type": "mp4"}),
@@ -344,7 +378,35 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         {"run_kind": "local_audio_video", "output_type": "mp4"},
                     ),
                 ]
+                from yt_downloader.telemetry_features import FEATURE_ACTIONS
+
+                for name in (
+                    product_telemetry.PRODUCT_EVENT_NAMES
+                    - {name for name, _ in dimensions}
+                    - {"run_failed", "feature_used"}
+                ):
+                    dimensions.append(
+                        (
+                            name,
+                            {
+                                "run_kind": "local_audio_video"
+                                if name.startswith("local_conversion_")
+                                else "youtube",
+                                "output_type": "mp4",
+                            },
+                        )
+                    )
+                dimensions.extend(
+                    ("feature_used", {"feature": feature, "action": action})
+                    for feature, actions in FEATURE_ACTIONS.items()
+                    for action in sorted(actions)
+                )
                 for index, (name, fields) in enumerate(dimensions):
+                    if (
+                        name.startswith(("run_", "local_conversion_"))
+                        or name == "media_exported"
+                    ):
+                        fields["attempt_key"] = f"attempt-{index}"
                     assert usage.record(name, dedupe_key=f"metric-{index}", **fields)
                     assert usage.record(name, dedupe_key=f"metric-{index}", **fields)
                 assert usage.shutdown(10)
@@ -391,8 +453,16 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         "event_name",
                         "run_kind",
                         "output_type",
+                        "attempt_id",
+                        "retry_of",
+                        "feature",
+                        "action",
+                        "schema_version",
                     ):
                         assert stored_event[field] == payload.get(field), field
+                    assert (
+                        json.loads(stored_event["dimensions"]) == payload["dimensions"]
+                    )
                     actual_time = datetime.fromisoformat(
                         stored_event["occurred_at"].replace("Z", "+00:00")
                     )

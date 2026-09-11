@@ -10,7 +10,7 @@ import threading
 import uuid
 import warnings
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,7 @@ from .safe_output import (
     commit_file_beneath,
     create_private_staging_directory,
 )
+from .telemetry_features import measured_dimensions
 
 LOCAL_CONVERSION_STATE_SCHEMA = 1
 LOCAL_VIDEO_WIDTH = 1920
@@ -165,6 +166,7 @@ class LocalAudioVideoResult:
     output_path: Path
     image_path: Path
     history_metadata: Mapping[str, Any]
+    telemetry_dimensions: Mapping[str, str] = field(default_factory=dict)
 
 
 def local_conversion_state_path(**kwargs: Any) -> Path:
@@ -1062,6 +1064,14 @@ class LocalAudioVideoConversionOwner:
             output_path=output_path,
             image_path=prepared.image_path,
             history_metadata=metadata,
+            telemetry_dimensions={
+                **measured_dimensions(output_probe),
+                "encoder": "cpu",
+                "rate_control": "cbr"
+                if request.profile == LocalVideoProfile.STRICT_CBR
+                else "quality",
+                "input_kind": "local",
+            },
         )
 
     def convert(

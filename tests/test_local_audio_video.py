@@ -317,6 +317,7 @@ def test_local_dialog_normalizes_typed_destination_like_download_submission(
         return SimpleNamespace(show=lambda: None)
 
     monkeypatch.setattr(app_module, "LocalAudioVideoDialog", dialog)
+    host._record_local_conversion_event = lambda *_args: None
     app_module.DownloaderApp._show_local_audio_video(host)
     assert captured["output_dir"] == folder
     assert captured["choose_output"]() == folder
@@ -496,6 +497,8 @@ def test_app_coordinates_completed_output_through_canonical_history(
             "local_conversion_completed",
             {
                 "dedupe_key": "run",
+                "attempt_key": "run",
+                "dimensions": {},
                 "run_kind": "local_audio_video",
                 "output_type": "mp4",
             },

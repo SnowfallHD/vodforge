@@ -57,11 +57,14 @@ class LocalAudioVideoDialog:
         on_complete: Callable[[LocalAudioVideoResult], None],
         on_closed: Callable[[], None],
         choose_output: Callable[[], Path] | None = None,
+        on_telemetry: Callable[[str, str], None] | None = None,
     ) -> None:
         self.owner = owner
         self.converter = converter
         self.output_dir = Path(output_dir)
         self.profile_var = profile_variable
+        self.on_telemetry = on_telemetry or (lambda _event, _run: None)
+        self._telemetry_run_id = ""
         self.on_complete = on_complete
         self.on_closed = on_closed
         self.choose_output = choose_output
@@ -410,7 +413,9 @@ class LocalAudioVideoDialog:
             name="vodforge-local-audio-video",
             daemon=True,
         )
+        self._telemetry_run_id = request.run_id
         self._worker.start()
+        self.on_telemetry("local_conversion_started", request.run_id)
         self.popup.after(60, self._pump_events)
 
     def _pump_events(self) -> None:
@@ -431,6 +436,12 @@ class LocalAudioVideoDialog:
                 self.on_complete(payload)
                 self._destroy()
             elif kind in {"cancelled", "error"}:
+                self.on_telemetry(
+                    "local_conversion_stopped"
+                    if kind == "cancelled"
+                    else "local_conversion_failed",
+                    self._telemetry_run_id,
+                )
                 terminal = True
                 self._worker = None
                 message = str(payload) or "The conversion did not finish."

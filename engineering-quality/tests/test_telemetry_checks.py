@@ -75,3 +75,36 @@ sys.audit('urllib.Request','http://127.0.0.1:12345/events',None,{},'POST')
         timeout=10,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_backend_gate_rejects_feature_vocabulary_drift(tmp_path):
+    import json
+
+    from quality_harness.telemetry_checks import assert_feature_vocabulary
+
+    from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
+    from yt_downloader.telemetry_features import DIMENSION_CHOICES, FEATURE_ACTIONS
+
+    source = tmp_path / "src/lib/product-telemetry.ts"
+    source.parent.mkdir(parents=True)
+    text = (
+        "export const PRODUCT_EVENT_NAMES = "
+        + json.dumps(sorted(PRODUCT_EVENT_NAMES))
+        + " as const;\n"
+    )
+    for name, values in [
+        ("FEATURE_ACTIONS", FEATURE_ACTIONS),
+        ("DIMENSION_CHOICES", DIMENSION_CHOICES),
+    ]:
+        text += (
+            "export const "
+            + name
+            + ": Record<string, readonly string[]> = "
+            + json.dumps({key: sorted(value) for key, value in values.items()})
+            + ";\n"
+        )
+    source.write_text(text)
+    assert_feature_vocabulary(tmp_path)
+    source.write_text(text.replace("notes_saved", "private_notes"))
+    with pytest.raises(AssertionError, match="vocabulary drift"):
+        assert_feature_vocabulary(tmp_path)

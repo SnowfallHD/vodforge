@@ -187,7 +187,10 @@ An explicit choice in Settings persists. Existing installations migrate their
 local state and evaluate the policy if needed without becoming new installs or
 reopening the first-install browser-link flow.
 
-Permitted telemetry uses random installation identifiers and coarse app facts;
+Permitted telemetry uses random installation identifiers, opaque attempt/retry
+identifiers, and coarse app facts. It covers export presets and encoders, bucketed
+media size/duration and processing time, queue/recovery outcomes, Library/player
+feature use, and verified updater outcomes. Feature actions record usage only;
 it excludes media URLs, titles, filenames, paths, searches, notes, tags, and
 playback positions. The first-install thank-you page can open independently of
 consent, but attribution requires permission. Closing that tab does not cause it

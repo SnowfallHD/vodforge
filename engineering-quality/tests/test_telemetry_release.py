@@ -46,12 +46,89 @@ def telemetry_fixture(candidate, platform="macos"):
     events += [
         {"event_name": name, "output_type": output}
         for name in ("run_started", "run_completed", "playback_started")
-        for output in ("mp4", "mp3", None)
+        for output in ("mp4", "mp3", "original")
     ]
     events += [
         {"event_name": name}
         for name in ("run_failed", "run_stopped", "local_conversion_completed")
     ]
+    import uuid
+    import json
+    from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
+    from yt_downloader.telemetry_features import FEATURE_ACTIONS
+
+    for name in PRODUCT_EVENT_NAMES - {e["event_name"] for e in events}:
+        if name != "feature_used":
+            events.append({"event_name": name})
+    events += [
+        {"event_name": "feature_used", "feature": feature, "action": action}
+        for feature, actions in FEATURE_ACTIONS.items()
+        for action in actions
+    ]
+    first_attempt = str(uuid.uuid4())
+    retry_attempt = str(uuid.uuid4())
+    for event in events:
+        event["schema_version"] = 2
+        event["dimensions"] = "{}"
+        if event["event_name"].startswith(("run_", "local_conversion_")):
+            event["attempt_id"] = first_attempt
+    extra_starts = []
+    for event in events:
+        name = event["event_name"]
+        if name in {
+            "run_completed",
+            "run_failed",
+            "run_stopped",
+            "local_conversion_completed",
+            "local_conversion_failed",
+            "local_conversion_stopped",
+        }:
+            event["attempt_id"] = str(uuid.uuid4())
+            if name == "run_failed":
+                first_attempt = event["attempt_id"]
+            extra_starts.append(
+                {
+                    "event_name": "local_conversion_started"
+                    if name.startswith("local_")
+                    else "run_started",
+                    "attempt_id": event["attempt_id"],
+                    "schema_version": 2,
+                    "dimensions": "{}",
+                }
+            )
+    events.extend(extra_starts)
+    events += [
+        {
+            "event_name": "run_started",
+            "attempt_id": retry_attempt,
+            "retry_of": first_attempt,
+            "schema_version": 2,
+            "dimensions": "{}",
+        },
+        {
+            "event_name": "run_completed",
+            "attempt_id": retry_attempt,
+            "retry_of": first_attempt,
+            "schema_version": 2,
+            "dimensions": "{}",
+        },
+    ]
+    for preset in ("everyday", "streaming", "editing", "sharing", "ctv", "custom"):
+        events.append(
+            {
+                "event_name": "media_exported",
+                "schema_version": 2,
+                "attempt_id": first_attempt,
+                "dimensions": json.dumps(
+                    {
+                        "preset": preset,
+                        "encoder": "nvidia"
+                        if preset == "ctv" and platform == "windows"
+                        else "cpu",
+                    }
+                ),
+            }
+        )
     for index, event in enumerate(events):
         event["event_id"] = str(index)
     complete["events"] = events

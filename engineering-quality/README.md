@@ -348,3 +348,13 @@ does not cover child processes. FAST also checks the isolation receipt.
 The first version makes real local MP4/MP3 output, same-run source-quality selection, HTTP 404/503, connection interruption, slow transfer, download and transcode cancellation, unwritable destinations, FFmpeg dependency failure, fresh-output validation, symlink/path, URL-secret, soak, defensive simultaneous-worker attack, static/test, bounded history mutation, maintainability, and packaged happy-path/restart journeys runnable. The packaged deep protocol includes queue and cancellation but still needs a stable repository-owned native UI automation engine.
 
 Highest-value additions are forced process-kill/restart with stale-stage accounting, low-disk volumes, real provider playlist scaling, duplicate/queue mutation through packaged UI, active-run updater shutdown, blocked-analysis slot exhaustion, multi-hour soak, actual temporary-worktree change implementations, and a wider mutation campaign.
+
+Expanded feature telemetry is documented in
+[`docs/telemetry-features.md`](../docs/telemetry-features.md). The backend gate
+checks cross-language vocabulary parity, and the preview release gate checks
+feature/action coverage and attempt relationships as well as event counts.
+`python -m quality_harness.telemetry_feature_probe --site ../vodforge-site
+--version <registered-version> --output <fresh-evidence-directory>` is an opt-in
+preview serializer/D1 contract check. Supply the QA key through the environment.
+It is not native UI or release proof; final artifacts must follow
+[TELEMETRY_RELEASE_GATE.md](TELEMETRY_RELEASE_GATE.md).

@@ -45,10 +45,10 @@ def test_original_audio_events_obey_deployed_vocabulary(tmp_path, permitted):
     )
     for output in OutputType:
         kind = product_output_kind(output.value)
-        assert kind in ("mp4", "mp3", None)
+        assert kind in ("mp4", "mp3", "original")
         for event in ("run_started", "run_completed", "playback_started"):
             assert owner.record(event, output_type=kind) is permitted
-    assert product_output_kind("Original audio") is None
+    assert product_output_kind("Original audio") == "original"
     assert owner.shutdown(2)
 
 
@@ -177,7 +177,12 @@ def test_event_contract_is_minimal_and_delivered_to_both_sinks(tmp_path: Path):
         "app_version": "0.1.8-dev",
         "platform": "macos",
         "release_channel": "development",
-        "schema_version": 1,
+        "schema_version": 2,
+        "attempt_id": None,
+        "retry_of": None,
+        "feature": None,
+        "action": None,
+        "dimensions": {},
         "run_kind": "youtube",
         "output_type": "mp4",
     }

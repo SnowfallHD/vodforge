@@ -170,6 +170,9 @@ class DownloadJob:
     preview_info: dict[str, Any] | None = None
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     origin_run_id: str | None = None
+    recovery_reason: str | None = None
+    execution_run_id: str | None = None
+    retry_of_run_id: str | None = None
     metadata_keys: set[tuple[str, str]] = field(default_factory=set)
     history_identities: set[tuple[str, str, str]] = field(default_factory=set)
     preview_thumbnail_image: Any | None = field(default=None, repr=False)

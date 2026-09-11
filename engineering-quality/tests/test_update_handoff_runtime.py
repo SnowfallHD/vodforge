@@ -174,7 +174,7 @@ def test_macos_swap_executes_relaunch_and_rollback(tmp_path, outcome):
     verifier.chmod(0o755)
     opener = tmp_path / "open"
     opener.write_text(
-        '#!/bin/bash\ncat "$1/marker" >> '
+        '#!/bin/bash\nif [[ "$1" == --env ]]; then shift 2; fi\ncat "$1/marker" >> '
         + shlex.quote(str(opened))
         + "\n"
         + ("exit 1\n" if outcome == "relaunch_failure" else "exit 0\n")

@@ -112,3 +112,10 @@ For a public macOS candidate, the byte-changing order is:
 Signing or stapling after E2E creates a new artifact and invalidates the candidate receipt. The release process must not rebuild or re-archive after the tested hash is established.
 
 Schemas: [candidate-artifact.schema.json](schemas/candidate-artifact.schema.json), [release-receipt.schema.json](schemas/release-receipt.schema.json), and [run-result.schema.json](schemas/run-result.schema.json).
+
+Schema-v2 telemetry additions must satisfy the full feature/action, attempt/retry,
+export-dimension and updater-outcome requirements in
+[TELEMETRY_RELEASE_GATE.md](TELEMETRY_RELEASE_GATE.md). Deploy the compatible D1
+migration and backend before the desktop release. A passing serializer probe or
+telemetry-disabled app smoke cannot substitute for final-artifact preview-D1 UI
+journeys on both Mac and Windows.

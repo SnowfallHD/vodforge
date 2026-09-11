@@ -955,3 +955,38 @@ def test_library_description_stays_inside_table_edge_after_resize():
                 assert body.winfo_height() > 20
         finally:
             app.destroy()
+
+
+def test_feature_callbacks_report_actions_without_widget_contents(monkeypatch):
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+
+    calls = []
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application.product_telemetry = SimpleNamespace(
+                record_feature=lambda feature, action, **fields: calls.append(
+                    (feature, action, fields)
+                ),
+                shutdown=lambda *_args: True,
+                set_enabled=lambda *_args: None,
+                record_app_opened=lambda: None,
+            )
+            application._select_focus_view("library")
+            application.library_search_var.set("PRIVATE SEARCH MUST NOT LEAVE")
+            application.library_category_var.set("PRIVATE CATEGORY")
+            application.forge_activity.set_technical(True)
+            application.forge_activity.set_technical(False)
+            application.forge_activity.set_technical(True)
+            settle_native(application)
+            observed = {(feature, action) for feature, action, _ in calls}
+            assert {
+                ("library", "opened"),
+                ("library", "searched"),
+                ("library", "filtered"),
+                ("guidance", "technical_opened"),
+            } <= observed
+            assert "PRIVATE" not in repr(calls)
+        finally:
+            application.destroy()

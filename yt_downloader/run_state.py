@@ -148,6 +148,9 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "preview_info": _safe_preview(job.preview_info),
         "run_id": job.run_id,
         "origin_run_id": job.origin_run_id,
+        "recovery_reason": job.recovery_reason,
+        "execution_run_id": job.execution_run_id,
+        "retry_of_run_id": job.retry_of_run_id,
     }
 
 
@@ -215,6 +218,11 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
             batch_mode=_required_bool(payload, "batch_mode"),
             preview_info=_safe_preview(payload.get("preview_info")),
             run_id=str(payload.get("run_id") or "")[:128],
+            execution_run_id=str(payload.get("execution_run_id") or "")[:128] or None,
+            retry_of_run_id=str(payload.get("retry_of_run_id") or "")[:128] or None,
+            recovery_reason="missing_media"
+            if payload.get("recovery_reason") == "missing_media"
+            else None,
             origin_run_id=(
                 str(payload.get("origin_run_id") or "").strip()[:128] or None
             ),

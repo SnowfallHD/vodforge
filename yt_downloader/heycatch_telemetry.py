@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .analytics_consent import analytics_allowed
+from .telemetry_features import FEATURE_ACTIONS, validate_dimensions
 from .telemetry_policy import production_telemetry_allowed
 
 HEYCATCH_CAPTURE_ENDPOINT = "https://in.heycatch.ai/capture/"
@@ -99,26 +100,34 @@ def record_product_event(
     release_channel: str,
     run_kind: str | None = None,
     output_type: str | None = None,
+    dimensions: Mapping[str, str] | None = None,
+    attempt_id: str | None = None,
+    retry_of: str | None = None,
+    feature: str | None = None,
+    action: str | None = None,
+    schema_version: int = 1,
     opener: Callable[..., Any] = urllib.request.urlopen,
 ) -> bool:
-    allowed_events = {
-        "app_opened",
-        "run_started",
-        "run_completed",
-        "run_failed",
-        "run_stopped",
-        "playback_started",
-        "local_conversion_completed",
-    }
-    if event_name not in allowed_events:
+    from .product_telemetry import PRODUCT_EVENT_NAMES
+
+    if event_name not in PRODUCT_EVENT_NAMES:
         raise ValueError("unsupported HeyCatch product event")
     properties: dict[str, str | bool] = {
         "$insert_id": str(uuid.UUID(event_id)),
         "app_version": str(app_version),
         "platform": str(platform),
         "release_channel": str(release_channel),
-        "telemetry_schema_version": "1",
+        "telemetry_schema_version": str(schema_version),
+        **validate_dimensions(dimensions),
     }
+    for name, value in (("attempt_id", attempt_id), ("retry_of", retry_of)):
+        if value is not None:
+            properties[name] = str(uuid.UUID(value))
+    if event_name == "feature_used":
+        if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
+            raise ValueError("unsupported feature action")
+        properties["feature"] = feature
+        properties["action"] = action
     if run_kind is not None:
         properties["run_kind"] = str(run_kind)
     if output_type is not None:

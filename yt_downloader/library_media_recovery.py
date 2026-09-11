@@ -196,6 +196,8 @@ class LibraryMediaRecoveryOwner:
             saved_job,
             run_id=self._run_id_factory(),
             origin_run_id=previous_run_id or saved_job.run_id,
+            execution_run_id=None,
+            retry_of_run_id=previous_run_id or saved_job.run_id,
             preview_info=dict(preview),
             metadata_keys=set(),
             history_identities=set(),

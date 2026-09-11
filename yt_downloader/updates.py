@@ -469,9 +469,12 @@ def cleanup_stale_macos_updates(update_root: Path, *, keep: Path | None = None) 
         shutil.rmtree(child, ignore_errors=True)
 
 
-def write_macos_swap_script(plan: MacUpdatePlan) -> Path:
+def write_macos_swap_script(
+    plan: MacUpdatePlan, *, repair: bool = False, telemetry_permitted: bool = False
+) -> Path:
     """Write the detached, rollback-capable macOS app replacement script."""
     script_path = plan.staging_root / "install-update.sh"
+    receipt_token = uuid.uuid4().hex
     script = textwrap.dedent(
         f"""\
         #!/bin/bash
@@ -482,18 +485,28 @@ def write_macos_swap_script(plan: MacUpdatePlan) -> Path:
         staging_root="$4"
         new_app="${{target_app}}.vodforge-update-new"
         old_app="${{target_app}}.vodforge-update-old"
+        telemetry_receipt="${{staging_root%/*}}/handoff-{receipt_token}.json"
+        umask 077
+        stage="verifying"
 
         fail() {{
           message="$1"
           /usr/bin/logger -t VODForge "update failed: $message"
           if [[ ! -e "$target_app" && -e "$old_app" ]]; then /bin/mv "$old_app" "$target_app"; fi
-          if [[ -d "$target_app" ]]; then /usr/bin/open "$target_app"; fi
+          if [[ -d "$target_app" ]]; then
+            path_digest=$(printf '%s' "$target_app/Contents/MacOS/VODForge" | /usr/bin/shasum -a 256)
+            path_digest="${{path_digest%% *}}"
+            printf '%s\n' '{{"status":"failed","stage":"'"$stage"'","executable_path_sha256":"'"$path_digest"'","telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
+            /bin/mv "$telemetry_receipt.tmp" "$telemetry_receipt"
+            /usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"
+          fi
           exit 1
         }}
 
         [[ "$source_app" == "$staging_root/VODForge.app" ]] || fail "unexpected source path"
         [[ "$target_app" == *.app ]] || fail "unexpected target path"
         [[ "$staging_root" == *"/{MACOS_STAGING_PREFIX}"* ]] || fail "unexpected staging path"
+        stage="waiting_for_exit"
         for _ in $(/usr/bin/seq 1 240); do
           /bin/kill -0 "$parent_pid" 2>/dev/null || break
           /bin/sleep 0.5
@@ -503,6 +516,7 @@ def write_macos_swap_script(plan: MacUpdatePlan) -> Path:
         [[ "$new_app" == "$target_app.vodforge-update-new" ]] || fail "unsafe new path"
         [[ "$old_app" == "$target_app.vodforge-update-old" ]] || fail "unsafe backup path"
         /bin/rm -rf -- "$new_app" "$old_app"
+        stage="verifying"
         /usr/bin/ditto "$source_app" "$new_app" || fail "could not stage replacement"
         /usr/bin/codesign --verify --deep --strict "$new_app" || fail "signature verification failed"
         identity=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$new_app/Contents/Info.plist" 2>/dev/null) || fail "bundle identity missing"
@@ -513,9 +527,15 @@ def write_macos_swap_script(plan: MacUpdatePlan) -> Path:
         /usr/bin/xcrun stapler validate "$new_app" >/dev/null 2>&1 || fail "notarization ticket missing"
         /usr/sbin/spctl --assess --type execute "$new_app" >/dev/null 2>&1 || fail "Gatekeeper rejected update"
 
+        stage="installing"
         /bin/mv "$target_app" "$old_app" || fail "could not preserve current app"
         if /bin/mv "$new_app" "$target_app"; then
-          if /usr/bin/open "$target_app"; then
+          stage="relaunching"
+          if /usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"; then
+            digest=$(/usr/bin/shasum -a 256 "$target_app/Contents/MacOS/VODForge")
+            digest="${{digest%% *}}"
+            printf '%s\n' '{{"status":"relaunched","stage":"relaunching","executable_sha256":"'"$digest"'","repair":{str(repair).lower()},"telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
+            /bin/mv "$telemetry_receipt.tmp" "$telemetry_receipt"
             /bin/rm -rf -- "$old_app"
             /usr/bin/logger -t VODForge "update installed successfully"
             /bin/rm -rf -- "$staging_root"
@@ -538,12 +558,16 @@ def launch_macos_update(
     plan: MacUpdatePlan,
     *,
     parent_pid: int | None = None,
+    repair: bool = False,
+    telemetry_permitted: bool = False,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
 ) -> None:
     """Launch the verified macOS swapper; the caller must then exit."""
     verify_macos_app(plan.source_app, runner=runner)
-    script_path = write_macos_swap_script(plan)
+    script_path = write_macos_swap_script(
+        plan, repair=repair, telemetry_permitted=telemetry_permitted
+    )
     process = popen(
         [
             "/bin/bash",
@@ -613,6 +637,8 @@ def windows_update_script(
     ready: Path,
     *,
     data_dir: Path | None = None,
+    repair: bool = False,
+    telemetry_permitted: bool = False,
     window_bounds: tuple[int, int, int, int] | None = None,
 ) -> str:
     """Detached handoff: wait for graceful exit, install, then explicitly relaunch."""
@@ -651,12 +677,12 @@ def windows_update_script(
         $backup = $receipt + '.data-backup'
         $directory = Split-Path -Parent $executable
         $expectedVersion = {literal(expected_version)}
-        $repairRequested = $false
+        $repairRequested = ${str(repair).lower()}
         $setup = $null
         $manifest = $null
         do {{
         $stage = 'waiting_for_exit'
-        $result = @{{ status = 'failed'; stage = $stage }}
+        $result = @{{ status = 'failed'; stage = $stage; executable = $executable; repair = $repairRequested; telemetry_permitted = ${str(telemetry_permitted).lower()} }}
         try {{
             $parent = Get-Process -Id {int(parent_pid)} -ErrorAction SilentlyContinue
             Set-Content -LiteralPath $ready -Value 'ready' -Encoding UTF8
@@ -696,6 +722,7 @@ def windows_update_script(
             $result.installed_version = $installedVersion
             $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
             $stage = 'relaunching'
+            $env:VODFORGE_UPDATE_RECEIPT = $receipt
             $app = Start-Process -FilePath $executable -WorkingDirectory $directory -PassThru
             if ($app.WaitForExit(3000)) {{ throw 'VODForge exited immediately after installation. Open it from the Start menu; see the update log if it fails again.' }}
             $result.status = 'relaunched'
@@ -729,6 +756,8 @@ def launch_windows_update(
     *,
     executable: Path | None = None,
     parent_pid: int | None = None,
+    repair: bool = False,
+    telemetry_permitted: bool = False,
     window_bounds: tuple[int, int, int, int] | None = None,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
 ) -> Path:
@@ -758,6 +787,8 @@ def launch_windows_update(
         receipt,
         ready,
         window_bounds=window_bounds,
+        repair=repair,
+        telemetry_permitted=telemetry_permitted,
     )
     script_path = installer.parent / f"handoff-{token}.ps1"
     # A file avoids Windows' 32K command-line ceiling as recovery grows.
@@ -798,3 +829,78 @@ def launch_windows_update(
     raise RuntimeError(
         "The update helper could not start. VODForge remains open; run the downloaded installer manually."
     )
+
+
+def confirmed_update_telemetry_receipt(
+    path: Path, executable: Path
+) -> tuple[str, bool, str, str] | None:
+    """Read a bounded helper receipt; current executable must match installed bytes.
+
+    Return an opaque operation token and repair flag only, never paths or errors.
+    The caller supplies the helper's inherited receipt path, not a broad log scan.
+    """
+    match = re.fullmatch(
+        r"handoff-([0-9a-f]{32})(?:\.[0-9a-f]{32}\.failed)?\.json", path.name
+    )
+    try:
+        if match is None or path.is_symlink() or path.stat().st_size > 16384:
+            return None
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+        from .telemetry_features import DIMENSION_CHOICES
+
+        stage = value.get("stage", "unknown")
+        if not isinstance(stage, str) or stage not in DIMENSION_CHOICES["update_stage"]:
+            stage = "unknown"
+        if value.get("telemetry_permitted") is not True or value.get("status") not in {
+            "relaunched",
+            "failed",
+        }:
+            return None
+        if value["status"] == "failed":
+            path_digest = hashlib.sha256(str(executable.resolve()).encode()).hexdigest()
+            same_target = value.get("executable_path_sha256") == path_digest or (
+                isinstance(value.get("executable"), str)
+                and Path(value["executable"]).resolve() == executable.resolve()
+            )
+            return (match.group(1), False, "failed", stage) if same_target else None
+        if value.get("pid") is not None and value["pid"] != os.getpid():
+            return None
+        with executable.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if str(value.get("executable_sha256", "")).lower() != digest:
+            return None
+        return match.group(1), value.get("repair") is True, "relaunched", stage
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def pending_update_telemetry_receipts(update_root: Path, executable: Path):
+    """Bounded recovery observations for the next app open, including Later.
+
+    Companion markers mean queued in the existing telemetry outbox, not delivered.
+    Original helper receipts remain untouched for support and update verification.
+    """
+    import time
+
+    try:
+        candidates = sorted(
+            update_root.glob("*/handoff-*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )[:64]
+    except OSError:
+        return
+    for path in candidates:
+        try:
+            if time.time() - path.stat().st_mtime > 30 * 86400:
+                continue
+            receipt = confirmed_update_telemetry_receipt(path, executable)
+            if (
+                receipt is not None
+                and not path.with_suffix(
+                    "." + receipt[2] + ".telemetry-queued"
+                ).exists()
+            ):
+                yield path, receipt
+        except OSError:
+            continue

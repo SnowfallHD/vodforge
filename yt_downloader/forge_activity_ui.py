@@ -115,7 +115,7 @@ def friendly_phase(status: str) -> str | None:
 class ForgeActivityPanel(ttk.Frame):
     """Switch one full-height viewport between friendly and technical activity."""
 
-    def __init__(self, parent: tk.Misc) -> None:
+    def __init__(self, parent: tk.Misc, *, on_technical: Any = None) -> None:
         super().__init__(parent, style="FocusShell.TFrame")
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
@@ -141,6 +141,7 @@ class ForgeActivityPanel(ttk.Frame):
         self.friendly = ActivityLogText(self, **options)
         self.friendly.grid(row=0, column=1, sticky="nsew")
         self.technical = ActivityLogText(self, **options)
+        self._on_technical = on_technical or (lambda: None)
         self.toggle = ActivityModeSlider(self, self.set_technical)
         self.toggle.grid(row=0, column=0, padx=(0, 8))
         bind_smooth_vertical_wheel(self.friendly, mode="pixels")
@@ -154,6 +155,7 @@ class ForgeActivityPanel(ttk.Frame):
             return
         self.expanded = enabled
         if self.expanded:
+            self._on_technical()
             self.friendly.grid_remove()
             self.technical.grid(row=0, column=1, sticky="nsew")
             if not self._opened:

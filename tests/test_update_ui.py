@@ -103,7 +103,7 @@ def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path
     app.after = lambda delay, callback: scheduled.append((delay, callback))
     launched = []
     monkeypatch.setattr(
-        app_module, "launch_macos_update", lambda plan: launched.append(plan)
+        app_module, "launch_macos_update", lambda plan, **kwargs: launched.append(plan)
     )
     plan = MacUpdatePlan(
         source_app=tmp_path / "staged-test" / "VODForge.app",

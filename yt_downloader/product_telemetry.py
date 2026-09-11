@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 import urllib.request
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, get_args
 
 from .analytics_consent import analytics_allowed
 from .cloud_funnel import (
@@ -26,15 +27,21 @@ from .heycatch_telemetry import record_product_event as record_heycatch_event
 from .history import application_data_dir
 from .private_files import write_private_bytes
 from .telemetry_credentials import RejectedTelemetryEvent, TelemetryCredentialOwner
+from .telemetry_features import (
+    FEATURE_ACTIONS,
+    attempt_identifier,
+    time_bucket,
+    validate_dimensions,
+)
 from .telemetry_policy import preview_telemetry_allowed, telemetry_collection_allowed
 from .telemetry_transport import telemetry_urlopen
 
 PRODUCT_TELEMETRY_ENDPOINT = "https://getvodforge.com/api/telemetry/events"
-PRODUCT_TELEMETRY_SCHEMA_VERSION = 1
+PRODUCT_TELEMETRY_SCHEMA_VERSION = 2
 PRODUCT_TELEMETRY_STATE_VERSION = 1
 PRODUCT_TELEMETRY_STATE_FILENAME = "product-telemetry.json"
 MAX_OUTBOX_EVENTS = 256
-MAX_STATE_BYTES = 128 * 1024
+MAX_STATE_BYTES = 512 * 1024
 NETWORK_TIMEOUT_SECONDS = 4.0
 
 ProductEventName = Literal[
@@ -45,33 +52,30 @@ ProductEventName = Literal[
     "run_stopped",
     "playback_started",
     "local_conversion_completed",
+    "media_exported",
+    "run_queued",
+    "run_dequeued",
+    "run_skipped",
+    "local_conversion_started",
+    "local_conversion_failed",
+    "local_conversion_stopped",
+    "feature_used",
 ]
 RunKind = Literal["youtube", "local_audio_video"]
-OutputKind = Literal["mp4", "mp3"]
+OutputKind = Literal["mp4", "mp3", "original"]
 ReleaseChannel = Literal["production", "development", "test"]
 
-_EVENT_NAMES = {
-    "app_opened",
-    "run_started",
-    "run_completed",
-    "run_failed",
-    "run_stopped",
-    "playback_started",
-    "local_conversion_completed",
-}
+PRODUCT_EVENT_NAMES = frozenset(get_args(ProductEventName))
+_EVENT_NAMES = PRODUCT_EVENT_NAMES
 _RUN_KINDS = {"youtube", "local_audio_video"}
-_OUTPUT_KINDS = {"mp4", "mp3"}
+_OUTPUT_KINDS = {"mp4", "mp3", "original"}
 _RELEASE_CHANNELS = {"production", "development", "test"}
 _PLATFORMS = {"macos", "windows", "linux", "unknown"}
 
 
 def product_output_kind(value: str) -> OutputKind | None:
-    """Project app formats onto the deployed v1 telemetry vocabulary.
-
-    New formats still emit their permitted lifecycle events with no format label;
-    never mislabel Original audio as MP3 or send an unsupported server enum.
-    """
-    normalized = value.lower()
+    """Normalize only known product output labels; never send arbitrary text."""
+    normalized = "original" if value.lower() == "original audio" else value.lower()
     return cast(OutputKind, normalized) if normalized in _OUTPUT_KINDS else None
 
 
@@ -89,6 +93,11 @@ class ProductTelemetryEvent:
     output_type: OutputKind | None = None
     failure_reason: str | None = None
     failure_detail: FailureDiagnostic | None = None
+    attempt_id: str | None = None
+    retry_of: str | None = None
+    feature: str | None = None
+    action: str | None = None
+    dimensions: dict[str, str] = field(default_factory=dict)
     d1_delivered: bool = False
     heycatch_delivered: bool = False
 
@@ -102,6 +111,17 @@ class ProductTelemetryEvent:
             "platform": self.platform,
             "release_channel": self.release_channel,
             "schema_version": self.schema_version,
+            **(
+                {
+                    "attempt_id": self.attempt_id,
+                    "retry_of": self.retry_of,
+                    "feature": self.feature,
+                    "action": self.action,
+                    "dimensions": dict(self.dimensions),
+                }
+                if self.schema_version == 2
+                else {}
+            ),
             "run_kind": self.run_kind,
             "output_type": self.output_type,
             **(
@@ -158,6 +178,16 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         failure_reason not in FAILURE_REASONS or event_name != "run_failed"
     ):
         raise ValueError("invalid failure reason")
+    feature, action = value.get("feature"), value.get("action")
+    if event_name == "feature_used":
+        if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
+            raise ValueError("invalid feature action")
+    elif feature is not None or action is not None:
+        raise ValueError("unexpected feature action")
+    if value.get("retry_of") and (
+        not value.get("attempt_id") or value["retry_of"] == value["attempt_id"]
+    ):
+        raise ValueError("invalid retry relationship")
     channel = str(value.get("release_channel") or "")
     if event_name not in _EVENT_NAMES:
         raise ValueError("telemetry event name is invalid")
@@ -173,7 +203,7 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         raise ValueError("telemetry app version is invalid")
     if platform not in _PLATFORMS:
         raise ValueError("telemetry platform is invalid")
-    if value.get("schema_version") != PRODUCT_TELEMETRY_SCHEMA_VERSION:
+    if value.get("schema_version") not in (1, 2):
         raise ValueError("telemetry schema version is invalid")
     occurred_at = str(value.get("occurred_at") or "")
     datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
@@ -185,7 +215,14 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         app_version=app_version,
         platform=platform,
         release_channel=cast(ReleaseChannel, channel),
-        schema_version=PRODUCT_TELEMETRY_SCHEMA_VERSION,
+        schema_version=value["schema_version"],
+        attempt_id=_valid_uuid(value["attempt_id"])
+        if value.get("attempt_id")
+        else None,
+        retry_of=_valid_uuid(value["retry_of"]) if value.get("retry_of") else None,
+        feature=value.get("feature"),
+        action=value.get("action"),
+        dimensions=validate_dimensions(value.get("dimensions")),
         run_kind=cast(RunKind | None, run_kind),
         output_type=cast(OutputKind | None, output_type),
         failure_reason=failure_reason,
@@ -296,6 +333,9 @@ class ProductTelemetryOwner:
         self._heycatch_recorder = heycatch_recorder
         self._diagnostic = diagnostic or (lambda _message: None)
         self._session_id = _valid_uuid(session_id or uuid.uuid4())
+        self._attempt_started: dict[str, float] = {}
+        self._attempt_queued: dict[str, float] = {}
+        self._feature_observed: set[tuple[str, str]] = set()
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
 
@@ -308,10 +348,17 @@ class ProductTelemetryOwner:
             return False, None
         return analytics_allowed(self._installation_state_path.parent), state.install_id
 
+    def permitted(self) -> bool:
+        """Expose the current privacy decision for detached operation handoffs."""
+        return self._permitted()[0]
+
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
             self._enabled = bool(enabled)
             if not self._enabled:
+                self._feature_observed.clear()
+                self._attempt_started.clear()
+                self._attempt_queued.clear()
                 try:
                     _save_outbox(self._state_path, [])
                 except OSError as exc:
@@ -330,7 +377,20 @@ class ProductTelemetryOwner:
         output_type: OutputKind | None = None,
         failure_reason: str | None = None,
         failure_detail: dict[str, Any] | None = None,
+        attempt_key: str | None = None,
+        retry_key: str | None = None,
+        feature: str | None = None,
+        action: str | None = None,
+        dimensions: Mapping[str, str] | None = None,
     ) -> bool:
+        clean_dimensions = validate_dimensions(dimensions)
+        if event_name == "feature_used":
+            if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
+                raise ValueError("unsupported telemetry feature action")
+        elif feature is not None or action is not None:
+            raise ValueError("unexpected telemetry feature action")
+        if retry_key is not None and (attempt_key is None or retry_key == attempt_key):
+            raise ValueError("invalid telemetry retry relationship")
         if event_name not in _EVENT_NAMES:
             raise ValueError("unsupported product telemetry event")
         if failure_detail is not None and event_name != "run_failed":
@@ -351,6 +411,35 @@ class ProductTelemetryOwner:
         permitted, install_id = self._permitted()
         if not permitted or install_id is None:
             return False
+        now = time.monotonic()
+        with self._lock:
+            if attempt_key:
+                if (
+                    event_name == "run_queued"
+                    and len(self._attempt_queued) < MAX_OUTBOX_EVENTS
+                ):
+                    self._attempt_queued.setdefault(attempt_key, now)
+                if event_name in {"run_started", "local_conversion_started"}:
+                    if len(self._attempt_started) < MAX_OUTBOX_EVENTS:
+                        self._attempt_started.setdefault(attempt_key, now)
+                    queued = self._attempt_queued.pop(attempt_key, None)
+                    if queued is not None:
+                        clean_dimensions["wait_bucket"] = time_bucket(now - queued)
+                elif event_name in {
+                    "run_completed",
+                    "run_failed",
+                    "run_stopped",
+                    "local_conversion_completed",
+                    "local_conversion_failed",
+                    "local_conversion_stopped",
+                }:
+                    started = self._attempt_started.pop(attempt_key, None)
+                    if started is not None:
+                        clean_dimensions["processing_bucket"] = time_bucket(
+                            now - started
+                        )
+                elif event_name == "run_dequeued":
+                    self._attempt_queued.pop(attempt_key, None)
         identity = dedupe_key or str(uuid.uuid4())
         event_id = str(
             uuid.uuid5(
@@ -372,6 +461,13 @@ class ProductTelemetryOwner:
             if event_name == "run_failed"
             else None,
             failure_detail=detail,
+            attempt_id=attempt_identifier(install_id, attempt_key)
+            if attempt_key
+            else None,
+            retry_of=attempt_identifier(install_id, retry_key) if retry_key else None,
+            feature=feature,
+            action=action,
+            dimensions=clean_dimensions,
         )
         with self._lock:
             try:
@@ -397,6 +493,23 @@ class ProductTelemetryOwner:
                 return False
         self.flush_async()
         return True
+
+    def record_feature(
+        self, feature: str, action: str, *, dimensions: Mapping[str, str] | None = None
+    ) -> bool:
+        """Record engagement once per session/action; avoid text-entry event floods."""
+        if not self._permitted()[0]:
+            return False
+        key = (feature, action)
+        with self._lock:
+            if feature != "updater" and key in self._feature_observed:
+                return True
+            accepted = self.record(
+                "feature_used", feature=feature, action=action, dimensions=dimensions
+            )
+            if accepted:
+                self._feature_observed.add(key)
+            return accepted
 
     def record_app_opened(self) -> bool:
         return self.record("app_opened", dedupe_key=self._session_id)
@@ -463,6 +576,12 @@ class ProductTelemetryOwner:
                 release_channel=event.release_channel,
                 run_kind=event.run_kind,
                 output_type=event.output_type,
+                dimensions=event.dimensions,
+                attempt_id=event.attempt_id,
+                retry_of=event.retry_of,
+                feature=event.feature,
+                action=event.action,
+                schema_version=event.schema_version,
             )
             updated = replace(
                 event,

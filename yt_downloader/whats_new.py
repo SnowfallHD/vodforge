@@ -78,12 +78,14 @@ class WhatsNewOwner:
         highlights: tuple[FeatureHighlight, ...] | None = None,
         mode: str = SHOWCASE_MODE,
         open_settings: Any = None,
+        on_feature: Any = None,
     ) -> None:
         self.parent, self.seen, self.ready = parent, seen, ready
         if mode not in {"whats-new", "did-you-know"}:
             raise ValueError("Unknown showcase mode")
         self.heading = "Did you know?" if mode == "did-you-know" else "What’s new"
         self.open_settings = open_settings
+        self.on_feature = on_feature or (lambda _action: None)
         self.is_tip = mode == "did-you-know"
         self.showcase_id = showcase_id
         self.highlights = (
@@ -133,8 +135,15 @@ class WhatsNewOwner:
             self._dismissed,
             heading=self.heading,
             finish_label="Try it" if settings_action else None,
-            on_finish=self.open_settings if settings_action else None,
+            on_finish=self._try_it if settings_action else None,
         )
+
+        self.on_feature("shown")
+
+    def _try_it(self) -> None:
+        self.on_feature("try_it")
+        if self.open_settings is not None:
+            self.open_settings()
 
     def _dismissed(self) -> None:
         self.seen.set(self.showcase_id)

@@ -82,6 +82,14 @@ TELEMETRY_UI_ACTIONS = (
     "failure_observed",
     "retry_completion_observed",
     "cloud_interest_observed",
+    "export_presets_observed",
+    "queue_removal_and_skip_observed",
+    "local_conversion_failure_stop_observed",
+    "library_organization_observed",
+    "player_features_observed",
+    "missing_media_recovery_observed",
+    "announcement_guidance_appearance_observed",
+    "update_repair_telemetry_observed",
 )
 TELEMETRY_UI_EVENT_ORDER = (
     *DEEP_UI_EVENT_ORDER[:8],

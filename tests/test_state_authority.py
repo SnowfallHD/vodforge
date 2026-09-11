@@ -1006,8 +1006,12 @@ def test_active_run_does_not_hide_committed_library_records(tmp_path: Path):
     assert len({record["run_id"] for record in records}) == 3
 
 
-def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
+@pytest.mark.parametrize("execution_parent", [None, "playlist-execution"])
+def test_retry_clears_all_prior_run_ownership_before_launch(
+    tmp_path: Path, execution_parent
+):
     failed_job = make_job(tmp_path)
+    failed_job.execution_run_id = execution_parent
     failed_job.metadata_keys.add(("authority-id", "MP4"))
     failed_job.history_identities.add(("authority-id", str(tmp_path), "MP4"))
     failed_job.terminal_status = "Failed"
@@ -1040,6 +1044,12 @@ def test_retry_clears_all_prior_run_ownership_before_launch(tmp_path: Path):
     assert launched[0].metadata_keys == set()
     assert launched[0].history_identities == set()
     assert launched[0].terminal_status is None
+    assert launched[0].execution_run_id is None
+    assert launched[0].retry_of_run_id == (execution_parent or failed_job.run_id)
+    from yt_downloader.run_state import deserialize_download_job, serialize_download_job
+
+    restored = deserialize_download_job(serialize_download_job(launched[0]))
+    assert restored.retry_of_run_id == launched[0].retry_of_run_id
 
 
 @pytest.mark.parametrize("status", ["Completed", "Failed"])

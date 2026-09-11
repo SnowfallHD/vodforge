@@ -18,7 +18,11 @@ class Recorder:
 
 @pytest.mark.parametrize(
     "output,expected",
-    [(OutputType.MP4, "mp4"), (OutputType.MP3, "mp3"), (OutputType.ORIGINAL, None)],
+    [
+        (OutputType.MP4, "mp4"),
+        (OutputType.MP3, "mp3"),
+        (OutputType.ORIGINAL, "original"),
+    ],
 )
 @pytest.mark.parametrize(
     "status,event",
@@ -43,6 +47,19 @@ def test_terminal_producer_preserves_attempt_identity_and_actual_format(
             event,
             {
                 "dedupe_key": "attempt-1",
+                "attempt_key": "attempt-1",
+                "retry_key": None,
+                "dimensions": {
+                    "input_kind": "single",
+                    "item_count_bucket": "1",
+                    "metadata": "disabled",
+                    "outcome": {
+                        "Completed": "complete",
+                        "Partial": "partial",
+                        "Failed": "failed",
+                        "Stopped": "stopped",
+                    }[status],
+                },
                 "run_kind": "youtube",
                 "output_type": expected,
                 "failure_reason": None,
@@ -72,7 +89,11 @@ def test_shutdown_cannot_emit_another_app_open():
 
 @pytest.mark.parametrize(
     "output,expected",
-    [(OutputType.MP4, "mp4"), (OutputType.MP3, "mp3"), (OutputType.ORIGINAL, None)],
+    [
+        (OutputType.MP4, "mp4"),
+        (OutputType.MP3, "mp3"),
+        (OutputType.ORIGINAL, "original"),
+    ],
 )
 def test_playback_producer_keeps_original_audio_unlabeled(output, expected):
     recorder = Recorder()
@@ -85,7 +106,11 @@ def test_playback_producer_keeps_original_audio_unlabeled(output, expected):
 
 @pytest.mark.parametrize(
     "output,expected",
-    [(OutputType.MP4, "mp4"), (OutputType.MP3, "mp3"), (OutputType.ORIGINAL, None)],
+    [
+        (OutputType.MP4, "mp4"),
+        (OutputType.MP3, "mp3"),
+        (OutputType.ORIGINAL, "original"),
+    ],
 )
 def test_actual_worker_launch_emits_start_with_attempt_identity(output, expected):
     import queue
@@ -115,7 +140,18 @@ def test_actual_worker_launch_emits_start_with_attempt_identity(output, expected
     assert recorder.events == [
         (
             "run_started",
-            {"dedupe_key": job.run_id, "run_kind": "youtube", "output_type": expected},
+            {
+                "dedupe_key": job.run_id,
+                "attempt_key": job.run_id,
+                "retry_key": None,
+                "dimensions": {
+                    "input_kind": "single",
+                    "item_count_bucket": "1",
+                    "metadata": "disabled",
+                },
+                "run_kind": "youtube",
+                "output_type": expected,
+            },
         )
     ]
     app._closing = True
