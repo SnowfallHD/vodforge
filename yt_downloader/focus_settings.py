@@ -159,6 +159,12 @@ class FocusSettingsDialog:
         for child in parent.winfo_children():
             if isinstance(child, ttk.Label) and int(child.cget("wraplength") or 0) > 0:
                 maximum = int(child.cget("wraplength") or 0)
+                # Measure the allocated grid cell, not the shrinking text request.
+                # Unstretched labels feed their wrapped width back into Configure.
+                sticky = str(child.grid_info().get("sticky", ""))
+                child.grid_configure(
+                    sticky="".join(c for c in "nsew" if c in sticky or c in "ew")
+                )
 
                 def fit(event: tk.Event, label=child, limit: int = maximum) -> None:
                     width = min(limit, max(1, event.width - 2))

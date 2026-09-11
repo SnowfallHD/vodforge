@@ -261,6 +261,8 @@ def classify_failure(message: str) -> str:
                 "unsupported codec",
                 "unsupported format",
                 "no video formats",
+                "no usable video source",
+                "no usable audio source",
             ),
         ),
         (

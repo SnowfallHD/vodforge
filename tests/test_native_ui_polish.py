@@ -36,6 +36,25 @@ def settle_native(window):
         time.sleep(0.01)
 
 
+def test_settings_helper_wrap_uses_allocated_width_without_shrinking(root):
+    from yt_downloader.focus_settings import FocusSettingsDialog
+    from yt_downloader.youtube_access import ACCESS_DESCRIPTION
+
+    root.geometry("440x300")
+    frame = ttk.Frame(root)
+    frame.pack(fill="both", expand=True)
+    frame.columnconfigure(0, weight=1)
+    label = ttk.Label(frame, text=ACCESS_DESCRIPTION, wraplength=300, justify="left")
+    label.grid(row=0, column=0, sticky="w")
+    FocusSettingsDialog._bind_responsive_copy(frame)
+    root.deiconify()
+    for width in (440, 260, 440):
+        root.geometry(f"{width}x300")
+        settle_native(root)
+        assert int(label.cget("wraplength")) == min(300, frame.winfo_width() - 2)
+        assert label.winfo_width() == frame.winfo_width()
+
+
 @pytest.fixture
 def root():
     window = tk.Tk()

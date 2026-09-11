@@ -9180,12 +9180,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         def choose_output() -> Path:
             self._browse_output()
-            return Path(self.output_var.get()).expanduser()
+            return Path(self.output_var.get().strip()).expanduser()
 
         dialog = LocalAudioVideoDialog(
             self,
             converter=self.local_audio_video,
-            output_dir=Path(self.output_var.get()).expanduser(),
+            output_dir=Path(self.output_var.get().strip()).expanduser(),
             profile_variable=self.local_video_profile_var,
             on_complete=self._complete_local_audio_video,
             on_closed=self._local_audio_video_dialog_closed,

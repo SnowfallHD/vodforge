@@ -298,6 +298,30 @@ def test_local_profile_uses_the_focused_settings_owner_and_dialog_boundary() -> 
     assert "export_mode_var" not in dialog_open
 
 
+def test_local_dialog_normalizes_typed_destination_like_download_submission(
+    monkeypatch, tmp_path: Path
+) -> None:
+    captured = {}
+    folder = tmp_path / "exports with spaces"
+    host = SimpleNamespace(
+        output_var=SimpleNamespace(get=lambda: f" {folder} "),
+        local_audio_video=object(),
+        local_video_profile_var=object(),
+        _complete_local_audio_video=lambda _result: None,
+        _local_audio_video_dialog_closed=lambda: None,
+        _browse_output=lambda: None,
+    )
+
+    def dialog(_parent, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(show=lambda: None)
+
+    monkeypatch.setattr(app_module, "LocalAudioVideoDialog", dialog)
+    app_module.DownloaderApp._show_local_audio_video(host)
+    assert captured["output_dir"] == folder
+    assert captured["choose_output"]() == folder
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [

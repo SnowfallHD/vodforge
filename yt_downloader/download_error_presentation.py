@@ -68,7 +68,9 @@ def download_error_message(error: object) -> str:
         return f"YouTube requires age verification for this video. {BROWSER_GUIDANCE}"
     if "sign in to confirm" in text or "confirm you're not a bot" in text:
         return f"YouTube is asking you to confirm your sign-in. {BROWSER_GUIDANCE}"
-    if "no video formats" in text or ("no usable" in text and "video" in text):
+    if "no usable audio source" in text:
+        return f"No downloadable audio was available for this link. {BROWSER_GUIDANCE}"
+    if "no video formats" in text or "no usable video source" in text:
         return f"No downloadable video was available for this link. {BROWSER_GUIDANCE}"
     if "requested format is not available" in text:
         return "The selected quality is unavailable. Choose a lower quality or another output format, then retry."

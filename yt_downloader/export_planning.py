@@ -526,8 +526,8 @@ def build_mp3_export_plan(
             )
     if audio is None:
         raise RuntimeError(
-            "No usable audio source was found for this URL. The video may be private, region-restricted, "
-            "or temporarily limited by YouTube. Check the diagnostics log or retry with cookies."
+            "No usable audio source was found for this URL. "
+            "The provider format list contains no selectable audio stream."
         )
     audio_id = str(audio.get("format_id") or "").strip()
     if not audio_id:
@@ -701,19 +701,15 @@ def _select_auto_sources(
     video, using_progressive_av = _choose_auto_video_source(formats, max_height)
     if video is None:
         raise RuntimeError(
-            "No usable video source was found for this URL. This can happen when:\n"
-            "• The video is private, members-only, or region-restricted.\n"
-            "• No JavaScript runtime (Deno 2.x) is installed, limiting available formats.\n"
-            "• YouTube is rate-limiting the connection (retry later or use cookies).\n"
-            "Check the diagnostics log for yt-dlp's detailed format list."
+            "No usable video source was found for this URL. "
+            "The provider format list contains no selectable video stream."
         )
 
     audio = _choose_auto_audio_source(formats, video, using_progressive_av)
     if audio is None and not using_progressive_av:
         raise RuntimeError(
-            "No usable audio source was found for this URL. This can happen when "
-            "yt-dlp returns limited formats without a JavaScript runtime (Deno 2.x). "
-            "Check the diagnostics log for details."
+            "No usable audio source was found for this URL. "
+            "The provider format list contains no selectable audio stream."
         )
 
     video_id = str(video.get("format_id") or "") or None

@@ -200,3 +200,17 @@ def test_nvenc_failure_offers_actionable_cpu_retry_and_retains_cause():
     assert "turn off Use NVIDIA NVENC" in download_error_message(error)
     assert "CPU encoding" in download_error_message(error)
     assert "required nvenc API version" in technical_download_error(error)
+
+
+def test_real_audio_selection_failure_keeps_cause_and_correct_media_kind():
+    from yt_downloader.download_error_presentation import technical_download_error
+    from yt_downloader.export_planning import build_mp3_export_plan
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    with pytest.raises(RuntimeError) as caught:
+        build_mp3_export_plan({"formats": []})
+    error = caught.value
+    assert capture_failure(error).reason == "unsupported_format"
+    assert "No usable audio source" in technical_download_error(error)
+    assert "No downloadable audio" in download_error_message(error)
+    assert "No downloadable video" not in download_error_message(error)
