@@ -8,7 +8,8 @@ installed an app; neither check proved an upgrade of a running older version.
 ## Runtime changes
 
 - Windows signature verification and the detached PowerShell helper use
-  `CREATE_NO_WINDOW`. The helper additionally specifies Hidden. The installer
+  `CREATE_NO_WINDOW`. PowerShell scripts resolve only their runtime’s built-in
+  modules, avoiding incompatible module paths inherited from PowerShell 7. The helper additionally specifies Hidden. The installer
   may show installation progress or a useful error; no PowerShell console is
   intended to appear.
 - The helper signals readiness before the UI schedules the existing safe-close

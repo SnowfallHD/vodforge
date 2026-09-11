@@ -33,6 +33,10 @@ SHA256_RE = re.compile(r"^([0-9a-fA-F]{64})\s+[ *](.+)$")
 MACOS_BUNDLE_ID = "com.snowfallhd.vodforge"
 MACOS_TEAM_ID = "76G5W4954G"
 WINDOWS_PUBLISHER = "Kryden Ventures, LLC"
+# A PowerShell 7 -> Python -> Windows PowerShell launch can inherit incompatible
+# PS7 modules. Update scripts need only the selected runtime's built-in modules.
+WINDOWS_POWERSHELL_MODULE_PATH = "$env:PSModulePath = $PSHOME + '/Modules';"
+
 MACOS_STAGING_PREFIX = "staged-"
 
 
@@ -570,7 +574,8 @@ def verify_windows_authenticode(
         raise RuntimeError("The Windows update is not an installer executable.")
     literal_path = str(installer_path).replace("'", "''")
     command = (
-        f"$signature=Get-AuthenticodeSignature -LiteralPath '{literal_path}';"
+        WINDOWS_POWERSHELL_MODULE_PATH
+        + f"$signature=Get-AuthenticodeSignature -LiteralPath '{literal_path}';"
         "$result=[pscustomobject]@{Status=[string]$signature.Status;"
         "Subject=[string]$signature.SignerCertificate.Subject;"
         "Timestamp=[string]$signature.TimeStamperCertificate.Subject};"
@@ -635,6 +640,7 @@ def windows_update_script(
         else "$null"
     )
     return RECOVERY_FUNCTIONS + textwrap.dedent(f"""\
+        {WINDOWS_POWERSHELL_MODULE_PATH}
         $ErrorActionPreference = 'Stop'
         $installer = {literal(installer)}
         $executable = {literal(executable)}

@@ -115,6 +115,8 @@ function Start-Process {
         check=False,
         capture_output=True,
         text=True,
+        # Reproduce an incompatible inherited module path from a parent shell.
+        env={**os.environ, "PSModulePath": str(tmp_path / "foreign-modules")},
         timeout=30,
         **({"creationflags": 0x08000000} if sys.platform == "win32" else {}),
     )

@@ -58,6 +58,15 @@ jobs:
       - name: Verify packaged Windows application signatures
         shell: pwsh
         run: .\verify_windows_signatures.ps1 -Files @("${{ github.workspace }}\dist\VODForge\VODForge.exe")
+      - name: Smoke-test signed Windows application
+        shell: pwsh
+        env:
+          VODFORGE_DISABLE_TELEMETRY: "1"
+        run: |
+          $smoke = Start-Process "$PWD\dist\VODForge\VODForge.exe" -ArgumentList '--runtime-smoke' -PassThru
+          if (!$smoke.WaitForExit(120000)) { throw 'Signed application runtime smoke timed out' }
+          $smoke.Refresh()
+          if ($smoke.ExitCode -ne 0) { throw ('Signed application runtime smoke failed: ' + $smoke.ExitCode) }
       - name: Build Windows installer
         shell: pwsh
         run: .\build_windows_installer.ps1 -Version "${{ inputs.version }}"
@@ -81,7 +90,7 @@ jobs:
           Compress-Archive -Path .\dist\VODForge -DestinationPath ".\dist\release\VODForge-Windows-Portable-v${{ inputs.version }}.zip" -Force
       - name: Execute Windows updater fault cases
         shell: pwsh
-        run: python -m pytest engineering-quality/tests/test_update_handoff_runtime.py -q
+        run: .\.venv\Scripts\python.exe -m pytest engineering-quality/tests/test_update_handoff_runtime.py -q
       - name: Verify running Windows upgrade before publishing artifacts
         shell: pwsh
         env:
@@ -92,8 +101,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'No published baseline installer available for upgrade proof' }
           $baseline = @(Get-ChildItem $baselineDir -Filter *.exe)
           if ($baseline.Count -ne 1) { throw 'Expected exactly one baseline installer' }
-          .\engineering-quality\runners\windows-update-qa.ps1 -BaselineInstaller $baseline[0].FullName -CandidateInstaller "$PWD\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe" -CandidateExecutable "$PWD\dist\VODForge\VODForge.exe" -SourceRoot "$PWD" -Python (Get-Command python).Source -OutputDirectory "$PWD\build\update-journeys"
-          .\engineering-quality\runners\windows-update-qa.ps1 -BaselineInstaller $baseline[0].FullName -CandidateInstaller "$PWD\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe" -CandidateExecutable "$PWD\dist\VODForge\VODForge.exe" -SourceRoot "$PWD" -Python (Get-Command python).Source -OutputDirectory "$PWD\build\update-journeys" -LegacyHandoff
+          .\engineering-quality\runners\windows-update-qa.ps1 -BaselineInstaller $baseline[0].FullName -CandidateInstaller "$PWD\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe" -CandidateExecutable "$PWD\dist\VODForge\VODForge.exe" -SourceRoot "$PWD" -Python "$PWD\.venv\Scripts\python.exe" -OutputDirectory "$PWD\build\update-journeys"
+          .\engineering-quality\runners\windows-update-qa.ps1 -BaselineInstaller $baseline[0].FullName -CandidateInstaller "$PWD\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe" -CandidateExecutable "$PWD\dist\VODForge\VODForge.exe" -SourceRoot "$PWD" -Python "$PWD\.venv\Scripts\python.exe" -OutputDirectory "$PWD\build\update-journeys" -LegacyHandoff
       - name: Preserve Windows update evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,6 +1,8 @@
 param([Parameter(Mandatory=$true)][string]$ExecutablePath)
 # The signed installer extracts this script into its private temporary directory.
 # Close only this installation using its normal shutdown handler; never force kill.
+# Use this runtime's built-in modules even when launched under PowerShell 7.
+$env:PSModulePath = $PSHOME + '/Modules'
 $ErrorActionPreference = 'Stop'
 try {
   $apps = @(Get-Process VODForge -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $ExecutablePath })
