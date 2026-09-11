@@ -13,7 +13,7 @@ from tkinter import ttk
 from PIL import Image, ImageOps, ImageTk
 
 from .activity_ui import ActivityLogText
-from .export_planning import EXPORT_MODES, QUALITY_OPTIONS
+from .export_planning import EXPORT_MODES, QUALITY_OPTIONS, export_mode_description
 from .local_audio_video import LOCAL_VIDEO_PROFILE_OPTIONS
 from .media_player_ui import PlayerTransportButton, PlayerVolumeControl
 from .models import CookieSource
@@ -71,6 +71,26 @@ class FeaturePreview(ttk.Frame):
             log.request(
                 "Getting video information\nDownloading media\nConverting media\n"
                 "Checking the output\n[success] Download complete"
+            )
+        elif key == "output-settings":
+            self.preferred_width = 390
+            self.preferred_height = 165
+            self._label("OPTIMIZE FOR", 0)
+            self._choice("Everyday", tuple(EXPORT_MODES), 1)
+            selection = self.variables[-1]
+            description = ttk.Label(
+                self,
+                text=export_mode_description(selection.get()),
+                style="Muted.TLabel",
+                wraplength=370,
+                justify="left",
+            )
+            description.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+            selection.trace_add(
+                "write",
+                lambda *_: description.configure(
+                    text=export_mode_description(selection.get())
+                ),
             )
         elif key == "ui-settings":
             self._label("MP4 VIDEO", 0)

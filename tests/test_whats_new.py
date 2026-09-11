@@ -25,19 +25,12 @@ class Seen:
         self.value = value
 
 
-def test_ui_updates_lead_without_replacing_existing_features():
-    assert [h.key for h in HIGHLIGHTS] == [
-        "ui-activity",
-        "ui-settings",
-        "ui-player",
-        "activity-mode",
-        "local-video",
-        "original-audio",
-        "library",
-        "player",
-    ]
-    assert HIGHLIGHTS[0].title == "UI Updates"
-    assert WhatsNewOwner(None, Seen("library-and-local-video"), lambda: True).pending
+def test_next_release_announces_only_output_settings():
+    assert [h.key for h in HIGHLIGHTS] == ["output-settings"]
+    owner = WhatsNewOwner(None, Seen("0.2.0-youtube-access-tip"), lambda: True)
+    assert owner.pending
+    assert owner.heading == "What’s new"
+    assert owner.highlights == HIGHLIGHTS
 
 
 def test_showcase_dismissal_survives_settings_reload(tmp_path):
@@ -77,7 +70,7 @@ def test_future_slides_cannot_fall_back_to_screenshot_artwork():
     assert {
         feature.preview
         for feature in (*HIGHLIGHTS, *WELCOME_SLIDES, *DID_YOU_KNOW_HIGHLIGHTS)
-    } == set(NativePreview)
+    } <= set(NativePreview)
 
 
 def test_tip_uses_same_once_seen_owner_and_replaces_release_slides():

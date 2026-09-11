@@ -14,6 +14,7 @@ class NativePreview(str, Enum):
     WELCOME_ACTIVITY = "welcome-activity"
     ACTIVITY = "ui-activity"
     SETTINGS = "ui-settings"
+    OUTPUT_SETTINGS = "output-settings"
     TRANSPORT = "ui-player"
     ACTIVITY_MODE = "activity-mode"
     LOCAL_VIDEO = "local-video"
@@ -37,70 +38,21 @@ class FeatureHighlight:
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
 # showcase. A new app version, patch release, or release-note edit is not enough.
 # An empty highlights tuple disables the showcase. Keep copy factual and short.
-SHOWCASE_ID = "0.2.0-youtube-access-tip"
+SHOWCASE_ID = "output-settings-presets-v1"
 HIGHLIGHTS = (
     FeatureHighlight(
-        "ui-activity",
-        "UI Updates",
-        "Follow your download with clear progress stages in Forge. "
-        "Switch to Technical details for the full log, or open Activity.",
-        NativePreview.ACTIVITY,
-    ),
-    FeatureHighlight(
-        "ui-settings",
-        "Cleaner controls",
-        "Refined dropdowns, checkboxes, and buttons make Settings easier to scan. "
-        "Your theme carries through the app.",
-        NativePreview.SETTINGS,
-    ),
-    FeatureHighlight(
-        "ui-player",
-        "A more polished Player",
-        "Refined playback controls, a clearer timeline, and a cleaner volume "
-        "slider keep the focus on your media.",
-        NativePreview.TRANSPORT,
-    ),
-    FeatureHighlight(
-        "activity-mode",
-        "Friendly or technical. Your call.",
-        "Slide up to the happy face for simple progress. Slide down to the "
-        "frowny face for the live technical log. Same run, your preferred detail.",
-        NativePreview.ACTIVITY_MODE,
-    ),
-    FeatureHighlight(
-        "local-video",
-        "Turn audio into video",
-        "Pair an MP3 with a still image to create an MP4, up to 4K. "
-        "Find it in Library and your selected output folder.",
-        NativePreview.LOCAL_VIDEO,
-    ),
-    FeatureHighlight(
-        "original-audio",
-        "Original audio. No extra compression.",
-        "Choose Original audio to keep the best available Opus or AAC stream "
-        "without re-encoding. MP3 is still here when you need it.",
-        NativePreview.ORIGINAL_AUDIO,
-    ),
-    FeatureHighlight(
-        "library",
-        "Make your Library your own",
-        "Search your saved media. Add notes, tags, and categories to keep "
-        "everything easy to find.",
-        NativePreview.LIBRARY,
-    ),
-    FeatureHighlight(
-        "player",
-        "Play without leaving VODForge",
-        "Watch or listen right in the app. Jump to preview moments and "
-        "chapters when your media includes them. Works offline.",
-        NativePreview.PLAYER,
+        "output-settings",
+        "Output settings for your next step",
+        "Choose Everyday, Streaming, Editing, Sharing or CTV for source-aware MP4 exports. "
+        "Use Custom for your own settings. Find them in Settings → Optimize for.",
+        NativePreview.OUTPUT_SETTINGS,
     ),
 )
 
 
 # Release editorial switch: choose one surface, never both. Keep the current
 # mode until a release explicitly opts into the tip and changes SHOWCASE_ID.
-SHOWCASE_MODE = "did-you-know"
+SHOWCASE_MODE = "whats-new"
 DID_YOU_KNOW_HIGHLIGHTS = (
     FeatureHighlight(
         "youtube-access-tip",

@@ -51,6 +51,25 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                         <= panel.frame.winfo_rooty() + panel.frame.winfo_height()
                     )
                 assert panel.preview.winfo_height() > 100
+                if HIGHLIGHTS[index].key == "output-settings":
+                    from yt_downloader.export_planning import (
+                        EXPORT_MODES,
+                        export_mode_description,
+                    )
+
+                    demo = panel.activity_demo
+                    for choice in EXPORT_MODES:
+                        demo.variables[0].set(choice)
+                        root.update()
+                        labels = [
+                            w
+                            for w in demo.winfo_children()
+                            if w.winfo_class() == "TLabel"
+                        ]
+                        assert export_mode_description(choice) in [
+                            w.cget("text") for w in labels
+                        ]
+
                 if HIGHLIGHTS[index].key == "activity-mode":
                     demo = panel.activity_demo
                     assert demo is not None and demo.timer is not None
