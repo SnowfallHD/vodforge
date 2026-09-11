@@ -15,7 +15,7 @@ telemetry exclusively to the fixed preview host. Production telemetry remains
 forbidden. Disabled artifacts cannot be enabled by these flags. The unconditional
 `VODFORGE_DISABLE_TELEMETRY=1` switch is retained for the negative journey.
 
-The maintained Mac launcher supports `packaged-e2e --telemetry preview`; it sets
+The maintained Mac launcher supports `packaged-e2e --profile telemetry --telemetry preview`; it sets
 an isolated profile and removes the off switch only from its own child environment.
 Supply the QA key privately in the parent environment, never in receipts, commands,
 source, or the artifact. Windows journeys must use the same explicit environment
@@ -31,12 +31,18 @@ production users or change production data to create test fixtures.
 
 ## Required observed journey
 
+Use the recorder's `telemetry` profile, which requires native screenshots for all
+producer actions and refusal/disabled observations. Follow its ordered event list:
+complete the media actions during the first session, reopen, then capture the
+same-version and completed-event readbacks before the negative checks. The
+checkpoints below describe the assertions, not an alternate recorder order.
+
 Retain the UI action ledger, screenshots, exact candidate archive/executable hashes,
 process launch identities, source commit, platform, and raw scoped D1 checkpoints.
 A helper directly posting events is a transport test, not packaged journey proof.
 
 1. Fresh isolated profile: decline or leave permission unknown; verify no optional
-   telemetry rows. Grant permission through the UI. Observe one installation and
+   telemetry rows and capture `unknown.json`. Grant permission through the UI. Observe one installation and
    credential, first launch and app-open event. Capture `first_launch.json`.
 2. Quit normally. Reopen the **same version and same profile** after the timestamp
    second changes. Verify last seen advances; first launch, creation date, identity

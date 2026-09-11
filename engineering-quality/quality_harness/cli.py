@@ -88,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     e2e.add_argument(
         "--profile",
-        choices=("smoke", "deep"),
+        choices=("smoke", "deep", "telemetry"),
         default="smoke",
         help="Smoke proves one full journey and restart; deep also requires queue and cancellation evidence",
     )

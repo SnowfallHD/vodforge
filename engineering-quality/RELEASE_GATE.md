@@ -6,7 +6,7 @@ The gate binds one source commit to one immutable ZIP and never treats a rebuild
 
 Every public release additionally requires [the preview-D1 telemetry gate](TELEMETRY_RELEASE_GATE.md)
 on macOS and Windows using the final signed artifacts. Telemetry-off-only E2E is
-not sufficient. Use `packaged-e2e --telemetry preview` for the positive journey and
+not sufficient. Use `packaged-e2e --profile telemetry --telemetry preview` for the positive journey and
 retain separate denied-consent/disabled negative checks. Both platform readbacks
 are mandatory inputs to the release receipt; missing evidence blocks publication.
 

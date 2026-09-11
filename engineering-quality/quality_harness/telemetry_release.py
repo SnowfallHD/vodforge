@@ -22,6 +22,7 @@ CHECKPOINTS = (
     "events_complete",
     "denied",
     "disabled",
+    "unknown",
 )
 EVENTS = frozenset(
     {
@@ -106,9 +107,17 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
     if len(identities) != 1 or None in identities:
         errors.append("Checkpoints must use the same isolated installation")
     first, reopened, complete = (snapshots[n] for n in CHECKPOINTS[:3])
+    unknown = snapshots["unknown"]
+    if (
+        unknown.get("installations") != []
+        or unknown.get("clients") != 0
+        or unknown.get("events") != []
+    ):
+        errors.append("Unknown-consent launch must not create optional telemetry rows")
     if any(
         len(s.get("installations", [])) != 1 or s.get("clients") != 1
-        for s in snapshots.values()
+        for name, s in snapshots.items()
+        if name != "unknown"
     ):
         return errors + ["Expected one installation and one credential throughout"]
     initial, second, last = (s["installations"][0] for s in (first, reopened, complete))
@@ -151,6 +160,16 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
         for field in ("installations", "clients", "events"):
             if snapshots[name].get(field) != complete.get(field):
                 errors.append(f"{name}: telemetry changed D1 {field}")
+    if snapshots["denied"].get("consent_choice") != "denied":
+        errors.append("Denied checkpoint must retain the actual saved refusal")
+    if (
+        snapshots["disabled"]
+        .get("launch", {})
+        .get("attestation", {})
+        .get("telemetry_preview")
+        is not False
+    ):
+        errors.append("Disabled checkpoint requires an attested disabled launch")
     update = data.get("update", {})
     before, after = update.get("before", {}), update.get("after", {})
     if not before or not after:
@@ -216,10 +235,23 @@ def release_checks(receipts, candidate):
                 or journey.get("artifact_integrity", {}).get("verified") is not True
             ):
                 errors.append("Passed exact-artifact packaged preview journey required")
+            from .packaged_e2e import TELEMETRY_UI_EVENT_ORDER
+
+            trace = journey.get("driver_trace", {}).get("events", [])
+            if (
+                not set(TELEMETRY_UI_EVENT_ORDER)
+                <= {event.get("event") for event in trace}
+                or journey.get("driver_trace_validation", {}).get("valid") is not True
+            ):
+                errors.append(
+                    "All telemetry UI actions require verified native driver evidence"
+                )
             launches = journey.get("launches", [])
-            if len(launches) < 2 or any(
+            if sum(
+                launch.get("attestation", {}).get("telemetry_preview") is True
+                for launch in launches
+            ) < 2 or any(
                 launch.get("verified") is not True
-                or launch.get("attestation", {}).get("telemetry_preview") is not True
                 or launch.get("attestation", {}).get("telemetry_production")
                 is not False
                 for launch in launches
@@ -260,6 +292,14 @@ def snapshot_command(args) -> int:
     profile = Path(session["state_paths"]["application_data"])
     state = json.loads((profile / "installation.json").read_text())
     snapshot = read_preview_snapshot(args.site.resolve(), state["install_id"])
+    from yt_downloader.settings_store import load_settings
+
+    snapshot["consent_choice"] = (
+        load_settings(profile / "settings.json")
+        .get("analytics_consent", {})
+        .get("choice")
+    )
+    snapshot["launch"] = session.get("current_launch") or session["launches"][-1]
     snapshot["session_nonce"] = session["session_nonce"]
     snapshot["candidate_binding"] = session["candidate_binding"]
     args.output.parent.mkdir(parents=True, exist_ok=True)

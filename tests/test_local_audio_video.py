@@ -474,6 +474,10 @@ def test_app_coordinates_completed_output_through_canonical_history(
         app.download_history = [dict(info)]
 
     app._record_download_history = record
+    recorded_events = []
+    app.product_telemetry = SimpleNamespace(
+        record=lambda name, **fields: recorded_events.append((name, fields))
+    )
     monkeypatch.setattr(
         app_module,
         "save_custom_cached_thumbnail_image",
@@ -487,6 +491,16 @@ def test_app_coordinates_completed_output_through_canonical_history(
 
     app_module.DownloaderApp._complete_local_audio_video(app, result)
 
+    assert recorded_events == [
+        (
+            "local_conversion_completed",
+            {
+                "dedupe_key": "run",
+                "run_kind": "local_audio_video",
+                "output_type": "mp4",
+            },
+        )
+    ]
     assert ("history", metadata, output.parent) in events
     assert ("view", "library") in events
     assert output.parent in app.last_output_dirs

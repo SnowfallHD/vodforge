@@ -72,6 +72,25 @@ DEEP_UI_EVENT_ORDER = (
     *SMOKE_UI_EVENT_ORDER[8:],
 )
 
+TELEMETRY_UI_ACTIONS = (
+    "mp4_playback_observed",
+    "mp3_completion_observed",
+    "mp3_playback_observed",
+    "original_completion_observed",
+    "original_playback_observed",
+    "local_conversion_observed",
+    "failure_observed",
+    "retry_completion_observed",
+    "cloud_interest_observed",
+)
+TELEMETRY_UI_EVENT_ORDER = (
+    *DEEP_UI_EVENT_ORDER[:8],
+    *TELEMETRY_UI_ACTIONS,
+    *DEEP_UI_EVENT_ORDER[8:],
+    "consent_denied_observed",
+    "telemetry_disabled_observed",
+)
+
 SMOKE_REQUIRED_UI_EVENTS = set(SMOKE_UI_EVENT_ORDER)
 DEEP_REQUIRED_UI_EVENTS = set(DEEP_UI_EVENT_ORDER)
 
@@ -81,10 +100,12 @@ SCREENSHOT_OPTIONAL_EVENTS = {"restart_requested"}
 
 
 def _required_ui_events(profile: str) -> set[str]:
-    return DEEP_REQUIRED_UI_EVENTS if profile == "deep" else SMOKE_REQUIRED_UI_EVENTS
+    return set(_required_ui_event_order(profile))
 
 
 def _required_ui_event_order(profile: str) -> tuple[str, ...]:
+    if profile == "telemetry":
+        return TELEMETRY_UI_EVENT_ORDER
     return DEEP_UI_EVENT_ORDER if profile == "deep" else SMOKE_UI_EVENT_ORDER
 
 
@@ -1185,6 +1206,8 @@ def run_packaged_e2e_session(
         }
     )
     telemetry_mode = getattr(args, "telemetry", "off")
+    if args.profile == "telemetry" and telemetry_mode != "preview":
+        raise ValueError("The telemetry journey requires --telemetry preview")
     if telemetry_mode == "preview":
         key = env.get("VODFORGE_QA_ACCESS_KEY", "")
         if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
@@ -1220,7 +1243,7 @@ def run_packaged_e2e_session(
             "Verify the same exact artifact restores history/output after restart and record restart_observed.",
             "Quit normally again and set control action to finish.",
         ]
-        if args.profile == "deep":
+        if args.profile in {"deep", "telemetry"}:
             journey[8:8] = [
                 "Start slow_input_url and record slow_run_started once transfer is active.",
                 "Submit input_url while the slow run remains active; observe a real queued card and record second_run_queued.",
@@ -1229,6 +1252,17 @@ def run_packaged_e2e_session(
                 "Observe the queued run advance into active work and record queued_run_started.",
                 "Wait for the queued run to complete and record queued_run_completion_observed.",
             ]
+        if args.profile == "telemetry":
+            journey.insert(
+                8,
+                "Record the telemetry profile actions in required_ui_events: MP4/MP3/Original playback, MP3/Original/local conversion, controlled failure/retry, and Cloud interest. Capture preview D1 checkpoints alongside the actual UI actions.",
+            )
+            journey.extend(
+                [
+                    "After restart, disable analytics in Settings and record consent_denied_observed; capture denied.json.",
+                    "Quit normally, set control to {action: relaunch, telemetry: off}, then record telemetry_disabled_observed in that owned disabled launch; capture disabled.json and finish.",
+                ]
+            )
         session = {
             "schema_version": "1.0.0",
             "e2e_profile": args.profile,
@@ -1319,6 +1353,9 @@ def run_packaged_e2e_session(
                 stdout_handle.close()
                 stderr_handle.close()
                 if action == "relaunch":
+                    control = json.loads(control_path.read_text(encoding="utf-8"))
+                    if control.get("telemetry") == "off":
+                        env["VODFORGE_DISABLE_TELEMETRY"] = "1"
                     restart_baseline = _persisted_state_snapshot(home)
                     launches[-1]["pre_restart_state"] = restart_baseline
                     json_dump(control_path, {"action": "running"})
@@ -1536,16 +1573,28 @@ def run_packaged_e2e_session(
         for item in launches
     )
     observed_event_names = set(trace_validation["event_names"])
-    expected_jobs_attempted = 3 if args.profile == "deep" else 1
+    expected_jobs_attempted = (
+        7 if args.profile == "telemetry" else 3 if args.profile == "deep" else 1
+    )
     jobs_completed = int(
         "completion_observed" in observed_event_names
         and bool(media_probes)
         and all(stage_receipts.values())
     )
-    if args.profile == "deep":
+    if args.profile in {"deep", "telemetry"}:
         jobs_completed += int("queued_run_completion_observed" in observed_event_names)
+    if args.profile == "telemetry":
+        jobs_completed += sum(
+            name in observed_event_names
+            for name in (
+                "mp3_completion_observed",
+                "original_completion_observed",
+                "retry_completion_observed",
+            )
+        )
     jobs_cancelled = int(
-        args.profile == "deep" and "cancellation_observed" in observed_event_names
+        args.profile in {"deep", "telemetry"}
+        and "cancellation_observed" in observed_event_names
     )
     jobs_failed = max(0, expected_jobs_attempted - jobs_completed - jobs_cancelled)
     passed = (

@@ -11,6 +11,8 @@ from quality_harness.telemetry_release import (
 
 
 def telemetry_fixture(candidate, platform="macos"):
+    from quality_harness.packaged_e2e import TELEMETRY_UI_EVENT_ORDER
+
     archive = candidate["immutable_archive"]["sha256"]
     installation = {
         "install_id": "qa",
@@ -57,12 +59,22 @@ def telemetry_fixture(candidate, platform="macos"):
     updated["events"] = [
         {"event_name": "client_update", "from_version": "0.2.1", "to_version": "0.2.2"}
     ]
+    unknown = deepcopy(first)
+    unknown.update(installations=[], clients=0, events=[])
+    denied = deepcopy(complete)
+    denied["consent_choice"] = "denied"
+    disabled = deepcopy(complete)
+    disabled["launch"] = {"attestation": {"telemetry_preview": False}}
     return {
         "platform": platform,
         "source_commit": candidate["source"]["commit"],
         "telemetry_mode": "preview",
         "packaged_e2e": {
             "scenario": {"status": "passed"},
+            "driver_trace": {
+                "events": [{"event": name} for name in TELEMETRY_UI_EVENT_ORDER]
+            },
+            "driver_trace_validation": {"valid": True},
             "telemetry_mode": "preview",
             "process_provenance": {"verified": True},
             "artifact_integrity": {"verified": True},
@@ -83,8 +95,9 @@ def telemetry_fixture(candidate, platform="macos"):
             "first_launch": first,
             "same_version_reopen": reopened,
             "events_complete": complete,
-            "denied": deepcopy(complete),
-            "disabled": deepcopy(complete),
+            "denied": denied,
+            "disabled": disabled,
+            "unknown": unknown,
         },
         "update": {"before": baseline, "after": updated},
     }
@@ -141,3 +154,80 @@ def test_both_platforms_and_exact_candidate_are_required():
     assert any(check["status"] == "failed" for check in release_checks(receipts[:1], c))
     receipts[0]["source_commit"] = "c" * 40
     assert any(check["status"] == "failed" for check in release_checks(receipts, c))
+
+
+def test_snapshot_refuses_production_binding_before_running_wranger(
+    tmp_path, monkeypatch
+):
+    import json
+
+    from quality_harness.telemetry_release import read_preview_snapshot
+
+    (tmp_path / "wrangler.preview.jsonc").write_text(
+        json.dumps(
+            {
+                "name": "vodforge-site",
+                "routes": [],
+                "d1_databases": [
+                    {
+                        "database_id": "a254402e-4130-4a53-ba33-bcada9ab602b",
+                        "database_name": "vodforge",
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setattr(
+        "quality_harness.telemetry_release.subprocess.run",
+        lambda *a, **kw: pytest.fail("must not contact production"),
+    )
+    with pytest.raises(ValueError, match="isolation"):
+        read_preview_snapshot(tmp_path, "ca40ed92-c8bb-41d9-a453-b9089a069a56")
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("telemetry_mode", "off"),
+        ("process_provenance", {"verified": False}),
+        ("artifact_integrity", {"verified": False}),
+        ("launches", []),
+    ],
+)
+def test_telemetry_off_or_unattested_journey_blocks_release(field, value):
+    c = candidate()
+    data = telemetry_fixture(c)
+    data["packaged_e2e"][field] = value
+    assert release_checks([data], c)[0]["status"] == "failed"
+
+
+def test_counts_without_the_actual_ui_actions_cannot_pass():
+    c = candidate()
+    data = telemetry_fixture(c)
+    data["packaged_e2e"]["driver_trace"]["events"] = [{"event": "completion_observed"}]
+    assert release_checks([data], c)[0]["status"] == "failed"
+
+
+def test_telemetry_profile_exposes_every_required_producer_action():
+    from quality_harness.cli import _parser
+    from quality_harness.packaged_e2e import _required_ui_event_order
+
+    args = _parser().parse_args(
+        ["packaged-e2e", "--profile", "telemetry", "--telemetry", "preview"]
+    )
+    events = _required_ui_event_order(args.profile)
+    assert len(events) == len(set(events))
+    assert {
+        "mp4_playback_observed",
+        "mp3_completion_observed",
+        "mp3_playback_observed",
+        "original_completion_observed",
+        "original_playback_observed",
+        "local_conversion_observed",
+        "failure_observed",
+        "retry_completion_observed",
+        "cloud_interest_observed",
+        "consent_denied_observed",
+        "telemetry_disabled_observed",
+        "restart_observed",
+    } <= set(events)

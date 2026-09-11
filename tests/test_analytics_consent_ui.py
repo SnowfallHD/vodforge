@@ -17,6 +17,9 @@ pytestmark = pytest.mark.skipif(
 
 def test_primary_hover_has_distinct_rendered_pixels():
     root = tk.Tk()
+    # Drain the native showRootWindow idle callback before destroying this root;
+    # otherwise Tk 9 on macOS can run it against the next test's dead NSWindow.
+    root.update()
     try:
         chrome = ProductChromeOwner(root)
         chrome.request(ttk.Style(root))

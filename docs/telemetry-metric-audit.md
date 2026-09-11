@@ -54,3 +54,31 @@ on both shipping platforms; local tests alone do not establish that tier.
 No telemetry consent defaults, production database records, user profiles, or
 third-party provider permissions are changed by this audit. See
 [the required release journey](../engineering-quality/TELEMETRY_RELEASE_GATE.md).
+
+## Verification recorded in this lane
+
+- Server source `04352c1`: all 117 site tests pass; preview deployment
+  `76515cef-d83c-4880-ac47-a02e661f1ce7`, migrations through 0014. Production site
+  and production D1 remain unchanged by this lane.
+- Real local HTTP/Worker/D1 all-event contract passes. The retained earlier failed
+  attempts exposed an incorrect test expectation for duplicate acceptance and
+  timestamp string formatting; final checks compare the same instant at the
+  server's documented millisecond precision rather than weakening event identity.
+- Private production-policy Mac package from runtime source `cdb37bf` passes bundled
+  smoke and two actual app launches against preview D1: one credential, two app-open
+  events, increased last seen, unchanged first launch, no update event. Two further
+  actual launches with denied consent and the off switch leave D1 unchanged.
+  This is an ad-hoc private artifact, not final signed-release certification.
+- Windows source regressions at `cdb37bf`: 115 pass. CRM's 12 query/auth/filter tests
+  pass. Required Mac native gate now includes consent UI: 101 pass. Native test
+  setup drains its first Tk root's pending show callback; it previously crashed
+  between roots, causing a subsequent macOS Python restoration prompt. No product
+  UI workaround or saved macOS preference change was introduced.
+- New app-producer tests additionally cover actual worker-launch emission,
+  completion/partial/failure/stop mapping, Original playback, shutdown suppression,
+  and local conversion after canonical history registration.
+- These are distinct proof tiers. No new release was requested or published. The
+  next public release must pass the new all-action signed-artifact preview journeys
+  on both platforms; this audit does not relabel startup-only or source tests as
+  that completed release gate. Detailed receipts remain in
+  `build/telemetry-session-gate/`.
