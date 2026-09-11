@@ -228,6 +228,7 @@ def release_checks(receipts, candidate):
             if (
                 journey.get("scenario", {}).get("status") != "passed"
                 or binding.get("verified") is not True
+                or binding.get("artifact_policy") != "release"
                 or not binding.get("archive_sha256")
                 or data.get("telemetry_mode") != "preview"
                 or journey.get("telemetry_mode") != "preview"

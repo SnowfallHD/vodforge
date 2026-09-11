@@ -21,7 +21,11 @@ def telemetry_fixture(candidate, platform="macos"):
         "last_seen_at": "2026-09-10 12:00:00",
         "current_app_version": "0.2.2",
     }
-    binding = {"verified": True, "archive_sha256": archive}
+    binding = {
+        "verified": True,
+        "archive_sha256": archive,
+        "artifact_policy": "release",
+    }
     first = {
         "install_id": "qa",
         "database_id": PREVIEW_DATABASE_ID,
@@ -231,3 +235,10 @@ def test_telemetry_profile_exposes_every_required_producer_action():
         "telemetry_disabled_observed",
         "restart_observed",
     } <= set(events)
+
+
+def test_private_development_artifact_cannot_satisfy_release_telemetry():
+    c = candidate()
+    data = telemetry_fixture(c, "windows")
+    data["packaged_e2e"]["candidate_binding"]["artifact_policy"] = "development"
+    assert release_checks([data], c)[1]["status"] == "failed"
