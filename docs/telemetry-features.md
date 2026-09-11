@@ -67,7 +67,8 @@ reported on the next open of that exact app target. Original helper receipts rem
 untouched; a companion marker means the observation was queued in the existing
 outbox, not that D1 delivery succeeded. Permission must have been enabled at the
 handoff and still be enabled when reporting; later consent cannot backfill an
-update started with analytics off.
+update started with analytics off. If permission is withdrawn before observation,
+a per-action discarded marker prevents a later opt-in from backfilling that result.
 
 ## Compatibility and release order
 

@@ -237,3 +237,36 @@ def test_failed_update_receipt_survives_later_but_never_backfills_denied(tmp_pat
     assert result == [(path, (path.stem[8:], False, "failed", "unknown"))]
     path.with_suffix(".failed.telemetry-queued").write_text("queued")
     assert list(pending_update_telemetry_receipts(folder.parent, executable)) == []
+
+
+def test_update_observation_is_discarded_on_refusal_not_backfilled(
+    tmp_path, monkeypatch
+):
+    import sys
+    from types import SimpleNamespace
+
+    import yt_downloader.app as app_module
+
+    folder = tmp_path / "updates" / "v1"
+    folder.mkdir(parents=True)
+    receipt = folder / ("handoff-" + uuid.uuid4().hex + ".json")
+    receipt.write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "executable": sys.executable,
+                "telemetry_permitted": True,
+            }
+        )
+    )
+    monkeypatch.setattr(app_module, "application_data_dir", lambda: tmp_path)
+    monkeypatch.delenv("VODFORGE_UPDATE_RECEIPT", raising=False)
+    owner = SimpleNamespace(
+        permitted=lambda: False,
+        record=lambda *args, **kwargs: pytest.fail("refused update was recorded"),
+    )
+    app = SimpleNamespace(product_telemetry=owner, _closing=False)
+    app_module.DownloaderApp._record_update_telemetry_receipt(app)
+    assert receipt.with_suffix(".failed.telemetry-discarded").exists()
+    owner.permitted = lambda: True
+    app_module.DownloaderApp._record_update_telemetry_receipt(app)

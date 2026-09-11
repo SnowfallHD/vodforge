@@ -900,6 +900,9 @@ def pending_update_telemetry_receipts(update_root: Path, executable: Path):
                 and not path.with_suffix(
                     "." + receipt[2] + ".telemetry-queued"
                 ).exists()
+                and not path.with_suffix(
+                    "." + receipt[2] + ".telemetry-discarded"
+                ).exists()
             ):
                 yield path, receipt
         except OSError:

@@ -7231,6 +7231,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _analytics_permission_changed(self, enabled: bool) -> None:
         self.product_telemetry.set_enabled(enabled)
+        if not enabled:
+            self._record_update_telemetry_receipt()
         if enabled and not self._closing:
             self._record_first_launch()
             self._record_product_app_opened()
@@ -7250,8 +7252,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
 
         telemetry = self.__dict__.get("product_telemetry")
-        if telemetry is None or self._closing or not telemetry.permitted():
+        if telemetry is None or self._closing:
             return
+        permitted = telemetry.permitted()
         receipts = list(
             pending_update_telemetry_receipts(
                 application_data_dir() / "updates", Path(sys.executable)
@@ -7266,10 +7269,21 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 and not path.with_suffix(
                     "." + receipt[2] + ".telemetry-queued"
                 ).exists()
+                and not path.with_suffix(
+                    "." + receipt[2] + ".telemetry-discarded"
+                ).exists()
                 and all(existing != path for existing, _ in receipts)
             ):
                 receipts.append((path, receipt))
         for path, (token, repair, action, stage) in receipts:
+            if not permitted:
+                try:
+                    path.with_suffix("." + action + ".telemetry-discarded").write_text(
+                        "discarded\n"
+                    )
+                except OSError:
+                    pass
+                continue
             accepted = telemetry.record(
                 "feature_used",
                 dedupe_key=token + ":" + action,
