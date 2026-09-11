@@ -2,6 +2,14 @@
 
 The gate binds one source commit to one immutable ZIP and never treats a rebuild as equivalent. It preserves the existing architecture and complexity findings as visible debt; only explicitly reviewed debt is nonblocking.
 
+## Required telemetry journey
+
+Every public release additionally requires [the preview-D1 telemetry gate](TELEMETRY_RELEASE_GATE.md)
+on macOS and Windows using the final signed artifacts. Telemetry-off-only E2E is
+not sufficient. Use `packaged-e2e --telemetry preview` for the positive journey and
+retain separate denied-consent/disabled negative checks. Both platform readbacks
+are mandatory inputs to the release receipt; missing evidence blocks publication.
+
 ## Profiles
 
 FAST / pre-commit:
@@ -73,6 +81,8 @@ After FAST, NORMAL, packaged E2E, and DEEP, bind the receipts:
   --normal-result engineering-quality/reports/<normal-id>/results.json \
   --deep-result engineering-quality/reports/<deep-id>/results.json \
   --e2e-result engineering-quality/reports/<e2e-id>/e2e-result.json \
+  --telemetry-result engineering-quality/reports/<mac-journey>/telemetry-result.json \
+  --telemetry-result engineering-quality/reports/<windows-journey>/telemetry-result.json \
   --output-dir engineering-quality/reports/<receipt-id> \
   --command "./engineering-quality/run fast ..." \
   --command "./engineering-quality/run normal ..." \

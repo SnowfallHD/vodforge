@@ -58,6 +58,7 @@
       }
     },
     "test_counts": { "type": "object" },
+    "telemetry": { "type": "array", "items": { "type": "object" } },
     "packaged_e2e": { "type": "object" },
     "security_findings": { "type": "array" },
     "lifecycle": { "type": "object" },

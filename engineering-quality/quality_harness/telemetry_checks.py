@@ -8,7 +8,9 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -275,7 +277,39 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 consent.choose(True)
                 assert owner.first_launch("0.1.7", "macos"), "Initial launch rejected"
                 assert owner.first_launch("0.1.8", "macos"), "Update launch rejected"
-                assert owner.first_launch("0.1.8", "macos"), "Repeat launch rejected"
+                assert owner.observe_session("0.1.8", "macos"), (
+                    "Session launch rejected"
+                )
+                process.stdin.write('{"op":"snapshot"}\n')
+                process.stdin.flush()
+                before_reopen = _read_line(process)
+                time.sleep(1.1)  # D1 CURRENT_TIMESTAMP has second precision.
+                reopened = transport.TelemetryCredentialOwner(case_dir / "client")
+                assert reopened.observe_session("0.1.8", "macos")
+                process.stdin.write('{"op":"snapshot"}\n')
+                process.stdin.flush()
+                after_reopen = _read_line(process)
+                assert (
+                    after_reopen["installations"][0]["last_seen_at"]
+                    > before_reopen["installations"][0]["last_seen_at"]
+                )
+                assert (
+                    after_reopen["installations"][0]["first_launched_at"]
+                    == before_reopen["installations"][0]["first_launched_at"]
+                )
+                assert len(after_reopen["clients"]) == 1
+                assert owner.cloud_event(
+                    "cloud_seen",
+                    after_reopen["installations"][0]["install_id"],
+                    "0.1.8",
+                    "macos",
+                )
+                assert owner.cloud_event(
+                    "cloud_click",
+                    after_reopen["installations"][0]["install_id"],
+                    "0.1.8",
+                    "macos",
+                )
                 state_path = case_dir / "client" / "installation.json"
                 state = load_or_create_installation_state(state_path)
                 mark_attribution_claim_confirmed(state_path, state.install_id)
@@ -294,6 +328,26 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     d1_recorder=deliver,
                     heycatch_recorder=lambda *_args, **_kwargs: True,
                 )
+                # Exercise the real outbox and serializer for every supported
+                # product event, not only two hand-selected failure payloads.
+                dimensions = [
+                    ("app_opened", {}),
+                    *[
+                        (name, {"run_kind": "youtube", "output_type": output})
+                        for output in ("mp4", "mp3", None)
+                        for name in ("run_started", "run_completed", "run_stopped")
+                    ],
+                    ("playback_started", {"output_type": "mp4"}),
+                    ("playback_started", {"output_type": "mp3"}),
+                    (
+                        "local_conversion_completed",
+                        {"run_kind": "local_audio_video", "output_type": "mp4"},
+                    ),
+                ]
+                for index, (name, fields) in enumerate(dimensions):
+                    assert usage.record(name, dedupe_key=f"metric-{index}", **fields)
+                    assert usage.record(name, dedupe_key=f"metric-{index}", **fields)
+                assert usage.shutdown(10)
                 for diagnostic in failures:
                     assert usage.record(
                         "run_failed",
@@ -303,8 +357,8 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         failure_detail=diagnostic.payload(),
                     )
                     assert usage.shutdown(10), "Usage outbox did not drain"
-                assert len(delivered) == 2, (
-                    f"Expected two emitted failures, got {len(delivered)}"
+                assert len(delivered) == len(dimensions) + 2, (
+                    f"Missing or duplicated emitted metrics: {len(delivered)}"
                 )
                 for payload in delivered:
                     assert owner.event(payload)
@@ -317,6 +371,46 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 artifact = case_dir / "local-d1-receipt.json"
                 artifact.write_text(json.dumps(snapshot, indent=2))
                 assert len(snapshot["installations"]) == 1
+                assert snapshot["installations"][0]["first_seen_at"]
+                assert snapshot["installations"][0]["cloud_clicked_at"]
+                expected_names = {name for name, _fields in dimensions} | {
+                    "run_failed",
+                    "client_update",
+                }
+                assert {
+                    event["event_name"] for event in snapshot["events"]
+                } == expected_names
+                assert len(snapshot["events"]) == len(delivered) + 1
+                for payload in delivered:
+                    stored_event = next(
+                        event
+                        for event in snapshot["events"]
+                        if event["event_id"] == payload["event_id"]
+                    )
+                    for field in (
+                        "event_name",
+                        "run_kind",
+                        "output_type",
+                    ):
+                        assert stored_event[field] == payload.get(field), field
+                    actual_time = datetime.fromisoformat(
+                        stored_event["occurred_at"].replace("Z", "+00:00")
+                    )
+                    emitted_time = datetime.fromisoformat(
+                        payload["occurred_at"].replace("Z", "+00:00")
+                    )
+                    assert abs((actual_time - emitted_time).total_seconds()) < 0.001
+                consent.choose(False)
+                denied_owner = transport.TelemetryCredentialOwner(case_dir / "client")
+                assert not denied_owner.observe_session("0.1.8", "macos")
+                assert not denied_owner.event(delivered[0])
+                process.stdin.write('{"op":"snapshot"}\n')
+                process.stdin.flush()
+                assert _read_line(process) == {
+                    key: value
+                    for key, value in snapshot.items()
+                    if key != "site_commit"
+                }
                 assert snapshot["installations"][0]["current_app_version"] == "0.1.8"
                 updates = [
                     e for e in snapshot["events"] if e["event_name"] == "client_update"

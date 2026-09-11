@@ -1184,6 +1184,17 @@ def run_packaged_e2e_session(
             "VODFORGE_QUALITY_E2E_ISOLATION_ROOT": state_paths["isolation_root"],
         }
     )
+    telemetry_mode = getattr(args, "telemetry", "off")
+    if telemetry_mode == "preview":
+        key = env.get("VODFORGE_QA_ACCESS_KEY", "")
+        if len(key) != 64 or any(c not in "0123456789abcdef" for c in key):
+            raise ValueError("Preview E2E requires the private QA access key")
+        env.pop("VODFORGE_DISABLE_TELEMETRY", None)
+        env["VODFORGE_QA_PREVIEW_TELEMETRY"] = "1"
+        env["VODFORGE_QA_PROFILE"] = state_paths["application_data"]
+    else:
+        env["VODFORGE_DISABLE_TELEMETRY"] = "1"
+        env.pop("VODFORGE_QA_PREVIEW_TELEMETRY", None)
     session_nonce = secrets.token_hex(16)
     started_at = utc_now()
     started = time.monotonic()
@@ -1221,6 +1232,7 @@ def run_packaged_e2e_session(
         session = {
             "schema_version": "1.0.0",
             "e2e_profile": args.profile,
+            "telemetry_mode": telemetry_mode,
             "session_dir": str(session_dir),
             "session_nonce": session_nonce,
             "driver_ready": False,
@@ -1664,6 +1676,7 @@ def run_packaged_e2e_session(
     payload = {
         "schema_version": "1.0.0",
         "started_at": started_at,
+        "telemetry_mode": telemetry_mode,
         "completed_at": utc_now(),
         "artifact_receipt": receipt,
         "candidate_binding": candidate_binding,

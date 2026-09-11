@@ -87,3 +87,20 @@ def test_preview_forbids_redirects(preview):
         transport._NoRedirect().redirect_request(
             None, None, 302, "", {}, "https://getvodforge.com"
         )
+
+
+def test_signed_release_can_only_route_to_preview_with_explicit_qa(
+    preview, monkeypatch
+):
+    (preview / "VODFORGE_TELEMETRY_POLICY").write_text("production")
+    monkeypatch.setenv("VODFORGE_QA_PREVIEW_TELEMETRY", "1")
+    assert policy.preview_telemetry_allowed()
+    assert not policy.production_telemetry_allowed()
+    monkeypatch.delenv("VODFORGE_QUALITY_E2E")
+    assert not policy.telemetry_collection_allowed()
+
+
+def test_disabled_artifact_cannot_be_enabled_by_release_qa(preview, monkeypatch):
+    (preview / "VODFORGE_TELEMETRY_POLICY").write_text("disabled")
+    monkeypatch.setenv("VODFORGE_QA_PREVIEW_TELEMETRY", "1")
+    assert not policy.telemetry_collection_allowed()

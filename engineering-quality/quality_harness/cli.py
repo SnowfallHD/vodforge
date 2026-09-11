@@ -92,6 +92,7 @@ def _parser() -> argparse.ArgumentParser:
         default="smoke",
         help="Smoke proves one full journey and restart; deep also requires queue and cancellation evidence",
     )
+    e2e.add_argument("--telemetry", choices=("off", "preview"), default="off")
     e2e.add_argument("--output-dir", type=Path)
     e2e.add_argument("--timeout", type=int, default=600)
     candidate = subparsers.add_parser(
@@ -130,6 +131,13 @@ def _parser() -> argparse.ArgumentParser:
     release_receipt.add_argument("--normal-result", type=Path, required=True)
     release_receipt.add_argument("--deep-result", type=Path, required=True)
     release_receipt.add_argument("--e2e-result", type=Path, required=True)
+    release_receipt.add_argument(
+        "--telemetry-result",
+        type=Path,
+        action="append",
+        required=True,
+        help="Preview-D1 journey receipt; repeat for Mac and Windows",
+    )
     release_receipt.add_argument("--output-dir", type=Path, required=True)
     release_receipt.add_argument(
         "--command",
@@ -142,6 +150,22 @@ def _parser() -> argparse.ArgumentParser:
     release_receipt.add_argument(
         "--no-fail", action="store_true", help="Write the receipt but always exit zero"
     )
+    snapshot = subparsers.add_parser(
+        "telemetry-snapshot", help="Read scoped preview D1 alongside a packaged journey"
+    )
+    snapshot.add_argument("--site", type=Path, required=True)
+    snapshot.add_argument("--session", type=Path, required=True)
+    snapshot.add_argument("--output", type=Path, required=True)
+    telemetry = subparsers.add_parser(
+        "telemetry-verify",
+        help="Reconcile all preview D1 checkpoints with a packaged journey",
+    )
+    telemetry.add_argument("--candidate", type=Path, required=True)
+    telemetry.add_argument("--e2e-result", type=Path, required=True)
+    telemetry.add_argument("--snapshots", type=Path, required=True)
+    telemetry.add_argument("--expected-counts", type=Path, required=True)
+    telemetry.add_argument("--platform", choices=("macos", "windows"), required=True)
+    telemetry.add_argument("--output", type=Path, required=True)
     doctor = subparsers.add_parser(
         "doctor",
         help="Verify harness runtimes and dependencies without running media jobs",
@@ -437,6 +461,10 @@ def run_release_receipt_gate(args: argparse.Namespace) -> int:
         deep_result=_read_json_object(args.deep_result, label="DEEP result"),
         packaged_e2e=_read_json_object(args.e2e_result, label="packaged E2E result"),
         commands_used=[shlex.split(command) for command in args.commands_used],
+        telemetry_results=[
+            _read_json_object(path, label="preview telemetry result")
+            for path in args.telemetry_result
+        ],
     )
     paths = write_release_receipt(args.output_dir.resolve(), receipt)
     print(
@@ -577,6 +605,14 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(
             run_candidate_gate(args, repo_root=repo_root, harness_root=harness_root)
         )
+    if args.command == "telemetry-verify":
+        from .telemetry_release import verify_command
+
+        raise SystemExit(verify_command(args))
+    if args.command == "telemetry-snapshot":
+        from .telemetry_release import snapshot_command
+
+        raise SystemExit(snapshot_command(args))
     if args.command == "release-receipt":
         raise SystemExit(run_release_receipt_gate(args))
     if args.command == "packaged-e2e":

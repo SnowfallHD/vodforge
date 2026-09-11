@@ -888,11 +888,15 @@ def build_release_receipt(
     deep_result: Mapping[str, Any],
     packaged_e2e: Mapping[str, Any],
     commands_used: Sequence[Sequence[str]],
+    telemetry_results: Sequence[Mapping[str, Any]] = (),
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a fail-closed release receipt from already-produced evidence."""
 
+    from .telemetry_release import release_checks
+
     checks = [
+        *release_checks(telemetry_results, candidate),
         *evaluate_candidate_receipt(candidate),
         *evaluate_fast_result(fast_result),
         *evaluate_engineering_result(normal_result, profile="normal"),
@@ -984,6 +988,7 @@ def build_release_receipt(
                 "skipped": deep_summary.get("skipped"),
             },
         },
+        "telemetry": list(telemetry_results),
         "packaged_e2e": {
             "scenario": packaged_e2e.get("scenario"),
             "candidate_binding": packaged_e2e.get("candidate_binding"),

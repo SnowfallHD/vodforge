@@ -583,8 +583,15 @@ def write_quality_e2e_startup_attestation(
         Path(sys.executable) if executable is None else executable,
         label="runtime executable",
     )
+    from .telemetry_policy import (
+        preview_telemetry_allowed,
+        production_telemetry_allowed,
+    )
+
     payload: dict[str, object] = {
         "schema_version": QUALITY_E2E_SCHEMA_VERSION,
+        "telemetry_preview": preview_telemetry_allowed(),
+        "telemetry_production": production_telemetry_allowed(),
         "session_nonce": nonce,
         "pid": os.getpid() if pid is None else pid,
         "ppid": os.getppid() if ppid is None else ppid,

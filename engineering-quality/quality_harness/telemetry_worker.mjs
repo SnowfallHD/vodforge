@@ -101,12 +101,12 @@ try {
     if (op === "stop") break;
     if (op !== "snapshot") throw new Error("Unknown harness control");
     const installations = await db
-      .prepare("SELECT install_id,current_app_version,telemetry_owner FROM installations")
+      .prepare("SELECT install_id,current_app_version,telemetry_owner,first_launched_at,last_seen_at,first_seen_at,cloud_clicked_at FROM installations")
       .all();
     const clients = await db.prepare("SELECT credential_id,install_id,revoked_at FROM telemetry_clients").all();
     const events = await db
       .prepare(
-        "SELECT event_name,from_version,to_version,failure_reason,failure_detail FROM product_events",
+        "SELECT event_id,event_name,occurred_at,run_kind,output_type,from_version,to_version,failure_reason,failure_detail FROM product_events",
       )
       .all();
     console.log(

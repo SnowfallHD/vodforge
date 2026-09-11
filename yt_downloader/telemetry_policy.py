@@ -26,9 +26,14 @@ def preview_telemetry_allowed() -> bool:
     if not profile or not Path(profile).is_absolute():
         return False
     try:
-        return (
-            Path(root) / "VODFORGE_TELEMETRY_POLICY"
-        ).read_text().strip() == "preview"
+        marker = (Path(root) / "VODFORGE_TELEMETRY_POLICY").read_text().strip()
+        # Exact signed release bytes can exercise the preview service. This is
+        # an explicit isolated QA mode, never a production-telemetry override.
+        return marker == "preview" or (
+            marker == "production"
+            and os.environ.get("VODFORGE_QUALITY_E2E") == "1"
+            and os.environ.get("VODFORGE_QA_PREVIEW_TELEMETRY") == "1"
+        )
     except (OSError, UnicodeError):
         return False
 
@@ -42,8 +47,10 @@ def telemetry_site_origin() -> str:
 
 
 def production_telemetry_allowed() -> bool:
-    if os.environ.get("VODFORGE_DISABLE_TELEMETRY") or os.environ.get(
-        "VODFORGE_QUALITY_E2E"
+    if (
+        os.environ.get("VODFORGE_DISABLE_TELEMETRY")
+        or os.environ.get("VODFORGE_QUALITY_E2E")
+        or os.environ.get("VODFORGE_QA_PREVIEW_TELEMETRY")
     ):
         return False
     root = getattr(sys, "_MEIPASS", None)

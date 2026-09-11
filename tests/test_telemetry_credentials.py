@@ -108,3 +108,86 @@ def test_rate_limit_backoff_survives_owner_recreation(tmp_path, monkeypatch):
     )
     assert len(calls) == 1
     assert not (tmp_path / "telemetry-launch-receipt.json").exists()
+
+
+def test_each_session_observes_launch_without_reenrollment(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
+    calls = []
+
+    def opener(request, **_kwargs):
+        body = json.loads(request.data)
+        calls.append(request.full_url.rsplit("/", 1)[-1])
+        return Response(
+            {
+                "ok": True,
+                "enrolled": True,
+                "launched": True,
+                "credential_id": body["credential_id"],
+                "install_id": module.load_or_create_installation_state(
+                    tmp_path / "installation.json"
+                ).install_id,
+                "app_version": body["app_version"],
+            }
+        )
+
+    first = module.TelemetryCredentialOwner(tmp_path, opener=opener)
+    assert first.observe_session("0.2.1", "macos")
+    assert first.observe_session("0.2.1", "macos")
+    assert calls == ["enroll", "launch"]
+    second = module.TelemetryCredentialOwner(tmp_path, opener=opener)
+    assert second.observe_session("0.2.1", "macos")
+    assert calls == ["enroll", "launch", "launch"]
+    assert second.first_launch("0.2.1", "macos")
+    assert calls == ["enroll", "launch", "launch"]
+
+
+@pytest.mark.parametrize("choice", [None, False])
+def test_session_ping_respects_unknown_and_denied_consent(
+    tmp_path, monkeypatch, choice
+):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
+    if choice is None:
+        (tmp_path / "settings.json").unlink()
+    else:
+        AnalyticsConsentOwner(tmp_path).choose(False)
+    owner = module.TelemetryCredentialOwner(
+        tmp_path, opener=lambda *_a, **_k: pytest.fail("request leaked")
+    )
+    assert not owner.observe_session("0.2.1", "macos")
+    assert not owner.session_observed("0.2.1")
+    assert not owner.path.exists()
+
+
+def test_failed_session_ping_retries_and_does_not_reenroll(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "telemetry_collection_allowed", lambda: True)
+    calls = []
+    successful = True
+
+    def opener(request, **_kwargs):
+        body = json.loads(request.data)
+        calls.append(request.full_url.rsplit("/", 1)[-1])
+        return Response(
+            {
+                "ok": successful,
+                "enrolled": True,
+                "launched": successful,
+                "credential_id": body["credential_id"],
+                "install_id": module.load_or_create_installation_state(
+                    tmp_path / "installation.json"
+                ).install_id,
+                "app_version": body["app_version"],
+            }
+        )
+
+    assert module.TelemetryCredentialOwner(tmp_path, opener=opener).observe_session(
+        "0.2.1", "macos"
+    )
+    second = module.TelemetryCredentialOwner(tmp_path, opener=opener)
+    successful = False
+    assert not second.observe_session("0.2.1", "macos")
+    assert not second.session_observed("0.2.1")
+    successful = True
+    assert second.observe_session("0.2.1", "macos")
+    assert calls == ["enroll", "launch", "launch", "launch"]

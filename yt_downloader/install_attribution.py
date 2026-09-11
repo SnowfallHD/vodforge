@@ -177,7 +177,7 @@ class InstallationAttributionOwner:
         self._native_delivery = first_party_recorder is None
         self._first_party_recorder = first_party_recorder or (
             lambda _state, *, app_version, platform_name: (
-                self._credentials.first_launch(
+                self._credentials.observe_session(
                     app_version, installation_platform(platform_name)
                 )
             )
@@ -190,7 +190,7 @@ class InstallationAttributionOwner:
         self._poll_attempts = max(0, int(poll_attempts))
 
     def needs_delivery(self, state: InstallationState) -> bool:
-        if self._native_delivery and not self._credentials.launch_confirmed():
+        if self._native_delivery and not self._credentials.session_observed():
             return True
         if not state.first_launch_confirmed:
             return True
@@ -217,7 +217,7 @@ class InstallationAttributionOwner:
             not current.first_launch_confirmed
             or (
                 self._native_delivery
-                and not self._credentials.launch_confirmed(app_version)
+                and not self._credentials.session_observed(app_version)
             )
         ) and self._first_party_recorder(
             current,

@@ -42,6 +42,7 @@ class TelemetryCredentialOwner:
         self.receipt = directory / "telemetry-launch-receipt.json"
         self.backoff = directory / "telemetry-backoff.json"
         self.opener = opener
+        self._observed_session_version: str | None = None
 
     def _credential(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -148,25 +149,50 @@ class TelemetryCredentialOwner:
                 pass
             return None
 
-    def first_launch(self, app_version: str, platform: str) -> bool:
-        if not telemetry_collection_allowed():
+    def session_observed(self, app_version: str = __version__) -> bool:
+        return self._observed_session_version == app_version
+
+    def observe_session(self, app_version: str, platform: str) -> bool:
+        """Observe each app session independently of durable version enrollment."""
+        if not telemetry_collection_allowed() or not analytics_allowed(
+            self.path.parent
+        ):
+            return False
+        if self.session_observed(app_version):
+            return True
+        if not self.first_launch(app_version, platform, observe=True):
+            return False
+        self._observed_session_version = app_version
+        return True
+
+    def first_launch(
+        self, app_version: str, platform: str, *, observe: bool = False
+    ) -> bool:
+        if not telemetry_collection_allowed() or not analytics_allowed(
+            self.path.parent
+        ):
             return False
         try:
             credential = self._credential()
-            if self.launch_confirmed(app_version):
+            confirmed = self.launch_confirmed(app_version)
+            if confirmed and not observe:
                 return True
             install_id = load_or_create_installation_state(
                 self.path.parent / "installation.json"
             ).install_id
-            enrolled = self._post(
-                "enroll",
-                {
-                    "app_version": app_version,
-                    "platform": platform,
-                    "schema_version": 1,
-                    "install_id": install_id,
-                },
-                credential,
+            enrolled = (
+                {"enrolled": True}
+                if confirmed
+                else self._post(
+                    "enroll",
+                    {
+                        "app_version": app_version,
+                        "platform": platform,
+                        "schema_version": 1,
+                        "install_id": install_id,
+                    },
+                    credential,
+                )
             )
             if not enrolled or enrolled.get("enrolled") is not True:
                 return False

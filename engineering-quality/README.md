@@ -338,7 +338,7 @@ The contract exercises first launch, version updates, event deduplication, and
 real injected HTTP failures serialized through the product-event owner. It is
 source integration evidence, not deployed routing or packaged-app proof.
 
-All profile runs force telemetry suppression. A harness-process audit guard
+Headless profile runs force telemetry suppression. Public releases additionally require the [packaged preview-D1 telemetry journey](TELEMETRY_RELEASE_GATE.md) on macOS and Windows; use `packaged-e2e --telemetry preview` for that separate positive gate. A harness-process audit guard
 blocks production telemetry hosts and fails the isolation receipt even if a
 caller swallows the exception. The local Worker denies outbound fetches and
 uses only explicitly supplied local bindings/migrations; no production D1 is

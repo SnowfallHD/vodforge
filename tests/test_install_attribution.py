@@ -348,3 +348,53 @@ def test_owner_resumes_status_poll_after_browser_closed_before_claim_completed(
     assert len(opened) == 1
     assert delivered.attribution_claim_confirmed is True
     assert delivered.heycatch_first_launch_confirmed is True
+
+
+def test_native_owner_observes_each_session_even_with_completed_attribution(
+    tmp_path, monkeypatch
+):
+    from yt_downloader import telemetry_credentials
+
+    monkeypatch.setattr(
+        telemetry_credentials, "telemetry_collection_allowed", lambda: True
+    )
+    from yt_downloader.cloud_funnel import mark_heycatch_first_launch_confirmed
+    from yt_downloader.version import __version__
+
+    path = tmp_path / "installation.json"
+    state = load_or_create_installation_state(path)
+    mark_first_launch_confirmed(path, state.install_id)
+    mark_heycatch_first_launch_confirmed(path, state.install_id)
+    state = mark_attribution_claim_confirmed(path, state.install_id)
+    calls = []
+
+    def opener(request, **kwargs):
+        body = json.loads(request.data)
+        calls.append(request.full_url.rsplit("/", 1)[-1])
+        return PayloadResponse(
+            {
+                "ok": True,
+                "enrolled": True,
+                "launched": True,
+                "credential_id": body["credential_id"],
+                "install_id": state.install_id,
+                "app_version": body["app_version"],
+            }
+        )
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Repeat session must not repeat browser/provider attribution")
+
+    for count in (2, 3):
+        owner = InstallationAttributionOwner(
+            path,
+            heycatch_recorder=forbidden,
+            claim_issuer=forbidden,
+            browser_opener=forbidden,
+        )
+        owner._credentials.opener = opener
+        assert owner.needs_delivery(state)
+        state = owner.deliver_first_launch(state, app_version=__version__)
+        assert not owner.needs_delivery(state)
+        assert len(calls) == count
+    assert calls == ["enroll", "launch", "launch"]

@@ -205,6 +205,8 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
     payload = json.loads(expected.read_text(encoding="utf-8"))
     assert payload == {
         "schema_version": "1.0.0",
+        "telemetry_preview": False,
+        "telemetry_production": False,
         "session_nonce": SESSION_NONCE,
         "pid": 4321,
         "ppid": 1234,

@@ -247,6 +247,8 @@ def test_release_receipt_command_keeps_subcommand_routing(
         str(tmp_path / "deep.json"),
         "--e2e-result",
         str(tmp_path / "e2e.json"),
+        "--telemetry-result",
+        str(tmp_path / "telemetry.json"),
         "--output-dir",
         str(tmp_path / "receipt"),
         "--command",
@@ -358,6 +360,8 @@ def test_packaged_receipt_requires_independent_pipeline_and_provenance_receipts(
 
 
 def test_release_receipt_allows_visible_debt_but_blocks_required_gaps() -> None:
+    from test_telemetry_release import telemetry_fixture
+
     candidate = _candidate()
     fast = {
         **_engineering_result("normal"),
@@ -378,6 +382,9 @@ def test_release_receipt_allows_visible_debt_but_blocks_required_gaps() -> None:
         deep_result=deep,
         packaged_e2e=packaged,
         commands_used=[["./engineering-quality/run", "fast"]],
+        telemetry_results=[
+            telemetry_fixture(candidate, platform) for platform in ("macos", "windows")
+        ],
         generated_at="2026-08-31T00:00:00+00:00",
     )
 

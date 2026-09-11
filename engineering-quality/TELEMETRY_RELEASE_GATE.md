@@ -1,0 +1,103 @@
+# Telemetry release gate
+
+A release must prove telemetry with real UI actions in final signed artifacts on
+**macOS and Windows**, against **vodforge_preview**. Telemetry-off E2E alone is
+insufficient. Do not publish when either platform's evidence is absent, skipped,
+failed, stale, or from a rebuilt artifact.
+
+## Isolation and final artifacts
+
+Use the normal final production-policy artifact. Do not modify its policy marker,
+re-sign it, or substitute a preview rebuild after testing. The explicit combination
+`VODFORGE_QUALITY_E2E=1`, `VODFORGE_QA_PREVIEW_TELEMETRY=1`, a valid private
+`VODFORGE_QA_ACCESS_KEY`, and an absolute isolated `VODFORGE_QA_PROFILE` routes
+telemetry exclusively to the fixed preview host. Production telemetry remains
+forbidden. Disabled artifacts cannot be enabled by these flags. The unconditional
+`VODFORGE_DISABLE_TELEMETRY=1` switch is retained for the negative journey.
+
+The maintained Mac launcher supports `packaged-e2e --telemetry preview`; it sets
+an isolated profile and removes the off switch only from its own child environment.
+Supply the QA key privately in the parent environment, never in receipts, commands,
+source, or the artifact. Windows journeys must use the same explicit environment
+and isolated state, retaining native PID/executable/signature and archive receipts.
+Do not use a user's normal profile. The existing Windows consent-only driver is
+not an all-event release journey and cannot substitute for this gate.
+
+Verify the preview config binds Worker `vodforge-preview`, no production routes,
+and D1 `924640fb-3be3-47ca-992c-1c7745bd8469`. Apply the same site migrations to
+preview and deploy its current handlers through the site's guarded preview script.
+Record the site commit/deployment version alongside the report. Do not copy
+production users or change production data to create test fixtures.
+
+## Required observed journey
+
+Retain the UI action ledger, screenshots, exact candidate archive/executable hashes,
+process launch identities, source commit, platform, and raw scoped D1 checkpoints.
+A helper directly posting events is a transport test, not packaged journey proof.
+
+1. Fresh isolated profile: decline or leave permission unknown; verify no optional
+   telemetry rows. Grant permission through the UI. Observe one installation and
+   credential, first launch and app-open event. Capture `first_launch.json`.
+2. Quit normally. Reopen the **same version and same profile** after the timestamp
+   second changes. Verify last seen advances; first launch, creation date, identity
+   and current version stay fixed; no update event appears. Capture
+   `same_version_reopen.json`. Repeated UI callbacks within one session must not
+   create extra app-open events.
+3. Through actual UI actions, complete MP4, MP3 and Original-audio runs; play each;
+   stop an active run; cause a controlled failure and retry it; complete local
+   audio + image → MP4. Open Settings and use Cloud interest. Record exact expected
+   counts from these actions, including starts and terminal outcomes for each
+   attempt. Capture `events_complete.json`. Keep bounded failure facts and exact
+   event IDs. Validate the media output independently as part of ordinary E2E.
+4. Turn analytics off through Settings, quit/reopen, and exercise actions again.
+   Capture `denied.json`; installation observations and event rows must not change.
+5. With the same isolated profile, run the explicit telemetry-disabled negative
+   journey, including app open and media use. Capture `disabled.json`; D1 must
+   remain unchanged. Also retain transport suppression tests for unknown consent.
+6. In a separate isolated upgrade profile, capture `update_before.json` on the
+   previous version and `update_after.json` after the real upgrade to the candidate.
+   Require the same installation, exactly one correct client_update transition,
+   current version advancement, and no duplicate transition after another launch.
+7. Repeat on Windows. Cover accepted/refused/unknown regional permission, browser
+   claim source attribution and refusal, offline retry, exact retry deduplication,
+   rate limiting, credential conflict and revocation in the required backend/local
+   contracts. Provider delivery is explicitly separate: preview excludes HeyCatch;
+   never claim provider certification from preview D1.
+
+## Direct D1 readbacks and enforcement
+
+While each packaged session runs, capture its scoped rows (SELECT only):
+
+```sh
+./engineering-quality/run telemetry-snapshot \
+  --site ../vodforge-site \
+  --session engineering-quality/reports/<journey>/session.json \
+  --output engineering-quality/reports/<journey>/snapshots/first_launch.json
+```
+
+Repeat for each checkpoint. The session must identify the actual isolated profile
+and immutable candidate binding. The command rejects a different database or
+production Worker configuration and exports no credentials or contact data.
+Use the corresponding baseline session for `update_before.json`.
+
+`expected-counts.json` is the explicit event-name/count mapping from the UI ledger;
+all seven product events must be present with positive counts. Do not copy counts
+from D1 to make a failed journey pass. Original audio remains an unlabeled format
+in schema v1; it must still produce lifecycle and playback events.
+
+```sh
+./engineering-quality/run telemetry-verify \
+  --candidate engineering-quality/candidates/<id>/candidate-artifact.json \
+  --e2e-result engineering-quality/reports/<journey>/e2e-result.json \
+  --snapshots engineering-quality/reports/<journey>/snapshots \
+  --expected-counts engineering-quality/reports/<journey>/expected-counts.json \
+  --platform macos \
+  --output engineering-quality/reports/<journey>/telemetry-result.json
+```
+
+Pass both platform results as repeated `--telemetry-result` arguments to
+`release-receipt`. It recomputes the metric checks from the readbacks; a supplied
+`status: passed` cannot bypass missing checkpoints, wrong source/artifact, stale
+last seen, missing or duplicate events, missing update evidence, or privacy writes.
+Final publication still requires the ordinary signature, updater, media, UI and
+artifact-integrity checks. A review-only draft upload is not publication.

@@ -34,6 +34,7 @@ def native_surface_contract(repo_root, output_dir):
             "tests/test_native_ui_polish.py",
             "tests/test_support_native.py",
             "tests/test_forge_activity_ui.py",
+            "tests/test_analytics_consent_ui.py",
             "-q",
             f"--junitxml={report}",
         ],
