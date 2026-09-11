@@ -59,7 +59,7 @@ def test_selected_item_height_remains_fixed_while_tags_are_capped() -> None:
     assert "height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES" in library_source
     assert "height=FOCUS_LIBRARY_SELECTED_DESCRIPTION_VISIBLE_LINES" in library_source
     assert "details.rowconfigure(3, weight=0)" in library_source
-    assert "details.rowconfigure(4, weight=1, minsize=120)" in library_source
+    assert "details.rowconfigure(4, weight=1)" in library_source
 
 
 def test_selected_overview_uses_the_active_title_font_measurement() -> None:

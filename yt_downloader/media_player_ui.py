@@ -13,19 +13,85 @@ from .history import sanitize_chapters, sanitize_heatmap
 from .media_preview import MediaPreviewOwner
 from .playback_backend import MediaPlayerError, PlaybackBackend, PlaybackSnapshot
 from .playback_surface import TkPlaybackSurfaceOwner
+from .ui_chrome import accent_hover_color
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, FONT_UI_SMALL, THEME
 from .ui_widgets import SleekScrollbar, _tinted_ui_icon, reveal_toplevel
 
 try:
-    from PIL import Image, ImageOps, ImageTk
+    from PIL import Image, ImageDraw, ImageOps, ImageTk
 except ImportError:  # pragma: no cover - required by production package
-    Image = ImageOps = ImageTk = None  # type: ignore[assignment]
+    Image = ImageDraw = ImageOps = ImageTk = None  # type: ignore[assignment]
 
 PREVIEW_WIDTH = 132
 PREVIEW_HEIGHT = 74
 CHAPTER_ROWS_MAX = 8
 DETAIL_ROWS_MAX = 12
+
+
+class PosterPlayButton(ttk.Button):
+    """Native button whose rounded corners show the poster beneath it.
+
+    Tk child windows cannot expose a sibling image through transparent pixels.
+    Composite the poster crop into the existing button chrome instead.
+    """
+
+    def __init__(self, master: tk.Misc, *, command: Callable[[], Any]) -> None:
+        super().__init__(master, text="▶  Play", command=command, takefocus=True)
+        self._poster: Any = None
+        self._poster_origin = (1, 1)
+        self._backgrounds = [
+            ImageTk.PhotoImage(Image.new("RGB", (176, 48), "black"), master=self)
+            for _ in range(2)
+        ]
+        style = ttk.Style(self)
+        name = "PosterPlay.Accent.TButton"
+        style.layout(name, [("Button.label", {"sticky": ""})])
+        self.configure(
+            {
+                "style": name,
+                "compound": "center",
+                "image": (
+                    self._backgrounds[0],
+                    "active",
+                    self._backgrounds[1],
+                    "pressed",
+                    self._backgrounds[1],
+                    "focus",
+                    self._backgrounds[1],
+                ),
+            },
+        )
+        self.bind("<Configure>", self._paint_background, add="+")
+        self._paint_background()
+
+    def set_poster(self, image: Any, origin: tuple[int, int]) -> None:
+        self._poster, self._poster_origin = image, origin
+        self._paint_background()
+
+    def _paint_background(self, _event: tk.Event[Any] | None = None) -> None:
+        width, height = 176, 48
+        left = self.winfo_x() - self._poster_origin[0]
+        top = self.winfo_y() - self._poster_origin[1]
+        background = (
+            self._poster.crop((left, top, left + width, top + height))
+            if self._poster is not None
+            else Image.new("RGB", (width, height), "black")
+        )
+        for photo, color in zip(
+            self._backgrounds, (THEME["accent"], accent_hover_color()), strict=True
+        ):
+            chrome = Image.new("RGBA", (width * 3, height * 3))
+            ImageDraw.Draw(chrome).rounded_rectangle(
+                (0, 0, width * 3 - 1, height * 3 - 1),
+                radius=27,
+                fill=color,
+            )
+            composed = background.convert("RGBA")
+            composed.alpha_composite(
+                chrome.resize((width, height), Image.Resampling.LANCZOS)
+            )
+            photo.paste(composed.convert("RGB"))
 
 
 class PlayerTransportButton(ttk.Button):
@@ -337,12 +403,7 @@ class MediaPlayerWindow:
         )
         self.stage.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
         self.stage.bind("<Configure>", self._queue_stage_render, add="+")
-        self.play_overlay = ttk.Button(
-            stage_shell,
-            text="▶  Play",
-            command=self._toggle,
-            style="Accent.TButton",
-        )
+        self.play_overlay = PosterPlayButton(stage_shell, command=self._toggle)
         self.play_overlay.place(relx=0.5, rely=0.5, anchor="center")
         if self.thumbnail_path is not None:
             self._render_still_image(self.thumbnail_path)
@@ -772,6 +833,9 @@ class MediaPlayerWindow:
         )
         self._frame_image = ImageTk.PhotoImage(image)
         self.stage.configure(image=self._frame_image, text="")
+        self.play_overlay.set_poster(
+            image, (self.stage.winfo_x(), self.stage.winfo_y())
+        )
 
     def _generate_previews(self) -> None:
         snapshot = self.playback.snapshot

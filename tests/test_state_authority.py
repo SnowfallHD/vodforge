@@ -2586,7 +2586,7 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
     )
     assert "overview.grid_propagate(False)" in library_source
     assert "details.rowconfigure(3, weight=0)" in library_source
-    assert "details.rowconfigure(4, weight=1, minsize=120)" in library_source
+    assert "details.rowconfigure(4, weight=1)" in library_source
     assert (
         "tags_line.configure(height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT)"
         in library_source

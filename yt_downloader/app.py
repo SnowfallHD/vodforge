@@ -6207,7 +6207,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
         details.rowconfigure(3, weight=0)
-        details.rowconfigure(4, weight=1, minsize=120)
+        details.rowconfigure(4, weight=1)
         self.selected_title_var = tk.StringVar(
             value="Choose a saved item or preview a URL to inspect its metadata."
         )
@@ -6341,6 +6341,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
         description_line = ttk.Frame(details, style="FocusShell.TFrame")
         description_line.grid(row=4, column=0, sticky="nsew")
+        description_line.grid_propagate(False)
         description_line.columnconfigure(0, weight=1)
         description_line.rowconfigure(1, weight=1)
         self.focus_description_heading_label = ttk.Label(

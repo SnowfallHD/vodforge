@@ -868,3 +868,90 @@ def test_update_recovery_exposes_cause_and_keeps_repair_visible(root):
     root.after(150, inspect)
     show_update_recovery(root, "precise failure cause", lambda: checks.append(True))
     assert checks == [True] * 7
+
+
+def test_player_overlay_corners_match_poster_and_native_input(root):
+    from PIL import Image, ImageTk
+
+    from yt_downloader.media_player_ui import MediaPlayerWindow
+
+    player = object.__new__(MediaPlayerWindow)
+    player.popup = root
+    player.thumbnail_path = None
+    player._audio_only = False
+    player._closed = False
+    player._source_image = None
+    player._stage_render_after_id = None
+    player._stage_render_signature = None
+    calls = []
+    player._toggle = lambda: calls.append(True)
+    frame = ttk.Frame(root)
+    frame.pack(fill="both", expand=True)
+    frame.columnconfigure(0, weight=1)
+    frame.rowconfigure(1, weight=1)
+    player._build_stage(frame)
+    root.deiconify()
+    for size in ("700x440", "950x600", "700x440"):
+        root.geometry(size)
+        settle_native(root)
+        player._source_image = Image.new("RGB", (1000, 700), "#d03a98")
+        player._stage_render_signature = None
+        player._commit_stage_render()
+        settle_native(root)
+        button = player.play_overlay
+        # The complete ttk element must own the corners, not transparent image
+        # pixels exposing the stage shell's solid backing.
+        images = getattr(button, "_backgrounds", [])
+        assert len(images) == 2, "Overlay still uses transparent generic button chrome"
+        for photo in images:
+            pixels = ImageTk.getimage(photo)
+            assert pixels.getpixel((0, 0))[:3] == (208, 58, 152)
+            assert (button.winfo_width(), button.winfo_height()) == pixels.size
+        button.invoke()
+        button.focus_force()
+        settle_native(root)
+        button.event_generate("<KeyPress-space>")
+        button.event_generate("<KeyRelease-space>")
+        settle_native(root)
+    assert len(calls) == 6
+
+
+def test_library_description_stays_inside_table_edge_after_resize():
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+
+    with isolated_preview_services():
+        app = DownloaderApp()
+        try:
+            app.metadata_items = [
+                {
+                    "id": "layout",
+                    "title": "A long selected title " * 8,
+                    "description": "Description sentinel first\nMiddle\nDescription sentinel last",
+                    "tags": ["tag"] * 20,
+                }
+            ]
+            app._display_selected_metadata(0)
+            app._select_focus_view("library")
+            for size in ("1320x820", "1440x900", "1320x780"):
+                app.geometry(size)
+                settle_native(app)
+                app._select_focus_view("library")
+                settle_native(app)
+                app._apply_focus_layout(force=True)
+                app._fit_focus_description_to_library_table()
+                settle_native(app)
+                body = app.description_text
+                table = app.video_tree
+                details = app.focus_library_details
+                bottom = body.winfo_rooty() + body.winfo_height()
+                assert (
+                    abs(bottom - (table.winfo_rooty() + table.winfo_height())) <= 2
+                ), [
+                    (str(w), w.winfo_y(), w.winfo_height(), w.winfo_ismapped())
+                    for w in (details, app.focus_description_line, body)
+                ]
+                assert bottom <= details.winfo_rooty() + details.winfo_height()
+                assert body.winfo_height() > 20
+        finally:
+            app.destroy()
