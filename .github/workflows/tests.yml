@@ -24,6 +24,16 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
+      - name: Install media test tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install media test tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+      - name: Install media test tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\install_ffmpeg_windows.ps1
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
       - name: Run tests
