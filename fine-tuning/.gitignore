@@ -1,0 +1,5 @@
+# Generated media and per-frame metrics are not public benchmark receipts.
+*.mp4
+*.mkv
+*-vmaf.json
+runs/

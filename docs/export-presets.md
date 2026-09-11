@@ -15,7 +15,28 @@ All automatic MP4 presets select the best suitable available SDR source within t
 | CTV | Source-derived constrained CBR; 1080p tier targets 2.5–10 Mbps | About 2 seconds maximum, explicit constant frame rate at source rate | Existing source-informed AAC policy |
 | Custom | User-selected CBR or x264 quality CRF 1–51, encoding speed | Existing encoder defaults | User-selected AAC or MP3, bitrate, sample rate, channels |
 
-Quality presets use CPU x264, including when a saved NVIDIA preference is on. NVENC CQ is not an interchangeable x264 CRF scale. CBR retains the existing optional NVENC path; Windows GPU execution is not verified by the Mac receipts. In Custom, the unused bitrate/CRF control is disabled, and unused bitrate does not affect quality-mode duplicate identity. CRF 0 is excluded because lossless x264 is incompatible with the fixed High profile contract.
+Automatic quality presets honor the saved Windows NVIDIA preference. CPU uses
+x264 medium with the CRF values above. NVENC uses independently tuned CQ:
+Everyday 24, Streaming 23, Editing 20 and Sharing 27, with p6/HQ, temporal AQ,
+20-frame lookahead, three B-frames and full-resolution multipass. These are
+encoder-specific targets, not equivalent numerical scales or a promise of
+identical quality/file size on every source or GPU. CPU remains the default.
+
+Streaming's NVENC bitrate cap is 1.5 times the CPU cap. Automatic CTV allows up
+to 1.75 times its CPU bitrate target, rounded up to 500 kbps, bounded by the greater of the existing target
+and the resolution/frame-rate cap, to compensate for encoder efficiency. The
+measured 1080p floor remains 2,000 kbps; resolution, frame timing, keyframes and
+audio contracts are unchanged. Custom CBR preserves the user's exact bitrate;
+Custom quality remains explicitly x264 CRF, rather than inventing an uncalibrated
+CQ translation for arbitrary manual values. The NVIDIA checkbox and descriptions
+state this distinction.
+
+The reproducible harness now lives in [fine-tuning](../fine-tuning/README.md).
+Its NVIDIA evidence uses an RTX 2080 Ti; other GPU generations and drivers still
+need their own receipts. Original CPU measurements below remain CPU results.
+In Custom, the unused bitrate/CRF control is disabled, and unused bitrate does
+not affect quality-mode duplicate identity. CRF 0 is excluded because lossless
+x264 is incompatible with the fixed High profile contract.
 
 Streaming reuses the existing resolution/frame-rate cap table (for example 5 Mbps at 720p, 10 Mbps at 1080p30, 14 Mbps at 1080p60) with a two-second VBV buffer. These are rate-control constraints, not exact file-size promises; short clips can have an average above the nominal cap due to the initial buffer. Existing 18% measured-rate tolerance applies to the maximum for this profile. Quality-mode video otherwise has no invented bitrate floor; positive, finite measured rate and the independent stream/codec/profile/pixel format/geometry/duration/audio checks remain mandatory.
 
@@ -43,7 +64,7 @@ The baseline 5 Mbps CTV candidate scored 87.65; the final 6 Mbps target scored 9
 ### Reproduce
 
 ```sh
-PYTHONPATH=. .venv/bin/python scripts/benchmark_export_presets.py --production \
+PYTHONPATH=. .venv/bin/python fine-tuning/benchmark_export_presets.py --production \
   --ffmpeg dist/VODForge.app/Contents/Frameworks/ffmpeg \
   --ffprobe dist/VODForge.app/Contents/Frameworks/ffprobe \
   --ocean build/aac-failure-repro/full-source.mp4 \

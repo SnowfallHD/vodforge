@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from .export_planning import QUALITY_PRESETS, export_mode_display_name
+from .export_planning import export_mode_display_name
 from .history import sanitize_durable_url
 from .models import DownloadJob, ExportMode, OutputType
 
@@ -81,7 +81,6 @@ def job_output_settings(job: DownloadJob) -> dict[str, Any]:
         "quality_label": job.quality_label,
         "export_mode": job.export_mode.value,
         "use_nvenc": job.use_nvenc
-        and job.export_mode not in QUALITY_PRESETS
         and not (
             job.export_mode == ExportMode.MANUAL_OVERRIDE
             and job.manual_settings.video_crf is not None

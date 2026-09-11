@@ -162,14 +162,17 @@ def test_hdr_only_is_rejected_with_an_explanation_instead_of_wrong_colors():
         build_auto_export_plan(info, mode=ExportMode.EVERYDAY)
 
 
+@pytest.mark.parametrize("use_nvenc", [False, True])
 @pytest.mark.parametrize("label", EXPORT_MODES)
 @pytest.mark.parametrize("tier", [360, 480, 720, 1080, 1440, 2160])
-def test_each_task_respects_source_ceiling_and_dimensions(label, tier):
+def test_each_task_respects_source_ceiling_and_dimensions(label, tier, use_nvenc):
     info = source_info(height=tier, width=round(tier * 16 / 9))
     info["formats"].insert(
         0, {**info["formats"][0], "format_id": "larger", "height": 4320, "width": 7680}
     )
-    plan = build_auto_export_plan(info, mode=label, max_height=tier)
+    plan = build_auto_export_plan(
+        info, mode=label, max_height=tier, use_nvenc=use_nvenc
+    )
     assert plan.video_format_id == "v"
     assert plan.output_height == tier
     assert plan.output_width == round(tier * 16 / 9)
@@ -212,3 +215,59 @@ def test_custom_quality_survives_restart_and_changes_duplicate_identity(tmp_path
         restored, manual_settings=replace(restored.manual_settings, video_crf=25)
     )
     assert job_attempt_signature(second) != job_attempt_signature(first)
+
+
+@pytest.mark.parametrize("mode", list(QUALITY_PRESETS))
+def test_nvenc_preset_preserves_task_contract_and_uses_distinct_quality(mode):
+    cpu = build_auto_export_plan(source_info(), mode=mode)
+    gpu = build_auto_export_plan(source_info(), mode=mode, use_nvenc=True)
+    assert gpu.nvenc_cq is not None
+    assert gpu.format_selector == cpu.format_selector
+    assert gpu.keyframe_seconds == cpu.keyframe_seconds
+    assert gpu.audio_bitrate_kbps == cpu.audio_bitrate_kbps
+    command = build_vod_ffmpeg_command(
+        "ffmpeg",
+        Path("in.mp4"),
+        Path("out.mp4"),
+        video_crf=gpu.video_crf,
+        nvenc_cq=gpu.nvenc_cq,
+        use_nvenc=True,
+        video_maxrate_kbps=gpu.video_maxrate_kbps,
+        preserve_attached_picture=True,
+    )
+    assert "h264_nvenc" in command and "libx264" not in command
+    assert "-crf:v:0" not in command and "-minrate:v:0" not in command
+    assert command[command.index("-cq:v:0") + 1] == str(gpu.nvenc_cq)
+    assert "-c:v:1" in command
+    assert "NVENC CQ" in gpu.video_target_label and "NVENC CQ" in gpu.summary
+    assert output_artifact_plan_mismatches(matching_probe(gpu), gpu) == []
+
+
+@pytest.mark.parametrize("mode", list(QUALITY_PRESETS))
+def test_selected_gpu_reaches_worker_plan_and_changes_reuse_identity(tmp_path, mode):
+    from yt_downloader.app import _build_download_item_plan
+    from yt_downloader.models import DownloadJob, Mp3ExportSettings, OutputType
+    from yt_downloader.run_identity import job_attempt_signature
+
+    job = DownloadJob(
+        url="https://www.youtube.com/watch?v=abc123",
+        output_dir=tmp_path,
+        output_type=OutputType.MP4,
+        quality_label="1080p Full HD",
+        export_mode=mode,
+        manual_settings=ManualExportSettings(),
+        mp3_settings=Mp3ExportSettings(),
+        single_video_only=True,
+        use_nvenc=False,
+        embed_thumbnail=False,
+        write_thumbnail=False,
+        embed_metadata=False,
+        write_info_json=False,
+        tags=[],
+    )
+    gpu_job = replace(job, use_nvenc=True)
+    plan = _build_download_item_plan(gpu_job, source_info(), max_height=1080)
+    assert plan.nvenc_cq is not None
+    assert job_attempt_signature(job) != job_attempt_signature(gpu_job)
+    # Repeating the same intent must still reuse rather than re-encode.
+    assert job_attempt_signature(gpu_job) == job_attempt_signature(replace(gpu_job))

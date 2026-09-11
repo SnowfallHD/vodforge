@@ -114,10 +114,10 @@ def export_mode_description(mode: ExportMode | str) -> str:
             "It cannot add detail missing from the YouTube source."
         )
     descriptions = {
-        ExportMode.EVERYDAY: "Recommended for general use. Balances detail and file size, adapting bitrate to the pictures. Uses CPU encoding for consistent quality.",
-        ExportMode.STREAMING: "Prepare local clips for livestreams and reactions. Clear detail, consistent frame timing and two-second keyframes. Uses CPU encoding.",
-        ExportMode.EDITING: "Preserve detail for another export, with one-second keyframes for easier seeking. Larger MP4 files; uses CPU encoding.",
-        ExportMode.SHARING: "Create smaller MP4 files for sending and uploading, accepting some detail loss. Keeps your resolution ceiling; uses CPU encoding.",
+        ExportMode.EVERYDAY: "Recommended for general use. Balances detail and file size, adapting bitrate to the pictures. Uses your selected CPU or NVIDIA encoder.",
+        ExportMode.STREAMING: "Prepare local clips for livestreams and reactions. Clear detail, consistent frame timing and two-second keyframes. Uses your selected CPU or NVIDIA encoder.",
+        ExportMode.EDITING: "Preserve detail for another export, with one-second keyframes for easier seeking. Larger MP4 files; uses your selected CPU or NVIDIA encoder.",
+        ExportMode.SHARING: "Create smaller MP4 files for sending and uploading, accepting some detail loss. Keeps your resolution ceiling; uses your selected CPU or NVIDIA encoder.",
     }
     return descriptions.get(
         parsed,
@@ -138,6 +138,15 @@ QUALITY_PRESETS = {
     ExportMode.STREAMING: (20, 2.0, True),
     ExportMode.EDITING: (18, 1.0, True),
     ExportMode.SHARING: (25, 5.0, False),
+}
+
+
+# NVIDIA candidates are calibrated independently; see fine-tuning/results.
+NVENC_QUALITY_PRESETS = {
+    ExportMode.EVERYDAY: 24,
+    ExportMode.STREAMING: 23,
+    ExportMode.EDITING: 20,
+    ExportMode.SHARING: 27,
 }
 
 
@@ -827,6 +836,8 @@ def build_auto_export_plan(
     info: dict[str, Any],
     mode: ExportMode | str = ExportMode.AUTO_CBR,
     max_height: int = DEFAULT_MAX_HEIGHT,
+    *,
+    use_nvenc: bool = False,
 ) -> ExportPlan:
     mode = export_mode_from_display_name(mode)
     formats = [fmt for fmt in info.get("formats") or [] if isinstance(fmt, dict)]
@@ -859,15 +870,24 @@ def build_auto_export_plan(
         max_height=max_height,
         evidence=evidence,
     )
+    video_target_kbps = targets.video_bitrate_kbps
+    if use_nvenc and mode == ExportMode.AUTO_CBR:
+        video_target_kbps = min(
+            max(video_target_kbps, _resolution_cap_kbps(height, fps)),
+            math.ceil(video_target_kbps * 1.75 / 500) * 500,
+        )
     summary = _auto_plan_summary(
         mode,
         video_quality_tier(video),
-        targets.video_bitrate_kbps,
+        video_target_kbps,
         targets.audio_bitrate_kbps,
     )
     crf, keyframe_seconds, constant_frame_rate = QUALITY_PRESETS.get(
         mode, (None, 2.0, True)
     )
+    nvenc_cq = NVENC_QUALITY_PRESETS.get(mode) if use_nvenc else None
+    if nvenc_cq is not None:
+        summary = summary.replace(f"CRF {crf}", f"NVENC CQ {nvenc_cq}")
     return ExportPlan(
         mode=mode,
         video_format_id=selection.video_id,
@@ -877,7 +897,7 @@ def build_auto_export_plan(
         output_height=height,
         source_video_kbps=source_video_kbps,
         effective_video_kbps=effective_video_kbps,
-        video_bitrate_kbps=targets.video_bitrate_kbps,
+        video_bitrate_kbps=video_target_kbps,
         source_audio_kbps=source_audio_kbps,
         effective_audio_kbps=effective_audio_kbps,
         audio_bitrate_kbps=targets.audio_bitrate_kbps,
@@ -887,9 +907,12 @@ def build_auto_export_plan(
         warnings=list(targets.warnings),
         summary=summary,
         video_crf=crf,
+        nvenc_cq=nvenc_cq,
         keyframe_seconds=keyframe_seconds,
         constant_frame_rate=constant_frame_rate,
-        video_maxrate_kbps=_resolution_cap_kbps(height, fps)
+        video_maxrate_kbps=round(
+            _resolution_cap_kbps(height, fps) * (1.5 if use_nvenc else 1)
+        )
         if mode == ExportMode.STREAMING
         else None,
         source_quality_tier=video_quality_tier(video),

@@ -2847,6 +2847,7 @@ def build_vod_ffmpeg_command(
     preserve_attached_picture: bool = False,
     preserve_metadata: bool | None = None,
     video_crf: int | None = None,
+    nvenc_cq: int | None = None,
     keyframe_seconds: float | None = None,
     fps: float | None = None,
     constant_frame_rate: bool = False,
@@ -2855,8 +2856,12 @@ def build_vod_ffmpeg_command(
     """Encode the selected quality or constrained-CBR contract."""
     if video_crf is not None and not 1 <= video_crf <= 51:
         raise ValueError("Video CRF must be between 1 and 51 for H.264 High profile.")
-    # NVENC CQ is not x264 CRF. Preserve the calibrated quality contract on CPU.
-    use_nvenc = use_nvenc and video_crf is None
+    if nvenc_cq is not None and (video_crf is None or not 1 <= nvenc_cq <= 51):
+        raise ValueError(
+            "NVENC CQ requires a quality plan and must be between 1 and 51."
+        )
+    # Explicit Custom CRF remains x264; automatic presets carry calibrated CQ.
+    use_nvenc = use_nvenc and (video_crf is None or nvenc_cq is not None)
     video_bitrate = f"{int(video_bitrate_kbps)}k"
     audio_bitrate = f"{int(audio_bitrate_kbps)}k"
     buffer_size = f"{int(video_bitrate_kbps) * 2}k"
@@ -2877,7 +2882,17 @@ def build_vod_ffmpeg_command(
             codec_option,
             "h264_nvenc",
             preset_option,
-            "p4",
+            "p6",
+            "-tune:v:0",
+            "hq",
+            "-rc-lookahead:v:0",
+            "20",
+            "-bf:v:0",
+            "3",
+            "-temporal-aq:v:0",
+            "1",
+            "-multipass:v:0",
+            "fullres",
             rate_control_option,
             "cbr",
             bitrate_option,
@@ -2928,6 +2943,33 @@ def build_vod_ffmpeg_command(
             profile_option,
             "high",
         ]
+        if use_nvenc:
+            video_args = [
+                codec_option,
+                "h264_nvenc",
+                preset_option,
+                "p6",
+                rate_control_option,
+                "vbr",
+                "-cq:v:0",
+                str(nvenc_cq),
+                bitrate_option,
+                "0",
+                "-tune:v:0",
+                "hq",
+                "-rc-lookahead:v:0",
+                "20",
+                "-bf:v:0",
+                "3",
+                "-temporal-aq:v:0",
+                "1",
+                "-multipass:v:0",
+                "fullres",
+                pixel_format_option,
+                "yuv420p",
+                profile_option,
+                "high",
+            ]
         if video_maxrate_kbps is not None:
             if video_maxrate_kbps <= 0:
                 raise ValueError("Maximum video bitrate must be positive.")
@@ -3608,6 +3650,7 @@ def transcode_to_vod_streaming_settings(
             preserve_attached_picture=preserve_attached_picture,
             preserve_metadata=preserve_metadata,
             video_crf=plan.video_crf if plan else None,
+            nvenc_cq=plan.nvenc_cq if plan else None,
             keyframe_seconds=plan.keyframe_seconds if plan else None,
             fps=plan.fps if plan else None,
             constant_frame_rate=plan.constant_frame_rate if plan else False,
@@ -4704,6 +4747,7 @@ def _build_download_item_plan(
         preflight_info,
         mode=job.export_mode,
         max_height=max_height,
+        use_nvenc=job.use_nvenc,
     )
     if job.export_mode == ExportMode.MANUAL_OVERRIDE:
         return apply_manual_export_settings(plan, job.manual_settings)
@@ -12482,7 +12526,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 self.events.put(("status", f"{label} — transcoding"))
                 encoder_label = (
                     "NVIDIA NVENC GPU"
-                    if job.use_nvenc and plan.video_crf is None
+                    if job.use_nvenc
+                    and (plan.video_crf is None or plan.nvenc_cq is not None)
                     else "CPU libx264"
                 )
                 self._emit_job_log(
@@ -12491,7 +12536,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 )
                 write_diagnostic(
                     f"{label} ffmpeg command: "
-                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata, video_crf=plan.video_crf, keyframe_seconds=plan.keyframe_seconds, fps=plan.fps, constant_frame_rate=plan.constant_frame_rate, video_maxrate_kbps=plan.video_maxrate_kbps)}"
+                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata, video_crf=plan.video_crf, nvenc_cq=plan.nvenc_cq, keyframe_seconds=plan.keyframe_seconds, fps=plan.fps, constant_frame_rate=plan.constant_frame_rate, video_maxrate_kbps=plan.video_maxrate_kbps)}"
                 )
                 progress_callback((encode_index - 1) / total_mp4)
                 transcode_started = time.monotonic()

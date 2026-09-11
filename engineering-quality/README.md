@@ -1,5 +1,11 @@
 # VODForge engineering-quality harness
 
+Encoder quality, size and speed calibration lives in the companion
+[fine-tuning harness](../fine-tuning/README.md). Its measurements select settings;
+this harness verifies production behavior. Set `VODFORGE_NVENC_TESTS=1` on a
+supported NVIDIA Windows host to include the real preset worker GPU tests.
+A skipped GPU test is not hardware verification.
+
 ## Native control lifecycle gate
 
 `unit_static.native_surface_contract` runs the opt-in source-native control suite

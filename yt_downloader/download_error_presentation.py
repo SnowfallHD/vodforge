@@ -45,6 +45,16 @@ def download_error_message(error: object) -> str:
         return FAILURE_GUIDANCE[reason]
     if reason in {"disk_full", "permission_denied", "filesystem", "resource_exhausted"}:
         return FAILURE_GUIDANCE[reason]
+    if any(
+        term in text
+        for term in (
+            "h264_nvenc",
+            "cannot load nvcuda",
+            "required nvenc api",
+            "no nvenc capable devices",
+        )
+    ):
+        return "NVIDIA encoding failed. In Settings, turn off Use NVIDIA NVENC for MP4 encoding and retry with CPU encoding. To use NVIDIA again, update your graphics driver and check that your GPU supports NVENC. Technical details contains the encoder's error."
     if "only an hdr video source" in text:
         return "This video is only available in HDR. Choose a video with an SDR version for these MP4 presets, then retry."
     if "no valid" in text and "output" in text:

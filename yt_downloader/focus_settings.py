@@ -562,9 +562,9 @@ class FocusSettingsDialog:
             variable=bindings.embed_metadata,
         ).grid(row=8, column=0, columnspan=2, sticky="w", pady=5)
         nvenc_label = (
-            "NVIDIA NVENC for CBR (Windows only)"
+            "NVIDIA NVENC (Windows only)"
             if macos
-            else "Use NVIDIA NVENC for CBR encoding"
+            else "Use NVIDIA NVENC for MP4 encoding"
         )
         nvenc = ModernCheckbox(
             mp4_output,
@@ -575,7 +575,7 @@ class FocusSettingsDialog:
         ToolTip(
             nvenc,
             "Use a supported NVIDIA GPU for MP4 encoding on Windows. "
-            "CPU encoding remains the compatibility default.",
+            "Automatic presets use tuned NVIDIA settings. Custom CRF quality uses CPU encoding.",
         )
         if macos:
             nvenc.state(["disabled"])

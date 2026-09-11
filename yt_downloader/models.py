@@ -81,6 +81,7 @@ class ExportPlan:
     warnings: list[str] = field(default_factory=list)
     summary: str = ""
     video_crf: int | None = None
+    nvenc_cq: int | None = None
     keyframe_seconds: float | None = None
     constant_frame_rate: bool = False
     video_maxrate_kbps: int | None = None
@@ -95,7 +96,12 @@ class ExportPlan:
             if self.video_maxrate_kbps
             else ""
         )
-        return f"Quality CRF {self.video_crf} (variable bitrate{cap})"
+        quality = (
+            f"NVENC CQ {self.nvenc_cq}"
+            if self.nvenc_cq is not None
+            else f"CRF {self.video_crf}"
+        )
+        return f"Quality {quality} (variable bitrate{cap})"
 
 
 @dataclass(frozen=True)

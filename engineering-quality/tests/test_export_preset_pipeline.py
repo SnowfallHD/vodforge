@@ -1,5 +1,6 @@
 """Offline provider boundary, real production transcode/validation/commit/reuse."""
 
+import os
 import queue
 import shutil
 import subprocess
@@ -53,9 +54,22 @@ def source(tmp_path_factory):
     return path, ffmpeg, find_ffprobe(ffmpeg)
 
 
+@pytest.mark.parametrize(
+    "use_nvenc",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.skipif(
+                os.environ.get("VODFORGE_NVENC_TESTS") != "1",
+                reason="requires an explicitly enabled NVIDIA hardware run",
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("preset", [*EXPORT_MODES, "Custom quality"])
 def test_preset_commits_and_reuses_real_valid_media(
-    monkeypatch, tmp_path, source, preset
+    monkeypatch, tmp_path, source, preset, use_nvenc
 ):
     path, ffmpeg, ffprobe = source
     info = {
@@ -142,7 +156,7 @@ def test_preset_commits_and_reuses_real_valid_media(
         ),
         mp3_settings=Mp3ExportSettings(),
         single_video_only=True,
-        use_nvenc=False,
+        use_nvenc=use_nvenc,
         embed_thumbnail=False,
         write_thumbnail=False,
         embed_metadata=False,
@@ -152,6 +166,9 @@ def test_preset_commits_and_reuses_real_valid_media(
     outcome = application._download_worker_single(job)
     assert outcome.success_count == 1
     assert outcome.failure_count == 0
+    if use_nvenc and preset != "Custom quality":
+        events = list(application.events.queue)
+        assert any("NVIDIA NVENC GPU" in str(event) for event in events)
     media = list(tmp_path.rglob("*.mp4"))
     assert len(media) == 1
     subprocess.run(

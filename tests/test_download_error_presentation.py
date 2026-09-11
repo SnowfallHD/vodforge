@@ -189,3 +189,14 @@ def test_nested_http_code_overrides_sign_in_wording():
     )
     assert "Wait before retrying" in download_error_message(error)
     assert "Browser" not in download_error_message(error)
+
+
+def test_nvenc_failure_offers_actionable_cpu_retry_and_retains_cause():
+    from yt_downloader.download_error_presentation import technical_download_error
+
+    error = RuntimeError(
+        "FFmpeg failed: [h264_nvenc] Driver does not support the required nvenc API version"
+    )
+    assert "turn off Use NVIDIA NVENC" in download_error_message(error)
+    assert "CPU encoding" in download_error_message(error)
+    assert "required nvenc API version" in technical_download_error(error)
