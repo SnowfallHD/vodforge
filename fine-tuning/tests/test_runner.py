@@ -88,3 +88,63 @@ def test_existing_receipts_cannot_be_replaced(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match="preserve receipts"):
         runner.main()
     assert receipt.read_text() == "prior evidence"
+
+
+def test_real_offset_reference_is_rejected_before_scoring(monkeypatch, tmp_path):
+    import shutil
+    import subprocess
+
+    ffmpeg = shutil.which("ffmpeg")
+    ffprobe = shutil.which("ffprobe")
+    if not ffmpeg or not ffprobe:
+        pytest.skip("requires FFmpeg and ffprobe")
+    source = tmp_path / "offset.mkv"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=30",
+            "-t",
+            "0.2",
+            "-c:v",
+            "ffv1",
+            "-output_ts_offset",
+            "0.021",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run.py",
+            "--ffmpeg",
+            ffmpeg,
+            "--ffprobe",
+            ffprobe,
+            "--fixtures",
+            str(tmp_path),
+            "--output",
+            str(tmp_path / "out"),
+            "--source-commit",
+            "test",
+            "--stage",
+            "verify",
+            "--encoders",
+            "cpu",
+            "--names",
+            "offset",
+            "--presets",
+            "Everyday",
+        ],
+    )
+    with pytest.raises(ValueError, match="Reference video must start at zero"):
+        runner.main()
+    assert not (tmp_path / "out" / "results.json").exists()

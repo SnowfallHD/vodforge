@@ -1,0 +1,6 @@
+fixture,preset,cq,speed,cpu_mb,nvenc_mb,size_ratio,cpu_vmaf,nvenc_vmaf,vmaf_delta,cpu_seconds,nvenc_seconds,speedup
+ocean-tail-aligned,Everyday,24,p6,7.872,11.876,1.509,95.345,93.649,-1.696,6.935,2.227,3.114
+ocean-tail-aligned,Streaming,23,p6,8.895,13.315,1.497,96.075,94.646,-1.429,7.286,2.176,3.348
+ocean-tail-aligned,Editing,20,p6,11.342,16.16,1.425,97.496,95.95,-1.546,7.069,2.157,3.277
+ocean-tail-aligned,Sharing,27,p6,5.874,8.402,1.43,90.799,90.032,-0.767,6.545,2.205,2.968
+ocean-tail-aligned,CTV,,p6,5.984,10.148,1.696,90.386,91.636,1.25,6.565,2.218,2.96

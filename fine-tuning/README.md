@@ -1,5 +1,7 @@
 # VODForge fine-tuning harness
 
+[Read the NVIDIA tuning report and measured results](results/2026-09-10-nvenc-report.md).
+
 The engineering-quality harness asks whether the application works correctly.
 This harness asks which encoder settings best serve each export task, and records
 the evidence behind those choices. It uses the production source selector, export

@@ -45,12 +45,15 @@ def main():
         if row["encoder"] != "nvenc":
             continue
         base = cpu[(row["fixture"], row["preset"])]
+        speed = row["speed"]
+        if speed is None and "-preset" in row["command"]:
+            speed = row["command"][row["command"].index("-preset") + 1]
         writer.writerow(
             [
                 row["fixture"],
                 row["preset"],
                 row["cq"],
-                row["speed"],
+                speed,
                 round(base["bytes"] / 1e6, 3),
                 round(row["bytes"] / 1e6, 3),
                 round(row["bytes"] / base["bytes"], 3),

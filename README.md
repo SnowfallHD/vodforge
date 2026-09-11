@@ -23,15 +23,15 @@ in a searchable Library with built-in playback.
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·
 [Privacy](#privacy-and-usage-analytics) · [Welcome & feedback (development)](docs/welcome-feedback-reviews.md) · [Development](#development) ·
-[Architecture](docs/architecture.md)
+[Architecture](docs/architecture.md) · [Fine-tuning](fine-tuning/README.md)
 
 ## What it does
 
 - Downloads individual videos, playlists, or a batch of URLs.
 - Supports quality caps from 360p through 4K when the source provides them.
-- Defaults to source-aware **Auto CBR** with resolution-specific bitrate floors and caps.
-- Includes **Strict Compliance** mode for fixed H.264 10 Mbps video and AAC 320 kbps audio.
-- Offers a manual MP4 override when you need exact video bitrate, encoding speed, sample rate, channels, and AAC or MP3 audio settings.
+- Offers task-based MP4 settings: **Everyday** (default), **Streaming**, **Editing**, **Sharing**, and **CTV**, plus **Custom** controls.
+- Tunes automatic presets separately for CPU x264 and optional Windows NVIDIA NVENC; existing Auto CBR preferences retain the CTV delivery intent.
+- Keeps exact video bitrate or explicit x264 CRF, encoding speed, sample rate, channels, and AAC or MP3 settings available through Custom.
 - Embeds useful metadata and thumbnails in the MP4 when supported.
 - Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
 - Preserves the best available supported audio stream with **Original audio**: Opus becomes `.opus`, AAC becomes `.m4a`, without another lossy encoding step. It does not force either codec or make the source lossless.
@@ -258,6 +258,14 @@ It creates a GitHub **draft** release only. Windows application and installer si
 After the draft assets and checksums are reviewed, publishing the draft makes it the update source. Packaged apps check only the latest public, stable GitHub Release after startup and every six hours, while retaining the manual **Check for updates** control. When a newer version is approved by the user, Windows downloads the matching installer, verifies its exact size, SHA-256 checksum, Kryden Ventures Authenticode publisher, and trusted timestamp, then starts the silent installer. macOS downloads the matching architecture, verifies its size and checksum, exact VODForge bundle and Apple team identities, strict Developer ID signature, stapled notarization ticket, and Gatekeeper acceptance, then uses a detached rollback-capable swapper to replace and relaunch the app.
 
 ## Development
+
+Two complementary harnesses make changes reviewable:
+
+- [Engineering quality](engineering-quality/README.md) verifies application behavior,
+  failure handling, validation, and real worker lifecycles.
+- [Fine-tuning](fine-tuning/README.md) measures encoder quality, file size, and speed
+  against common fixtures, preserving commands, hardware identity and results.
+  Its experiments select settings; they do not replace regression or packaged tests.
 
 Windows:
 
