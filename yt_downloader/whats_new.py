@@ -38,13 +38,13 @@ class FeatureHighlight:
 # Editorial opt-in: change this ID ONLY when intentionally shipping a new
 # showcase. A new app version, patch release, or release-note edit is not enough.
 # An empty highlights tuple disables the showcase. Keep copy factual and short.
-SHOWCASE_ID = "output-settings-presets-v1"
+SHOWCASE_ID = "output-settings-presets-v2"
 HIGHLIGHTS = (
     FeatureHighlight(
         "output-settings",
         "Output settings for your next step",
-        "Choose Everyday, Streaming, Editing, Sharing or CTV for source-aware MP4 exports. "
-        "Use Custom for your own settings. Find them in Settings → Optimize for.",
+        "Source-aware MP4 presets for your next task, tuned for CPU and optional NVIDIA "
+        "encoding on Windows. Choose a preset or Custom in Settings → Optimize for.",
         NativePreview.OUTPUT_SETTINGS,
     ),
 )

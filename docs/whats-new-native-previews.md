@@ -7,7 +7,7 @@ replaces release highlights rather than adding a second startup popup. Both use
 the same seen setting, consent/modal readiness gate, and fresh-user welcome
 suppression. Routine updates do not reset acknowledgement. The prepared tip is
 not enabled by adding its catalog entry alone. The next release selects
-`whats-new` with ID `output-settings-presets-v1` and only the updated output
+`whats-new` with ID `output-settings-presets-v2` and only the updated output
 settings highlight. Its native Optimize for selector uses the production choices
 and descriptions with local-only state; it does not change saved preferences.
 The previous YouTube-access tip remains available in the tip catalog.
