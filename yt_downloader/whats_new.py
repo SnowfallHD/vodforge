@@ -124,13 +124,16 @@ class WhatsNewOwner:
             return
         from .whats_new_ui import WhatsNewPanel
 
+        settings_action = self.is_tip or (
+            len(self.highlights) == 1 and self.highlights[0].key == "output-settings"
+        )
         self.panel = WhatsNewPanel(
             self.parent,
             self.highlights,
             self._dismissed,
             heading=self.heading,
-            finish_label="Try it" if self.is_tip else None,
-            on_finish=self.open_settings if self.is_tip else None,
+            finish_label="Try it" if settings_action else None,
+            on_finish=self.open_settings if settings_action else None,
         )
 
     def _dismissed(self) -> None:

@@ -88,3 +88,47 @@ def test_carousel_native_child_resize_noop_and_dismissal():
     finally:
         panel.close(acknowledge=False)
         root.destroy()
+
+
+def test_output_settings_try_it_releases_modal_before_opening_settings():
+    from yt_downloader.whats_new import WhatsNewOwner
+
+    root = tk.Tk()
+    root.geometry("1180x780")
+    seen = tk.StringVar(root)
+    opened = []
+    owner = WhatsNewOwner(
+        root,
+        seen,
+        lambda: True,
+        open_settings=lambda: opened.append(root.grab_current()),
+    )
+    try:
+        owner.show()
+        root.update()
+        panel = owner.panel
+        for geometry in ("1180x780", "860x600"):
+            root.geometry(geometry)
+            root.update()
+            assert panel.finish_button.cget("text") == "Try it"
+            assert panel.finish_button.winfo_ismapped()
+            assert not any(
+                w.winfo_ismapped() for w in (panel.page, panel.back, panel.next)
+            )
+            assert (
+                abs(
+                    panel.finish_button.winfo_rootx()
+                    + panel.finish_button.winfo_width() / 2
+                    - panel.frame.winfo_rootx()
+                    - panel.frame.winfo_width() / 2
+                )
+                < 3
+            )
+        panel.finish_button.invoke()
+        root.update()
+        assert opened == [None]
+        assert not owner.pending
+        assert owner.panel is None
+    finally:
+        owner.close()
+        root.destroy()
