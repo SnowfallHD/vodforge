@@ -4553,3 +4553,50 @@ def test_fast_stop_without_provider_preview_still_creates_a_library_row(
     assert row["webpage_url"] == stopped.url
     assert row["vodforge_terminal_status"] == "Stopped"
     assert row["vodforge_terminal_run_id"] == stopped.run_id
+
+
+@pytest.mark.parametrize("status", ["Stopped", "Complete"])
+def test_shutdown_finish_preserves_queue_without_starting_another_worker(
+    tmp_path: Path, status: str
+) -> None:
+    active = make_job(tmp_path, video_id="closing-active")
+    queued = [make_job(tmp_path, video_id=name) for name in ("next", "last")]
+    state_path = tmp_path / "private" / "active-run.json"
+    recovery = RunRecoveryOwner(state_path)
+    recovery.begin(active, queued)
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.active_job = active
+    app.pending_jobs = queued.copy()
+    app.run_recovery = recovery
+    app._closing = True
+    app.cancel_requested = True
+    app._terminal_jobs = []
+    app.metadata_items = []
+    app._library_suppressed_run_ids = set()
+    app._focus_active_thumbnail_source_image = None
+    app._focus_active_thumbnail_is_placeholder = True
+    app._focus_selected_run_id = active.run_id
+    app._append_job_log = lambda *_args: None
+    app._persist_job_activity_to_history = lambda *_args: None
+    app._render_metadata_tree = lambda **_kwargs: None
+    app.video_tree = object()
+    app._focus_terminal_job = lambda *_args: None
+    app._project_preparing_job_to_library = lambda *_args: pytest.fail(
+        "a completion event during shutdown must not launch the queued successor"
+    )
+    app.status_var = Value("")
+    for name in (
+        "download_button",
+        "cancel_button",
+        "skip_video_button",
+        "skip_url_button",
+    ):
+        setattr(app, name, Control())
+
+    app._finish_run_ui("Closing", status, "Closing")
+
+    assert app.active_job is active
+    assert app.pending_jobs == queued
+    assert app.cancel_requested is True
+    restored_queue = ActiveRunStore(state_path).load_queued_jobs()
+    assert [job.run_id for job in restored_queue] == [job.run_id for job in queued]

@@ -11778,6 +11778,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         queued_jobs: Sequence[DownloadJob] | None = None,
         superseded_run_id: str | None = None,
     ) -> bool:
+        if self.__dict__.get("_closing", False):
+            return False
         recovery_owner = self.__dict__.get("run_recovery")
         if recovery_owner is not None:
             try:
