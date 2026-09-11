@@ -1,6 +1,6 @@
 # Task-based MP4 export presets
 
-The output selector is now **Optimize for**: Everyday, Streaming, Editing, Sharing, CTV, Custom. Everyday is the default for a fresh profile. Existing Auto CBR preferences continue as CTV; existing manual preferences continue as Custom. This is implemented on the current feature lane, not publicly released or installed over the user's private app.
+The output selector is now **Optimize for**: Everyday, Streaming, Editing, Sharing, CTV, Custom. Everyday is the default for a fresh profile. Existing Auto CBR preferences continue as CTV; existing manual preferences continue as Custom. These settings are included in VODForge 0.2.1.
 
 ## Final policy
 

@@ -22,7 +22,7 @@ in a searchable Library with built-in playback.
 > [latest public download](https://github.com/SnowfallHD/vodforge/releases/latest).
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·
-[Privacy](#privacy-and-usage-analytics) · [Welcome & feedback (development)](docs/welcome-feedback-reviews.md) · [Development](#development) ·
+[Privacy](#privacy-and-usage-analytics) · [Welcome & feedback](docs/welcome-feedback-reviews.md) · [Development](#development) ·
 [Architecture](docs/architecture.md) · [Fine-tuning](fine-tuning/README.md)
 
 ## What it does
@@ -48,7 +48,7 @@ in a searchable Library with built-in playback.
 - Combines private local download history across app restarts with current-session metadata previews, output-type filters, a pixel-scrolling table, and draggable session-persistent columns.
 - Keeps each Forge run's format and output details stable while the output dropdown and Settings configure only the next run.
 - Reflects the latest Library items in Run Deck as playlist items finish, without waiting for the entire playlist. Skipping an item follows the next playlist item when one remains.
-- Introduces new users with a native welcome tour. Release-selected **Did you know?** tips or **What's new** highlights share once-seen tracking; 0.2.0 features YouTube access and age restrictions with a **Try it** shortcut to Settings.
+- Introduces new users with a native welcome tour. Release-selected **Did you know?** tips or **What's new** highlights share once-seen tracking; 0.2.1 uses one **What’s new** slide for the updated output settings, with **Try it** opening Settings.
 - The **All N runs** button opens Library on click and a scrollable run list on hover. Failed-run retries use current settings; redownloading previously successful media preserves its saved output profile.
 - Lets preview items start downloads directly, failed items retry, skipped or stopped items restart as fresh runs, and Library removal stop only the exact active or queued run it owns without deleting downloaded media.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
@@ -105,7 +105,7 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 
 For local audio, use **MP3 + image → MP4** beneath the Forge URL field. Choose one MP3 and one JPG, PNG, or WebP still; VODForge renders the image as the video for the full length of the audio. The original files are unchanged, and the finished MP4 is written directly to the selected output folder—no channel or item parent folder is added—then appears in Library's MP4 view.
 
-On current main, the dialog reserves its full Image preview frame before selection. **Choose folder** changes the shared save directory, and **All N runs** opens Library. The composer's format dropdown is inline after a divider; these refinements are not yet in the published 0.1.9 release.
+The dialog reserves its full Image preview frame before selection. **Choose folder** changes the shared save directory, and **All N runs** opens Library. The composer’s format dropdown is inline after a divider.
 
 This converter has its own saved output profile, independent of the YouTube download settings: **1080p Standard** uses efficient still-image compression, **2160p 4K** renders at 3840×2160, **720p Compact** reduces resolution, and **1080p Strict 2 Mbps CBR** provides a fixed-rate option. Each uses 30 fps H.264 with two-second keyframes and AAC audio. Increasing resolution cannot restore detail absent from the selected image.
 
@@ -115,6 +115,50 @@ Quality caps use the provider's named tier when available, rather than requiring
 an exact frame height. For example, a wide `1920×1012` stream labeled **1080p**
 by YouTube is eligible at 1080p. VODForge preserves aspect ratio; it does not add
 pixels just to make the height read 1080.
+
+### MP4 output settings
+
+In **Settings → Optimize for**, choose the task you need:
+
+| Setting | Use it for | CPU video policy |
+| --- | --- | --- |
+| **Everyday** | Watching, keeping, and general reuse; the new-profile default | CRF 21, five-second keyframes |
+| **Streaming** | Playback in reaction or presentation workflows | Capped CRF 20, constant frame rate, two-second keyframes |
+| **Editing** | Cutting and exporting again | CRF 18, constant frame rate, one-second keyframes |
+| **Sharing** | Smaller files when some detail loss is acceptable | CRF 25, five-second keyframes |
+| **CTV** | An upload master for a TV distribution workflow | Source-informed constrained CBR, two-second keyframes |
+| **Custom** | A known delivery specification | Your CBR target or explicit x264 CRF |
+
+Automatic presets use a suitable SDR source within your quality ceiling and
+produce H.264 MP4 with AAC stereo. They preserve source dimensions and aspect
+ratio; choosing 4K does not upscale a smaller source. Streaming exports a local
+file, not a live stream; Editing remains H.264, not a mezzanine format.
+
+CPU encoding is the default. Windows users can enable **NVIDIA GPU** for
+separately tuned NVENC quality controls: CQ 24/23/20/27 for Everyday, Streaming,
+Editing, and Sharing. CRF and CQ are different scales; GPU speed, file size and
+quality differ from CPU results. Custom CRF stays on CPU. Automatic CTV allows
+encoder-specific bitrate headroom while retaining the measured 2,000 kbps video
+minimum for the 1080p tier. Quiet AAC can legitimately measure below its target.
+
+Existing Auto CBR settings become **CTV**, and manual settings become **Custom**.
+Your saved history and retry profiles remain interpretable. See the
+[preset specification](docs/export-presets.md), [fine-tuning results](fine-tuning/results/2026-09-10-nvenc-report.md),
+and [measured export guide](https://getvodforge.com/mp4-export-settings/).
+
+### Failures and updates
+
+Failures pair a plain-language explanation with a practical next step. Switch
+to **Technical** for the recorded cause and process details; older records that
+lack those details say so. NVIDIA failures explain how to retry with CPU encoding.
+
+Updates close and relaunch the app automatically after verified installation.
+Windows targets the running app’s folder even when another copy is registered,
+and the helper runs without a PowerShell console. If installation fails, use
+**Repair VODForge** where offered to download and verify the latest official
+installer. Repair backs up saved app data and checks preservation before relaunch;
+it does not move or delete your media. **Open download page** provides a manual
+route. See [updater recovery](docs/update-handoff.md).
 
 ### A Library that stays yours
 

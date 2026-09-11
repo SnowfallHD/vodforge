@@ -63,9 +63,8 @@ because the tests were skipped on a Mac.
 
 ## Deployment boundary
 
-These are source and test changes until a fresh signed release is built, passes
-the running-upgrade gates and is published. They do not retrofit the installer
-already downloaded by users. Genesis was diagnosed separately: earlier QA registration directed its successful
+These changes ship in 0.2.1 after signed-artifact and running-upgrade gates.
+They do not retrofit an installer already downloaded by users. Genesis was diagnosed separately: earlier QA registration directed its successful
 update into the other installed copy. The new helper was then observed updating
 the actual running directory, correcting registration and reopening the app
 without a visible PowerShell console. That demonstration used the signed public

@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import urllib.error
 from email.message import Message
@@ -14,7 +15,9 @@ def test_identity_is_lazy_private_and_not_telemetry(tmp_path):
     credential = transport._credential()
     assert SupportTransport(tmp_path)._credential() == credential
     assert [p.name for p in tmp_path.iterdir()] == ["support-credential.json"]
-    assert transport.path.stat().st_mode & 0o077 == 0
+    # Windows stat mode bits do not represent NTFS access-control entries.
+    if os.name != "nt":
+        assert transport.path.stat().st_mode & 0o077 == 0
 
 
 @pytest.mark.parametrize(
