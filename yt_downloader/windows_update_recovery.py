@@ -96,6 +96,10 @@ function Show-VODForgeRecovery {
     $form.ForeColor = [Drawing.ColorTranslator]::FromHtml('#ededf0')
     $form.Font = New-Object Drawing.Font('Segoe UI', 10)
     $form.Padding = New-Object Windows.Forms.Padding(1)
+    $form.Add_Paint({
+        $_.Graphics.DrawRectangle([Drawing.Pens]::White, 0, 0, ($form.ClientSize.Width - 1), ($form.ClientSize.Height - 1))
+    })
+    $form.Add_Resize({ $form.Invalidate() })
     $form.KeyPreview = $true
     $form.Add_KeyDown({ if ($_.KeyCode -eq 'Escape') { $form.Close() } })
     $form.MaximizeBox = $false

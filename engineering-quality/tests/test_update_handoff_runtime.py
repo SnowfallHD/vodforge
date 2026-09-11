@@ -322,9 +322,19 @@ def test_windows_recovery_surface_owns_frame_and_centers_on_app(tmp_path):
 
     receipt = tmp_path / "layout.json"
     capture = r"""
+    $whiteBorders = @()
+    foreach ($height in @(405, 550)) {
+        $form.ClientSize = New-Object Drawing.Size(620, $height)
+        $bitmap = New-Object Drawing.Bitmap(620, $height)
+        $form.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0, 0, 620, $height)))
+        $whiteBorders += ($bitmap.GetPixel(0, 0).ToArgb() -eq [Drawing.Color]::White.ToArgb() -and $bitmap.GetPixel(619, ($height-1)).ToArgb() -eq [Drawing.Color]::White.ToArgb() -and $bitmap.GetPixel(0, 200).ToArgb() -eq [Drawing.Color]::White.ToArgb() -and $bitmap.GetPixel(300, ($height-1)).ToArgb() -eq [Drawing.Color]::White.ToArgb())
+        $bitmap.Dispose()
+    }
+    $form.ClientSize = New-Object Drawing.Size(620, 405)
+    & $center
     $expectedX = $windowBounds[0] + $windowBounds[2] / 2
     $expectedY = $windowBounds[1] + $windowBounds[3] / 2
-    @{border=$form.FormBorderStyle.ToString();center_dx=($form.Left+$form.Width/2-$expectedX);center_dy=($form.Top+$form.Height/2-$expectedY);repair=$repair.Text;technical=$details.Text;buttons_inside=($repair.Bottom -lt $form.ClientSize.Height -and $download.Right -lt $form.ClientSize.Width)} | ConvertTo-Json | Set-Content -LiteralPath $layoutReceipt
+    @{white_borders=$whiteBorders;border=$form.FormBorderStyle.ToString();center_dx=($form.Left+$form.Width/2-$expectedX);center_dy=($form.Top+$form.Height/2-$expectedY);repair=$repair.Text;technical=$details.Text;buttons_inside=($repair.Bottom -lt $form.ClientSize.Height -and $download.Right -lt $form.ClientSize.Width)} | ConvertTo-Json | Set-Content -LiteralPath $layoutReceipt
 """
     script = RECOVERY_FUNCTIONS.replace("[void]$form.ShowDialog()", capture)
     script += f"""
@@ -348,6 +358,7 @@ Show-VODForgeRecovery 'installing' 'test cause' 'C:\\VODForge' 'test backup'
     assert result.returncode == 0, result.stderr
     layout = json.loads(receipt.read_text(encoding="utf-8-sig"))
     assert layout["border"] == "None"
+    assert layout["white_borders"] == [True, True]
     assert abs(layout["center_dx"]) <= 1
     assert abs(layout["center_dy"]) <= 1
     assert layout["buttons_inside"] is True
