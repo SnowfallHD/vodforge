@@ -557,3 +557,99 @@ def test_windows_update_requires_valid_owned_timestamped_signature(tmp_path: Pat
 
     with pytest.raises(RuntimeError, match="Kryden Ventures"):
         verify_windows_authenticode(installer, runner=wrong_publisher_runner)
+
+
+def test_windows_helper_is_hidden_and_requires_readiness(tmp_path):
+    import base64
+    import re
+
+    from yt_downloader.updates import launch_windows_update
+
+    folder = tmp_path / "quoted ' ; $test"
+    folder.mkdir()
+    installer = folder / "VODForge-Windows-Setup-v1.2.3.exe"
+    target = tmp_path / "VODForge.exe"
+    installer.touch()
+    target.touch()
+    calls = []
+
+    class Process:
+        def poll(self):
+            return None
+
+    def spawn(command, **kwargs):
+        calls.append((command, kwargs))
+        script = base64.b64decode(command[-1]).decode("utf-16le")
+        ready = (
+            re.search(r"\$ready = '((?:[^']|'')*)'", script).group(1).replace("''", "'")
+        )
+        Path(ready).write_text("ready")
+        assert "quoted '' ; $test" in script
+        assert script.index("WaitForExit(120000)") < script.index(
+            "Start-Process -FilePath $installer"
+        )
+        assert script.index("$setup.ExitCode -ne 0") < script.index(
+            "Start-Process -FilePath $executable"
+        )
+        assert "/VODFORGEHANDOFF=1" in script
+        assert "/NORESTARTAPPLICATIONS" in script
+        assert "Get-FileHash" in script
+        return Process()
+
+    receipt = launch_windows_update(
+        installer, executable=target, parent_pid=123, popen=spawn
+    )
+    assert receipt.suffix == ".json"
+    assert calls[0][1]["creationflags"] == 0x08000000
+    assert "shell" not in calls[0][1]
+    assert calls[0][0][1:5] == [
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+    ]
+
+
+def test_windows_helper_start_failure_never_claims_handoff(tmp_path):
+    from yt_downloader.updates import launch_windows_update
+
+    target = tmp_path / "VODForge.exe"
+    installer = tmp_path / "VODForge-Windows-Setup-v1.2.3.exe"
+    target.touch()
+    installer.touch()
+
+    class FailedProcess:
+        def poll(self):
+            return 1
+
+    with pytest.raises(RuntimeError, match="remains open"):
+        launch_windows_update(
+            installer, executable=target, popen=lambda *a, **k: FailedProcess()
+        )
+
+
+def test_windows_verification_does_not_open_console(monkeypatch, tmp_path):
+    from yt_downloader import updates
+
+    calls = []
+    installer = tmp_path / "setup.exe"
+    installer.touch()
+    monkeypatch.setattr(updates.sys, "platform", "win32")
+
+    def run(command, **kwargs):
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps(
+                {
+                    "Status": "Valid",
+                    "Subject": 'CN="Kryden Ventures, LLC", O="Kryden Ventures, LLC"',
+                    "Timestamp": "trusted",
+                }
+            ),
+            "",
+        )
+
+    verify_windows_authenticode(installer, runner=run)
+    assert calls[0]["creationflags"] == 0x08000000

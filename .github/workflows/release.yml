@@ -79,10 +79,36 @@ jobs:
           $installer = "${{ github.workspace }}\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe"
           .\verify_windows_signatures.ps1 -Files @($installer)
           Compress-Archive -Path .\dist\VODForge -DestinationPath ".\dist\release\VODForge-Windows-Portable-v${{ inputs.version }}.zip" -Force
+      - name: Execute Windows updater fault cases
+        shell: pwsh
+        run: python -m pytest engineering-quality/tests/test_update_handoff_runtime.py -q
+      - name: Verify running Windows upgrade before publishing artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $baselineDir = "$PWD\build\update-baseline"
+          gh release download --repo SnowfallHD/vodforge --pattern 'VODForge-Windows-Setup-*.exe' --dir $baselineDir
+          if ($LASTEXITCODE -ne 0) { throw 'No published baseline installer available for upgrade proof' }
+          $baseline = @(Get-ChildItem $baselineDir -Filter *.exe)
+          if ($baseline.Count -ne 1) { throw 'Expected exactly one baseline installer' }
+          .\engineering-quality\runners\windows-update-qa.ps1 -BaselineInstaller $baseline[0].FullName -CandidateInstaller "$PWD\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe" -CandidateExecutable "$PWD\dist\VODForge\VODForge.exe" -SourceRoot "$PWD" -Python (Get-Command python).Source -OutputDirectory "$PWD\build\update-journeys"
+          .\engineering-quality\runners\windows-update-qa.ps1 -BaselineInstaller $baseline[0].FullName -CandidateInstaller "$PWD\dist\release\VODForge-Windows-Setup-v${{ inputs.version }}.exe" -CandidateExecutable "$PWD\dist\VODForge\VODForge.exe" -SourceRoot "$PWD" -Python (Get-Command python).Source -OutputDirectory "$PWD\build\update-journeys" -LegacyHandoff
+      - name: Preserve Windows update evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-update-evidence
+          path: |
+            build/update-journeys/**/update-journey.json
+            dist/release/handoff-*
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
           name: vodforge-windows
-          path: dist/release/*
+          path: |
+            dist/release/*.exe
+            dist/release/*.zip
           if-no-files-found: error
 
   macos:

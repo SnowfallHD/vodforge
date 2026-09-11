@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import yt_downloader.app as app_module
 from yt_downloader.app import DownloaderApp
 from yt_downloader.updates import MacUpdatePlan, ReleaseAsset, ReleaseInfo
@@ -97,7 +99,7 @@ def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path
     app = _app_stub()
     destroyed = []
     scheduled = []
-    app.destroy = lambda: destroyed.append(True)
+    app._request_application_close = lambda: destroyed.append(True)
     app.after = lambda delay, callback: scheduled.append((delay, callback))
     launched = []
     monkeypatch.setattr(
@@ -162,40 +164,54 @@ def test_windows_update_worker_verifies_installer_before_ready_event(
     ]
 
 
-def test_verified_windows_installer_handoff_uses_fixed_argv_without_shell(
-    monkeypatch,
-    tmp_path: Path,
-):
+def test_windows_handoff_changes_status_and_schedules_safe_close(monkeypatch, tmp_path):
     app = _app_stub()
-    installer = tmp_path / "VODForge verified;$(touch SHOULD_NOT_EXIST).exe"
-    installer.write_bytes(b"signed installer fixture")
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    class Process:
-        pass
-
-    def fake_popen(command, **kwargs):
-        calls.append((command, kwargs))
-        return Process()
-
-    monkeypatch.setattr(app_module.sys, "platform", "win32")
-    monkeypatch.setattr(app_module.subprocess, "Popen", fake_popen)
-
-    app._install_downloaded_update(installer)
-
-    assert calls == [
-        (
-            [
-                str(installer),
-                "/SP-",
-                "/SILENT",
-                "/CLOSEAPPLICATIONS",
-                "/RESTARTAPPLICATIONS",
-            ],
-            {"close_fds": True},
-        )
-    ]
-    assert "shell" not in calls[0][1]
-    assert app.status_var.value == (
-        "Verified updater started. VODForge will close and reopen when installation completes."
+    scheduled = []
+    app._request_application_close = lambda: None
+    app.after = lambda delay, callback: scheduled.append(callback)
+    monkeypatch.setattr(app_module, "is_windows", lambda: True)
+    monkeypatch.setattr(
+        app_module, "launch_windows_update", lambda path: tmp_path / "receipt.json"
     )
+    app._set_focus_update_state("Downloading update…", "")
+    app._install_downloaded_update(tmp_path / "setup.exe")
+    assert app.update_button.values == {
+        "state": "disabled",
+        "text": "Installing update…",
+    }
+    assert scheduled == [app._request_application_close]
+
+
+def test_failed_handoff_leaves_app_open_and_exposes_recovery(monkeypatch, tmp_path):
+    app = _app_stub()
+    monkeypatch.setattr(app_module, "is_windows", lambda: True)
+
+    def fail(path):
+        raise RuntimeError("helper denied")
+
+    monkeypatch.setattr(app_module, "launch_windows_update", fail)
+    shown = []
+    monkeypatch.setattr(
+        app_module.messagebox, "showerror", lambda *args: shown.append(args)
+    )
+    app._install_downloaded_update(tmp_path / "setup.exe")
+    assert app.update_button.values == {"state": "normal", "text": "Update failed"}
+    assert "helper denied" in shown[0][1]
+    assert "manually" in app.status_var.value
+
+
+def test_update_does_not_interrupt_active_or_queued_media(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        app_module, "launch_windows_update", lambda _: pytest.fail("must not install")
+    )
+    for state in (
+        {"worker": SimpleNamespace(is_alive=lambda: True)},
+        {"local_audio_video": SimpleNamespace(active=True)},
+        {"pending_jobs": [object()]},
+    ):
+        app = _app_stub()
+        app.__dict__.update(state)
+        app._install_downloaded_update(tmp_path / "setup.exe")
+        assert app.update_button.values["text"] == "Update ready"

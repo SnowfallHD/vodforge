@@ -333,7 +333,13 @@ def _run_checked(
     *,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> subprocess.CompletedProcess[str]:
-    result = runner(list(command), capture_output=True, text=True, check=False)
+    result = runner(
+        list(command),
+        capture_output=True,
+        text=True,
+        check=False,
+        **({"creationflags": 0x08000000} if sys.platform == "win32" else {}),
+    )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "verification failed").strip()
         raise RuntimeError(detail)
@@ -590,3 +596,137 @@ def verify_windows_authenticode(
         )
     if not str(payload.get("Timestamp") or "").strip():
         raise RuntimeError("The Windows update is missing its trusted timestamp.")
+
+
+def windows_update_script(
+    installer: Path, executable: Path, parent_pid: int, receipt: Path, ready: Path
+) -> str:
+    """Detached handoff: wait for graceful exit, install, then explicitly relaunch."""
+
+    def literal(value: object) -> str:
+        return "'" + str(value).replace("'", "''") + "'"
+
+    version = re.fullmatch(
+        r"VODForge-Windows-Setup-v(\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)\.exe",
+        installer.name,
+    )
+    if version is None:
+        raise ValueError(
+            "The Windows installer name does not identify its release version."
+        )
+    expected_version = version.group(1)
+    return textwrap.dedent(f"""\
+        $ErrorActionPreference = 'Stop'
+        $installer = {literal(installer)}
+        $executable = {literal(executable)}
+        $receipt = {literal(receipt)}
+        $ready = {literal(ready)}
+        $stage = 'waiting_for_exit'
+        $result = @{{ status = 'failed'; stage = $stage }}
+        try {{
+            $parent = Get-Process -Id {int(parent_pid)} -ErrorAction SilentlyContinue
+            Set-Content -LiteralPath $ready -Value 'ready' -Encoding UTF8
+            if ($parent -and !$parent.WaitForExit(120000)) {{ throw 'VODForge did not close. Close it normally and retry the update.' }}
+            $stage = 'installing'
+            $signature = Get-AuthenticodeSignature -LiteralPath $installer
+            if ($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate -or !$signature.SignerCertificate.Subject.Contains('CN="Kryden Ventures, LLC"') -or !$signature.SignerCertificate.Subject.Contains('O="Kryden Ventures, LLC"')) {{ throw 'Installer signature verification failed. Download a fresh installer from the official release.' }}
+            $directory = Split-Path -Parent $executable
+            $arguments = @('/SP-', '/SILENT', '/NORESTART', '/NOCLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/VODFORGEHANDOFF=1', ('/DIR="' + $directory + '"'), ('/LOG="' + $receipt + '.install.log"'))
+            $setup = Start-Process -FilePath $installer -ArgumentList $arguments -PassThru
+            if (!$setup.WaitForExit(900000)) {{ throw 'Installer is still running. Finish or close the installer before retrying.' }}
+            $setup.Refresh()
+            $result.installer_exit_code = $setup.ExitCode
+            if ($setup.ExitCode -ne 0) {{ throw ('Installation did not complete (exit code ' + $setup.ExitCode + '). Run the downloaded installer manually; see the installation log.') }}
+            if (!(Test-Path -LiteralPath $executable -PathType Leaf)) {{ throw 'Installed application is missing. Run the downloaded installer manually.' }}
+            $installedVersion = (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion
+            if ($installedVersion -ne {literal(expected_version)}) {{ throw ('Installed version does not match the update: ' + $installedVersion + '. Run the installer manually.') }}
+            $result.installed_version = $installedVersion
+            $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
+            $stage = 'relaunching'
+            $app = Start-Process -FilePath $executable -WorkingDirectory $directory -PassThru
+            if ($app.WaitForExit(3000)) {{ throw 'VODForge exited immediately after installation. Open it from the Start menu; see the update log if it fails again.' }}
+            $result.status = 'relaunched'
+            $result.pid = $app.Id
+            $result.executable = $executable
+            $result.executable_sha256 = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
+        }} catch {{
+            $result.error = $_.Exception.Message
+            $result.stage = $stage
+            $result | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
+            Add-Type -AssemblyName System.Windows.Forms
+            [System.Windows.Forms.MessageBox]::Show(($result.error + "`n`nUpdate log: " + $receipt), 'VODForge update') | Out-Null
+        }} finally {{
+            $result.stage = $stage
+            $result | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
+        }}
+        if ($result.status -ne 'relaunched') {{ exit 1 }}
+        """)
+
+
+def launch_windows_update(
+    installer: Path,
+    *,
+    executable: Path | None = None,
+    parent_pid: int | None = None,
+    popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
+) -> Path:
+    """Start a hidden helper and confirm readiness before the UI closes."""
+    import base64
+    import time
+
+    installer = installer.resolve()
+    target = Path(sys.executable) if executable is None else executable
+    target = target.resolve()
+    if target.name.lower() != "vodforge.exe" or not target.is_file():
+        raise RuntimeError("Run the installed VODForge app before updating.")
+    if installer.suffix.lower() != ".exe" or not installer.is_file():
+        raise RuntimeError(
+            "The verified installer is missing. Download the update again."
+        )
+    if not os.access(target.parent, os.W_OK):
+        raise RuntimeError(
+            "The app folder is not writable. Close VODForge and run the installer manually."
+        )
+    token = uuid.uuid4().hex
+    receipt = installer.parent / f"handoff-{token}.json"
+    ready = installer.parent / f"handoff-{token}.ready"
+    script = windows_update_script(
+        installer,
+        target,
+        os.getpid() if parent_pid is None else parent_pid,
+        receipt,
+        ready,
+    )
+    powershell = (
+        Path(os.environ.get("SystemRoot", r"C:\Windows"))
+        / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    )
+    process = popen(
+        [
+            str(powershell),
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-EncodedCommand",
+            base64.b64encode(script.encode("utf-16le")).decode("ascii"),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        creationflags=0x08000000,  # CREATE_NO_WINDOW
+    )
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if ready.is_file():
+            ready.unlink(missing_ok=True)
+            return receipt
+        if process.poll() is not None:
+            break
+        time.sleep(0.05)
+    if process.poll() is None:
+        process.terminate()
+    raise RuntimeError(
+        "The update helper could not start. VODForge remains open; run the downloaded installer manually."
+    )

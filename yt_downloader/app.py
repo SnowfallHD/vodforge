@@ -307,6 +307,7 @@ from .updates import (
     fetch_latest_release,
     is_newer_release,
     launch_macos_update,
+    launch_windows_update,
     prepare_macos_update,
     release_asset_for_platform,
     running_macos_app,
@@ -8986,49 +8987,50 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.events.put(("update_check_error", str(exc)))
 
     def _install_downloaded_update(self, update: Path | MacUpdatePlan) -> None:
-        self.update_button.config(state="normal")
-        if isinstance(update, MacUpdatePlan):
-            try:
-                launch_macos_update(update)
-            except Exception as exc:  # noqa: BLE001 - platform launcher failures stay user-visible
-                messagebox.showerror(
-                    APP_NAME,
-                    f"The verified macOS update could not be started:\n\n{exc}",
-                )
-                self.status_var.set("The macOS update could not be started.")
-                return
-            self.update_button.config(state="disabled", text="Installing update…")
-            self._focus_update_full_text = "Installing update…"
+        worker = self.__dict__.get("worker")
+        local = self.__dict__.get("local_audio_video")
+        if (
+            (worker is not None and worker.is_alive())
+            or (local is not None and local.active)
+            or self.__dict__.get("pending_jobs")
+        ):
+            self._set_focus_update_state("Update ready", THEME["accent"])
+            self.update_button.config(state="normal")
             self.status_var.set(
-                "Verified update ready. VODForge is restarting to install it…"
+                "Update downloaded. Finish or stop queued downloads and conversions, then check for updates again to install."
             )
-            self.after(250, self.destroy)
             return
-        path = update
-        if not is_windows() or path.suffix.lower() != ".exe":
-            self.status_var.set(f"Verified update downloaded: {path.name}")
-            self._open_path(path.parent)
+        if not isinstance(update, MacUpdatePlan) and (
+            not is_windows() or update.suffix.lower() != ".exe"
+        ):
+            self._set_focus_update_state("Update downloaded", THEME["accent"])
+            self.update_button.config(state="normal")
+            self.status_var.set(f"Verified update downloaded: {update.name}")
+            self._open_path(update.parent)
             return
+        self._set_focus_update_state("Preparing update…", THEME["accent"])
+        self.update_button.config(state="disabled")
         try:
-            # This path was checksum/Authenticode verified before the update_ready event.
-            subprocess.Popen(  # nosec B603
-                [
-                    str(path),
-                    "/SP-",
-                    "/SILENT",
-                    "/CLOSEAPPLICATIONS",
-                    "/RESTARTAPPLICATIONS",
-                ],
-                close_fds=True,
+            if isinstance(update, MacUpdatePlan):
+                launch_macos_update(update)
+            else:
+                receipt = launch_windows_update(update)
+                write_diagnostic(f"Windows update handoff log: {receipt}")
+        except Exception as exc:  # noqa: BLE001 - keep launcher failures visible and the app open
+            self._set_focus_update_state("Update failed", THEME["danger"])
+            self.update_button.config(state="normal")
+            self.status_var.set(
+                "Update could not start. Close VODForge and run the downloaded installer manually."
             )
-        except OSError as exc:
             messagebox.showerror(
-                APP_NAME, f"The verified updater could not be started:\n\n{exc}"
+                APP_NAME, f"The verified update could not be started:\n\n{exc}"
             )
             return
+        self._set_focus_update_state("Installing update…", THEME["accent"])
         self.status_var.set(
-            "Verified updater started. VODForge will close and reopen when installation completes."
+            "Verified update ready. VODForge will close safely and reopen after installation."
         )
+        self.after(250, self._request_application_close)
 
     def _load_download_history(self) -> None:
         try:

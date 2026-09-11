@@ -28,3 +28,6 @@ jobs:
         run: python -m compileall -q yt_downloader main.py
       - name: Run tests
         run: python -m pytest -q
+      - name: Execute Windows updater fault cases
+        if: runner.os == 'Windows'
+        run: python -m pytest engineering-quality/tests/test_update_handoff_runtime.py -q
