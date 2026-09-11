@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import re
 
-
 REPOSITORY = "SnowfallHD/vodforge"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
