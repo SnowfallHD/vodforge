@@ -299,6 +299,7 @@ from .ui_widgets import (
     reveal_toplevel,
     set_user_scroll_locked,
 )
+from .update_recovery import show_update_recovery
 from .updates import (
     MacUpdatePlan,
     ReleaseInfo,
@@ -8967,8 +8968,28 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         )
         self.update_worker.start()
 
-    def _update_download_worker(self, release: ReleaseInfo) -> None:
+    def _repair_update(self) -> None:
+        self.update_check_silent = False
+        self.update_button.config(state="disabled")
+        self._set_focus_update_state("Preparing repair…", THEME["accent"])
+        self.status_var.set("Downloading and verifying the latest VODForge installer…")
+        self.update_worker = threading.Thread(
+            target=self._update_download_worker, args=(None,), daemon=True
+        )
+        self.update_worker.start()
+
+    def _show_update_recovery(self, detail: str) -> None:
+        self._set_focus_update_state("Update needs attention", THEME["danger"])
+        self.update_button.config(state="normal")
+        self.status_var.set(
+            "Select Repair VODForge to try a fresh update, or Open download page for step-by-step installation."
+        )
+        show_update_recovery(self, detail, self._repair_update)
+
+    def _update_download_worker(self, release: ReleaseInfo | None) -> None:
         try:
+            if release is None:
+                release = fetch_latest_release()
             destination = application_data_dir() / "updates" / release.tag_name
             path = download_verified_update(release, destination)
             payload: Path | MacUpdatePlan = path
@@ -8984,7 +9005,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 verify_windows_authenticode(path)
             self.events.put(("update_ready", payload))
         except Exception as exc:  # noqa: BLE001 - worker reports any verified-update failure
-            self.events.put(("update_check_error", str(exc)))
+            self.events.put(("update_install_error", str(exc)))
 
     def _install_downloaded_update(self, update: Path | MacUpdatePlan) -> None:
         worker = self.__dict__.get("worker")
@@ -9014,17 +9035,20 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if isinstance(update, MacUpdatePlan):
                 launch_macos_update(update)
             else:
-                receipt = launch_windows_update(update)
+                bounds = (
+                    (
+                        self.winfo_rootx(),
+                        self.winfo_rooty(),
+                        self.winfo_width(),
+                        self.winfo_height(),
+                    )
+                    if self.__dict__.get("tk") is not None
+                    else None
+                )
+                receipt = launch_windows_update(update, window_bounds=bounds)
                 write_diagnostic(f"Windows update handoff log: {receipt}")
         except Exception as exc:  # noqa: BLE001 - keep launcher failures visible and the app open
-            self._set_focus_update_state("Update failed", THEME["danger"])
-            self.update_button.config(state="normal")
-            self.status_var.set(
-                "Update could not start. Close VODForge and run the downloaded installer manually."
-            )
-            messagebox.showerror(
-                APP_NAME, f"The verified update could not be started:\n\n{exc}"
-            )
+            self._show_update_recovery(str(exc))
             return
         self._set_focus_update_state("Installing update…", THEME["accent"])
         self.status_var.set(

@@ -71,7 +71,7 @@ MetadataUiEvent: TypeAlias = (
 RuntimeUiEvent: TypeAlias = (
     tuple[Literal["metadata_fetch_done"], None]
     | tuple[Literal["metadata_error"], str | dict[str, str]]
-    | tuple[Literal["runtime_error", "update_check_error"], str]
+    | tuple[Literal["runtime_error", "update_check_error", "update_install_error"], str]
     | tuple[Literal["download_folders"], list[Path]]
     | tuple[Literal["update_check_result"], ReleaseInfo]
     | tuple[Literal["update_ready"], Path | MacUpdatePlan]
@@ -290,6 +290,8 @@ class _UiEventHost(Protocol):
     def _display_metadata_preview_request(self, record: dict[str, Any]) -> None: ...
 
     def _show_update_result(self, release: ReleaseInfo) -> None: ...
+
+    def _show_update_recovery(self, detail: str) -> None: ...
 
     def _install_downloaded_update(self, update: Path | MacUpdatePlan) -> None: ...
 
@@ -526,6 +528,9 @@ class UiEventHandlersMixin:
             UiEventHandlersMixin._handle_update_check_result(self, payload)
         elif kind == "update_ready":
             UiEventHandlersMixin._handle_update_ready(self, payload)
+        elif kind == "update_install_error":
+            if not self.__dict__.get("_closing", False):
+                self._show_update_recovery(str(payload))
         elif kind == "update_check_error":
             UiEventHandlersMixin._handle_update_check_error(self, payload)
         elif kind == "cloud_seen_result":
@@ -611,8 +616,7 @@ class UiEventHandlersMixin:
         if silent:
             self._event_write_diagnostic(f"automatic update check failed: {payload}")
         else:
-            self.status_var.set("Could not check for updates.")
-            messagebox.showinfo(self._event_app_name, str(payload))
+            self._show_update_recovery(str(payload))
 
     def _handle_cloud_seen_result(self: _UiEventHost, payload: Any) -> None:
         if not (isinstance(payload, dict) and payload.get("success") is True):

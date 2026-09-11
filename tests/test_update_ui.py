@@ -171,7 +171,9 @@ def test_windows_handoff_changes_status_and_schedules_safe_close(monkeypatch, tm
     app.after = lambda delay, callback: scheduled.append(callback)
     monkeypatch.setattr(app_module, "is_windows", lambda: True)
     monkeypatch.setattr(
-        app_module, "launch_windows_update", lambda path: tmp_path / "receipt.json"
+        app_module,
+        "launch_windows_update",
+        lambda path, **kwargs: tmp_path / "receipt.json",
     )
     app._set_focus_update_state("Downloading update…", "")
     app._install_downloaded_update(tmp_path / "setup.exe")
@@ -186,18 +188,22 @@ def test_failed_handoff_leaves_app_open_and_exposes_recovery(monkeypatch, tmp_pa
     app = _app_stub()
     monkeypatch.setattr(app_module, "is_windows", lambda: True)
 
-    def fail(path):
+    def fail(path, **kwargs):
         raise RuntimeError("helper denied")
 
     monkeypatch.setattr(app_module, "launch_windows_update", fail)
     shown = []
     monkeypatch.setattr(
-        app_module.messagebox, "showerror", lambda *args: shown.append(args)
+        app_module, "show_update_recovery", lambda *args: shown.append(args)
     )
     app._install_downloaded_update(tmp_path / "setup.exe")
-    assert app.update_button.values == {"state": "normal", "text": "Update failed"}
+    assert app.update_button.values == {
+        "state": "normal",
+        "text": "Update needs attention",
+    }
     assert "helper denied" in shown[0][1]
-    assert "manually" in app.status_var.value
+    assert "Repair VODForge" in app.status_var.value
+    assert shown[0][2] == app._repair_update
 
 
 def test_update_does_not_interrupt_active_or_queued_media(monkeypatch, tmp_path):
@@ -215,3 +221,59 @@ def test_update_does_not_interrupt_active_or_queued_media(monkeypatch, tmp_path)
         app.__dict__.update(state)
         app._install_downloaded_update(tmp_path / "setup.exe")
         assert app.update_button.values["text"] == "Update ready"
+
+
+def test_repair_fetches_latest_even_when_current_version_is_installed(
+    monkeypatch, tmp_path
+):
+    app = _app_stub()
+    events = []
+    from types import SimpleNamespace
+
+    app.events = SimpleNamespace(put=events.append)
+    release = _release("1.2.4")
+    installer = tmp_path / "VODForge-Windows-Setup-v1.2.4.exe"
+    monkeypatch.setattr(app_module, "fetch_latest_release", lambda: release)
+    monkeypatch.setattr(app_module, "application_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(app_module, "is_macos", lambda: False)
+    monkeypatch.setattr(app_module, "is_windows", lambda: True)
+    verified = []
+    monkeypatch.setattr(
+        app_module, "download_verified_update", lambda info, dest: installer
+    )
+    monkeypatch.setattr(app_module, "verify_windows_authenticode", verified.append)
+    app._update_download_worker(None)
+    assert verified == [installer]
+    assert events == [("update_ready", installer)]
+
+
+def test_failed_repair_download_routes_to_actionable_recovery(monkeypatch):
+    app = _app_stub()
+    events = []
+    from types import SimpleNamespace
+
+    app.events = SimpleNamespace(put=events.append)
+
+    def offline():
+        raise OSError("network unavailable")
+
+    monkeypatch.setattr(app_module, "fetch_latest_release", offline)
+    app._update_download_worker(None)
+    assert events == [("update_install_error", "network unavailable")]
+
+
+@pytest.mark.parametrize("silent", [True, False])
+def test_update_check_failure_is_actionable_only_when_user_requested(
+    monkeypatch, silent
+):
+    from yt_downloader.ui_events import UiEventHandlersMixin
+
+    app = _app_stub()
+    app.update_check_silent = silent
+    shown = []
+    logged = []
+    app._show_update_recovery = shown.append
+    app._event_write_diagnostic = logged.append
+    UiEventHandlersMixin._handle_update_check_error(app, "network unavailable")
+    assert shown == ([] if silent else ["network unavailable"])
+    assert bool(logged) is silent

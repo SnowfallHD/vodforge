@@ -65,6 +65,52 @@ because the tests were skipped on a Mac.
 
 These are source and test changes until a fresh signed release is built, passes
 the running-upgrade gates and is published. They do not retrofit the installer
-already downloaded by users. Existing affected users can close VODForge and run
-a verified installer manually. Genesis's exact install failure remains
-unconfirmed without its process paths, version and installer outcome evidence.
+already downloaded by users. Genesis was diagnosed separately: earlier QA registration directed its successful
+update into the other installed copy. The new helper was then observed updating
+the actual running directory, correcting registration and reopening the app
+without a visible PowerShell console. That demonstration used the signed public
+0.2.0 installer; it does not publish these newer recovery changes.
+
+## Actionable recovery and repair
+
+Failures before app exit use the existing in-app modal surface. Detached Windows
+failures use an app-styled, borderless Windows Forms surface because the main
+application may no longer run. Both expose Repair VODForge, Open download page,
+Later, and a separate Technical details view. The detached surface uses the last
+app content bounds and clamps placement to the monitor work area. It has its own
+close/drag/keyboard controls; it does not inherit the Windows title bar.
+
+Repair explicitly fetches the latest stable official installer, checks the
+published SHA-256 and timestamped publisher signature, and installs into the
+same executable directory. Downloaded checksum content can be text or byte[] on
+Windows PowerShell; both are parsed, and missing/duplicate hashes are rejected.
+The helper is written to a uniquely named UTF-8 script instead of exceeding
+Windows' command-line limit with an encoded script. It still starts hidden and
+must acknowledge readiness before the app closes.
+
+After graceful exit, root saved-data files are copied to a per-handoff backup
+and their hashes verified. Logs/update payload directories are excluded; media
+is never moved or deleted by repair. The original backup is retained across
+retries. Data hashes are checked after installation and before relaunch. A data
+change disables automatic repair/relaunch and retains the backup rather than
+claiming preservation. This does not claim that later app migrations leave
+saved files byte-identical.
+
+Installer failure, wrong installed version, signature rejection, parent timeout,
+backup failure, changed saved data, relaunch failure, and repair-download failure
+have distinct next steps. Raw errors and the receipt path remain in Technical
+details. Manual fallback names the correct installation folder and tells the
+user to open the Windows setup file and click Install without uninstalling first.
+
+Recovery regressions execute successful retry, offline repair, data-change
+refusal, original-backup preservation, and text/byte checksum responses. The
+required native gate includes hidden/revealed cause, visible actions, callback,
+and in-app centering. A Windows Forms check verifies owned chrome, bounded
+buttons, and app-relative placement on Windows.
+
+Genesis visible demonstrations use real recovery code with explicit OS/download
+doubles and disposable files. The user observed successful test repairs in
+cases 1–4; their layout feedback drove the owned chrome and app-relative placement.
+A separate real download check fetched signed public 0.2.0, SHA-256
+`bf7117a864c34cf2ed45d603572c390c9d5919b217278cab2629442f40b09ded`, without
+executing it. This is not a newly packaged full repair-installation receipt.

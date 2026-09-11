@@ -560,7 +560,6 @@ def test_windows_update_requires_valid_owned_timestamped_signature(tmp_path: Pat
 
 
 def test_windows_helper_is_hidden_and_requires_readiness(tmp_path):
-    import base64
     import re
 
     from yt_downloader.updates import launch_windows_update
@@ -579,12 +578,15 @@ def test_windows_helper_is_hidden_and_requires_readiness(tmp_path):
 
     def spawn(command, **kwargs):
         calls.append((command, kwargs))
-        script = base64.b64decode(command[-1]).decode("utf-16le")
+        assert command[-2] == "-File"
+        assert len(subprocess.list2cmdline(command)) < 32767
+        script = Path(command[-1]).read_text(encoding="utf-8-sig")
         ready = (
             re.search(r"\$ready = '((?:[^']|'')*)'", script).group(1).replace("''", "'")
         )
         Path(ready).write_text("ready")
         assert "quoted '' ; $test" in script
+        assert "$windowBounds = @(100,80,1000,720)" in script
         assert script.index("WaitForExit(120000)") < script.index(
             "Start-Process -FilePath $installer"
         )
@@ -597,7 +599,11 @@ def test_windows_helper_is_hidden_and_requires_readiness(tmp_path):
         return Process()
 
     receipt = launch_windows_update(
-        installer, executable=target, parent_pid=123, popen=spawn
+        installer,
+        executable=target,
+        parent_pid=123,
+        window_bounds=(100, 80, 1000, 720),
+        popen=spawn,
     )
     assert receipt.suffix == ".json"
     assert calls[0][1]["creationflags"] == 0x08000000

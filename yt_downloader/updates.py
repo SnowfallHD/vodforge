@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .windows_update_recovery import RECOVERY_FUNCTIONS
+
 GITHUB_REPOSITORY = "SnowfallHD/vodforge"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{GITHUB_REPOSITORY}/releases/latest"
@@ -599,7 +601,14 @@ def verify_windows_authenticode(
 
 
 def windows_update_script(
-    installer: Path, executable: Path, parent_pid: int, receipt: Path, ready: Path
+    installer: Path,
+    executable: Path,
+    parent_pid: int,
+    receipt: Path,
+    ready: Path,
+    *,
+    data_dir: Path | None = None,
+    window_bounds: tuple[int, int, int, int] | None = None,
 ) -> str:
     """Detached handoff: wait for graceful exit, install, then explicitly relaunch."""
 
@@ -615,31 +624,69 @@ def windows_update_script(
             "The Windows installer name does not identify its release version."
         )
     expected_version = version.group(1)
-    return textwrap.dedent(f"""\
+    data_expression = (
+        literal(data_dir)
+        if data_dir is not None
+        else "(Join-Path $env:LOCALAPPDATA 'VODForge')"
+    )
+    bounds_expression = (
+        "@(" + ",".join(str(int(value)) for value in window_bounds) + ")"
+        if window_bounds
+        else "$null"
+    )
+    return RECOVERY_FUNCTIONS + textwrap.dedent(f"""\
         $ErrorActionPreference = 'Stop'
         $installer = {literal(installer)}
         $executable = {literal(executable)}
         $receipt = {literal(receipt)}
         $ready = {literal(ready)}
+        $windowBounds = {bounds_expression}
+        $dataRoot = {data_expression}
+        $backup = $receipt + '.data-backup'
+        $directory = Split-Path -Parent $executable
+        $expectedVersion = {literal(expected_version)}
+        $repairRequested = $false
+        $setup = $null
+        $manifest = $null
+        do {{
         $stage = 'waiting_for_exit'
         $result = @{{ status = 'failed'; stage = $stage }}
         try {{
             $parent = Get-Process -Id {int(parent_pid)} -ErrorAction SilentlyContinue
             Set-Content -LiteralPath $ready -Value 'ready' -Encoding UTF8
             if ($parent -and !$parent.WaitForExit(120000)) {{ throw 'VODForge did not close. Close it normally and retry the update.' }}
-            $stage = 'installing'
+            if ($setup -and !$setup.HasExited) {{ throw 'The previous installer is still running. Finish or close it before repair.' }}
+            if ($null -ne $manifest) {{
+                $stage = 'checking_data'
+                Confirm-VODForgeData $dataRoot $manifest
+            }}
+            if ($repairRequested) {{
+                $stage = 'downloading_repair'
+                $fresh = Get-VODForgeRepairInstaller (Split-Path -Parent $installer)
+                $installer = $fresh.Path
+                $expectedVersion = $fresh.Version
+            }}
+            $stage = 'backing_up'
+            if ($null -eq $manifest) {{ $manifest = Save-VODForgeData $dataRoot $backup }}
+            $result.data_backup = $backup
+            $stage = 'verifying'
             $signature = Get-AuthenticodeSignature -LiteralPath $installer
             if ($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate -or !$signature.SignerCertificate.Subject.Contains('CN="Kryden Ventures, LLC"') -or !$signature.SignerCertificate.Subject.Contains('O="Kryden Ventures, LLC"')) {{ throw 'Installer signature verification failed. Download a fresh installer from the official release.' }}
             $directory = Split-Path -Parent $executable
             $arguments = @('/SP-', '/SILENT', '/NORESTART', '/NOCLOSEAPPLICATIONS', '/NORESTARTAPPLICATIONS', '/VODFORGEHANDOFF=1', ('/DIR="' + $directory + '"'), ('/LOG="' + $receipt + '.install.log"'))
+            $stage = 'installing'
             $setup = Start-Process -FilePath $installer -ArgumentList $arguments -PassThru
             if (!$setup.WaitForExit(900000)) {{ throw 'Installer is still running. Finish or close the installer before retrying.' }}
             $setup.Refresh()
             $result.installer_exit_code = $setup.ExitCode
             if ($setup.ExitCode -ne 0) {{ throw ('Installation did not complete (exit code ' + $setup.ExitCode + '). Run the downloaded installer manually; see the installation log.') }}
+            $stage = 'verifying_install'
             if (!(Test-Path -LiteralPath $executable -PathType Leaf)) {{ throw 'Installed application is missing. Run the downloaded installer manually.' }}
             $installedVersion = (Get-Item -LiteralPath $executable).VersionInfo.ProductVersion
-            if ($installedVersion -ne {literal(expected_version)}) {{ throw ('Installed version does not match the update: ' + $installedVersion + '. Run the installer manually.') }}
+            if ($installedVersion -ne $expectedVersion) {{ throw ('Installed version does not match the update: ' + $installedVersion + '. Run the installer manually.') }}
+            $stage = 'checking_data'
+            Confirm-VODForgeData $dataRoot $manifest
+            $result.data_preserved_before_relaunch = $true
             $result.installed_version = $installedVersion
             $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
             $stage = 'relaunching'
@@ -651,14 +698,22 @@ def windows_update_script(
             $result.executable_sha256 = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash
         }} catch {{
             $result.error = $_.Exception.Message
+            if ($null -ne $manifest) {{
+                try {{ Confirm-VODForgeData $dataRoot $manifest }}
+                catch {{ $stage = 'checking_data'; $result.error += "`r`n" + $_.Exception.Message }}
+            }}
             $result.stage = $stage
             $result | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
-            Add-Type -AssemblyName System.Windows.Forms
-            [System.Windows.Forms.MessageBox]::Show(($result.error + "`n`nUpdate log: " + $receipt), 'VODForge update') | Out-Null
+            $choice = Show-VODForgeRecovery $stage ($result.error + "`r`nUpdate log: " + $receipt) $directory $backup
+            $repairRequested = $choice -eq 'repair'
+            if ($repairRequested) {{
+                Copy-Item -LiteralPath $receipt -Destination ($receipt + '.' + [guid]::NewGuid().ToString('N') + '.failed.json')
+            }}
         }} finally {{
             $result.stage = $stage
             $result | ConvertTo-Json | Set-Content -LiteralPath $receipt -Encoding UTF8
         }}
+        }} while ($result.status -ne 'relaunched' -and $repairRequested)
         if ($result.status -ne 'relaunched') {{ exit 1 }}
         """)
 
@@ -668,10 +723,10 @@ def launch_windows_update(
     *,
     executable: Path | None = None,
     parent_pid: int | None = None,
+    window_bounds: tuple[int, int, int, int] | None = None,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
 ) -> Path:
     """Start a hidden helper and confirm readiness before the UI closes."""
-    import base64
     import time
 
     installer = installer.resolve()
@@ -696,7 +751,12 @@ def launch_windows_update(
         os.getpid() if parent_pid is None else parent_pid,
         receipt,
         ready,
+        window_bounds=window_bounds,
     )
+    script_path = installer.parent / f"handoff-{token}.ps1"
+    # A file avoids Windows' 32K command-line ceiling as recovery grows.
+    with script_path.open("x", encoding="utf-8-sig") as handle:
+        handle.write(script)
     powershell = (
         Path(os.environ.get("SystemRoot", r"C:\Windows"))
         / "System32/WindowsPowerShell/v1.0/powershell.exe"
@@ -708,8 +768,10 @@ def launch_windows_update(
             "-NonInteractive",
             "-WindowStyle",
             "Hidden",
-            "-EncodedCommand",
-            base64.b64encode(script.encode("utf-16le")).decode("ascii"),
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script_path),
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

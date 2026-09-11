@@ -802,3 +802,50 @@ def test_composer_format_menu_opens_and_selects_every_format(size, monkeypatch):
                 assert dropdown._popover is None
         finally:
             application.destroy()
+
+
+def test_update_recovery_exposes_cause_and_keeps_repair_visible(root):
+    from yt_downloader.update_recovery import show_update_recovery
+
+    checks = []
+    root.geometry("1000x720")
+    root.deiconify()
+    root.update()
+
+    def inspect():
+        popup = root.nametowidget(".update_recovery")
+
+        def walk(widget):
+            return [widget] + [
+                item for child in widget.winfo_children() for item in walk(child)
+            ]
+
+        widgets = walk(popup)
+        buttons = {
+            str(w.cget("text")): w for w in widgets if w.winfo_class() == "TButton"
+        }
+        detail = next(w for w in widgets if isinstance(w, tk.Text))
+        checks.append(not bool(detail.winfo_manager()))
+        buttons["Technical details"].invoke()
+        popup.update_idletasks()
+        checks.append(bool(detail.winfo_manager()))
+        checks.append(
+            abs(popup.winfo_x() + popup.winfo_width() / 2 - root.winfo_width() / 2) <= 1
+        )
+        checks.append(
+            abs(popup.winfo_y() + popup.winfo_height() / 2 - root.winfo_height() / 2)
+            <= 1
+        )
+        checks.append("precise failure cause" in detail.get("1.0", "end"))
+        checks.append(
+            all(
+                w.winfo_rooty() + w.winfo_height()
+                <= popup.winfo_rooty() + popup.winfo_height()
+                for w in buttons.values()
+            )
+        )
+        buttons["Repair VODForge"].invoke()
+
+    root.after(150, inspect)
+    show_update_recovery(root, "precise failure cause", lambda: checks.append(True))
+    assert checks == [True] * 7
