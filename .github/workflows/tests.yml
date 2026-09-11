@@ -33,7 +33,9 @@ jobs:
       - name: Install media test tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\install_ffmpeg_windows.ps1
+        run: |
+          .\install_ffmpeg_windows.ps1
+          "$PWD\vendor\ffmpeg\bin" >> $env:GITHUB_PATH
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
       - name: Run tests

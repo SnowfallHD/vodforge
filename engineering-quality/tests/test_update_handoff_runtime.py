@@ -122,14 +122,14 @@ function Start-Process {
 
     evidence = json.loads(receipt.read_text(encoding="utf-8-sig"))
     success = outcome in {"success", "repair_success"}
-    assert (result.returncode == 0) == success, result.stderr
+    assert (result.returncode == 0) == success, (result.stderr, evidence)
     assert evidence["status"] == ("relaunched" if success else "failed")
     assert media.read_bytes() == b"existing media"
     backup = tmp_path / "result.json.data-backup" / "download-history.json.backup"
     if outcome != "parent_timeout":
         assert backup.read_text() == '{"library": ["preserve me"]}'
     if outcome == "data_changed":
-        assert evidence["stage"] == "checking_data"
+        assert evidence["stage"] == "checking_data", evidence
         assert "pid" not in evidence
     else:
         assert saved.read_text() == '{"library": ["preserve me"]}'
