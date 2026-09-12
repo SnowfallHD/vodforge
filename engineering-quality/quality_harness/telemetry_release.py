@@ -115,6 +115,20 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
     ):
         return errors + ["Expected one installation and one credential throughout"]
     initial, second, last = (s["installations"][0] for s in (first, reopened, complete))
+    for name, snapshot, expected_opens in (
+        ("first_launch", first, 1),
+        ("same_version_reopen", reopened, 2),
+    ):
+        if (
+            sum(
+                event.get("event_name") == "app_opened"
+                for event in snapshot.get("events", [])
+            )
+            != expected_opens
+        ):
+            errors.append(
+                f"{name}: expected {expected_opens} app-open events before later feature activity"
+            )
     if (
         not initial.get("last_seen_at")
         or not second.get("last_seen_at")

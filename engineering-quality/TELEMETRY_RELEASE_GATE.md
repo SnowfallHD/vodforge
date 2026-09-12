@@ -57,6 +57,11 @@ A helper directly posting events is a transport test, not packaged journey proof
 1. Fresh isolated profile: decline or leave permission unknown; verify no optional
    telemetry rows and capture `unknown.json`. Grant permission through the UI. Observe one installation and
    credential, first launch and app-open event. Capture `first_launch.json`.
+   Leave the app idle until this delivery completes: a later feature action must
+   not be needed to wake the app-open queue. Require exactly one app-open event at
+   this checkpoint, and exactly two at `same_version_reopen.json`. Startup retries
+   must drain an existing immutable event after a transient delivery failure;
+   recording while an empty delivery worker exits must not strand the new event.
 2. Quit normally. Reopen the **same version and same profile** after the timestamp
    second changes. Verify last seen advances; first launch, creation date, identity
    and current version stay fixed; no update event appears. Capture

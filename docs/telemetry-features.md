@@ -53,6 +53,12 @@ are omitted when their start was not observed in this process. They are not
 encoder-only benchmark measurements. The outbox remains limited to 256 events,
 512 KiB and the existing 30-day delivery acceptance window.
 
+Deduplication suppresses new event creation, not delivery retries: repeated
+startup or feature callbacks retry any existing immutable queued event. A producer
+request received while the delivery worker is finishing must wake that worker or
+start its replacement. The release journey requires app-open delivery while idle,
+before a later feature action could mask a stranded queue.
+
 Library discovery/organization, player controls and completion/failure,
 missing-media recovery, announcements/Try it, Technical disclosure and appearance
 use `feature_used` with a closed feature/action pair. Engagement records presence

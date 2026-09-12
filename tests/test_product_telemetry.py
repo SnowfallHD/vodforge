@@ -272,3 +272,77 @@ def test_app_open_is_once_per_session_but_not_once_per_installation(tmp_path: Pa
     assert first.record_app_opened()
     assert first.shutdown(1.0)
     assert len(delivered) == 2
+
+
+@pytest.mark.parametrize("kind", ["app_opened", "feature_used"])
+def test_repeated_startup_callback_retries_pending_event_without_recreating_it(
+    tmp_path: Path,
+    kind: str,
+):
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    attempts = []
+
+    def deliver(event):
+        attempts.append(event.public_payload())
+        return len(attempts) > 1
+
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.2.2",
+        d1_recorder=deliver,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    record = (
+        owner.record_app_opened
+        if kind == "app_opened"
+        else lambda: owner.record_feature("library", "opened")
+    )
+    assert record()
+    assert owner.shutdown(2)
+    assert len(attempts) == 1
+    # Enrollment completion retries the same immutable queued app-open event.
+    assert record()
+    assert owner.shutdown(2)
+    assert len(attempts) == 2
+    assert attempts[0] == attempts[1]
+    assert record()
+    assert owner.shutdown(2)
+    assert len(attempts) == 2
+
+
+def test_event_recorded_while_empty_delivery_worker_exits_is_not_stranded(
+    tmp_path: Path, monkeypatch
+):
+    import threading
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    delivered = []
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.2.2",
+        d1_recorder=lambda event: delivered.append(event.event_id) or True,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    empty_worker_done = threading.Event()
+    release_worker = threading.Event()
+    original_flush = owner._flush
+
+    def pause_at_exit():
+        original_flush()
+        if not empty_worker_done.is_set():
+            empty_worker_done.set()
+            assert release_worker.wait(3)
+
+    monkeypatch.setattr(owner, "_flush", pause_at_exit)
+    owner.flush_async()
+    try:
+        assert empty_worker_done.wait(2)
+        assert owner.record_app_opened()
+    finally:
+        release_worker.set()
+    assert owner.shutdown(2)
+    assert len(delivered) == 1

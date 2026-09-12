@@ -339,6 +339,7 @@ class ProductTelemetryOwner:
         self._feature_observed: set[tuple[str, str]] = set()
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
+        self._flush_requested = False
 
     def _permitted(self) -> tuple[bool, str | None]:
         if not telemetry_collection_allowed() or not self._enabled:
@@ -472,6 +473,7 @@ class ProductTelemetryOwner:
         )
         with self._lock:
             if dedupe_key is not None and event_id in self._recorded_dedupe_ids:
+                self.flush_async()
                 return True
             try:
                 events = _load_outbox(self._state_path)
@@ -483,6 +485,7 @@ class ProductTelemetryOwner:
             if any(candidate.event_id == event.event_id for candidate in events):
                 if dedupe_key is not None:
                     self._recorded_dedupe_ids.add(event_id)
+                self.flush_async()
                 return True
             if len(events) >= MAX_OUTBOX_EVENTS:
                 self._diagnostic(
@@ -512,6 +515,7 @@ class ProductTelemetryOwner:
         key = (feature, action)
         with self._lock:
             if feature != "updater" and key in self._feature_observed:
+                self.flush_async()
                 return True
             accepted = self.record(
                 "feature_used", feature=feature, action=action, dimensions=dimensions
@@ -525,16 +529,34 @@ class ProductTelemetryOwner:
 
     def flush_async(self) -> None:
         with self._lock:
-            if not self._enabled or (
-                self._worker is not None and self._worker.is_alive()
-            ):
+            if not self._enabled:
                 return
+            if self._worker is not None and self._worker.is_alive():
+                self._flush_requested = True
+                return
+            self._flush_requested = False
             self._worker = threading.Thread(
-                target=self._flush,
+                target=self._flush_worker,
                 name="vodforge-product-telemetry",
                 daemon=True,
             )
             self._worker.start()
+
+    def _flush_worker(self) -> None:
+        try:
+            while True:
+                self._flush()
+                with self._lock:
+                    if not self._flush_requested:
+                        # Retire under the same lock used by producers: a new
+                        # request must either wake this worker or start another.
+                        self._worker = None
+                        return
+                    self._flush_requested = False
+        finally:
+            with self._lock:
+                if self._worker is threading.current_thread():
+                    self._worker = None
 
     def _flush(self) -> None:
         while True:

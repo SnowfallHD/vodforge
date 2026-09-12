@@ -133,6 +133,8 @@ def telemetry_fixture(candidate, platform="macos"):
         )
     for index, event in enumerate(events):
         event["event_id"] = str(index)
+    first["events"] = deepcopy(events[:1])
+    reopened["events"] = deepcopy(events[:2])
     complete["events"] = events
     from collections import Counter
 
@@ -192,6 +194,25 @@ def candidate():
 
 def test_valid_preview_readbacks():
     assert validate_journey(telemetry_fixture(candidate())) == []
+
+
+@pytest.mark.parametrize(
+    "checkpoint, count",
+    [
+        ("first_launch", 0),
+        ("first_launch", 2),
+        ("same_version_reopen", 1),
+        ("same_version_reopen", 3),
+    ],
+)
+def test_app_open_must_arrive_at_each_launch_not_only_after_later_features(
+    checkpoint, count
+):
+    data = telemetry_fixture(candidate())
+    data["snapshots"][checkpoint]["events"] = [
+        {"event_name": "app_opened", "event_id": str(index)} for index in range(count)
+    ]
+    assert validate_journey(data)
 
 
 @pytest.mark.parametrize("checkpoint", CHECKPOINTS)
