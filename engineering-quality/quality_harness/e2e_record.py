@@ -7,7 +7,11 @@ import subprocess
 from pathlib import Path
 
 from .e2e_provenance import verify_live_launch, verify_native_window_identity
-from .packaged_e2e import SCREENSHOT_OPTIONAL_EVENTS, _required_ui_event_order
+from .packaged_e2e import (
+    SCREENSHOT_OPTIONAL_EVENTS,
+    _library_description_visibility_receipt,
+    _required_ui_event_order,
+)
 from .util import json_dump, sha256_file, utc_now
 
 
@@ -106,6 +110,30 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         ]
     else:
         unobserved_prior_events = []
+
+    if args.event == "library_description_observed":
+        visibility = _library_description_visibility_receipt(
+            state_paths=current_launch.get("state_paths") or {},
+            driver_trace={
+                "events": [
+                    {
+                        "event": args.event,
+                        "launch_id": current_launch.get("launch_id"),
+                        "window_title_token": args.window_title_token,
+                        "pid": expected_pid,
+                        "observed_text": args.observed_text,
+                    }
+                ]
+            },
+            launches=[current_launch],
+            session_nonce=session["session_nonce"],
+            expected_description=expected_description,
+        )
+        if visibility.get("verified") is not True:
+            raise RuntimeError(
+                "Library description checkpoint refused before continuing the journey: "
+                + "; ".join(visibility.get("errors") or [])
+            )
 
     active_evidence = None
     if args.event in {

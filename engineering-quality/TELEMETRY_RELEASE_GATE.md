@@ -53,6 +53,13 @@ The recorder checks the existing run journal for active work owned by the curren
 PID, and for a pending job at the queued checkpoint. This is additional evidence;
 it never replaces the required native screenshot or proves visible progress alone.
 
+Select the canonical description-stress export before any other Library item.
+The packaged app writes its immutable geometry receipt for the first selected
+item in each launch. Record `library_description_observed` immediately: the
+recorder validates the receipt's item, description, launch and geometry at that
+point, rather than discovering a mismatch after the rest of the journey. Preserve
+a rejected receipt; never overwrite it or treat a later screenshot as its repair.
+
 Before each native dialog action, discover the current window owned by the
 attested PID and use its exact title and current bounds. Opening a dialog and
 acting inside it are separate steps: verify it is visible first. After one failed

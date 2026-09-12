@@ -342,13 +342,22 @@ def test_recorder_copies_hashes_and_enforces_event_order(
     )
 
 
+@pytest.mark.parametrize("geometry_verified", [False, True])
 def test_recorder_requires_exact_visible_description_for_library_receipt(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, geometry_verified: bool
 ) -> None:
     session_path, trace_path = _write_session(tmp_path)
     monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
     screenshot = tmp_path / "library.png"
     screenshot.write_bytes(b"visible-library-description")
+    monkeypatch.setattr(
+        e2e_record,
+        "_library_description_visibility_receipt",
+        lambda **kwargs: {
+            "verified": geometry_verified,
+            "errors": [] if geometry_verified else ["wrong first selected item"],
+        },
+    )
 
     with pytest.raises(RuntimeError, match="exact visible fixture description"):
         record_e2e_event(
@@ -360,6 +369,20 @@ def test_recorder_requires_exact_visible_description_for_library_receipt(
                 observed_text="wrong description",
             )
         )
+
+    if not geometry_verified:
+        with pytest.raises(RuntimeError, match="wrong first selected item"):
+            record_e2e_event(
+                _args(
+                    session_path,
+                    "library_description_observed",
+                    screenshot=screenshot,
+                    allow_gap=True,
+                    observed_text=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+                )
+            )
+        assert json.loads(trace_path.read_text())["events"] == []
+        return
 
     assert (
         record_e2e_event(
