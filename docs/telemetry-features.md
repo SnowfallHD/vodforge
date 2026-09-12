@@ -36,6 +36,9 @@ produce different IDs for the same local key.
 Runs emit start and terminal events; `run_completed` distinguishes `complete` and
 `partial`. Queuing, removal before start, actual item skip, and each validated media
 commit have separate events. A playlist has one attempt and multiple media exports.
+`run_skipped` records an item skip, not an additional terminal outcome for the
+whole attempt. Skipping its last item can therefore also produce `run_stopped`
+when the enclosing run finishes; do not sum item skips into run terminal counts.
 Recovery of interrupted attempts reports the persisted terminal state. A closed
 app that never reopens cannot report a crash outcome.
 
@@ -65,6 +68,11 @@ use `feature_used` with a closed feature/action pair. Engagement records presenc
 once per permitted process session/action, not every keystroke or polling tick.
 Search and annotation text is never an event field. Theme names are enumerated;
 a custom accent is represented only as `custom`.
+
+Organization events compare the typed annotation's `note`, `tags`, and `category`
+after a successful save. Adding or clearing a value counts as a change; saving
+unchanged values or a failed write does not. The save-callback regression covers
+each field independently, including refusal of private values in event arguments.
 
 Playback failures follow the provider's error event even when libVLC subsequently
 reports `Ended`. The existing playback backend retains that error until a new

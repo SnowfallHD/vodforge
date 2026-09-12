@@ -152,6 +152,13 @@ and failure, seeking/chapters/heatmaps/previews, missing-file recovery, What’s
 Try it when enabled for the candidate, Technical view, appearance changes, and update/Repair outcomes. UI action
 and expected counts must be recorded before reading D1, never inferred from rows.
 
+For organization, independently edit and save a note, tags, and a category, then
+verify all three saved values locally and all three action names in D1. Keep
+private sentinel values out of the telemetry rows. A dialog screenshot or a direct
+`record_feature` test alone cannot prove that its actual save callback emits each
+action. The repository gate includes all field create/clear/unchanged/failed-save
+cases in `tests/test_telemetry_features.py`.
+
 For playback failure, back up a media file inside the isolated QA profile and
 deny read access using the platform's file permissions. Start playback through
 the real player and require `player/failed`, with no completion attributed to

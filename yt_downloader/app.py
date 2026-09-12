@@ -10529,14 +10529,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 messagebox.showerror(APP_NAME, str(exc), parent=self)
                 return False
             self._reconcile_library_projection(selected_index=selected_index)
-            for field, action in (
-                ("notes", "notes_saved"),
-                ("tags", "tags_saved"),
-                ("category", "category_saved"),
+            for previous, current, action in (
+                (previous_annotation.note, annotation.note, "notes_saved"),
+                (previous_annotation.tags, annotation.tags, "tags_saved"),
+                (previous_annotation.category, annotation.category, "category_saved"),
             ):
-                if getattr(annotation, field, None) != getattr(
-                    previous_annotation, field, None
-                ):
+                if current != previous:
                     self._record_feature("organization", action)
             self.status_var.set("Library notes and organization saved.")
             return True

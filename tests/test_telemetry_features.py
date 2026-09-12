@@ -14,6 +14,69 @@ from yt_downloader.telemetry_features import (
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
+@pytest.mark.parametrize(
+    "field,value,action",
+    [
+        ("note", "Private note sentinel", "notes_saved"),
+        ("tags", ("private-tag",), "tags_saved"),
+        ("category", "Private category", "category_saved"),
+    ],
+)
+@pytest.mark.parametrize("operation", ["create", "clear", "unchanged", "failed"])
+def test_annotation_save_producer_tracks_only_successful_changes(
+    tmp_path, monkeypatch, field, value, action, operation
+):
+    from types import SimpleNamespace
+
+    import yt_downloader.app as app_module
+    from yt_downloader.library_annotations import (
+        LibraryAnnotation,
+        LibraryAnnotationsError,
+        LibraryAnnotationsOwner,
+    )
+
+    owner = LibraryAnnotationsOwner(tmp_path / "annotations.json")
+    populated = LibraryAnnotation(**{field: value})
+    previous = populated if operation in {"clear", "unchanged"} else LibraryAnnotation()
+    proposed = LibraryAnnotation() if operation == "clear" else populated
+    owner.replace("run:test", previous)
+    events = []
+    outcomes = []
+    info = {app_module.ANNOTATION_OWNER_KEY: "run:test", "title": "Private title"}
+    app = SimpleNamespace(
+        metadata_items=[info],
+        library_annotations=owner,
+        _reconcile_library_projection=lambda **kwargs: None,
+        _record_feature=lambda *args: events.append(args),
+        status_var=SimpleNamespace(set=lambda text: None),
+    )
+
+    def dialog(*args, **kwargs):
+        return SimpleNamespace(
+            show=lambda: outcomes.append(kwargs["on_save"](proposed))
+        )
+
+    monkeypatch.setattr(app_module, "LibraryAnnotationDialog", dialog)
+    monkeypatch.setattr(
+        app_module.messagebox, "showerror", lambda *args, **kwargs: None
+    )
+    if operation == "failed":
+
+        def fail_save(*args):
+            raise LibraryAnnotationsError("Cannot save private path")
+
+        monkeypatch.setattr(owner, "replace", fail_save)
+    app_module.DownloaderApp._show_library_annotation_editor(app, info)
+    assert outcomes == [operation != "failed"]
+    assert events == (
+        [("organization", action)] if operation in {"create", "clear"} else []
+    )
+    assert owner.annotation_for("run:test") == (
+        previous if operation == "failed" else proposed
+    )
+    assert "Private" not in repr(events)
+
+
 def test_attempts_link_across_restart_without_exposing_local_identity(tmp_path):
     installation = tmp_path / "installation.json"
     install_id = _permitted_installation(installation)
