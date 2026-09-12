@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import urlopen
 
+import pytest
 from quality_harness import packaged_e2e
 from quality_harness.fault_server import (
     SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
@@ -17,7 +18,6 @@ from quality_harness.fixtures import (
     LIBRARY_DESCRIPTION_STRESS_TITLE,
 )
 from quality_harness.packaged_e2e import (
-    SMOKE_UI_EVENT_ORDER,
     _history_persistence_receipt,
     _library_description_visibility_receipt,
     _persisted_state_snapshot,
@@ -71,6 +71,7 @@ def _driver_trace(
     omit: set[str] | None = None,
     session_nonce: str | None = None,
     launches: list[dict[str, object]] | None = None,
+    profile: str = "smoke",
 ) -> dict[str, object]:
     omit = omit or set()
     ui_dir = session_dir / "ui"
@@ -78,7 +79,7 @@ def _driver_trace(
     events = []
     screenshots = []
     started = datetime(2026, 8, 30, tzinfo=timezone.utc)
-    for index, name in enumerate(SMOKE_UI_EVENT_ORDER):
+    for index, name in enumerate(packaged_e2e._required_ui_event_order(profile)):
         if name in omit:
             continue
         screenshot = None
@@ -97,7 +98,11 @@ def _driver_trace(
             }
         )
         if session_nonce is not None and launches is not None:
-            sequence = 2 if name == "restart_observed" else 1
+            sequence = {
+                "restart_observed": 2,
+                "consent_denied_observed": 3,
+                "telemetry_disabled_observed": 4,
+            }.get(name, 1)
             launch = next(
                 item for item in launches if item["launch_sequence"] == sequence
             )
@@ -123,6 +128,48 @@ def _driver_trace(
                 }
             )
     return {"events": events, "screenshots": screenshots, "notes": []}
+
+
+@pytest.mark.parametrize(
+    "defect", [None, "wrong_launch", "preview_enabled", "production_enabled"]
+)
+def test_telemetry_trace_binds_privacy_checks_to_their_reopened_processes(
+    tmp_path: Path, defect: str | None
+) -> None:
+    launches = [
+        {
+            "launch_sequence": sequence,
+            "launch_id": str(sequence) * 32,
+            "pid": 7000 + sequence,
+            "create_time": float(sequence),
+            "executable_sha256": "a" * 64,
+            "bundle_tree_sha256": "b" * 64,
+            "window_token": f"VFQ-test-L{sequence}",
+            "attestation": {
+                "telemetry_preview": sequence < 4,
+                "telemetry_production": False,
+            },
+        }
+        for sequence in range(1, 5)
+    ]
+    nonce = "f" * 32
+    trace = _driver_trace(
+        tmp_path, profile="telemetry", session_nonce=nonce, launches=launches
+    )
+    if defect == "wrong_launch":
+        trace["events"][-2]["launch_sequence"] = 1
+    elif defect == "preview_enabled":
+        launches[-1]["attestation"]["telemetry_preview"] = True
+    elif defect == "production_enabled":
+        launches[-1]["attestation"]["telemetry_production"] = True
+    receipt = _validate_driver_trace(
+        trace,
+        profile="telemetry",
+        session_dir=tmp_path,
+        session_nonce=nonce,
+        launches=launches,
+    )
+    assert receipt["valid"] is (defect is None)
 
 
 def test_driver_trace_requires_ordered_timestamped_session_screenshots(
@@ -633,3 +680,76 @@ def test_history_persistence_binds_two_launches_to_stable_output(
     assert receipt["launch_count_at_least_two"] is True
     assert receipt["media_hashes_stable_across_restart"] is True
     assert receipt["history_hash_stable_across_restart"] is True
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        None,
+        "wrong_format",
+        "missing_file",
+        "changed_media",
+        "missing_sentinel",
+        "unbound_file",
+    ],
+)
+def test_telemetry_persistence_covers_mixed_outputs_and_designated_description(
+    tmp_path: Path, defect: str | None
+) -> None:
+    home = tmp_path / "home"
+    downloads = home / "Downloads"
+    downloads.mkdir(parents=True)
+    items = []
+    probes = []
+    for suffix, output_type in (
+        ("mp4", "MP4"),
+        ("mp3", "MP3"),
+        ("opus", "Original audio"),
+        ("m4a", "Original audio"),
+    ):
+        media = downloads / f"export.{suffix}"
+        media.write_bytes(suffix.encode())
+        items.append(
+            {
+                "title": "Description fixture" if suffix == "mp4" else "Another source",
+                "description": "sentinel"
+                if suffix == "mp4"
+                else "Ordinary description",
+                "vodforge_output_type": output_type,
+                "vodforge_encoding_summary": {
+                    "output": {"Output file path": str(media)}
+                },
+            }
+        )
+        probes.append(
+            {"path": str(media), "sha256": sha256_file(media), "readable": True}
+        )
+    history = (
+        home / "Library" / "Application Support" / "VODForge" / "download-history.json"
+    )
+    history.parent.mkdir(parents=True)
+    if defect == "wrong_format":
+        items[-1]["vodforge_output_type"] = "MP3"
+    elif defect == "missing_sentinel":
+        items[0]["description"] = "truncated"
+    elif defect == "unbound_file":
+        items.pop()
+    history.write_text(json.dumps({"items": items}))
+    baseline = _persisted_state_snapshot(home)
+    assert len(baseline["media"]) == 4
+    if defect == "missing_file":
+        Path(probes[-1]["path"]).unlink()
+        probes.pop()
+    elif defect == "changed_media":
+        probes[-1]["sha256"] = "f" * 64
+    receipt = _history_persistence_receipt(
+        home,
+        probes,
+        [{}, {"reason": "driver_requested_restart"}],
+        f"Loaded download history: {history}",
+        baseline,
+        expected_output_type=None,
+        expected_description="sentinel",
+        expected_description_title="Description fixture",
+    )
+    assert receipt["verified"] is (defect is None)

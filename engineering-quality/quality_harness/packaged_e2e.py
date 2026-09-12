@@ -447,7 +447,11 @@ def _validate_driver_trace(
         name = str(event["event"])
         if name not in required or not provenance_required:
             continue
-        expected_sequence = 2 if name == "restart_observed" else 1
+        expected_sequence = {
+            "restart_observed": 2,
+            "consent_denied_observed": 3,
+            "telemetry_disabled_observed": 4,
+        }.get(name, 1)
         launch = launch_by_sequence.get(expected_sequence)
         errors: list[str] = []
         if launch is None:
@@ -467,6 +471,15 @@ def _validate_driver_trace(
             for key, value in expected.items():
                 if event.get(key) != value:
                     errors.append(f"{key} mismatch")
+            if name == "telemetry_disabled_observed":
+                attestation = launch.get("attestation", {})
+                if not isinstance(attestation, dict) or any(
+                    attestation.get(key) is not False
+                    for key in ("telemetry_preview", "telemetry_production")
+                ):
+                    errors.append(
+                        "disabled launch must attest no preview or production telemetry"
+                    )
         window_id = event.get("window_id")
         if not isinstance(window_id, int) or window_id <= 0:
             errors.append("window_id is missing or invalid")
@@ -576,13 +589,21 @@ def _validate_driver_trace(
     }
 
 
+def _exported_media_paths(home: Path) -> list[Path]:
+    # Original audio currently preserves Opus or AAC in these two containers.
+    return sorted(
+        path
+        for path in (home / "Downloads").rglob("*")
+        if path.is_file() and path.suffix.lower() in {".mp4", ".mp3", ".opus", ".m4a"}
+    )
+
+
 def _persisted_state_snapshot(home: Path) -> dict[str, Any]:
-    downloads = home / "Downloads"
     history_path = (
         home / "Library" / "Application Support" / "VODForge" / "download-history.json"
     )
     media = []
-    for path in sorted((*downloads.rglob("*.mp4"), *downloads.rglob("*.mp3"))):
+    for path in _exported_media_paths(home):
         media.append(
             {
                 "path": str(path.resolve()),
@@ -605,8 +626,9 @@ def _history_persistence_receipt(
     activity: str,
     restart_baseline: dict[str, Any] | None,
     *,
-    expected_output_type: str,
+    expected_output_type: str | None,
     expected_description: str | None = None,
+    expected_description_title: str | None = None,
 ) -> dict[str, Any]:
     history_path = (
         home / "Library" / "Application Support" / "VODForge" / "download-history.json"
@@ -629,6 +651,7 @@ def _history_persistence_receipt(
     }
     history_output_paths: list[str] = []
     matching_items: list[dict[str, Any]] = []
+    matching_types: dict[str, str] = {}
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -640,6 +663,9 @@ def _history_persistence_receipt(
             history_output_paths.append(resolved)
             if resolved in final_by_path:
                 matching_items.append(item)
+                matching_types[resolved] = str(
+                    item.get("vodforge_output_type") or ""
+                ).upper()
     baseline_media = {
         str(item.get("path")): item
         for item in (restart_baseline or {}).get("media", [])
@@ -665,20 +691,36 @@ def _history_persistence_receipt(
         for item in launches[1:]
         if item.get("reason") == "driver_requested_restart"
     ]
-    output_type_matches = bool(matching_items) and all(
-        str(item.get("vodforge_output_type") or "").upper()
-        == expected_output_type.upper()
-        for item in matching_items
+    allowed_suffixes = {
+        "MP4": {".mp4"},
+        "MP3": {".mp3"},
+        "ORIGINAL AUDIO": {".opus", ".m4a"},
+    }
+    output_type_matches = bool(matching_items) and (
+        all(
+            str(item.get("vodforge_output_type") or "").upper()
+            == expected_output_type.upper()
+            for item in matching_items
+        )
+        if expected_output_type is not None
+        else set(matching_types.values()) == set(allowed_suffixes)
     )
-    expected_suffix = ".mp4" if expected_output_type.upper() == "MP4" else ".mp3"
     media_extensions_match = bool(final_by_path) and all(
-        Path(path).suffix.lower() == expected_suffix for path in final_by_path
+        Path(path).suffix.lower()
+        in allowed_suffixes.get(matching_types.get(path, ""), set())
+        for path in final_by_path
     )
+    description_items = [
+        item
+        for item in matching_items
+        if expected_description_title is None
+        or item.get("title") == expected_description_title
+    ]
     description_matches = expected_description is None or (
-        bool(matching_items)
+        bool(description_items)
         and all(
             str(item.get("description") or "") == expected_description
-            for item in matching_items
+            for item in description_items
         )
     )
     verified = (
@@ -1279,7 +1321,7 @@ def run_packaged_e2e_session(
             )
             journey.extend(
                 [
-                    "After restart, disable analytics in Settings and record consent_denied_observed; capture denied.json.",
+                    "After restart (launch 2), disable analytics in Settings, quit normally and relaunch (launch 3); exercise actions, record consent_denied_observed and capture denied.json.",
                     "Quit normally, set control to {action: relaunch, telemetry: off}, then record telemetry_disabled_observed in that owned disabled launch; capture disabled.json and finish.",
                 ]
             )
@@ -1376,8 +1418,10 @@ def run_packaged_e2e_session(
                     control = json.loads(control_path.read_text(encoding="utf-8"))
                     if control.get("telemetry") == "off":
                         env["VODFORGE_DISABLE_TELEMETRY"] = "1"
-                    restart_baseline = _persisted_state_snapshot(home)
-                    launches[-1]["pre_restart_state"] = restart_baseline
+                    pre_restart_state = _persisted_state_snapshot(home)
+                    if restart_baseline is None:
+                        restart_baseline = pre_restart_state
+                    launches[-1]["pre_restart_state"] = pre_restart_state
                     json_dump(control_path, {"action": "running"})
                     (
                         process,
@@ -1514,9 +1558,7 @@ def run_packaged_e2e_session(
     )
     required_ui_events = _required_ui_events(args.profile)
     missing_events = trace_validation["missing_events"]
-    media_paths = sorted((home / "Downloads").rglob("*.mp4")) + sorted(
-        (home / "Downloads").rglob("*.mp3")
-    )
+    media_paths = _exported_media_paths(home)
     media_probes = _probe_media(media_paths, receipt, repo_root=repo_root)
     diagnostic_path = home / "Library" / "Logs" / "VODForge" / "latest.log"
     activity_path = home / "Library" / "Logs" / "VODForge" / "activity.log"
@@ -1536,8 +1578,13 @@ def run_packaged_e2e_session(
         launches,
         activity,
         restart_baseline,
-        expected_output_type="MP4",
+        expected_output_type=None if args.profile == "telemetry" else "MP4",
         expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+        expected_description_title=(
+            LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
+            if args.profile == "telemetry"
+            else None
+        ),
     )
     archived_diagnostics = []
     for path in sorted(session_dir.glob("diagnostics-*.log")):

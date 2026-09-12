@@ -37,6 +37,19 @@ complete the media actions during the first session, reopen, then capture the
 same-version and completed-event readbacks before the negative checks. The
 checkpoints below describe the assertions, not an alternate recorder order.
 
+The trace binds the main feature journey to launch 1, same-version reopening to
+launch 2, saved-consent refusal after reopening to launch 3, and explicit
+telemetry-disabled operation to launch 4. The last launch must attest both preview
+and production telemetry disabled. Retain the first pre-restart media/history
+snapshot through all three reopenings. Negative checks should use existing media
+and controls without changing the Library or exporting additional files.
+
+The telemetry profile validates MP4, MP3 and Original audio together, including
+both supported Original audio extensions (`.opus` and `.m4a`). Every retained
+output must have matching history, type, extension and an unchanged media hash;
+only the designated long-description fixture must retain the sentinel description.
+The ordinary smoke/deep profiles retain their strict MP4 and description contract.
+
 Retain the UI action ledger, screenshots, exact candidate archive/executable hashes,
 process launch identities, source commit, platform, and raw scoped D1 checkpoints.
 A helper directly posting events is a transport test, not packaged journey proof.
