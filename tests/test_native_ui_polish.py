@@ -127,6 +127,9 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
     with isolated_preview_services():
         application = DownloaderApp()
         try:
+            # This is a returning-user Run Deck interaction. A fresh profile's
+            # delayed Welcome tour otherwise correctly takes focus on Windows.
+            application.engagement.state.presented_welcome()
             application.geometry("1180x780")
             settle_native(application)
             owner = application.focus_run_hover_menu

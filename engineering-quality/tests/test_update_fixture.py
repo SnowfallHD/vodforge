@@ -18,7 +18,10 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
     artifact.write_bytes(b"transport fixture, not an executable")
     output = tmp_path / "feed"
     root = Path(__file__).resolve().parents[2]
-    env = dict(os.environ, PYTHONPATH=str(root / "engineering-quality"))
+    env = dict(
+        os.environ,
+        PYTHONPATH=os.pathsep.join((str(root / "engineering-quality"), str(root))),
+    )
     process = subprocess.Popen(
         [
             sys.executable,
@@ -32,6 +35,7 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
             str(output),
         ],
         env=env,
+        cwd=root,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -43,7 +47,10 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
             and time.monotonic() < deadline
         ):
             time.sleep(0.05)
-        assert (output / "feed.json").exists()
+        if not (output / "feed.json").exists():
+            process.terminate()
+            stdout, stderr = process.communicate(timeout=10)
+            pytest.fail(f"QA feed did not start: {stdout!r} {stderr!r}")
         feed = json.loads((output / "feed.json").read_text())
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(feed["url"], timeout=3) as response:
