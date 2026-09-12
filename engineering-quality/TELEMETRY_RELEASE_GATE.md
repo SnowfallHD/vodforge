@@ -244,6 +244,12 @@ and failure, seeking/chapters/heatmaps/previews, missing-file recovery, What’s
 Try it when enabled for the candidate, Technical view, appearance changes, and update/Repair outcomes. UI action
 and expected counts must be recorded before reading D1, never inferred from rows.
 
+For fragmented downloads, verify Cancel and Skip while a fragment is in flight,
+then verify queued work advances and the isolated output has no `.vfstage`
+residue after clean exit. The provider operation must close its fragment
+destination before staging cleanup; garbage collection or deleting leftovers
+from the test driver is not proof. Preserve any failed receipt and its files.
+
 After Custom, close and reopen Settings at its normal dialog size, then switch
 back to Everyday using the preset menu. Verify the complete control is visible
 and the selection commits on both platforms. Merely selecting Custom last in a

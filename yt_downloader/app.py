@@ -22,6 +22,7 @@ import uuid
 import warnings
 import webbrowser
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum
@@ -3265,11 +3266,15 @@ def tracked_ytdlp_popen_class(
 def run_tracked_ytdlp_operation(
     step: Callable[[], Any], *, control_check: Any | None = None
 ) -> Any:
-    """Run one serialized yt-dlp operation with all of its imported Popen aliases tracked."""
+    """Own child processes and fragment files for one serialized yt-dlp operation."""
     with _YTDLP_SUBPROCESS_TRACKING_LOCK:
         utils_module = importlib.import_module("yt_dlp.utils")
         original_class = utils_module.Popen
         tracked_class = tracked_ytdlp_popen_class(original_class, control_check)
+        fragment_class = importlib.import_module(
+            "yt_dlp.downloader.fragment"
+        ).FragmentFD
+        original_prepare = fragment_class._prepare_frag_download
         for module_name, module in tuple(sys.modules.items()):
             if module is None or not (
                 module_name == "yt_dlp" or module_name.startswith("yt_dlp.")
@@ -3280,10 +3285,27 @@ def run_tracked_ytdlp_operation(
                     module, "Popen", tracked_class
                 )
         try:
-            if control_check is not None:
-                control_check()
-            return step()
+            with ExitStack() as fragment_files:
+
+                def close_fragment_destination(context):
+                    stream = context.get("dest_stream")
+                    if stream is not None and context.get("tmpfilename") != "-":
+                        stream.close()
+
+                def prepare_fragment(downloader, context):
+                    # FragmentFD does not close its destination when our progress
+                    # hook raises Cancel/Skip. Own that destination until the
+                    # operation unwinds, before Windows staging cleanup runs.
+                    # Register first so a partially failed preparation is covered.
+                    fragment_files.callback(close_fragment_destination, context)
+                    return original_prepare(downloader, context)
+
+                fragment_class._prepare_frag_download = prepare_fragment
+                if control_check is not None:
+                    control_check()
+                return step()
         finally:
+            fragment_class._prepare_frag_download = original_prepare
             # Include modules imported during the operation; they may have
             # copied the temporarily patched class from yt_dlp.utils.
             for module_name, module in tuple(sys.modules.items()):

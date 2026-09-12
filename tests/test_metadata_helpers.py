@@ -8130,3 +8130,70 @@ def test_worker_failure_keeps_cause_in_run_log_and_friendly_terminal(
     assert [(kind, payload) for kind, payload in events if kind == "error"] == [
         ("error", format_ytdlp_user_error(RuntimeError(cause)))
     ]
+
+
+@pytest.mark.parametrize("control_kind", list(app_module._DownloadControlKind))
+def test_fragment_download_control_closes_destination_before_staging_cleanup(
+    tmp_path, control_kind
+):
+    import yt_dlp
+    from yt_dlp.downloader.fragment import FragmentFD
+
+    from yt_downloader.safe_output import cleanup_private_staging_directory
+
+    staging = tmp_path / ".vfstage" / "abcd1234"
+    staging.mkdir(parents=True)
+    context = {"filename": str(staging / "cancelled.mp4"), "total_frags": 2}
+    original_open = FragmentFD._prepare_frag_download
+
+    def stop(_status):
+        raise app_module._DownloadControlRequestError(control_kind)
+
+    def operation():
+        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+            downloader = FragmentFD(ydl, {"quiet": True})
+            downloader._prepare_frag_download(context)
+            context["dest_stream"].write(b"partial fragment")
+            downloader.add_progress_hook(stop)
+            downloader._hook_progress({"status": "downloading"}, {})
+
+    try:
+        with pytest.raises(app_module._DownloadControlRequestError) as caught:
+            app_module.run_tracked_ytdlp_operation(operation)
+        # Keep the exception and context alive: garbage collection must not be
+        # responsible for releasing the Windows file handle before cleanup.
+        assert caught.value.kind == control_kind
+        assert FragmentFD._prepare_frag_download is original_open
+        assert context["dest_stream"].closed
+        assert cleanup_private_staging_directory(staging)
+        assert not staging.exists()
+    finally:
+        context.get("dest_stream") and context["dest_stream"].close()
+
+
+def test_fragment_operation_preserves_completed_output_and_borrowed_stdout(tmp_path):
+    import yt_dlp
+    from yt_dlp.downloader.fragment import FragmentFD
+
+    destination = tmp_path / "complete.mp4"
+    context = {"filename": str(destination), "total_frags": 1}
+    borrowed = None
+
+    def operation():
+        nonlocal borrowed
+        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+            downloader = FragmentFD(ydl, {"quiet": True, "noprogress": True})
+            downloader._prepare_frag_download(context)
+            context["started"] = time.time()
+            context["dest_stream"].write(b"completed fragment")
+            assert downloader._finish_frag_download(context, {})
+            stdout_context = {"filename": "-", "total_frags": 1}
+            downloader._prepare_frag_download(stdout_context)
+            borrowed = stdout_context["dest_stream"]
+            assert stdout_context["tmpfilename"] == "-"
+            return "completed"
+
+    assert app_module.run_tracked_ytdlp_operation(operation) == "completed"
+    assert destination.read_bytes() == b"completed fragment"
+    assert context["dest_stream"].closed
+    assert borrowed is not None and not borrowed.closed
