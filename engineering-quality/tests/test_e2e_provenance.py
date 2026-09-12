@@ -178,8 +178,15 @@ def test_owned_cleanup_signals_only_attested_process_group(
     assert process.wait_calls == [0.1]
 
 
+@pytest.mark.parametrize(
+    ("layer", "allow_modal", "expected"),
+    [(0, False, True), (8, False, False), (8, True, True), (21, True, False)],
+)
 def test_native_window_identity_uses_core_graphics_owner_and_title(
     monkeypatch: pytest.MonkeyPatch,
+    layer: int,
+    allow_modal: bool,
+    expected: bool,
 ) -> None:
     fake_quartz = SimpleNamespace(
         kCGWindowListOptionIncludingWindow=1,
@@ -197,7 +204,7 @@ def test_native_window_identity_uses_core_graphics_owner_and_title(
                 "pid": 987,
                 "title": "VODForge [VFQ-0123456789ab-L1]",
                 "owner": "VODForge",
-                "layer": 0,
+                "layer": layer,
                 "onscreen": True,
                 "bounds": {"X": 10, "Y": 20, "Width": 800, "Height": 600},
             }
@@ -210,9 +217,10 @@ def test_native_window_identity_uses_core_graphics_owner_and_title(
         window_id=55,
         expected_pid=987,
         expected_title="VODForge [VFQ-0123456789ab-L1]",
+        allow_modal=allow_modal,
     )
 
-    assert receipt["verified"] is True
+    assert receipt["verified"] is expected
     assert receipt["owner_pid"] == 987
     assert receipt["onscreen"] is True
 
@@ -220,9 +228,10 @@ def test_native_window_identity_uses_core_graphics_owner_and_title(
         window_id=55,
         expected_pid=988,
         expected_title="VODForge [VFQ-0123456789ab-L1]",
+        allow_modal=allow_modal,
     )
     assert mismatch["verified"] is False
-    assert mismatch["errors"] == ["native window owner PID mismatch"]
+    assert "native window owner PID mismatch" in mismatch["errors"]
 
 
 def test_native_window_identity_accepts_pyobjc_mapping_semantics(

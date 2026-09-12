@@ -402,7 +402,7 @@ def verify_live_launch(launch: dict[str, Any]) -> dict[str, Any]:
 
 
 def verify_native_window_identity(
-    *, window_id: int, expected_pid: int, expected_title: str
+    *, window_id: int, expected_pid: int, expected_title: str, allow_modal: bool = False
 ) -> dict[str, Any]:
     """Verify the OS window identity independently of the UI input driver."""
     if window_id <= 0 or expected_pid <= 0 or not expected_title:
@@ -465,7 +465,7 @@ def verify_native_window_identity(
         errors.append("native window owner PID mismatch")
     if title != expected_title:
         errors.append("native window title mismatch")
-    if layer != 0:
+    if layer not in ((0, 8) if allow_modal else (0,)):
         errors.append("native window is not an application-layer window")
     onscreen = bool(window.get(Quartz.kCGWindowIsOnscreen, False))
     if not onscreen:

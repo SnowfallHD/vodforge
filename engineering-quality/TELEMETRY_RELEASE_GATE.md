@@ -33,6 +33,48 @@ production users or change production data to create test fixtures.
 
 ### Execution discipline
 
+For macOS, use the maintained native input driver below instead of ad-hoc scripts
+under `build/`. It resolves only the attested session PID, checks the exact focused
+window, clears inherited shortcut modifiers, and can wait up to five seconds for
+an expected dialog transition. Do not resolve `VODForge` by application name:
+multiple old QA bundles can share that name and launch the wrong app.
+
+```sh
+PYTHONPATH=engineering-quality .venv/bin/python -m quality_harness.native_input \
+  --session <journey>/session.json --window-title '<exact current title>' \
+  --output <journey>/input-001.json observe
+```
+
+Use a fresh output filename for each command. `click` requires `--x`, `--y`,
+`--image-width` and `--image-height` in the same displayed image coordinate space;
+the driver converts those pixels to desktop points once. Never mix resized image
+coordinates with Retina pixel dimensions or a different window's bounds. `key`
+accepts `--code <macOS virtual key>` and optional `--command`. For opening Settings,
+add `--expect-window 'VODForge Settings'` before `click`; when closing it, target
+Settings and add `--expect-closed --expect-window '<main title>'` before `key`.
+Use `text --value '<fixture text>'` for native Unicode typing without replacing
+the user's clipboard. Text is not copied into the input receipt.
+The expected transition must be observed before the next input. If focus differs,
+inspect the named window rather than sending keys to any window with the same PID.
+
+The input receipt reports dispatch, not feature success. Inspect its screenshot,
+then use the existing `record-e2e-event` to record a passing observation. A timeout
+must retain the failed receipt and must not automatically resend a click or submit
+a run again. Native input diagnosis may use an isolated source probe; it never
+substitutes for final signed-artifact evidence. Validate a driver correction with
+a short repeated dialog/entry cycle before spending another full telemetry journey.
+
+Window identity alone does not prove that a click can reach it. The driver uses
+desktop accessibility hit-testing to refuse points covered by another application,
+including notifications. Move the isolated QA window clear using native window
+controls; do not change the user's notification preferences. Native NSAlert windows
+use layer 8, so include those in the input inventory and target their exact title
+before returning to the main window. Main-window provenance remains layer 0.
+The driver captures the actual desktop rectangle: `screencapture -l` can capture
+an attached window group whose image size differs from the selected dialog's bounds.
+On failure inspect the accompanying local desktop capture before another attempt.
+Desktop captures may contain unrelated private content and must not be published.
+
 Run producer/lifecycle regressions and targeted native reproductions before building
 the next signed candidate. After a runtime fix, first repeat its failing case on
 the new artifact; do not spend another full journey before checking that fix.
