@@ -165,7 +165,9 @@ def test_all_runs_hover_and_click_remain_independent(monkeypatch):
                 if menu.type(item) == "text":
                     assert menu.bbox(item)[2] <= menu.winfo_width()
             assert int(menu.cget("scrollregion").split()[-1]) == 47 * 31
-            assert menu.bind("<TouchpadScroll>")
+            assert menu.bind("<MouseWheel>")
+            if menu.tk.call("info", "commands", "tk::PreciseScrollDeltas"):
+                assert menu.bind("<TouchpadScroll>")
             for _ in range(60):
                 menu.event_generate("<MouseWheel>", delta=-120)
             assert menu.yview()[1] == 1.0

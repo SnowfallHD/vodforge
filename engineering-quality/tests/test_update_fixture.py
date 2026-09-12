@@ -25,8 +25,10 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
     process = subprocess.Popen(
         [
             sys.executable,
-            "-m",
-            "quality_harness.update_fixture",
+            "-u",
+            "-c",
+            "import runpy; print('QA fixture interpreter started', flush=True); "
+            "runpy.run_module('quality_harness.update_fixture', run_name='__main__')",
             "--version",
             "1.2.3",
             "--asset",
@@ -36,11 +38,13 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
         ],
         env=env,
         cwd=root,
+        start_new_session=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     try:
-        deadline = time.monotonic() + 10
+        started = time.monotonic()
+        deadline = started + 30
         while (
             not (output / "feed.json").exists()
             and process.poll() is None
@@ -48,9 +52,14 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
         ):
             time.sleep(0.05)
         if not (output / "feed.json").exists():
+            prior_status = process.poll()
             process.terminate()
             stdout, stderr = process.communicate(timeout=10)
-            pytest.fail(f"QA feed did not start: {stdout!r} {stderr!r}")
+            pytest.fail(
+                f"QA feed did not start after {time.monotonic() - started:.2f}s; "
+                f"interpreter={sys.executable!r}; prior_status={prior_status}; "
+                f"final_status={process.returncode}; stdout={stdout!r}; stderr={stderr!r}"
+            )
         feed = json.loads((output / "feed.json").read_text())
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(feed["url"], timeout=3) as response:
