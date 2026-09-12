@@ -473,12 +473,17 @@ def fresh_output_contract_probe(
                 weak_mp4,
                 OutputType.MP4,
                 mp4_plan,
-                {**valid_mp4_probe, "streams": [{**mp4_video, field: value}, mp4_audio]},
+                {
+                    **valid_mp4_probe,
+                    "streams": [{**mp4_video, field: value}, mp4_audio],
+                },
             )
         )
     for label, field, value in (
         ("MP4 audio codec", "codec_name", "opus"),
-        ("MP4 audio bitrate", "bit_rate", "32000"),
+        ("MP4 excessive audio bitrate", "bit_rate", "500000"),
+        ("MP4 zero audio bitrate", "bit_rate", "0"),
+        ("MP4 unavailable audio bitrate", "bit_rate", "N/A"),
         ("MP4 audio sample rate", "sample_rate", "22050"),
         ("MP4 audio channels", "channels", 1),
     ):
@@ -488,7 +493,10 @@ def fresh_output_contract_probe(
                 weak_mp4,
                 OutputType.MP4,
                 mp4_plan,
-                {**valid_mp4_probe, "streams": [mp4_video, {**mp4_audio, field: value}]},
+                {
+                    **valid_mp4_probe,
+                    "streams": [mp4_video, {**mp4_audio, field: value}],
+                },
             )
         )
     for label, path, output_type, plan, probe in invalid_probes:
@@ -501,7 +509,9 @@ def fresh_output_contract_probe(
                 plan=plan,
                 ffprobe_data=probe,
             )
-            accepted.append(f"{label} mismatch was accepted despite the resolved export plan")
+            accepted.append(
+                f"{label} mismatch was accepted despite the resolved export plan"
+            )
         except (OSError, RuntimeError, ValueError):
             pass
     embedding_invalid_probes = [
@@ -622,6 +632,17 @@ def fresh_output_contract_probe(
             },
         ),
         (
+            "matching quiet AAC plan",
+            weak_mp4,
+            OutputType.MP4,
+            mp4_plan,
+            {
+                **valid_mp4_probe,
+                "streams": [mp4_video, {**mp4_audio, "bit_rate": "2000"}],
+            },
+            {"embed_metadata": False, "embed_cover_art": False},
+        ),
+        (
             "matching embedded MP3 plan",
             weak_mp3,
             OutputType.MP3,
@@ -653,7 +674,9 @@ def fresh_output_contract_probe(
                 **expectations,
             )
         except (OSError, RuntimeError, ValueError) as exc:
-            valid_rejections.append(f"{label} was rejected: {type(exc).__name__}: {exc}")
+            valid_rejections.append(
+                f"{label} was rejected: {type(exc).__name__}: {exc}"
+            )
     finding = _finding(
         "CORR-FRESH-OUTPUT-PLAN-001",
         "Fresh-output validation does not enforce the requested export plan",
@@ -680,11 +703,10 @@ def fresh_output_contract_probe(
             "validator_contract_weaknesses": len(accepted) + len(valid_rejections),
             "corrupted_final_outputs": 0,
         },
-        "evidence": accepted
-        + valid_rejections
+        "evidence": accepted + valid_rejections
         or [
             "Every injected plan/metadata/artwork/tag mismatch was rejected.",
-            "Matching MP3, embedded MP3, source-limited MP4, and embedded MP4 artifacts were accepted.",
+            "Matching MP3, embedded MP3, source-limited MP4, quiet AAC, and embedded MP4 artifacts were accepted.",
         ],
         "artifacts": [str(weak_mp3), str(weak_mp4)],
         "error": None,
@@ -711,7 +733,9 @@ def url_secret_persistence_probe(
         case_dir / "output",
     )
     report = case_dir / "batch-url-failures.txt"
-    app_module.append_batch_failure_report(report, url, f"injected failure while requesting {url}")
+    app_module.append_batch_failure_report(
+        report, url, f"injected failure while requesting {url}"
+    )
     activity = case_dir / "activity.log"
     app_module.append_activity_log(f"Normalized URL: {url}", activity)
     with app_module._ACTIVITY_LOG_LOCK:
@@ -747,17 +771,21 @@ def url_secret_persistence_probe(
         "compact_metadata": metadata.read_text(encoding="utf-8"),
     }
     safe_identity = "https://example.invalid/media"
-    persisted = {name: secret in text or "user:pass" in text for name, text in durable_text.items()}
+    persisted = {
+        name: secret in text or "user:pass" in text
+        for name, text in durable_text.items()
+    }
     diagnostic_mode = stat.S_IMODE(diagnostic.stat().st_mode)
     activity_mode = stat.S_IMODE(activity.stat().st_mode)
     failure_report_mode = stat.S_IMODE(report.stat().st_mode)
     posix_mode_contract = os.name != "nt"
     private_log_modes = not posix_mode_contract or all(
-        mode == 0o600
-        for mode in (diagnostic_mode, activity_mode, failure_report_mode)
+        mode == 0o600 for mode in (diagnostic_mode, activity_mode, failure_report_mode)
     )
     leaked_areas = [name for name, leaked in persisted.items() if leaked]
-    missing_identity_areas = [name for name, text in durable_text.items() if safe_identity not in text]
+    missing_identity_areas = [
+        name for name, text in durable_text.items() if safe_identity not in text
+    ]
     failed = bool(leaked_areas or missing_identity_areas) or not private_log_modes
     findings: list[dict[str, Any]] = []
     if leaked_areas or missing_identity_areas:
