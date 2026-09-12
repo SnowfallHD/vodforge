@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 from quality_harness.packaged_e2e import (
     DEEP_REQUIRED_UI_EVENTS,
@@ -394,6 +394,7 @@ def test_generated_metadata_never_lexically_escapes_output_root(
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 @given(payload=st.text(min_size=1, max_size=200))
+@example(payload="output.mp4")
 def test_ffmpeg_builder_keeps_untrusted_path_as_one_argv_element(
     tmp_path: Path, payload: str
 ) -> None:
@@ -402,6 +403,6 @@ def test_ffmpeg_builder_keeps_untrusted_path_as_one_argv_element(
     source = tmp_path / payload.replace("\x00", "_")
     output = tmp_path / "output.mp4"
     command = build_vod_ffmpeg_command("ffmpeg", source, output)
-    assert str(source) in command
-    assert command.count(str(source)) == 1
+    assert command[command.index("-i") + 1] == str(source)
+    assert command.count(str(source)) == 1 + (source == output)
     assert command[-1] == str(output)
