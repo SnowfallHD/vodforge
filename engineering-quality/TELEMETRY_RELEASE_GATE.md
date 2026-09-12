@@ -201,6 +201,13 @@ storage only; it does not replace native source callbacks or final signed-artifa
 UI evidence. Preview excludes the external provider; provider serialization and
 consent regressions remain separate.
 
+For both platform handoffs, assert the current telemetry permission is passed to
+the detached helper for normal updates and Repair. Cover consent allowed, denied,
+and an absent telemetry owner in the real UI handoff callback regression. In the
+native preview journey, retain the original helper receipt and require
+`telemetry_permitted: true` for an opted-in update before accepting its relaunch
+event. A successful installation alone cannot satisfy this telemetry gate.
+
 For a release whose canonical SHOWCASE_MODE is none, verify both announcement
 surfaces remain absent on fresh and returning profiles. The verifier excludes
 their unreachable actions and rejects any announcement event instead. Keep

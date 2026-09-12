@@ -123,6 +123,47 @@ def test_verified_macos_plan_launches_handoff_and_exits_ui(monkeypatch, tmp_path
     assert destroyed == [True]
 
 
+@pytest.mark.parametrize("platform", ["macos", "windows"])
+@pytest.mark.parametrize("permitted", [True, False, None])
+@pytest.mark.parametrize("repair", [False, True])
+def test_update_handoff_preserves_current_telemetry_permission(
+    monkeypatch, tmp_path, platform, permitted, repair
+):
+    from types import SimpleNamespace
+
+    app = _app_stub()
+    app._update_repair_requested = repair
+    app._request_application_close = lambda: None
+    app.after = lambda *_args: None
+    app._record_feature = lambda *_args, **_kwargs: None
+    if permitted is not None:
+        app.product_telemetry = SimpleNamespace(permitted=lambda: permitted)
+    launched = []
+
+    def capture_handoff(update, **kwargs):
+        launched.append(kwargs)
+        return tmp_path / "handoff.json"
+
+    monkeypatch.setattr(app_module, "is_windows", lambda: platform == "windows")
+    monkeypatch.setattr(app_module, "launch_macos_update", capture_handoff)
+    monkeypatch.setattr(app_module, "launch_windows_update", capture_handoff)
+    update = (
+        MacUpdatePlan(
+            source_app=tmp_path / "staged" / "VODForge.app",
+            target_app=tmp_path / "installed" / "VODForge.app",
+            staging_root=tmp_path / "staged",
+        )
+        if platform == "macos"
+        else tmp_path / "setup.exe"
+    )
+
+    app._install_downloaded_update(update)
+
+    assert len(launched) == 1
+    assert launched[0]["repair"] is repair
+    assert launched[0].get("telemetry_permitted") is (permitted is True)
+
+
 def test_windows_update_worker_verifies_installer_before_ready_event(
     monkeypatch,
     tmp_path: Path,

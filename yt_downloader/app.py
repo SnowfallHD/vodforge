@@ -9192,7 +9192,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         try:
             if isinstance(update, MacUpdatePlan):
                 launch_macos_update(
-                    update, repair=self.__dict__.get("_update_repair_requested", False)
+                    update,
+                    repair=self.__dict__.get("_update_repair_requested", False),
+                    telemetry_permitted=telemetry_permitted,
                 )
             else:
                 bounds = (
