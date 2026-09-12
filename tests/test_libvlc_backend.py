@@ -11,6 +11,7 @@ from yt_downloader.libvlc_backend import (
     LibVLCPlaybackBackend,
     LibVLCRuntime,
 )
+from yt_downloader.media_player_ui import MediaPlayerWindow
 from yt_downloader.playback_backend import MediaPlayerError, NativeRenderSurface
 
 
@@ -36,6 +37,13 @@ class FakePlayer:
         self.stop_calls = 0
         self.release_calls = 0
         self.actions: list[str] = []
+        self.event_callbacks: dict[object, object] = {}
+
+    def event_manager(self):
+        return self
+
+    def event_attach(self, event, callback):
+        self.event_callbacks[event] = callback
 
     def audio_set_volume(self, value: int) -> int:
         self.volume = value
@@ -103,6 +111,7 @@ class FakeInstance:
 
 
 class FakeVLC:
+    EventType = SimpleNamespace(MediaPlayerPlaying=10, MediaPlayerEncounteredError=11)
     State = SimpleNamespace(
         NothingSpecial=0,
         Opening=1,
@@ -259,6 +268,76 @@ def test_provider_state_failure_becomes_an_immutable_failed_snapshot(
 
     assert backend.snapshot.status == "Failed"
     assert backend.snapshot.error == "The local playback engine stopped responding."
+
+
+def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
+    tmp_path: Path,
+) -> None:
+    """Real libVLC emits EncounteredError but reports Ended for unreadable media."""
+    media = tmp_path / "video.mp4"
+    media.write_bytes(b"video")
+    backend, module = make_backend()
+    backend.load(media, duration=12)
+    backend.play()
+    callback = module.player.event_callbacks.get(
+        module.EventType.MediaPlayerEncounteredError
+    )
+    assert callback is not None
+    callback(None)
+    module.player.state = module.State.Ended
+    assert backend.snapshot.status == "Failed"
+    assert backend.snapshot.error == "The local media file could not be played."
+    observed: list[str] = []
+    player_window = SimpleNamespace(
+        _closed=False,
+        playback=backend,
+        _last_snapshot=None,
+        _on_feature=observed.append,
+        time_var=SimpleNamespace(set=lambda value: None),
+        status_var=SimpleNamespace(set=lambda value: None),
+        play_button=SimpleNamespace(configure=lambda **kwargs: None),
+        _update_timeline_value=lambda snapshot: None,
+        _drain_previews=lambda: None,
+        popup=SimpleNamespace(after=lambda delay, callback: None),
+        _poll=lambda: None,
+    )
+    MediaPlayerWindow._poll(player_window)
+    MediaPlayerWindow._poll(player_window)
+    assert observed == ["failed"]
+    assert backend.play().status == "Playing"
+    MediaPlayerWindow._poll(player_window)
+    module.player.state = module.State.Ended
+    assert backend.snapshot.status == "Ended"
+    MediaPlayerWindow._poll(player_window)
+    assert observed == ["failed", "completed"]
+
+
+def test_provider_error_during_play_is_not_cleared_after_provider_returns(
+    tmp_path: Path,
+) -> None:
+    media = tmp_path / "video.mp4"
+    media.write_bytes(b"video")
+    backend, module = make_backend()
+    backend.load(media, duration=12)
+    callback = module.player.event_callbacks.get(
+        module.EventType.MediaPlayerEncounteredError
+    )
+    assert callback is not None
+
+    def fail_play():
+        worker = threading.Thread(target=callback, args=(None,))
+        worker.start()
+        worker.join(timeout=1)
+        assert not worker.is_alive(), (
+            "Provider error callback must not wait on play's lock"
+        )
+        module.player.state = module.State.Ended
+        return 0
+
+    module.player.play = fail_play
+    assert backend.play().status == "Failed"
+    backend.load(media, duration=12)
+    assert backend.snapshot.status == "Ready"
 
 
 def test_shared_engine_warms_once_and_retires_session_asynchronously(

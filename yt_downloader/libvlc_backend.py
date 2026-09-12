@@ -329,6 +329,7 @@ class LibVLCPlaybackBackend:
         self._duration_hint = 0.0
         self._volume = 80
         self._error = ""
+        self._provider_failed = threading.Event()
         self._closed = False
         self._surface: NativeRenderSurface | None = None
         self._media: Any | None = None
@@ -370,6 +371,8 @@ class LibVLCPlaybackBackend:
             else:
                 try:
                     status = self._translate_state(self._player.get_state())
+                    if self._provider_failed.is_set():
+                        status = "Failed"
                     position_ms = self._safe_nonnegative(self._player.get_time())
                     duration_ms = self._safe_nonnegative(self._player.get_length())
                 except Exception as exc:  # noqa: BLE001 - provider state is isolated
@@ -437,6 +440,7 @@ class LibVLCPlaybackBackend:
                 if surface is not None:
                     self._bind_provider_surface(None)
                 self._stop_provider()
+                self._provider_failed.clear()
                 media = self._instance.media_new_path(str(media_path))
                 self._player.set_media(media)
                 self._player.audio_set_volume(self._volume)
@@ -465,13 +469,14 @@ class LibVLCPlaybackBackend:
             self._ensure_loaded()
             if self.snapshot.status == "Ended":
                 self._player.set_time(0)
+            self._provider_failed.clear()
+            self._error = ""
             try:
                 result = self._player.play()
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
                 return self._fail("The local playback engine could not start.", exc)
             if result == -1:
                 return self._fail("The local playback engine could not start.")
-            self._error = ""
         return self.snapshot
 
     def pause(self) -> PlaybackSnapshot:
@@ -695,7 +700,7 @@ class LibVLCPlaybackBackend:
             user32.DispatchMessageW(ctypes.byref(message))
 
     def _attach_provider_events(self) -> None:
-        """Use libVLC's event edge only to apply settings when output exists."""
+        """Keep provider error edges that can disappear before the UI polls."""
 
         try:
             event_manager = self._player.event_manager()
@@ -703,9 +708,20 @@ class LibVLCPlaybackBackend:
                 self._vlc.EventType.MediaPlayerPlaying,
                 self._playback_started,
             )
+            event_manager.event_attach(
+                self._vlc.EventType.MediaPlayerEncounteredError,
+                self._playback_failed,
+            )
             self._event_manager = event_manager
         except (AttributeError, TypeError):
             self._event_manager = None
+
+    def _playback_failed(self, _event: Any) -> None:
+        # Provider callbacks must not wait for the lock held across play/stop.
+        # libVLC can emit EncounteredError and then report Ended without ever
+        # exposing State.Error to a polling caller (e.g. permission denied).
+        if not self._closed:
+            self._provider_failed.set()
 
     def _playback_started(self, _event: Any) -> None:
         with self._lock:

@@ -60,6 +60,11 @@ once per permitted process session/action, not every keystroke or polling tick.
 Search and annotation text is never an event field. Theme names are enumerated;
 a custom accent is represented only as `custom`.
 
+Playback failures follow the provider's error event even when libVLC subsequently
+reports `Ended`. The existing playback backend retains that error until a new
+load or retry; the player reports failure rather than completion. Provider
+callbacks do not wait on the lock used by native playback operations.
+
 Updater actions are individual observations. Download, handoff, failure stage,
 relaunch and repair are distinct. A successful relaunch requires a helper receipt
 and matching executing bytes. Failed Windows handoffs retained after Later can be

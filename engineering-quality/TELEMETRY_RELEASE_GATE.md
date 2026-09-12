@@ -134,6 +134,16 @@ and failure, seeking/chapters/heatmaps/previews, missing-file recovery, What’s
 Try it when enabled for the candidate, Technical view, appearance changes, and update/Repair outcomes. UI action
 and expected counts must be recorded before reading D1, never inferred from rows.
 
+For playback failure, back up a media file inside the isolated QA profile and
+deny read access using the platform's file permissions. Start playback through
+the real player and require `player/failed`, with no completion attributed to
+that failed attempt. Restore the original bytes and permissions, then verify
+successful playback. Retain the provider error and UI evidence: libVLC can emit
+`MediaPlayerEncounteredError` while its later polled state is `Ended`. A zero-time
+Ended display is not failure-path proof. The backend/UI regression in
+`tests/test_libvlc_backend.py` covers this transition and retry reset in the
+repository test gate.
+
 Compare `attempt_id` across start/outcome and `retry_of` to the previous attempt.
 They are installation-scoped opaque UUIDs, independent of content and local paths.
 One attempt may produce multiple `media_exported` events in a playlist. Each must
