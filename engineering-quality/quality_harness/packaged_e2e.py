@@ -478,6 +478,18 @@ def _validate_driver_trace(
             or native_window.get("owner_pid") != event.get("window_owner_pid")
         ):
             errors.append("native_window_identity is missing or invalid")
+        if "capture_window_identity" in event:
+            capture = event["capture_window_identity"]
+            if (
+                not isinstance(capture, dict)
+                or capture.get("verified") is not True
+                or capture.get("owner_pid") != event.get("window_owner_pid")
+                or not isinstance(capture.get("window_id"), int)
+                or capture.get("window_id", 0) <= 0
+                or not capture.get("title")
+                or event.get("capture_method") != "screencapture-window-id"
+            ):
+                errors.append("capture_window_identity is missing or invalid")
         if errors:
             invalid_provenance_events.append(name)
         provenance_receipts.append(

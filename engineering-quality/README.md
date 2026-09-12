@@ -190,6 +190,13 @@ That command re-hashes and freshly extracts the frozen ZIP, verifies the declare
   --window-title-token <session-window-token>
 ```
 
+For a separate player or dialog window, keep the main session window arguments
+and replace `--screenshot` with `--capture-window-id <actual-window-id>` and
+`--capture-window-title <exact-native-title>`. The recorder verifies the separate
+window belongs to the same attested process, captures that window directly, and
+stores both window identities. Do not attribute a player screenshot to the main
+window or substitute an image from another process.
+
 If a UI surface cannot be reached, keep it missing and use `--allow-gap` only
 when recording the next later event. The recorder adds the skipped event names
 to the receipt; it never turns the gap into a pass.

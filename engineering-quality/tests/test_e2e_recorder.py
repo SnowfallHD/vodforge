@@ -15,6 +15,50 @@ TEST_WINDOW_ID = 9876
 TEST_WINDOW_TOKEN = "VFQ-0123456789ab-L1"
 
 
+@pytest.mark.parametrize("foreign", [False, True])
+def test_separate_window_capture_checks_owner_and_captures_actual_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, foreign: bool
+) -> None:
+    session, trace = _write_session(tmp_path)
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    args = _args(session, "app_visible")
+    args.capture_window_id = 12345
+    args.capture_window_title = "VODForge Player — fixture"
+    inspected: list[int] = []
+
+    def verify(*, window_id: int, expected_pid: int, expected_title: str):
+        inspected.append(window_id)
+        return {
+            "verified": not (foreign and window_id == 12345),
+            "window_id": window_id,
+            "owner_pid": expected_pid if not foreign else expected_pid + 1,
+            "title": expected_title,
+        }
+
+    commands: list[list[str]] = []
+
+    def capture(command: list[str], *, check: bool) -> None:
+        assert check
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"test-capture")
+
+    monkeypatch.setattr(e2e_record, "verify_native_window_identity", verify)
+    monkeypatch.setattr(e2e_record.subprocess, "run", capture)
+    if foreign:
+        with pytest.raises(RuntimeError, match="does not belong"):
+            record_e2e_event(args)
+        assert not commands
+        assert json.loads(trace.read_text())["events"] == []
+    else:
+        assert record_e2e_event(args) == 0
+        assert inspected == [TEST_WINDOW_ID, 12345, 12345]
+        assert commands[0][0:5] == ["screencapture", "-x", "-o", "-l", "12345"]
+        event = json.loads(trace.read_text())["events"][0]
+        assert event["native_window_identity"]["window_id"] == TEST_WINDOW_ID
+        assert event["capture_window_identity"]["window_id"] == 12345
+        assert event["capture_method"] == "screencapture-window-id"
+
+
 def _args(
     session: Path,
     event: str,

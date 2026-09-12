@@ -187,6 +187,8 @@ def _parser() -> argparse.ArgumentParser:
     record.add_argument("--window-owner-pid", type=int, required=True)
     record.add_argument("--window-id", type=int, required=True)
     record.add_argument("--window-title-token", required=True)
+    record.add_argument("--capture-window-id", type=int)
+    record.add_argument("--capture-window-title")
     record.add_argument(
         "--allow-gap",
         action="store_true",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
 from .e2e_provenance import verify_live_launch, verify_native_window_identity
@@ -107,10 +108,48 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         unobserved_prior_events = []
 
     screenshot_target: Path | None = None
+    capture_identity = None
+    capture_id = getattr(args, "capture_window_id", None)
+    capture_title = getattr(args, "capture_window_title", None)
+    if (capture_id is None) != (capture_title is None):
+        raise RuntimeError(
+            "Separate-window capture requires both its ID and exact title"
+        )
+    if capture_id is not None:
+        if args.screenshot is not None or args.event in SCREENSHOT_OPTIONAL_EVENTS:
+            raise RuntimeError(
+                "Separate-window capture must capture its own screenshot"
+            )
+        capture_identity = verify_native_window_identity(
+            window_id=capture_id,
+            expected_pid=expected_pid,
+            expected_title=capture_title,
+        )
+        if capture_identity.get("verified") is not True:
+            raise RuntimeError(
+                "Separate capture window does not belong to the attested app"
+            )
     if args.event not in SCREENSHOT_OPTIONAL_EVENTS:
-        if args.screenshot is None:
+        if args.screenshot is None and capture_identity is None:
             raise RuntimeError(f"event {args.event!r} requires a screenshot")
-        source = args.screenshot.resolve()
+        if capture_identity is not None:
+            source = session_dir / "captures" / f"{args.event}-{capture_id}.png"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["screencapture", "-x", "-o", "-l", str(capture_id), str(source)],
+                check=True,
+            )
+            if (
+                verify_native_window_identity(
+                    window_id=capture_id,
+                    expected_pid=expected_pid,
+                    expected_title=capture_title,
+                ).get("verified")
+                is not True
+            ):
+                raise RuntimeError("Separate capture window changed during capture")
+        else:
+            source = args.screenshot.resolve()
         if not source.is_file() or source.stat().st_size <= 0:
             raise RuntimeError(f"screenshot is missing or empty: {source}")
         suffix = source.suffix.lower()
@@ -144,6 +183,9 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         "window_title_token": args.window_title_token,
         "native_window_identity": native_window,
     }
+    if capture_identity is not None:
+        event["capture_window_identity"] = capture_identity
+        event["capture_method"] = "screencapture-window-id"
     if unobserved_prior_events:
         event["unobserved_prior_events"] = unobserved_prior_events
     events.append(event)

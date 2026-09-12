@@ -464,6 +464,36 @@ def test_driver_trace_binds_every_receipt_to_exact_launch_provenance(
     assert receipt["invalid_provenance_events"] == []
     assert all(item["valid"] for item in receipt["provenance_receipts"])
 
+    first_event = payload["events"][0]
+    first_event["capture_method"] = "screencapture-window-id"
+    first_event["capture_window_identity"] = {
+        "verified": True,
+        "owner_pid": first_event["window_owner_pid"],
+        "window_id": 9999,
+        "title": "VODForge Player — fixture",
+    }
+    assert (
+        _validate_driver_trace(
+            payload,
+            profile="smoke",
+            session_dir=tmp_path,
+            session_nonce=nonce,
+            launches=launches,
+        )["valid"]
+        is True
+    )
+    first_event["capture_window_identity"]["owner_pid"] = -1
+    assert (
+        _validate_driver_trace(
+            payload,
+            profile="smoke",
+            session_dir=tmp_path,
+            session_nonce=nonce,
+            launches=launches,
+        )["valid"]
+        is False
+    )
+
 
 def test_driver_trace_rejects_pid_and_window_token_from_another_launch(
     tmp_path: Path,
