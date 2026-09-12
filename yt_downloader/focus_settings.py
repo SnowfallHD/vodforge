@@ -504,6 +504,7 @@ class FocusSettingsDialog:
                 widget: ProductEntry | ChoiceDropdown = ProductEntry(
                     field,
                     textvariable=variable,
+                    width=12,
                 )
             else:
                 widget = ChoiceDropdown(

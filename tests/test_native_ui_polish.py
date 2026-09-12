@@ -759,9 +759,13 @@ def test_task_presets_use_real_dropdown_and_custom_quality_controls():
                 if isinstance(w, ChoiceDropdown)
                 and tuple(w.cget("values")) == tuple(EXPORT_MODES)
             )
-            for index, label in enumerate(EXPORT_MODES):
+            # Return from Custom too: its expanded fields must not push the
+            # preset anchor outside the scrolling Settings viewport.
+            for label in (*EXPORT_MODES, EXPORT_MODES[0]):
+                index = EXPORT_MODES.index(label)
                 dropdown.open_popover()
                 settle_native(application)
+                assert dropdown._popover is not None, label
                 choices = dropdown._popover.winfo_children()[0]
                 choices.selection_clear(0, "end")
                 choices.selection_set(index)
@@ -773,6 +777,8 @@ def test_task_presets_use_real_dropdown_and_custom_quality_controls():
                 )
                 assert application.export_mode_description_var.get()
                 assert bool(dialog.manual_frame.winfo_ismapped()) == (label == "Custom")
+            application.export_mode_choice_var.set("Custom")
+            settle_native(application)
             application.manual_rate_control_var.set("Quality")
             application.manual_crf_var.set("19")
             application.manual_video_bitrate_var.set("unused value")
@@ -789,6 +795,25 @@ def test_task_presets_use_real_dropdown_and_custom_quality_controls():
             application._show_focus_settings()
             settle_native(application)
             assert application.manual_crf_var.get() == "19"
+            dialog = application._focus_settings_dialog
+            dialog.popup.geometry("820x720")
+            settle_native(application)
+            dropdown = next(
+                w
+                for w in descendants(dialog.popup)
+                if isinstance(w, ChoiceDropdown)
+                and tuple(w.cget("values")) == tuple(EXPORT_MODES)
+            )
+            dropdown.open_popover()
+            settle_native(application)
+            assert dropdown._popover is not None, "Reopened Custom preset menu"
+            choices = dropdown._popover.winfo_children()[0]
+            choices.selection_clear(0, "end")
+            choices.selection_set(0)
+            choices.event_generate("<ButtonRelease-1>")
+            settle_native(application)
+            assert application.export_mode_choice_var.get() == EXPORT_MODES[0]
+            assert not dialog.manual_frame.winfo_ismapped()
         finally:
             application.destroy()
 

@@ -152,6 +152,13 @@ and failure, seeking/chapters/heatmaps/previews, missing-file recovery, What’s
 Try it when enabled for the candidate, Technical view, appearance changes, and update/Repair outcomes. UI action
 and expected counts must be recorded before reading D1, never inferred from rows.
 
+After Custom, close and reopen Settings at its normal dialog size, then switch
+back to Everyday using the preset menu. Verify the complete control is visible
+and the selection commits on both platforms. Merely selecting Custom last in a
+preset loop does not cover the expanded layout or the return path. The native
+`test_task_presets_use_real_dropdown_and_custom_quality_controls` regression
+exercises that reopened state as part of the existing repository gate.
+
 For organization, independently edit and save a note, tags, and a category, then
 verify all three saved values locally and all three action names in D1. Keep
 private sentinel values out of the telemetry rows. A dialog screenshot or a direct
