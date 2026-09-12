@@ -14,6 +14,16 @@ import shutil
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
+
+
+class _LoopbackUpdateServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        # HTTPServer normally reverse-resolves its address. The fixed loopback
+        # fixture needs no DNS, which can stall in isolated CI environments.
+        TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
 
 
 def serve(version: str, assets: list[Path], output: Path) -> None:
@@ -105,7 +115,7 @@ def serve(version: str, assets: list[Path], output: Path) -> None:
         def log_message(self, *_args):
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = _LoopbackUpdateServer(("127.0.0.1", 0), Handler)
     base = f"http://127.0.0.1:{server.server_port}{prefix}"
     (output / "feed.json").write_text(
         json.dumps(
