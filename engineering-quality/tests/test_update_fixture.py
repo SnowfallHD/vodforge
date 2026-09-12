@@ -27,7 +27,8 @@ def test_update_fixture_serves_only_declared_bytes_and_retains_faults(tmp_path):
             sys.executable,
             "-u",
             "-c",
-            "import runpy; print('QA fixture interpreter started', flush=True); "
+            "import runpy, faulthandler; faulthandler.dump_traceback_later(10); "
+            "print('QA fixture interpreter started', flush=True); "
             "runpy.run_module('quality_harness.update_fixture', run_name='__main__')",
             "--version",
             "1.2.3",
