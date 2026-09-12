@@ -468,11 +468,13 @@ class LibVLCPlaybackBackend:
         with self._lock:
             self._ensure_loaded()
             try:
-                if self.snapshot.status in {"Ended", "Failed"}:
+                if self._path is not None and self.snapshot.status in {
+                    "Ended",
+                    "Failed",
+                }:
                     # VLC 3 can accept play() on an ended input without
                     # reopening it. Reuse load's native-safe teardown and
                     # rebind before retrying the same file.
-                    assert self._path is not None
                     self.load(self._path, duration=self._duration_hint)
                 self._provider_failed.clear()
                 self._error = ""
