@@ -78,6 +78,10 @@ Playback failures follow the provider's error event even when libVLC subsequentl
 reports `Ended`. The existing playback backend retains that error until a new
 load or retry; the player reports failure rather than completion. Provider
 callbacks do not wait on the lock used by native playback operations.
+Replay after failure or completion reloads the same local media through the
+existing native-safe load path, because VLC 3 can accept `play()` while leaving
+its ended input idle. Release evidence must show advancing playback after retry
+and normal replay; an `Ended` label at zero seconds is not successful recovery.
 
 Updater actions are individual observations. Download, handoff, failure stage,
 relaunch and repair are distinct. A successful relaunch requires a helper receipt

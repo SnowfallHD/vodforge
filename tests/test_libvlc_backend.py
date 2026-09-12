@@ -340,6 +340,31 @@ def test_provider_error_during_play_is_not_cleared_after_provider_returns(
     assert backend.snapshot.status == "Ready"
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_terminal_input_is_reset_before_replay(tmp_path: Path, failed: bool) -> None:
+    """VLC 3 accepts play on a terminal input without actually restarting it."""
+    media = tmp_path / "audio.opus"
+    media.write_bytes(b"audio")
+    backend, module = make_backend()
+    backend.load(media, duration=19, audio_only=True)
+    backend.play()
+    module.player.state = module.State.Ended
+    if failed:
+        module.player.event_callbacks[module.EventType.MediaPlayerEncounteredError](
+            None
+        )
+
+    def play_terminal_input() -> int:
+        if module.player.state != module.State.Ended:
+            module.player.state = module.State.Playing
+        return 0
+
+    module.player.play = play_terminal_input
+    assert backend.play().status == "Playing"
+    assert backend.snapshot.position == 0
+    assert backend.snapshot.duration == 19
+
+
 def test_shared_engine_warms_once_and_retires_session_asynchronously(
     tmp_path: Path,
 ) -> None:

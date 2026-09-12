@@ -163,9 +163,13 @@ For playback failure, back up a media file inside the isolated QA profile and
 deny read access using the platform's file permissions. Start playback through
 the real player and require `player/failed`, with no completion attributed to
 that failed attempt. Restore the original bytes and permissions, then verify
-successful playback. Retain the provider error and UI evidence: libVLC can emit
+successful playback in the same player window: capture `Playing` with advancing
+position before eventual completion. Also replay after a normal ending and
+require advancing playback again. Retain the provider error and UI evidence: libVLC can emit
 `MediaPlayerEncounteredError` while its later polled state is `Ended`. A zero-time
-Ended display is not failure-path proof. The backend/UI regression in
+Ended display is neither failure-path nor recovery proof. VLC 3 can accept
+`play()` on an ended input without restarting it; replay must reset that input.
+The backend/UI regression in
 `tests/test_libvlc_backend.py` covers this transition and retry reset in the
 repository test gate.
 
