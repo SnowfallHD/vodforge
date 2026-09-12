@@ -49,11 +49,16 @@ Use a fresh output filename for each command. `click` requires `--x`, `--y`,
 `--image-width` and `--image-height` in the same displayed image coordinate space;
 the driver converts those pixels to desktop points once. Never mix resized image
 coordinates with Retina pixel dimensions or a different window's bounds. `key`
-accepts `--code <macOS virtual key>` and optional `--command`. For opening Settings,
+accepts `--code <macOS virtual key>` and optional `--command` and `--shift`. For opening Settings,
 add `--expect-window 'VODForge Settings'` before `click`; when closing it, target
 Settings and add `--expect-closed --expect-window '<main title>'` before `key`.
 Use `text --value '<fixture text>'` for native Unicode typing without replacing
 the user's clipboard. Text is not copied into the input receipt.
+Native file pickers can expose an AXSheet instead of AXFocusedWindow. The driver
+accepts only one sheet with an exact same-PID native rectangle match. Discover the
+actual picker title, then use Command-Shift-G (`key --code 5 --command --shift`),
+native text entry, Return to select the path, and Return to open the selected file.
+Observe the sheet transition before proceeding; do not assume a dispatched key worked.
 The expected transition must be observed before the next input. If focus differs,
 inspect the named window rather than sending keys to any window with the same PID.
 

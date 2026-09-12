@@ -203,3 +203,82 @@ def test_real_dispatch_path_refuses_occlusion_or_wrong_window_without_sending_in
     receipt = json.loads(output.read_text())
     assert receipt["input_sent"] is False
     assert receipt["status"] == "failed"
+
+
+@pytest.mark.parametrize("mismatch", [None, "pid", "bounds", "duplicate", "no_sheet"])
+def test_modal_sheet_requires_unique_same_process_exact_rectangle(
+    monkeypatch, mismatch
+):
+    import ctypes
+
+    class Function:
+        def __init__(self, call):
+            self.call = call
+
+        def __call__(self, *args):
+            return self.call(*args)
+
+    values = {
+        1: b"AXMainWindow",
+        2: b"AXChildren",
+        3: b"AXRole",
+        4: b"AXPosition",
+        5: b"AXSize",
+    }
+    attrs = {
+        b"AXMainWindow": 10,
+        b"AXChildren": 11,
+        b"AXRole": 12,
+        b"AXPosition": 13,
+        b"AXSize": 14,
+    }
+
+    def attribute(element, key, output):
+        ctypes.cast(output, ctypes.POINTER(ctypes.c_void_p))[0] = attrs[values[key]]
+        return 0
+
+    def string(value, buffer, size, encoding):
+        buffer.value = b"AXButton" if mismatch == "no_sheet" else b"AXSheet"
+        return True
+
+    def coordinates(value, kind, output):
+        pair = ctypes.cast(output, ctypes.POINTER(ctypes.c_double))
+        pair[0], pair[1] = (150, 238) if kind == 1 else (880, 448)
+        return True
+
+    cf = SimpleNamespace(
+        CFStringCreateWithCString=Function(
+            lambda _, name, enc: next(k for k, v in values.items() if v == name)
+        ),
+        CFArrayGetCount=Function(lambda _: 1),
+        CFArrayGetValueAtIndex=Function(lambda *_: 20),
+        CFStringGetCString=Function(string),
+        CFRelease=Function(lambda _: None),
+    )
+    ax = SimpleNamespace(
+        AXUIElementCopyAttributeValue=Function(attribute),
+        AXValueGetValue=Function(coordinates),
+    )
+    window = {
+        "kCGWindowOwnerPID": 99 if mismatch == "pid" else 42,
+        "kCGWindowLayer": 0,
+        "kCGWindowName": "Choose MP3 audio",
+        "kCGWindowBounds": {
+            "X": 151 if mismatch == "bounds" else 150,
+            "Y": 238,
+            "Width": 880,
+            "Height": 448,
+        },
+    }
+    windows = [window, window] if mismatch == "duplicate" else [window]
+    monkeypatch.setitem(
+        sys.modules,
+        "Quartz",
+        SimpleNamespace(
+            kCGWindowListOptionOnScreenOnly=1,
+            CGWindowListCopyWindowInfo=lambda *_: windows,
+        ),
+    )
+    assert native_input._modal_sheet_title(42, cf, ax, 1) == (
+        "Choose MP3 audio" if mismatch is None else None
+    )

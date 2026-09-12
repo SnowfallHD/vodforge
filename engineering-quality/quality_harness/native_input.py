@@ -82,13 +82,86 @@ def focused_window_title(pid):
             value = pointer()
             error = ax.AXUIElementCopyAttributeValue(current, name, ctypes.byref(value))
             if error or not value.value:
-                return None
+                return _modal_sheet_title(pid, cf, ax, application)
             owned.append(value)
             current = value
         buffer = ctypes.create_string_buffer(4096)
         if cf.CFStringGetCString(current, buffer, len(buffer), 0x08000100):
             return buffer.value.decode("utf-8")
         return None
+    finally:
+        for value in reversed(owned):
+            if value:
+                cf.CFRelease(value)
+
+
+def _modal_sheet_title(pid, cf, ax, application):
+    """Resolve an AppKit modal sheet when AXFocusedWindow is unavailable.
+
+    Require a single AXSheet attached to AXMainWindow and an exact native
+    rectangle match in this PID. A different window cannot satisfy this fallback.
+    """
+    import Quartz
+
+    pointer = ctypes.c_void_p
+    cf.CFArrayGetCount.argtypes = [pointer]
+    cf.CFArrayGetCount.restype = ctypes.c_long
+    cf.CFArrayGetValueAtIndex.argtypes = [pointer, ctypes.c_long]
+    cf.CFArrayGetValueAtIndex.restype = pointer
+    ax.AXValueGetValue.argtypes = [pointer, ctypes.c_int, pointer]
+    ax.AXValueGetValue.restype = ctypes.c_bool
+    owned = []
+
+    def attribute(element, name):
+        key = cf.CFStringCreateWithCString(None, name, 0x08000100)
+        owned.append(key)
+        value = pointer()
+        error = ax.AXUIElementCopyAttributeValue(element, key, ctypes.byref(value))
+        if error or not value.value:
+            return None
+        owned.append(value)
+        return value
+
+    try:
+        main = attribute(application, b"AXMainWindow")
+        children = attribute(main, b"AXChildren") if main else None
+        if not children:
+            return None
+        sheets = []
+        for index in range(cf.CFArrayGetCount(children)):
+            child = cf.CFArrayGetValueAtIndex(children, index)
+            role = attribute(child, b"AXRole")
+            buffer = ctypes.create_string_buffer(64)
+            if (
+                role
+                and cf.CFStringGetCString(role, buffer, len(buffer), 0x08000100)
+                and buffer.value == b"AXSheet"
+            ):
+                sheets.append(child)
+        if len(sheets) != 1:
+            return None
+        coordinates = []
+        for name, kind in ((b"AXPosition", 1), (b"AXSize", 2)):
+            value = attribute(sheets[0], name)
+            pair = (ctypes.c_double * 2)()
+            if not value or not ax.AXValueGetValue(value, kind, ctypes.byref(pair)):
+                return None
+            coordinates.extend(pair)
+        windows = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionOnScreenOnly, 0
+        )
+        matches = [
+            w.get("kCGWindowName")
+            for w in windows
+            if w.get("kCGWindowOwnerPID") == pid
+            and w.get("kCGWindowLayer") == 0
+            and [
+                w.get("kCGWindowBounds", {}).get(k)
+                for k in ("X", "Y", "Width", "Height")
+            ]
+            == coordinates
+        ]
+        return matches[0] if len(matches) == 1 else None
     finally:
         for value in reversed(owned):
             if value:
@@ -200,6 +273,7 @@ def main(argv=None):
     key = actions.add_parser("key")
     key.add_argument("--code", type=int, required=True)
     key.add_argument("--command", action="store_true")
+    key.add_argument("--shift", action="store_true")
     text = actions.add_parser("text")
     text.add_argument("--value", required=True)
     args = parser.parse_args(argv)
@@ -313,7 +387,8 @@ def main(argv=None):
             post_key(
                 Quartz,
                 args.code,
-                Quartz.kCGEventFlagMaskCommand if args.command else 0,
+                (Quartz.kCGEventFlagMaskCommand if args.command else 0)
+                | (Quartz.kCGEventFlagMaskShift if args.shift else 0),
                 guard,
                 dispatched,
             )
