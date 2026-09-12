@@ -290,15 +290,11 @@ def test_release_notes_lead_with_clear_user_facing_platform_choices():
     assert "VODForge-macOS-arm64-v1.2.3.zip" in notes
     assert "VODForge-macOS-x64-v1.2.3.zip" in notes
     assert "VODForge-Windows-Setup-v1.2.3.exe" in notes
-    assert "**Original audio**" in notes
-    assert "without another lossy encode" in notes
-    assert "installation, update, attribution, and usage telemetry" in notes
-    assert "opt-in and unknown regions require consent" in notes
-    assert "atomic final commits" in notes
-    assert "Quality caps honor YouTube's named quality tiers" in notes
-    assert (
-        "first-party installation and Cloud funnel counts remain separate" not in notes
-    )
+    assert "**More reliable optional analytics:**" in notes
+    assert "installation-scoped" in notes
+    assert "**Consent stays in control:**" in notes
+    assert "does not show What’s new or Did you know popups" in notes
+    assert "One What’s new slide" not in notes
 
 
 def test_draft_release_notes_keep_the_release_team_safety_gate():

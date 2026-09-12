@@ -10,7 +10,9 @@ from yt_downloader.whats_new import (
     SHOWCASE_ID,
     FeatureHighlight,
     NativePreview,
-    WhatsNewOwner,
+)
+from yt_downloader.whats_new import (
+    WhatsNewOwner as ReleaseWhatsNewOwner,
 )
 
 
@@ -25,7 +27,27 @@ class Seen:
         self.value = value
 
 
-def test_next_release_announces_only_output_settings():
+def WhatsNewOwner(*args, **kwargs):
+    # Keep evergreen showcase behavior covered while this release is silent.
+    kwargs.setdefault("mode", "whats-new")
+    return ReleaseWhatsNewOwner(*args, **kwargs)
+
+
+@pytest.mark.parametrize("seen", ["", SHOWCASE_ID, "older-release"])
+def test_next_release_has_no_announcement_or_telemetry(seen):
+    events = []
+    owner = ReleaseWhatsNewOwner(
+        None, Seen(seen), lambda: True, on_feature=events.append
+    )
+    assert not owner.pending
+    assert owner.highlights == ()
+    owner.start()
+    owner.show()
+    assert owner.panel is None
+    assert events == []
+
+
+def test_output_settings_catalog_remains_available_for_future_releases():
     assert [h.key for h in HIGHLIGHTS] == ["output-settings"]
     owner = WhatsNewOwner(None, Seen("0.2.0-youtube-access-tip"), lambda: True)
     assert owner.pending

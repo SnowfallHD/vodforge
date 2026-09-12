@@ -26,6 +26,7 @@ CHECKPOINTS = (
 )
 from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
 from yt_downloader.telemetry_features import FEATURE_ACTIONS, validate_dimensions
+from yt_downloader.whats_new import SHOWCASE_MODE
 
 EVENTS = PRODUCT_EVENT_NAMES
 
@@ -158,8 +159,13 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
     required_actions = {
         (feature, action)
         for feature, actions in FEATURE_ACTIONS.items()
+        if feature != "announcement" or SHOWCASE_MODE != "none"
         for action in actions
     }
+    if SHOWCASE_MODE == "none" and any(
+        feature == "announcement" for feature, _ in observed_actions
+    ):
+        errors.append("Disabled release announcement emitted telemetry")
     if not required_actions <= observed_actions:
         errors.append(
             "Missing feature/action preview-D1 observations: "

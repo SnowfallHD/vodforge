@@ -128,7 +128,7 @@ and per-media export events. Native screenshots must cover the corresponding
 local conversions, partial playlists, queue removal, a skipped item, retries,
 Library search/filter/selection/removal, notes/tags/categories, playback completion
 and failure, seeking/chapters/heatmaps/previews, missing-file recovery, What’s New
-Try it, Technical view, appearance changes, and update/Repair outcomes. UI action
+Try it when enabled for the candidate, Technical view, appearance changes, and update/Repair outcomes. UI action
 and expected counts must be recorded before reading D1, never inferred from rows.
 
 Compare `attempt_id` across start/outcome and `retry_of` to the previous attempt.
@@ -151,3 +151,10 @@ isolation checks. A direct serializer-to-preview-D1 test establishes transport a
 storage only; it does not replace native source callbacks or final signed-artifact
 UI evidence. Preview excludes the external provider; provider serialization and
 consent regressions remain separate.
+
+For a release whose canonical SHOWCASE_MODE is none, verify both announcement
+surfaces remain absent on fresh and returning profiles. The verifier excludes
+their unreachable actions and rejects any announcement event instead. Keep
+evergreen owner/native regressions for future enabled showcases. The combined
+announcement/guidance/appearance screenshot checkpoint must show the silent
+release state plus the enabled guidance and appearance interactions.

@@ -52,8 +52,9 @@ def telemetry_fixture(candidate, platform="macos"):
         {"event_name": name}
         for name in ("run_failed", "run_stopped", "local_conversion_completed")
     ]
-    import uuid
     import json
+    import uuid
+
     from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
     from yt_downloader.telemetry_features import FEATURE_ACTIONS
 
@@ -63,6 +64,7 @@ def telemetry_fixture(candidate, platform="macos"):
     events += [
         {"event_name": "feature_used", "feature": feature, "action": action}
         for feature, actions in FEATURE_ACTIONS.items()
+        if feature != "announcement"
         for action in actions
     ]
     first_attempt = str(uuid.uuid4())
@@ -319,3 +321,18 @@ def test_private_development_artifact_cannot_satisfy_release_telemetry():
     data = telemetry_fixture(c, "windows")
     data["packaged_e2e"]["candidate_binding"]["artifact_policy"] = "development"
     assert release_checks([data], c)[1]["status"] == "failed"
+
+
+def test_silent_release_rejects_announcement_event():
+    data = telemetry_fixture(candidate())
+    data["snapshots"]["events_complete"]["events"].append(
+        {
+            "event_id": "unexpected-announcement",
+            "event_name": "feature_used",
+            "feature": "announcement",
+            "action": "shown",
+            "schema_version": 2,
+            "dimensions": "{}",
+        }
+    )
+    assert "Disabled release announcement emitted telemetry" in validate_journey(data)

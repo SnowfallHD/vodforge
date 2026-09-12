@@ -56,15 +56,10 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
-- **Task-based MP4 output settings:** Everyday, Streaming, Editing, Sharing, CTV, and Custom. Automatic presets adapt to the source; existing Auto CBR settings retain the CTV delivery intent.
-- **CPU and NVIDIA tuning:** CPU remains the default. Optional Windows NVENC uses independently measured quality settings instead of treating CQ and CRF as equivalent. Explore the open [fine-tuning harness](https://github.com/SnowfallHD/vodforge/tree/main/fine-tuning) and [export-settings guide](https://getvodforge.com/mp4-export-settings/).
-- **One What’s new slide** introduces the output settings, with **Try it** opening Settings.
-- **Actionable failures:** Friendly explains the next step; Technical retains the actual recorded cause. Valid nearly silent AAC no longer fails an arbitrary minimum-bitrate check.
-- **Reliable updates and repair:** Windows targets the running app’s folder, hides the PowerShell helper, verifies installation, and relaunches. macOS also closes safely and relaunches. Recovery offers clear steps and verified repair with saved-data backups.
-- **Queue and UI fixes:** closing cannot start another queued worker. The composer format selector works correctly, Settings text and Library Description fit their surfaces, and the player Play overlay blends into its poster on Mac and Windows.
-- **Original audio** continues to preserve supported Opus or AAC without another lossy encode. Quality caps honor YouTube's named quality tiers; outputs use validation and atomic final commits.
-- Your optional analytics choice governs installation, update, attribution, and usage telemetry; opt-in and unknown regions require consent. Saved choices persist.
-- Windows downloads are signed by Kryden Ventures, LLC. Mac downloads are Developer ID signed and notarized, with separate Apple silicon and Intel builds.
+- **More reliable optional analytics:** app-open observations, export outcomes, retries and feature usage now share a validated telemetry contract. Attempt identifiers are installation-scoped and do not contain media URLs, filenames or content.
+- **Consent stays in control:** pending updater observations are discarded when analytics permission is withdrawn, including across a later opt-in.
+- **Stronger release verification:** regression coverage and final Mac/Windows preview-D1 journeys check telemetry delivery, duplicate prevention and privacy suppression.
+- **No release announcements:** this update does not show What’s new or Did you know popups.
 
 Checksums for every download are available in `SHA256SUMS.txt` below.
 """

@@ -52,7 +52,7 @@ HIGHLIGHTS = (
 
 # Release editorial switch: choose one surface, never both. Keep the current
 # mode until a release explicitly opts into the tip and changes SHOWCASE_ID.
-SHOWCASE_MODE = "whats-new"
+SHOWCASE_MODE = "none"
 DID_YOU_KNOW_HIGHLIGHTS = (
     FeatureHighlight(
         "youtube-access-tip",
@@ -81,7 +81,7 @@ class WhatsNewOwner:
         on_feature: Any = None,
     ) -> None:
         self.parent, self.seen, self.ready = parent, seen, ready
-        if mode not in {"whats-new", "did-you-know"}:
+        if mode not in {"none", "whats-new", "did-you-know"}:
             raise ValueError("Unknown showcase mode")
         self.heading = "Did you know?" if mode == "did-you-know" else "What’s new"
         self.open_settings = open_settings
@@ -89,9 +89,13 @@ class WhatsNewOwner:
         self.is_tip = mode == "did-you-know"
         self.showcase_id = showcase_id
         self.highlights = (
-            highlights
-            if highlights is not None
-            else (DID_YOU_KNOW_HIGHLIGHTS if mode == "did-you-know" else HIGHLIGHTS)
+            ()
+            if mode == "none"
+            else (
+                highlights
+                if highlights is not None
+                else (DID_YOU_KNOW_HIGHLIGHTS if mode == "did-you-know" else HIGHLIGHTS)
+            )
         )
         self.panel: Any = None
         self.closed = False

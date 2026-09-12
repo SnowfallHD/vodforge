@@ -101,6 +101,7 @@ def test_output_settings_try_it_releases_modal_before_opening_settings():
         root,
         seen,
         lambda: True,
+        mode="whats-new",
         open_settings=lambda: opened.append(root.grab_current()),
     )
     try:
