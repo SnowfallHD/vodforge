@@ -48,6 +48,18 @@ Use the app's real-user `Command+1`, `Command+2`, and `Command+3` shortcuts to s
 
 The recorder independently queries CoreGraphics for that native window ID and accepts the event only when the onscreen application-layer window's owner PID and exact nonce-bearing title match the attested launch. It then copies the screenshot into the session, hashes it, timestamps the event, rejects duplicates/out-of-order events, and updates `driver-events.json`. `restart_requested` is the only non-visual control event and can request relaunch atomically; it still requires the current launch/window identity arguments:
 
+The same event recorder supports an attested Windows driver session. Its native
+witness uses Win32 to verify the live top-level HWND, owning PID, exact title and
+visible bounds. Process identity retains executable hash, creation time, direct
+parent, isolated environment and startup-attestation checks; POSIX process groups
+are not asserted on Windows. The Windows driver owns normal process shutdown and
+relaunch. It must not invoke the Mac process-group cleanup routines. The driver
+must prepare the actual session from `attest_owned_launch` and never invent
+verified flags. Use the declared engineering-quality dependencies and an isolated
+QA temp directory. Separate Windows player/dialog captures use the verified window
+bounds with a second identity check after capture, recorded explicitly as
+`win32-window-bounds`; inspect them for occlusion before accepting the UI state.
+
 ```bash
 ./engineering-quality/run record-e2e-event \
   --session engineering-quality/reports/<session>/session.json \

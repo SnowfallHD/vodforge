@@ -500,7 +500,12 @@ def _validate_driver_trace(
                 or not isinstance(capture.get("window_id"), int)
                 or capture.get("window_id", 0) <= 0
                 or not capture.get("title")
-                or event.get("capture_method") != "screencapture-window-id"
+                or event.get("capture_method")
+                != (
+                    "win32-window-bounds"
+                    if capture.get("inspection_method") == "win32-window-identity"
+                    else "screencapture-window-id"
+                )
             ):
                 errors.append("capture_window_identity is missing or invalid")
         if errors:

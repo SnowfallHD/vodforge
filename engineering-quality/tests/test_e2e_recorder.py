@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -16,8 +17,12 @@ TEST_WINDOW_TOKEN = "VFQ-0123456789ab-L1"
 
 
 @pytest.mark.parametrize("foreign", [False, True])
+@pytest.mark.parametrize("windows_capture", [False, True])
 def test_separate_window_capture_checks_owner_and_captures_actual_id(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, foreign: bool
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    foreign: bool,
+    windows_capture: bool,
 ) -> None:
     session, trace = _write_session(tmp_path)
     monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
@@ -33,6 +38,10 @@ def test_separate_window_capture_checks_owner_and_captures_actual_id(
             "window_id": window_id,
             "owner_pid": expected_pid if not foreign else expected_pid + 1,
             "title": expected_title,
+            "inspection_method": "win32-window-identity"
+            if windows_capture
+            else "coregraphics",
+            "bounds": {"x": 10, "y": 20, "width": 300, "height": 200},
         }
 
     commands: list[list[str]] = []
@@ -44,19 +53,38 @@ def test_separate_window_capture_checks_owner_and_captures_actual_id(
 
     monkeypatch.setattr(e2e_record, "verify_native_window_identity", verify)
     monkeypatch.setattr(e2e_record.subprocess, "run", capture)
+    captured_bounds = []
+    if windows_capture:
+        from PIL import ImageGrab
+
+        def grab(*, bbox, all_screens):
+            assert all_screens is True
+            captured_bounds.append(bbox)
+            return SimpleNamespace(
+                save=lambda path: path.write_bytes(b"windows-capture")
+            )
+
+        monkeypatch.setattr(ImageGrab, "grab", grab)
     if foreign:
         with pytest.raises(RuntimeError, match="does not belong"):
             record_e2e_event(args)
         assert not commands
+        assert not captured_bounds
         assert json.loads(trace.read_text())["events"] == []
     else:
         assert record_e2e_event(args) == 0
         assert inspected == [TEST_WINDOW_ID, 12345, 12345]
-        assert commands[0][0:5] == ["screencapture", "-x", "-o", "-l", "12345"]
+        if windows_capture:
+            assert captured_bounds == [(10, 20, 310, 220)]
+            assert not commands
+        else:
+            assert commands[0][0:5] == ["screencapture", "-x", "-o", "-l", "12345"]
         event = json.loads(trace.read_text())["events"][0]
         assert event["native_window_identity"]["window_id"] == TEST_WINDOW_ID
         assert event["capture_window_identity"]["window_id"] == 12345
-        assert event["capture_method"] == "screencapture-window-id"
+        assert event["capture_method"] == (
+            "win32-window-bounds" if windows_capture else "screencapture-window-id"
+        )
 
 
 def _args(

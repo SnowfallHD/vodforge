@@ -109,6 +109,7 @@ def record_e2e_event(args: argparse.Namespace) -> int:
 
     screenshot_target: Path | None = None
     capture_identity = None
+    capture_method = None
     capture_id = getattr(args, "capture_window_id", None)
     capture_title = getattr(args, "capture_window_title", None)
     if (capture_id is None) != (capture_title is None):
@@ -135,10 +136,26 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         if capture_identity is not None:
             source = session_dir / "captures" / f"{args.event}-{capture_id}.png"
             source.parent.mkdir(parents=True, exist_ok=True)
-            subprocess.run(
-                ["screencapture", "-x", "-o", "-l", str(capture_id), str(source)],
-                check=True,
-            )
+            if capture_identity.get("inspection_method") == "win32-window-identity":
+                from PIL import ImageGrab
+
+                bounds = capture_identity["bounds"]
+                ImageGrab.grab(
+                    bbox=(
+                        bounds["x"],
+                        bounds["y"],
+                        bounds["x"] + bounds["width"],
+                        bounds["y"] + bounds["height"],
+                    ),
+                    all_screens=True,
+                ).save(source)
+                capture_method = "win32-window-bounds"
+            else:
+                subprocess.run(
+                    ["screencapture", "-x", "-o", "-l", str(capture_id), str(source)],
+                    check=True,
+                )
+                capture_method = "screencapture-window-id"
             if (
                 verify_native_window_identity(
                     window_id=capture_id,
@@ -185,7 +202,7 @@ def record_e2e_event(args: argparse.Namespace) -> int:
     }
     if capture_identity is not None:
         event["capture_window_identity"] = capture_identity
-        event["capture_method"] = "screencapture-window-id"
+        event["capture_method"] = capture_method
     if unobserved_prior_events:
         event["unobserved_prior_events"] = unobserved_prior_events
     events.append(event)

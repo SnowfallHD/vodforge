@@ -6,6 +6,7 @@ import os
 import signal
 import stat
 import subprocess
+import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -153,9 +154,11 @@ def _read_private_attestation(path: Path) -> dict[str, Any]:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode):
             raise RuntimeError("startup attestation is not a regular no-follow file")
-        if stat.S_IMODE(metadata.st_mode) != 0o600:
+        if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+            raise RuntimeError("startup attestation has symlink components")
+        if sys.platform != "win32" and stat.S_IMODE(metadata.st_mode) != 0o600:
             raise RuntimeError("startup attestation permissions are not 0600")
-        if metadata.st_uid != os.getuid():
+        if sys.platform != "win32" and metadata.st_uid != os.getuid():
             raise RuntimeError("startup attestation is not owned by the E2E user")
         with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
             descriptor = -1
@@ -257,7 +260,9 @@ def attest_owned_launch(
             observed_environment = observed.environ()
             create_time = float(observed.create_time())
             parent_pid = int(observed.ppid())
-            process_group_id = int(os.getpgid(process.pid))
+            process_group_id = (
+                None if sys.platform == "win32" else int(os.getpgid(process.pid))
+            )
         except (OSError, psutil.AccessDenied, psutil.NoSuchProcess) as exc:
             last_errors = [f"live process inspection failed: {type(exc).__name__}"]
             time.sleep(0.05)
@@ -270,7 +275,7 @@ def attest_owned_launch(
             errors.append("live executable hash mismatch")
         if parent_pid != os.getpid():
             errors.append("live process parent mismatch")
-        if process_group_id != process.pid:
+        if sys.platform != "win32" and process_group_id != process.pid:
             errors.append("live process group is not harness-owned")
         for key in E2E_ENV_KEYS:
             if observed_environment.get(key) != expected_environment.get(key):
@@ -337,7 +342,9 @@ def verify_live_launch(launch: dict[str, Any]) -> dict[str, Any]:
         observed_create_time = float(process.create_time())
         observed_executable = _resolved(process.exe())
         observed_environment = process.environ()
-        observed_pgid = int(os.getpgid(int(launch["pid"])))
+        observed_pgid = (
+            None if sys.platform == "win32" else int(os.getpgid(int(launch["pid"])))
+        )
     except (
         KeyError,
         OSError,
@@ -355,7 +362,7 @@ def verify_live_launch(launch: dict[str, Any]) -> dict[str, Any]:
         errors.append("live launch executable mismatch")
     elif sha256_file(observed_executable) != launch.get("executable_sha256"):
         errors.append("live launch executable hash mismatch")
-    if observed_pgid != int(launch.get("pgid") or -1):
+    if sys.platform != "win32" and observed_pgid != int(launch.get("pgid") or -1):
         errors.append("live launch process group mismatch")
     if int(process.ppid()) != int(launch.get("harness_pid") or -1):
         errors.append("live launch parent mismatch")
@@ -397,12 +404,14 @@ def verify_live_launch(launch: dict[str, Any]) -> dict[str, Any]:
 def verify_native_window_identity(
     *, window_id: int, expected_pid: int, expected_title: str
 ) -> dict[str, Any]:
-    """Verify one macOS window through CoreGraphics, independent of the driver."""
+    """Verify the OS window identity independently of the UI input driver."""
     if window_id <= 0 or expected_pid <= 0 or not expected_title:
         return {
             "verified": False,
             "errors": ["native window identity inputs are invalid"],
         }
+    if sys.platform == "win32":
+        return _verify_windows_window_identity(window_id, expected_pid, expected_title)
     try:
         import Quartz
     except ImportError:
@@ -472,6 +481,63 @@ def verify_native_window_identity(
         "layer": layer,
         "onscreen": onscreen,
         "bounds": bounds,
+    }
+
+
+def _verify_windows_window_identity(
+    window_id: int, expected_pid: int, expected_title: str
+) -> dict[str, Any]:
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.IsWindow.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    owner = wintypes.DWORD()
+    title = ctypes.create_unicode_buffer(4096)
+    bounds = wintypes.RECT()
+    exists = bool(user32.IsWindow(window_id))
+    visible = bool(user32.IsWindowVisible(window_id)) and not user32.IsIconic(window_id)
+    user32.GetWindowThreadProcessId(window_id, ctypes.byref(owner))
+    user32.GetWindowTextW(window_id, title, len(title))
+    measured = bool(user32.GetWindowRect(window_id, ctypes.byref(bounds)))
+    errors = []
+    if not exists or user32.GetAncestor(window_id, 2) != window_id:
+        errors.append("native window is not a live top-level window")
+    if owner.value != expected_pid:
+        errors.append("native window owner PID mismatch")
+    if title.value != expected_title:
+        errors.append("native window title mismatch")
+    if (
+        not visible
+        or not measured
+        or bounds.right <= bounds.left
+        or bounds.bottom <= bounds.top
+    ):
+        errors.append("native window is not visibly measurable")
+    return {
+        "verified": not errors,
+        "errors": errors,
+        "window_id": window_id,
+        "owner_pid": owner.value,
+        "title": title.value,
+        "onscreen": visible,
+        "inspection_method": "win32-window-identity",
+        "bounds": {
+            "x": bounds.left,
+            "y": bounds.top,
+            "width": bounds.right - bounds.left,
+            "height": bounds.bottom - bounds.top,
+        },
     }
 
 

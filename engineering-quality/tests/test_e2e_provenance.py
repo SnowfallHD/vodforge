@@ -204,6 +204,7 @@ def test_native_window_identity_uses_core_graphics_owner_and_title(
         ],
     )
     monkeypatch.setitem(sys.modules, "Quartz", fake_quartz)
+    monkeypatch.setattr(e2e_provenance.sys, "platform", "darwin")
 
     receipt = verify_native_window_identity(
         window_id=55,
@@ -255,6 +256,7 @@ def test_native_window_identity_accepts_pyobjc_mapping_semantics(
         ],
     )
     monkeypatch.setitem(sys.modules, "Quartz", fake_quartz)
+    monkeypatch.setattr(e2e_provenance.sys, "platform", "darwin")
 
     receipt = verify_native_window_identity(
         window_id=55,
@@ -273,3 +275,121 @@ def test_native_window_identity_accepts_pyobjc_mapping_semantics(
         "Width": 800,
         "Height": 600,
     }
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="real Windows window required")
+def test_windows_native_identity_rejects_wrong_owner_title_and_hidden_window() -> None:
+    import ctypes
+    import tkinter as tk
+    from ctypes import wintypes
+
+    root = tk.Tk()
+    root.title("VODForge native provenance regression")
+    root.geometry("400x200+40+40")
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
+    try:
+        root.update()
+        hwnd = user32.GetAncestor(root.winfo_id(), 2)
+        assert (
+            verify_native_window_identity(
+                window_id=hwnd, expected_pid=os.getpid(), expected_title=root.title()
+            )["verified"]
+            is True
+        )
+        assert (
+            verify_native_window_identity(
+                window_id=hwnd,
+                expected_pid=os.getpid() + 1,
+                expected_title=root.title(),
+            )["verified"]
+            is False
+        )
+        assert (
+            verify_native_window_identity(
+                window_id=hwnd, expected_pid=os.getpid(), expected_title="Wrong title"
+            )["verified"]
+            is False
+        )
+        root.withdraw()
+        root.update()
+        assert (
+            verify_native_window_identity(
+                window_id=hwnd, expected_pid=os.getpid(), expected_title=root.title()
+            )["verified"]
+            is False
+        )
+    finally:
+        root.destroy()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="real Windows process required")
+def test_windows_live_process_binding_retains_parent_time_environment_and_hash(
+    tmp_path: Path,
+) -> None:
+    import json
+    import subprocess
+    import time
+
+    from quality_harness.util import sha256_file
+
+    state_paths = {
+        key: str(tmp_path / key)
+        for key in ("isolation_root", "home", "xdg_data", "local_app_data", "tmp")
+    }
+    env = dict(os.environ)
+    env.update(
+        {
+            "VODFORGE_QUALITY_E2E": "1",
+            "VODFORGE_QUALITY_E2E_ISOLATION_ROOT": state_paths["isolation_root"],
+            "VODFORGE_QUALITY_E2E_SESSION_NONCE": "test-nonce",
+            "VODFORGE_QUALITY_E2E_WINDOW_TOKEN": "test-token",
+            "HOME": state_paths["home"],
+            "XDG_DATA_HOME": state_paths["xdg_data"],
+            "LOCALAPPDATA": state_paths["local_app_data"],
+            "TMPDIR": state_paths["tmp"],
+            "TMP": state_paths["tmp"],
+            "TEMP": state_paths["tmp"],
+        }
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"], env=env
+    )
+    try:
+        time.sleep(0.5)
+        observed = e2e_provenance._psutil().Process(process.pid)
+        executable = Path(observed.exe()).resolve()
+        attestation = tmp_path / "attestation.json"
+        attestation.write_text(json.dumps({"fixture": "process binding only"}))
+        assert (
+            e2e_provenance._read_private_attestation(attestation)["fixture"]
+            == "process binding only"
+        )
+        launch = {
+            "pid": process.pid,
+            "create_time": observed.create_time(),
+            "expected_executable": str(executable),
+            "executable_sha256": sha256_file(executable),
+            "pgid": None,
+            "harness_pid": os.getpid(),
+            "state_paths": state_paths,
+            "session_nonce": "test-nonce",
+            "window_token": "test-token",
+            "attestation_path": str(attestation),
+            "attestation_sha256": sha256_file(attestation),
+        }
+        assert e2e_provenance.verify_live_launch(launch)["verified"] is True
+        for key, value in (
+            ("harness_pid", 1),
+            ("create_time", 1.0),
+            ("session_nonce", "wrong"),
+            ("executable_sha256", "wrong"),
+        ):
+            assert (
+                e2e_provenance.verify_live_launch({**launch, key: value})["verified"]
+                is False
+            )
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
