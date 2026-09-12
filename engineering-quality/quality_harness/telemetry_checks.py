@@ -409,8 +409,21 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         or name == "media_exported"
                     ):
                         fields["attempt_key"] = f"attempt-{index}"
-                    assert usage.record(name, dedupe_key=f"metric-{index}", **fields)
-                    assert usage.record(name, dedupe_key=f"metric-{index}", **fields)
+                    if name == "app_opened":
+                        assert usage.record_app_opened()
+                    else:
+                        assert usage.record(
+                            name, dedupe_key=f"metric-{index}", **fields
+                        )
+                    assert usage.shutdown(10), "First delivery did not finish"
+                    assert not (case_dir / "client" / "outbox.json").exists()
+                    if name == "app_opened":
+                        assert usage.record_app_opened()
+                    else:
+                        assert usage.record(
+                            name, dedupe_key=f"metric-{index}", **fields
+                        )
+                    assert usage.shutdown(10), "Repeated callback did not finish"
                 assert usage.shutdown(10)
                 for diagnostic in failures:
                     assert usage.record(

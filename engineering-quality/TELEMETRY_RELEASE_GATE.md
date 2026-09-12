@@ -48,7 +48,10 @@ A helper directly posting events is a transport test, not packaged journey proof
    second changes. Verify last seen advances; first launch, creation date, identity
    and current version stay fixed; no update event appears. Capture
    `same_version_reopen.json`. Repeated UI callbacks within one session must not
-   create extra app-open events.
+   create extra app-open events or conflicting retransmissions after the first
+   app-open event has already been delivered and removed from the outbox. Check
+   the app diagnostics as well as D1 counts; a server-rejected duplicate is not
+   correct client-side session deduplication.
 3. Through actual UI actions, complete MP4, MP3 and Original-audio runs; play each;
    stop an active run; cause a controlled failure and retry it; complete local
    audio + image → MP4. Open Settings and use Cloud interest. Record exact expected

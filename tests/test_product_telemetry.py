@@ -227,7 +227,7 @@ def test_each_sink_retries_independently_and_disable_clears_unsent_events(
     assert not state_path.exists()
 
     heycatch_succeeds = False
-    assert owner.record_app_opened()
+    assert owner.record_feature("library", "opened")
     assert owner.shutdown(1.0)
     assert state_path.exists()
     owner.set_enabled(False)
@@ -255,10 +255,20 @@ def test_app_open_is_once_per_session_but_not_once_per_installation(tmp_path: Pa
 
     first = owner("3100042a-a7c5-5de2-a6d7-e40215b7078e")
     assert first.record_app_opened()
+    # A later startup callback may run after successful delivery removed the
+    # event from the outbox. Session deduplication must outlive that queue row.
+    assert first.shutdown(1.0)
     assert first.record_app_opened()
     assert first.shutdown(1.0)
     second = owner("2531948d-2918-5ddb-8e32-4bfe845d5165")
     assert second.record_app_opened()
     assert second.shutdown(1.0)
 
-    assert len(set(delivered)) == 2
+    assert len(delivered) == len(set(delivered)) == 2
+
+    first.set_enabled(False)
+    assert not first.record_app_opened()
+    first.set_enabled(True)
+    assert first.record_app_opened()
+    assert first.shutdown(1.0)
+    assert len(delivered) == 2

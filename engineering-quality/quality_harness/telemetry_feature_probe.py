@@ -78,7 +78,13 @@ def main() -> None:
             "Preview rejected or deferred an event"
         )
 
-    record("app_opened")
+    assert usage.record_app_opened()
+    assert usage.shutdown(15)
+    assert len(emitted) == 1
+    assert not (profile / "product-telemetry.json").exists()
+    assert usage.record_app_opened()
+    assert usage.shutdown(15)
+    assert len(emitted) == 1, "App-open callback was retransmitted after delivery"
     for index, output in enumerate(("mp4", "mp3", "original")):
         fields = {
             "attempt_key": f"output-{index}",

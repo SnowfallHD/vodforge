@@ -541,7 +541,11 @@ class ChoiceDropdown(tk.Frame):
             add="+",
         )
         listbox.bind("<Return>", lambda _event: self._commit_listbox(listbox), add="+")
-        listbox.bind("<Escape>", lambda _event: self._close_popover(), add="+")
+        listbox.bind(
+            "<Escape>",
+            lambda _event: self._close_popover(restore_focus=True),
+            add="+",
+        )
         popup.update_idletasks()
         self._popover = popup
         if not popup.reposition():
@@ -559,16 +563,18 @@ class ChoiceDropdown(tk.Frame):
         if selection:
             self.variable.set(str(listbox.get(selection[0])))
             self.event_generate("<<ComboboxSelected>>", when="tail")
-        self._close_popover()
+        self._close_popover(restore_focus=True)
         return "break"
 
-    def _close_popover(self) -> None:
+    def _close_popover(self, *, restore_focus: bool = False) -> None:
         popup, self._popover = self._popover, None
         if popup is not None:
             try:
                 popup.destroy()
             except tk.TclError:
                 pass
+        if restore_focus and self.winfo_viewable() and self._state != "disabled":
+            self.focus_set()
         self._sync_border()
 
     def _set_hovered(self, hovered: bool) -> None:

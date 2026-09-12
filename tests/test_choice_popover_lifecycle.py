@@ -287,6 +287,28 @@ def test_surface_lifetime_follows_owner(surface, action):
     assert not popup.winfo_exists()
 
 
+@pytest.mark.parametrize("finish", ["<Return>", "<Escape>"])
+def test_keyboard_menu_close_returns_focus_and_preserves_tab_navigation(
+    surface, finish
+):
+    root, field = surface
+    next_field = tk.Entry(root)
+    next_field.pack()
+    root.update()
+    field.focus_force()
+    field.open_popover()
+    root.update()
+    menu = field._popover.winfo_children()[0]
+    assert field.focus_get() is menu
+    menu.event_generate(finish)
+    root.update()
+    assert field._popover is None
+    assert field.focus_get() is field
+    field.event_generate("<Tab>")
+    root.update()
+    assert field.focus_get() is next_field
+
+
 def test_repeated_open_close_does_not_leak_bindings_or_tcl_commands(surface):
     root, field = surface
     original_tags = field.bindtags()

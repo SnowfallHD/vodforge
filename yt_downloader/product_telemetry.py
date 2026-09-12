@@ -333,6 +333,7 @@ class ProductTelemetryOwner:
         self._heycatch_recorder = heycatch_recorder
         self._diagnostic = diagnostic or (lambda _message: None)
         self._session_id = _valid_uuid(session_id or uuid.uuid4())
+        self._recorded_dedupe_ids: set[str] = set()
         self._attempt_started: dict[str, float] = {}
         self._attempt_queued: dict[str, float] = {}
         self._feature_observed: set[tuple[str, str]] = set()
@@ -470,6 +471,8 @@ class ProductTelemetryOwner:
             dimensions=clean_dimensions,
         )
         with self._lock:
+            if dedupe_key is not None and event_id in self._recorded_dedupe_ids:
+                return True
             try:
                 events = _load_outbox(self._state_path)
             except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
@@ -478,6 +481,8 @@ class ProductTelemetryOwner:
                 )
                 return False
             if any(candidate.event_id == event.event_id for candidate in events):
+                if dedupe_key is not None:
+                    self._recorded_dedupe_ids.add(event_id)
                 return True
             if len(events) >= MAX_OUTBOX_EVENTS:
                 self._diagnostic(
@@ -491,6 +496,10 @@ class ProductTelemetryOwner:
                     f"product telemetry event could not be retained: {type(exc).__name__}"
                 )
                 return False
+            if dedupe_key is not None:
+                # Delivery removes the outbox row, but repeated callbacks must
+                # not recreate the same ID with a different timestamp.
+                self._recorded_dedupe_ids.add(event_id)
         self.flush_async()
         return True
 
