@@ -282,3 +282,14 @@ def test_modal_sheet_requires_unique_same_process_exact_rectangle(
     assert native_input._modal_sheet_title(42, cf, ax, 1) == (
         "Choose MP3 audio" if mismatch is None else None
     )
+
+
+def test_right_click_releases_matching_button_and_clears_modifiers(monkeypatch):
+    monkeypatch.setattr(native_input.time, "sleep", lambda _: None)
+    quartz = Quartz()
+    quartz.kCGMouseButtonRight = 1
+    quartz.kCGEventRightMouseDown = 4
+    quartz.kCGEventRightMouseUp = 5
+    native_input.post_click(quartz, (10, 10), lambda: None, right=True)
+    assert [e["kind"] for e in quartz.events] == [1, 4, 5]
+    assert all(e["flags"] == 0 for e in quartz.events)

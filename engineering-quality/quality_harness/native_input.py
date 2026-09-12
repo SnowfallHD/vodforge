@@ -201,10 +201,13 @@ def hit_test_pid(point):
         cf.CFRelease(system)
 
 
-def post_click(quartz, point, guard, on_dispatch=lambda: None):
+def post_click(quartz, point, guard, on_dispatch=lambda: None, *, right=False):
     def post(event_type):
         event = quartz.CGEventCreateMouseEvent(
-            None, event_type, point, quartz.kCGMouseButtonLeft
+            None,
+            event_type,
+            point,
+            quartz.kCGMouseButtonRight if right else quartz.kCGMouseButtonLeft,
         )
         # A preceding Command shortcut otherwise leaks into newly created events.
         quartz.CGEventSetFlags(event, 0)
@@ -217,10 +220,10 @@ def post_click(quartz, point, guard, on_dispatch=lambda: None):
     post(quartz.kCGEventMouseMoved)
     guard()
     try:
-        post(quartz.kCGEventLeftMouseDown)
+        post(quartz.kCGEventRightMouseDown if right else quartz.kCGEventLeftMouseDown)
     finally:
         # A mouse-down binding can open a dialog. Always release our button.
-        post(quartz.kCGEventLeftMouseUp)
+        post(quartz.kCGEventRightMouseUp if right else quartz.kCGEventLeftMouseUp)
 
 
 def post_key(quartz, key, flags, guard, on_dispatch=lambda: None):
@@ -268,6 +271,7 @@ def main(argv=None):
     actions = parser.add_subparsers(dest="action", required=True)
     actions.add_parser("observe")
     click = actions.add_parser("click")
+    click.add_argument("--right", action="store_true")
     for name in ("x", "y", "image-width", "image-height"):
         click.add_argument(f"--{name}", type=float, required=True)
     key = actions.add_parser("key")
@@ -380,7 +384,7 @@ def main(argv=None):
                         "inspect desktop capture, do not resend"
                     )
 
-            post_click(Quartz, point, click_guard, dispatched)
+            post_click(Quartz, point, click_guard, dispatched, right=args.right)
         elif args.action == "key":
             if not 0 <= args.code <= 127:
                 raise ValueError("Invalid native key code")
