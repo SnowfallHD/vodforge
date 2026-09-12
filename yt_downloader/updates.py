@@ -40,6 +40,64 @@ WINDOWS_POWERSHELL_MODULE_PATH = "$env:PSModulePath = $PSHOME + '/Modules';"
 MACOS_STAGING_PREFIX = "staged-"
 
 
+def qa_update_feed() -> str | None:
+    """Permit a loopback release fixture only inside explicit isolated packaged QA."""
+    value = os.environ.get("VODFORGE_QA_UPDATE_FEED")
+    if not value:
+        return None
+    from .telemetry_policy import preview_telemetry_allowed
+
+    root = Path(os.environ.get("VODFORGE_QUALITY_E2E_ISOLATION_ROOT", ""))
+    home = Path.home()
+    profile = Path(os.environ.get("VODFORGE_QA_PROFILE", ""))
+    temporary = Path(os.environ.get("TMPDIR", ""))
+    paths = (root, home, profile, temporary, Path(sys.executable))
+    if (
+        os.environ.get("VODFORGE_QUALITY_E2E") != "1"
+        or not getattr(sys, "frozen", False)
+        or not preview_telemetry_allowed()
+        or any(not p.is_absolute() or not p.exists() or p.resolve() != p for p in paths)
+        or home != root / "home"
+        or temporary != root / "tmp"
+        or not profile.is_relative_to(home)
+        or not Path(sys.executable).is_relative_to(root)
+    ):
+        raise ValueError("The QA update feed requires an isolated preview app.")
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is None
+        or not 1 <= parsed.port <= 65535
+        or parsed.query
+        or parsed.fragment
+        or re.fullmatch(r"/[0-9a-f]{32}/release\.json", parsed.path) is None
+        or value != f"http://127.0.0.1:{parsed.port}{parsed.path}"
+    ):
+        raise ValueError("The QA update feed must use the scoped loopback fixture.")
+    return value
+
+
+class _NoQaUpdateRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError("QA update fixture redirects are forbidden.")
+
+
+def _open_update_request(request: urllib.request.Request, *, timeout: float):
+    feed = qa_update_feed()
+    if feed is None:
+        return urllib.request.urlopen(request, timeout=timeout)  # nosec B310
+    # No proxy, redirects, credentials or non-loopback fallback in QA.
+    base = feed.removesuffix("release.json")
+    if not request.full_url.startswith(base):
+        raise ValueError("QA update request escaped its fixture.")
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoQaUpdateRedirect()
+    ).open(request, timeout=timeout)
+
+
 @dataclass(frozen=True)
 class ReleaseAsset:
     name: str
@@ -93,6 +151,14 @@ def _trusted_github_download(
     tag_name: str,
     asset_name: str,
 ) -> str:
+    feed = qa_update_feed()
+    if feed is not None:
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", asset_name) is None:
+            raise ValueError("Invalid QA update asset name.")
+        expected = feed.removesuffix("release.json") + tag_name + "/" + asset_name
+        if url != expected:
+            raise ValueError("QA update asset escaped its fixture.")
+        return url
     expected_url = (
         f"https://github.com/{GITHUB_REPOSITORY}/releases/download/"
         f"{urllib.parse.quote(tag_name, safe='')}/{urllib.parse.quote(asset_name, safe='')}"
@@ -147,7 +213,7 @@ def parse_release_payload(payload: dict[str, Any]) -> ReleaseInfo:
 
 def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
     request = urllib.request.Request(
-        LATEST_RELEASE_API,
+        qa_update_feed() or LATEST_RELEASE_API,
         headers={
             "Accept": "application/vnd.github+json",
             "User-Agent": f"VODForge update checker ({GITHUB_REPOSITORY})",
@@ -156,7 +222,7 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
     )
     try:
         # LATEST_RELEASE_API is a fixed HTTPS endpoint owned by this repository.
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        with _open_update_request(request, timeout=timeout) as response:
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
@@ -216,7 +282,7 @@ def _fetch_small_text(url: str, *, timeout: float) -> str:
     )
     try:
         # The only caller passes an exact URL returned by _trusted_github_download.
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        with _open_update_request(request, timeout=timeout) as response:
             raw = response.read(MAX_RELEASE_RESPONSE_BYTES + 1)
     except (urllib.error.HTTPError, urllib.error.URLError) as exc:
         raise RuntimeError(
@@ -290,7 +356,7 @@ def download_verified_update(
     try:
         # asset_url was exact-canonicalized immediately above, before any network access.
         with (
-            urllib.request.urlopen(request, timeout=timeout) as response,  # nosec B310
+            _open_update_request(request, timeout=timeout) as response,
             temporary.open("wb") as output,
         ):
             while True:
@@ -668,6 +734,7 @@ def windows_update_script(
     return RECOVERY_FUNCTIONS + textwrap.dedent(f"""\
         {WINDOWS_POWERSHELL_MODULE_PATH}
         $ErrorActionPreference = 'Stop'
+        $qaUpdateFeed = {literal(qa_update_feed() or "")}
         $installer = {literal(installer)}
         $executable = {literal(executable)}
         $receipt = {literal(receipt)}
@@ -694,7 +761,7 @@ def windows_update_script(
             }}
             if ($repairRequested) {{
                 $stage = 'downloading_repair'
-                $fresh = Get-VODForgeRepairInstaller (Split-Path -Parent $installer)
+                $fresh = Get-VODForgeRepairInstaller (Split-Path -Parent $installer) $qaUpdateFeed
                 $installer = $fresh.Path
                 $expectedVersion = $fresh.Version
             }}

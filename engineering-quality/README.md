@@ -365,3 +365,14 @@ feature/action coverage and attempt relationships as well as event counts.
 preview serializer/D1 contract check. Supply the QA key through the environment.
 It is not native UI or release proof; final artifacts must follow
 [TELEMETRY_RELEASE_GATE.md](TELEMETRY_RELEASE_GATE.md).
+
+
+### Pre-publication update fixture
+
+`quality_harness.update_fixture` serves only explicitly listed final release
+archives on a scoped loopback URL. The existing isolated preview mode can use
+that feed for native update and Repair journeys without publishing first or
+changing signed bytes. It records hashes and requests, supports a real HTTP503
+fault, and preserves normal publisher verification. See the
+[telemetry release gate](TELEMETRY_RELEASE_GATE.md#isolated-updater-feed-before-publication)
+for the baseline, launch environment and required D1/UI evidence.

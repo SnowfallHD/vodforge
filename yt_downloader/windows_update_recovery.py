@@ -28,17 +28,53 @@ function Confirm-VODForgeData {
         }
     }
 }
+function Read-VODForgeQaText {
+    param($Url)
+    $request = [Net.HttpWebRequest]::Create($Url)
+    $request.Proxy = $null
+    $request.AllowAutoRedirect = $false
+    $request.Timeout = 30000
+    $request.ReadWriteTimeout = 30000
+    $response = $null; $stream = $null; $memory = New-Object IO.MemoryStream
+    try {
+        $response = $request.GetResponse()
+        if ([int]$response.StatusCode -ne 200) { throw 'QA update fixture redirects are forbidden.' }
+        $stream = $response.GetResponseStream()
+        $buffer = New-Object byte[] 65536
+        while (($count = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            if ($memory.Length + $count -gt 2097152) { throw 'QA update response is too large.' }
+            $memory.Write($buffer, 0, $count)
+        }
+        return [Text.Encoding]::UTF8.GetString($memory.ToArray())
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        if ($response) { $response.Dispose() }
+        $memory.Dispose()
+    }
+}
 function Get-VODForgeRepairInstaller {
-    param($Destination)
+    param($Destination, $QaFeed = '')
     # Fixed official endpoints; never execute a URL supplied by an error or receipt.
     $root = 'https://github.com/SnowfallHD/vodforge/releases/download/'
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/SnowfallHD/vodforge/releases/latest' -TimeoutSec 30
+    if ($QaFeed) {
+        # Passed by the already isolated Python owner, never read from a receipt.
+        if ($QaFeed -cnotmatch '^http://127\.0\.0\.1:[0-9]{1,5}/[0-9a-f]{32}/release\.json$') { throw 'Invalid QA update feed.' }
+        $root = $QaFeed.Substring(0, $QaFeed.Length - 'release.json'.Length)
+        $release = (Read-VODForgeQaText $QaFeed) | ConvertFrom-Json
+    } else {
+        $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/SnowfallHD/vodforge/releases/latest' -TimeoutSec 30
+    }
     if ($release.draft -or $release.prerelease -or $release.tag_name -notmatch '^v\d+\.\d+\.\d+$') { throw 'The latest stable release could not be identified.' }
     $name = 'VODForge-Windows-Setup-' + $release.tag_name + '.exe'
     $asset = @($release.assets | Where-Object { $_.name -eq $name })
     if ($asset.Count -ne 1 -or $asset[0].size -le 0 -or $asset[0].size -gt 4294967296) { throw 'The latest Windows installer is unavailable.' }
     $base = $root + $release.tag_name + '/'
-    $checksums = (Invoke-WebRequest -UseBasicParsing -Uri ($base + 'SHA256SUMS.txt') -TimeoutSec 30).Content
+    if ($QaFeed) {
+        if ($asset[0].browser_download_url -cne ($base + $name)) { throw 'QA update asset escaped its fixture.' }
+        $checksums = Read-VODForgeQaText ($base + 'SHA256SUMS.txt')
+    } else {
+        $checksums = (Invoke-WebRequest -UseBasicParsing -Uri ($base + 'SHA256SUMS.txt') -TimeoutSec 30).Content
+    }
     if ($checksums.Length -gt 2097152) { throw 'The release checksum file is too large.' }
     if ($checksums -is [byte[]]) { $checksums = [Text.Encoding]::UTF8.GetString($checksums) }
     $hashes = @($checksums -split "`n" | Where-Object { $_.Trim() -match ('^[a-fA-F0-9]{64}\s+\*?' + [regex]::Escape($name) + '$') })
@@ -49,9 +85,11 @@ function Get-VODForgeRepairInstaller {
     $response = $null; $inputStream = $null; $outputStream = $null
     try {
         $request = [Net.HttpWebRequest]::Create($base + $name)
+        if ($QaFeed) { $request.Proxy = $null; $request.AllowAutoRedirect = $false }
         $request.Timeout = 30000
         $request.ReadWriteTimeout = 30000
         $response = $request.GetResponse()
+        if ($QaFeed -and [int]$response.StatusCode -ne 200) { throw 'QA update fixture redirects are forbidden.' }
         $inputStream = $response.GetResponseStream()
         $outputStream = [IO.File]::Create($partial)
         $buffer = New-Object byte[] 65536

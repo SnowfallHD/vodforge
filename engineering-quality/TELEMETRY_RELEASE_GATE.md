@@ -161,3 +161,45 @@ their unreachable actions and rejects any announcement event instead. Keep
 evergreen owner/native regressions for future enabled showcases. The combined
 announcement/guidance/appearance screenshot checkpoint must show the silent
 release state plus the enabled guidance and appearance interactions.
+
+
+## Isolated updater feed before publication
+
+The public updater still uses only the official stable GitHub feed. For the
+pre-publication journey, serve the final signed artifacts on the same QA machine:
+
+```sh
+PYTHONPATH=engineering-quality .venv/bin/python -m quality_harness.update_fixture \
+  --version 0.2.2 \
+  --asset /absolute/path/VODForge-macOS-arm64-v0.2.2.zip \
+  --output build/qa-update-feed
+```
+
+Use the matching Windows installer on Windows. Set `VODFORGE_QA_UPDATE_FEED` to
+the URL in `feed.json` **before launching** the isolated packaged app. The feed
+requires packaged preview mode, the private preview key, isolated HOME/TMP/profile,
+and an executable inside the isolation root. Other hosts, redirects, proxies,
+external asset URLs and ordinary installed profiles are rejected. Normal launches
+without this variable retain the official feed. Never modify the signed artifact.
+The detached Windows Repair helper receives only the already validated feed;
+it retains size/hash, timestamped publisher, exact target and relaunch verification.
+
+For the first release introducing preview routing, build a separately identified,
+signed QA baseline from the same source at the preceding registered version. This
+is a QA baseline, not the historical public binary. Retain its hash/version and
+preview snapshot, then click the normal update UI to install the exact candidate.
+Keep the separate actual-public-baseline installer/legacy-helper checks too; the
+QA baseline does not replace that compatibility evidence.
+
+On the final candidate, create `unavailable` in the feed output directory to return
+real HTTP503 responses, click Check for updates and observe the actionable failure.
+Remove that file, then click Repair VODForge. The normal Repair path downloads,
+verifies, installs and relaunches the same final candidate. Capture preview-D1
+failure, repair and verified relaunch observations. Retain `feed.json`,
+`requests.jsonl`, the original helper receipts and actual UI captures. A changed
+fixture artifact returns409; do not rewrite its checksum or receipt to hide a change.
+
+The feed is a local test provider, not GitHub availability evidence. Regression
+coverage executes both Python and PowerShell transports against real loopback
+responses, including escaped URLs, redirects, checksum failure and normal-context
+refusal. No test bypasses installer publisher verification.
