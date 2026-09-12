@@ -19,6 +19,8 @@ from .fixtures import (
 
 LIBRARY_DESCRIPTION_STRESS_ROUTE = "/page/library-description-stress"
 SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE = "/slow/page/library-description-stress"
+CANCELLATION_ROUTE = "/slow/page/cancellation"
+QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE = "/slow/page/queued-library-description-stress"
 
 
 class FaultState:
@@ -56,8 +58,11 @@ class FaultState:
 
 
 class FixtureHTTPServer:
-    def __init__(self, fixture_dir: Path) -> None:
+    def __init__(self, fixture_dir: Path, *, slow_chunk_delay: float = 0.02) -> None:
+        if not 0 <= slow_chunk_delay <= 1:
+            raise ValueError("slow_chunk_delay must be between 0 and 1 second")
         self.fixture_dir = fixture_dir
+        self.slow_chunk_delay = slow_chunk_delay
         self.state = FaultState()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -75,6 +80,7 @@ class FixtureHTTPServer:
     def start(self) -> FixtureHTTPServer:
         fixture_dir = self.fixture_dir
         state = self.state
+        slow_chunk_delay = self.slow_chunk_delay
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "VODForgeQualityOrigin/1.0"
@@ -152,6 +158,8 @@ class FixtureHTTPServer:
                 if route in {
                     LIBRARY_DESCRIPTION_STRESS_ROUTE,
                     SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
+                    CANCELLATION_ROUTE,
+                    QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE,
                     "/page/unicode",
                     "/page/normal",
                     "/page/long",
@@ -169,6 +177,7 @@ class FixtureHTTPServer:
                             in {
                                 LIBRARY_DESCRIPTION_STRESS_ROUTE,
                                 SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
+                                QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE,
                             }
                         ),
                         send_body=send_body,
@@ -435,7 +444,7 @@ class FixtureHTTPServer:
                                 self.connection.close()
                                 return
                             if slow:
-                                time.sleep(0.02)
+                                time.sleep(slow_chunk_delay)
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     return
 

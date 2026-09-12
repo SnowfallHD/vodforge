@@ -107,6 +107,36 @@ def record_e2e_event(args: argparse.Namespace) -> int:
     else:
         unobserved_prior_events = []
 
+    active_evidence = None
+    if args.event in {
+        "progress_observed",
+        "slow_run_started",
+        "second_run_queued",
+        "queued_run_started",
+    }:
+        from yt_downloader.run_state import ActiveRunStore
+
+        state_paths = current_launch.get("state_paths") or {}
+        application_data = state_paths.get("application_data")
+        if not application_data:
+            raise RuntimeError(
+                "Active-work checkpoint requires attested application_data"
+            )
+        journal = Path(application_data) / "active-run.json"
+        state = ActiveRunStore(journal).load() or {}
+        if state.get("state") != "active":
+            raise RuntimeError(
+                "Active-work checkpoint refused: the run is no longer active. "
+                "Inspect the current window; a completed or cached export is not "
+                "transfer evidence. Use the dedicated cancellation/queue fixtures."
+            )
+        if state.get("owner_pid") != expected_pid:
+            raise RuntimeError("Active-work journal belongs to a different app launch")
+        queued_count = len(state.get("queued_jobs") or [])
+        if args.event == "second_run_queued" and not queued_count:
+            raise RuntimeError("Queue checkpoint refused: no durable queued job exists")
+        active_evidence = {"state": "active", "queued_count": queued_count}
+
     screenshot_target: Path | None = None
     capture_identity = None
     capture_method = None
@@ -203,6 +233,8 @@ def record_e2e_event(args: argparse.Namespace) -> int:
     if capture_identity is not None:
         event["capture_window_identity"] = capture_identity
         event["capture_method"] = capture_method
+    if active_evidence is not None:
+        event["active_work_evidence"] = active_evidence
     if unobserved_prior_events:
         event["unobserved_prior_events"] = unobserved_prior_events
     events.append(event)

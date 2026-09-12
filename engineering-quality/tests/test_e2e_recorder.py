@@ -122,6 +122,16 @@ def _write_session(tmp_path: Path) -> tuple[Path, Path]:
     control_path = session_dir / "control.json"
     trace_path.write_text('{"events": [], "screenshots": [], "notes": []}\n')
     control_path.write_text('{"action": "running"}\n')
+    (session_dir / "active-run.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "active",
+                "owner_pid": TEST_PID,
+                "queued_jobs": [],
+            }
+        )
+    )
     session_path = session_dir / "session.json"
     session_path.write_text(
         json.dumps(
@@ -136,6 +146,7 @@ def _write_session(tmp_path: Path) -> tuple[Path, Path]:
                     "description": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
                 },
                 "current_launch": {
+                    "state_paths": {"application_data": str(session_dir)},
                     "verified": True,
                     "session_nonce": "0123456789abcdef0123456789abcdef",
                     "launch_id": "launch-1",
@@ -156,6 +167,90 @@ def _write_session(tmp_path: Path) -> tuple[Path, Path]:
 
 def _verified_live_receipt(_launch: dict[str, Any]) -> dict[str, Any]:
     return {"verified": True, "errors": []}
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        "progress_observed",
+        "slow_run_started",
+        "second_run_queued",
+        "queued_run_started",
+    ],
+)
+@pytest.mark.parametrize("state", ["idle", "active"])
+def test_active_checkpoints_refuse_completed_or_cached_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: str, state: str
+) -> None:
+    session_path, trace_path = _write_session(tmp_path)
+    session = json.loads(session_path.read_text())
+    session["e2e_profile"] = "deep"
+    session_path.write_text(json.dumps(session))
+    (session_path.parent / "active-run.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": state,
+                "owner_pid": TEST_PID,
+                "queued_jobs": [{"url": "private fixture"}],
+            }
+        )
+    )
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    screenshot = tmp_path / "observed.png"
+    screenshot.write_bytes(b"test screenshot")
+    args = _args(session_path, event, screenshot=screenshot, allow_gap=True)
+    if state == "idle":
+        with pytest.raises(RuntimeError, match="no longer active"):
+            record_e2e_event(args)
+        assert json.loads(trace_path.read_text())["events"] == []
+    else:
+        assert record_e2e_event(args) == 0
+        recorded = json.loads(trace_path.read_text())["events"][0]
+        assert recorded["active_work_evidence"] == {
+            "state": "active",
+            "queued_count": 1,
+        }
+        assert "private fixture" not in trace_path.read_text()
+
+
+def test_queue_checkpoint_requires_real_pending_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_path, trace_path = _write_session(tmp_path)
+    session = json.loads(session_path.read_text())
+    session["e2e_profile"] = "deep"
+    session_path.write_text(json.dumps(session))
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    screenshot = tmp_path / "observed.png"
+    screenshot.write_bytes(b"test screenshot")
+    with pytest.raises(RuntimeError, match="no durable queued job"):
+        record_e2e_event(
+            _args(
+                session_path, "second_run_queued", screenshot=screenshot, allow_gap=True
+            )
+        )
+    assert json.loads(trace_path.read_text())["events"] == []
+
+
+@pytest.mark.parametrize("owner_pid", [None, TEST_PID + 1])
+def test_active_checkpoint_rejects_stale_launch_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, owner_pid: int | None
+) -> None:
+    session_path, trace_path = _write_session(tmp_path)
+    (session_path.parent / "active-run.json").write_text(
+        json.dumps({"schema_version": 1, "state": "active", "owner_pid": owner_pid})
+    )
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    screenshot = tmp_path / "observed.png"
+    screenshot.write_bytes(b"test screenshot")
+    with pytest.raises(RuntimeError, match="different app launch"):
+        record_e2e_event(
+            _args(
+                session_path, "progress_observed", screenshot=screenshot, allow_gap=True
+            )
+        )
+    assert json.loads(trace_path.read_text())["events"] == []
 
 
 @pytest.fixture(autouse=True)

@@ -124,7 +124,8 @@ def _packaged_fixture_session_fields(
 
     return {
         "input_url": url_for(SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE),
-        "slow_input_url": url_for("/slow/page"),
+        "slow_input_url": url_for("/slow/page/cancellation"),
+        "queued_input_url": url_for("/slow/page/queued-library-description-stress"),
         "library_visibility_expectation": {
             "fixture_id": "generated-library-description-stress",
             "page_title": LIBRARY_DESCRIPTION_STRESS_TITLE,
@@ -1294,7 +1295,7 @@ def run_packaged_e2e_session(
     timed_out = False
     with (
         _OwnedLaunchRegistry(sampler) as owned_registry,
-        FixtureHTTPServer(fixtures) as server,
+        FixtureHTTPServer(fixtures, slow_chunk_delay=0.25) as server,
     ):
         required_ui_events = _required_ui_events(args.profile)
         journey = [
@@ -1313,7 +1314,7 @@ def run_packaged_e2e_session(
         if args.profile in {"deep", "telemetry"}:
             journey[8:8] = [
                 "Start slow_input_url and record slow_run_started once transfer is active.",
-                "Submit input_url while the slow run remains active; observe a real queued card and record second_run_queued.",
+                "Submit queued_input_url while the slow run remains active; observe a real queued card and record second_run_queued. These dedicated URLs must not be used for earlier preset exports.",
                 "Cancel the active run through the visible UI and record cancellation_requested.",
                 "Observe a clean stopped/cancelled state with no committed partial and record cancellation_observed.",
                 "Observe the queued run advance into active work and record queued_run_started.",

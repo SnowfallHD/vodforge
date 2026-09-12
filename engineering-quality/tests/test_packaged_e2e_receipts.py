@@ -9,6 +9,8 @@ from urllib.request import urlopen
 import pytest
 from quality_harness import packaged_e2e
 from quality_harness.fault_server import (
+    CANCELLATION_ROUTE,
+    QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE,
     SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE,
     FixtureHTTPServer,
 )
@@ -41,6 +43,16 @@ def test_packaged_session_uses_slow_description_stress_fixture() -> None:
     assert fields["input_url"] == (
         f"http://fixture.invalid{SLOW_LIBRARY_DESCRIPTION_STRESS_ROUTE}"
     )
+    assert fields["slow_input_url"] == f"http://fixture.invalid{CANCELLATION_ROUTE}"
+    assert fields["queued_input_url"] == (
+        f"http://fixture.invalid{QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE}"
+    )
+    assert (
+        len(
+            {fields[key] for key in ("input_url", "slow_input_url", "queued_input_url")}
+        )
+        == 3
+    )
     expectation = fields["library_visibility_expectation"]
     assert expectation["page_title"] == LIBRARY_DESCRIPTION_STRESS_TITLE
     assert (
@@ -63,6 +75,67 @@ def test_slow_description_stress_route_preserves_metadata_and_uses_slow_hls(
     assert LIBRARY_DESCRIPTION_STRESS_TITLE in document
     assert LIBRARY_DESCRIPTION_STRESS_DESCRIPTION in document
     assert "/slow/hls/hls-long/master.m3u8" in document
+
+
+def test_dedicated_queue_route_preserves_description(tmp_path: Path) -> None:
+    with FixtureHTTPServer(tmp_path) as server:
+        with urlopen(
+            server.url(QUEUED_LIBRARY_DESCRIPTION_STRESS_ROUTE), timeout=5
+        ) as response:
+            document = response.read().decode()
+        with urlopen(server.url(CANCELLATION_ROUTE), timeout=5) as response:
+            cancellation = response.read().decode()
+    assert LIBRARY_DESCRIPTION_STRESS_TITLE in document
+    assert LIBRARY_DESCRIPTION_STRESS_DESCRIPTION in document
+    assert LIBRARY_DESCRIPTION_STRESS_TITLE not in cancellation
+    assert "/slow/hls/hls-long/master.m3u8" in cancellation
+
+
+def test_real_extractor_separates_cancellation_and_queue_identities(
+    tmp_path: Path,
+) -> None:
+    from yt_dlp import YoutubeDL
+
+    hls = tmp_path / "hls-long"
+    hls.mkdir()
+    (hls / "master.m3u8").write_text(
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n"
+        "#EXTINF:6,\nsegment.ts\n#EXT-X-ENDLIST\n"
+    )
+    with (
+        FixtureHTTPServer(tmp_path) as server,
+        YoutubeDL(
+            {"quiet": True, "no_warnings": True, "skip_download": True}
+        ) as extractor,
+    ):
+        fields = packaged_e2e._packaged_fixture_session_fields(server.url)
+        identities = [
+            extractor.extract_info(fields[key], download=False, process=False)["id"]
+            for key in ("input_url", "slow_input_url", "queued_input_url")
+        ]
+    assert len(set(identities)) == 3
+
+
+def test_fixture_throttle_applies_only_to_slow_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"fixture transport" * 2200
+    (tmp_path / "short-av.mp4").write_bytes(payload)
+    delays = []
+    monkeypatch.setattr("quality_harness.fault_server.time.sleep", delays.append)
+    with FixtureHTTPServer(tmp_path, slow_chunk_delay=0.25) as server:
+        with urlopen(server.url("/media/short-av.mp4"), timeout=5) as response:
+            assert response.read() == payload
+        assert delays == []
+        with urlopen(server.url("/slow/media/short-av.mp4"), timeout=5) as response:
+            assert response.read() == payload
+    assert delays == [0.25] * 3
+
+
+@pytest.mark.parametrize("delay", [-1, 1.1, float("nan"), float("inf")])
+def test_fixture_rejects_unbounded_throttle(tmp_path: Path, delay: float) -> None:
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        FixtureHTTPServer(tmp_path, slow_chunk_delay=delay)
 
 
 def _driver_trace(

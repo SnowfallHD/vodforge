@@ -31,6 +31,44 @@ production users or change production data to create test fixtures.
 
 ## Required observed journey
 
+### Execution discipline
+
+Run producer/lifecycle regressions and targeted native reproductions before building
+the next signed candidate. After a runtime fix, first repeat its failing case on
+the new artifact; do not spend another full journey before checking that fix.
+Preserve rejected artifacts and evidence, but never reuse their receipts as proof
+for a replacement artifact.
+
+Use the session's dedicated `slow_input_url` only for cancellation and
+`queued_input_url` only for queue advancement. They are deliberately distinct from
+the earlier export/preset source, so an existing valid output cannot turn the
+first cancellation test into an immediate cache hit. The packaged fixture uses
+250 ms per 16 KiB slow-media chunk; ordinary repository scenarios retain their
+fast default. Do not wait until completion to capture an active state. Capture
+immediately after submission, inspect the image, and require both a real active
+run and a queued card before testing cancellation. If a dedicated case was already
+completed, preserve its output and use a fresh isolated destination for that case;
+do not repeatedly submit a cached source and call it a transfer test.
+The recorder checks the existing run journal for active work owned by the current
+PID, and for a pending job at the queued checkpoint. This is additional evidence;
+it never replaces the required native screenshot or proves visible progress alone.
+
+Before each native dialog action, discover the current window owned by the
+attested PID and use its exact title and current bounds. Opening a dialog and
+acting inside it are separate steps: verify it is visible first. After one failed
+targeting attempt, inspect fresh native state and correct the target instead of
+repeating the same coordinates. Bound a window-readiness wait to five seconds;
+retain a timeout as an automation failure, not an application failure or passing
+observation. Never relaunch the whole candidate solely to recover window focus.
+
+Keep a per-platform action ledger as actions occur, including extra attempts,
+cache reuse, retries, and failures. Reconcile preview D1 after each feature group
+so a missing producer is discovered before the remainder of the journey. Stop
+repeating a failed step after two attempts and diagnose the fixture, recorder,
+or product owner with retained evidence. Continue independent required checks.
+Report a delay or blocker promptly rather than allowing hours of silent retries.
+These limits bound wasted retries; they do not waive any release prerequisite.
+
 Use the recorder's `telemetry` profile, which requires native screenshots for all
 producer actions and refusal/disabled observations. Follow its ordered event list:
 complete the media actions during the first session, reopen, then capture the
