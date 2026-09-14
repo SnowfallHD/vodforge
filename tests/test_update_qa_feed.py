@@ -153,7 +153,9 @@ def test_real_qa_feed_download(isolated_qa, monkeypatch, fault, entrypoint):
             script = isolated_qa / "repair.ps1"
             escaped = str(destination).replace("'", "''")
             script.write_text(
-                RECOVERY_FUNCTIONS + f"\n$ErrorActionPreference='Stop'\n"
+                updates.WINDOWS_POWERSHELL_MODULE_PATH
+                + RECOVERY_FUNCTIONS
+                + "\n$ErrorActionPreference='Stop'\n"
                 f"try {{ Get-VODForgeRepairInstaller '{escaped}' '{base}release.json' | Out-Null }}\n"
                 "catch { Write-Output $_.Exception.Message; exit 1 }\n"
             )
@@ -163,6 +165,9 @@ def test_real_qa_feed_download(isolated_qa, monkeypatch, fault, entrypoint):
                 text=True,
                 timeout=30,
                 check=False,
+                # Match the shipped helper bootstrap even when a parent shell
+                # supplies an incompatible module path (PowerShell 7 in CI).
+                env={**os.environ, "PSModulePath": str(isolated_qa / "foreign-modules")},
             )
             assert (result.returncode == 0) == (fault is None), (
                 result.stdout + result.stderr
@@ -170,6 +175,12 @@ def test_real_qa_feed_download(isolated_qa, monkeypatch, fault, entrypoint):
             if fault is None:
                 assert (destination / name).read_bytes() == content
             else:
+                expected_error = {
+                    "checksum": "The installer download could not be verified.",
+                    "redirect": "QA update fixture redirects are forbidden.",
+                    "asset_escape": "QA update asset escaped its fixture.",
+                }[fault]
+                assert expected_error in result.stdout, result.stdout + result.stderr
                 assert not list(destination.glob("*"))
             assert "/must-not-be-requested" not in requests
             return
