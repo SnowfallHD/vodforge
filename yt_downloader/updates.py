@@ -7,6 +7,7 @@ import platform
 import plistlib
 import re
 import shutil
+import ssl
 
 # Update verification uses fixed executables or injected argv-only runners, never a shell.
 import subprocess  # nosec B404
@@ -20,6 +21,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import certifi
 
 from .windows_update_recovery import RECOVERY_FUNCTIONS
 
@@ -85,10 +88,18 @@ class _NoQaUpdateRedirect(urllib.request.HTTPRedirectHandler):
         raise ValueError("QA update fixture redirects are forbidden.")
 
 
+def update_ssl_context() -> ssl.SSLContext:
+    """Always ship public roots; also retain platform/custom trust configuration."""
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.load_default_certs()
+    return context
+
+
 def _open_update_request(request: urllib.request.Request, *, timeout: float):
     feed = qa_update_feed()
     if feed is None:
-        return urllib.request.urlopen(request, timeout=timeout)  # nosec B310
+        context = update_ssl_context()
+        return urllib.request.urlopen(request, timeout=timeout, context=context)  # nosec B310
     # No proxy, redirects, credentials or non-loopback fallback in QA.
     base = feed.removesuffix("release.json")
     if not request.full_url.startswith(base):
@@ -234,7 +245,9 @@ def fetch_latest_release(*, timeout: float = 15) -> ReleaseInfo:
         ) from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(
-            "VODForge could not reach GitHub to check for updates."
+            f"VODForge could not reach GitHub to check for updates ({type(exc.reason).__name__}). "
+            "Check your connection and system date, then retry. "
+            "You can also download VODForge from getvodforge.com."
         ) from exc
     if len(raw) > MAX_RELEASE_RESPONSE_BYTES:
         raise RuntimeError("GitHub returned an unexpectedly large release response.")

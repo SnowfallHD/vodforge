@@ -1,6 +1,8 @@
 """Immutable machine-readable failure facts. Raw diagnostics stay local."""
 
 import errno
+import socket
+import ssl
 
 # Used only to classify exceptions, never to execute a process.
 import subprocess  # nosec B404
@@ -25,8 +27,112 @@ ERROR_TYPES = frozenset(
 )
 
 
+FAILURE_CODES = frozenset(
+    {
+        "no_video_stream",
+        "no_audio_stream",
+        "format_unavailable",
+        "selector_invalid",
+        "login_required",
+        "bot_challenge",
+        "cookies_unavailable",
+        "drm_protected",
+        "tls_certificate",
+        "tls_handshake",
+        "dns_lookup",
+        "timeout",
+        "connection_refused",
+        "connection_reset",
+        "http_error",
+        "encoder_unavailable",
+        "disk_full",
+    }
+)
+
+
+def failure_code(error: BaseException) -> str | None:
+    if isinstance(error, ssl.SSLCertVerificationError):
+        return "tls_certificate"
+    if isinstance(error, ssl.SSLError):
+        return "tls_handshake"
+    if isinstance(error, socket.gaierror):
+        return "dns_lookup"
+    if isinstance(error, TimeoutError):
+        return "timeout"
+    if isinstance(error, ConnectionRefusedError):
+        return "connection_refused"
+    if isinstance(error, ConnectionResetError):
+        return "connection_reset"
+    text = str(error).lower()
+    if "sslcertverificationerror" in text or "certificate_verify_failed" in text:
+        return "tls_certificate"
+    if "gaierror" in text:
+        return "dns_lookup"
+    for code, needles in (
+        ("no_video_stream", ("no usable video source", "no video formats")),
+        ("no_audio_stream", ("no usable audio source",)),
+        ("format_unavailable", ("requested format is not available",)),
+        ("selector_invalid", ("could not build a safe video+audio selector",)),
+        ("bot_challenge", ("confirm you're not a bot", "sign in to confirm")),
+        (
+            "cookies_unavailable",
+            (
+                "could not copy chrome cookie",
+                "failed to decrypt",
+                "could not find cookies",
+            ),
+        ),
+        (
+            "login_required",
+            (
+                "login required",
+                "authentication required",
+                "sign in",
+            ),
+        ),
+        (
+            "drm_protected",
+            (
+                "drm protected",
+                "drm-protected",
+            ),
+        ),
+        (
+            "encoder_unavailable",
+            (
+                "unknown encoder",
+                "no capable devices",
+                "cannot load nvcuda",
+            ),
+        ),
+        ("disk_full", ("no space left",)),
+    ):
+        if any(needle in text for needle in needles):
+            return code
+    return None
+
+
+class SourceSelectionError(RuntimeError):
+    """Local error text plus strictly numeric format-selection evidence."""
+
+    def __init__(self, message: str, formats: list[dict]):
+        super().__init__(message)
+        self.format_count = min(len(formats), 10000)
+        self.video_format_count = min(
+            sum(f.get("vcodec") not in (None, "none", "") for f in formats), 10000
+        )
+        self.audio_format_count = min(
+            sum(f.get("acodec") not in (None, "none", "") for f in formats), 10000
+        )
+
+
 @dataclass(frozen=True)
 class FailureDiagnostic:
+    failure_code: str | None = None
+    format_count: int | None = None
+    video_format_count: int | None = None
+    audio_format_count: int | None = None
+    tls_verify_code: int | None = None
     reason: str = "unknown"
     stage: str = "unknown"
     error_type: str | None = None
@@ -40,6 +146,11 @@ class FailureDiagnostic:
 
 def validate_failure_detail(value: dict) -> FailureDiagnostic:
     if set(value) - {
+        "failure_code",
+        "format_count",
+        "video_format_count",
+        "audio_format_count",
+        "tls_verify_code",
         "reason",
         "stage",
         "error_type",
@@ -55,7 +166,16 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         raise ValueError("unsupported failure detail")
     if value.get("error_type") is not None and value["error_type"] not in ERROR_TYPES:
         raise ValueError("unsupported error type")
+    if (
+        value.get("failure_code") is not None
+        and value["failure_code"] not in FAILURE_CODES
+    ):
+        raise ValueError("unsupported failure code")
     for key, low, high in (
+        ("format_count", 0, 10000),
+        ("video_format_count", 0, 10000),
+        ("audio_format_count", 0, 10000),
+        ("tls_verify_code", 0, 65535),
         ("http_status", 100, 599),
         ("os_error", 0, 65535),
         ("tool_exit_code", -(2**31), 2**32 - 1),
@@ -82,6 +202,18 @@ def capture_failure(
         if id(current) in seen:
             continue
         seen.add(id(current))
+        code = failure_code(current)
+        if code is not None:
+            facts["failure_code"] = code
+        if isinstance(current, SourceSelectionError):
+            for key in ("format_count", "video_format_count", "audio_format_count"):
+                facts[key] = getattr(current, key)
+        if isinstance(current, ssl.SSLCertVerificationError):
+            value = getattr(current, "verify_code", None)
+            if type(value) is int and 0 <= value <= 65535:
+                facts["tls_verify_code"] = value
+        if isinstance(current, (ssl.SSLError, socket.gaierror)):
+            facts["reason"] = "network"
         name = type(current).__name__
         if name in ERROR_TYPES:
             facts["error_type"] = name
@@ -99,6 +231,7 @@ def capture_failure(
                 facts["http_status"] = value
         if (
             isinstance(current, OSError)
+            and not isinstance(current, (ssl.SSLError, socket.gaierror))
             and type(current.errno) is int
             and 0 <= current.errno <= 65535
         ):

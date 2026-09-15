@@ -8,6 +8,13 @@ from yt_downloader.app import DownloaderApp
 from yt_downloader.models import OutputType
 
 
+@pytest.fixture(autouse=True)
+def stable_architecture(monkeypatch):
+    monkeypatch.setattr(
+        "yt_downloader.telemetry_features.platform.machine", lambda: "x86_64"
+    )
+
+
 class Recorder:
     def __init__(self):
         self.events = []
@@ -50,6 +57,10 @@ def test_terminal_producer_preserves_attempt_identity_and_actual_format(
                 "attempt_key": "attempt-1",
                 "retry_key": None,
                 "dimensions": {
+                    "cookie_access": "disabled",
+                    "provider": "other",
+                    "encoder_preference": "cpu",
+                    "architecture": "x64",
                     "input_kind": "single",
                     "item_count_bucket": "1",
                     "metadata": "disabled",
@@ -145,6 +156,10 @@ def test_actual_worker_launch_emits_start_with_attempt_identity(output, expected
                 "attempt_key": job.run_id,
                 "retry_key": None,
                 "dimensions": {
+                    "cookie_access": "disabled",
+                    "provider": "other",
+                    "encoder_preference": "cpu",
+                    "architecture": "x64",
                     "input_kind": "single",
                     "item_count_bucket": "1",
                     "metadata": "disabled",

@@ -233,7 +233,11 @@ from .settings_store import (
     SettingsPersistenceOwner,
     settings_file_path,
 )
-from .telemetry_features import committed_export_dimensions, export_dimensions
+from .telemetry_features import (
+    committed_export_dimensions,
+    export_dimensions,
+    settings_dimensions,
+)
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .thumbnail_state import advance_thumbnail_item
 from .ui_events import (
@@ -314,6 +318,7 @@ from .updates import (
     prepare_macos_update,
     release_asset_for_platform,
     running_macos_app,
+    update_ssl_context,
     verify_windows_authenticode,
 )
 from .version import __version__
@@ -4955,7 +4960,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         recovered_queued_jobs = self.run_recovery.queued_at_startup()
         set_active_child_process_observer(self.run_recovery.child_event)
         self.settings_persistence = SettingsPersistenceOwner(
-            settings_file_path(), diagnostic=write_diagnostic
+            settings_file_path(),
+            diagnostic=write_diagnostic,
+            on_saved=self._record_settings_snapshot,
         )
         saved_settings = migrate_export_preferences(self.settings_persistence.load())
         theme_selection = apply_theme_selection(
@@ -5218,6 +5225,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._build_ui()
         self.theme_render_owner = ThemeRenderOwner(self._render_live_theme)
         self.settings_persistence.bind(self, self._settings_variables())
+        self.cookie_source_var.trace_add(
+            "write", lambda *_: self._record_settings_snapshot()
+        )
         previous_activity = load_activity_log_tail()
         if previous_activity:
             self._set_text(self.log, previous_activity, disabled=True)
@@ -7332,10 +7342,28 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     pass
         os.environ.pop("VODFORGE_UPDATE_RECEIPT", None)
 
+    def _record_settings_snapshot(self, values: dict | None = None) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is None or not telemetry.permitted():
+            return
+        # Persistence may normalize session-only artwork; report actual UI choices.
+        values = {
+            key: variable.get() for key, variable in self._settings_variables().items()
+        }
+        dimensions = settings_dimensions(values)
+        source = self.cookie_source_var.get()
+        dimensions["cookie_access"] = {
+            "Public": "disabled",
+            "Browser": "browser",
+            "cookies.txt": "file",
+        }.get(source, "unconfigured")
+        telemetry.record_feature("settings", "snapshot", dimensions=dimensions)
+
     def _record_product_app_opened(self) -> None:
         telemetry = self.__dict__.get("product_telemetry")
         if not self._closing and telemetry is not None:
             telemetry.record_app_opened()
+            self._record_settings_snapshot()
 
     def _open_cloud_early_access(self) -> None:
         state = self.installation_state
@@ -9091,6 +9119,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         try:
             self.events.put(("update_check_result", fetch_latest_release()))
         except Exception as exc:  # noqa: BLE001 - worker reports any update-provider failure
+            write_diagnostic(f"update check failed: {capture_failure(exc).payload()}")
             self.events.put(("update_check_error", str(exc)))
 
     def _show_update_result(self, release: ReleaseInfo) -> None:
@@ -9150,10 +9179,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self.update_worker.start()
 
     def _show_update_recovery(self, detail: str) -> None:
+        code = capture_failure(RuntimeError(detail)).failure_code
         self._record_feature(
             "updater",
             "failed",
-            dimensions={"update_stage": self.__dict__.get("_update_stage", "check")},
+            dimensions={
+                "update_stage": self.__dict__.get("_update_stage", "check"),
+                **({"failure_code": code} if code else {}),
+            },
         )
         self._set_focus_update_state("Update needs attention", THEME["danger"])
         self.update_button.config(state="normal")
@@ -14531,6 +14564,14 @@ def _smoke_ytdlp_stack() -> tuple[str, str, tuple[str, ...]]:
 
 def runtime_smoke() -> int:
     """Verify packaged dependencies without opening the GUI or fetching media."""
+    try:
+        context = update_ssl_context()
+        if context.cert_store_stats()["x509_ca"] < 50:
+            raise RuntimeError("Bundled update certificate roots are incomplete")
+    except Exception as exc:  # noqa: BLE001 - packaged smoke reports dependency failure
+        _runtime_smoke_output(f"update-tls=failed error={type(exc).__name__}")
+        return 1
+    _runtime_smoke_output("update-tls=verified-roots")
     runtimes = {
         "ffmpeg": DownloaderApp._find_ffmpeg(),
         "ffprobe": DownloaderApp._find_ffprobe(),

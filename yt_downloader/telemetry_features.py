@@ -6,11 +6,15 @@ transport. This vocabulary is shared by producers, validation and QA inventories
 
 from __future__ import annotations
 
+import platform
 import uuid
 from collections.abc import Mapping
 from urllib.parse import parse_qs, urlsplit
 
+from .failure_diagnostics import FAILURE_CODES
+
 FEATURE_ACTIONS: dict[str, frozenset[str]] = {
+    "settings": frozenset({"snapshot"}),
     "library": frozenset({"opened", "searched", "filtered", "selected", "removed"}),
     "organization": frozenset({"notes_saved", "tags_saved", "category_saved"}),
     "player": frozenset(
@@ -33,6 +37,11 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
     ),
 }
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
+    "failure_code": FAILURE_CODES,
+    "cookie_access": frozenset({"disabled", "browser", "file", "unconfigured"}),
+    "provider": frozenset({"youtube", "other"}),
+    "encoder_preference": frozenset({"cpu", "nvidia"}),
+    "architecture": frozenset({"arm64", "x64", "other"}),
     "update_stage": frozenset(
         {
             "check",
@@ -79,6 +88,124 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "item_count_bucket": frozenset({"1", "2_5", "6_20", "21_100", "101_plus"}),
     "theme": frozenset({"violet", "cobalt", "jade", "ember", "rose", "custom"}),
 }
+
+
+# Explicit projection: unknown/future preferences are excluded until reviewed.
+SETTINGS_CHOICES = {
+    "local_video_profile": {
+        "1080p Standard (Recommended)",
+        "2160p 4K",
+        "1080p Strict 2 Mbps CBR",
+        "720p Compact",
+    },
+    "manual_crf": {str(value) for value in range(52)},
+    "output_type": {"MP4", "MP3", "Original audio"},
+    "quality": {
+        "Best available up to 4K",
+        "2160p / 4K",
+        "1440p / 2K",
+        "1080p Full HD",
+        "720p HD",
+        "480p",
+        "360p",
+    },
+    "export_mode": {
+        "Everyday",
+        "Streaming",
+        "Editing",
+        "Sharing",
+        "Auto CBR",
+        "Strict Compliance",
+        "Manual Override",
+    },
+    "manual_audio_codec": {"AAC", "MP3"},
+    "manual_sample_rate": {"44100", "48000"},
+    "manual_channels": {"Mono", "Stereo"},
+    "manual_preset": {"ultrafast", "veryfast", "fast", "medium", "slow"},
+    "manual_rate_control": {"CBR", "Quality"},
+    "mp3_quality": {
+        "Maximum — 320 kbps CBR",
+        "High — 256 kbps CBR",
+        "Standard — 192 kbps CBR",
+        "Compact — 128 kbps CBR",
+    },
+    "mp3_sample_rate": {"Preserve source", "48 kHz — video / DAW", "44.1 kHz — music"},
+    "mp3_channels": {"Preserve source", "Stereo", "Mono"},
+    "mp3_cover_art_mode": {"No Art", "YouTube art", "Custom art"},
+    "appearance_theme": {
+        "Violet",
+        "Cobalt",
+        "Jade",
+        "Ember",
+        "Rose",
+        "Custom",
+        "violet",
+        "cobalt",
+        "jade",
+        "ember",
+        "rose",
+        "custom",
+    },
+}
+SETTINGS_BOOLEANS = {
+    "single_video_only",
+    "use_nvenc",
+    "embed_thumbnail",
+    "write_thumbnail",
+    "embed_metadata",
+    "write_info_json",
+    "mp3_embed_metadata",
+}
+for _key, _choices in SETTINGS_CHOICES.items():
+    DIMENSION_CHOICES["setting_" + _key] = frozenset(_choices)
+for _key in SETTINGS_BOOLEANS:
+    DIMENSION_CHOICES["setting_" + _key] = frozenset({"enabled", "disabled"})
+for _key in ("manual_video_bitrate", "manual_audio_bitrate"):
+    DIMENSION_CHOICES["setting_" + _key] = frozenset(
+        {
+            "under_32",
+            "32_127",
+            "128_319",
+            "320_999",
+            "1000_1999",
+            "2000_4999",
+            "5000_9999",
+            "10000_plus",
+        }
+    )
+
+
+def settings_dimensions(values: Mapping) -> dict[str, str]:
+    result = {}
+    for key, choices in SETTINGS_CHOICES.items():
+        value = values.get(key)
+        if isinstance(value, str) and value in choices:
+            result["setting_" + key] = value
+    for key in SETTINGS_BOOLEANS:
+        value = values.get(key)
+        if type(value) is bool:
+            result["setting_" + key] = "enabled" if value else "disabled"
+    for key in ("manual_video_bitrate", "manual_audio_bitrate"):
+        value = values.get(key)
+        if type(value) not in (str, int) or not str(value).isdigit():
+            continue
+        number = int(str(value))
+        if not 0 <= number <= 100000:
+            continue
+        for upper, label in (
+            (32, "under_32"),
+            (128, "32_127"),
+            (320, "128_319"),
+            (1000, "320_999"),
+            (2000, "1000_1999"),
+            (5000, "2000_4999"),
+            (10000, "5000_9999"),
+            (100001, "10000_plus"),
+        ):
+            if number < upper:
+                result["setting_" + key] = label
+                break
+    return result
 
 
 def validate_dimensions(value: Mapping[str, str] | None) -> dict[str, str]:
@@ -128,6 +255,39 @@ def export_dimensions(job: object) -> dict[str, str]:
         if preset in DIMENSION_CHOICES["preset"]
         and getattr(getattr(job, "output_type", None), "value", "") == "MP4"
         else {}
+    )
+    result["cookie_access"] = (
+        "disabled"
+        if not getattr(job, "use_cookies", False)
+        else "file"
+        if getattr(job, "cookie_file", None)
+        else "browser"
+        if getattr(job, "cookie_browser", None)
+        else "unconfigured"
+    )
+    host = (urlsplit(getattr(job, "url", "")).hostname or "").lower()
+    result["provider"] = (
+        "youtube"
+        if host
+        in {
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "youtu.be",
+            "music.youtube.com",
+        }
+        else "other"
+    )
+    result["encoder_preference"] = (
+        "nvidia" if getattr(job, "use_nvenc", False) else "cpu"
+    )
+    machine = platform.machine().lower()
+    result["architecture"] = (
+        "arm64"
+        if machine in {"arm64", "aarch64"}
+        else "x64"
+        if machine in {"amd64", "x86_64"}
+        else "other"
     )
     result["input_kind"] = (
         "url_list"

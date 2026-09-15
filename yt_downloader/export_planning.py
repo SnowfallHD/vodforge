@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .failure_diagnostics import SourceSelectionError
 from .models import (
     STRICT_AUDIO_BITRATE_KBPS,
     STRICT_VIDEO_BITRATE_KBPS,
@@ -525,9 +526,10 @@ def build_mp3_export_plan(
                 ),
             )
     if audio is None:
-        raise RuntimeError(
+        raise SourceSelectionError(
             "No usable audio source was found for this URL. "
-            "The provider format list contains no selectable audio stream."
+            "The provider format list contains no selectable audio stream.",
+            formats,
         )
     audio_id = str(audio.get("format_id") or "").strip()
     if not audio_id:
@@ -700,16 +702,18 @@ def _select_auto_sources(
 ) -> _AutoSourceSelection:
     video, using_progressive_av = _choose_auto_video_source(formats, max_height)
     if video is None:
-        raise RuntimeError(
+        raise SourceSelectionError(
             "No usable video source was found for this URL. "
-            "The provider format list contains no selectable video stream."
+            "The provider format list contains no selectable video stream.",
+            formats,
         )
 
     audio = _choose_auto_audio_source(formats, video, using_progressive_av)
     if audio is None and not using_progressive_av:
-        raise RuntimeError(
+        raise SourceSelectionError(
             "No usable audio source was found for this URL. "
-            "The provider format list contains no selectable audio stream."
+            "The provider format list contains no selectable audio stream.",
+            formats,
         )
 
     video_id = str(video.get("format_id") or "") or None

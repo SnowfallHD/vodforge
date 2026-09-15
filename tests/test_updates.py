@@ -212,7 +212,7 @@ def test_verified_update_requires_matching_checksum(
         def __exit__(self, *_args):
             self.close()
 
-    def fake_urlopen(request, timeout=0):
+    def fake_urlopen(request, timeout=0, context=None):
         assert timeout == 60
         if request.full_url.endswith("SHA256SUMS.txt"):
             return FakeResponse(f"{digest}  {asset_name}\n".encode())

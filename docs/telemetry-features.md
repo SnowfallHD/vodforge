@@ -106,3 +106,13 @@ and native action evidence in both final signed release artifacts against previe
 D1. See [the release gate](../engineering-quality/TELEMETRY_RELEASE_GATE.md).
 A direct serializer probe is deliberately labeled source/transport proof and
 cannot satisfy the packaged release gate.
+
+## Diagnostic richness (next client release)
+
+Existing failure_detail now carries closed failure_code values, bounded format/video/audio counts and TLS verification codes. No raw exception messages, URL, media identifiers, cookie/profile identity or commands are uploaded. The source-selection exception owns format counts; the diagnostic owner traverses wrapped causes. Existing attempt events include cookie access, provider category and encoder preference/architecture.
+
+Settings snapshots use the existing consent-gated feature event pipeline on app open, successful debounced saves and cookie-source changes. Every persisted preference has a tested explicit privacy decision: output directory, custom color and announcement state are excluded; processing choices, local output profile and appearance choice are allowlisted. Bitrate values are bucketed; CRF is bounded. Snapshots deduplicate only unchanged states, retaining A-B-A transitions. Browser names, profiles, cookie files/contents, tags and input content never leave the device. Existing per-session engagement counts remain such; they are not click-by-click traces.
+
+Investigation: order events by installation/time, join attempt_id/retry_of, compare failure_code/counts and attempt settings, then compare nearby settings snapshots and outcomes. Changing cookies followed by success is evidence of a possible access-discoverability problem, not proof of causation or proof separate attempts used the same video. Missing fields on older clients mean not recorded, never false/zero. Raw logs and source URLs still require voluntary support sharing if structured evidence cannot reproduce an issue. No guarantee all bugs can be diagnosed automatically.
+
+Deploy the compatible backend validator before publishing the new client. Test with the focused diagnostic regressions and existing preview-D1 feature probe. No migration, second telemetry store or transport required.

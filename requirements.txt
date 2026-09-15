@@ -3,3 +3,4 @@ Pillow>=10.0
 imageio-ffmpeg>=0.6.0
 python-vlc==3.0.21203
 pyobjc-framework-Cocoa==12.2.2; sys_platform == "darwin"
+certifi>=2026.2.25

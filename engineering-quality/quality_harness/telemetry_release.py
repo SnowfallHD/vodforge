@@ -48,7 +48,7 @@ def read_preview_snapshot(site: Path, install_id: str) -> dict[str, Any]:
     statements = [
         f"SELECT install_id,platform,first_app_version,current_app_version,created_at,first_launched_at,last_seen_at,first_seen_at,cloud_clicked_at,source FROM installations WHERE install_id='{install_id}'",
         f"SELECT COUNT(*) AS count FROM telemetry_clients WHERE install_id='{install_id}'",
-        f"SELECT event_id,event_name,occurred_at,received_at,app_version,platform,release_channel,run_kind,output_type,failure_reason,from_version,to_version,schema_version,attempt_id,retry_of,feature,action,dimensions FROM product_events WHERE install_id='{install_id}' ORDER BY occurred_at,event_id",
+        f"SELECT event_id,event_name,occurred_at,received_at,app_version,platform,release_channel,run_kind,output_type,failure_reason,failure_detail,from_version,to_version,schema_version,attempt_id,retry_of,feature,action,dimensions FROM product_events WHERE install_id='{install_id}' ORDER BY occurred_at,event_id",
     ]
     command = [
         "node",

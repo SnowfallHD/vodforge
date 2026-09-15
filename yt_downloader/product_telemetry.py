@@ -336,6 +336,7 @@ class ProductTelemetryOwner:
         self._recorded_dedupe_ids: set[str] = set()
         self._attempt_started: dict[str, float] = {}
         self._attempt_queued: dict[str, float] = {}
+        self._last_settings_snapshot: dict[str, str] | None = None
         self._feature_observed: set[tuple[str, str]] = set()
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
@@ -514,7 +515,13 @@ class ProductTelemetryOwner:
             return False
         key = (feature, action)
         with self._lock:
-            if feature != "updater" and key in self._feature_observed:
+            if (
+                feature == "settings"
+                and dict(dimensions or {}) == self._last_settings_snapshot
+            ):
+                self.flush_async()
+                return True
+            if feature not in {"updater", "settings"} and key in self._feature_observed:
                 self.flush_async()
                 return True
             accepted = self.record(
@@ -522,6 +529,8 @@ class ProductTelemetryOwner:
             )
             if accepted:
                 self._feature_observed.add(key)
+                if feature == "settings":
+                    self._last_settings_snapshot = dict(dimensions or {})
             return accepted
 
     def record_app_opened(self) -> bool:

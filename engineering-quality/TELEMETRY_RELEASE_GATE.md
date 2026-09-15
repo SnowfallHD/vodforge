@@ -354,3 +354,28 @@ The feed is a local test provider, not GitHub availability evidence. Regression
 coverage executes both Python and PowerShell transports against real loopback
 responses, including escaped URLs, redirects, checksum failure and normal-context
 refusal. No test bypasses installer publisher verification.
+
+### Diagnostic richness and certificate regression (2026-09-15)
+
+Before publishing a client using the expanded diagnostic vocabulary, deploy the
+backward-compatible server validator first. Keep existing consent/outbox/attempt
+owners; no migration or raw-log ingestion is needed. Run
+`pytest -q tests/test_diagnostic_richness.py` in the normal repository gate. Its
+settings inventory test requires an explicit privacy decision for every durable
+preference. Settings snapshots occur after successful debounced saves and on app
+open; unchanged snapshots are suppressed, A→B→A transitions remain visible.
+Attempt events carry cookie access, encoder preference, provider category and
+architecture. Never interpret a setting change followed by success as proof of
+causation or assume separate attempts concern the same source.
+
+Run the existing `quality_harness.telemetry_feature_probe` against preview D1:
+it now verifies missing-video counts, exact failure detail persistence,
+settings/cookie change, linked retry outcome, and denial/replay invariants. This
+is targeted source/transport proof, not a replacement for final signed-package
+release prerequisites. No full packaged journey is required just to develop this
+additive change. Before actual publication, the existing packaged runtime smoke
+must report `update-tls=verified-roots`; a missing certifi bundle fails the smoke.
+Run the focused update check with SSL_CERT_FILE and SSL_CERT_DIR pointing to
+nonexistent QA paths, so a developer machine's Homebrew roots cannot conceal the
+packaging dependency. Never disable TLS verification or replace existing signed
+release assets silently.

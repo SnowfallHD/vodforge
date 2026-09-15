@@ -115,7 +115,10 @@ def _write_settings(path: Path, values: Mapping[str, Any]) -> None:
 class SettingsPersistenceOwner:
     """Own preference loading, debounced Tk observation, and private writes."""
 
-    def __init__(self, path: Path, *, diagnostic: Any = None) -> None:
+    def __init__(
+        self, path: Path, *, diagnostic: Any = None, on_saved: Any = None
+    ) -> None:
+        self._on_saved = on_saved
         self.path = path
         self._diagnostic = diagnostic or (lambda _message: None)
         self._scheduler: _TkScheduler | None = None
@@ -173,6 +176,14 @@ class SettingsPersistenceOwner:
                     f"settings save timer could not be cancelled: {type(exc).__name__}"
                 )
         try:
-            save_settings(self.path, self.values())
+            values = self.values()
+            save_settings(self.path, values)
+            if self._on_saved is not None:
+                try:
+                    self._on_saved(values)
+                except Exception as exc:  # noqa: BLE001 - telemetry must not affect persistence
+                    self._diagnostic(
+                        f"Settings observation failed: {type(exc).__name__}"
+                    )
         except SettingsError as exc:
             self._diagnostic(str(exc))

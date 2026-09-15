@@ -14,9 +14,10 @@ from pathlib import Path
 
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
 from yt_downloader.cloud_funnel import load_or_create_installation_state
+from yt_downloader.failure_diagnostics import SourceSelectionError, capture_failure
 from yt_downloader.product_telemetry import ProductTelemetryOwner
 from yt_downloader.telemetry_credentials import TelemetryCredentialOwner
-from yt_downloader.telemetry_features import FEATURE_ACTIONS
+from yt_downloader.telemetry_features import FEATURE_ACTIONS, settings_dimensions
 from yt_downloader.telemetry_policy import (
     preview_telemetry_allowed,
     production_telemetry_allowed,
@@ -152,6 +153,63 @@ def main() -> None:
                 "theme": "violet",
             },
         )
+    diagnostic = capture_failure(
+        SourceSelectionError(
+            "No usable video source",
+            [
+                {
+                    "vcodec": "none",
+                    "acodec": "aac",
+                    "url": "https://private.invalid/token",
+                }
+            ],
+        ),
+        stage="preparation",
+    )
+    fields = {
+        "attempt_key": "rich-failure",
+        "run_kind": "youtube",
+        "output_type": "mp4",
+    }
+    record("run_started", **fields, dimensions={"cookie_access": "disabled"})
+    record(
+        "run_failed",
+        **fields,
+        failure_reason=diagnostic.reason,
+        failure_detail=diagnostic.payload(),
+        dimensions={"cookie_access": "disabled"},
+    )
+    snapshot = settings_dimensions(
+        {
+            "output_type": "MP4",
+            "quality": "1080p Full HD",
+            "use_nvenc": True,
+            "output_dir": "/private/sentinel",
+            "custom_accent": "private",
+        }
+    )
+    record(
+        "feature_used",
+        feature="settings",
+        action="snapshot",
+        dimensions={**snapshot, "cookie_access": "browser"},
+    )
+    record(
+        "run_started",
+        attempt_key="rich-retry",
+        retry_key="rich-failure",
+        run_kind="youtube",
+        output_type="mp4",
+        dimensions={"cookie_access": "browser"},
+    )
+    record(
+        "run_completed",
+        attempt_key="rich-retry",
+        retry_key="rich-failure",
+        run_kind="youtube",
+        output_type="mp4",
+        dimensions={"cookie_access": "browser"},
+    )
     install = load_or_create_installation_state(
         profile / "installation.json"
     ).install_id
@@ -172,6 +230,10 @@ def main() -> None:
         ):
             assert row[field] == event[field], field
         assert json.loads(row["dimensions"]) == event["dimensions"]
+        if event.get("failure_detail"):
+            assert json.loads(row["failure_detail"]) == event["failure_detail"]
+    assert "private.invalid" not in json.dumps(before)
+    assert "/private/sentinel" not in json.dumps(before)
     # Lost-response replay must not create another row or change immutable data.
     for event in emitted[:3]:
         assert credentials.event(event)
