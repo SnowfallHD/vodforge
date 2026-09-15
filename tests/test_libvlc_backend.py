@@ -49,6 +49,9 @@ class FakePlayer:
         self.volume = value
         return 0
 
+    def audio_get_volume(self):
+        return self.volume
+
     def get_state(self):
         return self.state
 
@@ -395,3 +398,42 @@ def test_shared_engine_warms_once_and_retires_session_asynchronously(
     assert module.player.release_calls == 1
     assert module.instance.media[0].released is True
     assert module.instance.released is True
+
+
+def test_preplay_volume_retries_until_audio_output_is_ready(tmp_path):
+    media = tmp_path / "audio.mp3"
+    media.write_bytes(b"fixture")
+    backend, module = make_backend()
+    backend.load(media)
+    ready = False
+
+    def set_volume(value):
+        if not ready:
+            return -1
+        module.player.volume = value
+        return 0
+
+    module.player.audio_set_volume = set_volume
+    module.player.audio_get_volume = lambda: module.player.volume
+    backend.set_volume(0)
+    backend._playback_started(None)
+    backend.play()
+    assert module.player.volume == 80
+    ready = True
+    assert backend.snapshot.volume == 0
+    assert module.player.volume == 0
+    # An asynchronously recreated audio output must also retain the chosen level.
+    module.player.volume = 80
+    assert backend.snapshot.volume == 0
+    assert module.player.volume == 0
+
+
+def test_playing_callback_never_waits_for_backend_lock():
+    backend, _ = make_backend()
+    with backend._lock:
+        callback = threading.Thread(target=backend._playback_started, args=(None,))
+        callback.start()
+        callback.join(timeout=0.2)
+        blocked = callback.is_alive()
+    callback.join(timeout=1)
+    assert not blocked

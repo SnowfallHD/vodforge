@@ -328,6 +328,8 @@ class LibVLCPlaybackBackend:
         self._path: Path | None = None
         self._duration_hint = 0.0
         self._volume = 80
+        self._volume_pending = threading.Event()
+        self._volume_pending.set()
         self._error = ""
         self._provider_failed = threading.Event()
         self._closed = False
@@ -373,6 +375,8 @@ class LibVLCPlaybackBackend:
                     status = self._translate_state(self._player.get_state())
                     if self._provider_failed.is_set():
                         status = "Failed"
+                    if status in {"Playing", "Paused"}:
+                        self._sync_volume()
                     position_ms = self._safe_nonnegative(self._player.get_time())
                     duration_ms = self._safe_nonnegative(self._player.get_length())
                 except Exception as exc:  # noqa: BLE001 - provider state is isolated
@@ -531,6 +535,7 @@ class LibVLCPlaybackBackend:
                         "The local playback engine could not change volume."
                     )
             self._volume = volume
+            self._volume_pending.set()
         return self.snapshot
 
     def stop(self) -> PlaybackSnapshot:
@@ -730,15 +735,24 @@ class LibVLCPlaybackBackend:
             self._provider_failed.set()
 
     def _playback_started(self, _event: Any) -> None:
-        with self._lock:
-            if self._closed:
-                return
-            try:
-                self._player.audio_set_volume(self._volume)
-            except Exception as exc:  # noqa: BLE001 - provider callback remains isolated
-                self._diagnostic(
-                    f"libVLC deferred volume application failed: {type(exc).__name__}"
-                )
+        # Playing may precede audio-output creation. Never call back into VLC or
+        # acquire our lock from its event thread; the normal UI poll applies it.
+        if not self._closed:
+            self._volume_pending.set()
+
+    def _sync_volume(self) -> None:
+        """Reconcile desired volume after asynchronous audio-output creation."""
+        try:
+            current = self._player.audio_get_volume()
+            if (
+                self._volume_pending.is_set() or current != self._volume
+            ) and self._player.audio_set_volume(self._volume) != -1:
+                self._volume_pending.clear()
+        except Exception as exc:  # noqa: BLE001 - transient audio readiness stays retryable
+            self._volume_pending.set()
+            self._diagnostic(
+                f"libVLC volume synchronization failed: {type(exc).__name__}"
+            )
 
     def _fail(self, message: str, exc: Exception | None = None) -> PlaybackSnapshot:
         if exc is not None:
