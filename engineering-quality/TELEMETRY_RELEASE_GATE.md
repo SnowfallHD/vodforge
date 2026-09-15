@@ -379,3 +379,7 @@ Run the focused update check with SSL_CERT_FILE and SSL_CERT_DIR pointing to
 nonexistent QA paths, so a developer machine's Homebrew roots cannot conceal the
 packaging dependency. Never disable TLS verification or replace existing signed
 release assets silently.
+
+### Learning from defects
+
+Follow the mandatory bug-to-invariant workflow in [README.md](README.md#when-and-how-to-strengthen-the-harness) whenever a defect is found. Add the specific regression and assess generalized cross-owner coverage; telemetry serializer tests alone cannot establish lifecycle, durable-effect or native-provider correctness. Use the narrowest relevant gate during development and preserve the final publication evidence requirements.

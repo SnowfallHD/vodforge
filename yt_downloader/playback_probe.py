@@ -139,9 +139,26 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
         for index, path in enumerate(paths):
             checkpoint(f"load:{index}:{path.suffix.casefold()}")
             backend.load(path)
+            # Exercise intent before native audio exists, including file switches.
+            backend.set_volume(0)
             started = time.perf_counter()
             backend.play()
             _wait_for(root, lambda: backend.snapshot.status == "Playing")
+            _wait_for(
+                root,
+                lambda: (
+                    backend.snapshot.volume == 0
+                    and backend._player.audio_get_volume() == 0
+                ),
+            )
+            receipt["steps"].append(
+                {
+                    "action": "preplay_volume_verified",
+                    "extension": path.suffix.casefold(),
+                    "requested": 0,
+                    "provider": backend._player.audio_get_volume(),
+                }
+            )
             startup_ms = (time.perf_counter() - started) * 1000
             receipt["steps"].append(
                 {
@@ -182,7 +199,20 @@ def run_packaged_playback_probe(paths: tuple[Path, ...]) -> int:
             backend.set_volume(0)
             backend.set_volume(40)
             backend.set_volume(0)
-            receipt["steps"].append({"action": "volume", "final": 0})
+            _wait_for(
+                root,
+                lambda: (
+                    backend.snapshot.volume == 0
+                    and backend._player.audio_get_volume() == 0
+                ),
+            )
+            receipt["steps"].append(
+                {
+                    "action": "volume",
+                    "final": 0,
+                    "provider": backend._player.audio_get_volume(),
+                }
+            )
             checkpoint("volume_complete")
             clock_sample = _sample_engine_clock(root, backend)
             receipt["steps"].append({"action": "engine_clock", **clock_sample})

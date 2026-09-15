@@ -6,6 +6,57 @@ this harness verifies production behavior. Set `VODFORGE_NVENC_TESTS=1` on a
 supported NVIDIA Windows host to include the real preset worker GPU tests.
 A skipped GPU test is not hardware verification.
 
+## When and how to strengthen the harness
+
+Every confirmed product bug is an input to harness improvement, whether discovered
+by a user, telemetry, support, development, or a release run. Do this as part of the
+same fix, before describing that work as complete. A specific regression test and
+a harness improvement serve different purposes; one is not a substitute for the other.
+
+1. Preserve the concrete reproducer and add a regression for the reported failure.
+2. Identify the invariant that failed, independently of the affected screen or tool.
+   Examples: accepted intent survives delayed readiness; only the current owner may
+   commit a result; failed effects never report success; retries preserve identity;
+   cancellation/consent withdrawal stops future effects; teardown cannot deadlock.
+3. Review where that same invariant applies across existing subsystems. Select a
+   bounded, risk-based set of representative owners rather than auditing the whole
+   application. For lifecycle/sequencing bugs, consider player/provider readiness,
+   settings persistence, queued work, telemetry transport, updater handoff, and
+   asynchronous UI results—not just another control in the original screen.
+4. Extend existing scenarios with meaningful variations: ordering, delayed readiness,
+   failed-then-successful effects, repeated commands, owner replacement, stale/late
+   callbacks, shutdown, restart, and permission changes. Choose only variations that
+   apply to the owner's contract. Do not invent behavior for an unsupported operation.
+5. Assert independent observable outcomes: provider state, durable files, identity,
+   delivery receipts, or absence of external effects. A displayed value or successful
+   method return alone is insufficient. Exercise production owners with controlled
+   faults; avoid testing only a parallel toy implementation.
+6. Verify the exact regression fails before the fix when feasible. Demonstrate that
+   the generalized checks detect the broken invariant using the prior implementation
+   or a bounded fault/mutation, then pass with the fix. Record any unexecuted tier.
+7. In the fix's evidence/continuity record, identify the root cause, invariant, affected
+   owners, added or reused scenarios, variations, executed results, and remaining
+   coverage limits. If existing harness coverage already exercises the class, name
+   that coverage and explain why it missed this instance; update its fixture, gate,
+   or execution requirements as appropriate. Never say “covered” solely because a
+   new regression lives under pytest.
+
+Apply this process when a bug exposes a coverage gap, a new lifecycle/provider
+boundary is introduced, or a supported behavior changes. Preserve the bounded
+review budget: extend the relevant class, do not automatically rerun every E2E
+journey or build a generalized runtime framework. Final publication still follows
+its existing exact-artifact release requirements. Previously passed evidence does
+not prove newly changed behavior.
+
+Current cross-owner sequencing coverage is in
+`tests/test_cross_owner_lifecycle.py` and `tests/test_playback_control_lifecycle.py`
+(relative to this directory). The required repository suite runs these through
+`pytest_harness`. They vary debounce/write failures, delivery retries/withdrawal,
+readiness delays, replacement/replay, latest intent, and callback lock ordering.
+The packaged playback probe additionally verifies actual provider volume after
+pre-play changes and file switches. These are representative checks, not a claim
+that every subsystem or possible interleaving is covered.
+
 ## Native control lifecycle gate
 
 `unit_static.native_surface_contract` runs the opt-in source-native control suite
