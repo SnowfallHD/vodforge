@@ -752,3 +752,29 @@ The fix adds only narrow B110 annotations with the existing boundary reason.
 Before/after Python ASTs are identical for all three files. No global severity
 filter, disabled gate or runtime rewrite is used. Preserve the failed FAST receipt
 and rerun the mandatory gate; complexity debt remains separately visible.
+
+### Typed safe-output refusals must survive diagnostic boundaries
+
+The K persisted-first review identified an optional metadata failure but only
+stored reason=unknown and safe_output:342. Physical truth later established a
+directory at the requested metadata leaf. Existing optional-write tests used a
+PermissionError double, and path-containment tests proved refusal/preservation
+without inspecting the real durable telemetry owner. Eight new assertions failed
+before this fix, including actual metadata/thumbnail conflicts on fresh and reused
+media and both POSIX and portable commit owners.
+
+The existing UnsafeOutputPathError now contributes its actual closed type and
+output_conflict reason. Its local message is not parsed; misleading wrapper text
+cannot supply a fabricated failure code. Actual nested OS evidence still
+distinguishes permission denial, disk full and I/O errors. An unrelated exception
+with the same class name does not acquire this classification. No raw path or
+message is serialized, no write/containment behavior changes, and no new owner or
+schema migration is introduced. Thirteen focused variations cover these invariants, retained
+media/blocked destinations and opaque exception text. The backend route persists
+and replays the real bounded shape; its first regression failed before the
+allowlist addition.
+
+This class reports an unsafe output-path refusal, not the exact leaf type or
+whether a redirect was malicious. Unknown nested causes remain unknown. K is
+immutable; historical unknown events are not relabeled. Source tests require a
+bounded prospective preview proof before claiming delivered diagnosis.

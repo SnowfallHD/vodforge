@@ -8,6 +8,8 @@ import ssl
 import subprocess  # nosec B404
 from dataclasses import asdict, dataclass
 
+from .safe_output import UnsafeOutputPathError
+
 FAILURE_STAGES = frozenset(
     {
         "preparation",
@@ -41,6 +43,7 @@ ERROR_TYPES = frozenset(
         "HTTPError",
         "URLError",
         "RuntimeError",
+        "UnsafeOutputPathError",
         "ValueError",
         "TypeError",
         "AttributeError",
@@ -126,6 +129,9 @@ FAILURE_CODES = frozenset(
 
 
 def failure_code(error: BaseException) -> str | None:
+    if isinstance(error, UnsafeOutputPathError):
+        # Its typed refusal is authoritative; its local message may contain paths.
+        return None
     if isinstance(error, ssl.SSLCertVerificationError):
         return "tls_certificate"
     if isinstance(error, ssl.SSLError):
@@ -309,7 +315,11 @@ def capture_failure(
         if isinstance(current, (ssl.SSLError, socket.gaierror)):
             facts["reason"] = "network"
         name = type(current).__name__
-        if name in ERROR_TYPES:
+        if isinstance(current, UnsafeOutputPathError):
+            facts["reason"] = "output_conflict"
+            facts.pop("failure_code", None)
+            facts["error_type"] = "UnsafeOutputPathError"
+        elif name in ERROR_TYPES and name != "UnsafeOutputPathError":
             facts["error_type"] = name
         if isinstance(current, TimeoutError):
             facts["reason"] = "network"
@@ -317,7 +327,7 @@ def capture_failure(
             facts["reason"] = "permission_denied"
         elif isinstance(current, FileNotFoundError):
             facts["reason"] = "filesystem"
-        if text_reason == "unknown":
+        if text_reason == "unknown" and not isinstance(current, UnsafeOutputPathError):
             text_reason = classify_failure(str(current))
         for attribute in ("status", "code"):
             value = getattr(current, attribute, None)
