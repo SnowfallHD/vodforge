@@ -217,6 +217,8 @@ from .run_identity import (
     matching_attempt,
     metadata_output_profile,
     metadata_output_profile_details,
+    metadata_output_variant,
+    owned_output_paths,
 )
 from .run_state import (
     RunRecoveryOwner,
@@ -228,6 +230,8 @@ from .safe_output import (
     cleanup_private_staging_directory,
     commit_file_beneath,
     create_private_staging_directory,
+    is_regular_file_beneath,
+    write_file_beneath,
 )
 from .settings_store import (
     SettingsPersistenceOwner,
@@ -2148,6 +2152,8 @@ def channel_folder_name(info: dict[str, Any]) -> str:
 def video_folder_name(info: dict[str, Any]) -> str:
     video_id = _windows_safe_component(info.get("id"), "", max_len=32)
     suffix = f" [{video_id}]" if video_id else ""
+    if variant := metadata_output_variant(info):
+        suffix += f" - {variant}"
     # _windows_safe_component appends an ellipsis after truncating, so reserve
     # one extra character to keep the final user-facing folder within 96 chars.
     title_max_len = max(1, 95 - len(suffix))
@@ -2173,9 +2179,13 @@ def _path_would_exceed_windows_safe_limit(path: Path) -> bool:
     return len(str(path).encode("utf-16-le")) // 2 > WINDOWS_SAFE_PATH_LIMIT
 
 
-def compact_video_folder_name(info: dict[str, Any], max_title_len: int) -> str:
+def compact_video_folder_name(
+    info: dict[str, Any], max_title_len: int, *, compact_variant: bool = False
+) -> str:
     video_id = _windows_safe_component(info.get("id"), "", max_len=32)
     suffix = f" [{video_id}]" if video_id else ""
+    if variant := metadata_output_variant(info, compact=compact_variant):
+        suffix += f" - {variant}"
     title_text = _clean_windows_component_text(info.get("title"), "video")
     title_safe = "".join(
         ch if ch not in '<>:"/\\|?*\0' else "_" for ch in title_text
@@ -2210,6 +2220,8 @@ def compact_video_output_dir(
     channel_limit = 80
     playlist_limit = 80
     title_limit = 80
+    compact_variant = False
+    component_minimum = 8 if metadata_output_variant(info) else 16
     while True:
         channel = _windows_safe_component(
             info.get("channel")
@@ -2229,15 +2241,20 @@ def compact_video_output_dir(
             parent = parent / "playlists" / playlist
         else:
             parent = parent / "videos - no playlist"
-        candidate = parent / compact_video_folder_name(info, title_limit)
+        candidate = parent / compact_video_folder_name(
+            info, title_limit, compact_variant=compact_variant
+        )
         if not _path_would_exceed_windows_safe_limit(candidate / target_file_name):
             return candidate
         if title_limit > 4:
             name, current, minimum = "title", title_limit, 4
-        elif has_playlist and playlist_limit > 16:
-            name, current, minimum = "playlist", playlist_limit, 16
-        elif channel_limit > 16:
-            name, current, minimum = "channel", channel_limit, 16
+        elif has_playlist and playlist_limit > component_minimum:
+            name, current, minimum = "playlist", playlist_limit, component_minimum
+        elif channel_limit > component_minimum:
+            name, current, minimum = "channel", channel_limit, component_minimum
+        elif metadata_output_variant(info) and not compact_variant:
+            compact_variant = True
+            continue
         else:
             raise ValueError(
                 "The selected output folder is too deep for a Windows-compatible media path. "
@@ -2314,13 +2331,21 @@ def existing_output_candidate_dirs(
 
     safe_video_id = _windows_safe_component(info.get("id"), "", max_len=32)
     suffix = f"[{safe_video_id}]" if safe_video_id else ""
+    suffixes: tuple[str, ...] = (suffix,)
+    if variant := metadata_output_variant(info):
+        suffixes = (
+            f"{suffix} - {variant}",
+            f"{suffix} - {metadata_output_variant(info, compact=True)}",
+        )
     for parent in {canonical.parent, legacy.parent}:
         try:
             for child in parent.iterdir():
-                if child.is_dir() and suffix and child.name.endswith(suffix):
+                if child.is_dir() and suffix and child.name.endswith(suffixes):
                     add(child)
         except OSError:
             continue
+    if metadata_output_variant(info):
+        return [path for path in candidates if path.name.endswith(suffixes)]
     return candidates
 
 
@@ -2431,6 +2456,7 @@ def find_valid_existing_output(
     expected_tags: list[str] | None = None,
     expected_duration_seconds: float | None = None,
     control_check: Callable[[], None] | None = None,
+    owned_legacy_paths: tuple[Path, ...] = (),
 ) -> tuple[Path, dict[str, Any]] | None:
     """Reuse only a provider-ID-scoped artifact that passes full media validation."""
     requirements = ExistingOutputRequirements(
@@ -2456,6 +2482,16 @@ def find_valid_existing_output(
     candidate_dirs = existing_output_candidate_dirs(output_dir, info, target_file_name)
     if target_dir is not None and target_dir not in candidate_dirs:
         candidate_dirs.insert(0, target_dir)
+    for path in owned_legacy_paths:
+        if control_check is not None:
+            control_check()
+        if not is_regular_file_beneath(output_dir, path):
+            continue
+        probe_data = _validate_existing_output_candidate(
+            path, ffprobe, requirements, control_check=control_check
+        )
+        if probe_data is not None:
+            return path, probe_data
     for candidate_dir in candidate_dirs:
         exact = candidate_dir / target_file_name
         paths = [exact]
@@ -2471,7 +2507,7 @@ def find_valid_existing_output(
         for path in paths:
             if control_check is not None:
                 control_check()
-            if not path.is_file():
+            if not is_regular_file_beneath(output_dir, path):
                 continue
             probe_data = _validate_existing_output_candidate(
                 path,
@@ -2659,18 +2695,23 @@ def compact_video_metadata(
 
 
 def write_compact_video_metadata(
-    output_dir: Path, info: dict[str, Any], extra_tags: list[str]
+    output_dir: Path,
+    info: dict[str, Any],
+    extra_tags: list[str],
+    *,
+    output_root: Path | None = None,
 ) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / safe_metadata_filename(info)
-    path.write_text(
+    data = (
         json.dumps(
             compact_video_metadata(info, extra_tags), ensure_ascii=False, indent=2
         )
-        + "\n",
-        encoding="utf-8",
+        + "\n"
     )
-    return path
+    return write_file_beneath(
+        output_root if output_root is not None else output_dir,
+        output_dir / safe_metadata_filename(info),
+        lambda staged: staged.write_text(data, encoding="utf-8"),
+    )
 
 
 def write_all_compact_video_metadata(
@@ -2680,7 +2721,10 @@ def write_all_compact_video_metadata(
     for video in iter_video_infos(info):
         paths.append(
             write_compact_video_metadata(
-                video_output_dir(output_dir, video), video, extra_tags
+                video_output_dir(output_dir, video),
+                video,
+                extra_tags,
+                output_root=output_dir,
             )
         )
     return paths
@@ -2733,11 +2777,12 @@ def resolved_video_output_target(
 ) -> tuple[Path, str]:
     """Allocate one path budget while preserving the canonical hierarchy."""
     primary = video_output_dir(output_dir, info)
-    for title_limit in range(120, 23, -4):
+    minimum_title = 3 if metadata_output_variant(info) else 23
+    for title_limit in range(120, minimum_title, -4):
         target_file_name = video_file_name(info, ext, max_title_len=title_limit)
         if not _path_would_exceed_windows_safe_limit(primary / target_file_name):
             return primary, target_file_name
-    for title_limit in range(120, 23, -4):
+    for title_limit in range(120, minimum_title, -4):
         target_file_name = video_file_name(info, ext, max_title_len=title_limit)
         try:
             compact = compact_video_output_dir(output_dir, info, target_file_name)
@@ -3809,12 +3854,12 @@ def save_thumbnail_image(
     *,
     filename: str = "thumbnail.jpeg",
     source_url: str | None = None,
+    output_root: Path | None = None,
 ) -> Path | None:
     thumb = best_thumbnail_for_download(info)
     url = str((thumb or {}).get("url") or "")
     if not url:
         return None
-    output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / filename
     data = download_bounded_url_bytes(url, source_url=source_url)
     if Image is None:
@@ -3822,11 +3867,17 @@ def save_thumbnail_image(
             raise RuntimeError(
                 "Pillow is required to enforce the 300 KB thumbnail limit"
             )
-        path.write_bytes(data)
-        return path
+        return write_file_beneath(
+            output_root if output_root is not None else output_dir,
+            path,
+            lambda staged: staged.write_bytes(data),
+        )
     image = decode_bounded_thumbnail(data).convert("RGB")
-    _save_jpeg_under_size(image, path)
-    return path
+    return write_file_beneath(
+        output_root if output_root is not None else output_dir,
+        path,
+        lambda staged: _save_jpeg_under_size(image, staged),
+    )
 
 
 def cached_thumbnail_path(
@@ -12659,6 +12710,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             expected_tags=job.tags,
             expected_duration_seconds=_float_or_none(info.get("duration")),
             control_check=control_check,
+            owned_legacy_paths=owned_output_paths(
+                job, info, self.__dict__.get("download_history", ())
+            ),
         )
         if existing_output is None:
             return None
@@ -12709,7 +12763,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if job.write_info_json:
             try:
                 write_compact_video_metadata(
-                    existing_path.parent, reused_info, job.tags
+                    existing_path.parent,
+                    reused_info,
+                    job.tags,
+                    output_root=job.output_dir,
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
                 self._emit_job_log(job, technical_download_error(exc))
@@ -12726,6 +12783,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     existing_path.parent,
                     reused_info,
                     source_url=job.url,
+                    output_root=job.output_dir,
                 )
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
                 self._emit_job_log(job, technical_download_error(exc))
@@ -12974,6 +13032,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     resolved_video_output_dir(job.output_dir, info),
                     info,
                     job.tags,
+                    output_root=job.output_dir,
                 )
                 self._emit_job_log(
                     job,
@@ -12997,6 +13056,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     resolved_video_output_dir(job.output_dir, info),
                     info,
                     source_url=job.url,
+                    output_root=job.output_dir,
                 )
                 if thumb_path:
                     self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
@@ -13339,6 +13399,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             preflight_info,
             max_height=max_height,
         )
+        preflight_info = annotate_job_metadata(job, preflight_info)
         display_info = build_encoding_summary_metadata(preflight_info, plan)
         self.events.put(job_info_event("job_metadata", job, display_info))
         for line in _download_item_plan_log_lines(job, item.label, plan):
@@ -13428,6 +13489,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ),
             job.output_type,
         )
+        info = annotate_job_metadata(job, info)
         encoding_summary = analyzed_item.display_info.get("vodforge_encoding_summary")
         if encoding_summary:
             info["vodforge_encoding_summary"] = encoding_summary

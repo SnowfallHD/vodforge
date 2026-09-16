@@ -48,6 +48,7 @@ HISTORY_METADATA_KEYS = (
     "vodforge_encoding_summary",
     "vodforge_output_path",
     "vodforge_attempt_signature",
+    "vodforge_output_variant",
     "vodforge_output_profile",
     "vodforge_output_profile_details",
     "vodforge_run_id",

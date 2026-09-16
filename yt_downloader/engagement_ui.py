@@ -30,6 +30,8 @@ class EngagementUI:
         self.latest_failure: FailureContext | None = None
         self.closed = False
         self.timer: str | None = None
+        self._menu: tk.Menu | None = None
+        self._menu_action: str | None = None
 
     @property
     def blocks_announcements(self) -> bool:
@@ -66,7 +68,11 @@ class EngagementUI:
         self.panel = None
 
     def welcome(self) -> None:
-        if self.panel is not None or self.root.grab_current() is not None:
+        if (
+            self.closed
+            or self.panel is not None
+            or self.root.grab_current() is not None
+        ):
             return
         self.panel = WhatsNewPanel(
             self.root,
@@ -79,7 +85,11 @@ class EngagementUI:
         self.suppress_showcase()
 
     def feedback(self) -> None:
-        if self.panel is not None or self.root.grab_current() is not None:
+        if (
+            self.closed
+            or self.panel is not None
+            or self.root.grab_current() is not None
+        ):
             return
         self.panel = SupportPanel(
             self.root,
@@ -90,7 +100,11 @@ class EngagementUI:
         )
 
     def review(self) -> None:
-        if self.panel is not None or self.root.grab_current() is not None:
+        if (
+            self.closed
+            or self.panel is not None
+            or self.root.grab_current() is not None
+        ):
             return
         self.panel = SupportPanel(
             self.root, kind="review", transport=self.transport, closed=self._closed
@@ -108,29 +122,66 @@ class EngagementUI:
         except (OSError, ValueError):
             pass
 
+    def _dismiss_menu(self) -> None:
+        if self._menu_action is not None:
+            self.root.after_cancel(self._menu_action)
+            self._menu_action = None
+        menu, self._menu = self._menu, None
+        if menu is not None:
+            try:
+                menu.unpost()
+                if self.root.grab_current() is menu:
+                    menu.grab_release()
+                menu.destroy()
+            except tk.TclError:
+                pass
+
+    def _select_menu_action(self, menu: tk.Menu, action: Callable[[], None]) -> None:
+        if self.closed or self._menu is not menu or self._menu_action is not None:
+            return
+
+        def dispatch() -> None:
+            self._menu_action = None
+            if self.closed or self._menu is not menu:
+                return
+            self._dismiss_menu()
+            action()
+
+        # Windows delivers the selected Tcl command after tk_popup returns.
+        # Keep that command alive, then dismiss before constructing a modal.
+        self._menu_action = self.root.after_idle(dispatch)
+
     def menu(self, anchor: tk.Misc) -> None:
-        menu = tk.Menu(self.root, tearoff=False)
+        if self.closed:
+            return
+        self._dismiss_menu()
+        menu = self._menu = tk.Menu(self.root, tearoff=False)
         menu.add_command(
             label="Report a problem / Send feedback",
-            command=lambda: self.root.after_idle(self.feedback),
+            command=lambda: self._select_menu_action(menu, self.feedback),
         )
         menu.add_command(
-            label="Rate VODForge", command=lambda: self.root.after_idle(self.review)
+            label="Rate VODForge",
+            command=lambda: self._select_menu_action(menu, self.review),
         )
         menu.add_separator()
         menu.add_command(
-            label="Welcome tour", command=lambda: self.root.after_idle(self.welcome)
+            label="Welcome tour",
+            command=lambda: self._select_menu_action(menu, self.welcome),
         )
         try:
             menu.tk_popup(
                 anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height()
             )
         finally:
-            menu.grab_release()
-            menu.destroy()
+            if self.root.grab_current() is menu:
+                menu.grab_release()
+        # An unselected menu is bounded to this one owner and reclaimed on
+        # replacement/close. Destroying it here discards Windows' queued command.
 
     def close(self) -> None:
         self.closed = True
+        self._dismiss_menu()
         if self.timer:
             self.root.after_cancel(self.timer)
         if isinstance(self.panel, SupportPanel):

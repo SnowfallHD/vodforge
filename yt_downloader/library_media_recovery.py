@@ -124,8 +124,13 @@ class LibraryMediaRecoveryOwner:
         # substring or a fixed count of parents. Repeated suffixes are ambiguous.
         if self._artifact_directory is None or not row.get("id"):
             return None
+        legacy_row = dict(row)
+        legacy_row.pop("vodforge_output_variant", None)
         for parent in directory.parents:
-            if self._artifact_directory(parent, row) == directory:
+            if any(
+                self._artifact_directory(parent, candidate) == directory
+                for candidate in (row, legacy_row)
+            ):
                 return parent
         return None
 

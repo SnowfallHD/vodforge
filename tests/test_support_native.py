@@ -404,3 +404,108 @@ def test_automatic_prompts_wait_for_consent_and_secondary_windows(root, tmp_path
     owner._poll()
     assert owner.panel is None
     owner.close()
+
+
+@pytest.mark.parametrize("action", ["feedback", "review", "welcome"])
+def test_help_command_survives_popup_return_and_opens_modal_after_dismissal(
+    root, tmp_path, monkeypatch, action
+):
+    """Real Tcl command queued after native popup return, real modal observation."""
+    from yt_downloader.engagement_ui import EngagementUI
+
+    owner = EngagementUI(
+        root,
+        tmp_path / "engagement.json",
+        ready=lambda: True,
+        suppress_showcase=lambda: None,
+    )
+    anchor = tk.Button(root, text="Help")
+    anchor.pack()
+    root.update()
+    # Windows delivers the selection after tk_popup's native loop returns.
+    # Preserve this ordering on every platform without mocking the action.
+    index = {"feedback": 0, "review": 1, "welcome": 3}[action]
+
+    def posted(menu, *_args):
+        root.after_idle(lambda: menu.invoke(index))
+
+    monkeypatch.setattr(tk.Menu, "tk_popup", posted)
+    owner.menu(anchor)
+    root.update()
+    assert owner.panel is not None
+    assert owner._menu is None
+    assert root.grab_current() is not None
+    assert owner.panel.frame.winfo_ismapped()
+    owner.close()
+    root.update()
+    assert root.grab_current() is None
+
+
+@pytest.mark.parametrize("transition", ["close", "replace", "repeated", "foreign_grab"])
+def test_deferred_help_selection_respects_current_owner(
+    root, tmp_path, monkeypatch, transition
+):
+    from yt_downloader.engagement_ui import EngagementUI
+
+    owner = EngagementUI(
+        root,
+        tmp_path / "engagement.json",
+        ready=lambda: True,
+        suppress_showcase=lambda: None,
+    )
+    anchor = tk.Button(root, text="Help")
+    anchor.pack()
+    root.update()
+    monkeypatch.setattr(tk.Menu, "tk_popup", lambda *_args: None)
+    owner.menu(anchor)
+    menu = owner._menu
+    menu.invoke(0)
+    foreign = None
+    if transition == "close":
+        owner.close()
+    elif transition == "replace":
+        owner.menu(anchor)
+    elif transition == "repeated":
+        menu.invoke(1)
+    else:
+        foreign = tk.Toplevel(root)
+        foreign.grab_set()
+    root.update()
+    if transition == "repeated":
+        assert isinstance(owner.panel, SupportPanel)
+        assert owner.panel.kind == "feedback"
+    else:
+        assert owner.panel is None
+    if foreign is not None:
+        assert root.grab_current() is foreign
+        foreign.grab_release()
+        foreign.destroy()
+    owner.close()
+
+
+def test_help_pending_action_is_cancelled_before_root_teardown(
+    root, tmp_path, monkeypatch
+):
+    from yt_downloader.engagement_ui import EngagementUI
+
+    host = tk.Toplevel(root)
+    owner = EngagementUI(
+        host,
+        tmp_path / "engagement.json",
+        ready=lambda: True,
+        suppress_showcase=lambda: None,
+    )
+    anchor = tk.Button(host, text="Help")
+    anchor.pack()
+    root.update()
+    monkeypatch.setattr(tk.Menu, "tk_popup", lambda *_args: None)
+    owner.menu(anchor)
+    owner._menu.invoke(0)
+    pending = owner._menu_action
+    assert pending in root.tk.call("after", "info")
+    owner.close()
+    host.destroy()
+    root.update()
+    assert pending not in root.tk.call("after", "info")
+    assert owner.panel is None
+    assert root.grab_current() is None

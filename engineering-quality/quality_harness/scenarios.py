@@ -350,6 +350,83 @@ def correctness_mp4(
     return scenario, findings
 
 
+def _same_source_variant_checks(
+    runner: HeadlessPipelineRunner, server: FixtureHTTPServer
+) -> tuple[dict[str, bool], list[dict[str, Any]], list[str]]:
+    """Exercise settings identity through real encoding, history, reuse and retry."""
+    from yt_downloader.history import history_output_path, upsert_history
+
+    output = runner.run_root / "cases" / "variants" / "out"
+    url = server.url("/page/unicode?variant-contract=stable")
+    results: list[dict[str, Any]] = []
+    paths: list[Path] = []
+    history: list[dict[str, Any]] = []
+    artifacts: list[str] = []
+    requests = [
+        ("mp4-360", "MP4", {"quality_label": "360p"}),
+        # The fixture fits both ceilings: probe-equivalent bytes must still honor
+        # the user's distinct intent, rather than adopting another item's file.
+        ("mp4-720", "MP4", {"quality_label": "720p"}),
+        ("mp4-repeat", "MP4", {"quality_label": "360p"}),
+        ("mp3-128", "MP3", {"mp3_bitrate_kbps": 128}),
+        ("mp3-192", "MP3", {"mp3_bitrate_kbps": 192}),
+        ("mp3-repeat", "MP3", {"mp3_bitrate_kbps": 128}),
+    ]
+    snapshots: list[dict[str, str]] = []
+    for case, kind, options in requests:
+        result = runner.run_job(
+            case_id=f"variant-{case}",
+            url=url,
+            output_type=kind,
+            output_dir=output,
+            **options,
+        )
+        results.append(result)
+        artifacts.append(
+            str(runner.run_root / "cases" / f"variant-{case}" / "pipeline-result.json")
+        )
+        records = [
+            event["payload"]
+            for event in result["events"]
+            if event["kind"] == "history_record"
+        ]
+        if len(records) != 1:
+            return {"variant_history_emitted": False}, results, artifacts
+        record = records[0]
+        history = upsert_history(history, record["info"], record["output_dir"])
+        path = history_output_path(history[0])
+        if path is None:
+            return {"variant_exact_path_retained": False}, results, artifacts
+        paths.append(path)
+        snapshots.append(
+            {
+                entry["path"]: entry["sha256"]
+                for entry in result["outputs"]
+                if Path(entry["path"]).suffix.lower() in {".mp4", ".mp3"}
+            }
+        )
+    checks = {
+        "mp4_variants_separated": paths[0].parent != paths[1].parent,
+        "mp4_repeat_reused": paths[0] == paths[2],
+        "mp3_variants_separated": paths[3].parent != paths[4].parent,
+        "mp3_repeat_reused": paths[3] == paths[5],
+        "formats_separated": len({paths[i].parent for i in (0, 1, 3, 4)}) == 4,
+        "exact_history_ownership": len(history) == 4
+        and {history_output_path(row) for row in history} == set(paths),
+        "existing_media_unchanged": all(
+            all(later.get(path) == digest for path, digest in earlier.items())
+            for earlier, later in pairwise(snapshots)
+        ),
+        "all_variant_workers_clean": all(
+            result["error"] is None
+            and _worker_cleanup_is_clean(result)
+            and not result["staging_entries_after"]
+            for result in results
+        ),
+    }
+    return checks, results, artifacts
+
+
 def reliability_duplicate_artifact_transitions(
     runner: HeadlessPipelineRunner, server: FixtureHTTPServer
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -456,8 +533,12 @@ def reliability_duplicate_artifact_transitions(
     except OSError:
         pass
 
+    variant_checks, variant_results, variant_artifacts = _same_source_variant_checks(
+        runner, server
+    )
     passed = bool(
-        first.get("error") is None
+        all(variant_checks.values())
+        and first.get("error") is None
         and second.get("error") is None
         and len(first_media) == 1
         and len(second_media) == 1
@@ -482,15 +563,21 @@ def reliability_duplicate_artifact_transitions(
         "status": "passed" if passed else "failed",
         "duration_seconds": round(
             float(first.get("duration_seconds") or 0)
-            + float(second.get("duration_seconds") or 0),
+            + float(second.get("duration_seconds") or 0)
+            + sum(
+                float(result.get("duration_seconds") or 0) for result in variant_results
+            ),
             4,
         ),
         "metrics": {
-            "jobs_attempted": 2,
+            "jobs_attempted": 2 + len(variant_results),
             "jobs_completed": sum(
-                int(result.get("media_output_count") == 1) for result in (first, second)
+                int((result.get("outcome") or {}).get("success_count", 0) > 0)
+                for result in (first, second, *variant_results)
             ),
             "jobs_failed": 0 if passed else 1,
+            **variant_checks,
+            "variant_jobs_attempted": len(variant_results),
             "same_media_path_reused": first_media_path == second_media_path,
             "stable_media_hash": bool(first_hash and first_hash == second_hash),
             "sidecars_initially_present": sidecars_initially_present,
@@ -512,14 +599,15 @@ def reliability_duplicate_artifact_transitions(
                         if child.get("alive")
                     ]
                 )
-                for result in (first, second)
+                for result in (first, second, *variant_results)
             ),
             "staging_residue_count": sum(
                 len(result.get("staging_entries_after") or [])
-                for result in (first, second)
+                for result in (first, second, *variant_results)
             ),
         },
         "evidence": [
+            f"Same-source MP4/MP3 settings, repeat and ledger checks: {variant_checks}",
             f"The second real worker run reused the same media path and SHA-256: {first_media_path == second_media_path and first_hash == second_hash}",
             f"Deleted metadata and thumbnail sidecars were regenerated without media replacement: {repaired_sidecars}",
             f"The exact reuse receipt was emitted once: {len(reuse_events) == 1}",
@@ -540,6 +628,7 @@ def reliability_duplicate_artifact_transitions(
                 / "duplicate-artifact-reuse"
                 / "pipeline-result.json"
             ),
+            *variant_artifacts,
         ],
         "error": first.get("error") or second.get("error"),
     }

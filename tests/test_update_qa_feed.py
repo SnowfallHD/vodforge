@@ -167,7 +167,10 @@ def test_real_qa_feed_download(isolated_qa, monkeypatch, fault, entrypoint):
                 check=False,
                 # Match the shipped helper bootstrap even when a parent shell
                 # supplies an incompatible module path (PowerShell 7 in CI).
-                env={**os.environ, "PSModulePath": str(isolated_qa / "foreign-modules")},
+                env={
+                    **os.environ,
+                    "PSModulePath": str(isolated_qa / "foreign-modules"),
+                },
             )
             assert (result.returncode == 0) == (fault is None), (
                 result.stdout + result.stderr

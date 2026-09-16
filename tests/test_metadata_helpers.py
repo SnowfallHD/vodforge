@@ -6796,7 +6796,7 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
         single_video_only=True,
         use_nvenc=False,
         embed_thumbnail=True,
-        write_thumbnail=False,
+        write_thumbnail=True,
         embed_metadata=True,
         write_info_json=True,
         tags=["alpha"],
@@ -6804,13 +6804,9 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
 
     outcome = app._download_worker_single(job)
 
-    expected = (
-        tmp_path
-        / "Creator"
-        / "videos - no playlist"
-        / "Fast Path [abc123]"
-        / "Fast Path.mp4"
-    )
+    [expected] = list(tmp_path.rglob("Fast Path.mp4"))
+    assert expected.parent.name.startswith("Fast Path [abc123] - MP4 1080p CTV [")
+    assert expected.parent.parent == tmp_path / "Creator" / "videos - no playlist"
     assert calls == {"extract": 1, "process": 1}
     assert len(validation_options) == 1
     assert isinstance(validation_options[0]["plan"], ExportPlan)
@@ -6836,13 +6832,15 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
 
     repaired_sidecars: list[str] = []
 
-    def repair_metadata(output_dir, _info, _tags):
+    def repair_metadata(output_dir, _info, _tags, *, output_root):
         repaired_sidecars.append("metadata")
         path = Path(output_dir) / "metadata.json"
         path.write_text("repaired metadata", encoding="utf-8")
         return path
 
-    def repair_thumbnail(output_dir, _info, *, filename="thumbnail.jpeg", source_url):
+    def repair_thumbnail(
+        output_dir, _info, *, filename="thumbnail.jpeg", source_url, output_root
+    ):
         assert source_url == preflight["webpage_url"]
         repaired_sidecars.append("thumbnail")
         path = Path(output_dir) / filename
@@ -6851,7 +6849,6 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
 
     (expected.parent / "metadata.json").unlink(missing_ok=True)
     (expected.parent / "thumbnail.jpeg").unlink(missing_ok=True)
-    job.write_thumbnail = True
     monkeypatch.setattr(app_module, "write_compact_video_metadata", repair_metadata)
     monkeypatch.setattr(app_module, "save_thumbnail_image", repair_thumbnail)
     monkeypatch.setattr(
@@ -6928,10 +6925,12 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
         for index, (kind, _payload) in enumerate(reuse_events)
     )
 
-    # A control request raised while probing the final bounded legacy candidate
+    # A control request raised while probing the final bounded owned candidate
     # must not be misreported as an invalid file or advance into staging.
     last_candidate = (
-        existing_output_candidate_dirs(tmp_path, preflight, expected.name)[-1]
+        existing_output_candidate_dirs(
+            tmp_path, app_module.annotate_job_metadata(job, preflight), expected.name
+        )[-1]
         / expected.name
     )
     last_candidate.parent.mkdir(parents=True, exist_ok=True)
@@ -7167,13 +7166,10 @@ def test_ignore_playlists_worker_keeps_full_watch_url_playlist_route(
 
     outcome = app._download_worker_single(job)
 
-    expected = (
-        tmp_path
-        / "Creator"
-        / "playlists"
-        / "Real Playlist"
-        / "Playlist Item [abc123]"
-        / "Playlist Item.mp4"
+    [expected] = list(tmp_path.rglob("Playlist Item.mp4"))
+    assert expected.parent.name.startswith("Playlist Item [abc123] - MP4 1080p CTV [")
+    assert (
+        expected.parent.parent == tmp_path / "Creator" / "playlists" / "Real Playlist"
     )
     assert calls[0] == (source_url, True)
     assert outcome == DownloadOutcome(success_count=1)

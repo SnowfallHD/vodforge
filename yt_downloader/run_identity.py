@@ -3,18 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import urllib.parse
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from .export_planning import export_mode_display_name
-from .history import sanitize_durable_url
+from .history import history_output_path, sanitize_durable_url
 from .models import DownloadJob, ExportMode, OutputType
 
 ATTEMPT_SIGNATURE_KEY = "vodforge_attempt_signature"
 OUTPUT_PROFILE_KEY = "vodforge_output_profile"
 OUTPUT_PROFILE_DETAILS_KEY = "vodforge_output_profile_details"
+OUTPUT_VARIANT_KEY = "vodforge_output_variant"
 
 
 def _normalized_path(path: Path | str) -> str:
@@ -133,12 +135,80 @@ def matching_attempt(
     )
 
 
+def owned_output_paths(
+    job: DownloadJob, info: dict[str, Any], records: Iterable[dict[str, Any]]
+) -> tuple[Path, ...]:
+    """Resolve legacy reuse through existing durable item/attempt ownership."""
+    signature = job_attempt_signature(job)
+    item_id = str(info.get("id") or "")
+    return tuple(
+        dict.fromkeys(
+            path
+            for record in records
+            if item_id
+            and str(record.get("id") or "") == item_id
+            and metadata_attempt_signature(record) == signature
+            and (path := history_output_path(record)) is not None
+        )
+    )
+
+
 def job_output_profile(job: DownloadJob) -> str:
     if job.output_type is OutputType.ORIGINAL:
         return "Original audio • No re-encoding"
     if job.output_type is OutputType.MP3:
         return f"MP3 • {job.mp3_settings.bitrate_kbps} kbps"
     return f"MP4 • {job.quality_label} • {export_mode_display_name(job.export_mode)}"
+
+
+def job_output_variant(job: DownloadJob) -> str:
+    """A readable, stable namespace for the same intent used by duplicate checks."""
+    settings = job_output_settings(job)
+    encoded = json.dumps(
+        settings, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    digest = hashlib.sha256(encoded).hexdigest()[:16]
+    if job.output_type is OutputType.MP4:
+        quality = job.quality_label.split()[0]
+        mode = export_mode_display_name(job.export_mode)
+        if manual := settings["mp4"].get("manual"):
+            video = (
+                f"CRF{manual['video_crf']}"
+                if "video_crf" in manual
+                else f"{manual['video_bitrate_kbps']}k"
+            )
+            mode = (
+                f"Custom {video} {manual['audio_codec']}{manual['audio_bitrate_kbps']}k"
+            )
+        label = f"MP4 {quality} {mode}"
+    elif job.output_type is OutputType.MP3:
+        audio = settings["mp3"]
+        rate = (
+            f"{int(audio['sample_rate']) / 1000:g}kHz"
+            if str(audio["sample_rate"]).isdigit() and int(audio["sample_rate"]) > 0
+            else "sourceHz"
+        )
+        channels = {"1": "mono", "2": "stereo"}.get(str(audio["channels"]), "sourceCh")
+        art = (
+            "customArt"
+            if audio["custom_cover_art_path"]
+            else "art"
+            if audio["embed_cover_art"]
+            else "noArt"
+        )
+        label = f"MP3 {audio['bitrate_kbps']}k {rate} {channels} {art}"
+    else:
+        label = "Original audio"
+    label = re.sub(r"[^a-zA-Z0-9 -]", "_", label)[:40].strip()
+    return f"{label} [{digest}]"
+
+
+def metadata_output_variant(info: dict[str, Any], *, compact: bool = False) -> str:
+    # Provider input is not allowed to inject a path component.
+    value = str(info.get(OUTPUT_VARIANT_KEY) or "")
+    if not re.fullmatch(r"[a-zA-Z0-9 _-]{1,40} \[[0-9a-f]{16}\]", value):
+        return ""
+    return f"{value.split()[0]} {value[-18:]}" if compact else value
 
 
 def job_output_profile_details(job: DownloadJob) -> str:
@@ -184,6 +254,7 @@ def job_output_profile_details(job: DownloadJob) -> str:
 def annotate_job_metadata(job: DownloadJob, info: dict[str, Any]) -> dict[str, Any]:
     annotated = dict(info)
     annotated[ATTEMPT_SIGNATURE_KEY] = job_attempt_signature(job)
+    annotated[OUTPUT_VARIANT_KEY] = job_output_variant(job)
     annotated[OUTPUT_PROFILE_KEY] = job_output_profile(job)
     annotated[OUTPUT_PROFILE_DETAILS_KEY] = job_output_profile_details(job)
     return annotated

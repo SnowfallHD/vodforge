@@ -570,3 +570,36 @@ def commit_file_beneath(
             replace_existing,
         )
     return destination_absolute
+
+
+def is_regular_file_beneath(root: Path, path: Path) -> bool:
+    """Accept a chosen root link, but no linked or redirected descendants."""
+    try:
+        root_absolute, _, parents, leaf = _lexical_destination_parts(root, path)
+        root_real = root_absolute.resolve(strict=True)
+        current = root_real
+        for index, part in enumerate((*parents, leaf)):
+            current = current / part
+            inspected = current.lstat()
+            if is_symlink_or_reparse(inspected):
+                return False
+            if index < len(parents) and not stat.S_ISDIR(inspected.st_mode):
+                return False
+        return stat.S_ISREG(inspected.st_mode) and _resolved_beneath(
+            current.resolve(strict=True), root_real
+        )
+    except (OSError, ValueError, UnsafeOutputPathError):
+        return False
+
+
+def write_file_beneath(
+    root: Path, destination: Path, writer: Callable[[Path], object]
+) -> Path:
+    """Stage optional output, then use the same safe commit as media."""
+    staging = create_private_staging_directory(root)
+    try:
+        source = staging / "sidecar"
+        writer(source)
+        return commit_file_beneath(source, root, destination)
+    finally:
+        cleanup_private_staging_directory(staging)
