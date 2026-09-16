@@ -1065,3 +1065,86 @@ def test_primary_views_allocate_only_current_surface_and_restore_latest_layout(
             assert application.focus_run_deck.winfo_ismapped()
         finally:
             application.destroy()
+
+
+@pytest.mark.parametrize("row_count", [0, 25, 5000])
+def test_forge_geometry_reuses_projection_and_reentry_observes_history_changes(
+    monkeypatch, row_count
+):
+    from scripts.focus_ui_preview import approved_metadata, isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.ui_layout import focus_run_deck_capacity
+
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            base = approved_metadata()
+            application.metadata_items = [
+                {
+                    **base[i % len(base)],
+                    "id": f"geometry-{i}",
+                    "title": f"Geometry record {i}",
+                    "vodforge_projection_owner": f"preview:geometry:{i}",
+                    "vodforge_annotation_owner": f"preview:geometry:{i}",
+                }
+                for i in range(row_count)
+            ]
+            application._render_metadata_tree(selected_index=0 if row_count else None)
+            application._select_focus_view("forge")
+            settle_native(application)
+            original_projection = application._focus_run_records
+            projections = []
+
+            def project():
+                projections.append(True)
+                return original_projection()
+
+            monkeypatch.setattr(application, "_focus_run_records", project)
+            for size in ("820x560", "1180x780", "1440x900", "820x560"):
+                application.geometry(size)
+                settle_native(application)
+                deck = application.focus_run_deck
+                assert deck.winfo_ismapped()
+                assert (
+                    application._focus_run_deck_rendered_capacity
+                    == focus_run_deck_capacity(deck.winfo_width())
+                )
+                assert deck.winfo_rootx() + deck.winfo_width() <= (
+                    application.winfo_rootx() + application.winfo_width()
+                )
+            assert projections == []
+
+            # Mutate the same history list while Forge is hidden. Forced entry
+            # must reacquire data, including removal-to-empty and replacement.
+            application._select_focus_view("library")
+            changed = {**base[0], "title": "Changed while hidden"}
+            application.metadata_items[:] = [changed]
+            application._refresh_focus_run_deck()
+            assert projections == []
+            application._select_focus_view("forge")
+            settle_native(application)
+            assert projections
+            snapshot = application._focus_run_deck_signature
+            assert any(
+                tile.structure[3] == "Changed while hidden" for tile in snapshot.tiles
+            )
+
+            def visible_text(widget):
+                texts = []
+                try:
+                    texts.append(str(widget.cget("text")))
+                except tk.TclError:
+                    pass
+                for child in widget.winfo_children():
+                    texts.extend(visible_text(child))
+                return texts
+
+            assert "Changed while hidden" in visible_text(application.focus_run_deck)
+            application.metadata_items.clear()
+            application._refresh_focus_run_deck()
+            settle_native(application)
+            assert "Your runs will collect here" in visible_text(
+                application.focus_run_deck
+            )
+        finally:
+            application.destroy()

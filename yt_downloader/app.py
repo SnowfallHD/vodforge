@@ -8310,7 +8310,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         if capacity == self.__dict__.get("_focus_run_deck_rendered_capacity"):
             return
         try:
-            self._refresh_focus_run_deck()
+            self._refresh_focus_run_deck(geometry_only=True)
         except tk.TclError:
             return
 
@@ -8533,34 +8533,34 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             widget.bind("<Enter>", schedule_tile_hover, add="+")
             widget.bind("<Leave>", schedule_tile_hover, add="+")
 
-    def _refresh_focus_run_deck(self) -> None:
+    def _refresh_focus_run_deck(self, *, geometry_only: bool = False) -> None:
         if not hasattr(self, "focus_run_deck"):
             return
         if self.__dict__.get("_focus_selected_view", "forge") != "forge":
             return
-        records = self._focus_run_records()
+        # Configure only changes capacity/layout. Reuse the last data projection;
+        # ordinary model/progress refreshes and forced view entry replace it.
+        # Never key this on list identity: queue/history rows mutate in place.
+        cached = self.__dict__.get("_focus_run_deck_projection")
+        if geometry_only and cached is not None:
+            records, summary_text = cached
+        else:
+            records = self._focus_run_records()
+            counts: dict[str, int] = {}
+            for record in records:
+                kind = str(record.get("kind") or "")
+                counts[kind] = counts.get(kind, 0) + 1
+            parts = [f"{len(records)} run{'s' if len(records) != 1 else ''}"]
+            for kind in ("active", "queued", "completed", "failed", "skipped"):
+                if count := counts.get(kind, 0):
+                    parts.append(f"{count} {kind}")
+            summary_text = "No runs yet" if not records else "  •  ".join(parts)
+            self._focus_run_deck_projection = (records, summary_text)
         deck_width = self.focus_run_deck.winfo_width()
         if deck_width <= 1:
             deck_width = max(1, self.winfo_width() - 52)
         limit = focus_run_deck_capacity(deck_width)
         visible = records[:limit]
-        completed = sum(1 for record in records if record.get("kind") == "completed")
-        failed = sum(1 for record in records if record.get("kind") == "failed")
-        skipped = sum(1 for record in records if record.get("kind") == "skipped")
-        queued = sum(1 for record in records if record.get("kind") == "queued")
-        active = sum(1 for record in records if record.get("kind") == "active")
-        parts = [f"{len(records)} run{'s' if len(records) != 1 else ''}"]
-        if active:
-            parts.append(f"{active} active")
-        if queued:
-            parts.append(f"{queued} queued")
-        if completed:
-            parts.append(f"{completed} completed")
-        if failed:
-            parts.append(f"{failed} failed")
-        if skipped:
-            parts.append(f"{skipped} skipped")
-        summary_text = "No runs yet" if not records else "  •  ".join(parts)
         snapshot = RunDeckSnapshot(
             layout=str(self._focus_layout or ""),
             capacity=limit,
@@ -9101,22 +9101,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.focus_details_button.grid_remove()
             self.focus_detail_header.grid_remove()
 
-        if (
-            self.__dict__.get("_focus_selected_view", "forge") == "forge"
-            and self._focus_run_records()
-        ):
-            if not self.focus_deck_header.winfo_manager():
-                self.focus_deck_header.grid()
-        else:
-            self.focus_deck_header.grid_remove()
-
         self._apply_focus_library_layout(
             video_tree,
             library_mode=library_mode,
             vertical_mode=library_vertical_mode,
         )
         self._sync_focus_destination()
-        self._refresh_focus_run_deck()
+        self._refresh_focus_run_deck(geometry_only=not force)
+        projection = self.__dict__.get("_focus_run_deck_projection")
+        if (
+            self.__dict__.get("_focus_selected_view", "forge") == "forge"
+            and projection is not None
+            and projection[0]
+        ):
+            if not self.focus_deck_header.winfo_manager():
+                self.focus_deck_header.grid()
+        else:
+            self.focus_deck_header.grid_remove()
 
     def _apply_focus_library_layout(
         self,

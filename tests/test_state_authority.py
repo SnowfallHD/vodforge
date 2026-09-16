@@ -2029,7 +2029,7 @@ def test_all_runs_navigates_to_library_without_hover_popup():
     )
     library_layout_call = layout_source.index("self._apply_focus_library_layout(")
     destination_sync = layout_source.index("self._sync_focus_destination()")
-    deck_refresh = layout_source.index("self._refresh_focus_run_deck()")
+    deck_refresh = layout_source.index("self._refresh_focus_run_deck(")
     assert library_layout_call < destination_sync < deck_refresh
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
     assert "for column in range(4):" in deck_source
@@ -2251,7 +2251,8 @@ def test_run_deck_capacity_crossing_refreshes_synchronously_once():
             self._focus_run_deck_rendered_capacity = 3
             self.refreshes = 0
 
-        def _refresh_focus_run_deck(self):
+        def _refresh_focus_run_deck(self, *, geometry_only=False):
+            assert geometry_only
             self.refreshes += 1
             self._focus_run_deck_rendered_capacity = 4
 
@@ -2516,7 +2517,7 @@ def test_run_deck_tile_extraction_preserves_interaction_and_update_order():
     assert tile_source.index(
         'play_button.bind(\n                "<Button-1>",'
     ) < tile_source.index("hover_widgets.append(play_button)")
-    aggregate_index = deck_source.index("completed = sum(")
+    aggregate_index = deck_source.index("counts: dict[str, int] = {}")
     snapshot_index = deck_source.index("snapshot = RunDeckSnapshot(")
     render_index = deck_source.index("self._render_focus_run_deck_tile(")
     owner_index = deck_source.index("owner.render(")
@@ -4613,3 +4614,91 @@ def test_shutdown_finish_preserves_queue_without_starting_another_worker(
     assert app.cancel_requested is True
     restored_queue = ActiveRunStore(state_path).load_queued_jobs()
     assert [job.run_id for job in restored_queue] == [job.run_id for job in queued]
+
+
+@pytest.mark.parametrize("record_count", [25, 5000])
+def test_geometry_uses_rendered_data_but_data_refresh_advances_run_state(record_count):
+    """Geometry must not replay history projection; model changes still win."""
+
+    class Deck:
+        width = 900
+
+        def winfo_width(self):
+            return self.width
+
+        def winfo_children(self):
+            return ()
+
+        def columnconfigure(self, *_args, **_kwargs):
+            pass
+
+    class Probe:
+        _refresh_focus_run_deck = DownloaderApp._refresh_focus_run_deck
+        _focus_layout = "wide"
+
+        def __init__(self):
+            self.focus_run_deck = Deck()
+            self.projections = 0
+            self.rendered = []
+            self.summaries = []
+            self.focus_run_count_var = SimpleNamespace(set=self.summaries.append)
+            self.focus_run_overflow_button = SimpleNamespace(
+                grid=lambda: None, configure=lambda **_kwargs: None
+            )
+            self.records = [
+                {
+                    "kind": "queued",
+                    "run_id": str(i),
+                    "title": f"Run {i}",
+                    "output_type": "MP4",
+                    "status": "Queued",
+                    "progress": 0,
+                }
+                for i in range(record_count)
+            ]
+
+        def _focus_run_records(self):
+            self.projections += 1
+            return [dict(record) for record in self.records]
+
+        def winfo_width(self):
+            return self.focus_run_deck.width + 52
+
+        def _render_focus_run_deck_tile(self, record, **_kwargs):
+            self.rendered.append((record["title"], record["kind"], record["progress"]))
+            self._focus_run_deck_value_widgets.append(
+                (SimpleNamespace(configure=lambda **_kwargs: None), None)
+            )
+
+    probe = Probe()
+    probe._refresh_focus_run_deck()
+    initial_projections = probe.projections
+    for width in (670, 450, 900):
+        probe.focus_run_deck.width = width
+        DownloaderApp._schedule_focus_run_deck_geometry_refresh(
+            probe, SimpleNamespace(width=width)
+        )
+        assert (
+            probe._focus_run_deck_rendered_capacity
+            == app_module.focus_run_deck_capacity(width)
+        )
+    assert probe.projections == initial_projections
+
+    # Queue promotion and live progress use the ordinary data owner, never a
+    # list-identity cache: the same record/list may change in place.
+    probe.records[0].update(kind="active", status="57%", progress=57)
+    probe._refresh_focus_run_deck()
+    assert probe._focus_run_deck_signature.tiles[0].progress == 57
+    assert "1 active" in probe.summaries[-1]
+    assert probe.rendered[-4] == ("Run 0", "active", 57)
+
+    probe.records[0].update(kind="completed", status="Completed", progress=100)
+    probe._refresh_focus_run_deck()
+    assert "1 completed" in probe.summaries[-1]
+    assert probe.rendered[-4] == ("Run 0", "completed", 100)
+
+    # Removal/replacement must change the rendered action target as well as text.
+    probe.records = probe.records[1:]
+    probe._refresh_focus_run_deck()
+    assert probe._focus_run_deck_signature.tiles[0].structure[1] == "1"
+    assert probe.rendered[-4][0] == "Run 1"

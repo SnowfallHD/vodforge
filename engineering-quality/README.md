@@ -57,6 +57,36 @@ The packaged playback probe additionally verifies actual provider volume after
 pre-play changes and file switches. These are representative checks, not a claim
 that every subsystem or possible interleaving is covered.
 
+
+## Forge geometry must not replay data projection (2026-09-16)
+
+The native unprofiled Forge5000 comparison still had a491ms maximum heartbeat
+gap after the earlier selected-view fix (baseline760ms). Forge rebuilt persisted
+run history both for its header and for capacity changes. The renderer's existing
+snapshot no-op check came after that expensive work. Geometry now reuses its last
+data projection and summary; ordinary data/progress refreshes replace it, and
+forced view entry reacquires current history. No list-identity invalidation,
+additional polling timer, or new data owner is introduced.
+
+The broader invariant is that presentation-only changes must not replay data work,
+while actual state transitions must remain authoritative. The25/5000record
+state-authority regression failed before the fix: one initial render plus three
+capacity changes made four projections. It now makes one. The same production
+renderer checks queue promotion, active57percent progress, completion, and removal,
+including mutation of the same list/record. Existing Library phase reconciliation,
+padding burst/latest intent and RunDeck active progress tests provide the bounded
+cross-owner comparisons; all130state-authority tests pass. Earlier renderer tests
+asserted widget rebuild counts, so they missed work before the no-op decision.
+
+The required native surface suite now varies empty/25/5000history, real root/deck
+geometry, hidden-history mutation, re-entry, and removal-to-empty; it asserts
+visible tile text, mapped geometry and capacity. Native execution and fresh
+unprofiled Windows timing are pending at this checkpoint. Programmatic Tk geometry,
+headless owner tests, source native drags and exact-package acceptance remain
+separate evidence; no CPU-efficiency or Chrome-equivalence claim follows from
+projection counts. Active job event frequency and very large-history projection
+on actual model changes remain outside this geometry-only optimization.
+
 ## Native control lifecycle gate
 
 `unit_static.native_surface_contract` runs the opt-in source-native control suite
