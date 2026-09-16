@@ -25,7 +25,12 @@ CHECKPOINTS = (
     "unknown",
 )
 from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
-from yt_downloader.telemetry_features import FEATURE_ACTIONS, validate_dimensions
+from yt_downloader.telemetry_features import (
+    FEATURE_ACTIONS,
+    OPERATION_FEATURES,
+    validate_dimensions,
+    validate_operation_fields,
+)
 from yt_downloader.whats_new import SHOWCASE_MODE
 
 EVENTS = PRODUCT_EVENT_NAMES
@@ -198,6 +203,15 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
         except (ValueError, TypeError):
             errors.append("Invalid or private telemetry dimensions")
             continue
+        try:
+            validate_operation_fields(event.get("feature"), dimensions)
+        except ValueError:
+            errors.append("Operation observation missing correlation")
+        if event.get("feature") in OPERATION_FEATURES and (
+            dimensions.get("build_revision") == "unknown"
+            or dimensions.get("build_revision") != data.get("source_commit")
+        ):
+            errors.append("Operation build revision does not match packaged source")
         if dimensions.get("preset"):
             presets.add(dimensions["preset"])
         if dimensions.get("encoder"):

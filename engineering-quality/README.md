@@ -427,3 +427,61 @@ changing signed bytes. It records hashes and requests, supports a real HTTP503
 fault, and preserves normal publisher verification. See the
 [telemetry release gate](TELEMETRY_RELEASE_GATE.md#isolated-updater-feed-before-publication)
 for the baseline, launch environment and required D1/UI evidence.
+
+### Consent withdrawal and prospective operation evidence (2026-09-16)
+
+The telemetry owner must not recreate an outbox after withdrawal or resume a
+pre-withdrawal observation after a failed purge, restart, or rapid re-enable.
+The prior owner fails test_revocation_survives_locked_outbox_and_restart_without_replay:
+an independently recorded sink receives the old row after denied consent and a
+locked outbox. Prior-source receipt:
+build/variant-help-20260916/privacy-revocation-before.log. A private epoch in
+existing consent settings/outbox now invalidates old observations; it is excluded
+from the wire. Separate tests cover permission-to-write ordering, revocation
+between the two sinks, immutable replay and fresh post-enable observations.
+An already in-flight request cannot be unsent. Previous tests assumed successful
+purging or stopped before re-enable, so they missed this cross-lifecycle defect.
+
+Operation observations are prospective, separate from session feature presence.
+The actual local converter captures failure facts before formatting display text;
+controlled failures at preparation/image/transcode/validation/commit assert the
+independently observed exception, final files/staging state, and persisted typed
+event. Playback checks provider failure followed by actual Playing and Ended.
+The source-native Windows Help runner pairs OS input, visible modal/grab receipts
+and local outbox events; the injected collection policy and local sinks are
+explicitly labeled, never packaged/preview proof. Its first instrumented matrix
+caught missing forced-tour closure telemetry even though the tour was visible;
+forced teardown now retires the existing operation owner.
+
+The resize invariant is that hidden primary views do not consume geometry work or
+history projection, while selected views restore current layout on re-entry.
+The actual native view-allocation test fails on old source and passes after the
+change. Profiled quiet drags reveal the expensive hidden history path; absolute
+performance qualification still requires unprofiled before/after comparisons with
+runtime/driver hashes, CPU intervals, commanded and delivered geometry, and no
+screenshots during measurement. Empty/normal/large Library, Forge, panel/focus/
+scale/teardown variations and Mac/exact signed artifacts remain distinct required
+tiers. Event counts are not frame rate or Chrome parity.
+
+Backend migration tests preserve historical columns, indexes and FKs, reject
+null/non-failure action diagnostics, and exercise immutable replay through the
+enrolled route. CRM tests use mixed legacy/new/source/channel fixtures,
+out-of-order arrival and incomplete sequences; commits/reuse count only at their
+actual observation, never again in completion summaries. These are source checks;
+fresh preview D1, blinded investigation, native consent-positive and denied/off
+signed artifacts, Update/Repair and full release gates remain required.
+
+The local converter also observes the successful physical commit before later
+metadata construction, using its existing worker event queue. A prior-source
+case produces an independently verified file but no commit observation when
+metadata then fails (local-commit-observation-before.log). The regression checks
+preserved bytes, one observation, history-stage failure and cleaned staging.
+Earlier conversion tests stopped at commit failures or fully successful results,
+so they missed the committed-file/later-history boundary. This complements the
+download sidecar-partial case; neither proof infers an absent event means zero.
+
+Native support testing also found reply-enabled Feedback at bounded small window
+sizes collapsed the message field to 17px. Existing modal layout ownership now
+allocates reply-field height while retaining the parent bound. The unchanged
+independent field-height/footer/backdrop checks failed twice before and all
+25 native cases passed afterward. Exact packaged visual checks remain required.

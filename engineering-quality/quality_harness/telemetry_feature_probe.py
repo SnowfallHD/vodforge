@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
@@ -72,7 +73,23 @@ def main() -> None:
         heycatch_recorder=lambda *_args, **_kwargs: False,
     )
 
+    def operation_fields(feature):
+        return (
+            {
+                "dimensions": {
+                    "instrumentation": "diagnostics_v1",
+                    "build_revision": "unknown",
+                    "operation_id": str(uuid.uuid4()),
+                    "operation_step": "1",
+                }
+            }
+            if feature.endswith("_operation")
+            else {}
+        )
+
     def record(name, **fields):
+        if fields.get("feature"):
+            fields.update(operation_fields(fields["feature"]))
         assert usage.record(name, **fields)
         assert usage.shutdown(15), "Preview request did not finish"
         assert not (profile / "product-telemetry.json").exists(), (
@@ -240,7 +257,12 @@ def main() -> None:
     consent.choose(False)
     for feature, actions in FEATURE_ACTIONS.items():
         for action in actions:
-            assert not usage.record("feature_used", feature=feature, action=action)
+            assert not usage.record(
+                "feature_used",
+                feature=feature,
+                action=action,
+                **operation_fields(feature),
+            )
     after = read_preview_snapshot(args.site.resolve(), install)
     assert (
         before["events"] == after["events"]

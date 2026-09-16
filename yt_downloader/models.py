@@ -181,6 +181,9 @@ class DownloadJob:
     terminal_message: str = ""
     item_terminal_emitted: bool = False
     failure_diagnostic: FailureDiagnostic | None = None
+    # Ephemeral observations follow the existing serialized worker, never own files.
+    telemetry_operation_id: str | None = None
+    failure_stage: str = "preparation"
 
 
 @dataclass(frozen=True)

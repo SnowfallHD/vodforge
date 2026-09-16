@@ -195,7 +195,8 @@ def test_forms_footer_consent_limits_and_dismissal(root, kind, size):
         assert panel.send.cget("text") == "Submit public review"
         assert not hasattr(panel, "publish")
     root.update()
-    assert panel.frame.winfo_height() <= (510 if kind == "feedback" else 480)
+    assert panel.frame.winfo_height() <= (580 if kind == "feedback" else 480)
+    assert panel.frame.winfo_height() <= root.winfo_height() - 36
     bottom = panel.frame.winfo_rooty() + panel.frame.winfo_height()
     assert panel.backdrop.last == (
         root.winfo_width(),
@@ -413,11 +414,15 @@ def test_help_command_survives_popup_return_and_opens_modal_after_dismissal(
     """Real Tcl command queued after native popup return, real modal observation."""
     from yt_downloader.engagement_ui import EngagementUI
 
+    observations = []
     owner = EngagementUI(
         root,
         tmp_path / "engagement.json",
         ready=lambda: True,
         suppress_showcase=lambda: None,
+        on_operation=lambda feature, action, **fields: observations.append(
+            (action, fields)
+        ),
     )
     anchor = tk.Button(root, text="Help")
     anchor.pack()
@@ -439,6 +444,10 @@ def test_help_command_survives_popup_return_and_opens_modal_after_dismissal(
     owner.close()
     root.update()
     assert root.grab_current() is None
+    actions = [observed_action for observed_action, _ in observations]
+    assert actions.count("shown") == 1
+    assert actions.count("closed") == 1
+    assert observations[-1][1]["dimensions"]["help_target"] == action
 
 
 @pytest.mark.parametrize("transition", ["close", "replace", "repeated", "foreign_grab"])

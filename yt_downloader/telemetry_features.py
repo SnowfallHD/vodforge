@@ -6,7 +6,9 @@ transport. This vocabulary is shared by producers, validation and QA inventories
 
 from __future__ import annotations
 
+import json
 import platform
+import re
 import uuid
 from collections.abc import Mapping
 from urllib.parse import parse_qs, urlsplit
@@ -36,7 +38,98 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
         }
     ),
 }
+# Per-operation observations are separate from legacy once-per-session usage.
+OPERATION_FEATURES = {
+    "download_operation": frozenset(
+        {"started", "stage", "reused", "committed", "completed", "failed", "cancelled"}
+    ),
+    "local_conversion_operation": frozenset(
+        {"started", "committed", "completed", "failed", "cancelled"}
+    ),
+    "help_operation": frozenset(
+        {
+            "requested",
+            "popup_returned",
+            "selected",
+            "dispatched",
+            "shown",
+            "blocked",
+            "closed",
+            "replaced",
+            "failed",
+        }
+    ),
+    "playback_operation": frozenset(
+        {
+            "requested",
+            "focused",
+            "ready",
+            "started",
+            "completed",
+            "failed",
+            "closed",
+            "cancelled",
+        }
+    ),
+    "resize_operation": frozenset({"settled"}),
+}
+FEATURE_ACTIONS.update(OPERATION_FEATURES)
+DIMENSION_PATTERNS = {
+    "operation_id": r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+    "operation_step": r"(?:[1-9]|[1-5][0-9]|6[0-4])",
+    "build_revision": r"(?:[0-9a-f]{40}|unknown)",
+}
+DIMENSION_RANGES = {
+    key: (0, 10000)
+    for key in (
+        "item_count",
+        "committed_count",
+        "reused_count",
+        "failed_count",
+        "skipped_count",
+        "sidecar_failure_count",
+        "observation_drop_count",
+    )
+}
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
+    "intent_relation": frozenset(
+        {
+            "first_observed",
+            "same_intent",
+            "different_settings",
+            "different_destination_or_organization",
+            "unknown",
+        }
+    ),
+    "instrumentation": frozenset({"diagnostics_v1"}),
+    "stage": frozenset(
+        {
+            "preparation",
+            "analysis",
+            "reuse",
+            "staging",
+            "download",
+            "transcode",
+            "validation",
+            "commit",
+            "sidecars",
+            "history",
+            "dispatch",
+            "playback",
+            "unknown",
+        }
+    ),
+    "storage_namespace": frozenset({"variant", "owned_legacy", "unknown"}),
+    "reuse_result": frozenset({"hit", "miss", "unavailable"}),
+    "help_target": frozenset({"menu", "feedback", "review", "welcome"}),
+    "ui_blocker": frozenset({"closed", "panel", "grab", "unknown"}),
+    "view": frozenset({"forge", "library", "activity", "unknown"}),
+    "row_count_bucket": frozenset({"0", "1_25", "26_500", "501_5000", "5001_plus"}),
+    "lag_bucket": frozenset(
+        {"under_50ms", "50_99ms", "100_249ms", "250_999ms", "1000ms_plus"}
+    ),
+    "window_change": frozenset({"resize", "state"}),
+    "lag_measurement": frozenset({"ui_pump_delay"}),
     "failure_code": FAILURE_CODES,
     "cookie_access": frozenset({"disabled", "browser", "file", "unconfigured"}),
     "provider": frozenset({"youtube", "other"}),
@@ -215,13 +308,43 @@ def validate_dimensions(value: Mapping[str, str] | None) -> dict[str, str]:
         raise TypeError("telemetry dimensions must be an object")
     result = dict(value)
     for key, item in result.items():
-        if (
-            key not in DIMENSION_CHOICES
-            or not isinstance(item, str)
-            or item not in DIMENSION_CHOICES[key]
-        ):
-            raise ValueError("unsupported telemetry dimension")
+        if not isinstance(item, str):
+            raise TypeError("unsupported telemetry dimension")
+        if key in DIMENSION_CHOICES and item in DIMENSION_CHOICES[key]:
+            continue
+        if key in DIMENSION_PATTERNS and re.fullmatch(DIMENSION_PATTERNS[key], item):
+            continue
+        if key in DIMENSION_RANGES and re.fullmatch(r"0|[1-9][0-9]{0,4}", item):
+            low, high = DIMENSION_RANGES[key]
+            if low <= int(item) <= high:
+                continue
+        raise ValueError("unsupported telemetry dimension")
+    if (
+        len(
+            json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
+        > 2048
+    ):
+        raise ValueError("telemetry dimensions exceed limit")
     return result
+
+
+def validate_operation_fields(
+    feature: str | None, dimensions: Mapping[str, str]
+) -> None:
+    if feature in OPERATION_FEATURES:
+        required = {
+            "operation_id",
+            "operation_step",
+            "instrumentation",
+            "build_revision",
+        }
+        if not required.issubset(dimensions):
+            raise ValueError("operation correlation is required")
+    elif "operation_id" in dimensions or "operation_step" in dimensions:
+        raise ValueError("unexpected operation correlation")
 
 
 def attempt_identifier(install_id: str, run_id: str) -> str:
@@ -328,6 +451,61 @@ def export_dimensions(job: object) -> dict[str, str]:
         )
         result["metadata"] = "enabled" if mp3.embed_metadata else "disabled"
     return result
+
+
+def job_intent_dimensions(job: object) -> dict[str, str]:
+    output = getattr(getattr(job, "output_type", None), "value", "")
+    values = {
+        "output_type": output,
+        "quality": getattr(job, "quality_label", None),
+        "export_mode": getattr(getattr(job, "export_mode", None), "value", None),
+        **{key: getattr(job, key, None) for key in SETTINGS_BOOLEANS},
+    }
+    manual = getattr(job, "manual_settings", None)
+    if (
+        output == "MP4"
+        and values["export_mode"] == "Manual Override"
+        and manual is not None
+    ):
+        values.update(
+            manual_crf=str(manual.video_crf) if manual.video_crf is not None else None,
+            manual_video_bitrate=manual.video_bitrate_kbps,
+            manual_audio_bitrate=manual.audio_bitrate_kbps,
+            manual_sample_rate=str(manual.audio_sample_rate),
+            manual_channels={1: "Mono", 2: "Stereo"}.get(manual.audio_channels),
+            manual_audio_codec=manual.audio_codec.value,
+            manual_preset=manual.x264_preset,
+            manual_rate_control="Quality" if manual.video_crf is not None else "CBR",
+        )
+    mp3 = getattr(job, "mp3_settings", None)
+    if output == "MP3" and mp3 is not None:
+        values = {
+            key: value
+            for key, value in values.items()
+            if key in {"output_type", "single_video_only"}
+        }
+        values.update(
+            mp3_quality={
+                320: "Maximum — 320 kbps CBR",
+                256: "High — 256 kbps CBR",
+                192: "Standard — 192 kbps CBR",
+                128: "Compact — 128 kbps CBR",
+            }.get(mp3.bitrate_kbps),
+            mp3_sample_rate={
+                "48000": "48 kHz — video / DAW",
+                "44100": "44.1 kHz — music",
+            }.get(str(mp3.sample_rate), "Preserve source"),
+            mp3_channels={"1": "Mono", "2": "Stereo"}.get(
+                str(mp3.channels), "Preserve source"
+            ),
+            mp3_embed_metadata=mp3.embed_metadata,
+            mp3_cover_art_mode="Custom art"
+            if mp3.custom_cover_art_path
+            else "YouTube art"
+            if mp3.embed_cover_art
+            else "No Art",
+        )
+    return {**export_dimensions(job), **settings_dimensions(values)}
 
 
 def resolution_bucket(height: float) -> str:

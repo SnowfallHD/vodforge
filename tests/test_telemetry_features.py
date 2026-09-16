@@ -7,6 +7,7 @@ from tests.test_product_telemetry import _permitted_installation
 from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
 from yt_downloader.telemetry_features import (
     FEATURE_ACTIONS,
+    OPERATION_FEATURES,
     attempt_identifier,
     validate_dimensions,
 )
@@ -158,16 +159,21 @@ def test_all_feature_actions_persist_and_are_deduplicated_in_session(tmp_path):
         d1_recorder=lambda _event: False,
         heycatch_recorder=lambda *_args, **_kwargs: False,
     )
-    for feature, actions in FEATURE_ACTIONS.items():
+    legacy_features = {
+        key: actions
+        for key, actions in FEATURE_ACTIONS.items()
+        if key not in OPERATION_FEATURES
+    }
+    for feature, actions in legacy_features.items():
         for action in actions:
             assert owner.record_feature(feature, action)
             if feature != "updater":
                 assert owner.record_feature(feature, action)
     owner.shutdown(2)
     events = _load_outbox(path)
-    assert len(events) == sum(map(len, FEATURE_ACTIONS.values()))
+    assert len(events) == sum(map(len, legacy_features.values()))
     assert {(e.feature, e.action) for e in events} == {
-        (f, a) for f, actions in FEATURE_ACTIONS.items() for a in actions
+        (f, a) for f, actions in legacy_features.items() for a in actions
     }
 
 
@@ -333,3 +339,198 @@ def test_update_observation_is_discarded_on_refusal_not_backfilled(
     assert receipt.with_suffix(".failed.telemetry-discarded").exists()
     owner.permitted = lambda: True
     app_module.DownloaderApp._record_update_telemetry_receipt(app)
+
+
+def test_local_typed_worker_failure_reaches_outbox_without_display_text(tmp_path):
+    import queue
+    from types import SimpleNamespace
+
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.failure_diagnostics import capture_failure
+    from yt_downloader.local_audio_video_ui import (
+        LocalAudioVideoDialog,
+        LocalConversionFailure,
+    )
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_a, **_kw: False,
+    )
+    app = SimpleNamespace(product_telemetry=telemetry)
+    events = queue.Queue()
+    detail = capture_failure(PermissionError(13, "PRIVATE title path"), stage="commit")
+    events.put(("error", LocalConversionFailure("PRIVATE title path", detail)))
+    control = SimpleNamespace(configure=lambda **kwargs: None)
+    dialog = SimpleNamespace(
+        _closed=False,
+        _events=events,
+        _worker=object(),
+        _telemetry_run_id=str(uuid.uuid4()),
+        on_telemetry=lambda *args: DownloaderApp._record_local_conversion_event(
+            app, *args
+        ),
+        cancel_button=control,
+        audio_button=control,
+        image_button=control,
+        destination_button=control,
+        profile_combo=control,
+        choose_output=None,
+        _sync_ready_state=lambda **kwargs: None,
+        _close_when_idle=False,
+    )
+    LocalAudioVideoDialog._pump_events(dialog)
+    assert telemetry.shutdown(2)
+    recorded = _load_outbox(path)[0].public_payload()
+    assert recorded["failure_reason"] == "permission_denied"
+    assert recorded["failure_detail"]["stage"] == "commit"
+    assert recorded["attempt_id"]
+    assert "PRIVATE" not in json.dumps(recorded)
+
+
+def test_operation_journeys_repeat_order_and_revoke_without_presence_dedup(tmp_path):
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    owner = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_a, **_kw: False,
+    )
+    keys = [str(uuid.uuid4()), str(uuid.uuid4())]
+    for key in keys:
+        for action in ("requested", "shown", "closed"):
+            assert owner.record_operation(
+                "help_operation",
+                action,
+                operation_key=key,
+                dimensions={"help_target": "feedback"},
+            )
+    assert owner.shutdown(2)
+    events = [e.public_payload() for e in _load_outbox(path)]
+    assert len(events) == 6
+    assert [e["action"] for e in events] == ["requested", "shown", "closed"] * 2
+    assert [e["dimensions"]["operation_step"] for e in events] == ["1", "2", "3"] * 2
+    identities = [e["dimensions"]["operation_id"] for e in events]
+    assert len(set(identities[:3])) == len(set(identities[3:])) == 1
+    assert identities[0] != identities[3]
+    assert all(e["dimensions"]["instrumentation"] == "diagnostics_v1" for e in events)
+    owner.set_enabled(False)
+    assert not owner.record_operation("help_operation", "closed", operation_key=keys[0])
+    assert not path.exists()
+    owner.set_enabled(True)
+    assert owner.record_operation("help_operation", "requested", operation_key=keys[0])
+    assert owner.shutdown(2)
+    fresh = _load_outbox(path)[0].dimensions
+    assert fresh["operation_step"] == "1"
+    assert fresh["operation_id"] not in identities
+
+
+def test_operation_observation_limits_preserve_missing_evidence(tmp_path, monkeypatch):
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    owner = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_a, **_kw: False,
+    )
+    monkeypatch.setattr(owner, "flush_async", lambda: None)
+    key = str(uuid.uuid4())
+    for _ in range(64):
+        assert owner.record_operation("help_operation", "requested", operation_key=key)
+    assert not owner.record_operation("help_operation", "requested", operation_key=key)
+    assert len(_load_outbox(path)) == 64
+    other = str(uuid.uuid4())
+    assert owner.record_operation("help_operation", "requested", operation_key=other)
+    assert _load_outbox(path)[-1].dimensions["observation_drop_count"] == "1"
+    assert owner.record_operation("help_operation", "closed", operation_key=other)
+    assert _load_outbox(path)[-1].dimensions["observation_drop_count"] == "0"
+
+
+@pytest.mark.parametrize(
+    "dimensions",
+    [
+        {"operation_id": "private URL"},
+        {"build_revision": "/Users/private"},
+        {"operation_step": "65"},
+        {"operation_step": "01"},
+        {"item_count": "10001"},
+        {"item_count": True},
+        {"item_count": "-1"},
+        {"title": "private"},
+    ],
+)
+def test_operation_dimension_contract_rejects_unbounded_values(dimensions):
+    from yt_downloader.telemetry_features import validate_dimensions
+
+    with pytest.raises((TypeError, ValueError)):
+        validate_dimensions(dimensions)
+
+
+def test_build_revision_requires_build_marker(tmp_path):
+    from yt_downloader.version import read_build_revision
+
+    marker = tmp_path / "VODFORGE_BUILD_REVISION"
+    assert read_build_revision(marker) == "unknown"
+    marker.write_text("private arbitrary content")
+    assert read_build_revision(marker) == "unknown"
+    marker.write_text("a" * 40 + "\n")
+    assert read_build_revision(marker) == "a" * 40
+
+
+def test_resize_summary_uses_existing_pump_and_consent_clears_pending(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from yt_downloader import app as module
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    captured = []
+    telemetry = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.2.3-qa",
+        d1_recorder=lambda event: captured.append(event) is None,
+        heycatch_recorder=lambda *_a, **_kw: True,
+    )
+    clock = [10.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock[0])
+    app = SimpleNamespace(
+        product_telemetry=telemetry,
+        _closing=False,
+        anonymous_usage_analytics_var=SimpleNamespace(get=lambda: True),
+        _focus_selected_view="library",
+        download_history=[{}] * 5000,
+        _resize_last_pump=10.0,
+    )
+    module.DownloaderApp._observe_resize_geometry(app, 1000, 700)
+    clock[0] = 10.1
+    module.DownloaderApp._observe_resize_geometry(app, 1200, 800)
+    clock[0] = 10.7
+    module.DownloaderApp._observe_resize_pump(app)
+    assert telemetry.shutdown(2)
+    assert len(captured) == 1
+    assert captured[0].dimensions["lag_bucket"] == "250_999ms"
+    assert captured[0].dimensions["lag_measurement"] == "ui_pump_delay"
+    assert captured[0].dimensions["row_count_bucket"] == "501_5000"
+    clock[0] = 10.8
+    module.DownloaderApp._observe_resize_geometry(app, 1000, 700)
+    # Existing consent callback must discard a burst, even on rapid re-enable.
+    app._record_update_telemetry_receipt = lambda: None
+    module.DownloaderApp._analytics_permission_changed(app, False)
+    clock[0] = 11.5
+    module.DownloaderApp._observe_resize_pump(app)
+    assert app._resize_observation is None
+    assert len(captured) == 1

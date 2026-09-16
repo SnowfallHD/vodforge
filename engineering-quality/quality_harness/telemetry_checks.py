@@ -166,7 +166,12 @@ def assert_feature_vocabulary(site: Path) -> None:
     import re
 
     from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
-    from yt_downloader.telemetry_features import DIMENSION_CHOICES, FEATURE_ACTIONS
+    from yt_downloader.telemetry_features import (
+        DIMENSION_CHOICES,
+        DIMENSION_PATTERNS,
+        DIMENSION_RANGES,
+        FEATURE_ACTIONS,
+    )
 
     source = (site / "src/lib/product-telemetry.ts").read_text()
     for name, expected in (
@@ -186,6 +191,42 @@ def assert_feature_vocabulary(site: Path) -> None:
             != expected
         ):
             raise AssertionError("Desktop/backend vocabulary drift: " + name)
+    for name, expected in (
+        ("DIMENSION_PATTERNS", DIMENSION_PATTERNS),
+        (
+            "DIMENSION_RANGES",
+            {key: list(value) for key, value in DIMENSION_RANGES.items()},
+        ),
+    ):
+        match = re.search(r"export const " + name + r": [^=]+ = (.*?);", source)
+        if match is None or json.loads(match.group(1)) != expected:
+            raise AssertionError("Desktop/backend vocabulary drift: " + name)
+    from ast import literal_eval
+
+    from yt_downloader.failure_diagnostics import (
+        ERROR_TYPES,
+        FAILURE_CODES,
+        FAILURE_REASONS,
+        FAILURE_STAGES,
+        FIRST_PARTY_MODULES,
+    )
+
+    for key, expected in (
+        ("FAILURE_REASONS", FAILURE_REASONS),
+        ("failure_code", FAILURE_CODES),
+        ("source_module", FIRST_PARTY_MODULES),
+        ("source_scope", {"first_party_frame"}),
+        ("stage", FAILURE_STAGES),
+        ("error_type", ERROR_TYPES),
+    ):
+        pattern = (
+            r"const " + key + r" = new Set\(\[(.*?)\]\)"
+            if key == "FAILURE_REASONS"
+            else r"\b" + key + r": new Set\(\[(.*?)\]\)"
+        )
+        match = re.search(pattern, source, re.DOTALL)
+        if match is None or set(literal_eval("[" + match.group(1) + "]")) != expected:
+            raise AssertionError("Desktop/backend diagnostic vocabulary drift: " + key)
     names = re.search(r"PRODUCT_EVENT_NAMES = \[(.*?)\] as const", source, re.DOTALL)
     if (
         names is None
@@ -404,6 +445,13 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     for action in sorted(actions)
                 )
                 for index, (name, fields) in enumerate(dimensions):
+                    if str(fields.get("feature", "")).endswith("_operation"):
+                        fields["dimensions"] = {
+                            "instrumentation": "diagnostics_v1",
+                            "build_revision": "unknown",
+                            "operation_id": str(uuid.uuid4()),
+                            "operation_step": "1",
+                        }
                     if (
                         name.startswith(("run_", "local_conversion_"))
                         or name == "media_exported"

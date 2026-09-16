@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import tkinter as tk
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from .engagement_state import WELCOME_SLIDES, EngagementState
+from .failure_diagnostics import capture_failure
 from .support_diagnostics import FailureContext, failure_context
 from .support_transport import SupportTransport
 from .support_ui import SupportPanel
@@ -22,6 +24,7 @@ class EngagementUI:
         *,
         ready: Callable[[], bool],
         suppress_showcase: Callable[[], None],
+        on_operation: Callable[..., Any] | None = None,
     ):
         self.root, self.ready, self.suppress_showcase = root, ready, suppress_showcase
         self.state = EngagementState(path)
@@ -32,6 +35,11 @@ class EngagementUI:
         self.timer: str | None = None
         self._menu: tk.Menu | None = None
         self._menu_action: str | None = None
+        self.on_operation = on_operation or (lambda *_args, **_kwargs: None)
+        self._menu_operation: str | None = None
+        self._panel_operation: str | None = None
+        self._panel_target = "menu"
+        self._panel_observation: str | None = None
 
     @property
     def blocks_announcements(self) -> bool:
@@ -64,7 +72,24 @@ class EngagementUI:
             pass  # Optional prompts must never break ordinary app use.
         self.start()
 
+    def _observe(
+        self, action: str, operation: str | None, target: str = "menu", **kwargs
+    ) -> None:
+        if operation is not None:
+            self.on_operation(
+                "help_operation",
+                action,
+                operation_key=operation,
+                dimensions={"help_target": target, **kwargs.pop("dimensions", {})},
+                **kwargs,
+            )
+
     def _closed(self) -> None:
+        if self._panel_observation is not None:
+            self.root.after_cancel(self._panel_observation)
+            self._panel_observation = None
+        self._observe("closed", self._panel_operation, self._panel_target)
+        self._panel_operation = None
         self.panel = None
 
     def welcome(self) -> None:
@@ -140,12 +165,57 @@ class EngagementUI:
         if self.closed or self._menu is not menu or self._menu_action is not None:
             return
 
+        operation = self._menu_operation
+        target = getattr(action, "__name__", "menu")
+        if target not in {"feedback", "review", "welcome"}:
+            target = "menu"
+        self._observe("selected", operation, target)
+
         def dispatch() -> None:
             self._menu_action = None
             if self.closed or self._menu is not menu:
                 return
             self._dismiss_menu()
-            action()
+            self._menu_operation = None
+            self._observe("dispatched", operation, target)
+            blocker = (
+                "panel"
+                if self.panel is not None
+                else "grab"
+                if self.root.grab_current() is not None
+                else None
+            )
+            if blocker:
+                self._observe(
+                    "blocked", operation, target, dimensions={"ui_blocker": blocker}
+                )
+                return
+            try:
+                action()
+            except Exception as exc:
+                self._observe(
+                    "failed",
+                    operation,
+                    target,
+                    failure_detail=capture_failure(exc, stage="dispatch"),
+                )
+                raise
+            panel = self.panel
+            if panel is not None:
+                self._panel_operation, self._panel_target = operation, target
+
+                def observed() -> None:
+                    self._panel_observation = None
+                    frame = getattr(panel, "frame", None)
+                    if (
+                        not self.closed
+                        and self.panel is panel
+                        and frame is not None
+                        and frame.winfo_viewable()
+                    ):
+                        self._observe("shown", operation, target)
+
+                self._panel_observation = self.root.after_idle(observed)
 
         # Windows delivers the selected Tcl command after tk_popup returns.
         # Keep that command alive, then dismiss before constructing a modal.
@@ -154,7 +224,12 @@ class EngagementUI:
     def menu(self, anchor: tk.Misc) -> None:
         if self.closed:
             return
+        if self._menu is not None:
+            self._observe("replaced", self._menu_operation)
         self._dismiss_menu()
+        self._menu_operation = str(uuid.uuid4())
+        operation = self._menu_operation
+        self._observe("requested", operation)
         menu = self._menu = tk.Menu(self.root, tearoff=False)
         menu.add_command(
             label="Report a problem / Send feedback",
@@ -176,11 +251,17 @@ class EngagementUI:
         finally:
             if self.root.grab_current() is menu:
                 menu.grab_release()
+            self._observe("popup_returned", operation)
         # An unselected menu is bounded to this one owner and reclaimed on
         # replacement/close. Destroying it here discards Windows' queued command.
 
     def close(self) -> None:
         self.closed = True
+        self._observe("closed", self._menu_operation)
+        self._menu_operation = None
+        if self._panel_observation is not None:
+            self.root.after_cancel(self._panel_observation)
+            self._panel_observation = None
         self._dismiss_menu()
         if self.timer:
             self.root.after_cancel(self.timer)
@@ -188,4 +269,5 @@ class EngagementUI:
             self.panel.close(force=True)
         elif self.panel is not None:
             self.panel.close(acknowledge=False)
-        self.panel = None
+        # Forced tour close skips acknowledgement, but still retires its operation.
+        self._closed()

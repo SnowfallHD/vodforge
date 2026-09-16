@@ -72,6 +72,15 @@ def telemetry_fixture(candidate, platform="macos"):
     for event in events:
         event["schema_version"] = 2
         event["dimensions"] = "{}"
+        if str(event.get("feature", "")).endswith("_operation"):
+            event["dimensions"] = json.dumps(
+                {
+                    "instrumentation": "diagnostics_v1",
+                    "build_revision": candidate["source"]["commit"],
+                    "operation_id": str(uuid.uuid4()),
+                    "operation_step": "1",
+                }
+            )
         if event["event_name"].startswith(("run_", "local_conversion_")):
             event["attempt_id"] = first_attempt
     extra_starts = []
@@ -357,3 +366,33 @@ def test_silent_release_rejects_announcement_event():
         }
     )
     assert "Disabled release announcement emitted telemetry" in validate_journey(data)
+
+
+def test_operation_release_observations_require_correlation_and_exact_source():
+    import json
+
+    candidate = {
+        "source": {"commit": "a" * 40},
+        "immutable_archive": {"sha256": "b" * 64},
+    }
+    data = telemetry_fixture(candidate)
+    events = data["snapshots"]["events_complete"]["events"]
+    event = next(
+        event
+        for event in events
+        if str(event.get("feature", "")).endswith("_operation")
+    )
+    event["dimensions"] = "{}"
+    assert "Operation observation missing correlation" in validate_journey(data)
+    event["dimensions"] = json.dumps(
+        {
+            "instrumentation": "diagnostics_v1",
+            "operation_id": "fd2f4067-e5b4-46b2-b9c0-c8707a0523e1",
+            "operation_step": "1",
+            "build_revision": "unknown",
+        }
+    )
+    assert (
+        "Operation build revision does not match packaged source"
+        in validate_journey(data)
+    )

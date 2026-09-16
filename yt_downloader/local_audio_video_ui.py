@@ -4,12 +4,14 @@ import queue
 import threading
 import tkinter as tk
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Any, Literal
 
 from PIL import Image, ImageTk
 
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoCancelled,
@@ -44,6 +46,13 @@ def compact_dialog_path(path: Path, *, maximum: int = 108) -> str:
     return f"{prefix}…{suffix}"
 
 
+@dataclass(frozen=True)
+class LocalConversionFailure:
+    # Message remains local presentation data; only diagnostic reaches telemetry.
+    message: str
+    diagnostic: FailureDiagnostic
+
+
 class LocalAudioVideoDialog:
     """Own the local MP3 + still-image form and its immutable worker events."""
 
@@ -57,13 +66,13 @@ class LocalAudioVideoDialog:
         on_complete: Callable[[LocalAudioVideoResult], None],
         on_closed: Callable[[], None],
         choose_output: Callable[[], Path] | None = None,
-        on_telemetry: Callable[[str, str], None] | None = None,
+        on_telemetry: Callable[..., None] | None = None,
     ) -> None:
         self.owner = owner
         self.converter = converter
         self.output_dir = Path(output_dir)
         self.profile_var = profile_variable
-        self.on_telemetry = on_telemetry or (lambda _event, _run: None)
+        self.on_telemetry = on_telemetry or (lambda *_args: None)
         self._telemetry_run_id = ""
         self.on_complete = on_complete
         self.on_closed = on_closed
@@ -395,18 +404,24 @@ class LocalAudioVideoDialog:
         self.status_var.set("Checking local files…")
 
         def run() -> None:
+            diagnostics: list[FailureDiagnostic] = []
             try:
                 result = self.converter.convert(
                     request,
                     on_progress=lambda progress: self._events.put(
                         ("progress", progress)
                     ),
+                    on_failure=diagnostics.append,
+                    on_commit=lambda: self._events.put(("committed", None)),
                 )
                 self._events.put(("complete", result))
             except LocalAudioVideoCancelled as exc:
                 self._events.put(("cancelled", str(exc)))
             except Exception as exc:  # noqa: BLE001 - presentation boundary
-                self._events.put(("error", str(exc)))
+                diagnostic = diagnostics[-1] if diagnostics else capture_failure(exc)
+                self._events.put(
+                    ("error", LocalConversionFailure(str(exc), diagnostic))
+                )
 
         self._worker = threading.Thread(
             target=run,
@@ -430,6 +445,8 @@ class LocalAudioVideoDialog:
             if kind == "progress" and isinstance(payload, LocalAudioVideoProgress):
                 self.progress.configure(value=payload.fraction * 100)
                 self.status_var.set(payload.label)
+            elif kind == "committed":
+                self.on_telemetry("local_conversion_committed", self._telemetry_run_id)
             elif kind == "complete" and isinstance(payload, LocalAudioVideoResult):
                 terminal = True
                 self._worker = None
@@ -441,10 +458,19 @@ class LocalAudioVideoDialog:
                     if kind == "cancelled"
                     else "local_conversion_failed",
                     self._telemetry_run_id,
+                    *(
+                        [payload.diagnostic]
+                        if isinstance(payload, LocalConversionFailure)
+                        else []
+                    ),
                 )
                 terminal = True
                 self._worker = None
-                message = str(payload) or "The conversion did not finish."
+                message = (
+                    payload.message
+                    if isinstance(payload, LocalConversionFailure)
+                    else str(payload)
+                ) or "The conversion did not finish."
                 self.cancel_button.configure(text="Cancel", state="normal")
                 self.audio_button.configure(state="normal")
                 self.image_button.configure(state="normal")

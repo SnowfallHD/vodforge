@@ -291,11 +291,16 @@ def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
     assert backend.snapshot.status == "Failed"
     assert backend.snapshot.error == "The local media file could not be played."
     observed: list[str] = []
+    operations = []
     player_window = SimpleNamespace(
         _closed=False,
         playback=backend,
         _last_snapshot=None,
         _on_feature=observed.append,
+        _operation_play_observed=False,
+        _on_operation=lambda action, diagnostic=None: operations.append(
+            (action, diagnostic)
+        ),
         time_var=SimpleNamespace(set=lambda value: None),
         status_var=SimpleNamespace(set=lambda value: None),
         play_button=SimpleNamespace(configure=lambda **kwargs: None),
@@ -313,6 +318,11 @@ def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
     assert backend.snapshot.status == "Ended"
     MediaPlayerWindow._poll(player_window)
     assert observed == ["failed", "completed"]
+    assert [action for action, _ in operations] == ["failed", "started", "completed"]
+    assert operations[0][1].stage == "playback"
+    assert (
+        operations[0][1].error_type is None
+    )  # Provider supplied text, not a typed exception.
 
 
 def test_provider_error_during_play_is_not_cleared_after_provider_returns(

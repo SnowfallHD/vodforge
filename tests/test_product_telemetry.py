@@ -346,3 +346,276 @@ def test_event_recorded_while_empty_delivery_worker_exits_is_not_stranded(
         release_worker.set()
     assert owner.shutdown(2)
     assert len(delivered) == 1
+
+
+@pytest.mark.parametrize(
+    "event_name,feature,action",
+    [
+        ("local_conversion_failed", None, None),
+        ("feature_used", "player", "failed"),
+    ],
+)
+def test_typed_operation_failures_survive_restart_without_private_exception_data(
+    tmp_path, event_name, feature, action
+):
+    from yt_downloader.failure_diagnostics import capture_failure
+    from yt_downloader.product_telemetry import _load_outbox, _parse_event
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    detail = capture_failure(PermissionError(13, "PRIVATE /path title URL")).payload()
+    owner = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    assert owner.record(
+        event_name, feature=feature, action=action, failure_detail=detail
+    )
+    assert owner.shutdown(2)
+    persisted = _load_outbox(path)[0].public_payload()
+    assert persisted["failure_reason"] == "permission_denied"
+    assert persisted["failure_detail"] == detail
+    assert "PRIVATE" not in json.dumps(persisted)
+    assert _parse_event(persisted).public_payload() == persisted
+    deliveries = []
+    restarted = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda event: deliveries.append(event.public_payload()) is None,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    restarted.flush_async()
+    assert restarted.shutdown(2)
+    assert deliveries == [persisted]
+    assert not path.exists()
+
+
+def test_old_local_failure_replay_does_not_acquire_invented_diagnostic(tmp_path):
+    from yt_downloader.product_telemetry import _parse_event
+
+    legacy = {
+        "event_id": "a40aa6cc-cfdd-4f7a-96e1-5dce763d2782",
+        "install_id": "5fcae92f-8bf0-4810-920d-ff8348a42a0a",
+        "event_name": "local_conversion_failed",
+        "occurred_at": "2026-09-15T00:00:00+00:00",
+        "app_version": "0.2.2",
+        "platform": "windows",
+        "release_channel": "production",
+        "schema_version": 2,
+        "attempt_id": None,
+        "retry_of": None,
+        "feature": None,
+        "action": None,
+        "dimensions": {},
+        "run_kind": "local_audio_video",
+        "output_type": "mp4",
+    }
+    assert _parse_event(legacy).public_payload() == legacy
+
+
+@pytest.mark.parametrize(
+    "event_name,feature,action",
+    [
+        ("local_conversion_completed", None, None),
+        ("feature_used", "player", "completed"),
+    ],
+)
+def test_nonfailure_events_reject_failure_facts(tmp_path, event_name, feature, action):
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=tmp_path / "installation.json",
+        app_version="0.2.3-dev",
+    )
+    with pytest.raises(ValueError):
+        owner.record(
+            event_name,
+            feature=feature,
+            action=action,
+            failure_detail={"reason": "permission_denied", "stage": "unknown"},
+        )
+
+
+def test_conflicting_failure_reason_is_rejected_before_outbox(tmp_path):
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=tmp_path / "installation.json",
+        app_version="0.2.3-dev",
+    )
+    with pytest.raises(ValueError):
+        owner.record(
+            "local_conversion_failed",
+            failure_reason="network",
+            failure_detail={"reason": "permission_denied", "stage": "unknown"},
+        )
+    assert not (tmp_path / "events.json").exists()
+
+
+def test_settings_reenable_reports_current_observation_without_replaying_denied(
+    tmp_path,
+):
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    received = []
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda event: received.append(event.public_payload()) is None,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    current = {"setting_output_type": "MP4"}
+    assert owner.record_feature("settings", "snapshot", dimensions=current)
+    assert owner.shutdown(2)
+    owner.set_enabled(False)
+    assert not owner.record_feature(
+        "settings", "snapshot", dimensions={"setting_output_type": "MP3"}
+    )
+    assert not (tmp_path / "events.json").exists()
+    owner.set_enabled(True)
+    assert owner.record_feature("settings", "snapshot", dimensions=current)
+    assert owner.shutdown(2)
+    assert len(received) == 2
+    assert all(event["dimensions"] == current for event in received)
+    assert received[0]["event_id"] != received[1]["event_id"]
+
+
+def test_disable_between_permission_and_retention_cannot_recreate_outbox(
+    tmp_path, monkeypatch
+):
+    from yt_downloader import product_telemetry as module
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    owner = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda event: pytest.fail("disabled event reached sink"),
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+
+    def load_after_disable(_path):
+        owner.set_enabled(False)
+        return []
+
+    monkeypatch.setattr(module, "_load_outbox", load_after_disable)
+    assert not owner.record("app_opened")
+    assert not path.exists()
+
+
+def test_revocation_survives_locked_outbox_and_restart_without_replay(
+    tmp_path, monkeypatch
+):
+    from yt_downloader import product_telemetry as module
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    owner = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_a, **_kw: False,
+    )
+    assert owner.record_app_opened()
+    assert owner.shutdown(2)
+    before = path.read_bytes()
+    consent = AnalyticsConsentOwner(tmp_path)
+    consent.choose(False)
+
+    def locked(*args):
+        raise PermissionError("QA locked outbox")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "_save_outbox", locked)
+        owner.set_enabled(False)
+    assert path.read_bytes() == before
+    consent.choose(True)
+    delivered = []
+    restarted = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda event: delivered.append(event) is None,
+        heycatch_recorder=lambda *_a, **_kw: True,
+    )
+    restarted.flush_async()
+    assert restarted.shutdown(2)
+    assert delivered == []
+    assert not path.exists()
+    assert restarted.record_app_opened()
+    assert restarted.shutdown(2)
+    assert len(delivered) == 1
+    assert delivered[0].consent_epoch == consent.snapshot()["collection_epoch"]
+    assert "consent_epoch" not in delivered[0].public_payload()
+
+
+def test_revoke_and_reenable_between_sinks_cannot_deliver_old_event_to_second_sink(
+    tmp_path,
+):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    consent = AnalyticsConsentOwner(tmp_path)
+    secondary = []
+
+    def primary(_event):
+        consent.choose(False)
+        owner.set_enabled(False)
+        consent.choose(True)
+        owner.set_enabled(True)
+        return True
+
+    owner = ProductTelemetryOwner(
+        state_path=tmp_path / "events.json",
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=primary,
+        heycatch_recorder=lambda *args, **kwargs: secondary.append(kwargs) is None,
+    )
+    assert owner.record_app_opened()
+    assert owner.shutdown(2)
+    assert secondary == []
+    assert not (tmp_path / "events.json").exists()
+
+
+def test_legacy_denial_also_invalidates_outbox_before_reenable(tmp_path):
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+    from yt_downloader.settings_store import update_analytics_settings
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    path = tmp_path / "events.json"
+    owner = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_a, **_kw: False,
+    )
+    assert owner.record_app_opened() and owner.shutdown(2)
+    # Historical releases saved choice only; simulate their unpurged outbox.
+    update_analytics_settings(tmp_path / "settings.json", {"choice": "denied"})
+    consent = AnalyticsConsentOwner(tmp_path)
+    assert consent.snapshot().get("collection_epoch")
+    consent.choose(True)
+    delivered = []
+    resumed = ProductTelemetryOwner(
+        state_path=path,
+        installation_state_path=installation,
+        app_version="0.2.3-dev",
+        d1_recorder=lambda e: delivered.append(e) is None,
+        heycatch_recorder=lambda *_a, **_kw: True,
+    )
+    resumed.flush_async()
+    assert resumed.shutdown(2)
+    assert delivered == [] and not path.exists()

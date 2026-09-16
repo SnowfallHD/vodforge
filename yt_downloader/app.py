@@ -66,7 +66,7 @@ from .export_planning import (
     migrate_export_preferences,
     mp3_sample_rate_display,
 )
-from .failure_diagnostics import capture_failure
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .focus_settings import (
     FocusSettingsActions,
     FocusSettingsBindings,
@@ -214,7 +214,9 @@ from .run_deck_renderer import (
 )
 from .run_identity import (
     annotate_job_metadata,
+    job_attempt_signature,
     matching_attempt,
+    metadata_attempt_signature,
     metadata_output_profile,
     metadata_output_profile_details,
     metadata_output_variant,
@@ -240,6 +242,7 @@ from .settings_store import (
 from .telemetry_features import (
     committed_export_dimensions,
     export_dimensions,
+    job_intent_dimensions,
     settings_dimensions,
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
@@ -5071,6 +5074,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 and not self._closing
             ),
             suppress_showcase=lambda: self.whats_new_seen_var.set(SHOWCASE_ID),
+            on_operation=self.product_telemetry.record_operation,
         )
         self.whats_new = WhatsNewOwner(
             self,
@@ -6840,6 +6844,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         if name == "library" and self.__dict__.get("_focus_selected_view") != name:
             self._record_feature("library", "opened")
+        # A raised frame leaves every sibling mapped. During native live resize
+        # Tk then lays out and repaints hidden Forge/Library/Activity surfaces.
+        # Retain widgets and grid options, but allocate only the selected view.
+        for view_name, candidate in self._focus_views.items():
+            if view_name == name:
+                candidate.grid()
+            else:
+                candidate.grid_remove()
         frame.tkraise()
         for view_name, button in self._focus_nav_buttons.items():
             active = view_name == name
@@ -6855,6 +6867,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if underline is not None:
                 underline.configure(bg=THEME["accent"] if active else THEME["bg"])
         self._focus_selected_view = name
+        self._apply_focus_layout(force=True)
         if name == "library":
             self._queue_focus_selected_overview_layout()
             self._queue_quality_e2e_library_visibility_receipt()
@@ -7313,6 +7326,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._first_launch_worker.start()
 
     def _analytics_permission_changed(self, enabled: bool) -> None:
+        self._resize_observation: dict[str, Any] | None = None
         self.product_telemetry.set_enabled(enabled)
         if not enabled:
             self._record_update_telemetry_receipt()
@@ -8522,6 +8536,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     def _refresh_focus_run_deck(self) -> None:
         if not hasattr(self, "focus_run_deck"):
             return
+        if self.__dict__.get("_focus_selected_view", "forge") != "forge":
+            return
         records = self._focus_run_records()
         deck_width = self.focus_run_deck.winfo_width()
         if deck_width <= 1:
@@ -8832,9 +8848,94 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if event is not None
                 else max(1, self.winfo_height())
             )
+            DownloaderApp._observe_resize_geometry(self, width, height)
             self._apply_focus_layout(width=width, height=height)
         except tk.TclError:
             return
+
+    def _observe_resize_geometry(self, width: int, height: int) -> None:
+        geometry = (width, height)
+        previous = self.__dict__.get("_resize_observed_geometry")
+        self._resize_observed_geometry = geometry
+        if (
+            previous is None
+            or previous == geometry
+            or self.__dict__.get("_closing", False)
+        ):
+            return
+        consent = self.__dict__.get("anonymous_usage_analytics_var")
+        if consent is None or not consent.get():
+            self._resize_observation = None
+            return
+        now = time.monotonic()
+        observation = self.__dict__.get("_resize_observation")
+        if observation is None:
+            telemetry = self.__dict__.get("product_telemetry")
+            if telemetry is None or not telemetry.permitted():
+                return
+            observation = self._resize_observation = {
+                "operation": str(uuid.uuid4()),
+                "last": now,
+                "delay": 0.0,
+            }
+        observation["last"] = now
+
+    def _observe_resize_pump(self) -> None:
+        now = time.monotonic()
+        previous = self.__dict__.get("_resize_last_pump", now)
+        self._resize_last_pump = now
+        observation = self.__dict__.get("_resize_observation")
+        if observation is None:
+            return
+        if self.__dict__.get("_closing", False):
+            self._resize_observation = None
+            return
+        observation["delay"] = max(observation["delay"], max(0.0, now - previous - 0.1))
+        if now - observation["last"] < 0.25:
+            return
+        self._resize_observation = None
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is None:
+            return
+        delay = observation["delay"] * 1000
+        lag = next(
+            (
+                label
+                for upper, label in (
+                    (50, "under_50ms"),
+                    (100, "50_99ms"),
+                    (250, "100_249ms"),
+                    (1000, "250_999ms"),
+                )
+                if delay < upper
+            ),
+            "1000ms_plus",
+        )
+        rows = len(self.__dict__.get("download_history", ()))
+        count = (
+            "0"
+            if rows == 0
+            else "1_25"
+            if rows <= 25
+            else "26_500"
+            if rows <= 500
+            else "501_5000"
+            if rows <= 5000
+            else "5001_plus"
+        )
+        view = self.__dict__.get("_focus_selected_view", "unknown")
+        telemetry.record_operation(
+            "resize_operation",
+            "settled",
+            operation_key=observation["operation"],
+            dimensions={
+                "view": view if view in {"forge", "library", "activity"} else "unknown",
+                "row_count_bucket": count,
+                "lag_bucket": lag,
+                "window_change": "resize",
+                "lag_measurement": "ui_pump_delay",
+            },
+        )
 
     def _schedule_focus_library_padding(self, padding: int) -> None:
         """Settle cosmetic ultrawide centering after native edge motion stops.
@@ -9000,7 +9101,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.focus_details_button.grid_remove()
             self.focus_detail_header.grid_remove()
 
-        if self._focus_run_records():
+        if (
+            self.__dict__.get("_focus_selected_view", "forge") == "forge"
+            and self._focus_run_records()
+        ):
             if not self.focus_deck_header.winfo_manager():
                 self.focus_deck_header.grid()
         else:
@@ -9425,15 +9529,34 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         self._local_audio_video_dialog = dialog
         dialog.show()
 
-    def _record_local_conversion_event(self, event: str, run_id: str) -> None:
+    def _record_local_conversion_event(
+        self, event: str, run_id: str, diagnostic: FailureDiagnostic | None = None
+    ) -> None:
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is not None:
+            action = {
+                "local_conversion_started": "started",
+                "local_conversion_committed": "committed",
+                "local_conversion_failed": "failed",
+                "local_conversion_stopped": "cancelled",
+            }[event]
+            telemetry.record_operation(
+                "local_conversion_operation",
+                action,
+                operation_key=run_id,
+                attempt_key=run_id,
+                failure_detail=diagnostic,
+                dimensions={"committed_count": "1"} if action == "committed" else {},
+            )
+            if action == "committed":
+                return
             telemetry.record(
                 cast(ProductEventName, event),
                 dedupe_key=run_id,
                 attempt_key=run_id,
                 run_kind="local_audio_video",
                 output_type="mp4",
+                failure_detail=diagnostic.payload() if diagnostic else None,
             )
 
     def _record_queue_event(self, event: str, job: DownloadJob) -> None:
@@ -9454,6 +9577,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
 
     def _complete_local_audio_video(self, result: LocalAudioVideoResult) -> None:
         metadata = dict(result.history_metadata)
+        run_id = str(metadata.get("vodforge_run_id") or "")
+        telemetry = self.__dict__.get("product_telemetry")
         try:
             save_custom_cached_thumbnail_image(metadata, result.image_path)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -9469,6 +9594,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ):
             telemetry = self.__dict__.get("product_telemetry")
             if telemetry is not None:
+                if run_id:
+                    telemetry.record_operation(
+                        "local_conversion_operation",
+                        "failed",
+                        operation_key=run_id,
+                        attempt_key=run_id,
+                        dimensions={"committed_count": "1", "stage": "history"},
+                        failure_detail=FailureDiagnostic(
+                            reason="unknown", stage="history"
+                        ),
+                    )
                 telemetry.record(
                     "local_conversion_failed",
                     dedupe_key=run_id or None,
@@ -9479,6 +9615,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is not None:
+            if run_id:
+                telemetry.record_operation(
+                    "local_conversion_operation",
+                    "completed",
+                    operation_key=run_id,
+                    attempt_key=run_id,
+                    dimensions={"committed_count": "1"},
+                )
             telemetry.record(
                 "local_conversion_completed",
                 dedupe_key=run_id or None,
@@ -10689,8 +10833,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 info = self.metadata_items[int(selection[0])]
             except (IndexError, TypeError, ValueError):
                 return
+        operation = str(uuid.uuid4())
+        DownloaderApp._record_playback_operation(self, operation, "requested")
         media_path = resolve_library_media_path(info)
         if media_path is None:
+            DownloaderApp._record_playback_operation(
+                self,
+                operation,
+                "failed",
+                FailureDiagnostic(reason="filesystem", stage="playback"),
+            )
             self._handle_missing_library_media(info)
             return
         existing = self.__dict__.get("_media_player_window")
@@ -10699,12 +10851,19 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             and existing is not None
             and existing.focus_existing()
         ):
+            DownloaderApp._record_playback_operation(self, operation, "focused")
             return
         if existing is not None:
             existing.close()
         ffmpeg = find_runtime_executable("ffmpeg")
         playback_engine = self.playback_engine
         if not ffmpeg or playback_engine is None:
+            DownloaderApp._record_playback_operation(
+                self,
+                operation,
+                "failed",
+                FailureDiagnostic(reason="dependency_missing", stage="playback"),
+            )
             messagebox.showerror(
                 f"{APP_NAME} Player",
                 "The bundled playback engine is unavailable. Reinstall VODForge or use Open saved location.",
@@ -10720,6 +10879,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ffmpeg=ffmpeg,
             launch_generation=launch_generation,
             deadline=time.monotonic() + 10.0,
+            operation=operation,
         )
 
     def _open_library_player_when_ready(
@@ -10730,15 +10890,23 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ffmpeg: str,
         launch_generation: int,
         deadline: float,
+        operation: str | None = None,
     ) -> None:
         """Open from the warm engine without ever waiting on Tk's render thread."""
 
         if launch_generation != self._media_player_launch_generation or self._closing:
+            DownloaderApp._record_playback_operation(self, operation, "cancelled")
             return
         playback_engine = self.playback_engine
         if playback_engine is None:
             return
         if playback_engine.failed:
+            DownloaderApp._record_playback_operation(
+                self,
+                operation,
+                "failed",
+                FailureDiagnostic(reason="unknown", stage="playback"),
+            )
             messagebox.showerror(
                 f"{APP_NAME} Player",
                 "The bundled playback engine could not initialize. Reinstall VODForge or use Open saved location.",
@@ -10747,6 +10915,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         if not playback_engine.ready:
             if time.monotonic() >= deadline:
+                DownloaderApp._record_playback_operation(
+                    self,
+                    operation,
+                    "failed",
+                    FailureDiagnostic(
+                        reason="unknown", stage="playback", failure_code="timeout"
+                    ),
+                )
                 messagebox.showerror(
                     f"{APP_NAME} Player",
                     "The offline playback engine did not become ready in time.",
@@ -10762,6 +10938,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     ffmpeg=ffmpeg,
                     launch_generation=launch_generation,
                     deadline=deadline,
+                    operation=operation,
                 ),
             )
             return
@@ -10786,6 +10963,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             )
             previews.load(media_path)
         except MediaPlayerError as exc:
+            DownloaderApp._record_playback_operation(
+                self, operation, "failed", capture_failure(exc, stage="playback")
+            )
             if previews is not None:
                 previews.shutdown()
             if playback is not None:
@@ -10811,11 +10991,32 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             thumbnail_path=self._library_thumbnail_path(info),
             on_first_play=lambda: self._record_product_playback_started(info),
             on_feature=lambda action: self._record_feature("player", action),
+            on_operation=lambda action, diagnostic=None: (
+                DownloaderApp._record_playback_operation(
+                    self, operation, action, diagnostic
+                )
+            ),
         )
         self._media_player_window = window
         self._media_player_source = media_path
         window.show()
+        DownloaderApp._record_playback_operation(self, operation, "ready")
         self.status_var.set("Player ready")
+
+    def _record_playback_operation(
+        self,
+        operation: str | None,
+        action: str,
+        diagnostic: FailureDiagnostic | None = None,
+    ) -> None:
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None and operation is not None:
+            telemetry.record_operation(
+                "playback_operation",
+                action,
+                operation_key=operation,
+                failure_detail=diagnostic,
+            )
 
     def _handle_missing_library_media(self, info: dict[str, Any]) -> None:
         """Render one recovery decision owned by LibraryMediaRecoveryOwner."""
@@ -12718,6 +12919,26 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return None
 
         existing_path, existing_probe = existing_output
+        variant_names = {
+            metadata_output_variant(info),
+            metadata_output_variant(info, compact=True),
+        } - {""}
+        namespace = (
+            "variant"
+            if variant_names.intersection(existing_path.parts)
+            else "owned_legacy"
+        )
+        DownloaderApp._observe_download_operation(
+            self,
+            job,
+            "reused",
+            stage="reuse",
+            dimensions={
+                "reused_count": "1",
+                "committed_count": "0",
+                "storage_namespace": namespace,
+            },
+        )
         remember_video_output_dir(info, existing_path.parent)
         reused_info = build_encoding_summary_metadata(
             info,
@@ -12863,6 +13084,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         else:
             self.events.put(("status", f"{label} — MP3 encoded"))
 
+        DownloaderApp._observe_download_operation(
+            self, job, "stage", stage="validation"
+        )
         self.events.put(("status", f"{label} — validating output"))
         validation_started = time.monotonic()
         validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
@@ -13594,6 +13818,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 control_request = pending_request
 
         if control_request is not None:
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "cancelled",
+                dimensions={
+                    "outcome": "stopped"
+                    if control_request.kind is _DownloadControlKind.CANCEL_RUN
+                    else "skipped"
+                },
+            )
             if control_request.kind is _DownloadControlKind.CANCEL_RUN:
                 self._emit_failed_download_item_metadata(
                     job, result, str(control_request)
@@ -13651,8 +13885,13 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.skip_video_requested = False
             return replace(result, outcome=skipped_outcome)
 
-        job.failure_diagnostic = capture_failure(
-            error, stage="processing" if result.metadata is not None else "preparation"
+        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
+        DownloaderApp._observe_download_operation(
+            self,
+            job,
+            "failed",
+            failure_detail=job.failure_diagnostic,
+            dimensions={"failed_count": "1"},
         )
         issue = format_ytdlp_user_error(error)
         if item.total <= 1:
@@ -13704,6 +13943,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             recovery_owner = self.__dict__.get("run_recovery")
             if recovery_owner is not None:
                 recovery_owner.staging_started(job, staging_dir)
+            DownloaderApp._observe_download_operation(
+                self, job, "stage", stage="download"
+            )
             downloaded_item = self._download_item_to_staging(
                 job,
                 source.ytdlp_module,
@@ -13736,6 +13978,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             current_info = prepared_item.metadata
             result = replace(result, metadata=current_info)
 
+            DownloaderApp._observe_download_operation(
+                self, job, "stage", stage="transcode"
+            )
             validated_staged = self._transcode_and_validate_staged_media(
                 job,
                 current_info,
@@ -13750,6 +13995,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     0.40,
                 ),
                 control_check=self._raise_for_download_control_requests,
+            )
+            DownloaderApp._observe_download_operation(
+                self, job, "stage", stage="commit"
             )
             committed_media = self._commit_validated_staged_media(
                 job,
@@ -13767,6 +14015,20 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     0.40,
                 ),
                 control_check=self._raise_for_download_control_requests,
+            )
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "committed",
+                stage="commit",
+                dimensions={
+                    "committed_count": str(min(committed_media.success_count, 10000)),
+                    "storage_namespace": "variant",
+                },
+            )
+            before_sidecars = result.outcome.sidecar_failure_count
+            DownloaderApp._observe_download_operation(
+                self, job, "stage", stage="sidecars"
             )
             current_info = committed_media.metadata
             result = replace(
@@ -13788,6 +14050,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                         custom_cover_for_cache=prepared_item.custom_cover_for_cache,
                     )
                 ),
+            )
+            sidecar_failures = result.outcome.sidecar_failure_count - before_sidecars
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "completed",
+                dimensions={
+                    "committed_count": str(min(committed_media.success_count, 10000)),
+                    "reused_count": "0",
+                    "sidecar_failure_count": str(min(sidecar_failures, 10000)),
+                    "outcome": "partial" if sidecar_failures else "complete",
+                },
             )
             self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
             result_label = (
@@ -13812,6 +14086,73 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return self._resolve_download_item_failure(job, item, result, failure)
         return result
 
+    def _observe_download_operation(
+        self,
+        job: DownloadJob,
+        action: str,
+        *,
+        stage: str | None = None,
+        dimensions: dict[str, str] | None = None,
+        failure_detail: FailureDiagnostic | None = None,
+    ) -> None:
+        if stage is not None:
+            job.failure_stage = stage
+        telemetry = self.__dict__.get("product_telemetry")
+        operation = getattr(job, "telemetry_operation_id", None)
+        if telemetry is not None and operation:
+            telemetry.record_operation(
+                "download_operation",
+                action,
+                operation_key=operation,
+                attempt_key=job.run_id,
+                retry_key=job.retry_of_run_id,
+                dimensions={"stage": job.failure_stage, **dict(dimensions or {})},
+                failure_detail=failure_detail,
+            )
+
+    def _observed_intent_relation(self, job: DownloadJob, info: dict[str, Any]) -> str:
+        # Compare the existing durable owners locally; never emit their raw keys.
+        previous = [
+            record
+            for record in self.__dict__.get("download_history", ())
+            if info.get("id") and record.get("id") == info["id"]
+        ]
+        if not previous:
+            return "first_observed"
+        source_url = sanitize_durable_url(
+            str(info.get("webpage_url") or ""), preserve_youtube_context=True
+        )
+        if not source_url:
+            return "unknown"
+        same_source = [
+            record
+            for record in previous
+            if sanitize_durable_url(
+                str(record.get("webpage_url") or ""), preserve_youtube_context=True
+            )
+            == source_url
+        ]
+        if not same_source:
+            # Equal provider IDs alone do not establish equal sources.
+            return "unknown"
+        previous = same_source
+        signature = job_attempt_signature(job)
+        if any(metadata_attempt_signature(record) == signature for record in previous):
+            return "same_intent"
+        variant = metadata_output_variant(info)
+        known = [
+            metadata_output_variant(record)
+            for record in previous
+            if metadata_output_variant(record)
+        ]
+        if not variant or not known:
+            return "unknown"
+        return (
+            "different_destination_or_organization"
+            if variant in known
+            else "different_settings"
+        )
+
     def _coordinate_download_item(
         self,
         job: DownloadJob,
@@ -13828,6 +14169,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             stop_source=False,
         )
         primary_intent_active = False
+        job.telemetry_operation_id = str(uuid.uuid4())
+        DownloaderApp._observe_download_operation(
+            self,
+            job,
+            "started",
+            stage="analysis",
+            dimensions={
+                **job_intent_dimensions(job),
+                "item_count": str(min(item.total, 10000)),
+            },
+        )
         try:
             self._raise_for_download_control_requests()
             source.provider_network.begin_primary(
@@ -13864,6 +14216,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if recovery_owner is not None:
                 recovery_owner.metadata_observed(job, analyzed_item.display_info)
             all_output_dirs = list(result.output_dirs)
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="reuse",
+                dimensions={
+                    "intent_relation": DownloaderApp._observed_intent_relation(
+                        self, job, analyzed_item.display_info
+                    )
+                },
+            )
             existing_reuse = self._try_reuse_existing_output(
                 job,
                 analyzed_item.display_info,
@@ -13873,6 +14236,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 control_check=self._raise_for_download_control_requests,
             )
             if existing_reuse is not None:
+                DownloaderApp._observe_download_operation(
+                    self,
+                    job,
+                    "completed",
+                    dimensions={
+                        "reuse_result": "hit",
+                        "reused_count": "1",
+                        "committed_count": "0",
+                        "sidecar_failure_count": str(
+                            min(existing_reuse.outcome.sidecar_failure_count, 10000)
+                        ),
+                        "outcome": "partial"
+                        if existing_reuse.outcome.sidecar_failure_count
+                        else "complete",
+                    },
+                )
                 self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
                 self.events.put(
                     (
@@ -13889,6 +14268,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     output_dirs=tuple(all_output_dirs),
                     metadata=existing_reuse.metadata,
                 )
+            DownloaderApp._observe_download_operation(
+                self, job, "stage", stage="staging", dimensions={"reuse_result": "miss"}
+            )
             primary_intent_active = False
         except Exception as exc:  # noqa: BLE001 - item failure resolver separates user control from provider text
             return self._resolve_download_item_failure(job, item, result, exc)
@@ -13920,9 +14302,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> DownloadOutcome:
         self._active_progress_context = None
         user_error = format_ytdlp_user_error(error)
-        job.failure_diagnostic = capture_failure(
-            error, stage="processing" if result.metadata is not None else "preparation"
-        )
+        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
         self._emit_job_log(job, technical_download_error(error))
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
@@ -14226,6 +14606,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             self.events.put(("status", "Download finished; finalizing output…"))
 
     def _pump_events(self) -> None:
+        DownloaderApp._observe_resize_pump(self)
         try:
             while True:
                 self._dispatch_ui_event(self.events.get_nowait())

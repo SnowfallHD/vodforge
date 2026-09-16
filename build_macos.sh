@@ -50,6 +50,7 @@ build_version_dir="build/version"
 mkdir -p "$build_version_dir"
 build_version_file="$build_version_dir/VODFORGE_VERSION"
 printf '%s' "$build_version" > "$build_version_file"
+"$python_bin" scripts/write_build_revision.py "$build_version_dir/VODFORGE_BUILD_REVISION"
 telemetry_policy="${VODFORGE_BUILD_TELEMETRY:-disabled}"
 if [[ "$telemetry_policy" != "disabled" && "$telemetry_policy" != "production" && "$telemetry_policy" != "preview" ]]; then
   echo "VODFORGE_BUILD_TELEMETRY must be disabled, production, or preview."
@@ -112,6 +113,7 @@ fi
   --osx-bundle-identifier "com.snowfallhd.vodforge" \
   --icon "$icon_file" \
   --add-data "$build_version_file:." \
+  --add-data "$build_version_dir/VODFORGE_BUILD_REVISION:." \
   --add-data "$build_version_dir/VODFORGE_TELEMETRY_POLICY:." \
   --add-data "$icon_png:assets" \
   --add-data "$icon_asset_dir:assets/icons/lucide" \

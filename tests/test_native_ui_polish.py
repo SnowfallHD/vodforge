@@ -1020,3 +1020,48 @@ def test_feature_callbacks_report_actions_without_widget_contents(monkeypatch):
             assert "PRIVATE" not in repr(calls)
         finally:
             application.destroy()
+
+
+def test_primary_views_allocate_only_current_surface_and_restore_latest_layout(
+    monkeypatch,
+):
+    from scripts.focus_ui_preview import approved_metadata, isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application.metadata_items = approved_metadata()
+            application._render_metadata_tree(selected_index=0)
+            for name, size in [
+                ("library", "1180x780"),
+                ("activity", "820x560"),
+                ("forge", "1180x780"),
+                ("library", "820x560"),
+                ("forge", "820x560"),
+                ("library", "1180x780"),
+            ]:
+                application._select_focus_view(name)
+                application.geometry(size)
+                settle_native(application)
+                assert [
+                    key
+                    for key, frame in application._focus_views.items()
+                    if frame.winfo_ismapped()
+                ] == [name]
+                active = application._focus_views[name]
+                assert active.winfo_width() > 700
+                assert active.winfo_height() > 400
+                assert application.winfo_width() == int(size.split("x")[0])
+            calls = []
+            monkeypatch.setattr(
+                application, "_focus_run_records", lambda: calls.append(True) or []
+            )
+            application._refresh_focus_run_deck()
+            assert calls == []
+            application._select_focus_view("forge")
+            settle_native(application)
+            assert calls
+            assert application.focus_run_deck.winfo_ismapped()
+        finally:
+            application.destroy()

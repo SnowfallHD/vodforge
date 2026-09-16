@@ -9,6 +9,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
+from .failure_diagnostics import FailureDiagnostic, capture_failure, classify_failure
 from .history import sanitize_chapters, sanitize_heatmap
 from .media_preview import MediaPreviewOwner
 from .playback_backend import MediaPlayerError, PlaybackBackend, PlaybackSnapshot
@@ -285,6 +286,7 @@ class MediaPlayerWindow:
         thumbnail_path: Path | None = None,
         on_first_play: Callable[[], None] | None = None,
         on_feature: Callable[[str], None] | None = None,
+        on_operation: Callable[..., None] | None = None,
     ) -> None:
         self.owner = owner
         self.playback = playback
@@ -292,6 +294,8 @@ class MediaPlayerWindow:
         self.info = info
         self.thumbnail_path = thumbnail_path
         self._on_feature = on_feature or (lambda _action: None)
+        self._on_operation = on_operation or (lambda *_args: None)
+        self._operation_play_observed = False
         self._on_first_play = on_first_play
         self._first_play_recorded = False
         self._closed = False
@@ -627,6 +631,7 @@ class MediaPlayerWindow:
             self._surface_owner = TkPlaybackSurfaceOwner(self.popup, self.stage)
             self.playback.attach_render_surface(self._surface_owner.surface)
         except MediaPlayerError as exc:
+            self._on_operation("failed", capture_failure(exc, stage="playback"))
             messagebox.showerror("VODForge Player", str(exc), parent=self.popup)
             if self._surface_owner is not None:
                 self._surface_owner.close()
@@ -772,6 +777,20 @@ class MediaPlayerWindow:
             return
         snapshot = self.playback.snapshot
         previous = self._last_snapshot
+        if snapshot.status == "Playing" and not self._operation_play_observed:
+            self._operation_play_observed = True
+            self._on_operation("started")
+        if (
+            previous is None or previous.status != snapshot.status
+        ) and snapshot.status in {"Ended", "Failed"}:
+            self._on_operation(
+                "completed" if snapshot.status == "Ended" else "failed",
+                FailureDiagnostic(
+                    reason=classify_failure(snapshot.error), stage="playback"
+                )
+                if snapshot.status == "Failed"
+                else None,
+            )
         if (
             previous is None or previous.status != snapshot.status
         ) and snapshot.status in {"Ended", "Failed"}:
@@ -896,6 +915,7 @@ class MediaPlayerWindow:
         if self._closed:
             return
         self._closed = True
+        self._on_operation("closed")
         if self._poll_after_id is not None:
             try:
                 self.popup.after_cancel(self._poll_after_id)

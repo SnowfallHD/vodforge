@@ -83,7 +83,12 @@ def test_backend_gate_rejects_feature_vocabulary_drift(tmp_path):
     from quality_harness.telemetry_checks import assert_feature_vocabulary
 
     from yt_downloader.product_telemetry import PRODUCT_EVENT_NAMES
-    from yt_downloader.telemetry_features import DIMENSION_CHOICES, FEATURE_ACTIONS
+    from yt_downloader.telemetry_features import (
+        DIMENSION_CHOICES,
+        DIMENSION_PATTERNS,
+        DIMENSION_RANGES,
+        FEATURE_ACTIONS,
+    )
 
     source = tmp_path / "src/lib/product-telemetry.ts"
     source.parent.mkdir(parents=True)
@@ -103,8 +108,64 @@ def test_backend_gate_rejects_feature_vocabulary_drift(tmp_path):
             + json.dumps({key: sorted(value) for key, value in values.items()})
             + ";\n"
         )
+    for name, values in [
+        ("DIMENSION_PATTERNS", DIMENSION_PATTERNS),
+        ("DIMENSION_RANGES", DIMENSION_RANGES),
+    ]:
+        text += (
+            "export const "
+            + name
+            + ": Record<string,unknown> = "
+            + json.dumps(values)
+            + ";"
+            + chr(10)
+        )
+    from yt_downloader.failure_diagnostics import (
+        ERROR_TYPES,
+        FAILURE_CODES,
+        FAILURE_REASONS,
+        FAILURE_STAGES,
+        FIRST_PARTY_MODULES,
+    )
+
+    for key, values in (
+        ("FAILURE_REASONS", FAILURE_REASONS),
+        ("failure_code", FAILURE_CODES),
+        ("source_module", FIRST_PARTY_MODULES),
+        ("source_scope", {"first_party_frame"}),
+        ("stage", FAILURE_STAGES),
+        ("error_type", ERROR_TYPES),
+    ):
+        prefix = "const " + key + " =" if key == "FAILURE_REASONS" else key + ":"
+        text += prefix + " new Set(" + json.dumps(sorted(values)) + ");\n"
     source.write_text(text)
     assert_feature_vocabulary(tmp_path)
     source.write_text(text.replace("notes_saved", "private_notes"))
     with pytest.raises(AssertionError, match="vocabulary drift"):
+        assert_feature_vocabulary(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        ('"AttributeError"', '"UnexpectedPrivateError"'),
+        ('"libvlc_backend"', '"private_module"'),
+        ("'image_preparation'", "'private_stage'"),
+    ],
+)
+def test_backend_gate_rejects_diagnostic_vocabulary_drift(tmp_path, before, after):
+    from quality_harness.telemetry_checks import assert_feature_vocabulary
+
+    actual = (
+        Path(__file__).resolve().parents[3]
+        / "vodforge-site/src/lib/product-telemetry.ts"
+    )
+    if not actual.exists():
+        pytest.skip("sibling backend repository unavailable")
+    source = tmp_path / "src/lib/product-telemetry.ts"
+    source.parent.mkdir(parents=True)
+    text = actual.read_text()
+    assert before in text
+    source.write_text(text.replace(before, after, 1))
+    with pytest.raises(AssertionError, match="diagnostic vocabulary drift"):
         assert_feature_vocabulary(tmp_path)

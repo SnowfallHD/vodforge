@@ -237,7 +237,7 @@ class SupportPanel:
             anchor="center",
             width=min(580, max(340, self.parent.winfo_width() - 36)),
             height=min(
-                510 if self.kind == "feedback" else 480,
+                (580 if self.reply.get() else 510) if self.kind == "feedback" else 480,
                 max(400, self.parent.winfo_height() - 36),
             ),
         )
@@ -263,6 +263,7 @@ class SupportPanel:
         else:
             self.email_hint.grid_remove()
             self.email_entry.grid_remove()
+        self._resize()
 
     def _review_diagnostics(self) -> None:
         if not self.context:

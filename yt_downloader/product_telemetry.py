@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
 
-from .analytics_consent import analytics_allowed
+from .analytics_consent import AnalyticsConsentOwner, analytics_allowed
 from .cloud_funnel import (
     InstallationIdentityError,
     installation_platform,
@@ -29,9 +29,11 @@ from .private_files import write_private_bytes
 from .telemetry_credentials import RejectedTelemetryEvent, TelemetryCredentialOwner
 from .telemetry_features import (
     FEATURE_ACTIONS,
+    OPERATION_FEATURES,
     attempt_identifier,
     time_bucket,
     validate_dimensions,
+    validate_operation_fields,
 )
 from .telemetry_policy import preview_telemetry_allowed, telemetry_collection_allowed
 from .telemetry_transport import telemetry_urlopen
@@ -79,6 +81,12 @@ def product_output_kind(value: str) -> OutputKind | None:
     return cast(OutputKind, normalized) if normalized in _OUTPUT_KINDS else None
 
 
+def _supports_failure(event_name: str, action: str | None = None) -> bool:
+    return event_name in {"run_failed", "local_conversion_failed"} or (
+        event_name == "feature_used" and action == "failed"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ProductTelemetryEvent:
     event_id: str
@@ -100,6 +108,7 @@ class ProductTelemetryEvent:
     dimensions: dict[str, str] = field(default_factory=dict)
     d1_delivered: bool = False
     heycatch_delivered: bool = False
+    consent_epoch: str | None = None
 
     def public_payload(self) -> dict[str, Any]:
         return {
@@ -127,11 +136,16 @@ class ProductTelemetryEvent:
             **(
                 {"failure_reason": self.failure_reason or "unknown"}
                 if self.event_name == "run_failed"
+                or (
+                    _supports_failure(self.event_name, self.action)
+                    and self.failure_reason is not None
+                )
                 else {}
             ),
             **(
                 {"failure_detail": self.failure_detail.payload()}
-                if self.event_name == "run_failed" and self.failure_detail
+                if _supports_failure(self.event_name, self.action)
+                and self.failure_detail
                 else {}
             ),
         }
@@ -171,14 +185,21 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
     failure_reason = value.get("failure_reason")
     detail = value.get("failure_detail")
     if detail is not None and (
-        not isinstance(detail, dict) or event_name != "run_failed"
+        not isinstance(detail, dict)
+        or not _supports_failure(event_name, value.get("action"))
     ):
         raise ValueError("invalid failure detail")
     if failure_reason is not None and (
-        failure_reason not in FAILURE_REASONS or event_name != "run_failed"
+        failure_reason not in FAILURE_REASONS
+        or not _supports_failure(event_name, value.get("action"))
     ):
         raise ValueError("invalid failure reason")
+    if detail is not None:
+        clean_detail = validate_failure_detail(detail)
+        if clean_detail.reason != (failure_reason or "unknown"):
+            raise ValueError("conflicting failure reason")
     feature, action = value.get("feature"), value.get("action")
+    validate_operation_fields(feature, validate_dimensions(value.get("dimensions")))
     if event_name == "feature_used":
         if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
             raise ValueError("invalid feature action")
@@ -209,6 +230,9 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
     datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
     return ProductTelemetryEvent(
         event_id=_valid_uuid(value.get("event_id")),
+        consent_epoch=_valid_uuid(value["consent_epoch"], version=4)
+        if value.get("consent_epoch") is not None
+        else None,
         install_id=_valid_uuid(value.get("install_id"), version=4),
         event_name=cast(ProductEventName, event_name),
         occurred_at=occurred_at,
@@ -324,6 +348,7 @@ class ProductTelemetryOwner:
         self._platform = installation_platform(platform_name)
         self._release_channel = release_channel(app_version)
         self._enabled = bool(enabled)
+        self._consent_generation = 0
         credential_owner = TelemetryCredentialOwner(installation_state_path.parent)
         self._d1_recorder = (
             (lambda event: credential_owner.event(event.public_payload()))
@@ -338,6 +363,8 @@ class ProductTelemetryOwner:
         self._attempt_queued: dict[str, float] = {}
         self._last_settings_snapshot: dict[str, str] | None = None
         self._feature_observed: set[tuple[str, str]] = set()
+        self._operation_steps: dict[tuple[str, str], tuple[str, int]] = {}
+        self._observation_drops = 0
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._flush_requested = False
@@ -351,15 +378,28 @@ class ProductTelemetryOwner:
             return False, None
         return analytics_allowed(self._installation_state_path.parent), state.install_id
 
+    def _consent_epoch(self) -> str | None:
+        value = (
+            AnalyticsConsentOwner(self._installation_state_path.parent)
+            .snapshot()
+            .get("collection_epoch")
+        )
+        return _valid_uuid(value, version=4) if value is not None else None
+
     def permitted(self) -> bool:
         """Expose the current privacy decision for detached operation handoffs."""
         return self._permitted()[0]
 
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
+            if self._enabled != bool(enabled):
+                self._consent_generation += 1
             self._enabled = bool(enabled)
             if not self._enabled:
                 self._feature_observed.clear()
+                self._operation_steps.clear()
+                self._observation_drops = 0
+                self._last_settings_snapshot = None
                 self._attempt_started.clear()
                 self._attempt_queued.clear()
                 try:
@@ -387,6 +427,7 @@ class ProductTelemetryOwner:
         dimensions: Mapping[str, str] | None = None,
     ) -> bool:
         clean_dimensions = validate_dimensions(dimensions)
+        validate_operation_fields(feature, clean_dimensions)
         if event_name == "feature_used":
             if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
                 raise ValueError("unsupported telemetry feature action")
@@ -396,22 +437,33 @@ class ProductTelemetryOwner:
             raise ValueError("invalid telemetry retry relationship")
         if event_name not in _EVENT_NAMES:
             raise ValueError("unsupported product telemetry event")
-        if failure_detail is not None and event_name != "run_failed":
+        if failure_detail is not None and not _supports_failure(event_name, action):
             raise ValueError("unexpected failure detail")
         detail = (
             validate_failure_detail(failure_detail)
             if failure_detail is not None
             else None
         )
+        if detail is not None:
+            if failure_reason is not None and failure_reason != detail.reason:
+                raise ValueError("conflicting failure reason")
+            failure_reason = detail.reason
         if failure_reason is not None and (
-            failure_reason not in FAILURE_REASONS or event_name != "run_failed"
+            failure_reason not in FAILURE_REASONS
+            or not _supports_failure(event_name, action)
         ):
             raise ValueError("unsupported failure reason")
         if run_kind is not None and run_kind not in _RUN_KINDS:
             raise ValueError("unsupported product telemetry run kind")
         if output_type is not None and output_type not in _OUTPUT_KINDS:
             raise ValueError("unsupported product telemetry output type")
-        permitted, install_id = self._permitted()
+        with self._lock:
+            permitted, install_id = self._permitted()
+            generation = self._consent_generation
+            try:
+                consent_epoch = self._consent_epoch()
+            except (ValueError, OSError):
+                return False
         if not permitted or install_id is None:
             return False
         now = time.monotonic()
@@ -452,6 +504,7 @@ class ProductTelemetryOwner:
         )
         event = ProductTelemetryEvent(
             event_id=event_id,
+            consent_epoch=consent_epoch,
             install_id=install_id,
             event_name=event_name,
             occurred_at=datetime.now(timezone.utc).isoformat(),
@@ -461,7 +514,7 @@ class ProductTelemetryOwner:
             run_kind=run_kind,
             output_type=output_type,
             failure_reason=(failure_reason or "unknown")
-            if event_name == "run_failed"
+            if _supports_failure(event_name, action)
             else None,
             failure_detail=detail,
             attempt_id=attempt_identifier(install_id, attempt_key)
@@ -473,6 +526,8 @@ class ProductTelemetryOwner:
             dimensions=clean_dimensions,
         )
         with self._lock:
+            if generation != self._consent_generation or not self._permitted()[0]:
+                return False
             if dedupe_key is not None and event_id in self._recorded_dedupe_ids:
                 self.flush_async()
                 return True
@@ -482,6 +537,13 @@ class ProductTelemetryOwner:
                 self._diagnostic(
                     f"product telemetry outbox could not be loaded: {type(exc).__name__}"
                 )
+                return False
+            if generation != self._consent_generation or not self._permitted()[0]:
+                return False
+            try:
+                if consent_epoch != self._consent_epoch():
+                    return False
+            except (ValueError, OSError):
                 return False
             if any(candidate.event_id == event.event_id for candidate in events):
                 if dedupe_key is not None:
@@ -506,6 +568,71 @@ class ProductTelemetryOwner:
                 self._recorded_dedupe_ids.add(event_id)
         self.flush_async()
         return True
+
+    def record_operation(
+        self,
+        feature: str,
+        action: str,
+        *,
+        operation_key: str,
+        attempt_key: str | None = None,
+        retry_key: str | None = None,
+        dimensions: Mapping[str, str] | None = None,
+        failure_detail: FailureDiagnostic | None = None,
+    ) -> bool:
+        """Bounded observations, ordered within one consent/session operation.
+
+        The caller supplies a random UUID from the actual operation owner, never
+        a source URL, media identifier or a content-derived hash. Delivery order
+        is not execution order; missing ordinals remain missing evidence.
+        """
+        from .version import read_build_revision
+
+        if (
+            feature not in OPERATION_FEATURES
+            or action not in OPERATION_FEATURES[feature]
+        ):
+            raise ValueError("unsupported operation observation")
+        random_key = _valid_uuid(operation_key, version=4)
+        with self._lock:
+            permitted, install_id = self._permitted()
+            if not permitted or install_id is None:
+                return False
+            key = (feature, random_key)
+            operation_id, previous_step = self._operation_steps.get(
+                key, (str(uuid.uuid4()), 0)
+            )
+            step = previous_step + 1
+            if step > 64:
+                self._observation_drops = min(10000, self._observation_drops + 1)
+                return False
+            if (
+                key not in self._operation_steps
+                and len(self._operation_steps) >= MAX_OUTBOX_EVENTS
+            ):
+                self._operation_steps.pop(next(iter(self._operation_steps)))
+            self._operation_steps[key] = (operation_id, step)
+            accepted = self.record(
+                "feature_used",
+                feature=feature,
+                action=action,
+                attempt_key=attempt_key,
+                retry_key=retry_key,
+                dimensions={
+                    **dict(dimensions or {}),
+                    "instrumentation": "diagnostics_v1",
+                    "build_revision": read_build_revision(),
+                    "operation_id": operation_id,
+                    "operation_step": str(step),
+                    "observation_drop_count": str(self._observation_drops),
+                },
+                failure_detail=failure_detail.payload() if failure_detail else None,
+            )
+            if accepted:
+                self._observation_drops = 0
+            else:
+                self._observation_drops = min(10000, self._observation_drops + 1)
+            return accepted
 
     def record_feature(
         self, feature: str, action: str, *, dimensions: Mapping[str, str] | None = None
@@ -567,6 +694,18 @@ class ProductTelemetryOwner:
                 if self._worker is threading.current_thread():
                     self._worker = None
 
+    def _delivery_permitted(
+        self, event: ProductTelemetryEvent, generation: int
+    ) -> bool:
+        # Check again between sinks; an already in-flight request cannot be unsent.
+        with self._lock:
+            if generation != self._consent_generation or not self._permitted()[0]:
+                return False
+            try:
+                return event.consent_epoch == self._consent_epoch()
+            except (ValueError, OSError):
+                return False
+
     def _flush(self) -> None:
         while True:
             permitted, _install_id = self._permitted()
@@ -583,6 +722,20 @@ class ProductTelemetryOwner:
                 if not events:
                     return
                 event = events[0]
+                generation = self._consent_generation
+                try:
+                    epoch = self._consent_epoch()
+                    if event.consent_epoch != epoch:
+                        _save_outbox(self._state_path, events[1:])
+                        self._diagnostic(
+                            "pre-revocation telemetry discarded; not delivered"
+                        )
+                        continue
+                except (ValueError, OSError):
+                    self._diagnostic(
+                        "telemetry consent epoch unavailable; delivery paused"
+                    )
+                    return
                 # Privacy retention matches server acceptance. Expiration is a
                 # local discard, never a fabricated delivery acknowledgement.
                 if (
@@ -592,6 +745,8 @@ class ProductTelemetryOwner:
                     _save_outbox(self._state_path, events[1:])
                     self._diagnostic("expired telemetry event discarded after 30 days")
                     continue
+            if not self._delivery_permitted(event, generation):
+                return
             try:
                 d1_delivered = event.d1_delivered or self._d1_recorder(event)
             except RejectedTelemetryEvent:
@@ -605,7 +760,7 @@ class ProductTelemetryOwner:
                     "permanently rejected telemetry event discarded; not delivered"
                 )
                 continue
-            if not self._permitted()[0]:
+            if not self._delivery_permitted(event, generation):
                 return
             heycatch_delivered = event.heycatch_delivered or self._heycatch_recorder(
                 event.install_id,

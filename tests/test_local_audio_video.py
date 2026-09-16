@@ -477,7 +477,8 @@ def test_app_coordinates_completed_output_through_canonical_history(
     app._record_download_history = record
     recorded_events = []
     app.product_telemetry = SimpleNamespace(
-        record=lambda name, **fields: recorded_events.append((name, fields))
+        record=lambda name, **fields: recorded_events.append((name, fields)),
+        record_operation=lambda *_args, **_fields: None,
     )
     monkeypatch.setattr(
         app_module,
@@ -678,3 +679,122 @@ def test_restart_fails_closed_when_prior_owner_is_still_live(tmp_path: Path) -> 
     assert owner.recover_interrupted() is False
     assert staging.exists()
     assert state.exists()
+
+
+@pytest.mark.parametrize(
+    "method,stage",
+    [
+        ("_prepare_request", "preparation"),
+        ("_image_normalizer", "image_preparation"),
+        ("_run_ffmpeg", "transcode"),
+        ("_validate_output_shape", "validation"),
+        ("_commit_distinct_output", "commit"),
+    ],
+)
+def test_conversion_owner_captures_actual_failed_phase_and_preserves_exception(
+    tmp_path, monkeypatch, method, stage
+):
+    audio = tmp_path / "private song.mp3"
+    audio.write_bytes(b"mp3")
+    image = tmp_path / "private image.png"
+    image.write_bytes(b"png")
+    owner = _owner(tmp_path, popen=lambda command, **kwargs: FakeProcess(command))
+    error = PermissionError(13, "PRIVATE file URL")
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(owner, method, fail)
+    facts = []
+    with pytest.raises(PermissionError) as caught:
+        owner.convert(
+            new_local_audio_video_request(audio, image, tmp_path / "out"),
+            on_progress=lambda _progress: None,
+            on_failure=facts.append,
+        )
+    assert caught.value is error
+    assert len(facts) == 1
+    assert facts[0].stage == stage
+    assert facts[0].reason == "permission_denied"
+    assert facts[0].os_error == 13
+    assert "PRIVATE" not in json.dumps(facts[0].payload())
+    assert owner.active is False
+    assert not (tmp_path / "out" / ".vfstage").exists()
+
+
+def test_unexpected_probe_shape_localizes_first_party_frame_without_private_context(
+    tmp_path, monkeypatch
+):
+    audio = tmp_path / "PRIVATE song.mp3"
+    audio.write_bytes(b"mp3")
+    image = tmp_path / "PRIVATE image.png"
+    image.write_bytes(b"png")
+    owner = _owner(tmp_path, popen=lambda command, **kwargs: FakeProcess(command))
+    # Held-out provider shape; failure arises in actual shipped validation code.
+    monkeypatch.setattr(
+        owner,
+        "_probe",
+        lambda _path: None,
+    )
+    facts = []
+    with pytest.raises(AttributeError):
+        owner.convert(
+            new_local_audio_video_request(audio, image, tmp_path / "out"),
+            on_progress=lambda _event: None,
+            on_failure=facts.append,
+        )
+    assert len(facts) == 1
+    detail = facts[0].payload()
+    assert detail["error_type"] == "AttributeError"
+    assert detail["stage"] == "preparation"
+    assert detail["source_module"] == "local_audio_video"
+    assert detail["source_scope"] == "first_party_frame"
+    source = (
+        Path(inspect.getfile(LocalAudioVideoConversionOwner)).read_text().splitlines()
+    )
+    assert 'probe.get("streams")' in source[int(detail["source_line"]) - 1]
+    assert "PRIVATE" not in json.dumps(detail)
+    assert str(tmp_path) not in json.dumps(detail)
+    assert not (tmp_path / "out").exists()
+
+
+def test_commit_observation_survives_later_metadata_failure(tmp_path, monkeypatch):
+    from yt_downloader import local_audio_video as module
+
+    audio = tmp_path / "source.mp3"
+    audio.write_bytes(b"mp3")
+    image = tmp_path / "image.png"
+    image.write_bytes(b"png")
+    owner = _owner(tmp_path, popen=lambda command, **kwargs: FakeProcess(command))
+    committed = []
+    facts = []
+
+    def fail_history(*_args, **_kwargs):
+        raise ValueError("PRIVATE metadata state")
+
+    def observe_commit():
+        outputs = list((tmp_path / "out").glob("*.mp4"))
+        assert len(outputs) == 1 and outputs[0].stat().st_size > 0
+        committed.append(outputs[0].read_bytes())
+
+    monkeypatch.setattr(
+        module, "build_local_audio_video_history_metadata", fail_history
+    )
+    with pytest.raises(ValueError):
+        owner.convert(
+            new_local_audio_video_request(audio, image, tmp_path / "out"),
+            on_progress=lambda _event: None,
+            on_failure=facts.append,
+            **(
+                {"on_commit": observe_commit}
+                if "on_commit" in inspect.signature(owner.convert).parameters
+                else {}
+            ),
+        )
+    outputs = list((tmp_path / "out").glob("*.mp4"))
+    assert len(outputs) == 1 and outputs[0].stat().st_size > 0
+    assert len(committed) == 1
+    assert outputs[0].read_bytes() == committed[0]
+    assert facts[0].stage == "history"
+    assert not (tmp_path / "out" / ".vfstage").exists()
+    assert not owner.active

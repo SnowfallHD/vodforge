@@ -17,6 +17,7 @@ import time
 import tkinter as tk
 import traceback
 from ctypes import wintypes as W
+from functools import wraps
 from pathlib import Path
 from tkinter import ttk
 
@@ -38,7 +39,10 @@ RUN = args.output.resolve()
 RUN.mkdir(parents=True, exist_ok=False)
 os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
 sys.path.insert(0, str(SOURCE))
+from yt_downloader import analytics_consent, product_telemetry
+from yt_downloader.analytics_consent import AnalyticsConsentOwner
 from yt_downloader.engagement_ui import EngagementUI
+from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
 from yt_downloader.ui_styles import apply_product_styles
 
 u = C.windll.user32
@@ -51,6 +55,18 @@ root.title("VODForge Help Native Regression")
 root.geometry("900x650+80+60")
 apply_product_styles(root)
 events = []
+# Source-native producer evidence only. Both sinks are injected local failures;
+# no network call or production build-policy claim is made by this runner.
+product_telemetry.telemetry_collection_allowed = lambda: True
+analytics_consent.telemetry_collection_allowed = lambda: True
+AnalyticsConsentOwner(RUN).choose(True)
+telemetry = ProductTelemetryOwner(
+    state_path=RUN / "outbox.json",
+    installation_state_path=RUN / "installation.json",
+    app_version="0.2.3-qa",
+    d1_recorder=lambda _event: False,
+    heycatch_recorder=lambda *_args, **_kwargs: False,
+)
 
 
 def trace(name):
@@ -70,12 +86,17 @@ def trace(name):
 
 
 owner = EngagementUI(
-    root, RUN / "engagement.json", ready=lambda: True, suppress_showcase=lambda: None
+    root,
+    RUN / "engagement.json",
+    ready=lambda: True,
+    suppress_showcase=lambda: None,
+    on_operation=telemetry.record_operation,
 )
 owner.state.presented_welcome()
 for name in ("welcome", "review", "feedback"):
     original = getattr(owner, name)
 
+    @wraps(original)
     def wrapped(original=original, name=name):
         trace(name + "-entered")
         original()
@@ -218,6 +239,40 @@ def finish():
         )
     )
     owner.close()
+    telemetry.shutdown(2)
+    observations = [
+        event.public_payload() for event in _load_outbox(RUN / "outbox.json")
+    ]
+    actions = [event["action"] for event in observations]
+    instrumentation_pass = all(
+        event["dimensions"].get("instrumentation") == "diagnostics_v1"
+        and event["dimensions"].get("operation_id")
+        for event in observations
+    ) and actions.count("requested") == (2 if args.entry == "reopen" else 1)
+    if expected:
+        instrumentation_pass = (
+            instrumentation_pass
+            and all(
+                action in actions
+                for action in ("selected", "dispatched", "shown", "closed")
+            )
+            and actions.count("shown") == 1
+        )
+    else:
+        instrumentation_pass = (
+            instrumentation_pass
+            and "selected" not in actions
+            and "shown" not in actions
+        )
+    passed = passed and instrumentation_pass
+    (RUN / "operation-events.json").write_text(json.dumps(observations, indent=2))
+    receipt = json.loads((RUN / "receipt.json").read_text())
+    receipt.update(
+        passed=passed,
+        instrumentation_pass=instrumentation_pass,
+        telemetry_transport="local outbox; QA-injected collection policy; no network",
+    )
+    (RUN / "receipt.json").write_text(json.dumps(receipt, indent=2))
     root.destroy()
 
 

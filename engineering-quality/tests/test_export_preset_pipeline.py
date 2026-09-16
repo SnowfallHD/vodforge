@@ -142,6 +142,22 @@ def test_preset_commits_and_reuses_real_valid_media(
     application._find_ffmpeg = lambda: ffmpeg
     application._find_ffprobe = lambda: ffprobe
     application._find_deno = lambda: None
+    from yt_downloader import analytics_consent, product_telemetry
+    from yt_downloader.analytics_consent import AnalyticsConsentOwner
+    from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
+
+    # Transport is local; this is actual worker/serializer evidence, not a build gate.
+    monkeypatch.setattr(analytics_consent, "telemetry_collection_allowed", lambda: True)
+    monkeypatch.setattr(product_telemetry, "telemetry_collection_allowed", lambda: True)
+    state = tmp_path / "qa-state"
+    AnalyticsConsentOwner(state).choose(True)
+    application.product_telemetry = ProductTelemetryOwner(
+        state_path=state / "events.json",
+        installation_state_path=state / "installation.json",
+        app_version="0.2.3-qa",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
     job = DownloadJob(
         url=info["webpage_url"],
         output_dir=tmp_path,
@@ -181,6 +197,52 @@ def test_preset_commits_and_reuses_real_valid_media(
     assert outcome.success_count == 1
     assert len(downloads) == 1
     assert list(tmp_path.rglob("*.mp4")) == media
+    assert application.product_telemetry.shutdown(2)
+    observations = [
+        event
+        for event in _load_outbox(state / "events.json")
+        if event.feature == "download_operation"
+    ]
+    actions = [event.action for event in observations]
+    assert actions.count("committed") == 1
+    assert actions.count("reused") == 1
+    assert actions.count("completed") == 2
+    assert len({event.dimensions["operation_id"] for event in observations}) == 2
+    assert (
+        next(event for event in observations if event.action == "committed").dimensions[
+            "committed_count"
+        ]
+        == "1"
+    )
+    assert (
+        next(event for event in observations if event.action == "reused").dimensions[
+            "committed_count"
+        ]
+        == "0"
+    )
+    # Optional sidecar failure must preserve media and describe a partial result.
+    import hashlib
+
+    before = hashlib.sha256(media[0].read_bytes()).hexdigest()
+
+    def fail_metadata(*_args, **_kwargs):
+        raise PermissionError(13, "PRIVATE sidecar destination")
+
+    monkeypatch.setattr(app_module, "write_compact_video_metadata", fail_metadata)
+    result = application._download_worker_single(job)
+    assert result.success_count == 1 and result.sidecar_failure_count == 1
+    assert hashlib.sha256(media[0].read_bytes()).hexdigest() == before
+    assert len(downloads) == 1
+    assert not (tmp_path / ".vfstage").exists()
+    assert application.product_telemetry.shutdown(2)
+    terminal = [
+        event
+        for event in _load_outbox(state / "events.json")
+        if event.feature == "download_operation" and event.action == "completed"
+    ][-1]
+    assert terminal.dimensions["outcome"] == "partial"
+    assert terminal.dimensions["sidecar_failure_count"] == "1"
+    assert "PRIVATE" not in (state / "events.json").read_text()
 
 
 def test_quality_presets_have_measurable_size_and_detail_tradeoffs(source, tmp_path):

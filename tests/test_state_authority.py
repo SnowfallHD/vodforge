@@ -665,6 +665,8 @@ def test_opening_activity_view_starts_at_latest_line():
     app._focus_nav_underlines = {"activity": Control()}
     app._focus_nav_icons = {"activity": (None, None)}
     app.log = activity_log
+    activity_view.grid = lambda: None
+    app._apply_focus_layout = lambda **_kwargs: None
 
     app._select_focus_view("activity")
 
@@ -2044,7 +2046,8 @@ def test_all_runs_navigates_to_library_without_hover_popup():
         in deck_resize_source
     )
     assert "self.focus_run_overflow_button.grid()" in deck_source
-    assert "if self._focus_run_records():" in layout_source
+    # Visibility and deferred deck refresh are exercised with actual mapped
+    # native frames in test_native_ui_polish, not a source-string condition.
     assert "ttk.Sizegrip(self" in focus_ui_source
     assert 'self.bind("<Configure>", self._schedule_focus_layout' in focus_ui_source
     assert "self.after(16, apply)" not in root_resize_source

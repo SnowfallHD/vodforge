@@ -6,6 +6,7 @@ import json
 import threading
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,14 @@ class AnalyticsConsentOwner:
                     prompted=old.get("choice") in {"granted", "denied"},
                 )
             current = load_settings(self.path).get("analytics_consent", {})
+            if (
+                isinstance(current, dict)
+                and current.get("choice") == "denied"
+                and "collection_epoch" not in current
+            ):
+                update_analytics_settings(
+                    self.path, {"collection_epoch": str(uuid.uuid4())}
+                )
             if isinstance(current, dict) and any(
                 key in current for key in _ONBOARDING_KEYS
             ):
@@ -94,6 +103,9 @@ class AnalyticsConsentOwner:
                 key: value for key, value in changes.items() if key in _ONBOARDING_KEYS
             }
             if preference:
+                if preference.get("choice") == "denied":
+                    # Persist revocation with the choice, even if an outbox is locked.
+                    preference["collection_epoch"] = str(uuid.uuid4())
                 update_analytics_settings(self.path, preference)
             if onboarding:
                 if onboarding.get("region_checked") is True:

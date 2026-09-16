@@ -23,6 +23,10 @@ New-Item -ItemType Directory -Force -Path $buildMetadataDir | Out-Null
 $buildVersionFile = Join-Path $buildMetadataDir "VODFORGE_VERSION"
 Set-Content -Path $buildVersionFile -Value $buildVersion -NoNewline
 $addData = @("--add-data", "$buildVersionFile;.")
+$buildRevisionFile = Join-Path $buildMetadataDir "VODFORGE_BUILD_REVISION"
+python scripts/write_build_revision.py $buildRevisionFile
+if ($LASTEXITCODE -ne 0) { throw "Build provenance generation failed." }
+$addData += @("--add-data", "$buildRevisionFile;.")
 $telemetryPolicy = if ($env:VODFORGE_BUILD_TELEMETRY) { $env:VODFORGE_BUILD_TELEMETRY } else { "disabled" }
 if ($telemetryPolicy -notin @("disabled", "production", "preview")) {
   throw "VODFORGE_BUILD_TELEMETRY must be disabled, production, or preview."

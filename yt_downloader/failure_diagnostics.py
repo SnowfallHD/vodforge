@@ -8,7 +8,26 @@ import ssl
 import subprocess  # nosec B404
 from dataclasses import asdict, dataclass
 
-FAILURE_STAGES = frozenset({"preparation", "processing", "batch", "unknown"})
+FAILURE_STAGES = frozenset(
+    {
+        "preparation",
+        "processing",
+        "batch",
+        "unknown",
+        "analysis",
+        "reuse",
+        "staging",
+        "download",
+        "image_preparation",
+        "transcode",
+        "validation",
+        "commit",
+        "sidecars",
+        "history",
+        "dispatch",
+        "playback",
+    }
+)
 ERROR_TYPES = frozenset(
     {
         "TimeoutError",
@@ -23,8 +42,64 @@ ERROR_TYPES = frozenset(
         "URLError",
         "RuntimeError",
         "ValueError",
+        "TypeError",
+        "AttributeError",
+        "KeyError",
+        "IndexError",
+        "AssertionError",
+        "UnboundLocalError",
+        "RecursionError",
+        "ZeroDivisionError",
     }
 )
+
+
+# Last shipped frame is an observed location, not proof that the cause originated
+# there. Traceback messages, locals and absolute filenames are never inspected.
+FIRST_PARTY_MODULES = frozenset(
+    {
+        "app",
+        "engagement_ui",
+        "history",
+        "libvlc_backend",
+        "local_audio_video",
+        "local_audio_video_ui",
+        "media_player",
+        "media_player_ui",
+        "output_validation",
+        "process_lifecycle",
+        "product_telemetry",
+        "run_identity",
+        "run_state",
+        "safe_output",
+        "settings_store",
+        "telemetry_features",
+        "updates",
+        "export_planning",
+        "original_audio",
+        "media_preview",
+        "playback_surface",
+    }
+)
+
+
+def _first_party_location(error: BaseException) -> dict[str, str | int]:
+    location: dict[str, str | int] = {}
+    frame = error.__traceback__
+    depth = 0
+    while frame is not None and depth < 64:
+        name = frame.tb_frame.f_globals.get("__name__", "")
+        if isinstance(name, str) and name.startswith("yt_downloader."):
+            module = name.removeprefix("yt_downloader.")
+            if module in FIRST_PARTY_MODULES and 1 <= frame.tb_lineno <= 100000:
+                location = {
+                    "source_module": module,
+                    "source_line": frame.tb_lineno,
+                    "source_scope": "first_party_frame",
+                }
+        frame = frame.tb_next
+        depth += 1
+    return location
 
 
 FAILURE_CODES = frozenset(
@@ -139,6 +214,9 @@ class FailureDiagnostic:
     http_status: int | None = None
     os_error: int | None = None
     tool_exit_code: int | None = None
+    source_module: str | None = None
+    source_line: int | None = None
+    source_scope: str | None = None
 
     def payload(self) -> dict[str, str | int]:
         return {key: value for key, value in asdict(self).items() if value is not None}
@@ -157,6 +235,9 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         "http_status",
         "os_error",
         "tool_exit_code",
+        "source_module",
+        "source_line",
+        "source_scope",
     }:
         raise ValueError("unsupported failure detail")
     if (
@@ -171,7 +252,19 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         and value["failure_code"] not in FAILURE_CODES
     ):
         raise ValueError("unsupported failure code")
+    location = {
+        key
+        for key in ("source_module", "source_line", "source_scope")
+        if value.get(key) is not None
+    }
+    if location and (
+        location != {"source_module", "source_line", "source_scope"}
+        or value["source_module"] not in FIRST_PARTY_MODULES
+        or value["source_scope"] != "first_party_frame"
+    ):
+        raise ValueError("unsupported source location")
     for key, low, high in (
+        ("source_line", 1, 100000),
         ("format_count", 0, 10000),
         ("video_format_count", 0, 10000),
         ("audio_format_count", 0, 10000),
@@ -202,6 +295,7 @@ def capture_failure(
         if id(current) in seen:
             continue
         seen.add(id(current))
+        facts.update(_first_party_location(current))
         code = failure_code(current)
         if code is not None:
             facts["failure_code"] = code

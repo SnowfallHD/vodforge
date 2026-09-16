@@ -275,3 +275,29 @@ def test_mp3_variant_label_accepts_saved_string_audio_choices(
         mp3_settings=Mp3ExportSettings(sample_rate=rate, channels=channel),
     )
     assert label in job_output_variant(job)
+
+
+def test_observed_intent_relation_requires_actual_source_evidence(tmp_path):
+    from types import SimpleNamespace
+
+    from yt_downloader.app import DownloaderApp
+
+    job = make_job(tmp_path)
+    info = {"id": "abc123", "webpage_url": job.url}
+    old = annotate_job_metadata(job, info)
+    app = SimpleNamespace(download_history=[old])
+    relation = DownloaderApp._observed_intent_relation
+    assert relation(app, job, old) == "same_intent"
+    changed = replace(job, quality_label="720p HD")
+    assert (
+        relation(app, changed, annotate_job_metadata(changed, info))
+        == "different_settings"
+    )
+    different_source = {**old, "webpage_url": "https://example.com/unrelated"}
+    assert relation(app, job, different_source) == "unknown"
+    assert relation(app, job, {**old, "webpage_url": ""}) == "unknown"
+    moved = replace(job, output_dir=tmp_path / "another")
+    assert (
+        relation(app, moved, annotate_job_metadata(moved, info))
+        == "different_destination_or_organization"
+    )

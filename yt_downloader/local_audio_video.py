@@ -17,6 +17,7 @@ from typing import Any
 
 from PIL import Image, ImageOps
 
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .history import application_data_dir
 from .models import OutputType
 from .output_validation import validate_output_artifact
@@ -1006,9 +1007,11 @@ class LocalAudioVideoConversionOwner:
         prepared: _PreparedLocalAudioVideo,
         staging_dir: Path,
         on_progress: Callable[[LocalAudioVideoProgress], None],
+        on_commit: Callable[[], None] | None,
     ) -> LocalAudioVideoResult:
         normalized_image = staging_dir / "still.png"
         staged_output = staging_dir / "rendered.mp4"
+        self._failure_stage = "image_preparation"
         self._image_normalizer(prepared.image_path, normalized_image)
         on_progress(LocalAudioVideoProgress(0.10, "Preparing still image…"))
         self._raise_if_cancelled()
@@ -1023,6 +1026,7 @@ class LocalAudioVideoConversionOwner:
             "local audio-to-video encode started "
             f"run_id={request.run_id} duration_seconds={prepared.duration:.3f}"
         )
+        self._failure_stage = "transcode"
         self._run_ffmpeg(
             command,
             duration=prepared.duration,
@@ -1030,6 +1034,7 @@ class LocalAudioVideoConversionOwner:
         )
         self._raise_if_cancelled()
         on_progress(LocalAudioVideoProgress(0.92, "Validating MP4…"))
+        self._failure_stage = "validation"
         output_probe = self._probe(staged_output)
         validate_output_artifact(
             staged_output,
@@ -1044,11 +1049,15 @@ class LocalAudioVideoConversionOwner:
         self._validate_output_shape(output_probe, request.profile)
         self._raise_if_cancelled()
         on_progress(LocalAudioVideoProgress(0.97, "Saving to Forge destination…"))
+        self._failure_stage = "commit"
         output_path = self._commit_distinct_output(
             staged_output,
             prepared.output_root,
             local_video_filename(prepared.audio_path),
         )
+        if on_commit is not None:
+            on_commit()
+        self._failure_stage = "history"
         metadata = build_local_audio_video_history_metadata(
             request,
             output_path=output_path,
@@ -1079,11 +1088,14 @@ class LocalAudioVideoConversionOwner:
         request: LocalAudioVideoRequest,
         *,
         on_progress: Callable[[LocalAudioVideoProgress], None],
+        on_failure: Callable[[FailureDiagnostic], None] | None = None,
+        on_commit: Callable[[], None] | None = None,
     ) -> LocalAudioVideoResult:
         if not self._transaction_lock.acquire(blocking=False):
             raise LocalAudioVideoError("Another local conversion is already running.")
         self._idle.clear()
         staging_dir: Path | None = None
+        self._failure_stage = "preparation"
         try:
             if self._shutdown.is_set():
                 raise LocalAudioVideoCancelled(
@@ -1091,6 +1103,7 @@ class LocalAudioVideoConversionOwner:
                 )
             self._cancel.clear()
             prepared = self._prepare_request(request, on_progress)
+            self._failure_stage = "staging"
             staging_dir = create_private_staging_directory(prepared.output_root)
             self.recovery.begin(
                 output_root=prepared.output_root,
@@ -1102,7 +1115,14 @@ class LocalAudioVideoConversionOwner:
                 prepared,
                 staging_dir,
                 on_progress,
+                on_commit,
             )
+        except LocalAudioVideoCancelled:
+            raise
+        except Exception as exc:
+            if on_failure is not None:
+                on_failure(capture_failure(exc, stage=self._failure_stage))
+            raise
         finally:
             if staging_dir is not None and not self._has_active_child():
                 cleaned = cleanup_private_staging_directory(staging_dir)
