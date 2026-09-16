@@ -83,7 +83,7 @@ def product_output_kind(value: str) -> OutputKind | None:
 
 def _supports_failure(event_name: str, action: str | None = None) -> bool:
     return event_name in {"run_failed", "local_conversion_failed"} or (
-        event_name == "feature_used" and action == "failed"
+        event_name == "feature_used" and action in {"failed", "candidate_rejected"}
     )
 
 
@@ -612,22 +612,26 @@ class ProductTelemetryOwner:
             ):
                 self._operation_steps.pop(next(iter(self._operation_steps)))
             self._operation_steps[key] = (operation_id, step)
-            accepted = self.record(
-                "feature_used",
-                feature=feature,
-                action=action,
-                attempt_key=attempt_key,
-                retry_key=retry_key,
-                dimensions={
-                    **dict(dimensions or {}),
-                    "instrumentation": "diagnostics_v1",
-                    "build_revision": read_build_revision(),
-                    "operation_id": operation_id,
-                    "operation_step": str(step),
-                    "observation_drop_count": str(self._observation_drops),
-                },
-                failure_detail=failure_detail.payload() if failure_detail else None,
-            )
+            try:
+                accepted = self.record(
+                    "feature_used",
+                    feature=feature,
+                    action=action,
+                    attempt_key=attempt_key,
+                    retry_key=retry_key,
+                    dimensions={
+                        **dict(dimensions or {}),
+                        "instrumentation": "diagnostics_v1",
+                        "build_revision": read_build_revision(),
+                        "operation_id": operation_id,
+                        "operation_step": str(step),
+                        "observation_drop_count": str(self._observation_drops),
+                    },
+                    failure_detail=failure_detail.payload() if failure_detail else None,
+                )
+            except Exception:
+                self._observation_drops = min(10000, self._observation_drops + 1)
+                raise
             if accepted:
                 self._observation_drops = 0
             else:

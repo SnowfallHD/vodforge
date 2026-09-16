@@ -663,3 +663,36 @@ content-only metadata sidecar; it therefore retained empty history, making its
 first_observed values accurate but useless for same-source claims. Follow-up
 must consume actual history_record events through the existing history owner.
 Never reinterpret the original packet as stronger evidence.
+
+
+### Reuse-candidate diagnostics must survive every real boundary
+
+The controlled corrupt AAC candidate in producer I completed a valid replacement
+while preserving the rejected file, but the proposed rejection observation was
+lost. The app passed typed failure detail with action stage; the real telemetry
+owner correctly rejected that combination. Its allocated ordinal was absent and
+the next event incorrectly reported zero drops. Two pre-fix regressions failed
+in reuse-rejection-transport-before.log. Earlier reuse tests used a permissive
+collector and therefore bypassed the actual outbox validator.
+
+The existing operation owner now records candidate_rejected for actual candidate
+rejection and keeps ordinary no-candidate misses as stage observations. This is
+not an operation failure. Typed details remain bounded and apply only to this
+explicit action or existing failure actions. Exceptions after ordinal allocation
+increment the bounded observation-drop count; the next retained observation
+reports the gap and a later retained observation resets the counter. Nine real
+owner cases cover typed and untyped candidate rejection, a normal empty lookup,
+and drop/reset behavior across download, conversion, Help, playback and resize.
+
+The first enrolled-route persistence regression also failed against the previous
+database constraint. Migration 0020 expands only the download-candidate boundary,
+preserves every existing event column and index, and retains foreign keys and
+cascade behavior. Actual enrolled-handler tests verify immutable replay, later
+successful completion, exclusion from failed-action counts and rejection of
+private messages or wrong feature/action combinations. Cross-language vocabulary
+parity remains required. CRM labels the fact as a rejected reuse candidate.
+
+Source checks do not establish delivered production data or packaged behavior.
+Producer I is preserved as incomplete evidence; a fresh preview run must verify
+real media reuse/repair, the retained typed rejection and natural outbox delivery.
+Missing facts remain missing; a drop count does not reconstruct their contents.

@@ -534,3 +534,118 @@ def test_resize_summary_uses_existing_pump_and_consent_clears_pending(
     module.DownloaderApp._observe_resize_pump(app)
     assert app._resize_observation is None
     assert len(captured) == 1
+
+
+@pytest.mark.parametrize(
+    "reason,has_detail",
+    [
+        ("validation_failed", True),
+        ("plan_mismatch", False),
+        ("custom_artwork_unverifiable", False),
+        ("no_eligible_candidate", False),
+    ],
+)
+def test_reuse_rejection_survives_real_telemetry_validation(
+    tmp_path, monkeypatch, reason, has_detail
+):
+    from tests.test_state_authority import make_job
+    from yt_downloader import app as app_module
+    from yt_downloader.failure_diagnostics import FailureDiagnostic
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.1",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    app = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
+    app.product_telemetry = telemetry
+    app.download_history = []
+    app._find_ffprobe = lambda: "trusted-probe"
+    job = make_job(tmp_path)
+    job.telemetry_operation_id = str(uuid.uuid4())
+
+    def rejected_candidate(*_args, **kwargs):
+        if reason != "no_eligible_candidate":
+            kwargs["on_rejection"](
+                reason,
+                FailureDiagnostic(
+                    reason="unknown", stage="reuse", error_type="RuntimeError"
+                )
+                if has_detail
+                else None,
+            )
+
+    monkeypatch.setattr(app_module, "find_valid_existing_output", rejected_candidate)
+    assert (
+        app._try_reuse_existing_output(
+            job,
+            {"id": "fixture"},
+            None,
+            label="QA",
+            all_output_dirs=[],
+            control_check=lambda: None,
+        )
+        is None
+    )
+    assert telemetry.shutdown(2)
+    events = _load_outbox(state)
+    assert len(events) == 1
+    assert events[0].action == (
+        "stage" if reason == "no_eligible_candidate" else "candidate_rejected"
+    )
+    assert events[0].dimensions["reuse_rejection"] == reason
+    if has_detail:
+        assert events[0].failure_detail.stage == "reuse"
+    else:
+        assert events[0].failure_detail is None
+
+
+@pytest.mark.parametrize(
+    "feature,action",
+    [
+        ("download_operation", "stage"),
+        ("local_conversion_operation", "started"),
+        ("help_operation", "requested"),
+        ("playback_operation", "requested"),
+        ("resize_operation", "settled"),
+    ],
+)
+def test_rejected_observation_increments_drop_count_for_next_valid_fact(
+    tmp_path, feature, action
+):
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.1",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    operation = str(uuid.uuid4())
+    with pytest.raises(ValueError):
+        telemetry.record_operation(
+            feature,
+            action,
+            operation_key=operation,
+            dimensions={"private_note": "PRIVATE"},
+        )
+    assert telemetry.record_operation(
+        feature, action, operation_key=operation, dimensions={"stage": "analysis"}
+    )
+    assert telemetry.record_operation(
+        feature, action, operation_key=operation, dimensions={"stage": "analysis"}
+    )
+    assert telemetry.shutdown(2)
+    events = _load_outbox(state)
+    assert len(events) == 2
+    assert events[0].dimensions["operation_step"] == "2"
+    assert events[0].dimensions["observation_drop_count"] == "1"
+    assert events[1].dimensions["operation_step"] == "3"
+    assert events[1].dimensions["observation_drop_count"] == "0"

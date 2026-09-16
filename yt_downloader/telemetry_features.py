@@ -41,7 +41,16 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
 # Per-operation observations are separate from legacy once-per-session usage.
 OPERATION_FEATURES = {
     "download_operation": frozenset(
-        {"started", "stage", "reused", "committed", "completed", "failed", "cancelled"}
+        {
+            "started",
+            "stage",
+            "candidate_rejected",
+            "reused",
+            "committed",
+            "completed",
+            "failed",
+            "cancelled",
+        }
     ),
     "local_conversion_operation": frozenset(
         {"started", "committed", "completed", "failed", "cancelled"}

@@ -13011,7 +13011,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             DownloaderApp._observe_download_operation(
                 self,
                 job,
-                "stage",
+                "stage"
+                if rejection[0] == "no_eligible_candidate"
+                else "candidate_rejected",
                 stage="reuse",
                 dimensions={"reuse_result": "miss", "reuse_rejection": rejection[0]},
                 failure_detail=rejection[1],
