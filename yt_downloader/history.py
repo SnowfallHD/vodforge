@@ -10,7 +10,7 @@ import sys
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any
+from typing import Any, cast
 
 APP_NAME = "VODForge"
 HISTORY_SCHEMA_VERSION = 1
@@ -623,3 +623,146 @@ def load_history(path: Path) -> list[dict[str, Any]]:
         if len(records) >= MAX_HISTORY_ITEMS:
             break
     return records
+
+
+_NAMESPACE_SCAN_LIMIT = 128
+_NAMESPACE_PEER_LIMIT = 32
+_OBSERVED_MEDIA_SUFFIXES = frozenset(
+    {".mp4", ".mp3", ".m4a", ".opus", ".ogg", ".webm", ".mkv", ".mov", ".wav", ".flac"}
+)
+
+
+def _observed_namespace_files(output_path: Path) -> dict[str, str]:
+    """Count recognized regular media in one directory, with an explicit cap."""
+    count = 0
+    state = "complete"
+    try:
+        if not output_path.is_file():
+            return {"namespace_scan_state": "missing"}
+        with os.scandir(output_path.parent) as entries:
+            for index, entry in enumerate(entries):
+                if index == _NAMESPACE_SCAN_LIMIT:
+                    state = "capped"
+                    break
+                if Path(entry.name).suffix.lower() in _OBSERVED_MEDIA_SUFFIXES:
+                    if entry.is_symlink():
+                        state = "unknown"
+                    elif entry.is_file(follow_symlinks=False):
+                        count += 1
+    except FileNotFoundError:
+        return {"namespace_scan_state": "missing"}
+    except OSError:
+        return {"namespace_scan_state": "unreadable"}
+    return {"namespace_scan_state": state, "namespace_media_file_count": str(count)}
+
+
+def _namespace_source(info: Any) -> tuple[str, str, str] | None:
+    if not isinstance(info, dict):
+        return None
+    signature, identifier = info.get("vodforge_attempt_signature"), info.get("id")
+    raw_url = info.get("webpage_url")
+    if not all(
+        isinstance(value, str) and value for value in (signature, identifier, raw_url)
+    ):
+        return None
+    signature, identifier, raw_url = cast(
+        tuple[str, str, str], (signature, identifier, raw_url)
+    )
+    if not re.fullmatch(r"[0-9a-f]{64}", signature):
+        return None
+    url = sanitize_durable_url(raw_url, preserve_youtube_context=True)
+    return (identifier, url, signature) if url else None
+
+
+def _namespace_peer_eligibility(record: Any, source: tuple[str, str, str]) -> str:
+    if not isinstance(record, dict):
+        return "unknown"
+    identifier, url, signature = source
+    if record.get("id") != identifier:
+        return "skip"
+    peer_source = _namespace_source(record)
+    if peer_source is None:
+        return "unknown"
+    if peer_source[1] != url or peer_source[2] == signature:
+        return "skip"
+    return "candidate"
+
+
+def _compare_namespace_peer(output_path: Path, record: dict[str, Any]) -> str:
+    try:
+        peer = history_output_path(record)
+        if peer is None:
+            return "unknown"
+        if not peer.is_file() or not output_path.is_file():
+            return "missing"
+        if output_path.parent.samefile(peer.parent):
+            return "shared_directory"
+        if output_path.samefile(peer):
+            return "shared_artifact"
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "unreadable"
+    return "distinct"
+
+
+def _observed_namespace_peers(
+    output_path: Path, info: Any, history: Any
+) -> dict[str, str]:
+    """Compare only retained same-source other intents; races are not excluded."""
+    if info is None:
+        return {"peer_namespace_state": "not_applicable"}
+    source = _namespace_source(info)
+    if source is None or not isinstance(history, (list, tuple)):
+        return {"peer_namespace_state": "unknown", "peer_comparison_count": "0"}
+    return _observe_retained_peers(output_path, source, history)
+
+
+def _observe_retained_peers(
+    output_path: Path, source: tuple[str, str, str], history: list | tuple
+) -> dict[str, str]:
+    compared = 0
+    candidates = 0
+    uncertain: str | None = "capped" if len(history) > MAX_HISTORY_ITEMS else None
+    state = "no_comparable"
+    for record in history[:MAX_HISTORY_ITEMS]:
+        eligibility = _namespace_peer_eligibility(record, source)
+        if eligibility != "candidate":
+            if eligibility == "unknown":
+                uncertain = uncertain or "unknown"
+            continue
+        candidates += 1
+        if candidates > _NAMESPACE_PEER_LIMIT:
+            uncertain = "capped"
+            break
+        result = _compare_namespace_peer(output_path, record)
+        if result not in {"distinct", "shared_directory", "shared_artifact"}:
+            uncertain = uncertain or result
+            continue
+        compared += 1
+        state = result
+        if result != "distinct":
+            # A positively observed shared identity remains useful even if some
+            # other rows were unavailable or the history scan was capped.
+            uncertain = None
+            break
+    return {
+        "peer_namespace_state": uncertain or state,
+        "peer_comparison_count": str(compared),
+    }
+
+
+def observed_output_namespace(
+    output_path: Path, info: Any = None, history: Any = None
+) -> dict[str, str]:
+    """Observation only: a malformed row or filesystem race never owns an export."""
+    facts = {"namespace_scan_state": "unknown", "peer_namespace_state": "unknown"}
+    try:
+        facts.update(_observed_namespace_files(output_path))
+    except Exception:  # noqa: BLE001, S110 - optional observation must not control committed media
+        pass
+    try:
+        facts.update(_observed_namespace_peers(output_path, info, history))
+    except Exception:  # noqa: BLE001, S110 - legacy/mutating history cannot break an export
+        pass
+    return facts

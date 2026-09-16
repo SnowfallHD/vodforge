@@ -91,6 +91,15 @@ DIMENSION_RANGES = {
         "observation_drop_count",
     )
 }
+DIMENSION_RANGES.update(
+    {
+        "observed_audio_bitrate_kbps": (1, 100000),
+        "observed_audio_sample_rate_hz": (1, 768000),
+        "observed_audio_channels": (1, 64),
+        "namespace_media_file_count": (0, 128),
+        "peer_comparison_count": (0, 32),
+    }
+)
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "intent_relation": frozenset(
         {
@@ -117,6 +126,37 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
             "dispatch",
             "playback",
             "unknown",
+        }
+    ),
+    "output_observation": frozenset({"single", "multiple", "unavailable"}),
+    "observed_audio_state": frozenset({"single", "multiple", "none", "unknown"}),
+    "observed_audio_codec": frozenset(
+        {
+            "aac",
+            "mp3",
+            "opus",
+            "vorbis",
+            "flac",
+            "alac",
+            "pcm_s16le",
+            "pcm_s24le",
+            "other",
+        }
+    ),
+    "namespace_scan_state": frozenset(
+        {"complete", "capped", "missing", "unreadable", "unknown", "not_applicable"}
+    ),
+    "peer_namespace_state": frozenset(
+        {
+            "distinct",
+            "shared_directory",
+            "shared_artifact",
+            "no_comparable",
+            "missing",
+            "unreadable",
+            "capped",
+            "unknown",
+            "not_applicable",
         }
     ),
     "storage_namespace": frozenset({"variant", "owned_legacy", "unknown"}),
@@ -314,7 +354,7 @@ def validate_dimensions(value: Mapping[str, str] | None) -> dict[str, str]:
             continue
         if key in DIMENSION_PATTERNS and re.fullmatch(DIMENSION_PATTERNS[key], item):
             continue
-        if key in DIMENSION_RANGES and re.fullmatch(r"0|[1-9][0-9]{0,4}", item):
+        if key in DIMENSION_RANGES and re.fullmatch(r"0|[1-9][0-9]{0,5}", item):
             low, high = DIMENSION_RANGES[key]
             if low <= int(item) <= high:
                 continue

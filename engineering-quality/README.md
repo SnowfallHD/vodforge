@@ -58,6 +58,54 @@ pre-play changes and file switches. These are representative checks, not a claim
 that every subsystem or possible interleaving is covered.
 
 
+## Observed output facts must survive later projections (2026-09-16)
+
+The independent MP3 producer/D1 audit found that requested settings and a variant
+label did not establish the actual output properties or physical separation.
+A second regression exposed a sequencing error: validated bytes were physically
+committed, then a metadata projection failure prevented the commit observation.
+The pre-fix test in build/variant-help-20260916/download-postcommit-observation-before.log
+fails with an existing destination file and zero committed observations.
+
+The invariant is that a durable effect is observed at its boundary, independently
+of later presentation/history work, and optional observations never own media
+success. Download fresh commits and validated reuse now project only the existing
+successful ffprobe facts. Local conversion sends its actual committed path and
+validation probe through its existing local event queue. Observation failures are
+isolated; consent is checked before adding filesystem work and again by the
+telemetry owner before recording. No new probe, timer, subsystem, or fallback to
+requested settings was added.
+
+tests/test_output_observations.py varies MP4, MP3, and Original containers;
+fresh commit and reuse before a metadata fault; local conversion; absent,
+multiple, malformed and out-of-range probe values; identical bytes in distinct
+directories; shared directory and hardlink identity; same-intent reuse; missing
+or unreadable peers; symlinks; malformed history; and independent scan caps.
+It checks physical files, field absence, privacy, and continued commit recording
+when enrichment fails. tests/test_local_audio_video.py also proves a broken
+commit observer cannot prevent history metadata or cleanup. Backend integration
+persists the new facts in D1, rejects private/unbounded fields, and retains
+cross-language vocabulary parity.
+
+Bounded in-memory mutations detected both removed physical identity comparison
+(two failing collision cases) and falsely substituted bitrate (four failing
+fresh/local observation cases). See observations-mutations.json and its logs.
+These mutations do not change repository source. The original sequencing case
+and the generalized variants pass with the fix. Earlier coverage asserted
+requested intent, folder names, and aggregate commit/reuse counts; it did not
+compare persisted outcome properties or insert a fault between commit and
+metadata projection.
+
+Scope is deliberately limited. Stream bitrate is the probe-reported value
+rounded to kbps, not an instantaneous VBR claim. Directory counts cover recognized
+regular media files in a shallow scan of at most 128 entries, not a universal
+principal-artifact count. Physical comparisons cover at most 32 comparable
+retained peers within 5,000 history rows. Missing, capped, unreadable, unknown,
+multiple, and no-comparable states remain explicit. A distinct result is a
+point-in-time observation, not race exclusion or proof that no overwrite occurred.
+Source fixture tests and local D1 checks do not replace the fresh preview
+producer packet, native GUI checks, or exact signed-package acceptance.
+
 ## Forge geometry must not replay data projection (2026-09-16)
 
 The native unprofiled Forge5000 comparison still had a491ms maximum heartbeat

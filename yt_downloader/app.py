@@ -82,6 +82,7 @@ from .history import (
     history_identity,
     history_output_dir,
     load_history,
+    observed_output_namespace,
     sanitize_chapters,
     sanitize_durable_text,
     sanitize_durable_thumbnail_record,
@@ -138,6 +139,7 @@ from .libvlc_backend import (
     probe_libvlc_runtime,
 )
 from .local_audio_video import (
+    LocalAudioVideoCommit,
     LocalAudioVideoConversionOwner,
     LocalAudioVideoResult,
     LocalConversionRecoveryOwner,
@@ -172,6 +174,7 @@ from .original_audio import (
     original_audio_extension,
     original_audio_options,
 )
+from .output_validation import observed_audio_characteristics
 from .output_validation import (
     output_artifact_plan_mismatches as _output_artifact_plan_mismatches,
 )
@@ -9535,7 +9538,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         dialog.show()
 
     def _record_local_conversion_event(
-        self, event: str, run_id: str, diagnostic: FailureDiagnostic | None = None
+        self,
+        event: str,
+        run_id: str,
+        diagnostic: FailureDiagnostic | None = None,
+        committed: LocalAudioVideoCommit | None = None,
     ) -> None:
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is not None:
@@ -9545,14 +9552,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "local_conversion_failed": "failed",
                 "local_conversion_stopped": "cancelled",
             }[event]
-            telemetry.record_operation(
-                "local_conversion_operation",
-                action,
-                operation_key=run_id,
-                attempt_key=run_id,
-                failure_detail=diagnostic,
-                dimensions={"committed_count": "1"} if action == "committed" else {},
-            )
+            dimensions = {"committed_count": "1"} if action == "committed" else {}
+            if action == "committed" and committed is not None:
+                dimensions.update(
+                    DownloaderApp._observed_output_dimensions(
+                        self, committed.output_path, committed.output_probe
+                    )
+                )
+            try:
+                telemetry.record_operation(
+                    "local_conversion_operation",
+                    action,
+                    operation_key=run_id,
+                    attempt_key=run_id,
+                    failure_detail=diagnostic,
+                    dimensions=dimensions,
+                )
+            except Exception:  # noqa: BLE001, S110 - optional observation must not stop the UI pump
+                pass
             if action == "committed":
                 return
             telemetry.record(
@@ -12964,6 +12981,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 "committed_count": "0",
                 "storage_namespace": namespace,
             },
+            output_path=existing_path,
+            output_probe=existing_probe,
+            output_info=info,
         )
         remember_video_output_dir(info, existing_path.parent)
         reused_info = build_encoding_summary_metadata(
@@ -13178,14 +13198,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             ],
             control_check=control_check,
         )
-        write_diagnostic(
-            f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}"
-        )
-        output_dirs = sorted({path.parent for path in packaged_paths})
-        all_output_dirs.extend(output_dirs)
-        self.events.put(("download_folders", sorted(set(all_output_dirs))))
-        for packaged_path in packaged_paths:
-            self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
         output_paths = [
             path for path in packaged_paths if path.suffix.lower() == expected_extension
         ]
@@ -13194,6 +13206,28 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             raise RuntimeError(
                 f"{label}: validated output could not be committed to the destination."
             )
+        DownloaderApp._observe_download_operation(
+            self,
+            job,
+            "committed",
+            stage="commit",
+            dimensions={
+                "committed_count": str(min(len(output_paths), 10000)),
+                "storage_namespace": "variant",
+            },
+            output_path=primary_output,
+            output_probe=validated_staged[0][2] if len(validated_staged) == 1 else None,
+            output_info=info,
+            artifact_count=len(output_paths),
+        )
+        write_diagnostic(
+            f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}"
+        )
+        output_dirs = sorted({path.parent for path in packaged_paths})
+        all_output_dirs.extend(output_dirs)
+        self.events.put(("download_folders", sorted(set(all_output_dirs))))
+        for packaged_path in packaged_paths:
+            self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
         ffprobe_data = validated_staged[0][2]
         if isinstance(plan, AudioExportPlan):
             self._emit_job_log(
@@ -14048,16 +14082,6 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 ),
                 control_check=self._raise_for_download_control_requests,
             )
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "committed",
-                stage="commit",
-                dimensions={
-                    "committed_count": str(min(committed_media.success_count, 10000)),
-                    "storage_namespace": "variant",
-                },
-            )
             before_sidecars = result.outcome.sidecar_failure_count
             DownloaderApp._observe_download_operation(
                 self, job, "stage", stage="sidecars"
@@ -14118,6 +14142,45 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return self._resolve_download_item_failure(job, item, result, failure)
         return result
 
+    def _observed_output_dimensions(
+        self,
+        output_path: Path,
+        probe: Any,
+        *,
+        info: dict[str, Any] | None = None,
+        artifact_count: int = 1,
+    ) -> dict[str, str]:
+        # No extra filesystem observations without current collection consent.
+        telemetry = self.__dict__.get("product_telemetry")
+        try:
+            permitted = getattr(telemetry, "permitted", None)
+            if not callable(permitted) or not permitted():
+                return {}
+        except Exception:  # noqa: BLE001 - unavailable consent is not permission
+            return {}
+        facts = {"output_observation": "unavailable", "observed_audio_state": "unknown"}
+        try:
+            facts.update(
+                observed_audio_characteristics(probe, artifact_count=artifact_count)
+            )
+        except Exception:  # noqa: BLE001, S110 - malformed probe observations cannot break media
+            pass
+        if artifact_count != 1:
+            facts.update(
+                namespace_scan_state="not_applicable",
+                peer_namespace_state="not_applicable",
+            )
+            return facts
+        try:
+            facts.update(
+                observed_output_namespace(
+                    output_path, info, self.__dict__.get("download_history")
+                )
+            )
+        except Exception:  # noqa: BLE001 - optional observation cannot control the commit
+            facts.update(namespace_scan_state="unknown", peer_namespace_state="unknown")
+        return facts
+
     def _observe_download_operation(
         self,
         job: DownloadJob,
@@ -14126,21 +14189,39 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         stage: str | None = None,
         dimensions: dict[str, str] | None = None,
         failure_detail: FailureDiagnostic | None = None,
+        output_path: Path | None = None,
+        output_probe: Any = None,
+        output_info: dict[str, Any] | None = None,
+        artifact_count: int = 1,
     ) -> None:
         if stage is not None:
             job.failure_stage = stage
         telemetry = self.__dict__.get("product_telemetry")
         operation = getattr(job, "telemetry_operation_id", None)
         if telemetry is not None and operation:
-            telemetry.record_operation(
-                "download_operation",
-                action,
-                operation_key=operation,
-                attempt_key=job.run_id,
-                retry_key=job.retry_of_run_id,
-                dimensions={"stage": job.failure_stage, **dict(dimensions or {})},
-                failure_detail=failure_detail,
-            )
+            facts = {"stage": job.failure_stage, **dict(dimensions or {})}
+            if output_path is not None:
+                facts.update(
+                    DownloaderApp._observed_output_dimensions(
+                        self,
+                        output_path,
+                        output_probe,
+                        info=output_info,
+                        artifact_count=artifact_count,
+                    )
+                )
+            try:
+                telemetry.record_operation(
+                    "download_operation",
+                    action,
+                    operation_key=operation,
+                    attempt_key=job.run_id,
+                    retry_key=job.retry_of_run_id,
+                    dimensions=facts,
+                    failure_detail=failure_detail,
+                )
+            except Exception:  # noqa: BLE001, S110 - telemetry cannot own export success
+                pass
 
     def _observe_download_sidecar_failure(
         self, job: DownloadJob, error: Exception

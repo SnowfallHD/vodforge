@@ -772,9 +772,11 @@ def test_commit_observation_survives_later_metadata_failure(tmp_path, monkeypatc
     def fail_history(*_args, **_kwargs):
         raise ValueError("PRIVATE metadata state")
 
-    def observe_commit():
+    def observe_commit(committed_output):
         outputs = list((tmp_path / "out").glob("*.mp4"))
         assert len(outputs) == 1 and outputs[0].stat().st_size > 0
+        assert committed_output.output_path == outputs[0]
+        assert committed_output.output_probe == _output_probe()
         committed.append(outputs[0].read_bytes())
 
     monkeypatch.setattr(
@@ -796,5 +798,26 @@ def test_commit_observation_survives_later_metadata_failure(tmp_path, monkeypatc
     assert len(committed) == 1
     assert outputs[0].read_bytes() == committed[0]
     assert facts[0].stage == "history"
+    assert not (tmp_path / "out" / ".vfstage").exists()
+    assert not owner.active
+
+
+def test_commit_observer_failure_does_not_interrupt_history_or_cleanup(tmp_path):
+    audio = tmp_path / "source.mp3"
+    audio.write_bytes(b"mp3")
+    image = tmp_path / "image.png"
+    image.write_bytes(b"png")
+    owner = _owner(tmp_path, popen=lambda command, **kwargs: FakeProcess(command))
+
+    def broken_observer(_committed):
+        raise RuntimeError("PRIVATE observer failure")
+
+    result = owner.convert(
+        new_local_audio_video_request(audio, image, tmp_path / "out"),
+        on_progress=lambda _event: None,
+        on_commit=broken_observer,
+    )
+    assert result.output_path.is_file()
+    assert result.history_metadata["vodforge_output_path"] == str(result.output_path)
     assert not (tmp_path / "out" / ".vfstage").exists()
     assert not owner.active

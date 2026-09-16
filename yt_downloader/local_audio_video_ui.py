@@ -15,6 +15,7 @@ from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoCancelled,
+    LocalAudioVideoCommit,
     LocalAudioVideoConversionOwner,
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
@@ -412,7 +413,9 @@ class LocalAudioVideoDialog:
                         ("progress", progress)
                     ),
                     on_failure=diagnostics.append,
-                    on_commit=lambda: self._events.put(("committed", None)),
+                    on_commit=lambda committed: self._events.put(
+                        ("committed", committed)
+                    ),
                 )
                 self._events.put(("complete", result))
             except LocalAudioVideoCancelled as exc:
@@ -445,8 +448,10 @@ class LocalAudioVideoDialog:
             if kind == "progress" and isinstance(payload, LocalAudioVideoProgress):
                 self.progress.configure(value=payload.fraction * 100)
                 self.status_var.set(payload.label)
-            elif kind == "committed":
-                self.on_telemetry("local_conversion_committed", self._telemetry_run_id)
+            elif kind == "committed" and isinstance(payload, LocalAudioVideoCommit):
+                self.on_telemetry(
+                    "local_conversion_committed", self._telemetry_run_id, None, payload
+                )
             elif kind == "complete" and isinstance(payload, LocalAudioVideoResult):
                 terminal = True
                 self._worker = None

@@ -163,6 +163,13 @@ class LocalAudioVideoProgress:
 
 
 @dataclass(frozen=True)
+class LocalAudioVideoCommit:
+    # Local-only payload from the successful validation/commit boundary.
+    output_path: Path
+    output_probe: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
 class LocalAudioVideoResult:
     output_path: Path
     image_path: Path
@@ -1007,7 +1014,7 @@ class LocalAudioVideoConversionOwner:
         prepared: _PreparedLocalAudioVideo,
         staging_dir: Path,
         on_progress: Callable[[LocalAudioVideoProgress], None],
-        on_commit: Callable[[], None] | None,
+        on_commit: Callable[[LocalAudioVideoCommit], None] | None,
     ) -> LocalAudioVideoResult:
         normalized_image = staging_dir / "still.png"
         staged_output = staging_dir / "rendered.mp4"
@@ -1056,7 +1063,10 @@ class LocalAudioVideoConversionOwner:
             local_video_filename(prepared.audio_path),
         )
         if on_commit is not None:
-            on_commit()
+            try:
+                on_commit(LocalAudioVideoCommit(output_path, output_probe))
+            except Exception:  # noqa: BLE001, S110 - an observer cannot invalidate committed media
+                pass
         self._failure_stage = "history"
         metadata = build_local_audio_video_history_metadata(
             request,
@@ -1089,7 +1099,7 @@ class LocalAudioVideoConversionOwner:
         *,
         on_progress: Callable[[LocalAudioVideoProgress], None],
         on_failure: Callable[[FailureDiagnostic], None] | None = None,
-        on_commit: Callable[[], None] | None = None,
+        on_commit: Callable[[LocalAudioVideoCommit], None] | None = None,
     ) -> LocalAudioVideoResult:
         if not self._transaction_lock.acquire(blocking=False):
             raise LocalAudioVideoError("Another local conversion is already running.")

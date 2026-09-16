@@ -684,3 +684,72 @@ def validate_output_artifact(
             expected_tags=expected_tags,
         )
     return data
+
+
+def _observed_positive_integer(value: Any, high: int) -> int | None:
+    if type(value) is int:
+        number = value
+    elif (
+        isinstance(value, str)
+        and value.isascii()
+        and value.isdigit()
+        and len(value) <= 9
+    ):
+        number = int(value)
+    else:
+        return None
+    return number if 0 < number <= high else None
+
+
+def _observed_audio_stream(probe_data: Any) -> tuple[str, dict[str, Any] | None]:
+    if not isinstance(probe_data, dict):
+        return "unknown", None
+    streams = probe_data.get("streams")
+    if not isinstance(streams, (list, tuple)) or len(streams) > 64:
+        return "unknown", None
+    if any(not isinstance(stream, dict) for stream in streams):
+        return "unknown", None
+    audio = [stream for stream in streams if stream.get("codec_type") == "audio"]
+    if len(audio) == 1:
+        return "single", audio[0]
+    return ("multiple" if audio else "none"), None
+
+
+def observed_audio_characteristics(
+    probe_data: Any, *, artifact_count: int = 1
+) -> dict[str, str]:
+    """Use existing ffprobe facts, without substituting requested settings.
+
+    Bitrate is stream-reported kbps rounded to the nearest integer, not a fresh
+    decode or instantaneous VBR measurement. Absent/invalid fields stay absent.
+    """
+    state = (
+        "single"
+        if artifact_count == 1
+        else "multiple"
+        if artifact_count > 1
+        else "unavailable"
+    )
+    facts = {"output_observation": state, "observed_audio_state": "unknown"}
+    if artifact_count != 1:
+        return facts
+    audio_state, stream = _observed_audio_stream(probe_data)
+    facts["observed_audio_state"] = audio_state
+    if stream is None:
+        return facts
+    codec = stream.get("codec_name")
+    known = {"aac", "mp3", "opus", "vorbis", "flac", "alac", "pcm_s16le", "pcm_s24le"}
+    facts["observed_audio_codec"] = (
+        codec if isinstance(codec, str) and codec in known else "other"
+    )
+    for source_key, dimension, high, divisor in (
+        ("bit_rate", "observed_audio_bitrate_kbps", 100_000_000, 1000),
+        ("sample_rate", "observed_audio_sample_rate_hz", 768000, 1),
+        ("channels", "observed_audio_channels", 64, 1),
+    ):
+        number = _observed_positive_integer(stream.get(source_key), high)
+        if number is not None:
+            normalized = (number + divisor // 2) // divisor
+            if normalized > 0:
+                facts[dimension] = str(normalized)
+    return facts
