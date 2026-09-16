@@ -778,3 +778,55 @@ This class reports an unsafe output-path refusal, not the exact leaf type or
 whether a redirect was malicious. Unknown nested causes remain unknown. K is
 immutable; historical unknown events are not relabeled. Source tests require a
 bounded prospective preview proof before claiming delivered diagnosis.
+
+
+### Native click intent and late media facts (2026-09-16)
+
+The exact signed Windows a0434ee candidate exposed two readiness errors. A pointer
+could enter a ChoiceMenu and click without a preceding Motion event; commit then
+used an older keyboard/hover selection. A generated MP4 had no extractor duration
+but libVLC later reported six seconds; Preview Moments had already extracted five
+zero-second images and never refreshed their captions. The transport and preview
+click targets used the later duration, so visible evidence disagreed with behavior.
+
+Shared invariant: a committed action must bind to the current event's intent, and
+derived asynchronous UI must bind to the current media facts and owner lifetime.
+Hover is presentation, not a prerequisite for selecting the clicked row. Unknown
+duration must remain unknown rather than becoming five apparently valid zero
+timestamps. When facts change, timestamps and images refresh together; obsolete
+worker results cannot replace the current generation. One preview worker runs at
+a time, and an unavailable/invalid image does not trigger an unbounded retry loop.
+These changes extend the existing ChoiceMenu and MediaPlayerWindow; no new owner
+or telemetry vocabulary is introduced.
+
+Coverage gap: prior native Settings and Feedback tests explicitly called
+selection_set before ButtonRelease, bypassing the user input boundary. The
+shared menu test exercised hover and keyboard separately. Existing player tests
+covered fixed metadata, volume/readiness and shutdown, but not delayed duration
+invalidating already derived imagery. The new native interaction matrix includes
+four inline/form/scrolled click cases, unknown-to-known duration, in-flight
+replacement with independently checked image pixels, seek/caption agreement,
+unchanged-snapshot deduplication, pending-close retirement, and two extraction
+failure cases. The existing real Settings quality-selector and modal Feedback
+tests now click coordinates instead of preselecting their answer. This extends
+the contract across output planning, support forms and playback. Existing
+settings/telemetry latest-intent and player readiness harness matrices remain
+complementary coverage.
+
+Prior-failure evidence: seven new assertions fail against a0434ee, and both
+strengthened real Settings/Feedback cases also fail with the old ChoiceMenu.
+Windows receipts 037/065 and separated pointer move/click 077-079 preserve the
+native symptom, including the actual stationary click; keyboard selection passed.
+Generated-video playback and the six-second end state are independent of the
+preview strip. Limits: native Tk regressions use controlled backend/preview
+boundaries to schedule races; they do not qualify a newly signed artifact,
+physical pointer behavior on both OSes, every possible scheduling interleaving,
+or frame presentation performance. Exact rebuilt-package checks remain required.
+
+
+Validation checkpoint: 121 native Tk cases passed together; after preview state
+initialization was grouped with its existing strip builder, the focused
+interaction/backend suite passed again. Full source suite: 1653 passed,
+166 environment/opt-in skips in the isolated worktree. Canonical Ruff/format,
+mypy (79 files) and Bandit (zero findings) passed. Complexity findings remain
+191, identical to a0434ee; this is not an all-green maintainability claim.

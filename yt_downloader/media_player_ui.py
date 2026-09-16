@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 import queue
 import threading
 import tkinter as tk
@@ -308,8 +309,6 @@ class MediaPlayerWindow:
         self._timeline_signature: tuple[Any, ...] | None = None
         self._timeline_progress: int | None = None
         self._timeline_handle: int | None = None
-        self._preview_queue: queue.Queue[tuple[int, bytes | None]] = queue.Queue()
-        self._preview_images: list[Any] = []
         self._surface_owner: TkPlaybackSurfaceOwner | None = None
         self._chapters = sanitize_chapters(info.get("chapters"))
         self._heatmap = sanitize_heatmap(info.get("heatmap"))
@@ -565,7 +564,16 @@ class MediaPlayerWindow:
         volume.grid(row=1, column=4, sticky="e")
 
     def _build_preview_strip(self, root: ttk.Frame) -> None:
+        self._preview_queue: queue.Queue[tuple[int, int | None, bytes | None]] = (
+            queue.Queue()
+        )
+        self._preview_generation = 0
+        self._preview_target: tuple[Path, float] | None = None
+        self._preview_worker_generation: int | None = None
+        self._preview_completed_generation: int | None = None
+        self._preview_images: list[Any] = []
         self.preview_labels: list[tk.Label] = []
+        self._preview_captions: list[ttk.Label] = []
         if self._audio_only:
             return
         strip = ttk.Frame(root, style="FocusShell.TFrame")
@@ -578,10 +586,9 @@ class MediaPlayerWindow:
             style="FocusEyebrow.TLabel",
         ).grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 6))
         for index in range(5):
-            position = self.playback.snapshot.duration * ((index + 0.5) / 5)
             label = tk.Label(
                 strip,
-                text="Loading preview…",
+                text="Play for preview",
                 bg=THEME["surface"],
                 fg=THEME["subtle"],
                 width=16,
@@ -598,11 +605,9 @@ class MediaPlayerWindow:
             )
             label.bind("<Button-1>", self._preview_seek_handler(index))
             self.preview_labels.append(label)
-            ttk.Label(
-                strip,
-                text=format_playback_time(position),
-                style="Muted.TLabel",
-            ).grid(row=2, column=index, sticky="w", padx=(2, 0), pady=(4, 0))
+            caption = ttk.Label(strip, text="—", style="Muted.TLabel")
+            caption.grid(row=2, column=index, sticky="w", padx=(2, 0), pady=(4, 0))
+            self._preview_captions.append(caption)
 
     def _preview_seek_handler(self, index: int) -> Any:
         def seek(_event: tk.Event[Any]) -> None:
@@ -617,12 +622,6 @@ class MediaPlayerWindow:
         )
         self.popup.focus_force()
         self._poll()
-        if self.playback.snapshot.path is not None and not self._audio_only:
-            threading.Thread(
-                target=self._generate_previews,
-                daemon=True,
-                name="vodforge-player-previews",
-            ).start()
 
     def _ensure_render_surface(self) -> bool:
         if self._audio_only or self._surface_owner is not None:
@@ -814,6 +813,7 @@ class MediaPlayerWindow:
                 text=("Pause" if snapshot.status in {"Playing", "Starting"} else "Play")
             )
             self._update_timeline_value(snapshot)
+        self._refresh_previews(snapshot)
         self._drain_previews()
         self._last_snapshot = snapshot
         self._poll_after_id = self.popup.after(100, self._poll)
@@ -867,29 +867,77 @@ class MediaPlayerWindow:
             image, (self.stage.winfo_x(), self.stage.winfo_y())
         )
 
-    def _generate_previews(self) -> None:
-        snapshot = self.playback.snapshot
-        path = snapshot.path
-        if path is None:
+    def _refresh_previews(self, snapshot: PlaybackSnapshot) -> None:
+        if self._closed or not self.preview_labels:
             return
-        for index in range(len(self.preview_labels)):
-            if self._closed:
+        target = (
+            (snapshot.path, round(snapshot.duration, 3))
+            if snapshot.path is not None
+            and math.isfinite(snapshot.duration)
+            and snapshot.duration > 0
+            else None
+        )
+        if target != self._preview_target:
+            self._preview_target = target
+            self._preview_generation += 1
+            self._preview_images = [None] * len(self.preview_labels)
+            for index, label in enumerate(self.preview_labels):
+                label.configure(
+                    image="",
+                    text="Loading preview…" if target else "Play for preview",
+                    width=16,
+                    height=4,
+                )
+                position = (
+                    target[1] * ((index + 0.5) / len(self.preview_labels))
+                    if target
+                    else 0
+                )
+                self._preview_captions[index].configure(
+                    text=format_playback_time(position) if target else "—"
+                )
+        if target is not None and self._preview_worker_generation is None:
+            # Completed generations keep their images. A newer generation waits
+            # for the old worker to retire before starting more FFmpeg children.
+            if self._preview_completed_generation == self._preview_generation:
                 return
-            position = snapshot.duration * ((index + 0.5) / len(self.preview_labels))
-            try:
-                data = self.previews.preview_png(position)
-            except MediaPlayerError:
-                data = None
-            self._preview_queue.put((index, data))
+            self._preview_worker_generation = self._preview_generation
+            threading.Thread(
+                target=self._generate_previews,
+                args=(self._preview_generation, target[1], len(self.preview_labels)),
+                daemon=True,
+                name="vodforge-player-previews",
+            ).start()
+
+    def _generate_previews(self, generation: int, duration: float, count: int) -> None:
+        try:
+            for index in range(count):
+                if self._closed or generation != self._preview_generation:
+                    return
+                position = duration * ((index + 0.5) / count)
+                try:
+                    data = self.previews.preview_png(position)
+                except MediaPlayerError:
+                    data = None
+                self._preview_queue.put((generation, index, data))
+        finally:
+            self._preview_queue.put((generation, None, None))
 
     def _drain_previews(self) -> None:
         if Image is None or ImageOps is None or ImageTk is None:
             return
         while True:
             try:
-                index, data = self._preview_queue.get_nowait()
+                generation, index, data = self._preview_queue.get_nowait()
             except queue.Empty:
                 return
+            if index is None:
+                if generation == self._preview_worker_generation:
+                    self._preview_worker_generation = None
+                    self._preview_completed_generation = generation
+                continue
+            if generation != self._preview_generation:
+                continue
             if data is None:
                 self.preview_labels[index].configure(text="No preview")
                 continue
@@ -904,7 +952,7 @@ class MediaPlayerWindow:
             except (OSError, ValueError):
                 self.preview_labels[index].configure(text="No preview")
                 continue
-            self._preview_images.append(rendered)
+            self._preview_images[index] = rendered
             apply_preview_image(self.preview_labels[index], rendered)
 
     @property

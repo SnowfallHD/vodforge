@@ -267,8 +267,9 @@ def test_feedback_dropdown_belongs_to_modal_grab(root):
     assert popup is not None
     assert popup.master is root.grab_current() is panel.frame
     menu = popup.winfo_children()[0]
-    menu.selection_set(1)
-    menu.event_generate("<ButtonRelease-1>")
+    click_y = 6 + menu.row_height + 17
+    menu.event_generate("<ButtonPress-1>", x=24, y=click_y)
+    menu.event_generate("<ButtonRelease-1>", x=24, y=click_y)
     root.update()
     assert panel.reason.get() == "Playback problem"
     assert field._popover is None

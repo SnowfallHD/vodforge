@@ -305,6 +305,7 @@ def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
         status_var=SimpleNamespace(set=lambda value: None),
         play_button=SimpleNamespace(configure=lambda **kwargs: None),
         _update_timeline_value=lambda snapshot: None,
+        _refresh_previews=lambda snapshot: None,
         _drain_previews=lambda: None,
         popup=SimpleNamespace(after=lambda delay, callback: None),
         _poll=lambda: None,

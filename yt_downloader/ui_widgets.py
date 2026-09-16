@@ -254,6 +254,8 @@ class ChoiceMenu(tk.Canvas):
         )
         self.bind("<Configure>", lambda _e: self._paint())
         self.bind("<Motion>", self._hover)
+        # Pointer entry need not deliver Motion before a click (or touch).
+        self.bind("<ButtonPress-1>", self._hover)
         self.bind("<Up>", lambda _e: self._move(-1))
         self.bind("<Down>", lambda _e: self._move(1))
         self.bind("<Home>", lambda _e: self._move(-len(self.values)))

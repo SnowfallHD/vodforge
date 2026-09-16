@@ -218,9 +218,10 @@ def test_settings_selects_every_quality_tier_in_real_dropdown():
                 dropdown.open_popover()
                 settle_native(application)
                 listbox = dropdown._popover.winfo_children()[0]
-                listbox.selection_clear(0, "end")
-                listbox.selection_set(index)
-                listbox.event_generate("<ButtonRelease-1>")
+                listbox.see(index)
+                click_y = 6 + (index - listbox.top) * listbox.row_height + 17
+                listbox.event_generate("<ButtonPress-1>", x=24, y=click_y)
+                listbox.event_generate("<ButtonRelease-1>", x=24, y=click_y)
                 application.update()
                 assert dropdown.get() == label
                 ceiling = _quality_max_height(dropdown.get())
