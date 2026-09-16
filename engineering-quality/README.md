@@ -875,8 +875,19 @@ remain separately identified in the release evidence.
 Validation checkpoint: 136 native cases pass together, and the existing 72
 cross-owner lifecycle cases pass. Full source suite: 1653 passed, 181 opt-in or
 environment skips; Ruff/format, mypy (79 files), and Bandit (zero findings) pass.
-Complexity remains 191 findings. A prior native batch exposed retired test Tk
-graphs being finalized from a preview worker; the fixture now collects retired
-graphs on the Tk thread before creating the next root and explicitly acquires
-focus for its owned window. The crashed and intermediate failing runs are retained.
-This fixture hygiene does not relax application lifecycle assertions.
+Complexity remains 191 findings. A prior native batch's sample showed
+off-thread garbage collection entering Tk while the main thread waited for an
+import lock; the sample does not identify the exact collected object graph. The
+test fixture now collects unreachable test-process objects on the Tk thread before
+creating the next root and explicitly acquires focus for its owned window. The
+crashed and intermediate failing runs are retained. This is fixture hygiene, not a
+product lifecycle repair, and does not relax application lifecycle assertions.
+
+Final gate review found that the explicit native_surface_contract file list did
+not include the new interaction matrix. The headless repository suite skipped its
+opt-in cases, so adding the regression file alone did not enforce the new class.
+The required NORMAL/DEEP source-native scenario now includes that matrix alongside
+the existing popover, polish, support, activity and consent tests. Its existing
+JUnit verifier rejects empty, skipped, failed or errored reports. FAST remains a
+headless gate and cannot substitute for executing this native scenario. The new
+case list is not a waiver for exact packaged-artifact or OS-input qualification.
