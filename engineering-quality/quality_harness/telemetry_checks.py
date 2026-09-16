@@ -537,7 +537,60 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 (case_dir / "history-producer-events.json").write_text(
                     json.dumps(producer_events, indent=2)
                 )
-                assert len(delivered) == len(dimensions) + 2 + len(producer_events), (
+                # Exercise actual canonical metadata copy producers as well. The
+                # clipboard is controlled; the consent/outbox/HTTP/D1 owners are real.
+                copy_app = object.__new__(DownloaderApp)
+                copy_app.product_telemetry = usage
+                copy_app.metadata_items = [
+                    {
+                        "tags": ["PRIVATE source"],
+                        "description": "PRIVATE description",
+                        "vodforge_user_tags": ["PRIVATE personal"],
+                        "vodforge_user_note": "PRIVATE note",
+                        "thumbnail": "https://example.invalid/PRIVATE.jpg",
+                        "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
+                    }
+                ]
+                copy_app.video_tree = SimpleNamespace(selection=lambda: ("0",))
+                copy_app.status_var = SimpleNamespace(set=lambda value: None)
+                copied = []
+                copy_app.clipboard_clear = copied.clear
+                copy_app.clipboard_append = copied.append
+                copy_events = []
+                for method, action, expected in (
+                    ("_copy_tags", "source_tags_copied", "PRIVATE source"),
+                    (
+                        "_copy_description",
+                        "source_description_copied",
+                        "PRIVATE description",
+                    ),
+                    ("_copy_personal_tags", "personal_tags_copied", "PRIVATE personal"),
+                    ("_copy_personal_note", "personal_note_copied", "PRIVATE note"),
+                    (
+                        "_copy_thumbnail_url",
+                        "thumbnail_url_copied",
+                        "https://example.invalid/PRIVATE.jpg",
+                    ),
+                    (
+                        "_copy_youtube_url",
+                        "youtube_url_copied",
+                        "https://www.youtube.com/watch?v=abcdefghijk",
+                    ),
+                ):
+                    previous = len(delivered)
+                    assert getattr(copy_app, method)() and copied == [expected]
+                    assert usage.shutdown(10), "Copy producer did not drain"
+                    observed = delivered[previous:]
+                    assert len(observed) == 1 and observed[0]["action"] == action
+                    assert observed[0]["dimensions"] == {}
+                    assert "PRIVATE" not in json.dumps(observed)
+                    copy_events.extend(observed)
+                (case_dir / "copy-producer-events.json").write_text(
+                    json.dumps(copy_events, indent=2)
+                )
+                assert len(delivered) == len(dimensions) + 2 + len(
+                    producer_events
+                ) + len(copy_events), (
                     f"Missing or duplicated emitted metrics: {len(delivered)}"
                 )
                 for payload in delivered:
@@ -673,6 +726,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             "One installation, one observed update, exact failure retries deduplicated.",
             "Real 404/500 worker failures stored only bounded machine facts.",
             "Actual app history failures preserve main/pending, parse/schema cause, source frame, revision and ordered operation steps in D1.",
+            "Six actual canonical Library copy producers store only bounded action names; source/personal content is absent.",
             "Six real installation entry points: retry, second actor, durable credential count, legacy write exclusion.",
         ],
         [artifact],

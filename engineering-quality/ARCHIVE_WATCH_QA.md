@@ -21,6 +21,45 @@ Evidence directory: /Users/coop/Dev/vodforge/build/archive-management-20260916.
 ARCHIVE_BASELINE_PARITY.json maps all 49 baseline capabilities with explicit
 per-capability gaps. It is a map, not 49 accepted native results.
 
+## Source and personal copy controls follow-on: 2026-09-16
+
+An independent baseline audit found inherited ambiguity: Copy description and Copy
+tags exported the merged display (personal annotations plus source content and UI
+labels). The source-copy invariant is now explicit: source actions use canonical
+source metadata; Copy your note and Copy your tags preserve deliberate access to
+personal annotations. Empty fields do not copy placeholders or stale display data.
+Thumbnail and YouTube copies also use the selected canonical owner; playlist URL
+context remains intact.
+
+All six actions bind to the deeply immutable projection row that opened their menu,
+so a subsequent selection change cannot switch the copied owner. No new metadata
+owner or mutable snapshot store was introduced. Six bounded action names are emitted
+through the existing consent-gated ProductTelemetryOwner; no clipboard content,
+notes, tags, description, title, path or URLs enter those observations.
+
+Bug-class learning and evidence (copy-semantics under the archive evidence directory):
+- Two source-copy assertions fail before the fix (fail-before.log).
+- test_library_copy checks canonical source versus combined display, explicit
+  owner selection, empty/stale fields and actual persisted telemetry with consent
+  allowed/denied. Existing state/projection/annotation/telemetry classes:220 passed.
+- The maintained native archive gate now includes compact1100x600/wide1440x900,
+  six real Tcl menu callbacks for two saved output variants, a selection switch
+  after opening each menu, exact copied values, and unchanged durable history.
+  Controlled clipboard/menu posting; no physical-input/system-clipboard claim.
+- Native-v1 caught an implementation mistake: deepcopy cannot reconstruct frozen
+  projection containers. Retaining the existing deeply immutable value resolves
+  the ownership requirement. Native-v2 caught an expected-URL fixture that omitted
+  preserved playlist context. Both raw failures remain; native-final passed2.
+- The existing telemetry_local_contract now invokes all six actual copy producers
+  through real Python HTTP, Worker and local D1. Independent stored SELECT matches
+  action names and empty dimensions; stored-copy-projection.json and exact emitted
+  copy-producer-events-http.json contain no private content.
+- Targeted backend49 passed; full vocabulary parity and scoped Ruff/format pass.
+  Maintained mypy command passed89 modules. The earlier ad-hoc mypy invocation
+  lacked the harness's optional-import flags and is preserved in source-check-2.log.
+- This is a bounded source/native follow-on; it does not replace final integrated
+  49-capability, exact package, Windows or preview-D1 qualification.
+
 ## History diagnostic follow-on: 2026-09-16
 
 Root's actual malformed-file probe exposed a producer coverage gap: session-deduplicated

@@ -643,14 +643,23 @@
           "symbol": "_show_library_row_menu"
         }
       ],
-      "current_destination": "Existing Actions copy commands and clipboard feedback",
+      "current_destination": "Actions: explicit source tags/description, personal tags/note, canonical thumbnail and YouTube URL; menu-bound immutable owner",
       "source_evidence": {
-        "gate": "archive-affected-final-current.log:836 passed",
-        "tests": [],
-        "scope": "affected source owners; not complete native action parity"
+        "gate": "copy-semantics/source-check-3.log:220 passed",
+        "tests": [
+          "tests/test_library_copy.py",
+          "tests/test_state_authority.py"
+        ],
+        "scope": "canonical source/personal, empty/stale fields, explicit owner, consent/outbox privacy"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_native_copy_menu_separates_personal_source_and_retains_opened_owner",
+          "report": "copy-semantics/native-final.xml",
+          "scope": "compact/wide real Tcl actions; two variants; selection replacement; controlled clipboard/menu posting"
+        }
+      ],
+      "acceptance": "bounded source-native copy contract passed; Windows/package/physical-input qualification pending"
     },
     {
       "id": "library.play-action",

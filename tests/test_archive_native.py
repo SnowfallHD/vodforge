@@ -526,3 +526,87 @@ def test_native_missing_relinked_media_uses_explicit_saved_profile_recovery(
         assert queued[0].tags == original.tags
         assert load_history(app.history_path) == []
         assert app._focus_selected_view == "forge"
+
+
+@pytest.mark.parametrize("size", ["1100x600", "1440x900"])
+def test_native_copy_menu_separates_personal_source_and_retains_opened_owner(
+    application, tmp_path, monkeypatch, size
+):
+    from yt_downloader.history import history_annotation_owner, save_history
+    from yt_downloader.library_annotations import LibraryAnnotation
+
+    app = application
+    monkeypatch.setattr(app, "_load_thumbnail_preview", lambda *a, **k: None)
+    rows = []
+    for kind, extension in (("MP4", "mp4"), ("MP3", "mp3")):
+        path = tmp_path / kind / ("media." + extension)
+        path.parent.mkdir()
+        path.write_bytes(b"synthetic not played")
+        row = saved(path, video="shared-video", kind=kind, playlist="shared-playlist")
+        row.update(
+            title=kind + " version",
+            description="Source " + kind + "\nLast line",
+            tags=["provider", kind],
+            thumbnail="https://example.invalid/" + extension + ".jpg",
+        )
+        rows.append(row)
+        app.library_annotations.replace(
+            history_annotation_owner(row),
+            LibraryAnnotation(
+                note="PRIVATE " + kind + "\nPersonal last line",
+                tags=("personal", kind),
+                category=kind,
+            ),
+        )
+    app.download_history = rows
+    save_history(app.history_path, rows)
+    before = app.history_path.read_bytes()
+    app._reconcile_library_projection()
+    app.library_output_type_var.set("All")
+    app.video_tree.navigate(None, mode="all")
+    app.geometry(size)
+    pump(app, 0.2)
+    copied = []
+    monkeypatch.setattr(app, "clipboard_clear", lambda: copied.clear())
+    monkeypatch.setattr(app, "clipboard_append", copied.append)
+    menus = []
+    monkeypatch.setattr(tk.Menu, "tk_popup", lambda menu, *a, **k: menus.append(menu))
+    for kind in ("MP4", "MP3"):
+        index = next(
+            i
+            for i, row in enumerate(app.metadata_items)
+            if row["title"] == kind + " version"
+        )
+        other = 1 - index
+        app.video_tree.see(str(index))
+        app.video_tree.selection_set(str(index))
+        app._display_selected_metadata(index)
+        pump(app)
+        app._show_library_actions_menu()
+        menu = menus[-1]
+        entries = {
+            menu.entrycget(i, "label"): i
+            for i in range(menu.index("end") + 1)
+            if menu.type(i) not in ("separator", "tearoff")
+        }
+        # Real Tcl callbacks must retain the menu's owner even when the current
+        # inspector now presents the other saved variant's personal annotation.
+        app.video_tree.selection_set(str(other))
+        app._display_selected_metadata(other)
+        pump(app)
+        for label, expected in (
+            ("Copy source description", "Source " + kind + "\nLast line"),
+            ("Copy source tags", "provider, " + kind),
+            ("Copy your note", "PRIVATE " + kind + "\nPersonal last line"),
+            ("Copy your tags", "personal, " + kind),
+            ("Copy thumbnail URL", "https://example.invalid/" + kind.lower() + ".jpg"),
+            (
+                "Copy YouTube URL",
+                "https://www.youtube.com/watch?v=shared-video&list=shared-playlist",
+            ),
+        ):
+            menu.invoke(entries[label])
+            pump(app, 0.02)
+            assert copied == [expected]
+        menu.destroy()
+    assert app.history_path.read_bytes() == before

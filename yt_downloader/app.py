@@ -8111,21 +8111,46 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 command=partial(self._show_library_annotation_editor, selected_info),
             )
             menu.add_separator()
+        # Bind the menu to its original owner, independently of later selection
+        # changes and the merged personal/source display.
+        # Projection rows are already deeply immutable; retaining that value
+        # preserves the owner without attempting to reconstruct frozen containers.
+        copy_info = selected_info if isinstance(selected_info, dict) else {}
         menu.add_command(
-            label="Copy tags",
-            command=lambda: self._run_library_copy_action(self._copy_tags),
+            label="Copy source tags",
+            command=lambda: self._run_library_copy_action(
+                partial(self._copy_tags, copy_info)
+            ),
         )
         menu.add_command(
-            label="Copy description",
-            command=lambda: self._run_library_copy_action(self._copy_description),
+            label="Copy source description",
+            command=lambda: self._run_library_copy_action(
+                partial(self._copy_description, copy_info)
+            ),
+        )
+        menu.add_command(
+            label="Copy your tags",
+            command=lambda: self._run_library_copy_action(
+                partial(self._copy_personal_tags, copy_info)
+            ),
+        )
+        menu.add_command(
+            label="Copy your note",
+            command=lambda: self._run_library_copy_action(
+                partial(self._copy_personal_note, copy_info)
+            ),
         )
         menu.add_command(
             label="Copy thumbnail URL",
-            command=lambda: self._run_library_copy_action(self._copy_thumbnail_url),
+            command=lambda: self._run_library_copy_action(
+                partial(self._copy_thumbnail_url, copy_info)
+            ),
         )
         menu.add_command(
             label="Copy YouTube URL",
-            command=lambda: self._run_library_copy_action(self._copy_youtube_url),
+            command=lambda: self._run_library_copy_action(
+                partial(self._copy_youtube_url, copy_info)
+            ),
         )
         menu.add_separator()
         menu.add_command(
@@ -10352,22 +10377,58 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 f"queued run preview unavailable for {job.url}: {type(exc).__name__}: {exc}"
             )
 
-    def _copy_tags(self) -> bool:
-        text = self.pulled_tags_text.get("1.0", "end").strip()
-        if text:
-            self.clipboard_clear()
-            self.clipboard_append(text)
-            self.status_var.set("Copied tags to clipboard.")
-            return True
-        return False
+    def _library_copy_info(self, info: dict[str, Any] | None = None) -> dict[str, Any]:
+        if info is not None:
+            return info
+        selection = self.video_tree.selection()
+        if selection:
+            try:
+                index = int(selection[0])
+                if 0 <= index < len(self.metadata_items):
+                    return self.metadata_items[index]
+            except (TypeError, ValueError):
+                pass
+        return {}
 
-    def _copy_thumbnail_url(self) -> bool:
-        if self.last_thumbnail_url:
-            self.clipboard_clear()
-            self.clipboard_append(self.last_thumbnail_url)
-            self.status_var.set("Copied thumbnail URL to clipboard.")
-            return True
-        return False
+    def _copy_library_text(self, text: str, action: str, label: str) -> bool:
+        if not text:
+            return False
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.status_var.set(f"Copied {label} to clipboard.")
+        self._archive_usage("library", action)
+        return True
+
+    def _copy_personal_tags(self, info: dict[str, Any] | None = None) -> bool:
+        selected = self._library_copy_info(info)
+        return self._copy_library_text(
+            ", ".join(_clean_list(selected.get("vodforge_user_tags"))),
+            "personal_tags_copied",
+            "your tags",
+        )
+
+    def _copy_personal_note(self, info: dict[str, Any] | None = None) -> bool:
+        selected = self._library_copy_info(info)
+        return self._copy_library_text(
+            str(selected.get("vodforge_user_note") or "").strip(),
+            "personal_note_copied",
+            "your note",
+        )
+
+    def _copy_tags(self, info: dict[str, Any] | None = None) -> bool:
+        return self._copy_library_text(
+            build_tags_display_text(self._library_copy_info(info)),
+            "source_tags_copied",
+            "source tags",
+        )
+
+    def _copy_thumbnail_url(self, info: dict[str, Any] | None = None) -> bool:
+        thumbnail = best_thumbnail(self._library_copy_info(info))
+        return self._copy_library_text(
+            str((thumbnail or {}).get("url") or "").strip(),
+            "thumbnail_url_copied",
+            "thumbnail URL",
+        )
 
     def _copy_youtube_url_value(self, url: str) -> bool:
         self.clipboard_clear()
@@ -10376,21 +10437,16 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         return True
 
     def _copy_youtube_url(self, info: dict[str, Any] | None = None) -> bool:
-        selected = info
-        if selected is None:
-            selection = self.video_tree.selection()
-            if selection:
-                try:
-                    selected = self.metadata_items[int(selection[0])]
-                except (IndexError, TypeError, ValueError):
-                    selected = None
-        url = canonical_youtube_url(selected or {})
+        url = canonical_youtube_url(self._library_copy_info(info))
         if not url:
             messagebox.showinfo(
                 APP_NAME, "This item does not include a YouTube URL to copy."
             )
             return False
-        return self._copy_youtube_url_value(url)
+        copied = self._copy_youtube_url_value(url)
+        if copied:
+            self._archive_usage("library", "youtube_url_copied")
+        return copied
 
     def _youtube_url_for_run_record(self, record: dict[str, Any]) -> str | None:
         metadata_index = record.get("metadata_index")
@@ -10408,14 +10464,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             return canonical_youtube_url(job.preview_info or {}, job.url)
         return canonical_youtube_url(record)
 
-    def _copy_description(self) -> bool:
-        text = self.description_text.get("1.0", "end").strip()
-        if text:
-            self.clipboard_clear()
-            self.clipboard_append(text)
-            self.status_var.set("Copied description to clipboard.")
-            return True
-        return False
+    def _copy_description(self, info: dict[str, Any] | None = None) -> bool:
+        return self._copy_library_text(
+            build_description_display_text(self._library_copy_info(info)),
+            "source_description_copied",
+            "source description",
+        )
 
     def _run_library_copy_action(self, action: Callable[[], bool]) -> None:
         if not action():

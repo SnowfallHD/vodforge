@@ -49,7 +49,21 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
             "artwork_unavailable",
         }
     ),
-    "library": frozenset({"opened", "searched", "filtered", "selected", "removed"}),
+    "library": frozenset(
+        {
+            "opened",
+            "searched",
+            "filtered",
+            "selected",
+            "removed",
+            "source_tags_copied",
+            "source_description_copied",
+            "personal_tags_copied",
+            "personal_note_copied",
+            "thumbnail_url_copied",
+            "youtube_url_copied",
+        }
+    ),
     "organization": frozenset({"notes_saved", "tags_saved", "category_saved"}),
     "player": frozenset(
         {"completed", "failed", "seek", "chapter", "heatmap", "preview"}

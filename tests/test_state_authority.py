@@ -2495,8 +2495,10 @@ def test_library_actions_remain_one_stable_menu_at_every_width():
     assert "focus_library_action_buttons" not in library_source
     assert "focus_library_copy_buttons" not in library_source
     for label in (
-        "Copy tags",
-        "Copy description",
+        "Copy source tags",
+        "Copy source description",
+        "Copy your tags",
+        "Copy your note",
         "Copy thumbnail URL",
         "Copy YouTube URL",
         "Open saved location",
@@ -2509,7 +2511,7 @@ def test_library_actions_remain_one_stable_menu_at_every_width():
         forge_actions_source,
     ):
         assert "Copy YouTube URL" in source
-    assert compact_actions_source.count("_run_library_copy_action") == 4
+    assert compact_actions_source.count("_run_library_copy_action") == 6
 
 
 def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
