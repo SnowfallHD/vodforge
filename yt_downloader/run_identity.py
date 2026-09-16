@@ -145,7 +145,8 @@ def owned_output_paths(
         dict.fromkeys(
             path
             for record in records
-            if item_id
+            if isinstance(record, dict)
+            and item_id
             and str(record.get("id") or "") == item_id
             and metadata_attempt_signature(record) == signature
             and (path := history_output_path(record)) is not None

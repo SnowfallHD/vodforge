@@ -12888,6 +12888,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         ffprobe = self._find_ffprobe()
         if not ffprobe:
             return None
+        history = self.__dict__.get("download_history", ())
+        legacy_paths = owned_output_paths(
+            job, info, history if isinstance(history, (list, tuple)) else ()
+        )
         existing_output = find_valid_existing_output(
             job.output_dir,
             info,
@@ -12911,23 +12915,24 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             expected_tags=job.tags,
             expected_duration_seconds=_float_or_none(info.get("duration")),
             control_check=control_check,
-            owned_legacy_paths=owned_output_paths(
-                job, info, self.__dict__.get("download_history", ())
-            ),
+            owned_legacy_paths=legacy_paths,
         )
         if existing_output is None:
             return None
 
         existing_path, existing_probe = existing_output
-        variant_names = {
-            metadata_output_variant(info),
-            metadata_output_variant(info, compact=True),
-        } - {""}
-        namespace = (
-            "variant"
-            if variant_names.intersection(existing_path.parts)
-            else "owned_legacy"
-        )
+        namespace = "unknown"
+        if metadata_output_variant(info):
+            try:
+                variant_dir, _ = resolved_video_output_target(
+                    job.output_dir, info, existing_path.suffix
+                )
+                if existing_path.parent == variant_dir:
+                    namespace = "variant"
+            except ValueError:
+                pass  # A legacy lookup can succeed when a new path is too long.
+        if namespace == "unknown" and existing_path in legacy_paths:
+            namespace = "owned_legacy"
         DownloaderApp._observe_download_operation(
             self,
             job,
@@ -12973,6 +12978,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job, f"{label}: refreshed private Library artwork cache"
                 )
         except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
+            DownloaderApp._observe_download_sidecar_failure(self, job, exc)
             self._emit_job_log(job, technical_download_error(exc))
             reuse_outcome = reuse_outcome.combined_with(
                 DownloadOutcome(sidecar_failure_count=1)
@@ -12990,6 +12996,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     output_root=job.output_dir,
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
+                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
                 self._emit_job_log(job, technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13007,6 +13014,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     output_root=job.output_dir,
                 )
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
+                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
                 self._emit_job_log(job, technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13234,6 +13242,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"{label}: cached {artwork_source} privately for Forge and Library",
                 )
         except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
+            DownloaderApp._observe_download_sidecar_failure(self, job, exc)
             self._emit_job_log(job, technical_download_error(exc))
             outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
             write_diagnostic(
@@ -13263,6 +13272,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"{label}: saved compact video metadata {metadata_path}",
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
+                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
                 self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13285,6 +13295,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if thumb_path:
                     self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
+                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
                 self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -14110,11 +14121,44 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 failure_detail=failure_detail,
             )
 
+    def _observe_download_sidecar_failure(
+        self, job: DownloadJob, error: Exception
+    ) -> None:
+        DownloaderApp._observe_download_operation(
+            self,
+            job,
+            "failed",
+            stage="sidecars",
+            dimensions={"sidecar_failure_count": "1", "failed_count": "0"},
+            failure_detail=capture_failure(error, stage="sidecars"),
+        )
+
     def _observed_intent_relation(self, job: DownloadJob, info: dict[str, Any]) -> str:
-        # Compare the existing durable owners locally; never emit their raw keys.
+        # An observational comparison must never create media-work failure.
+        # Invalid/absent evidence is unknown, not a claim of first use.
+        history = self.__dict__.get("download_history")
+        if not isinstance(history, (list, tuple)) or not isinstance(
+            info.get("id"), str
+        ):
+            return "unknown"
+        if any(
+            not isinstance(record, dict)
+            or not isinstance(record.get("id"), str)
+            or any(
+                record.get(key) is not None and not isinstance(record[key], str)
+                for key in (
+                    "webpage_url",
+                    "vodforge_attempt_signature",
+                    "vodforge_output_variant",
+                    "vodforge_output_variant_compact",
+                )
+            )
+            for record in history
+        ):
+            return "unknown"
         previous = [
             record
-            for record in self.__dict__.get("download_history", ())
+            for record in history
             if info.get("id") and record.get("id") == info["id"]
         ]
         if not previous:
@@ -14216,6 +14260,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             if recovery_owner is not None:
                 recovery_owner.metadata_observed(job, analyzed_item.display_info)
             all_output_dirs = list(result.output_dirs)
+            job.failure_stage = "reuse"
             DownloaderApp._observe_download_operation(
                 self,
                 job,

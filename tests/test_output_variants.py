@@ -301,3 +301,52 @@ def test_observed_intent_relation_requires_actual_source_evidence(tmp_path):
         relation(app, moved, annotate_job_metadata(moved, info))
         == "different_destination_or_organization"
     )
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        None,
+        {},
+        "unavailable",
+        [None],
+        [42],
+        [""],
+        [{"id": []}],
+        [{"id": "abc123", "webpage_url": []}],
+        [{"id": "abc123", "vodforge_attempt_signature": {}}],
+        [{"id": "abc123", "vodforge_output_variant": []}],
+    ],
+)
+def test_intent_observation_malformed_evidence_is_unknown(tmp_path, history):
+    from types import SimpleNamespace
+
+    from yt_downloader.app import DownloaderApp
+
+    job = make_job(tmp_path)
+    info = annotate_job_metadata(job, {"id": "abc123", "webpage_url": job.url})
+    assert (
+        DownloaderApp._observed_intent_relation(
+            SimpleNamespace(download_history=history), job, info
+        )
+        == "unknown"
+    )
+
+
+def test_intent_observation_distinguishes_absent_and_empty_history(tmp_path):
+    from types import SimpleNamespace
+
+    from yt_downloader.app import DownloaderApp
+
+    job = make_job(tmp_path)
+    info = {"id": "abc123", "webpage_url": job.url}
+    assert (
+        DownloaderApp._observed_intent_relation(SimpleNamespace(), job, info)
+        == "unknown"
+    )
+    assert (
+        DownloaderApp._observed_intent_relation(
+            SimpleNamespace(download_history=[]), job, info
+        )
+        == "first_observed"
+    )

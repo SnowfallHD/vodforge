@@ -485,3 +485,36 @@ sizes collapsed the message field to 17px. Existing modal layout ownership now
 allocates reply-field height while retaining the parent bound. The unchanged
 independent field-height/footer/backdrop checks failed twice before and all
 25 native cases passed afterward. Exact packaged visual checks remain required.
+
+### Blind packet follow-up: observations cannot interfere with work
+
+The coordinator assessed only persisted preview-D1 events and approved context
+before the fixture was revealed. It identified the failing app frame and explicit
+retry, distinguished two commits from two reuse observations, and explicitly
+could not establish exact trigger, sidecar cause or same-source settings history.
+The locked assessment is maintained in the separate coordinator audit workspace.
+
+The revealed malformed in-memory history row fault occurred inside the newly
+added observation comparison. The normal durable loader already discards
+non-mapping rows, so this injection does not establish a reachable on-disk user
+failure. Observations now return unknown for absent/malformed evidence, and the
+existing legacy-ownership lookup skips non-mapping rows while retaining exact
+signature/path requirements. Cross-owner CPU pipeline tests deliberately carry
+invalid rows through actual transcode, validation, commit, reuse and optional
+sidecar failure; 35 focused cases pass. No actual media error is swallowed.
+
+A separate independently verified bug mislabeled new variant reuse as owned
+legacy by comparing a suffix with a whole path component. Namespace observations
+now compare the actual validated artifact directory with the existing output
+planner's target and require actual legacy-path membership otherwise. The prior
+real-pipeline test fails (namespace-sidecar-before.log); the corrected cases pass
+across every CPU preset. Optional artwork, metadata and thumbnail failures now
+emit a bounded sidecars-stage diagnostic at both fresh and reuse boundaries,
+with failed media count zero and sidecar count one; completed partial observations
+remain separate. This closes a blind-investigation limit without raw messages.
+
+The initial producer driver mistakenly tried to populate history from the
+content-only metadata sidecar; it therefore retained empty history, making its
+first_observed values accurate but useless for same-source claims. Follow-up
+must consume actual history_record events through the existing history owner.
+Never reinterpret the original packet as stronger evidence.

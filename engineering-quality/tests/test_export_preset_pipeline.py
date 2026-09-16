@@ -134,6 +134,9 @@ def test_preset_commits_and_reuses_real_valid_media(
     monkeypatch.setattr(app_module, "write_diagnostic", lambda *_args: None)
     application = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
     application.events = queue.Queue()
+    # Historical invalid rows must not make optional observations or reuse
+    # ownership lookup interfere with actual transcode/validation/commit.
+    application.download_history = [None, {"id": []}]
     application.cancel_requested = application.skip_video_requested = (
         application.skip_url_requested
     ) = False
@@ -206,6 +209,12 @@ def test_preset_commits_and_reuses_real_valid_media(
     actions = [event.action for event in observations]
     assert actions.count("committed") == 1
     assert actions.count("reused") == 1
+    assert (
+        next(event for event in observations if event.action == "reused").dimensions[
+            "storage_namespace"
+        ]
+        == "variant"
+    )
     assert actions.count("completed") == 2
     assert len({event.dimensions["operation_id"] for event in observations}) == 2
     assert (
@@ -242,6 +251,18 @@ def test_preset_commits_and_reuses_real_valid_media(
     ][-1]
     assert terminal.dimensions["outcome"] == "partial"
     assert terminal.dimensions["sidecar_failure_count"] == "1"
+    failed_sidecars = [
+        event
+        for event in _load_outbox(state / "events.json")
+        if event.feature == "download_operation" and event.action == "failed"
+    ]
+    assert len(failed_sidecars) == 1
+    detail = failed_sidecars[0].failure_detail
+    assert detail is not None
+    assert detail.stage == "sidecars" and detail.reason == "permission_denied"
+    assert detail.error_type == "PermissionError" and detail.os_error == 13
+    assert failed_sidecars[0].dimensions["sidecar_failure_count"] == "1"
+    assert failed_sidecars[0].dimensions["failed_count"] == "0"
     assert "PRIVATE" not in (state / "events.json").read_text()
 
 
