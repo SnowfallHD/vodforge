@@ -696,3 +696,43 @@ Source checks do not establish delivered production data or packaged behavior.
 Producer I is preserved as incomplete evidence; a fresh preview run must verify
 real media reuse/repair, the retained typed rejection and natural outbox delivery.
 Missing facts remain missing; a drop count does not reconstruct their contents.
+
+
+### Optional companions need explicit outcomes, not absence-of-error inference
+
+The J persisted-first review could identify commits and reuse but could not tell
+whether missing metadata or artwork was repaired. Five real-owner outbox cases
+failed before this patch (sidecar-outcomes-before.log). Existing reuse coverage
+proved preserved media and recreated files, while sidecar telemetry described
+only failures; neither absence of a failure nor overall media success established
+an actual companion-file action.
+
+The existing metadata, thumbnail and private artwork owners now optionally report
+their real write or validated-cache-return boundary. No new durable owner or
+sidecar identity is introduced. Closed kind, outcome and media-context fields
+distinguish created, repaired, rewritten, already_present, not_requested,
+unavailable, failed and unknown. Repaired means filling a missing companion next
+to validated reused media, or replacing an unusable private cache entry. It does
+not reconstruct whether a companion had existed earlier. Rewritten means an
+existing regular file was written again; it does not assert bytes changed.
+Already_present applies only to an actual validated cache return. Unknown
+filesystem observations never become asserted creation. These are best-effort
+point-in-time facts, not cross-process race guarantees.
+
+Fourteen new cases use the real telemetry owner and independent files: fresh and
+repeated writes, all three missing companions on media reuse, disabled settings
+versus unavailable artwork, invalid cache recovery, both fresh/reuse optional
+write failures, unavailable prior state, collection disabled, unexpected
+observation errors and callback failures across all four writers. Media bytes
+remain unchanged during repair and optional failures. Production write/validation
+errors retain their behavior; optional diagnostic exceptions cannot break writes.
+The callback is admitted by current consent and collection is checked again at
+the telemetry owner. An already-started observation cannot be retrospectively
+undone. A successful write may precede a later cache-maintenance failure, so
+success and failure observations must retain their sequence rather than be
+collapsed into one inferred final state.
+
+Backend tests persist/replay all 24 kind/outcome combinations and reject private
+paths, filenames, hashes and arbitrary outcomes. CRM explains historical gaps
+without backfill. Source checks and fixture assertions are not packaged proof;
+fresh preview evidence is required for prospective repair/failure diagnosis.

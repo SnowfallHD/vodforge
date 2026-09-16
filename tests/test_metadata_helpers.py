@@ -6832,16 +6832,24 @@ def test_default_single_video_pipeline_downloads_once_then_reuses_valid_output(
 
     repaired_sidecars: list[str] = []
 
-    def repair_metadata(output_dir, _info, _tags, *, output_root):
+    def repair_metadata(output_dir, _info, _tags, *, output_root, on_result=None):
+        assert on_result is None
         repaired_sidecars.append("metadata")
         path = Path(output_dir) / "metadata.json"
         path.write_text("repaired metadata", encoding="utf-8")
         return path
 
     def repair_thumbnail(
-        output_dir, _info, *, filename="thumbnail.jpeg", source_url, output_root
+        output_dir,
+        _info,
+        *,
+        filename="thumbnail.jpeg",
+        source_url,
+        output_root,
+        on_result=None,
     ):
         assert source_url == preflight["webpage_url"]
+        assert on_result is None
         repaired_sidecars.append("thumbnail")
         path = Path(output_dir) / filename
         path.write_bytes(b"repaired thumbnail")

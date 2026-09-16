@@ -178,6 +178,20 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
             "probe_unavailable",
         }
     ),
+    "sidecar_kind": frozenset({"metadata", "thumbnail", "library_artwork"}),
+    "sidecar_context": frozenset({"committed_media", "reused_media"}),
+    "sidecar_outcome": frozenset(
+        {
+            "created",
+            "repaired",
+            "rewritten",
+            "already_present",
+            "not_requested",
+            "unavailable",
+            "failed",
+            "unknown",
+        }
+    ),
     "reuse_result": frozenset({"hit", "miss", "unavailable"}),
     "help_target": frozenset({"menu", "feedback", "review", "welcome"}),
     "ui_blocker": frozenset({"closed", "panel", "grab", "unknown"}),

@@ -8,6 +8,7 @@ import os
 import queue
 import re
 import shutil
+import stat
 
 # Reviewed subprocess call sites use fixed argv lists and never invoke a shell.
 import subprocess  # nosec B404
@@ -2731,12 +2732,36 @@ def compact_video_metadata(
     }
 
 
+def _sidecar_destination_state(path: Path) -> bool | None:
+    """A best-effort point-in-time observation, never a commit authority."""
+    try:
+        observed = path.lstat()
+        return True if stat.S_ISREG(observed.st_mode) else None
+    except FileNotFoundError:
+        return False
+    except Exception:  # noqa: BLE001 - best-effort observation must not affect writes
+        return None
+
+
+def _sidecar_write_result(before: bool | None) -> str:
+    return "unknown" if before is None else "rewritten" if before else "created"
+
+
+def _report_sidecar_result(callback: Callable[[str], None] | None, result: str) -> None:
+    if callback is not None:
+        try:
+            callback(result)
+        except Exception:  # noqa: BLE001 - callbacks are outside the artifact authority
+            return
+
+
 def write_compact_video_metadata(
     output_dir: Path,
     info: dict[str, Any],
     extra_tags: list[str],
     *,
     output_root: Path | None = None,
+    on_result: Callable[[str], None] | None = None,
 ) -> Path:
     data = (
         json.dumps(
@@ -2744,11 +2769,15 @@ def write_compact_video_metadata(
         )
         + "\n"
     )
-    return write_file_beneath(
+    destination = output_dir / safe_metadata_filename(info)
+    before = _sidecar_destination_state(destination) if on_result is not None else None
+    written = write_file_beneath(
         output_root if output_root is not None else output_dir,
-        output_dir / safe_metadata_filename(info),
+        destination,
         lambda staged: staged.write_text(data, encoding="utf-8"),
     )
+    _report_sidecar_result(on_result, _sidecar_write_result(before))
+    return written
 
 
 def write_all_compact_video_metadata(
@@ -3892,29 +3921,35 @@ def save_thumbnail_image(
     filename: str = "thumbnail.jpeg",
     source_url: str | None = None,
     output_root: Path | None = None,
+    on_result: Callable[[str], None] | None = None,
 ) -> Path | None:
     thumb = best_thumbnail_for_download(info)
     url = str((thumb or {}).get("url") or "")
     if not url:
+        _report_sidecar_result(on_result, "unavailable")
         return None
     path = output_dir / filename
     data = download_bounded_url_bytes(url, source_url=source_url)
+    before = _sidecar_destination_state(path) if on_result is not None else None
     if Image is None:
         if len(data) > THUMBNAIL_MAX_BYTES:
             raise RuntimeError(
                 "Pillow is required to enforce the 300 KB thumbnail limit"
             )
-        return write_file_beneath(
+        written = write_file_beneath(
             output_root if output_root is not None else output_dir,
             path,
             lambda staged: staged.write_bytes(data),
         )
-    image = decode_bounded_thumbnail(data).convert("RGB")
-    return write_file_beneath(
-        output_root if output_root is not None else output_dir,
-        path,
-        lambda staged: _save_jpeg_under_size(image, staged),
-    )
+    else:
+        image = decode_bounded_thumbnail(data).convert("RGB")
+        written = write_file_beneath(
+            output_root if output_root is not None else output_dir,
+            path,
+            lambda staged: _save_jpeg_under_size(image, staged),
+        )
+    _report_sidecar_result(on_result, _sidecar_write_result(before))
+    return written
 
 
 def cached_thumbnail_path(
@@ -4066,17 +4101,21 @@ def save_cached_thumbnail_image(
     *,
     data_dir: Path | None = None,
     source_url: str | None = None,
+    on_result: Callable[[str], None] | None = None,
 ) -> Path | None:
     path = cached_thumbnail_path(info, data_dir=data_dir)
     if path is None:
+        _report_sidecar_result(on_result, "unavailable")
         return None
     with thumbnail_cache_lock(path):
+        before = _sidecar_destination_state(path) if on_result is not None else None
         try:
             if path.is_file() and 0 < path.stat().st_size <= THUMBNAIL_MAX_BYTES:
                 if Image is not None:
                     cached_image = decode_bounded_thumbnail(path.read_bytes())
                     cached_image.close()
                 path.touch(exist_ok=True)
+                _report_sidecar_result(on_result, "already_present")
                 return path
         except (OSError, RuntimeError):
             try:
@@ -4093,11 +4132,15 @@ def save_cached_thumbnail_image(
                 source_url=source_url,
             )
             if saved is None:
+                _report_sidecar_result(on_result, "unavailable")
                 return None
             if Image is not None:
                 cached_image = decode_bounded_thumbnail(saved.read_bytes())
                 cached_image.close()
             os.replace(saved, path)
+            _report_sidecar_result(
+                on_result, "repaired" if before else _sidecar_write_result(before)
+            )
             prune_thumbnail_cache(path.parent)
             return path
         finally:
@@ -4139,15 +4182,20 @@ def save_custom_cached_thumbnail_image(
     source_path: Path,
     *,
     data_dir: Path | None = None,
+    on_result: Callable[[str], None] | None = None,
 ) -> Path | None:
     """Make a user-selected cover the canonical private artwork for one item."""
     destination = cached_thumbnail_path(info, data_dir=data_dir)
     if destination is None:
+        _report_sidecar_result(on_result, "unavailable")
         return None
     source_path = validate_custom_cover_art(source_path)
     if Image is None or ImageOps is None:
         raise RuntimeError("Pillow is required to cache custom cover art.")
     with thumbnail_cache_lock(destination):
+        before = (
+            _sidecar_destination_state(destination) if on_result is not None else None
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(f".{destination.stem}.{uuid.uuid4().hex}.tmp")
         try:
@@ -4160,6 +4208,7 @@ def save_custom_cached_thumbnail_image(
             cached_image = decode_bounded_thumbnail(temporary.read_bytes())
             cached_image.close()
             os.replace(temporary, destination)
+            _report_sidecar_result(on_result, _sidecar_write_result(before))
             prune_thumbnail_cache(destination.parent)
             return destination
         finally:
@@ -13075,13 +13124,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             cached_thumbnail = save_cached_thumbnail_image(
                 reused_info,
                 source_url=job.url,
+                on_result=DownloaderApp._download_sidecar_observer(
+                    self, job, "library_artwork", reused=True
+                ),
             )
             if cached_thumbnail is not None:
                 self._emit_job_log(
                     job, f"{label}: refreshed private Library artwork cache"
                 )
         except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
-            DownloaderApp._observe_download_sidecar_failure(self, job, exc)
+            DownloaderApp._observe_download_sidecar_failure(
+                self, job, exc, kind="library_artwork", reused=True
+            )
             self._emit_job_log(job, technical_download_error(exc))
             reuse_outcome = reuse_outcome.combined_with(
                 DownloadOutcome(sidecar_failure_count=1)
@@ -13097,9 +13151,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     reused_info,
                     job.tags,
                     output_root=job.output_dir,
+                    on_result=DownloaderApp._download_sidecar_observer(
+                        self, job, "metadata", reused=True
+                    ),
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
+                DownloaderApp._observe_download_sidecar_failure(
+                    self, job, exc, kind="metadata", reused=True
+                )
                 self._emit_job_log(job, technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13108,6 +13167,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job,
                     f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed: {exc}",
                 )
+        else:
+            observer = DownloaderApp._download_sidecar_observer(
+                self, job, "metadata", reused=True
+            )
+            if observer is not None:
+                observer("not_requested")
         if job.write_thumbnail:
             try:
                 save_thumbnail_image(
@@ -13115,9 +13180,14 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     reused_info,
                     source_url=job.url,
                     output_root=job.output_dir,
+                    on_result=DownloaderApp._download_sidecar_observer(
+                        self, job, "thumbnail", reused=True
+                    ),
                 )
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
+                DownloaderApp._observe_download_sidecar_failure(
+                    self, job, exc, kind="thumbnail", reused=True
+                )
                 self._emit_job_log(job, technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13126,6 +13196,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job,
                     f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed: {exc}",
                 )
+        else:
+            observer = DownloaderApp._download_sidecar_observer(
+                self, job, "thumbnail", reused=True
+            )
+            if observer is not None:
+                observer("not_requested")
         return _ExistingOutputReuse(
             metadata=reused_info,
             outcome=reuse_outcome,
@@ -13343,10 +13419,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         outcome = DownloadOutcome()
         try:
             cached_thumbnail = (
-                save_custom_cached_thumbnail_image(info, custom_cover_for_cache)
+                save_custom_cached_thumbnail_image(
+                    info,
+                    custom_cover_for_cache,
+                    on_result=DownloaderApp._download_sidecar_observer(
+                        self, job, "library_artwork", reused=False
+                    ),
+                )
                 if job.output_type == OutputType.MP3
                 and custom_cover_for_cache is not None
-                else save_cached_thumbnail_image(info, source_url=job.url)
+                else save_cached_thumbnail_image(
+                    info,
+                    source_url=job.url,
+                    on_result=DownloaderApp._download_sidecar_observer(
+                        self, job, "library_artwork", reused=False
+                    ),
+                )
             )
             if cached_thumbnail is not None:
                 artwork_source = (
@@ -13359,7 +13447,9 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     f"{label}: cached {artwork_source} privately for Forge and Library",
                 )
         except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
-            DownloaderApp._observe_download_sidecar_failure(self, job, exc)
+            DownloaderApp._observe_download_sidecar_failure(
+                self, job, exc, kind="library_artwork", reused=False
+            )
             self._emit_job_log(job, technical_download_error(exc))
             outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
             write_diagnostic(
@@ -13383,13 +13473,18 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     info,
                     job.tags,
                     output_root=job.output_dir,
+                    on_result=DownloaderApp._download_sidecar_observer(
+                        self, job, "metadata", reused=False
+                    ),
                 )
                 self._emit_job_log(
                     job,
                     f"{label}: saved compact video metadata {metadata_path}",
                 )
             except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
+                DownloaderApp._observe_download_sidecar_failure(
+                    self, job, exc, kind="metadata", reused=False
+                )
                 self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13401,6 +13496,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job,
                     f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}",
                 )
+        else:
+            observer = DownloaderApp._download_sidecar_observer(
+                self, job, "metadata", reused=False
+            )
+            if observer is not None:
+                observer("not_requested")
         if job.write_thumbnail:
             try:
                 thumb_path = save_thumbnail_image(
@@ -13408,11 +13509,16 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     info,
                     source_url=job.url,
                     output_root=job.output_dir,
+                    on_result=DownloaderApp._download_sidecar_observer(
+                        self, job, "thumbnail", reused=False
+                    ),
                 )
                 if thumb_path:
                     self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
             except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(self, job, exc)
+                DownloaderApp._observe_download_sidecar_failure(
+                    self, job, exc, kind="thumbnail", reused=False
+                )
                 self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
@@ -13424,6 +13530,12 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     job,
                     f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}",
                 )
+        else:
+            observer = DownloaderApp._download_sidecar_observer(
+                self, job, "thumbnail", reused=False
+            )
+            if observer is not None:
+                observer("not_requested")
         return outcome
 
     def _put_download_stage_progress(
@@ -14286,16 +14398,50 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 pass
 
     def _observe_download_sidecar_failure(
-        self, job: DownloadJob, error: Exception
+        self, job: DownloadJob, error: Exception, *, kind: str, reused: bool = False
     ) -> None:
         DownloaderApp._observe_download_operation(
             self,
             job,
             "failed",
             stage="sidecars",
-            dimensions={"sidecar_failure_count": "1", "failed_count": "0"},
+            dimensions={
+                "sidecar_failure_count": "1",
+                "failed_count": "0",
+                "sidecar_kind": kind,
+                "sidecar_outcome": "failed",
+                "sidecar_context": "reused_media" if reused else "committed_media",
+            },
             failure_detail=capture_failure(error, stage="sidecars"),
         )
+
+    def _download_sidecar_observer(
+        self, job: DownloadJob, kind: str, *, reused: bool = False
+    ) -> Callable[[str], None] | None:
+        telemetry = self.__dict__.get("product_telemetry")
+        try:
+            if telemetry is None or not telemetry.permitted():
+                return None
+        except Exception:  # noqa: BLE001 - unavailable consent fails closed
+            return None
+
+        def observed(result: str) -> None:
+            # Repaired here means a missing requested companion was restored
+            # beside reused media, not that a prior deletion was reconstructed.
+            outcome = "repaired" if reused and result == "created" else result
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="sidecars",
+                dimensions={
+                    "sidecar_kind": kind,
+                    "sidecar_outcome": outcome,
+                    "sidecar_context": "reused_media" if reused else "committed_media",
+                },
+            )
+
+        return observed
 
     def _observed_intent_relation(self, job: DownloadJob, info: dict[str, Any]) -> str:
         # An observational comparison must never create media-work failure.
