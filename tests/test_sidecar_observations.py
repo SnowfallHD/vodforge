@@ -287,3 +287,29 @@ def test_write_helpers_isolate_callback_exceptions(tmp_path, monkeypatch, helper
         with Image.open(path) as image:
             image.load()
     assert not list(tmp_path.glob(".vfstage*"))
+
+
+@pytest.mark.parametrize("reuse", [False, True])
+@pytest.mark.parametrize("kind", ["metadata", "thumbnail"])
+def test_real_companion_destination_conflict_has_typed_outbox_cause(
+    sidecar_case, reuse, kind
+):
+    _app, _owner, _job, info, folder, _cache, run, facts = sidecar_case
+    blocked = folder / (
+        app_module.safe_metadata_filename(info)
+        if kind == "metadata"
+        else "thumbnail.jpeg"
+    )
+    blocked.mkdir()
+    outcome = run(reuse=reuse)
+    assert outcome.failure_count == 0
+    assert outcome.sidecar_failure_count == 1
+    assert blocked.is_dir() and not list(blocked.iterdir())
+    failures = [e for e in facts() if e.dimensions["sidecar_outcome"] == "failed"]
+    assert len(failures) == 1
+    assert failures[0].dimensions["sidecar_kind"] == kind
+    detail = failures[0].failure_detail.payload()
+    assert detail["reason"] == "output_conflict"
+    assert detail["error_type"] == "UnsafeOutputPathError"
+    assert "os_error" not in detail
+    assert "PRIVATE" not in str(failures[0].public_payload())

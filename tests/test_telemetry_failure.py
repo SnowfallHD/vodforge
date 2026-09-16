@@ -84,3 +84,88 @@ def test_provider_exc_info_preserves_http_evidence():
     assert detail["http_status"] == 429
     assert detail["reason"] == "rate_limited"
     assert "secret" not in str(detail)
+
+
+@pytest.mark.parametrize("backend", ["posix", "portable"])
+def test_actual_safe_commit_refusal_preserves_closed_cause(tmp_path, backend):
+    from yt_downloader import safe_output
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    source = tmp_path / "PRIVATE-staged"
+    source.write_bytes(b"staged bytes retained")
+    root = tmp_path / "root"
+    root.mkdir()
+    leaf = root / "PRIVATE-destination"
+    leaf.mkdir()
+    with pytest.raises(safe_output.UnsafeOutputPathError) as caught:
+        if backend == "posix":
+            if __import__("os").name == "nt":
+                pytest.skip("POSIX directory descriptors unavailable")
+            safe_output._commit_posix(source, root, leaf, (), leaf.name, None, True)
+        else:
+            safe_output._commit_windows(
+                source, root, root, leaf, (), leaf.name, None, True
+            )
+    detail = capture_failure(caught.value, stage="commit").payload()
+    assert detail["reason"] == "output_conflict"
+    assert detail["error_type"] == "UnsafeOutputPathError"
+    assert detail["source_module"] == "safe_output"
+    assert "os_error" not in detail
+    assert "PRIVATE" not in str(detail)
+    assert source.read_bytes() == b"staged bytes retained"
+    assert leaf.is_dir() and not list(leaf.iterdir())
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_safe_output_type_is_used_without_parsing_private_message(wrapped):
+    from yt_downloader.failure_diagnostics import capture_failure
+    from yt_downloader.safe_output import UnsafeOutputPathError
+
+    error = UnsafeOutputPathError("PRIVATE title 429 login required")
+    if wrapped:
+        outer = RuntimeError("PRIVATE unrelated login required")
+        outer.__cause__ = error
+        error = outer
+    detail = capture_failure(error, stage="sidecars").payload()
+    assert detail["reason"] == "output_conflict"
+    assert detail["error_type"] == "UnsafeOutputPathError"
+    assert "PRIVATE" not in str(detail)
+    assert "failure_code" not in detail
+
+
+@pytest.mark.parametrize(
+    "code,reason", [(13, "permission_denied"), (28, "disk_full"), (5, "filesystem")]
+)
+def test_nested_os_evidence_still_overrides_safe_path_refusal(code, reason):
+    from yt_downloader.failure_diagnostics import capture_failure
+    from yt_downloader.safe_output import UnsafeOutputPathError
+
+    error = UnsafeOutputPathError("PRIVATE directory could not be inspected")
+    error.__cause__ = OSError(code, "PRIVATE pathname")
+    detail = capture_failure(error, stage="sidecars").payload()
+    assert detail["reason"] == reason
+    assert detail["os_error"] == code
+    assert "PRIVATE" not in str(detail)
+
+
+def test_same_named_untrusted_exception_does_not_gain_safe_path_authority():
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    lookalike = type("UnsafeOutputPathError", (RuntimeError,), {})
+    detail = capture_failure(lookalike("PRIVATE opaque"), stage="sidecars").payload()
+    assert detail["reason"] == "unknown"
+    assert "error_type" not in detail
+
+
+def test_typed_safe_output_diagnostic_does_not_read_local_message():
+    from yt_downloader.failure_diagnostics import capture_failure
+    from yt_downloader.safe_output import UnsafeOutputPathError
+
+    class OpaqueRefusal(UnsafeOutputPathError):
+        def __str__(self):
+            raise AssertionError("Local diagnostic text must not be inspected")
+
+    detail = capture_failure(OpaqueRefusal(), stage="sidecars").payload()
+    assert detail["reason"] == "output_conflict"
+    assert detail["error_type"] == "UnsafeOutputPathError"
+    assert "failure_code" not in detail
