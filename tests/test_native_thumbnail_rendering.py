@@ -116,6 +116,9 @@ def test_position_only_configure_does_not_repeat_thumbnail_rasterization(
     application, monkeypatch
 ):
     app = application
+    app._archive_inspector_expanded = True
+    app._apply_focus_layout(force=True)
+    app.update()
     event_owner = app.thumbnail_label.master
     width = event_owner.winfo_width()
     app._render_focus_thumbnail_surfaces(library_width=width)

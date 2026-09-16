@@ -171,6 +171,7 @@ def assert_feature_vocabulary(site: Path) -> None:
         DIMENSION_PATTERNS,
         DIMENSION_RANGES,
         FEATURE_ACTIONS,
+        OPERATION_FEATURES,
     )
 
     source = (site / "src/lib/product-telemetry.ts").read_text()
@@ -201,6 +202,11 @@ def assert_feature_vocabulary(site: Path) -> None:
         match = re.search(r"export const " + name + r": [^=]+ = (.*?);", source)
         if match is None or json.loads(match.group(1)) != expected:
             raise AssertionError("Desktop/backend vocabulary drift: " + name)
+    operation_match = re.search(r"const OPERATION_FEATURES = new Set\((.*?)\);", source)
+    if operation_match is None or set(json.loads(operation_match.group(1))) != set(
+        OPERATION_FEATURES
+    ):
+        raise AssertionError("Desktop/backend operation-correlation vocabulary drift")
     from ast import literal_eval
 
     from yt_downloader.failure_diagnostics import (

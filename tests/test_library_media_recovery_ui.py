@@ -62,3 +62,18 @@ def test_legacy_and_unavailable_prompts_fail_closed(tmp_path: Path) -> None:
     assert unavailable.primary_action == "none"
     assert legacy.output_settings == "No saved output settings detected"
     assert "Reconnect" in unavailable.heading
+
+
+def test_relinked_missing_prompt_keeps_exact_profile_and_makes_folder_choice_explicit(
+    tmp_path,
+):
+    job = _job(tmp_path)
+    prompt = library_media_recovery_prompt(
+        LibraryMediaRecoveryPlan(
+            "missing", None, job=job, requires_destination_choice=True
+        )
+    )
+    assert prompt.primary_action == "redownload"
+    assert prompt.primary_label == "Choose folder and redownload"
+    assert "MP3 • 256 kbps" in prompt.output_settings
+    assert "default location" in prompt.message

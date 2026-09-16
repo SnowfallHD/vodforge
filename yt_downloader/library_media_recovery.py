@@ -7,11 +7,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
+from .archive_paths import ArchivePath
 from .history import (
     HISTORY_MEDIA_MISSING,
     HISTORY_MEDIA_PRESENT,
     HISTORY_MEDIA_UNAVAILABLE,
     RETRY_JOB_METADATA_KEY,
+    history_annotation_owner,
     history_identity,
     history_media_file_state,
     history_output_dir,
@@ -87,6 +89,9 @@ def _clean_preview(info: Mapping[str, Any]) -> dict[str, Any]:
         "vodforge_preview_complete",
         "vodforge_preview_run_id",
         RETRY_JOB_METADATA_KEY,
+        "vodforge_archive_id",
+        "vodforge_archive_annotation_owner",
+        "vodforge_relinked",
     ):
         preview.pop(key, None)
     return preview
@@ -182,13 +187,17 @@ class LibraryMediaRecoveryOwner:
         # History's location is the committed artifact parent and may include
         # VODForge's channel/playlist/video hierarchy. The durable job owns the
         # user-selected base destination used to reconstruct that hierarchy.
-        if not _path_is_within(destination, saved_job.output_dir):
+        # A reviewed relink changes artifact location, not the original signed
+        # export intent. Preserve that intent, but require an explicit new base.
+        # The innermost media folder must never become an inferred download root.
+        relocated = row.get("vodforge_relinked") is True
+        if not relocated and not _path_is_within(destination, saved_job.output_dir):
             return LibraryMediaRecoveryPlan("invalid", destination)
         stored_signature = metadata_attempt_signature(row)
         if stored_signature and job_attempt_signature(saved_job) != stored_signature:
             return LibraryMediaRecoveryPlan("invalid", destination)
 
-        if self._legacy_root(saved_job.output_dir, row) is not None:
+        if not relocated and self._legacy_root(saved_job.output_dir, row) is not None:
             # A previous legacy recovery may already have saved a nested base.
             # Do not silently reinterpret a durable job or alter its signature.
             return LibraryMediaRecoveryPlan(
@@ -213,15 +222,35 @@ class LibraryMediaRecoveryOwner:
         )
         job.preview_info = annotate_job_metadata(job, dict(preview))
         previous_annotation_owner = str(
-            row.get(ANNOTATION_OWNER_KEY)
-            or (f"run:{previous_run_id}" if previous_run_id else "")
+            row.get(ANNOTATION_OWNER_KEY) or history_annotation_owner(row)
         ).strip()
         return LibraryMediaRecoveryPlan(
             "missing",
-            saved_job.output_dir,
+            None if relocated else saved_job.output_dir,
             job=job,
+            requires_destination_choice=relocated,
             replaced_history_identity=history_identity(row),
             previous_annotation_owner=previous_annotation_owner,
+        )
+
+    @staticmethod
+    def with_destination(
+        plan: LibraryMediaRecoveryPlan, destination: Path
+    ) -> LibraryMediaRecoveryPlan:
+        """Apply an explicit recovery-only base without editing saved settings."""
+        if (
+            not plan.can_redownload
+            or plan.job is None
+            or not plan.requires_destination_choice
+        ):
+            raise ValueError("This recovery does not require a destination")
+        parsed = ArchivePath.parse(str(destination))
+        if (parsed.style == "windows") != (os.name == "nt"):
+            raise ValueError("Choose a location available on this computer")
+        job = replace(plan.job, output_dir=destination)
+        job.preview_info = annotate_job_metadata(job, dict(job.preview_info or {}))
+        return replace(
+            plan, destination=destination, job=job, requires_destination_choice=False
         )
 
     @staticmethod

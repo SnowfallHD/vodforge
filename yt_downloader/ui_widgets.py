@@ -2256,8 +2256,12 @@ class PixelScrollTable(tk.Frame):
             pass
 
 
+class _LibraryFocusTarget(Protocol):
+    def focus_item(self, item: str | None = None) -> str: ...
+
+
 def _focus_library_table_item(
-    table: PixelScrollTable,
+    table: _LibraryFocusTarget,
     item: str,
 ) -> None:
     """Set logical row focus through the Library table contract."""

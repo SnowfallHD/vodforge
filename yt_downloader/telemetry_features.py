@@ -17,6 +17,38 @@ from .failure_diagnostics import FAILURE_CODES
 
 FEATURE_ACTIONS: dict[str, frozenset[str]] = {
     "settings": frozenset({"snapshot"}),
+    "archive": frozenset(
+        {
+            "folders",
+            "all_media",
+            "activity",
+            "folder_opened",
+            "location_copied",
+            "version_selected",
+            "inspector_opened",
+            "history_deferred",
+            "history_recovered",
+            "history_defer_failed",
+            "history_recovery_failed",
+            "artwork_loaded",
+            "artwork_unavailable",
+        }
+    ),
+    "watch": frozenset(
+        {
+            "opened",
+            "searched",
+            "playlists",
+            "channels",
+            "channel_opened",
+            "collections",
+            "rail_scrolled",
+            "details",
+            "singleton_shown",
+            "artwork_loaded",
+            "artwork_unavailable",
+        }
+    ),
     "library": frozenset({"opened", "searched", "filtered", "selected", "removed"}),
     "organization": frozenset({"notes_saved", "tags_saved", "category_saved"}),
     "player": frozenset(
@@ -40,6 +72,22 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
 }
 # Per-operation observations are separate from legacy once-per-session usage.
 OPERATION_FEATURES = {
+    "archive_location_operation": frozenset(
+        {"requested", "completed", "failed", "cancelled", "timed_out"}
+    ),
+    "archive_relink_operation": frozenset(
+        {
+            "requested",
+            "verified",
+            "cancel_requested",
+            "commit_requested",
+            "committed",
+            "failed",
+            "cancelled",
+            "timed_out",
+            "stale",
+        }
+    ),
     "download_operation": frozenset(
         {
             "started",
@@ -107,9 +155,41 @@ DIMENSION_RANGES.update(
         "observed_audio_channels": (1, 64),
         "namespace_media_file_count": (0, 128),
         "peer_comparison_count": (0, 32),
+        **{
+            key: (0, 5000)
+            for key in (
+                "verified_count",
+                "unresolved_count",
+                "collision_count",
+                "missing_count",
+                "unavailable_count",
+            )
+        },
     }
 )
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
+    "archive_mode": frozenset({"folders", "all", "activity"}),
+    "watch_mode": frozenset({"playlists", "channels", "collections"}),
+    "storage_kind": frozenset({"local", "drive", "network", "external", "unknown"}),
+    "location_action": frozenset({"open", "check"}),
+    "relink_mode": frozenset({"file", "folder"}),
+    "archive_result": frozenset(
+        {
+            "available",
+            "opened",
+            "missing",
+            "unavailable",
+            "foreign_platform",
+            "cancelled",
+            "timed_out",
+            "stale",
+            "changed",
+            "write_failed",
+            "unknown",
+        }
+    ),
+    "playback_origin": frozenset({"library", "watch", "unknown"}),
+    "player_surface": frozenset({"embedded", "window"}),
     "intent_relation": frozenset(
         {
             "first_observed",
@@ -195,7 +275,7 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "reuse_result": frozenset({"hit", "miss", "unavailable"}),
     "help_target": frozenset({"menu", "feedback", "review", "welcome"}),
     "ui_blocker": frozenset({"closed", "panel", "grab", "unknown"}),
-    "view": frozenset({"forge", "library", "activity", "unknown"}),
+    "view": frozenset({"forge", "library", "watch", "activity", "unknown"}),
     "row_count_bucket": frozenset({"0", "1_25", "26_500", "501_5000", "5001_plus"}),
     "lag_bucket": frozenset(
         {"under_50ms", "50_99ms", "100_249ms", "250_999ms", "1000ms_plus"}

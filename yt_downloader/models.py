@@ -175,6 +175,7 @@ class DownloadJob:
     retry_of_run_id: str | None = None
     metadata_keys: set[tuple[str, str]] = field(default_factory=set)
     history_identities: set[tuple[str, str, str]] = field(default_factory=set)
+    history_archive_owners: set[str] = field(default_factory=set)
     preview_thumbnail_image: Any | None = field(default=None, repr=False)
     activity_lines: list[str] = field(default_factory=list, repr=False)
     terminal_status: str | None = None

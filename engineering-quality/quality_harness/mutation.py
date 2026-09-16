@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,16 @@ MUTANTS = (
         "if len(result) >= MAX_RUN_ACTIVITY_LINES:",
         "if len(result) < MAX_RUN_ACTIVITY_LINES:",
     ),
+    (
+        "pending_history_staging_removed",
+        "        _stage_history_mutation(path, mutation)",
+        "        return  # injected missing durable acceptance",
+    ),
+    (
+        "pending_history_restart_replay_removed",
+        "records, count = recover_pending_history(path, _load_history_records(path))",
+        "records, count = _load_history_records(path), 0",
+    ),
 )
 
 
@@ -37,8 +48,34 @@ def _workspace(repo_root: Path, destination: Path) -> Path:
     )
     tests = destination / "tests"
     tests.mkdir(parents=True)
-    shutil.copy2(repo_root / "tests" / "test_history.py", tests / "test_history.py")
+    for name in (
+        "__init__.py",
+        "test_history.py",
+        "test_history_pending.py",
+        "test_archive_relink.py",
+        "test_archive_models.py",
+        "test_archive_ui_owners.py",
+    ):
+        shutil.copy2(repo_root / "tests" / name, tests / name)
     return destination
+
+
+def mutation_detected(result: Any, report: Path) -> bool:
+    """A collection/import error, timeout or unavailable runner is not a kill."""
+    if result.returncode != 1 or result.timed_out or result.unavailable:
+        return False
+    try:
+        cases = ET.parse(report).getroot().findall(".//testcase")
+    except (OSError, ET.ParseError):
+        return False
+    return (
+        bool(cases)
+        and any(case.find("failure") is not None for case in cases)
+        and not any(
+            case.find("error") is not None or case.find("skipped") is not None
+            for case in cases
+        )
+    )
 
 
 def run_bounded_mutation_campaign(
@@ -61,7 +98,15 @@ def run_bounded_mutation_campaign(
         else:
             environment[key] = str(original_value)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    command = [python, "-m", "pytest", "-q", "tests/test_history.py"]
+    command = [
+        python,
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_history.py",
+        "tests/test_history_pending.py",
+        "--junitxml=mutation.xml",
+    ]
     started = time.monotonic()
 
     baseline_root = _workspace(repo_root, case_dir / "baseline")
@@ -94,9 +139,7 @@ def run_bounded_mutation_campaign(
         (case_dir / f"{mutant_id}.stderr.txt").write_text(stderr, encoding="utf-8")
         killed = bool(
             command_result
-            and command_result.returncode not in {0, None}
-            and not command_result.timed_out
-            and not command_result.unavailable
+            and mutation_detected(command_result, mutant_root / "mutation.xml")
         )
         mutant_results.append(
             {
@@ -138,7 +181,7 @@ def run_bounded_mutation_campaign(
                 f"{item['id']}: {'killed' if item['killed'] else 'survived/invalid'} (rc={item['returncode']})"
                 for item in mutant_results
             ],
-            "This score covers only three high-value history/privacy regressions and is not a repository-wide mutation score.",
+            "This score covers five bounded history/privacy/restart-recovery regressions and is not a repository-wide mutation score.",
         ],
         "artifacts": [str(case_dir)],
         "error": None,
@@ -151,7 +194,7 @@ def run_bounded_mutation_campaign(
                 "title": "Existing history tests did not kill every bounded high-value mutant",
                 "classification": "maintainability risk",
                 "severity": "medium",
-                "area": "tests/test_history.py and yt_downloader/history.py",
+                "area": "tests/test_history{,_pending}.py and yt_downloader/history.py",
                 "reproduction": [
                     "Run ./engineering-quality/run normal --scenario unit_static.bounded_mutation_history.",
                     "Inspect each disposable mutant result under the scenario artifact directory.",

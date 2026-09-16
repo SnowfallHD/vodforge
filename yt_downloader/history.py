@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import ntpath
@@ -8,9 +9,12 @@ import re
 import stat
 import sys
 import urllib.parse
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
+
+from .archive_paths import ArchivePath
 
 APP_NAME = "VODForge"
 HISTORY_SCHEMA_VERSION = 1
@@ -53,6 +57,9 @@ HISTORY_METADATA_KEYS = (
     "vodforge_output_profile_details",
     "vodforge_run_id",
     "vodforge_run_activity",
+    "vodforge_archive_id",
+    "vodforge_archive_annotation_owner",
+    "vodforge_relinked",
     RETRY_JOB_METADATA_KEY,
 )
 
@@ -329,36 +336,30 @@ def history_output_dir(record: dict[str, Any]) -> Path | None:
     return Path(value).expanduser() if value else None
 
 
-def history_output_path(record: dict[str, Any]) -> Path | None:
-    """Return the exact committed artifact path when the record provides one."""
-
+def _stored_artifact_path(record: dict[str, Any]) -> ArchivePath | None:
     value = str(record.get("vodforge_output_path") or "").strip()
     if not value:
         summary = record.get("vodforge_encoding_summary")
         if isinstance(summary, dict):
             output = summary.get("output")
             if isinstance(output, dict):
-                candidate = str(output.get("Output file path") or "").strip()
-                if candidate not in {"", "Pending", "Not produced"}:
-                    value = candidate
-    if not value:
-        return None
-    candidate_path = Path(value).expanduser()
-    if not candidate_path.is_absolute():
-        return None
+                value = str(output.get("Output file path") or "").strip()
     try:
-        candidate_path = candidate_path.resolve(strict=False)
-    except OSError:
-        candidate_path = Path(os.path.abspath(str(candidate_path)))
-    output_dir = history_output_dir(record)
-    if output_dir is not None:
-        try:
-            output_dir = output_dir.resolve(strict=False)
-        except OSError:
-            output_dir = Path(os.path.abspath(str(output_dir)))
-        if candidate_path.parent != output_dir:
+        candidate = ArchivePath.parse(value)
+        directory = str(record.get("vodforge_output_dir") or "").strip()
+        if directory and candidate.parent.key != ArchivePath.parse(directory).key:
             return None
-    return candidate_path
+        return candidate
+    except ValueError:
+        return None
+
+
+def history_output_path(record: dict[str, Any]) -> Path | None:
+    """Return a native exact path without filesystem access or foreign coercion."""
+    candidate = _stored_artifact_path(record)
+    if candidate is None or (candidate.style == "windows") != (os.name == "nt"):
+        return None
+    return Path(str(candidate))
 
 
 def history_output_type(record: dict[str, Any]) -> str:
@@ -380,19 +381,49 @@ def history_output_type(record: dict[str, Any]) -> str:
 
 def history_identity(record: dict[str, Any]) -> tuple[str, str, str]:
     video_id = str(record.get("id") or "").strip()
-    output_location = history_output_path(record) or history_output_dir(record)
-    normalized_location = (
-        os.path.normcase(os.path.abspath(str(output_location)))
-        if output_location
-        else ""
-    )
-    if video_id:
-        return video_id, normalized_location, history_output_type(record)
+    location = _stored_artifact_path(record)
+    if location is None:
+        try:
+            location = ArchivePath.parse(str(record.get("vodforge_output_dir") or ""))
+        except ValueError:
+            location = None
+    normalized = str(location) if location else ""
+    if location is not None and location.style == "windows":
+        normalized = normalized.casefold()
     return (
-        str(record.get("title") or "").strip(),
-        normalized_location,
+        video_id or str(record.get("title") or "").strip(),
+        normalized,
         history_output_type(record),
     )
+
+
+def history_archive_owner(record: dict[str, Any]) -> str:
+    archive_id = str(record.get("vodforge_archive_id") or "")
+    if re.fullmatch(r"[0-9a-f]{64}", archive_id):
+        return f"archive:{archive_id}"
+    output_path = str(record.get("vodforge_output_path") or "").strip()
+    if output_path:
+        return f"history-path:{output_path}"
+    digest = hashlib.sha256(
+        "\0".join(history_identity(record)).encode("utf-8")
+    ).hexdigest()[:24]
+    return f"history:{digest}"
+
+
+def history_activity_owner_keys(owners: set[str]) -> set[str]:
+    """Exact accepted owners plus their existing stable relink lineage."""
+    return owners | {
+        "archive:" + hashlib.sha256(owner.encode("utf-8")).hexdigest()
+        for owner in owners
+    }
+
+
+def history_annotation_owner(record: dict[str, Any]) -> str:
+    preserved = str(record.get("vodforge_archive_annotation_owner") or "")
+    if preserved:
+        return preserved[:512]
+    run_id = str(record.get("vodforge_run_id") or "").strip()
+    return f"run:{run_id}" if run_id else history_archive_owner(record)
 
 
 def history_media_identity(record: dict[str, Any]) -> tuple[str, str, str]:
@@ -432,6 +463,12 @@ def history_media_file_state(record: dict[str, Any]) -> str:
     output_dir = history_output_dir(record)
     if output_dir is None:
         return HISTORY_MEDIA_MISSING
+    try:
+        lexical = ArchivePath.parse(str(output_dir))
+    except ValueError:
+        return HISTORY_MEDIA_UNAVAILABLE
+    if (lexical.style == "windows") != (os.name == "nt"):
+        return HISTORY_MEDIA_UNAVAILABLE
     output_path = history_output_path(record)
     if output_path is not None:
         try:
@@ -519,17 +556,20 @@ def sanitize_history_record(
         if value not in (None, "", [], {}):
             record[key] = value
 
-    path = Path(output_dir).expanduser()
+    raw_directory = str(output_dir)
     try:
-        path = path.resolve(strict=False)
-    except OSError:
-        path = Path(os.path.abspath(str(path)))
-    record["vodforge_output_dir"] = str(path)
+        directory = ArchivePath.parse(raw_directory)
+    except ValueError:
+        directory = ArchivePath.parse(
+            os.path.abspath(os.path.expanduser(raw_directory))
+        )
+    record["vodforge_output_dir"] = str(directory)
     record["vodforge_output_type"] = history_output_type(record or info)
-    record.pop("vodforge_output_path", None)
-    exact_output = history_output_path({**record, "vodforge_output_dir": str(path)})
+    exact_output = _stored_artifact_path(record)
     if exact_output is not None:
         record["vodforge_output_path"] = str(exact_output)
+    else:
+        record.pop("vodforge_output_path", None)
     record["vodforge_recorded_at"] = (
         recorded_at or datetime.now(timezone.utc).isoformat()
     )
@@ -582,7 +622,7 @@ def save_history(path: Path, records: list[dict[str, Any]]) -> None:
         raise HistoryError(f"VODForge could not save download history: {exc}") from exc
 
 
-def load_history(path: Path) -> list[dict[str, Any]]:
+def _load_history_records(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     try:
@@ -766,3 +806,200 @@ def observed_output_namespace(
     except Exception:  # noqa: BLE001, S110  # nosec B110 - legacy/mutating history cannot break an export
         pass
     return facts
+
+
+def pending_history_path(path: Path) -> Path:
+    """Private recovery journal owned by the same history persistence boundary."""
+    return path.with_name(f".{path.name}.pending")
+
+
+def _read_pending_history(path: Path) -> list[dict[str, Any]]:
+    journal = pending_history_path(path)
+    try:
+        try:
+            size = journal.stat().st_size
+        except FileNotFoundError:
+            return []
+        if size > MAX_HISTORY_FILE_BYTES:
+            raise HistoryError("Pending history exceeds the supported size.")
+        payload = json.loads(journal.read_text(encoding="utf-8"))
+        operations = payload["operations"]
+        if payload.get("schema_version") != 1 or not isinstance(operations, list):
+            raise ValueError("Invalid pending history schema")
+        if len(operations) > MAX_HISTORY_ITEMS:
+            raise ValueError("Too many pending history operations")
+        for operation in operations:
+            if not isinstance(operation, dict) or operation.get("kind") not in {
+                "record",
+                "activity",
+            }:
+                raise ValueError("Invalid pending history operation")
+            if operation["kind"] == "record":
+                record = operation.get("record")
+                if not isinstance(record, dict) or history_output_dir(record) is None:
+                    raise ValueError("Invalid pending history record")
+            elif (
+                not isinstance(operation.get("owners"), list)
+                or len(operation["owners"]) > MAX_HISTORY_ITEMS
+                or not all(
+                    isinstance(owner, str) and len(owner) <= 16384
+                    for owner in operation["owners"]
+                )
+                or not isinstance(operation.get("activity"), list)
+                or not isinstance(operation.get("run_id", ""), str)
+                or len(operation.get("run_id", "")) > 512
+            ):
+                raise ValueError("Invalid pending activity update")
+        return operations
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError) as exc:
+        raise HistoryError(
+            "VODForge could not recover pending history updates."
+        ) from exc
+
+
+def _pending_operation_key(operation: dict[str, Any]) -> tuple[Any, ...]:
+    if operation["kind"] == "record":
+        return ("record", *history_identity(operation["record"]))
+    return ("activity", operation.get("run_id", ""), *operation["owners"])
+
+
+def _stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
+    """Durably accept a bounded delta before delaying its in-memory callback.
+
+    Only the UI history coordinator writes this journal. The relink worker writes
+    the main history file, so the two cannot overwrite one another's snapshots.
+    """
+    if mutation.get("kind") == "record":
+        raw = mutation["record"]
+        clean = {
+            "kind": "record",
+            "record": sanitize_history_record(
+                raw,
+                raw["vodforge_output_dir"],
+                recorded_at=str(raw.get("vodforge_recorded_at") or "") or None,
+            ),
+        }
+    elif mutation.get("kind") == "activity":
+        owners = tuple(dict.fromkeys(mutation["owners"]))
+        if len(owners) > MAX_HISTORY_ITEMS or not all(
+            isinstance(owner, str) and len(owner) <= 16384 for owner in owners
+        ):
+            raise HistoryError("Pending history owner scope exceeds its limit.")
+        clean = {
+            "kind": "activity",
+            "owners": list(owners),
+            "activity": sanitize_run_activity(mutation["activity"]),
+            "run_id": str(mutation.get("run_id") or "")[:512],
+        }
+    else:
+        raise HistoryError("Unsupported pending history operation.")
+    existing = _read_pending_history(path)
+    key = _pending_operation_key(clean)
+    operations = [item for item in existing if _pending_operation_key(item) != key]
+    operations.append(clean)
+    if len(operations) > MAX_HISTORY_ITEMS:
+        raise HistoryError("Pending history exceeds its supported operation count.")
+    payload = json.dumps(
+        {"schema_version": 1, "operations": operations}, ensure_ascii=False
+    )
+    if len(payload.encode("utf-8")) > MAX_HISTORY_FILE_BYTES:
+        raise HistoryError("Pending history exceeds its supported size.")
+    journal = pending_history_path(path)
+    temporary = journal.with_name(journal.name + ".tmp")
+    try:
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(payload, encoding="utf-8")
+        if os.name != "nt":
+            temporary.chmod(0o600)
+        temporary.replace(journal)
+    except OSError as exc:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HistoryError("VODForge could not save pending history updates.") from exc
+
+
+def recover_pending_history(
+    path: Path, current: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], int]:
+    """Merge durable deltas with actual history, never an old whole-file snapshot.
+
+    Replay is idempotent across a crash after save but before journal retirement.
+    Activity deltas follow a relink's recorded lineage without replacing its path.
+    No media filesystem observations or media writes occur here.
+    """
+    operations = _read_pending_history(path)
+    if not operations:
+        return current, 0
+    result = [dict(record) for record in current]
+    for operation in operations:
+        if operation["kind"] == "record":
+            record = operation["record"]
+            result = upsert_history(
+                result,
+                record,
+                record["vodforge_output_dir"],
+                recorded_at=record.get("vodforge_recorded_at"),
+                replace_missing_media=False,
+            )
+        else:
+            owners = set(operation["owners"])
+            run_id = operation.get("run_id", "")
+            # Include only records durably accepted in this same journal. A
+            # matching run alone cannot claim unrelated existing export variants.
+            if run_id:
+                owners.update(
+                    history_archive_owner(pending["record"])
+                    for pending in operations
+                    if pending["kind"] == "record"
+                    and pending["record"].get("vodforge_run_id") == run_id
+                )
+            owner_keys = history_activity_owner_keys(owners)
+            result = [
+                {
+                    **record,
+                    "vodforge_run_activity": sanitize_run_activity(
+                        operation["activity"]
+                    ),
+                }
+                if (
+                    history_archive_owner(record) in owner_keys
+                    and (
+                        not run_id
+                        or not record.get("vodforge_run_id")
+                        or record.get("vodforge_run_id") == run_id
+                    )
+                )
+                else record
+                for record in result
+            ]
+    save_history(path, result)
+    try:
+        pending_history_path(path).unlink()
+    except OSError as exc:
+        # Fail closed before accepting further history edits. Retaining this
+        # idempotent journal permits a retry without losing either update.
+        raise HistoryError(
+            "Pending history was saved but recovery cleanup failed."
+        ) from exc
+    return result, len(operations)
+
+
+def load_history(
+    path: Path, *, on_recovered: Callable[[int], None] | None = None
+) -> list[dict[str, Any]]:
+    records, count = recover_pending_history(path, _load_history_records(path))
+    if count and on_recovered is not None:
+        try:
+            on_recovered(count)
+        except Exception:  # noqa: BLE001, S110 - optional observation cannot prevent durable recovery
+            pass
+    return records
+
+
+def stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
+    try:
+        _stage_history_mutation(path, mutation)
+    except (OSError, TypeError, ValueError, KeyError) as exc:
+        raise HistoryError("VODForge could not save pending history updates.") from exc

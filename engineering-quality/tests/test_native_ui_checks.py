@@ -1,5 +1,6 @@
-import pytest
 from types import SimpleNamespace
+
+import pytest
 from quality_harness import native_ui_checks
 from quality_harness.native_ui_checks import complete_native_report
 
@@ -26,6 +27,8 @@ def test_missing_native_evidence_fails(tmp_path):
 
 def test_native_scenario_uses_schema_compatible_evidence(tmp_path, monkeypatch):
     def run(*args, **kwargs):
+        assert "tests/test_archive_actual_playback.py" in args[0]
+        assert kwargs["env"]["VODFORGE_ACTUAL_PLAYBACK_TESTS"] == "1"
         (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
         return SimpleNamespace(returncode=0, stdout="1 passed")
 

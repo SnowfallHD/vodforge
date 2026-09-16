@@ -910,6 +910,7 @@ def test_player_overlay_corners_match_poster_and_native_input(root):
     player = object.__new__(MediaPlayerWindow)
     player.popup = root
     player.thumbnail_path = None
+    player._poster_image = None
     player._audio_only = False
     player._closed = False
     player._source_image = None
@@ -948,43 +949,53 @@ def test_player_overlay_corners_match_poster_and_native_input(root):
     assert len(calls) == 6
 
 
-def test_library_description_stays_inside_table_edge_after_resize():
+def test_library_description_stays_inside_inspector_after_resize():
     from scripts.focus_ui_preview import isolated_preview_services
     from yt_downloader.app import DownloaderApp
 
     with isolated_preview_services():
         app = DownloaderApp()
         try:
+            description = (
+                "Description sentinel first\n"
+                + "Middle description line\n" * 100
+                + "Description sentinel last"
+            )
             app.metadata_items = [
                 {
                     "id": "layout",
                     "title": "A long selected title " * 8,
-                    "description": "Description sentinel first\nMiddle\nDescription sentinel last",
+                    "description": description,
                     "tags": ["tag"] * 20,
                 }
             ]
             app._display_selected_metadata(0)
             app._select_focus_view("library")
-            for size in ("1320x820", "1440x900", "1320x780"):
+            for size in ("1320x820", "1100x600", "1440x900"):
                 app.geometry(size)
-                settle_native(app)
-                app._select_focus_view("library")
-                settle_native(app)
+                app._archive_inspector_expanded = True
                 app._apply_focus_layout(force=True)
-                app._fit_focus_description_to_library_table()
+                app.focus_archive_inspector.select(app.focus_archive_description_tab)
                 settle_native(app)
                 body = app.description_text
-                table = app.video_tree
-                details = app.focus_library_details
-                bottom = body.winfo_rooty() + body.winfo_height()
-                assert (
-                    abs(bottom - (table.winfo_rooty() + table.winfo_height())) <= 2
-                ), [
-                    (str(w), w.winfo_y(), w.winfo_height(), w.winfo_ismapped())
-                    for w in (details, app.focus_description_line, body)
-                ]
-                assert bottom <= details.winfo_rooty() + details.winfo_height()
-                assert body.winfo_height() > 20
+                details = app.focus_archive_description_tab
+                assert body.winfo_ismapped()
+                assert body.winfo_height() > 100
+                assert body.winfo_rooty() >= details.winfo_rooty()
+                assert body.winfo_rooty() + body.winfo_height() <= (
+                    details.winfo_rooty() + details.winfo_height()
+                )
+                assert body.winfo_rootx() + body.winfo_width() <= (
+                    details.winfo_rootx() + details.winfo_width()
+                )
+                assert body.get("1.0", "end").strip() == description
+                body.see("end")
+                settle_native(app)
+                assert body.yview()[1] == 1.0
+                last_line = body.dlineinfo("end-1c linestart")
+                assert last_line is not None
+                assert 0 <= last_line[1]
+                assert last_line[1] + last_line[3] <= body.winfo_height()
         finally:
             app.destroy()
 

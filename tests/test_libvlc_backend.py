@@ -310,6 +310,9 @@ def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
         popup=SimpleNamespace(after=lambda delay, callback: None),
         _poll=lambda: None,
     )
+    player_window._present_snapshot = lambda snapshot: (
+        MediaPlayerWindow._present_snapshot(player_window, snapshot)
+    )
     MediaPlayerWindow._poll(player_window)
     MediaPlayerWindow._poll(player_window)
     assert observed == ["failed"]

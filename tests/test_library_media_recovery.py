@@ -238,3 +238,47 @@ def test_legacy_or_tampered_missing_media_never_guesses_saved_settings(
     tampered_payload["output_dir"] = str(tmp_path / "different")
     tampered[RETRY_JOB_METADATA_KEY] = tampered_payload
     assert owner.plan(tampered).kind == "invalid"
+
+
+@pytest.mark.parametrize("new_base", ["archive", "renamed-export"])
+def test_relinked_missing_media_keeps_saved_settings_and_requires_new_base(
+    tmp_path, new_base
+):
+    from copy import deepcopy
+
+    original = _job(tmp_path)
+    record = _missing_record(original)
+    record.update(
+        vodforge_relinked=True,
+        vodforge_archive_id="stable-relocated-owner",
+        vodforge_archive_annotation_owner="run:completed-run",
+        vodforge_output_dir=str(tmp_path / new_base),
+        vodforge_output_path=str(tmp_path / new_base / "renamed.mp3"),
+    )
+    before = deepcopy(record)
+    owner = LibraryMediaRecoveryOwner(run_id_factory=lambda: "recovered")
+    plan = owner.plan(record)
+    assert plan.can_redownload and plan.requires_destination_choice
+    assert plan.destination is None
+    assert plan.job.mp3_settings == original.mp3_settings
+    assert plan.job.tags == original.tags
+    chosen = tmp_path / "chosen-base"
+    accepted = owner.with_destination(plan, chosen)
+    assert accepted.destination == chosen and not accepted.requires_destination_choice
+    assert accepted.job.output_dir == chosen
+    assert accepted.job.mp3_settings == original.mp3_settings
+    assert plan.job.output_dir == original.output_dir
+    assert "vodforge_archive_id" not in accepted.job.preview_info
+    assert "vodforge_relinked" not in accepted.job.preview_info
+    assert accepted.previous_annotation_owner == "run:completed-run"
+    assert record == before
+    assert not chosen.exists()
+
+
+def test_relinked_marker_never_bypasses_saved_profile_signature_validation(tmp_path):
+    record = _missing_record(_job(tmp_path))
+    record["vodforge_relinked"] = True
+    record["vodforge_output_dir"] = str(tmp_path / "elsewhere")
+    record["vodforge_output_path"] = str(tmp_path / "elsewhere" / "clip.mp3")
+    record[RETRY_JOB_METADATA_KEY]["output_dir"] = str(tmp_path / "tampered")
+    assert LibraryMediaRecoveryOwner().plan(record).kind == "invalid"

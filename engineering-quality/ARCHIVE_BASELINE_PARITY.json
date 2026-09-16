@@ -1,0 +1,2337 @@
+{
+  "baseline_commit": "225eda3998677156e7cf3bf39482188bc14dfbca",
+  "baseline_inventory": "/Users/coop/Documents/Codex/2026-09-16/coordinator-audit/vodforge-archive-baseline-parity/inventory.json",
+  "status": "49 capabilities mapped with bounded source/native evidence; not 49 accepted native results",
+  "capabilities": [
+    {
+      "id": "library.types",
+      "baseline": "All / MP4 / MP3 / Original audio",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6256,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 7178,
+          "symbol": "_on_library_output_type_changed"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9525,
+          "symbol": "_load_download_history"
+        },
+        {
+          "path": "yt_downloader/models.py",
+          "line": 17,
+          "symbol": "OutputType"
+        }
+      ],
+      "current_destination": "Library header media segments; existing output-type filter",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_models.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.rows",
+      "baseline": "Metadata row identity and displayed fields",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6330,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10585,
+          "symbol": "_render_metadata_tree"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10720,
+          "symbol": "_on_library_tree_click"
+        }
+      ],
+      "current_destination": "Archive cards plus Item/Source/Output/Location/Description inspector; ordinal/duration/creator visible on cards",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_models.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_archive_cards_keep_row_facts_and_page_keys_retain_visible_selection",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.search",
+      "baseline": "Search Library",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_search.py",
+          "line": 26,
+          "symbol": "_searchable_text"
+        },
+        {
+          "path": "yt_downloader/library_search.py",
+          "line": 49,
+          "symbol": "library_search_terms"
+        },
+        {
+          "path": "yt_downloader/library_search_ui.py",
+          "line": 16,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6278,
+          "symbol": "_build_focus_library_view"
+        }
+      ],
+      "current_destination": "Existing LibrarySearchField and library_visible_indices; Archive projection consumes filtered indices",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_search.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.collection-filter",
+      "baseline": "All categories / custom collection filter",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_annotation_ui.py",
+          "line": 65,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/library_annotation_ui.py",
+          "line": 77,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/library_search.py",
+          "line": 15,
+          "symbol": "library_categories"
+        },
+        {
+          "path": "yt_downloader/library_search.py",
+          "line": 80,
+          "symbol": "library_visible_indices"
+        },
+        {
+          "path": "yt_downloader/library_search_ui.py",
+          "line": 113,
+          "symbol": "LibraryCategoryFilter"
+        }
+      ],
+      "current_destination": "Existing category filter; Watch Collections uses the same single personal category",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_search.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.selection",
+      "baseline": "Single selection and navigation",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1417,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1460,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1683,
+          "symbol": "selection_set"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10627,
+          "symbol": "_render_metadata_tree"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10648,
+          "symbol": "_clear_library_selection"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10701,
+          "symbol": "_on_library_double_click"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10740,
+          "symbol": "_show_library_row_menu"
+        }
+      ],
+      "current_destination": "ArchiveBrowser single owner selection, arrow keys and context menu; page-key behavior review pending",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_models.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_archive_cards_keep_row_facts_and_page_keys_retain_visible_selection",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        },
+        {
+          "test": "tests/test_archive_native.py::test_native_relink_review_buttons_preserve_exact_history_and_selection",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "file/folder commit/cancel/stale; filtered/deferred front insertion and exact owner restoration"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.columns",
+      "baseline": "Table resize and scrolling",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1476,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1512,
+          "symbol": "heading"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1529,
+          "symbol": "layout_column"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6368,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9240,
+          "symbol": "_apply_focus_library_layout"
+        }
+      ],
+      "current_destination": "Authorized replacement: paged cards, precision canvas scroll, full inspector and path access",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_models.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_archive_cards_keep_row_facts_and_page_keys_retain_visible_selection",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.overview",
+      "baseline": "Selected Item overview",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6385,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11433,
+          "symbol": "_display_selected_metadata"
+        }
+      ],
+      "current_destination": "Item, Description and Location tabs through _display_selected_metadata",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_selected_layout.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_description_remains_accessible_in_compact_inspector",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.compact-details",
+      "baseline": "Selected details on compact width",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8143,
+          "symbol": "_show_selected_metadata_details"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9210,
+          "symbol": "_apply_focus_library_layout"
+        }
+      ],
+      "current_destination": "In-window Item details/Back to browse switches to full-width inspector",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_selected_layout.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_description_remains_accessible_in_compact_inspector",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.encoding-docs",
+      "baseline": "Source details and Output details",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 1398,
+          "symbol": "build_encoding_summary_metadata"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 1573,
+          "symbol": "_planned_output_summary"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 1650,
+          "symbol": "_ffprobe_output_summary"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 1696,
+          "symbol": "<module>"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 1770,
+          "symbol": "build_encoding_summary_display"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6570,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/detail_ui.py",
+          "line": 33,
+          "symbol": "detail_lines"
+        },
+        {
+          "path": "yt_downloader/detail_ui.py",
+          "line": 80,
+          "symbol": "request"
+        }
+      ],
+      "current_destination": "Source/Output tabs retain canonical FactsText and formatters",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_metadata_helpers.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.output-requested",
+      "baseline": "Output details\u2026 requested versus final",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10811,
+          "symbol": "_show_library_output_details"
+        },
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 157,
+          "symbol": "job_output_profile"
+        },
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 215,
+          "symbol": "job_output_profile_details"
+        },
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 287,
+          "symbol": "metadata_output_profile_details"
+        },
+        {
+          "path": "yt_downloader/detail_ui.py",
+          "line": 114,
+          "symbol": "OutputDetailsDialog"
+        }
+      ],
+      "current_destination": "Existing Actions/row Output details dialog; embedded Output tab separates requested/final",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_metadata_helpers.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.profiles",
+      "baseline": "Same source, different output intent",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 56,
+          "symbol": "job_output_settings"
+        },
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 110,
+          "symbol": "job_attempt_signature"
+        },
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 165,
+          "symbol": "job_output_variant"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "line": 332,
+          "symbol": "history_output_path"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "line": 381,
+          "symbol": "history_identity"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 2888,
+          "symbol": "package_downloaded_media_from_staging"
+        }
+      ],
+      "current_destination": "Canonical archive identities; saved export ChoiceDropdown; Watch source-video dedupe",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_metadata_helpers.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.annotations-edit",
+      "baseline": "Edit notes, tags & category\u2026",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10832,
+          "symbol": "_show_library_annotation_editor"
+        },
+        {
+          "path": "yt_downloader/library_annotation_ui.py",
+          "line": 19,
+          "symbol": "LibraryAnnotationDialog"
+        },
+        {
+          "path": "yt_downloader/library_annotation_ui.py",
+          "line": 143,
+          "symbol": "_save"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 166,
+          "symbol": "replace"
+        }
+      ],
+      "current_destination": "Existing Actions/row LibraryAnnotationDialog; embedded Notes edit command",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_annotations.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.annotations-owner",
+      "baseline": "Annotation identity and persistence",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 39,
+          "symbol": "library_annotations_file_path"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 114,
+          "symbol": "save_library_annotations"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 143,
+          "symbol": "LibraryAnnotationsOwner"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 190,
+          "symbol": "transfer"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 462,
+          "symbol": "reconcile"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11183,
+          "symbol": "_accept_library_redownload"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 12317,
+          "symbol": "_supersede_matching_terminal_attempt"
+        }
+      ],
+      "current_destination": "Unchanged LibraryAnnotationsOwner plus preserved relink annotation owner",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_annotations.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.annotations-bounds",
+      "baseline": "Bounded personal metadata",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 13,
+          "symbol": "<module>"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 47,
+          "symbol": "_clean_tags"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 68,
+          "symbol": "sanitize_library_annotation"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 77,
+          "symbol": "load_library_annotations"
+        }
+      ],
+      "current_destination": "Unchanged bounded annotation ledger and sanitizer",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_annotations.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.copy",
+      "baseline": "Copy tags / description / thumbnail URL / YouTube URL",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8111,
+          "symbol": "_show_library_actions_menu"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10262,
+          "symbol": "_copy_tags"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10318,
+          "symbol": "_copy_description"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10327,
+          "symbol": "_run_library_copy_action"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10797,
+          "symbol": "_show_library_row_menu"
+        }
+      ],
+      "current_destination": "Existing Actions copy commands and clipboard feedback",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.play-action",
+      "baseline": "Play in VODForge",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10701,
+          "symbol": "_on_library_double_click"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10926,
+          "symbol": "_play_selected_library_item"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10987,
+          "symbol": "_open_library_player_when_ready"
+        }
+      ],
+      "current_destination": "Archive header/context/double-click and Watch Play use _archive_request_playback",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_ui_owners.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.open-location",
+      "baseline": "Open saved location",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9866,
+          "symbol": "_open_selected_saved_location"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9875,
+          "symbol": "_open_existing_saved_folder"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9900,
+          "symbol": "_selected_saved_folder"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8873,
+          "symbol": "open_saved_location"
+        }
+      ],
+      "current_destination": "Exact innermost saved folder; separate parent chooser and asynchronous availability",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_ui_owners.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_archive_real_thumbnail_and_full_location_context_survive_back",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        },
+        {
+          "test": "tests/test_archive_native.py::test_native_relink_review_buttons_preserve_exact_history_and_selection",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "file/folder commit/cancel/stale; filtered/deferred front insertion and exact owner restoration"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.preview-start",
+      "baseline": "Start download in Forge",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8083,
+          "symbol": "_show_library_actions_menu"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10770,
+          "symbol": "_show_library_row_menu"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 12375,
+          "symbol": "_start_preview_download"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 7818,
+          "symbol": "_start_selected_preview_download"
+        }
+      ],
+      "current_destination": "Archive Runs & previews activation and existing Start download in Forge action",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_projection.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.retry",
+      "baseline": "Retry in Forge",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10720,
+          "symbol": "_on_library_tree_click"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8062,
+          "symbol": "_show_library_actions_menu"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 12301,
+          "symbol": "_supersede_matching_terminal_attempt"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 7842,
+          "symbol": "_set_focus_terminal_action"
+        }
+      ],
+      "current_destination": "Archive terminal activation and existing Retry in Forge action",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_projection.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.remove",
+      "baseline": "Remove from Library\u2026",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11212,
+          "symbol": "_remove_selected_library_item"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11259,
+          "symbol": "_apply_library_removal_plan"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11330,
+          "symbol": "_remove_library_item_from_forge_recents"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 612,
+          "symbol": "_library_execution_owner_run_id"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 624,
+          "symbol": "resolve_library_removal_plan"
+        }
+      ],
+      "current_destination": "Existing canonical removal plan; commit gate blocks conflicting removal",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_projection.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.live-states",
+      "baseline": "Queued / active / terminal / preview / saved membership",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 22,
+          "symbol": "<module>"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 254,
+          "symbol": "LibraryProjectionOwner"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 306,
+          "symbol": "reconcile"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 462,
+          "symbol": "reconcile"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10545,
+          "symbol": "_reconcile_library_projection"
+        }
+      ],
+      "current_destination": "Shared LibraryProjectionOwner; Archive activity preserves canonical order",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_projection.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.history",
+      "baseline": "Durable saved metadata",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/history.py",
+          "line": 28,
+          "symbol": "<module>"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "line": 487,
+          "symbol": "sanitize_history_record"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "line": 539,
+          "symbol": "upsert_history"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "line": 585,
+          "symbol": "load_history"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 177,
+          "symbol": "_ImmutableDict"
+        }
+      ],
+      "current_destination": "Existing history owner/atomic serializer, with bounded relink identity fields",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_history_pending.py",
+          "tests/test_history_activity_relink.py",
+          "engineering-quality/tests/test_archive_lifecycle.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_native_relink_review_buttons_preserve_exact_history_and_selection",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "file/folder commit/cancel/stale; filtered/deferred front insertion and exact owner restoration"
+        }
+      ],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.recovery",
+      "baseline": "Missing media recovery versus offline storage",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/history.py",
+          "line": 430,
+          "symbol": "history_media_file_state"
+        },
+        {
+          "path": "yt_downloader/library_media_recovery.py",
+          "line": 137,
+          "symbol": "plan"
+        },
+        {
+          "path": "yt_downloader/library_media_recovery_ui.py",
+          "line": 26,
+          "symbol": "LibraryMediaRecoveryPrompt"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11123,
+          "symbol": "_handle_missing_library_media"
+        }
+      ],
+      "current_destination": "Same-window missing/offline/ambiguous outcomes; existing recovery owner with explicit relocated base",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_media_recovery.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_native_missing_relinked_media_uses_explicit_saved_profile_recovery",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "real Tk actions; controlled chooser and queue boundary, no actual download"
+        }
+      ],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.recovery-owner",
+      "baseline": "Accepted replacement ownership",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_media_recovery.py",
+          "line": 137,
+          "symbol": "plan"
+        },
+        {
+          "path": "yt_downloader/library_media_recovery.py",
+          "line": 228,
+          "symbol": "history_after_acceptance"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11174,
+          "symbol": "_accept_library_redownload"
+        }
+      ],
+      "current_destination": "Existing queue acceptance and annotation transfer; chosen relocated base retains saved settings",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_media_recovery.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_native_missing_relinked_media_uses_explicit_saved_profile_recovery",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "real Tk actions; controlled chooser and queue boundary, no actual download"
+        }
+      ],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.artwork",
+      "baseline": "Selected thumbnail and shared artwork",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10905,
+          "symbol": "_library_thumbnail_path"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11499,
+          "symbol": "_display_selected_metadata"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11548,
+          "symbol": "_render_focus_thumbnail_surfaces"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 13453,
+          "symbol": "_record_committed_media_and_write_sidecars"
+        }
+      ],
+      "current_destination": "Shared bounded Archive/Watch artwork worker and selected inspector artwork",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_artwork.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_archive_real_thumbnail_and_full_location_context_survive_back",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "library.sidecars",
+      "baseline": "Media, metadata.json and separate thumbnail",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 2700,
+          "symbol": "safe_metadata_filename"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 2704,
+          "symbol": "compact_video_metadata"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 13453,
+          "symbol": "_record_committed_media_and_write_sidecars"
+        },
+        {
+          "path": "yt_downloader/run_identity.py",
+          "line": 215,
+          "symbol": "job_output_profile_details"
+        }
+      ],
+      "current_destination": "Existing exact media resolver; bounded known companion checks in relink",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_metadata_helpers.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "library.forge-coupling",
+      "baseline": "Forge cards and cross-navigation",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_state.py",
+          "line": 649,
+          "symbol": "persisted_run_deck_records"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 7789,
+          "symbol": "_select_record_in_library"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8828,
+          "symbol": "_show_focus_run_actions_menu"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11367,
+          "symbol": "_reconcile_focus_after_library_removal"
+        }
+      ],
+      "current_destination": "Existing projection/Forge actions; Archive focus_item adapter and exact View in Library index",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_projection.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "shared.choice",
+      "baseline": "Dropdown/menu admission and lifecycle",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 234,
+          "symbol": "ChoiceMenu"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 535,
+          "symbol": "open_popover"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 573,
+          "symbol": "_commit_listbox"
+        },
+        {
+          "path": "yt_downloader/focus_settings.py",
+          "line": 348,
+          "symbol": "_build_access_controls"
+        },
+        {
+          "path": "yt_downloader/local_audio_video_ui.py",
+          "line": 182,
+          "symbol": "_build_profile"
+        },
+        {
+          "path": "yt_downloader/support_ui.py",
+          "line": 96,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/whats_new_feature_preview.py",
+          "line": 192,
+          "symbol": "_choice"
+        }
+      ],
+      "current_destination": "Existing ChoiceDropdown/ChoicePopover in export versions, category and unaffected app controls",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "shared.facts",
+      "baseline": "Lossless FactsText / OutputDetailsDialog",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/detail_ui.py",
+          "line": 33,
+          "symbol": "detail_lines"
+        },
+        {
+          "path": "yt_downloader/detail_ui.py",
+          "line": 44,
+          "symbol": "FactsText"
+        },
+        {
+          "path": "yt_downloader/detail_ui.py",
+          "line": 114,
+          "symbol": "OutputDetailsDialog"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 7630,
+          "symbol": "_show_focus_output_details"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10811,
+          "symbol": "_show_library_output_details"
+        }
+      ],
+      "current_destination": "Existing FactsText and OutputDetailsDialog",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_metadata_helpers.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "shared.dialog-scroll",
+      "baseline": "Dialog/footer and wheel ownership",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 86,
+          "symbol": "bind_smooth_vertical_wheel"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 837,
+          "symbol": "ActionDialogSurface"
+        },
+        {
+          "path": "yt_downloader/library_annotation_ui.py",
+          "line": 42,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/library_media_recovery_ui.py",
+          "line": 128,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/focus_settings.py",
+          "line": 129,
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/forge_activity_ui.py",
+          "line": 147,
+          "symbol": "__init__"
+        }
+      ],
+      "current_destination": "Existing dialog primitives; Location gets scrollable content at compact height",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player_ui.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "shared.thumbnail-performance",
+      "baseline": "Library/Forge thumbnail and resize ownership",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8015,
+          "symbol": "_display_focus_record_thumbnail"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8796,
+          "symbol": "_focus_photo_from_source"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11548,
+          "symbol": "_render_focus_thumbnail_surfaces"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11931,
+          "symbol": "_display_thumbnail_preview_result"
+        }
+      ],
+      "current_destination": "Existing selected render owner plus bounded asynchronous card caches",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_artwork.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "scope.new",
+      "baseline": "New requested archive functions",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6240,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 9866,
+          "symbol": "_open_selected_saved_location"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 11212,
+          "symbol": "_remove_selected_library_item"
+        }
+      ],
+      "current_destination": "Archive navigation/relink, Watch rails/channel/collection, embedded player and telemetry",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_models.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_native.py::test_watch_singleton_keyboard_and_saved_variant_count",
+          "report": "archive-full-native-v3/native.xml",
+          "scope": "bounded source-native fixture"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "scope.absent",
+      "baseline": "No invented baseline capabilities",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "line": 6240,
+          "symbol": "_build_focus_library_view"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 8062,
+          "symbol": "_show_library_actions_menu"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "line": 10740,
+          "symbol": "_show_library_row_menu"
+        },
+        {
+          "path": "yt_downloader/ui_widgets.py",
+          "line": 1512,
+          "symbol": "heading"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "line": 26,
+          "symbol": "<module>"
+        }
+      ],
+      "current_destination": "No added multiselect/category migration/media move/delete/hash or inferred drive mapping",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_models.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "identity_open_focus_replace",
+      "baseline": "Library Play action opens local saved artifact; same open path focuses existing player; different path closes old player first.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10926,
+            11106
+          ],
+          "symbol": "_play_selected_library_item / _open_library_player_when_ready"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            618,
+            649
+          ],
+          "symbol": "show / focus_existing"
+        }
+      ],
+      "current_destination": "_archive_request_playback and existing engine readiness; exact path refocus preserves paused backend",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_ui_owners.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "artifact_resolution",
+      "baseline": "Missing saved media routes to recovery, never an arbitrary same-extension sibling.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player.py",
+          "lines": [
+            14,
+            46
+          ],
+          "symbol": "resolve_library_media_path"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10940,
+            10949
+          ],
+          "symbol": "_play_selected_library_item"
+        }
+      ],
+      "current_destination": "Existing resolve_library_media_path runs in bounded ArchiveWorkOwner",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "header_metadata",
+      "baseline": "VODForge PLAYER branding, full title, creator (uploader then channel then Unknown creator), user category subtitle, Done.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            320,
+            325
+          ],
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            347,
+            385
+          ],
+          "symbol": "_build_header"
+        }
+      ],
+      "current_destination": "Embedded player header and Info/Notes tabs",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "poster_first_stage",
+      "baseline": "Saved poster with in-stage Play button; black stage fallback; Audio playback text for MP3 or Original audio without poster.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            313,
+            318
+          ],
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            387,
+            416
+          ],
+          "symbol": "_build_stage"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            626,
+            664
+          ],
+          "symbol": "_ensure_render_surface / _toggle"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            821,
+            868
+          ],
+          "symbol": "poster rendering"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10905,
+            10924
+          ],
+          "symbol": "_library_thumbnail_path"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            425,
+            469
+          ],
+          "symbol": "load"
+        }
+      ],
+      "current_destination": "Existing stage/poster/native surface; user Play activation now intentionally autoplays embedded player",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player_ui.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "play_pause_replay",
+      "baseline": "Transport Play/Pause, poster Play, Space key.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            99,
+            118
+          ],
+          "symbol": "PlayerTransportButton"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            340,
+            345
+          ],
+          "symbol": "keyboard bindings"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            521,
+            526
+          ],
+          "symbol": "_build_transport"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            651,
+            664
+          ],
+          "symbol": "_toggle"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            774,
+            819
+          ],
+          "symbol": "_poll"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            471,
+            506
+          ],
+          "symbol": "play / pause / toggle"
+        }
+      ],
+      "current_destination": "Existing PlayerTransportButton/backend/toggle and scoped Space binding",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_libvlc_backend.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "seek_and_time",
+      "baseline": "Click or drag timeline, Left/Right +/-10 seconds, elapsed/total clock, live status.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            527,
+            546
+          ],
+          "symbol": "_build_transport"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            666,
+            695
+          ],
+          "symbol": "_seek_relative / _timeline_clicked / _seek_to"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            761,
+            819
+          ],
+          "symbol": "_update_timeline_value / _poll"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            357,
+            401
+          ],
+          "symbol": "snapshot"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            508,
+            519
+          ],
+          "symbol": "seek"
+        }
+      ],
+      "current_destination": "Existing timeline, time/status variables, scoped +/-10 second keys",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_libvlc_backend.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "chapters",
+      "baseline": "CHAPTERS list, timestamp + title, Untitled chapter fallback, empty No chapters message.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            313,
+            314
+          ],
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            418,
+            466
+          ],
+          "symbol": "_build_sidebar"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            677,
+            683
+          ],
+          "symbol": "_chapter_selected"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            741,
+            747
+          ],
+          "symbol": "_draw_timeline_base"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "lines": [
+            59,
+            88
+          ],
+          "symbol": "MAX_CHAPTERS / sanitize_chapters"
+        }
+      ],
+      "current_destination": "Existing chapter list in Chapters tab",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "heatmap",
+      "baseline": "Engagement heatmap above timeline; clicking or dragging that area seeks.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            128,
+            138
+          ],
+          "symbol": "heatmap_buckets"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            670,
+            675
+          ],
+          "symbol": "_timeline_clicked"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            704,
+            740
+          ],
+          "symbol": "_draw_timeline_base"
+        },
+        {
+          "path": "yt_downloader/history.py",
+          "lines": [
+            91,
+            125
+          ],
+          "symbol": "sanitize_heatmap"
+        }
+      ],
+      "current_destination": "Existing timeline heatmap and seek callbacks",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player_ui.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "preview_moments",
+      "baseline": "PREVIEW MOMENTS: five image cards and timestamp captions at 10%, 30%, 50%, 70%, 90%; click image to seek. Video only.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            566,
+            616
+          ],
+          "symbol": "_build_preview_strip"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            685,
+            688
+          ],
+          "symbol": "_seek_preview"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            870,
+            956
+          ],
+          "symbol": "_refresh_previews / _generate_previews / _drain_previews"
+        },
+        {
+          "path": "yt_downloader/media_preview.py",
+          "lines": [
+            14,
+            92
+          ],
+          "symbol": "MediaPreviewOwner"
+        }
+      ],
+      "current_destination": "Moments tab, five FFmpeg-backed targets at 10/30/50/70/90 percent",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "volume",
+      "baseline": "Volume percentage, icon and focusable canvas slider; click/drag, Left/Right +/-5, Home 0, End 100.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            174,
+            274
+          ],
+          "symbol": "PlayerVolumeControl"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            547,
+            564
+          ],
+          "symbol": "_build_transport"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            697,
+            702
+          ],
+          "symbol": "_schedule_volume"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            315,
+            350
+          ],
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            521,
+            539
+          ],
+          "symbol": "set_volume"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            737,
+            755
+          ],
+          "symbol": "_playback_started / _sync_volume"
+        }
+      ],
+      "current_destination": "Existing PlayerVolumeControl and provider desired-volume reconciliation",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_libvlc_backend.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "your_details",
+      "baseline": "YOUR DETAILS shows Category, Tags (comma joined), Notes; empty state directs users to Library actions.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            468,
+            519
+          ],
+          "symbol": "_build_sidebar"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            280,
+            301
+          ],
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10950,
+            10957
+          ],
+          "symbol": "same-path focus branch"
+        }
+      ],
+      "current_destination": "Notes tab: category, personal tags, full scrollable notes; existing snapshot semantics",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player_ui.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "annotation_persistence_boundary",
+      "baseline": "Organize this item dialog has category/create-or-reuse, comma-separated user tags, notes, Save details and Cancel. Player points users there.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/library_annotation_ui.py",
+          "lines": [
+            19,
+            160
+          ],
+          "symbol": "LibraryAnnotationDialog"
+        },
+        {
+          "path": "yt_downloader/library_annotations.py",
+          "lines": [
+            13,
+            206
+          ],
+          "symbol": "LibraryAnnotation / LibraryAnnotationsOwner"
+        },
+        {
+          "path": "yt_downloader/library_state.py",
+          "lines": [
+            462,
+            482
+          ],
+          "symbol": "LibraryProjectionOwner annotation join"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10832,
+            10902
+          ],
+          "symbol": "_show_library_annotation_editor"
+        }
+      ],
+      "current_destination": "Notes edit command reuses LibraryAnnotationDialog and canonical annotation ledger",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_library_annotations.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "close_cleanup",
+      "baseline": "Done, Escape, native window close; external window destruction also cleans up.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            340,
+            345
+          ],
+          "symbol": "bindings"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            380,
+            385
+          ],
+          "symbol": "Done"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            958,
+            992
+          ],
+          "symbol": "closed / close / _on_destroy"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            219,
+            279
+          ],
+          "symbol": "LibVLCEngineOwner.retire_session / shutdown"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            556,
+            586
+          ],
+          "symbol": "LibVLCPlaybackBackend.shutdown"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            12814,
+            12829
+          ],
+          "symbol": "_request_application_close"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            12861,
+            12879
+          ],
+          "symbol": "_terminate_owned_media_work"
+        }
+      ],
+      "current_destination": "Embedded close destroys child host; native surface detach, provider retirement, timers/keys cleanup",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "engineering-quality/tests/test_playback_control_lifecycle.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "failure_feedback",
+      "baseline": "Dialogs for engine unavailable/start/attach errors; status line for seek/volume failures; Failed playback state; dependency error offers Reinstall VODForge or Open saved location.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10940,
+            10974
+          ],
+          "symbol": "_play_selected_library_item"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            11005,
+            11045
+          ],
+          "symbol": "engine readiness failure"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            626,
+            638
+          ],
+          "symbol": "surface attachment failure"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            651,
+            702
+          ],
+          "symbol": "control errors"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            774,
+            819
+          ],
+          "symbol": "Failed status"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            357,
+            401
+          ],
+          "symbol": "snapshot"
+        },
+        {
+          "path": "yt_downloader/libvlc_backend.py",
+          "lines": [
+            713,
+            735
+          ],
+          "symbol": "error event capture"
+        }
+      ],
+      "current_destination": "Same-window archive errors/missing recovery plus existing player failure state",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_libvlc_backend.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [],
+      "acceptance": "native action parity pending"
+    },
+    {
+      "id": "geometry",
+      "baseline": "Resizable player; initial centered 1100x800, minimum 980x690. Bounded chapter/detail collections; preview strip and transport remain visible.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            320,
+            345
+          ],
+          "symbol": "__init__"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            418,
+            610
+          ],
+          "symbol": "sidebar / transport / previews"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            618,
+            624
+          ],
+          "symbol": "show"
+        },
+        {
+          "path": "tests/test_native_ui_polish.py",
+          "lines": [
+            655,
+            690
+          ],
+          "symbol": "test_player_content_cannot_starve_stage_or_clip_previews"
+        }
+      ],
+      "current_destination": "Embedded stage/sidebar/transport with compact tab access; actual MP4/MP3/M4A source-native journey verified",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_media_player_ui.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    },
+    {
+      "id": "telemetry_callbacks",
+      "baseline": "No telemetry-specific player control.",
+      "baseline_refs": [
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            10938,
+            11121
+          ],
+          "symbol": "playback operation coordination"
+        },
+        {
+          "path": "yt_downloader/app.py",
+          "lines": [
+            15164,
+            15171
+          ],
+          "symbol": "_record_product_playback_started"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            651,
+            702
+          ],
+          "symbol": "action callbacks"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            774,
+            819
+          ],
+          "symbol": "state callbacks"
+        },
+        {
+          "path": "yt_downloader/media_player_ui.py",
+          "lines": [
+            962,
+            966
+          ],
+          "symbol": "close callback"
+        }
+      ],
+      "current_destination": "Existing ProductTelemetryOwner with embedded/window surface and Library/Watch origin",
+      "source_evidence": {
+        "gate": "archive-affected-final-current.log:836 passed",
+        "tests": [
+          "tests/test_archive_telemetry.py"
+        ],
+        "scope": "affected source owners; not complete native action parity"
+      },
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_actual_playback.py::test_real_embedded_media_annotation_transport_preview_and_release",
+          "report": "archive-full-native-v3/native.xml",
+          "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
+          "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        }
+      ],
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+    }
+  ],
+  "intentional_changes": [
+    "Table structure replaced by archive cards and inspector",
+    "Player embedded into main window",
+    "Explicit Play activation autoplays; repeated same-path activation refocuses"
+  ],
+  "remaining": [
+    "Independent integrated49-capability acceptance; existing/native gates are bounded evidence",
+    "Physical OS chooser, storage reconnect, native delayed/cancelled commit UI",
+    "Long-duration/native artwork and resize CPU/heartbeat",
+    "Settled provider/transport consistency after seek; prior capture may precede UI poll",
+    "Windows native/UNC and exact packaged qualification; audible output and physical input not established by source-native fixtures"
+  ],
+  "latest_native_freeze": {
+    "path": "source-freeze-20260916T184436Z",
+    "manifest_sha256": "a9a3f6dbe9c8a1be8cb94f908907ff27112b2a3dddf56caad6f2f22cd1309e69",
+    "report": "archive-full-native-v3-completion.json",
+    "source_stable": true,
+    "cases": 178,
+    "skipped": 0
+  }
+}

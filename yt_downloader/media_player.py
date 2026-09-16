@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess  # nosec B404 - fixed argv to trusted local media tools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from .archive_paths import ArchivePath
 from .history import history_output_dir, history_output_path, history_output_type
 from .platform_services import hidden_window_subprocess_kwargs
 from .playback_backend import MediaPlayerError
@@ -14,6 +16,12 @@ from .playback_backend import MediaPlayerError
 def resolve_library_media_path(record: dict[str, Any]) -> Path | None:
     """Resolve one committed Library artifact without treating its row as authority."""
 
+    try:
+        saved = ArchivePath.parse(str(record.get("vodforge_output_dir") or ""))
+    except ValueError:
+        return None
+    if (saved.style == "windows") != (os.name == "nt"):
+        return None
     exact = history_output_path(record)
     if exact is not None:
         try:
@@ -31,16 +39,18 @@ def resolve_library_media_path(record: dict[str, Any]) -> Path | None:
         return None  # Never substitute a nearby MP4 for an incomplete audio record.
     extension = ".mp3" if history_output_type(record) == "MP3" else ".mp4"
     try:
-        candidates = sorted(
-            (
-                child
-                for child in output_dir.iterdir()
-                if child.suffix.casefold() == extension
+        candidates: list[Path] = []
+        for index, child in enumerate(output_dir.iterdir()):
+            if index >= 128:
+                return None  # Legacy folders require explicit selection beyond the cap.
+            if (
+                child.suffix.casefold() == extension
                 and child.is_file()
                 and child.stat().st_size > 0
-            ),
-            key=lambda path: path.name.casefold(),
-        )
+            ):
+                candidates.append(child)
+                if len(candidates) > 1:
+                    return None
     except OSError:
         return None
     return candidates[0] if len(candidates) == 1 else None

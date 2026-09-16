@@ -81,6 +81,19 @@ def library_media_recovery_prompt(
             "No saved output settings detected",
         )
     if plan.can_redownload and plan.job is not None:
+        if plan.requires_destination_choice:
+            return LibraryMediaRecoveryPrompt(
+                "Media file not found",
+                "Choose where to redownload",
+                "This item was relinked to a new location. Choose a download base "
+                "to reuse its exact saved output settings. Your default location "
+                "will remain unchanged.",
+                "Choose a download folder",
+                "Choose folder and redownload",
+                "redownload",
+                True,
+                job_output_profile(plan.job),
+            )
         return LibraryMediaRecoveryPrompt(
             "Media file not found",
             "This media was moved or deleted",

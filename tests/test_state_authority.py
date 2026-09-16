@@ -1971,66 +1971,19 @@ def test_all_runs_navigates_to_library_without_hover_popup():
     deck_source = inspect.getsource(DownloaderApp._refresh_focus_run_deck)
     tile_source = inspect.getsource(DownloaderApp._render_focus_run_deck_tile)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
-    library_layout_source = inspect.getsource(DownloaderApp._apply_focus_library_layout)
     deck_resize_source = inspect.getsource(
         DownloaderApp._schedule_focus_run_deck_geometry_refresh
     )
     root_resize_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
 
-    assert 'orient="horizontal"' in library_source
-    assert "xscrollcommand=tree_x_scroll.set" in library_source
-    assert "video_tree.layout_columns(" in library_layout_source
-    columns = app_module.library_table_column_layout()
-    assert set(columns) == {
-        "index",
-        "title",
-        "profile",
-        "duration",
-        "creator",
-        "location",
-    }
-    assert all(column["minwidth"] > 0 for column in columns.values())
-    assert columns["title"]["stretch"] is True
-    assert columns["location"]["width"] >= columns["location"]["minwidth"]
-    assert "width=0, minwidth=0" not in library_layout_source
-    assert (
-        "library_vertical_mode = focus_library_vertical_layout_mode(height)"
-        in layout_source
-    )
-    assert re.search(
-        r'library_mode\s*=\s*\(\s*"compact"\s*if compact or '
-        r'library_vertical_mode == "compact"\s*else '
-        r"focus_library_layout_mode\(width\)\s*\)",
-        layout_source,
-    )
-    assert "focus_library_action_layout_mode(" not in library_layout_source
-    assert "self.focus_library_action_buttons" not in library_layout_source
-    assert (
-        "if not self.focus_library_menu_button.winfo_manager():"
-        in library_layout_source
-    )
-    assert "library_mode," in layout_source
-    assert "library_vertical_mode," in layout_source
-    assert "library_mode=library_mode," in layout_source
-    assert "vertical_mode=library_vertical_mode," in layout_source
-    assert 'if library_mode == "compact":' in library_layout_source
-    assert "library_actions_collapsed" not in library_layout_source
-    assert columns["index"]["minwidth"] >= 30
-    assert columns["duration"]["minwidth"] >= 50
-    assert '"id": {' not in library_layout_source
-    assert (
-        "self.focus_metadata_content.columnconfigure(0, weight=1)"
-        in library_layout_source
-    )
-    assert "minsize=inspector_width" in library_layout_source
-    assert (
-        'inspector_width = 350 if library_mode == "balanced" else 380'
-        in library_layout_source
-    )
-    library_layout_call = layout_source.index("self._apply_focus_library_layout(")
+    # Native archive tests verify compact/wide folder components and selection.
+    # Historical column geometry remains a standalone PixelScrollTable contract.
+    assert "self.video_tree = ArchiveBrowser(" in library_source
+    assert "PixelScrollTable(" not in library_source
+    assert "self._apply_archive_layout(width, height)" in layout_source
     destination_sync = layout_source.index("self._sync_focus_destination()")
     deck_refresh = layout_source.index("self._refresh_focus_run_deck(")
-    assert library_layout_call < destination_sync < deck_refresh
+    assert destination_sync < deck_refresh
     assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
     assert "for column in range(4):" in deck_source
     assert "self._render_focus_run_deck_tile(" in deck_source
@@ -2566,7 +2519,15 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
     wheel_binding_source = inspect.getsource(app_module.bind_smooth_vertical_wheel)
 
-    assert "self.video_tree = PixelScrollTable(" in library_source
+    assert "self.video_tree = ArchiveBrowser(" in library_source
+    from yt_downloader.archive_browser_ui import ArchiveBrowser
+    from yt_downloader.watch_ui import WatchView
+
+    for widget in (ArchiveBrowser, WatchView):
+        assert (
+            'bind_smooth_vertical_wheel(self.canvas, mode="pixels")'
+            in inspect.getsource(widget)
+        )
     assert 'target.bind("<TouchpadScroll>"' in pixel_table_source
     assert "tk::PreciseScrollDeltas" in inspect.getsource(
         app_module.touchpad_scroll_deltas
@@ -2672,7 +2633,7 @@ def test_library_description_is_capped_at_the_measured_table_bottom():
     assert probe.focus_description_line.grid_updates == [{"pady": (0, 14)}]
 
 
-def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_scroll():
+def test_legacy_pixel_table_columns_remain_resizable_without_losing_pixel_scroll():
     pixel_table_source = inspect.getsource(app_module.PixelScrollTable)
     column_layout_source = inspect.getsource(
         app_module.PixelScrollTable._layout_columns
@@ -2708,9 +2669,6 @@ def test_pixel_scroll_library_columns_are_drag_resizable_without_losing_pixel_sc
     assert (
         "heading_anchor = self._heading_anchors.get(column) or anchor"
         in pixel_table_source
-    )
-    assert 'anchor="w" if column == "duration" else None' in inspect.getsource(
-        DownloaderApp._build_focus_library_view
     )
     assert "def layout_column" in pixel_table_source
     assert "stretched_table_column_widths" in column_layout_source
@@ -3051,11 +3009,12 @@ def test_visible_leading_retry_cell_owns_the_retry_click(tmp_path: Path):
     assert retried == [terminal]
 
 
-def test_library_table_hides_provider_id_and_has_no_invisible_action_column():
+def test_archive_uses_folder_components_and_keeps_provider_id_out_of_selected_heading():
     source = inspect.getsource(DownloaderApp._build_focus_library_view)
     detail_source = inspect.getsource(DownloaderApp._display_selected_metadata)
 
-    assert '("location", "Status / location")' in source
+    assert "ArchiveBrowser(" in source
+    assert "self._build_archive_location_panel(" in source
     assert '("id", "ID")' not in source
     assert '"action"' not in source
     assert "info.get('id') or 'no id'" not in detail_source

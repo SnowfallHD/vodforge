@@ -36,8 +36,13 @@ class TkPlaybackSurfaceOwner:
             raise MediaPlayerError(
                 "Internal playback is currently available on macOS and Windows."
             )
-        self.stage.bind("<Configure>", self._configured, add="+")
-        self.toplevel.bind("<Configure>", self._configured, add="+")
+        self._bindings: tuple[tuple[tk.Misc, str | None], ...] = (
+            (self.stage, self.stage.bind("<Configure>", self._configured, add="+")),
+            (
+                self.toplevel,
+                self.toplevel.bind("<Configure>", self._configured, add="+"),
+            ),
+        )
 
     @property
     def surface(self) -> NativeRenderSurface:
@@ -69,6 +74,13 @@ class TkPlaybackSurfaceOwner:
         if self._closed:
             return
         self._closed = True
+        for widget, binding in self._bindings:
+            if binding:
+                try:
+                    widget.unbind("<Configure>", binding)
+                except tk.TclError:
+                    pass
+        self._bindings = ()
         if self._refresh_after_id is not None:
             try:
                 self.toplevel.after_cancel(self._refresh_after_id)

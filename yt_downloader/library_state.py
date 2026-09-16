@@ -7,7 +7,13 @@ from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from typing import Any, TypeGuard
 
-from .history import history_identity, history_output_dir, history_output_type
+from .history import (
+    history_annotation_owner,
+    history_archive_owner,
+    history_identity,
+    history_output_dir,
+    history_output_type,
+)
 from .library_annotations import LibraryAnnotation
 from .models import DownloadJob, OutputType
 from .run_identity import annotate_job_metadata
@@ -360,10 +366,7 @@ class LibraryProjectionOwner:
             run_id = str(row.get("vodforge_run_id") or "").strip()
             if run_id and run_id in superseded_history_run_ids:
                 continue
-            owner = _legacy_history_owner(row)
-            output_path = str(row.get("vodforge_output_path") or "").strip()
-            if output_path:
-                owner = f"history-path:{output_path}"
+            owner = history_archive_owner(row)
             if owner in seen_history_owners:
                 violations.append(
                     LibraryInvariantViolation(code="duplicate_history_owner")
@@ -470,7 +473,11 @@ class LibraryProjectionOwner:
                 or ""
             ).strip()
             annotation_owner = (
-                f"run:{run_id}" if run_id else str(row.get(PROJECTION_OWNER_KEY) or "")
+                history_annotation_owner(row)
+                if row.get(PROJECTION_OWNER_KIND_KEY) == "history"
+                else f"run:{run_id}"
+                if run_id
+                else str(row.get(PROJECTION_OWNER_KEY) or "")
             )
             row[ANNOTATION_OWNER_KEY] = annotation_owner
             annotation = annotation_snapshot.get(annotation_owner)

@@ -195,6 +195,38 @@ def apply_product_styles(root: tk.Tk) -> None:
         expand=[("selected", (0, 0, 0, 0))],
     )
     style.configure(
+        "Archive.TNotebook",
+        background=THEME["bg"],
+        borderwidth=0,
+        bordercolor=THEME["bg"],
+        lightcolor=THEME["bg"],
+        darkcolor=THEME["bg"],
+        tabmargins=(0, 0, 0, 6),
+    )
+    style.configure(
+        "Archive.TNotebook.Tab",
+        background=THEME["surface"],
+        foreground=THEME["muted"],
+        padding=(8, 8),
+        font=FONT_UI_SMALL,
+        borderwidth=0,
+        bordercolor=THEME["bg"],
+        lightcolor=THEME["bg"],
+        darkcolor=THEME["bg"],
+        focuscolor=THEME["accent"],
+    )
+    style.map(
+        "Archive.TNotebook.Tab",
+        background=[
+            ("selected", THEME["accent_surface"]),
+            ("active", THEME["surface_2"]),
+        ],
+        foreground=[("selected", THEME["accent"]), ("active", THEME["text"])],
+        lightcolor=[("selected", THEME["bg"]), ("!selected", THEME["bg"])],
+        darkcolor=[("selected", THEME["bg"]), ("!selected", THEME["bg"])],
+        bordercolor=[("selected", THEME["bg"]), ("!selected", THEME["bg"])],
+    )
+    style.configure(
         "Treeview",
         background=THEME["surface"],
         fieldbackground=THEME["surface"],

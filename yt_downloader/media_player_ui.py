@@ -6,6 +6,7 @@ import queue
 import threading
 import tkinter as tk
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
@@ -18,7 +19,12 @@ from .playback_surface import TkPlaybackSurfaceOwner
 from .ui_chrome import accent_hover_color
 from .ui_layout import centered_toplevel_geometry
 from .ui_theme import FONT_UI_MEDIUM, FONT_UI_SMALL, THEME
-from .ui_widgets import SleekScrollbar, _tinted_ui_icon, reveal_toplevel
+from .ui_widgets import (
+    SleekScrollbar,
+    _tinted_ui_icon,
+    bind_smooth_vertical_wheel,
+    reveal_toplevel,
+)
 
 try:
     from PIL import Image, ImageDraw, ImageOps, ImageTk
@@ -288,8 +294,26 @@ class MediaPlayerWindow:
         on_first_play: Callable[[], None] | None = None,
         on_feature: Callable[[str], None] | None = None,
         on_operation: Callable[..., None] | None = None,
+        host: tk.Misc | None = None,
+        on_closed: Callable[[], None] | None = None,
+        on_details: Callable[[], None] | None = None,
+        autoplay: bool = False,
+        poster_image: Any = None,
+        source_details: str = "",
+        output_details: str = "",
+        on_edit_notes: Callable[[], None] | None = None,
     ) -> None:
         self.owner = owner
+        self.embedded = host is not None
+        self._on_closed = on_closed
+        self._on_details = on_details
+        self._autoplay = autoplay
+        self._poster_image = poster_image
+        self._source_details = source_details
+        self._output_details = output_details
+        self._on_edit_notes = on_edit_notes
+        self._autoplay_after_id: str | None = None
+        self._shortcut_bindings: list[tuple[str, str]] = []
         self.playback = playback
         self.previews = previews
         self.info = info
@@ -300,6 +324,7 @@ class MediaPlayerWindow:
         self._on_first_play = on_first_play
         self._first_play_recorded = False
         self._closed = False
+        self._shown_once = False
         self._poll_after_id: str | None = None
         self._last_snapshot: PlaybackSnapshot | None = None
         self._frame_image: Any | None = None
@@ -317,19 +342,29 @@ class MediaPlayerWindow:
             "ORIGINAL AUDIO",
         }
 
-        popup = tk.Toplevel(owner)
-        popup.withdraw()
-        popup.title(f"VODForge Player — {info.get('title') or 'Saved media'}")
-        popup.configure(bg=THEME["bg"])
-        popup.minsize(980, 690)
-        popup.resizable(True, True)
+        popup: Any
+        if host is None:
+            popup = tk.Toplevel(owner)
+            popup.withdraw()
+            popup.title(f"VODForge Player — {info.get('title') or 'Saved media'}")
+            popup.configure(bg=THEME["bg"])
+            popup.minsize(980, 690)
+            popup.resizable(True, True)
+        else:
+            popup = tk.Frame(host, bg=THEME["bg"])  # type: ignore[assignment]
+            popup.pack(fill="both", expand=True)
         self.popup = popup
 
         root = ttk.Frame(popup, style="FocusShell.TFrame")
-        root.pack(fill="both", expand=True, padx=22, pady=18)
+        root.pack(
+            fill="both",
+            expand=True,
+            padx=16 if self.embedded else 22,
+            pady=10 if self.embedded else 18,
+        )
         root.columnconfigure(0, weight=3)
-        root.columnconfigure(1, weight=1, minsize=235)
-        root.rowconfigure(1, weight=1, minsize=290)
+        root.columnconfigure(1, weight=1, minsize=300 if self.embedded else 235)
+        root.rowconfigure(1, weight=1, minsize=160 if self.embedded else 290)
 
         self._build_header(root)
         self._build_stage(root)
@@ -337,11 +372,22 @@ class MediaPlayerWindow:
         self._build_transport(root)
         self._build_preview_strip(root)
 
-        popup.protocol("WM_DELETE_WINDOW", self.close)
-        popup.bind("<Escape>", lambda _event: self.close())
-        popup.bind("<space>", lambda _event: self._toggle())
-        popup.bind("<Left>", lambda _event: self._seek_relative(-10))
-        popup.bind("<Right>", lambda _event: self._seek_relative(10))
+        if not self.embedded:
+            popup.protocol("WM_DELETE_WINDOW", self.close)
+        for sequence, action in (
+            ("<Escape>", self.close),
+            ("<space>", self._toggle),
+            ("<Left>", lambda: self._seek_relative(-10)),
+            ("<Right>", lambda: self._seek_relative(10)),
+        ):
+            target = owner if self.embedded else popup
+            binding = target.bind(
+                sequence,
+                partial(self._shortcut, action=action),
+                add="+",
+            )
+            if binding:
+                self._shortcut_bindings.append((sequence, binding))
         popup.bind("<Destroy>", self._on_destroy, add="+")
 
     def _build_header(self, root: ttk.Frame) -> None:
@@ -379,10 +425,35 @@ class MediaPlayerWindow:
         )
         ttk.Button(
             header,
-            text="Done",
+            text="Back to browse" if self.embedded else "Done",
             command=self.close,
             style="FocusQuiet.TButton",
         ).grid(row=0, column=1, sticky="e")
+        if self._on_details is not None:
+            ttk.Button(
+                header,
+                text="Source, output & item details",
+                command=self._on_details,
+                style="FocusQuiet.TButton",
+            ).grid(row=1, column=1, sticky="e", padx=(12, 0))
+
+    def _shortcut(self, event: Any, action: Callable[[], Any]) -> str | None:
+        if self._closed:
+            return None
+        if self.embedded:
+            widget = event.widget
+            if not str(widget).startswith(str(self.popup)):
+                return None
+            if widget.winfo_class() in {
+                "Entry",
+                "TEntry",
+                "Text",
+                "Listbox",
+                "TCombobox",
+            }:
+                return None
+        action()
+        return "break"
 
     def _build_stage(self, root: ttk.Frame) -> None:
         stage_shell = tk.Frame(
@@ -410,14 +481,26 @@ class MediaPlayerWindow:
         self.stage.bind("<Configure>", self._queue_stage_render, add="+")
         self.play_overlay = PosterPlayButton(stage_shell, command=self._toggle)
         self.play_overlay.place(relx=0.5, rely=0.5, anchor="center")
-        if self.thumbnail_path is not None:
+        if self._poster_image is not None:
+            self._source_image = self._poster_image
+            self._queue_stage_render()
+        elif self.thumbnail_path is not None:
             self._render_still_image(self.thumbnail_path)
         elif self._audio_only:
             self.stage.configure(text="Audio playback")
 
     def _build_sidebar(self, root: ttk.Frame) -> None:
-        sidebar = ttk.Frame(root, style="FocusShell.TFrame")
-        sidebar.grid(row=1, column=1, rowspan=3, sticky="new")
+        if self.embedded:
+            self._info_notebook = ttk.Notebook(root, style="Archive.TNotebook")
+            self._info_notebook.grid(row=1, column=1, rowspan=3, sticky="nsew")
+            sidebar = ttk.Frame(
+                self._info_notebook, style="FocusShell.TFrame", padding=8
+            )
+            self._info_notebook.add(sidebar, text="Chapters")
+            self._build_information_tabs()
+        else:
+            sidebar = ttk.Frame(root, style="FocusShell.TFrame")
+            sidebar.grid(row=1, column=1, rowspan=3, sticky="new")
         sidebar.columnconfigure(0, weight=1)
         ttk.Label(sidebar, text="CHAPTERS", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 6)
@@ -465,6 +548,20 @@ class MediaPlayerWindow:
                 justify="left",
             ).grid(row=1, column=0, sticky="w")
 
+        if self.embedded:
+            sidebar = ttk.Frame(
+                self._info_notebook, style="FocusShell.TFrame", padding=8
+            )
+            self._info_notebook.add(sidebar, text="Notes")
+            sidebar.columnconfigure(0, weight=1)
+            sidebar.rowconfigure(4, weight=1)
+            if self._on_edit_notes is not None:
+                ttk.Button(
+                    sidebar,
+                    text="Edit notes, tags & collection",
+                    command=self._on_edit_notes,
+                    style="FocusQuiet.TButton",
+                ).grid(row=0, column=0, sticky="ew", pady=(0, 8))
         ttk.Label(sidebar, text="YOUR DETAILS", style="FocusEyebrow.TLabel").grid(
             row=2, column=0, sticky="w", pady=(16, 6)
         )
@@ -492,8 +589,9 @@ class MediaPlayerWindow:
             ).grid(row=4, column=0, sticky="w")
             return
         detail_shell = ttk.Frame(sidebar, style="FocusShell.TFrame")
-        detail_shell.grid(row=4, column=0, sticky="ew")
+        detail_shell.grid(row=4, column=0, sticky="nsew" if self.embedded else "ew")
         detail_shell.columnconfigure(0, weight=1)
+        detail_shell.rowconfigure(0, weight=1)
         details = tk.Text(
             detail_shell,
             width=1,
@@ -507,16 +605,61 @@ class MediaPlayerWindow:
             pady=3,
             font=FONT_UI_SMALL,
         )
-        details.grid(row=0, column=0, sticky="ew")
+        details.grid(row=0, column=0, sticky="nsew")
         details.insert("1.0", detail_text)
         details.configure(state="disabled")
-        if bounded_content_rows(detail_text, maximum=10_000) > DETAIL_ROWS_MAX:
+        if (
+            self.embedded
+            or bounded_content_rows(detail_text, maximum=10_000) > DETAIL_ROWS_MAX
+        ):
             scrollbar = SleekScrollbar(
                 detail_shell,
                 command=details.yview,
             )
             scrollbar.grid(row=0, column=1, sticky="ns")
             details.configure(yscrollcommand=scrollbar.set)
+
+    def _build_information_tabs(self) -> None:
+        tags = ", ".join(
+            str(value)
+            for key in ("tags", "extra_tags")
+            for value in self.info.get(key, ())
+        )
+        metadata = "\n\n".join(
+            (
+                str(self.info.get("title") or ""),
+                str(self.info.get("uploader") or self.info.get("channel") or ""),
+                "ID: " + str(self.info.get("id") or ""),
+                str(self.info.get("description") or ""),
+                "Source tags: " + tags,
+            )
+        )
+        for title, content in (
+            ("Info", metadata),
+            ("Source", self._source_details),
+            ("Output", self._output_details),
+        ):
+            panel = ttk.Frame(self._info_notebook, style="FocusShell.TFrame", padding=8)
+            panel.columnconfigure(0, weight=1)
+            panel.rowconfigure(0, weight=1)
+            self._info_notebook.add(panel, text=title)
+            text = tk.Text(
+                panel,
+                width=1,
+                height=4,
+                wrap="word",
+                bg=THEME["bg"],
+                fg=THEME["text"],
+                bd=0,
+                highlightthickness=0,
+                font=FONT_UI_SMALL,
+            )
+            text.grid(row=0, column=0, sticky="nsew")
+            text.insert("1.0", content or "No saved details.")
+            text.configure(state="disabled")
+            scroll = SleekScrollbar(panel, command=text.yview)
+            scroll.grid(row=0, column=1, sticky="ns")
+            text.configure(yscrollcommand=scroll.set)
 
     def _build_transport(self, root: ttk.Frame) -> None:
         transport = ttk.Frame(root, style="FocusShell.TFrame")
@@ -576,15 +719,40 @@ class MediaPlayerWindow:
         self._preview_captions: list[ttk.Label] = []
         if self._audio_only:
             return
-        strip = ttk.Frame(root, style="FocusShell.TFrame")
-        strip.grid(row=3, column=0, sticky="ew", padx=(0, 18), pady=(13, 0))
-        for index in range(5):
+        if self.embedded:
+            panel = ttk.Frame(self._info_notebook, style="FocusShell.TFrame")
+            self._info_notebook.add(panel, text="Moments")
+            panel.columnconfigure(0, weight=1)
+            panel.rowconfigure(0, weight=1)
+            canvas = tk.Canvas(
+                panel, bg=THEME["bg"], bd=0, highlightthickness=0, width=280
+            )
+            canvas.grid(row=0, column=0, sticky="nsew")
+            scroll = SleekScrollbar(panel, command=canvas.yview)
+            scroll.grid(row=0, column=1, sticky="ns")
+            canvas.configure(yscrollcommand=scroll.set)
+            strip = ttk.Frame(canvas, style="FocusShell.TFrame", padding=8)
+            canvas.create_window(0, 0, window=strip, anchor="nw")
+            strip.bind(
+                "<Configure>",
+                lambda _event: canvas.configure(scrollregion=canvas.bbox("all")),
+            )
+        else:
+            strip = ttk.Frame(root, style="FocusShell.TFrame")
+            strip.grid(row=3, column=0, sticky="ew", padx=(0, 18), pady=(13, 0))
+        for index in range(2 if self.embedded else 5):
             strip.columnconfigure(index, weight=1, uniform="preview")
         ttk.Label(
             strip,
             text="PREVIEW MOMENTS",
             style="FocusEyebrow.TLabel",
-        ).grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 6))
+        ).grid(
+            row=0,
+            column=0,
+            columnspan=2 if self.embedded else 5,
+            sticky="w",
+            pady=(0, 6),
+        )
         for index in range(5):
             label = tk.Label(
                 strip,
@@ -598,16 +766,26 @@ class MediaPlayerWindow:
                 cursor="hand2",
             )
             label.grid(
-                row=1,
-                column=index,
+                row=1 + (index // 2) * 2 if self.embedded else 1,
+                column=index % 2 if self.embedded else index,
                 sticky="ew",
                 padx=(0 if index == 0 else 4, 0),
             )
             label.bind("<Button-1>", self._preview_seek_handler(index))
             self.preview_labels.append(label)
             caption = ttk.Label(strip, text="—", style="Muted.TLabel")
-            caption.grid(row=2, column=index, sticky="w", padx=(2, 0), pady=(4, 0))
+            caption.grid(
+                row=2 + (index // 2) * 2 if self.embedded else 2,
+                column=index % 2 if self.embedded else index,
+                sticky="w",
+                padx=(2, 0),
+                pady=(4, 8),
+            )
             self._preview_captions.append(caption)
+        if self.embedded:
+            bind_smooth_vertical_wheel(
+                canvas, strip, *self.preview_labels, *self._preview_captions
+            )
 
     def _preview_seek_handler(self, index: int) -> Any:
         def seek(_event: tk.Event[Any]) -> None:
@@ -616,18 +794,37 @@ class MediaPlayerWindow:
         return seek
 
     def show(self) -> None:
-        reveal_toplevel(
-            self.popup,
-            centered_toplevel_geometry(self.owner, width=1100, height=800),
-        )
-        self.popup.focus_force()
+        if self._closed:
+            return
+        if self._shown_once:
+            self.focus_existing()
+            return
+        self._shown_once = True
+        if self.embedded:
+            self.popup.update_idletasks()
+            self.popup.focus_set()
+        else:
+            reveal_toplevel(
+                self.popup,
+                centered_toplevel_geometry(self.owner, width=1100, height=800),
+            )
+            self.popup.focus_force()
         self._poll()
+        if self._autoplay:
+            self._autoplay_after_id = self.popup.after_idle(self._autoplay_ready)
+
+    def _autoplay_ready(self) -> None:
+        self._autoplay_after_id = None
+        if not self._closed:
+            self._toggle()
 
     def _ensure_render_surface(self) -> bool:
         if self._audio_only or self._surface_owner is not None:
             return True
         try:
-            self._surface_owner = TkPlaybackSurfaceOwner(self.popup, self.stage)
+            self._surface_owner = TkPlaybackSurfaceOwner(
+                self.popup.winfo_toplevel(), self.stage
+            )
             self.playback.attach_render_surface(self._surface_owner.surface)
         except MediaPlayerError as exc:
             self._on_operation("failed", capture_failure(exc, stage="playback"))
@@ -649,8 +846,14 @@ class MediaPlayerWindow:
             return False
 
     def _toggle(self) -> None:
+        if self._closed:
+            return
         try:
-            was_playing = self.playback.snapshot.status in {"Starting", "Playing"}
+            observed = self.playback.snapshot
+            # A replay can arrive between timer ticks. Consume the terminal
+            # observation before the provider changes state again.
+            self._present_snapshot(observed)
+            was_playing = observed.status in {"Starting", "Playing"}
             if not was_playing and not self._ensure_render_surface():
                 return
             self.playback.toggle()
@@ -774,7 +977,10 @@ class MediaPlayerWindow:
     def _poll(self) -> None:
         if self._closed:
             return
-        snapshot = self.playback.snapshot
+        self._present_snapshot(self.playback.snapshot)
+        self._poll_after_id = self.popup.after(100, self._poll)
+
+    def _present_snapshot(self, snapshot: PlaybackSnapshot) -> None:
         previous = self._last_snapshot
         if snapshot.status == "Playing" and not self._operation_play_observed:
             self._operation_play_observed = True
@@ -816,7 +1022,6 @@ class MediaPlayerWindow:
         self._refresh_previews(snapshot)
         self._drain_previews()
         self._last_snapshot = snapshot
-        self._poll_after_id = self.popup.after(100, self._poll)
 
     def _render_still_image(self, path: Path) -> None:
         if Image is None or ImageOps is None or ImageTk is None:
@@ -963,6 +1168,18 @@ class MediaPlayerWindow:
         if self._closed:
             return
         self._closed = True
+        for sequence, binding in self._shortcut_bindings:
+            try:
+                (self.owner if self.embedded else self.popup).unbind(sequence, binding)
+            except tk.TclError:
+                pass
+        self._shortcut_bindings.clear()
+        if self._autoplay_after_id is not None:
+            try:
+                self.popup.after_cancel(self._autoplay_after_id)
+            except tk.TclError:
+                pass
+            self._autoplay_after_id = None
         self._on_operation("closed")
         if self._poll_after_id is not None:
             try:
@@ -986,6 +1203,9 @@ class MediaPlayerWindow:
         # and its native child are gone before provider teardown begins.
         self.playback.shutdown()
         self.previews.shutdown()
+        if self._on_closed is not None:
+            callback, self._on_closed = self._on_closed, None
+            callback()
 
     def _on_destroy(self, event: tk.Event[Any]) -> None:
         if event.widget is self.popup and not self._closed:

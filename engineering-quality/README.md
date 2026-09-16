@@ -936,3 +936,19 @@ the existing popover, polish, support, activity and consent tests. Its existing
 JUnit verifier rejects empty, skipped, failed or errored reports. FAST remains a
 headless gate and cannot substitute for executing this native scenario. The new
 case list is not a waiver for exact packaged-artifact or OS-input qualification.
+
+## Archive, Watch and embedded-player boundaries
+
+See [the feature validation ledger](ARCHIVE_WATCH_QA.md) for the new required
+regression, class lifecycle, native and telemetry acceptance coverage. The native
+surface gate now enrolls test_archive_native.py and test_archive_actual_playback.py;
+skipped cases cannot count as
+source-native acceptance. Current WIP evidence and unexecuted tiers remain explicit.
+
+
+The existing bounded history mutation gate also exercises pending-delta staging
+and restart replay through test_history_pending.py. Its unmodified copied suite
+must pass first; all five targeted mutants must produce actual JUnit test
+failures. Import/collection/setup errors, skipped cases, empty reports, timeout
+or unavailable runners cannot qualify as detection. This is a bounded
+history/privacy/recovery score, not a repository-wide mutation score.
