@@ -160,6 +160,15 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
         }
     ),
     "storage_namespace": frozenset({"variant", "owned_legacy", "unknown"}),
+    "reuse_rejection": frozenset(
+        {
+            "no_eligible_candidate",
+            "validation_failed",
+            "plan_mismatch",
+            "custom_artwork_unverifiable",
+            "probe_unavailable",
+        }
+    ),
     "reuse_result": frozenset({"hit", "miss", "unavailable"}),
     "help_target": frozenset({"menu", "feedback", "review", "welcome"}),
     "ui_blocker": frozenset({"closed", "panel", "grab", "unknown"}),

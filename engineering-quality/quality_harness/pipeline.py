@@ -342,6 +342,7 @@ class HeadlessPipelineRunner:
         validate_destination: bool = True,
         re_raise: bool = True,
         cleanup_global_children: bool = True,
+        history_records: list[dict[str, Any]] | None = None,
         ffmpeg_override: str | None = None,
     ) -> dict[str, Any]:
         import yt_downloader.app as app_module
@@ -351,6 +352,8 @@ class HeadlessPipelineRunner:
         case_dir.mkdir(parents=True, exist_ok=True)
         events = TracingQueue()
         app = make_headless_app(events)
+        if history_records is not None:
+            app.download_history = list(history_records)
         if ffmpeg_override is not None:
             app._find_ffmpeg = lambda: ffmpeg_override
         progress_trace: list[dict[str, Any]] = []

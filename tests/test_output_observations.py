@@ -441,3 +441,37 @@ def test_reuse_observes_validated_artifact_before_metadata_projection(
     assert facts["observed_audio_codec"] == codec
     assert facts["observed_audio_bitrate_kbps"] == "128"
     assert output.read_bytes() == b"identical encoded media"
+
+
+@pytest.mark.parametrize(
+    "probe_available,expected",
+    [(True, "no_eligible_candidate"), (False, "probe_unavailable")],
+)
+def test_reuse_miss_reason_comes_from_the_attempted_lookup(
+    tmp_path, probe_available, expected
+):
+    app = app_module.DownloaderApp.__new__(app_module.DownloaderApp)
+    app._find_ffprobe = lambda: "trusted-probe" if probe_available else None
+    app.download_history = []
+    observed = []
+    app.product_telemetry = SimpleNamespace(
+        permitted=lambda: True,
+        record_operation=lambda *args, **kwargs: observed.append((args, kwargs)),
+    )
+    job = make_job(tmp_path)
+    job.telemetry_operation_id = str(uuid.uuid4())
+    assert (
+        app._try_reuse_existing_output(
+            job,
+            source_info(),
+            None,
+            label="QA",
+            all_output_dirs=[],
+            control_check=lambda: None,
+        )
+        is None
+    )
+    facts = observed[0][1]["dimensions"]
+    assert facts["stage"] == "reuse"
+    assert facts["reuse_rejection"] == expected
+    assert facts["reuse_result"] == ("miss" if probe_available else "unavailable")

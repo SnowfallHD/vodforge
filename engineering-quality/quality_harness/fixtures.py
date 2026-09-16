@@ -163,6 +163,69 @@ def _generate_hls(
     )
 
 
+def _generate_original_audio_fixtures(ffmpeg: str, source: Path, root: Path) -> None:
+    aac = root / "original-aac"
+    aac.mkdir(parents=True, exist_ok=True)
+    if not (aac / "media.m3u8").exists():
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-map",
+                "0:a:0",
+                "-c:a",
+                "copy",
+                "-f",
+                "hls",
+                "-hls_time",
+                "2",
+                "-hls_list_size",
+                "0",
+                "-hls_segment_filename",
+                str(aac / "segment-%03d.ts"),
+                str(aac / "media.m3u8"),
+            ]
+        )
+    (aac / "master.m3u8").write_text(
+        '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=200000,CODECS="mp4a.40.2"\nmedia.m3u8\n',
+        encoding="utf-8",
+    )
+    opus = root / "original-opus"
+    opus.mkdir(parents=True, exist_ok=True)
+    if not (opus / "manifest.mpd").exists():
+        _run(
+            [
+                ffmpeg,
+                "-y",
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-map",
+                "0:a:0",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "128k",
+                "-f",
+                "dash",
+                "-seg_duration",
+                "2",
+                "-dash_segment_type",
+                "webm",
+                str(opus / "manifest.mpd"),
+            ]
+        )
+
+
 def generate_fixtures(root: Path, *, deep: bool = False) -> dict[str, Any]:
     ffmpeg = find_ffmpeg()
     ffprobe = find_ffprobe(ffmpeg)
@@ -234,6 +297,7 @@ def generate_fixtures(root: Path, *, deep: bool = False) -> dict[str, Any]:
         "../hls-short-high/media.m3u8\n",
         encoding="utf-8",
     )
+    _generate_original_audio_fixtures(ffmpeg, short_path, root)
     manifest = {
         "generator": "FFmpeg lavfi testsrc2+sine",
         "ffmpeg": ffmpeg,
@@ -267,6 +331,11 @@ def generate_fixtures(root: Path, *, deep: bool = False) -> dict[str, Any]:
                 "path": str(multi_root),
                 "variant_count": 2,
                 "resolutions": ["640x360", "960x540"],
+            },
+            "original-audio": {
+                "aac_hls": str(root / "original-aac/master.m3u8"),
+                "opus_dash": str(root / "original-opus/manifest.mpd"),
+                "audio_only": True,
             },
             "hls-long": {
                 "path": str(root / "hls-long"),

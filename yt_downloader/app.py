@@ -2401,12 +2401,26 @@ class ExistingOutputRequirements:
     expected_duration_seconds: float | None = None
 
 
+def _report_reuse_rejection(
+    callback: Callable[[str, FailureDiagnostic | None], None] | None,
+    reason: str,
+    error: Exception | None = None,
+) -> None:
+    if callback is None:
+        return
+    try:
+        callback(reason, capture_failure(error, stage="reuse") if error else None)
+    except Exception:  # noqa: BLE001, S110 - diagnostic callbacks cannot control reuse
+        pass
+
+
 def _validate_existing_output_candidate(
     path: Path,
     ffprobe: str,
     requirements: ExistingOutputRequirements,
     *,
     control_check: Callable[[], None] | None,
+    on_rejection: Callable[[str, FailureDiagnostic | None], None] | None = None,
 ) -> dict[str, Any] | None:
     """Return probe data only when one candidate satisfies the reuse contract."""
     try:
@@ -2421,6 +2435,10 @@ def _validate_existing_output_candidate(
                 if isinstance(requirements.plan, ExportPlan)
                 else "mp3"
             ),
+            plan=requirements.plan,
+            embed_metadata=requirements.embed_metadata,
+            embed_cover_art=requirements.embed_cover_art,
+            expected_tags=requirements.expected_tags,
             control_check=control_check,
         )
     except Exception as exc:  # noqa: BLE001 - any invalid candidate must fail closed
@@ -2428,6 +2446,7 @@ def _validate_existing_output_candidate(
         # before classifying the exception as an invalid artifact and scanning on.
         if control_check is not None:
             control_check()
+        _report_reuse_rejection(on_rejection, "validation_failed", exc)
         write_diagnostic(
             f"existing output rejected: path={path} reason={type(exc).__name__}: {exc}"
         )
@@ -2442,6 +2461,12 @@ def _validate_existing_output_candidate(
         expected_tags=requirements.expected_tags,
         sidecar_summary=load_vodforge_output_summary(path.parent),
     ):
+        _report_reuse_rejection(
+            on_rejection,
+            "custom_artwork_unverifiable"
+            if requirements.custom_cover_art
+            else "plan_mismatch",
+        )
         write_diagnostic(
             f"existing output rejected: path={path} reason=export settings do not match"
         )
@@ -2463,6 +2488,7 @@ def find_valid_existing_output(
     expected_duration_seconds: float | None = None,
     control_check: Callable[[], None] | None = None,
     owned_legacy_paths: tuple[Path, ...] = (),
+    on_rejection: Callable[[str, FailureDiagnostic | None], None] | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     """Reuse only a provider-ID-scoped artifact that passes full media validation."""
     requirements = ExistingOutputRequirements(
@@ -2494,7 +2520,11 @@ def find_valid_existing_output(
         if not is_regular_file_beneath(output_dir, path):
             continue
         probe_data = _validate_existing_output_candidate(
-            path, ffprobe, requirements, control_check=control_check
+            path,
+            ffprobe,
+            requirements,
+            control_check=control_check,
+            on_rejection=on_rejection,
         )
         if probe_data is not None:
             return path, probe_data
@@ -2520,6 +2550,7 @@ def find_valid_existing_output(
                 ffprobe,
                 requirements,
                 control_check=control_check,
+                on_rejection=on_rejection,
             )
             if probe_data is None:
                 continue
@@ -12925,11 +12956,31 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
     ) -> _ExistingOutputReuse | None:
         ffprobe = self._find_ffprobe()
         if not ffprobe:
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="reuse",
+                dimensions={
+                    "reuse_result": "unavailable",
+                    "reuse_rejection": "probe_unavailable",
+                },
+            )
             return None
         history = self.__dict__.get("download_history", ())
         legacy_paths = owned_output_paths(
             job, info, history if isinstance(history, (list, tuple)) else ()
         )
+        rejection: tuple[str, FailureDiagnostic | None] = (
+            "no_eligible_candidate",
+            None,
+        )
+
+        def rejected(reason: str, detail: FailureDiagnostic | None) -> None:
+            nonlocal rejection
+            # Keep only the last rejection; candidate count can be large.
+            rejection = (reason, detail)
+
         existing_output = find_valid_existing_output(
             job.output_dir,
             info,
@@ -12954,8 +13005,17 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             expected_duration_seconds=_float_or_none(info.get("duration")),
             control_check=control_check,
             owned_legacy_paths=legacy_paths,
+            on_rejection=rejected,
         )
         if existing_output is None:
+            DownloaderApp._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="reuse",
+                dimensions={"reuse_result": "miss", "reuse_rejection": rejection[0]},
+                failure_detail=rejection[1],
+            )
             return None
 
         existing_path, existing_probe = existing_output

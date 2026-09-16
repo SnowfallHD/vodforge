@@ -96,7 +96,8 @@ def _media_streams(
     media = [
         entry
         for entry in result.get("outputs", [])
-        if Path(entry.get("path", "")).suffix.lower() in {".mp4", ".mp3"}
+        if Path(entry.get("path", "")).suffix.lower()
+        in {".mp4", ".mp3", ".m4a", ".opus"}
     ]
     streams = [
         stream
@@ -402,7 +403,8 @@ def _same_source_variant_checks(
             {
                 entry["path"]: entry["sha256"]
                 for entry in result["outputs"]
-                if Path(entry["path"]).suffix.lower() in {".mp4", ".mp3"}
+                if Path(entry["path"]).suffix.lower()
+                in {".mp4", ".mp3", ".m4a", ".opus"}
             }
         )
     checks = {
@@ -424,6 +426,104 @@ def _same_source_variant_checks(
             for result in results
         ),
     }
+    return checks, results, artifacts
+
+
+def _original_audio_reuse_checks(
+    runner: HeadlessPipelineRunner, server: FixtureHTTPServer
+) -> tuple[dict[str, bool], list[dict[str, Any]], list[str]]:
+    """Real AAC HLS / Opus DASH through fresh, durable history, and reuse."""
+    from yt_downloader.history import (
+        history_output_path,
+        load_history,
+        save_history,
+        upsert_history,
+    )
+
+    root = runner.run_root / "cases" / "original-reuse"
+    output = root / "output"
+    history_path = root / "history.json"
+    history: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    artifacts: list[str] = []
+    checks: dict[str, bool] = {}
+    for codec, route in (
+        ("aac", "/hls/original-aac/master.m3u8"),
+        ("opus", "/hls/original-opus/manifest.mpd"),
+    ):
+        original_path: Path | None = None
+        original_hash: str | None = None
+        before_media: dict[str, str] = {}
+        for phase in ("first", "repeat", "sidecar-repair"):
+            if phase == "sidecar-repair" and original_path is not None:
+                (original_path.parent / "metadata.json").unlink(missing_ok=True)
+            case = f"original-{codec}-{phase}"
+            result = runner.run_job(
+                case_id=case,
+                url=server.url(route),
+                output_type="Original audio",
+                output_dir=output,
+                history_records=history,
+                embed_metadata=False,
+                embed_cover_art=False,
+                write_thumbnail=False,
+            )
+            results.append(result)
+            artifacts.append(
+                str(runner.run_root / "cases" / case / "pipeline-result.json")
+            )
+            records = [
+                event["payload"]
+                for event in result["events"]
+                if event["kind"] == "history_record"
+            ]
+            if len(records) != 1:
+                checks[f"{codec}_{phase}_history"] = False
+                continue
+            record = records[0]
+            history = upsert_history(history, record["info"], record["output_dir"])
+            save_history(history_path, history)
+            history = load_history(history_path)
+            path = history_output_path(history[0])
+            media, streams = _media_streams(result)
+            media_hashes = {entry["path"]: entry["sha256"] for entry in media}
+            if phase == "first":
+                original_path = path
+                original_hash = media_hashes.get(str(path))
+                before_media = media_hashes
+                checks[f"{codec}_fresh_audio_only"] = any(
+                    stream.get("codec_type") == "audio"
+                    and stream.get("codec_name") == codec
+                    for stream in streams
+                )
+            else:
+                reuse_events = [
+                    event
+                    for event in result["events"]
+                    if event["kind"] == "job_log"
+                    and "Already downloaded and valid — reused existing file."
+                    in str((event.get("payload") or {}).get("line") or "")
+                ]
+                checks[f"{codec}_{phase}_reused_once"] = len(reuse_events) == 1
+                checks[f"{codec}_{phase}_no_media_download"] = not result[
+                    "progress_trace"
+                ]
+                checks[f"{codec}_{phase}_same_namespace_and_bytes"] = (
+                    path == original_path
+                    and bool(original_hash)
+                    and media_hashes == before_media
+                    and media_hashes.get(str(path)) == original_hash
+                )
+            checks[f"{codec}_{phase}_media_and_history"] = bool(
+                result["error"] is None
+                and (result.get("outcome") or {}).get("success_count") == 1
+                and path is not None
+                and path.is_file()
+                and all(entry.get("readable") for entry in media)
+                and (path.parent / "metadata.json").is_file()
+                and _worker_cleanup_is_clean(result)
+                and not result["staging_entries_after"]
+            )
     return checks, results, artifacts
 
 
@@ -536,6 +636,12 @@ def reliability_duplicate_artifact_transitions(
     variant_checks, variant_results, variant_artifacts = _same_source_variant_checks(
         runner, server
     )
+    original_checks, original_results, original_artifacts = (
+        _original_audio_reuse_checks(runner, server)
+    )
+    variant_checks.update(original_checks)
+    variant_results.extend(original_results)
+    variant_artifacts.extend(original_artifacts)
     passed = bool(
         all(variant_checks.values())
         and first.get("error") is None
@@ -607,7 +713,7 @@ def reliability_duplicate_artifact_transitions(
             ),
         },
         "evidence": [
-            f"Same-source MP4/MP3 settings, repeat and ledger checks: {variant_checks}",
+            f"Same-source MP4/MP3 settings and real Original fresh/history/reuse checks: {variant_checks}",
             f"The second real worker run reused the same media path and SHA-256: {first_media_path == second_media_path and first_hash == second_hash}",
             f"Deleted metadata and thumbnail sidecars were regenerated without media replacement: {repaired_sidecars}",
             f"The exact reuse receipt was emitted once: {len(reuse_events) == 1}",

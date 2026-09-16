@@ -293,6 +293,11 @@ class FixtureHTTPServer:
                     )
                     return
                 path = fixture_dir.joinpath(*parts[1:])
+                if path.suffix == ".mpd":
+                    self._file_response(
+                        path, route, "application/dash+xml", send_body=send_body
+                    )
+                    return
                 if path.suffix == ".m3u8":
                     if not path.is_file():
                         self._bytes_response(

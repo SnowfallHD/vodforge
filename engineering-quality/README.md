@@ -58,6 +58,47 @@ pre-play changes and file switches. These are representative checks, not a claim
 that every subsystem or possible interleaving is covered.
 
 
+## Original reuse must share the fresh preservation contract (2026-09-16)
+
+The independent persisted-first H audit found two same-intent Original commits,
+with a directory count increasing from one to two. Independent artifact probes
+confirmed two identical, fully decodable M4A files. H is immutable evidence of
+the bug, not a successful Original reuse run. The first driver only asserted
+successful export outcomes, so it missed the duplicate despite recording it.
+
+Reuse omitted the source-preservation plan required by Original validation.
+Its shared AudioExportPlan matcher also assumed MP3 codec, CBR targets, and MP3
+metadata controls. Fresh Original validation followed a separate preservation
+branch and passed. Four AAC/Opus regression cases fail on the prior source:
+see original-reuse-before.log under build/variant-help-20260916.
+
+The invariant is that a valid artifact accepted at commit must remain eligible
+under the same source-preservation intent, while changed codec/container,
+sample rate, channels, unexpected video, truncated duration, or corrupt media
+must still fail closed. Fresh and reused Original audio now share the same
+preservation matcher. Advertised source bitrate is not a CBR encode target;
+Original source metadata is not an MP3 metadata toggle. Reuse receives the
+actual plan. Tests vary AAC and Opus across both owners and isolate diagnostic
+callback failure from candidate validation.
+
+The existing reliability.duplicate_artifact_transitions gate now generates
+audio-only AAC HLS and Opus DASH fixtures, uses actual yt-dlp/FFmpeg/probing,
+persists and reloads real history, then repeats and repairs a missing sidecar.
+It asserts an explicit reuse receipt, no media download progress, unchanged
+physical namespace and hashes, readable outputs, restored metadata, and cleanup.
+The expanded gate passed all 14 actual jobs, including MP4/MP3 variant/retry
+checks and six Original jobs. The producer follow-up must additionally assert
+persisted reused_count and unchanged media files, not just success_count.
+
+Miss observations now report the last bounded candidate rejection category
+with privacy-safe validation provenance where available, or explicitly report
+no eligible candidate / unavailable probe. This is not a reconstruction of
+every rejected file or a guaranteed root cause. Existing coverage missed the
+class because it tested fresh Original preservation and MP3/MP4 reuse separately;
+it had no real audio-only source feeding Original fresh -> history -> reuse.
+No existing duplicate user files are deleted. Source/harness and preview
+evidence do not certify new signed packages or native resize smoothness.
+
 ## Observed output facts must survive later projections (2026-09-16)
 
 The independent MP3 producer/D1 audit found that requested settings and a variant
