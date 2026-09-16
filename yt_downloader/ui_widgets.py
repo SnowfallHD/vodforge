@@ -269,9 +269,17 @@ class ChoiceMenu(tk.Canvas):
         self.see(self.selected)
         return "break"
 
-    def _hover(self, event: tk.Event) -> None:
-        index = self.top + (event.y - 6) // self.row_height
+    def index_at(self, x: int, y: int) -> int | None:
+        if not 0 <= x < self.winfo_width():
+            return None
+        index = self.top + (y - 6) // self.row_height
         if self.top <= index < min(len(self.values), self.top + self.rows):
+            return index
+        return None
+
+    def _hover(self, event: tk.Event) -> None:
+        index = self.index_at(event.x, event.y)
+        if index is not None:
             self.selection_set(index)
 
     def selection_set(self, index: int) -> None:
@@ -479,6 +487,8 @@ class ChoiceDropdown(tk.Frame):
             self._field.configure(width=self._width)
         if "state" in options:
             self._state = str(options.pop("state"))
+            if self._state == "disabled":
+                self._close_popover()
             if isinstance(self._field, tk.Entry):
                 self._field.configure(
                     state="normal" if self._state == "normal" else "disabled"
@@ -539,7 +549,7 @@ class ChoiceDropdown(tk.Frame):
         listbox.see(selected_index)
         listbox.bind(
             "<ButtonRelease-1>",
-            lambda _event: self._commit_listbox(listbox),
+            lambda event: self._commit_listbox(listbox, event),
             add="+",
         )
         listbox.bind("<Return>", lambda _event: self._commit_listbox(listbox), add="+")
@@ -560,7 +570,18 @@ class ChoiceDropdown(tk.Frame):
         popup.watch()
         self._sync_border()
 
-    def _commit_listbox(self, listbox: ChoiceMenu) -> str:
+    def _commit_listbox(
+        self, listbox: ChoiceMenu, event: tk.Event[Any] | None = None
+    ) -> str:
+        # A queued callback must still belong to the enabled, current surface.
+        if self._state == "disabled" or listbox.master is not self._popover:
+            return "break"
+        if event is not None:
+            index = listbox.index_at(event.x, event.y)
+            if index is None:
+                self._close_popover(restore_focus=True)
+                return "break"
+            listbox.selection_set(index)
         selection = listbox.curselection()
         if selection:
             self.variable.set(str(listbox.get(selection[0])))

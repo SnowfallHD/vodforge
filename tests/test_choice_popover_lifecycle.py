@@ -300,8 +300,14 @@ def test_keyboard_menu_close_returns_focus_and_preserves_tab_navigation(
     root.update()
     menu = field._popover.winfo_children()[0]
     assert field.focus_get() is menu
+    selected = []
+    field.bind("<<ComboboxSelected>>", lambda _event: selected.append(field.get()))
+    menu.event_generate("<Down>")
     menu.event_generate(finish)
     root.update()
+    expected = "MP3" if finish == "<Return>" else "MP4"
+    assert field.get() == expected
+    assert selected == ([expected] if finish == "<Return>" else [])
     assert field._popover is None
     assert field.focus_get() is field
     field.event_generate("<Tab>")

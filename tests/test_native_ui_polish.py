@@ -262,7 +262,7 @@ def test_shared_choice_menu_navigation_hover_and_identical_render(root):
     assert menu.find_all() == items
     menu._move(11)
     assert menu.selected == 11 and menu.top == 4
-    menu._hover(SimpleNamespace(y=7))
+    menu.event_generate("<Motion>", x=24, y=7)
     assert menu.selected == 4
     dropdown._commit_listbox(menu)
     assert value.get() == "Choice 4"
@@ -768,9 +768,10 @@ def test_task_presets_use_real_dropdown_and_custom_quality_controls():
                 settle_native(application)
                 assert dropdown._popover is not None, label
                 choices = dropdown._popover.winfo_children()[0]
-                choices.selection_clear(0, "end")
-                choices.selection_set(index)
-                choices.event_generate("<ButtonRelease-1>")
+                choices.see(index)
+                y = 6 + (index - choices.top) * choices.row_height + 17
+                choices.event_generate("<ButtonPress-1>", x=24, y=y)
+                choices.event_generate("<ButtonRelease-1>", x=24, y=y)
                 settle_native(application)
                 assert (
                     application.export_mode_var.get()
@@ -809,9 +810,9 @@ def test_task_presets_use_real_dropdown_and_custom_quality_controls():
             settle_native(application)
             assert dropdown._popover is not None, "Reopened Custom preset menu"
             choices = dropdown._popover.winfo_children()[0]
-            choices.selection_clear(0, "end")
-            choices.selection_set(0)
-            choices.event_generate("<ButtonRelease-1>")
+            choices.see(0)
+            choices.event_generate("<ButtonPress-1>", x=24, y=23)
+            choices.event_generate("<ButtonRelease-1>", x=24, y=23)
             settle_native(application)
             assert application.export_mode_choice_var.get() == EXPORT_MODES[0]
             assert not dialog.manual_frame.winfo_ismapped()

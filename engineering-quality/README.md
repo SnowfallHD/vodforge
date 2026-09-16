@@ -830,3 +830,53 @@ interaction/backend suite passed again. Full source suite: 1653 passed,
 166 environment/opt-in skips in the isolated worktree. Canonical Ruff/format,
 mypy (79 files) and Bandit (zero findings) passed. Complexity findings remain
 191, identical to a0434ee; this is not an all-green maintainability claim.
+
+### Choice admission must be checked when the action commits (2026-09-16)
+
+Independent review of de92d0b found pre-existing cancellation/admission gaps:
+ButtonRelease ignored its own coordinates, and an already-open dropdown could
+still commit after the field became disabled. The review used extracted methods;
+the product Tk boundary then reproduced both, plus a queued retired-menu callback
+that emitted a selection and closed a replacement popover. These are residual
+bugs, not regressions attributed to the preceding press-coordinate fix.
+
+The shared invariant is that an effect needs current intent, permission and owner
+at its commit boundary. ChoiceMenu now shares coordinate hit testing between
+hover/press and release; a release outside a visible row cancels. Disabling a
+ChoiceDropdown immediately retires its popover, and commit rejects a disabled
+field or a callback from a retired menu. Valid keyboard Return still commits;
+Escape, outside release and permission withdrawal emit no selection. Re-enabling
+the field creates a fresh usable menu. No new runtime owner is introduced.
+
+The native matrix adds 15 fail-before cases across inline and form fields:
+horizontal exit, both vertical padding regions, release at a new row without an
+intermediate Motion event, queued mouse/Return after disabling, re-enable and
+selection, and a late callback after owner replacement. It checks the independent
+StringVar outcome and actual ComboboxSelected delivery, not just popup visibility.
+The existing Return/Escape focus-and-Tab test now also changes the selected row
+and checks value/event preservation. Settings preset selection now sends actual
+press/release coordinates; its previous zero-coordinate release depended on the
+same bypass. The shared hover test likewise dispatches a real Motion event. Prior positive click coverage missed release
+cancellation and dynamic permission changes; prior lifetime coverage checked
+popup destruction without asserting absence of committed selection.
+
+Representative cross-owner checks are the existing settings durable-commit and
+telemetry retry/permission-withdrawal matrix in
+tests/test_cross_owner_lifecycle.py and player replacement/closed-callback matrix
+in tests/test_playback_control_lifecycle.py (paths relative to this directory).
+These retain independent durable files, delivery attempts and provider outcomes.
+They did not exercise the native menu's event admission boundary. The new native
+cases extend that broader class rather than substituting one local regression.
+The de92 before-fix log preserves all 15 failures. Native generated events do not
+prove physical drag delivery on Windows or macOS, painted-frame performance,
+every possible callback interleaving, or a rebuilt signed artifact. Those tiers
+remain separately identified in the release evidence.
+
+Validation checkpoint: 136 native cases pass together, and the existing 72
+cross-owner lifecycle cases pass. Full source suite: 1653 passed, 181 opt-in or
+environment skips; Ruff/format, mypy (79 files), and Bandit (zero findings) pass.
+Complexity remains 191 findings. A prior native batch exposed retired test Tk
+graphs being finalized from a preview worker; the fixture now collects retired
+graphs on the Tk thread before creating the next root and explicitly acquires
+focus for its owned window. The crashed and intermediate failing runs are retained.
+This fixture hygiene does not relax application lifecycle assertions.

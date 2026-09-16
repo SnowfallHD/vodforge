@@ -1,5 +1,6 @@
 """Real Tk outcomes for click intent and asynchronously available media facts."""
 
+import gc
 import io
 import os
 import threading
@@ -23,9 +24,13 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def root():
+    # Collect retired Tk graphs on the owning thread before a preview worker runs.
+    gc.collect()
     root = tk.Tk()
     root.geometry("1180x900")
     apply_product_styles(root)
+    root.update()
+    root.focus_force()
     root.update()
     yield root
     root.destroy()
@@ -87,6 +92,93 @@ def test_click_commits_pointed_row_without_prior_hover(
     assert value.get() == values[index]
     assert field._popover is None
     assert field.focus_get() is field
+
+
+def open_choice(root, inline):
+    value = tk.StringVar(root, "MP4")
+    field = ChoiceDropdown(
+        root,
+        textvariable=value,
+        values=("MP4", "MP3", "Original audio"),
+        inline=inline,
+    )
+    field.pack()
+    selected = []
+    field.bind("<<ComboboxSelected>>", lambda _event: selected.append(value.get()))
+    root.update()
+    field.open_popover()
+    root.update()
+    return field, field._popover.winfo_children()[0], value, selected
+
+
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("edge", ["left", "right", "top_padding", "bottom_padding"])
+def test_drag_release_outside_rows_cancels_without_selection(root, inline, edge):
+    field, menu, value, selected = open_choice(root, inline)
+    row_y = 6 + menu.row_height + 17
+    menu.event_generate("<ButtonPress-1>", x=24, y=row_y)
+    x, y = {
+        "left": (-2, row_y),
+        "right": (menu.winfo_width() + 2, row_y),
+        "top_padding": (24, 2),
+        "bottom_padding": (24, menu.winfo_height() - 2),
+    }[edge]
+    menu.event_generate("<ButtonRelease-1>", x=x, y=y)
+    root.update()
+    assert value.get() == "MP4"
+    assert selected == []
+    assert field._popover is None
+
+
+@pytest.mark.parametrize("inline", [False, True])
+def test_release_commits_final_pointed_row_without_intermediate_motion(root, inline):
+    field, menu, value, selected = open_choice(root, inline)
+    menu.event_generate("<ButtonPress-1>", x=24, y=23)
+    menu.event_generate("<ButtonRelease-1>", x=24, y=6 + menu.row_height + 17)
+    root.update()
+    assert value.get() == "MP3"
+    assert selected == ["MP3"]
+    assert field._popover is None
+
+
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("finish", ["<ButtonRelease-1>", "<Return>"])
+def test_disabling_open_choice_cancels_pending_input_then_reenable_works(
+    root, inline, finish
+):
+    field, menu, value, selected = open_choice(root, inline)
+    menu.event_generate("<ButtonPress-1>", x=24, y=6 + menu.row_height + 17)
+    menu.event_generate(finish, x=24, y=6 + menu.row_height + 17, when="tail")
+    field.configure(state="disabled")
+    root.update()
+    assert value.get() == "MP4"
+    assert selected == []
+    assert field._popover is None
+    field.state(["!disabled"])
+    field.open_popover()
+    root.update()
+    current = field._popover.winfo_children()[0]
+    current.event_generate("<ButtonPress-1>", x=24, y=6 + menu.row_height + 17)
+    current.event_generate("<ButtonRelease-1>", x=24, y=6 + menu.row_height + 17)
+    root.update()
+    assert value.get() == "MP3"
+    assert selected == ["MP3"]
+
+
+def test_retired_menu_callback_cannot_change_or_close_replacement(root):
+    field, retired, value, selected = open_choice(root, False)
+    errors = []
+    root.report_callback_exception = lambda *error: errors.append(error)
+    root.after_idle(lambda: field._commit_listbox(retired))
+    field._close_popover()
+    field.open_popover()
+    current = field._popover
+    root.update()
+    assert errors == []
+    assert value.get() == "MP4"
+    assert selected == []
+    assert field._popover is current
+    assert current.winfo_exists()
 
 
 class Backend:
