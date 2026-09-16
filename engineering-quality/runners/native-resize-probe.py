@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import tkinter as tk
 import traceback
 from ctypes import wintypes as W
 from pathlib import Path
@@ -241,7 +242,9 @@ with (
     def callback_failed(*items):
         callback_errors.append("".join(traceback.format_exception(*items)))
         (run / "callback-error.txt").write_text("\n".join(callback_errors))
-        app.destroy()
+        # Never recursively destroy Tcl widgets from its exception callback.
+        # Exit the loop; the outer owner performs cleanup and records the error.
+        app.quit()
 
     app.report_callback_exception = callback_failed
     app.update()
@@ -344,7 +347,8 @@ with (
                 for f in (source / "yt_downloader").glob("*.py")
             },
         }
-        (run / "receipt.json").write_text(json.dumps(summary, indent=2))
+        summary["application_closed"] = False
+        (run / "measurement.json").write_text(json.dumps(summary, indent=2))
         (run / "trace.json").write_text(
             json.dumps(
                 {
@@ -357,7 +361,7 @@ with (
             )
         )
         shot("final.png")
-        app.destroy()
+        app._request_application_close()
 
     def ready():
         shot("ready.png")
@@ -381,4 +385,24 @@ with (
 
     app.after(1200, ready)
     app.mainloop()
-sys.exit(1 if failure or callback_errors else 0)
+    try:
+        if app.winfo_exists():
+            # Error/early-loop exit only; normal completion closes through the
+            # application's own worker/settings/telemetry shutdown authority.
+            app.destroy()
+    except tk.TclError:
+        pass
+    try:
+        closed = not bool(app.winfo_exists())
+    except tk.TclError:
+        closed = True
+    measurement = run / "measurement.json"
+    if measurement.exists():
+        summary = json.loads(measurement.read_text())
+        summary["callback_errors"] = list(callback_errors)
+        summary["errors"] = list(failure)
+        summary["application_closed"] = closed
+        (run / "receipt.json").write_text(json.dumps(summary, indent=2))
+    else:
+        failure.append("native measurement did not complete")
+sys.exit(1 if failure or callback_errors or not closed else 0)

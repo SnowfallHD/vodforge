@@ -4673,6 +4673,8 @@ def test_geometry_uses_rendered_data_but_data_refresh_advances_run_state(record_
     probe = Probe()
     probe._refresh_focus_run_deck()
     initial_projections = probe.projections
+    assert len(probe._focus_run_deck_projection[0]) <= 4
+    assert probe._focus_run_deck_signature.overflow_text == f"All {record_count} runs"
     for width in (670, 450, 900):
         probe.focus_run_deck.width = width
         DownloaderApp._schedule_focus_run_deck_geometry_refresh(
@@ -4702,3 +4704,28 @@ def test_geometry_uses_rendered_data_but_data_refresh_advances_run_state(record_
     probe._refresh_focus_run_deck()
     assert probe._focus_run_deck_signature.tiles[0].structure[1] == "1"
     assert probe.rendered[-4][0] == "Run 1"
+
+
+@pytest.mark.parametrize("closing", [False, True])
+def test_thumbnail_geometry_ignores_closed_owner_or_removed_sibling(closing):
+    class Surface:
+        def winfo_exists(self):
+            return False
+
+        def winfo_width(self):
+            raise AssertionError("closed thumbnail owner must not be measured")
+
+        def cget(self, _key):
+            raise app_module.tk.TclError("invalid command name removed-thumbnail")
+
+    probe = SimpleNamespace(
+        _focus_active_thumbnail_source_image=object(),
+        _focus_thumbnail_source_image=object(),
+        _focus_brand_source_image=None,
+        _closing=closing,
+        focus_thumbnail_wrap=Surface(),
+        focus_active_thumbnail_label=Surface(),
+        thumbnail_label=Surface(),
+    )
+    # Configure events may be delivered while Tk recursively destroys siblings.
+    DownloaderApp._render_focus_thumbnail_surfaces(probe, library_width=200)

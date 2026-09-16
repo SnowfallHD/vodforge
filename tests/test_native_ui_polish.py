@@ -1148,3 +1148,41 @@ def test_forge_geometry_reuses_projection_and_reentry_observes_history_changes(
             )
         finally:
             application.destroy()
+
+
+def test_thumbnail_configure_after_sibling_removal_and_native_close():
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+
+    errors = []
+    with isolated_preview_services():
+        application = DownloaderApp()
+        application.report_callback_exception = lambda *items: errors.append(items)
+        try:
+            application.geometry("1180x780")
+            settle_native(application)
+            # Reproduce the actual destroyed sibling condition seen during
+            # recursive Tk shutdown, while its Configure-bound peer is alive.
+            application.focus_active_thumbnail_label.destroy()
+            application.focus_thumbnail_wrap.event_generate(
+                "<Configure>", width=210, height=118
+            )
+            application._request_application_close()
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    if not application.winfo_exists():
+                        break
+                    application.update()
+                except tk.TclError:
+                    break
+                time.sleep(0.01)
+            else:
+                pytest.fail("native close did not finish")
+            assert errors == []
+        finally:
+            try:
+                if application.winfo_exists():
+                    application.destroy()
+            except tk.TclError:
+                pass

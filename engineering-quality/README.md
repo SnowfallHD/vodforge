@@ -65,8 +65,8 @@ gap after the earlier selected-view fix (baseline760ms). Forge rebuilt persisted
 run history both for its header and for capacity changes. The renderer's existing
 snapshot no-op check came after that expensive work. Geometry now reuses its last
 data projection and summary; ordinary data/progress refreshes replace it, and
-forced view entry reacquires current history. No list-identity invalidation,
-additional polling timer, or new data owner is introduced.
+forced view entry reacquires current history. Only four display candidates plus full-history summary/count are retained.
+No list-identity invalidation, additional polling timer, or new data owner is introduced.
 
 The broader invariant is that presentation-only changes must not replay data work,
 while actual state transitions must remain authoritative. The25/5000record
@@ -75,17 +75,43 @@ capacity changes made four projections. It now makes one. The same production
 renderer checks queue promotion, active57percent progress, completion, and removal,
 including mutation of the same list/record. Existing Library phase reconciliation,
 padding burst/latest intent and RunDeck active progress tests provide the bounded
-cross-owner comparisons; all130state-authority tests pass. Earlier renderer tests
+cross-owner comparisons; all132state-authority tests pass. Earlier renderer tests
 asserted widget rebuild counts, so they missed work before the no-op decision.
 
 The required native surface suite now varies empty/25/5000history, real root/deck
 geometry, hidden-history mutation, re-entry, and removal-to-empty; it asserts
-visible tile text, mapped geometry and capacity. Native execution and fresh
-unprofiled Windows timing are pending at this checkpoint. Programmatic Tk geometry,
+visible tile text, mapped geometry and capacity. Windows source-native execution passed all seven focused cases. Unprofiled
+measurement on sourcef7 recorded5000row max100ms versus7c948ms;25rows108ms,
+empty43ms. All four runs subsequently hit the existing thumbnail destruction
+callback fault, so these are pre-shutdown measurements, not clean completion.
+Full raw geometry/gap/CPU traces remain in build/variant-help-20260916/native-forge-f7af1a8.
+CPU remained high (large9.875s before versus10.56s after per12s drag). Programmatic Tk geometry,
 headless owner tests, source native drags and exact-package acceptance remain
 separate evidence; no CPU-efficiency or Chrome-equivalence claim follows from
 projection counts. Active job event frequency and very large-history projection
 on actual model changes remain outside this geometry-only optimization.
+
+
+### Thumbnail teardown and measurement lifetime
+
+The native resize runs exposed a Configure callback accessing an already-destroyed
+sibling thumbnail label. Python widget existence did not imply a live Tcl command.
+The production thumbnail owner now rejects a closing application or missing Tcl
+surfaces before image work. The prior source owner fails both closing and removed
+sibling variations with TclError; current source passes. The required native test
+removes the sibling, generates the bound Configure event, and exercises the normal
+application close protocol, checking no callback errors and actual window exit.
+
+The broader closed-owner invariant already appears in choice popover anchor
+destruction and delayed player/telemetry callbacks. Those tests did not cover
+Configure delivery during recursive sibling destruction. New coverage extends
+that concrete lifecycle boundary without changing the renderer or shutdown owner.
+Separately, the probe's error callback recursively called destroy and amplified
+the product error into an access violation. It now exits the loop without recursive
+destruction; normal completion uses the application's existing close authority,
+and the final receipt is written after shutdown with all late callback errors.
+An intermediate measurement file is explicitly not a clean-completion receipt.
+Fresh native execution of the new guard/probe is pending; no old receipt is relabeled.
 
 ## Native control lifecycle gate
 

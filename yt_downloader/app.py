@@ -8543,7 +8543,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         # Never key this on list identity: queue/history rows mutate in place.
         cached = self.__dict__.get("_focus_run_deck_projection")
         if geometry_only and cached is not None:
-            records, summary_text = cached
+            records, summary_text, record_count = cached
         else:
             records = self._focus_run_records()
             counts: dict[str, int] = {}
@@ -8555,7 +8555,11 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 if count := counts.get(kind, 0):
                     parts.append(f"{count} {kind}")
             summary_text = "No runs yet" if not records else "  •  ".join(parts)
-            self._focus_run_deck_projection = (records, summary_text)
+            record_count = len(records)
+            # Capacity tops out at four; retain only visible candidates, never a
+            # second full history. The summary/count cover the full projection.
+            records = records[:4]
+            self._focus_run_deck_projection = (records, summary_text, record_count)
         deck_width = self.focus_run_deck.winfo_width()
         if deck_width <= 1:
             deck_width = max(1, self.winfo_width() - 52)
@@ -8584,8 +8588,8 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 for record in visible
             ),
             summary_text=summary_text,
-            overflow_text=f"All {len(records)} runs",
-            overflow_visible=bool(records),
+            overflow_text=f"All {record_count} runs",
+            overflow_visible=bool(record_count),
         )
 
         def update_summary(next_snapshot: RunDeckSnapshot) -> None:
@@ -11462,6 +11466,22 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             return
         if target not in {"active", "library", "both"}:
             raise ValueError(f"Unsupported thumbnail target: {target}")
+        if self.__dict__.get("_closing", False):
+            return
+        # Tk can deliver Configure while siblings are being recursively removed.
+        # An existing Python widget object does not imply a live Tcl command.
+        try:
+            if not all(
+                widget.winfo_exists()
+                for widget in (
+                    self.focus_thumbnail_wrap,
+                    self.focus_active_thumbnail_label,
+                    self.thumbnail_label,
+                )
+            ):
+                return
+        except tk.TclError:
+            return
         if source is not None:
             normalized = source.convert("RGBA").copy()
             if target in {"active", "both"}:
