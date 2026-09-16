@@ -2411,7 +2411,7 @@ def _report_reuse_rejection(
         return
     try:
         callback(reason, capture_failure(error, stage="reuse") if error else None)
-    except Exception:  # noqa: BLE001, S110 - diagnostic callbacks cannot control reuse
+    except Exception:  # noqa: BLE001, S110  # nosec B110 - diagnostic callbacks cannot control reuse
         pass
 
 
@@ -9648,7 +9648,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     failure_detail=diagnostic,
                     dimensions=dimensions,
                 )
-            except Exception:  # noqa: BLE001, S110 - optional observation must not stop the UI pump
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - optional observation must not stop the UI pump
                 pass
             if action == "committed":
                 return
@@ -14337,7 +14337,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
             facts.update(
                 observed_audio_characteristics(probe, artifact_count=artifact_count)
             )
-        except Exception:  # noqa: BLE001, S110 - malformed probe observations cannot break media
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - malformed probe observations cannot break media
             pass
         if artifact_count != 1:
             facts.update(
@@ -14394,7 +14394,7 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                     dimensions=facts,
                     failure_detail=failure_detail,
                 )
-            except Exception:  # noqa: BLE001, S110 - telemetry cannot own export success
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - telemetry cannot own export success
                 pass
 
     def _observe_download_sidecar_failure(

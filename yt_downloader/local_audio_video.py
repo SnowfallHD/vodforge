@@ -1065,7 +1065,7 @@ class LocalAudioVideoConversionOwner:
         if on_commit is not None:
             try:
                 on_commit(LocalAudioVideoCommit(output_path, output_probe))
-            except Exception:  # noqa: BLE001, S110 - an observer cannot invalidate committed media
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - an observer cannot invalidate committed media
                 pass
         self._failure_stage = "history"
         metadata = build_local_audio_video_history_metadata(

@@ -736,3 +736,19 @@ Backend tests persist/replay all 24 kind/outcome combinations and reject private
 paths, filenames, hashes and arbitrary outcomes. CRM explains historical gaps
 without backfill. Source checks and fixture assertions are not packaged proof;
 fresh preview evidence is required for prospective repair/failure diagnosis.
+
+### Keep intentional diagnostic isolation explicit in every static gate
+
+The frozen aab31d5 FAST receipt exposed seven Bandit B110 findings in the
+previously reviewed reuse, download, local conversion and namespace-observation
+boundaries. Ruff BLE001/S110 comments did not annotate Bandit's independent rule.
+Each boundary was reviewed: it catches optional diagnostic work only, preserves
+unknown facts where collection fails, and leaves actual validation, write and
+commit failures outside the catch. Existing observation-noninterference and
+rejected-candidate transport tests cover the behavior; their earlier passes could
+not establish that a different static tool accepted the documented exception.
+
+The fix adds only narrow B110 annotations with the existing boundary reason.
+Before/after Python ASTs are identical for all three files. No global severity
+filter, disabled gate or runtime rewrite is used. Preserve the failed FAST receipt
+and rerun the mandatory gate; complexity debt remains separately visible.

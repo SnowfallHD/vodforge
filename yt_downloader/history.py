@@ -759,10 +759,10 @@ def observed_output_namespace(
     facts = {"namespace_scan_state": "unknown", "peer_namespace_state": "unknown"}
     try:
         facts.update(_observed_namespace_files(output_path))
-    except Exception:  # noqa: BLE001, S110 - optional observation must not control committed media
+    except Exception:  # noqa: BLE001, S110  # nosec B110 - optional observation must not control committed media
         pass
     try:
         facts.update(_observed_namespace_peers(output_path, info, history))
-    except Exception:  # noqa: BLE001, S110 - legacy/mutating history cannot break an export
+    except Exception:  # noqa: BLE001, S110  # nosec B110 - legacy/mutating history cannot break an export
         pass
     return facts
