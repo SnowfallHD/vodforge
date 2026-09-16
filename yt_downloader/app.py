@@ -11606,6 +11606,45 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
         library_size = library_thumbnail_size(width)
         if int(self.focus_thumbnail_wrap.cget("height")) != library_size[1]:
             self.focus_thumbnail_wrap.configure(height=library_size[1])
+        # Configure also reports position-only changes. Reuse the last committed
+        # images only while their semantic inputs and live Tcl resources agree.
+        # Keep source references, rather than bare ids, to prevent id reuse.
+        render_inputs = (
+            active_image,
+            library_image,
+            active_size,
+            library_size,
+            self._focus_active_thumbnail_is_placeholder,
+            self._focus_thumbnail_is_placeholder,
+            self._focus_active_thumbnail_source_path,
+            self._focus_thumbnail_source_path,
+            THEME["surface"],
+            THEME["bg"],
+        )
+        previous = self.__dict__.get("_focus_thumbnail_render_state")
+        if (
+            previous is not None
+            and previous[0][0] is active_image
+            and previous[0][1] is library_image
+            and previous[0][2:] == render_inputs[2:]
+        ):
+            active_previous, library_previous = previous[1]
+            try:
+                if (
+                    self.__dict__.get("focus_active_thumbnail_image") is active_previous
+                    and self.__dict__.get("thumbnail_image") is library_previous
+                    and str(self.focus_active_thumbnail_label.cget("image"))
+                    == str(active_previous)
+                    and str(self.thumbnail_label.cget("image")) == str(library_previous)
+                    and self.focus_active_thumbnail_label.cget("text") == ""
+                    and self.thumbnail_label.cget("text") == ""
+                ):
+                    for image in previous[1]:
+                        self.tk.call("image", "type", str(image))
+                    return
+            except tk.TclError:
+                # A resource can retire without its Python/string handle changing.
+                pass
         active_rendered = self._render_focus_thumbnail_image(
             active_image,
             active_size,
@@ -11624,6 +11663,10 @@ class DownloaderApp(UiEventHandlersMixin, tk.Tk):
                 library_rendered,
                 native=isinstance(active_rendered, str)
                 or isinstance(library_rendered, str),
+            )
+            self._focus_thumbnail_render_state = (
+                render_inputs,
+                (active_rendered, library_rendered),
             )
 
     def _render_focus_thumbnail_image(

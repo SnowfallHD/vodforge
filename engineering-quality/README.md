@@ -202,6 +202,51 @@ and the final receipt is written after shutdown with all late callback errors.
 An intermediate measurement file is explicitly not a clean-completion receipt.
 Fresh native execution of the new guard/probe is pending; no old receipt is relabeled.
 
+### Thumbnail render admission during resize
+
+Background-only programmatic profiling on f041 isolated repeated thumbnail image
+work during Library resize. The mapped thumbnail wrapper emitted Configure for
+position changes while its render inputs stayed identical. The existing owner
+rebuilt both the Library and active-job images anyway. Two reversed-order
+experiments skipped 206 identical render requests per run: Library request
+lateness p95 fell from 259/262 ms to 9.30/8.85 ms and heartbeat p95 from about
+52 ms to 25 ms. All 360 requested geometries were observed without mismatch.
+These are controlled source experiments, not OS-drag or presented-paint proof.
+Total CPU stayed near one core; the common Tk layout/native drawing cost and
+Windows drag qualification remain open. Root Configure filtering and rounded
+button image reuse did not resolve that CPU cost and were not landed.
+
+The production thumbnail owner now retains only its last committed input/output
+snapshot. It checks source object identity, target dimensions, placeholder mode,
+source paths, palette, actual label bindings, and live Tcl image resources before
+reusing pixels. Source references prevent object-id reuse; failed renders never
+advance the snapshot. New source content at the same path, palette/size changes,
+cleared labels, and retired native handles still require new images. It neither
+defers real changes nor freezes the display during resize.
+
+The broader invariant is that presentation events must not replay expensive work
+when the semantic state and committed effect still agree. The existing Run Deck
+projection/capacity checks in test_state_authority and the SegmentedSelector
+snapshot behavior are representative comparisons. They missed the thumbnail
+owner's unconditional rasterization before any no-op decision. The new required
+test_native_thumbnail_rendering module extends that boundary with real Tk image
+identity and pixel checks, mapped Configure delivery, independent active/Library
+source replacement, same-path replacement, geometry/palette changes, failed then
+successful rendering, cleared labels, retired resources, and normal application
+shutdown. Its generalized same-intent matrix also exercises SegmentedSelector.
+Eight of thirteen cases fail on the prior thumbnail owner. The focused checks
+also verify externally changed label text before admitting render reuse. The native gate explicitly enrolls the module, so headless skips cannot hide
+it. Existing teardown and Run Deck state-authority checks remain in the gate.
+
+The string-image lifecycle case uses real Tcl photo resources through the
+production native-image ownership/deletion path; it does not qualify the AppKit
+decoder. Source images are refreshed through the existing source owner, not a new
+filesystem watcher. Very large image decoding, all timing interleavings, exact
+signed packages, foreground native drag, and Chrome parity remain outside this
+bounded proof. Early profiling observer overhead, a test fixture that initially
+did not pump asynchronous shutdown, and a hidden-wrapper fixture were preserved
+as invalid evidence and corrected before the fail-before run.
+
 ## Native control lifecycle gate
 
 `unit_static.native_surface_contract` runs the opt-in source-native control suite
