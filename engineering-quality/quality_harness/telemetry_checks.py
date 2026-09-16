@@ -571,7 +571,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 ) == [("source_unavailable", 404), ("unknown", 500)]
                 assert all(
                     json.loads(e["failure_detail"])["error_type"] == "HTTPError"
-                    and json.loads(e["failure_detail"])["stage"] == "preparation"
+                    and json.loads(e["failure_detail"])["stage"] == "analysis"
                     for e in stored
                 )
                 encoded = json.dumps(stored)

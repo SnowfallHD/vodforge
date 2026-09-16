@@ -103,9 +103,8 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
     os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1", reason="native Tk"
 )
 def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path):
-    from test_metadata_helpers import _worker_test_app, _worker_test_job
-
     import yt_downloader.app as app_module
+    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
     monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
