@@ -43,6 +43,9 @@ ERROR_TYPES = frozenset(
         "HTTPError",
         "URLError",
         "RuntimeError",
+        "HistoryError",
+        "JSONDecodeError",
+        "UnicodeDecodeError",
         "UnsafeOutputPathError",
         "ValueError",
         "TypeError",
@@ -62,6 +65,8 @@ ERROR_TYPES = frozenset(
 FIRST_PARTY_MODULES = frozenset(
     {
         "app",
+        "archive_library_ui",
+        "archive_relink",
         "engagement_ui",
         "history",
         "libvlc_backend",
@@ -107,6 +112,11 @@ def _first_party_location(error: BaseException) -> dict[str, str | int]:
 
 FAILURE_CODES = frozenset(
     {
+        "history_malformed_json",
+        "history_unsupported_schema",
+        "history_invalid_structure",
+        "history_limit_exceeded",
+        "history_invalid_encoding",
         "no_video_stream",
         "no_audio_stream",
         "format_unavailable",
@@ -286,7 +296,7 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
 
 
 def capture_failure(
-    error: BaseException, *, stage: str = "unknown"
+    error: BaseException, *, stage: str = "unknown", inspect_text: bool = True
 ) -> FailureDiagnostic:
     """Extract scalar machine facts; never serialize args, commands or messages."""
     facts: dict = {
@@ -302,7 +312,7 @@ def capture_failure(
             continue
         seen.add(id(current))
         facts.update(_first_party_location(current))
-        code = failure_code(current)
+        code = failure_code(current) if inspect_text else None
         if code is not None:
             facts["failure_code"] = code
         if isinstance(current, SourceSelectionError):
@@ -327,7 +337,11 @@ def capture_failure(
             facts["reason"] = "permission_denied"
         elif isinstance(current, FileNotFoundError):
             facts["reason"] = "filesystem"
-        if text_reason == "unknown" and not isinstance(current, UnsafeOutputPathError):
+        if (
+            inspect_text
+            and text_reason == "unknown"
+            and not isinstance(current, UnsafeOutputPathError)
+        ):
             text_reason = classify_failure(str(current))
         for attribute in ("status", "code"):
             value = getattr(current, attribute, None)
@@ -389,6 +403,8 @@ def capture_failure(
         or http_reason
         or (facts["reason"] if facts["reason"] != "unknown" else text_reason)
     )
+    if not inspect_text and facts.get("os_error") == errno.ENOSPC:
+        facts["failure_code"] = "disk_full"
     return FailureDiagnostic(**facts)
 
 

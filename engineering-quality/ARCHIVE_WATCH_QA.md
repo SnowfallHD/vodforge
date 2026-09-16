@@ -9,7 +9,7 @@ moved, hashed or deleted.
 | --- | --- | --- |
 | Archive roots, ancestry, exact saved location, lexical Windows/UNC/POSIX | test_archive_models, test_archive_relink, test_archive_ui_owners; real Tk test_archive_native | archive navigation; archive_location_operation requested/actual outcome/cancel/timeout |
 | Relink preview, collisions, stale review, write failure, cancellation before/after save | test_archive_relink; real files, independent disk reload and bounded lane schedules in test_archive_lifecycle | archive_relink_operation requested/verified/commit_requested/cancel_requested/committed/failure/stale/cancel/timeout; aggregate counts |
-| Concurrent history writers and bounded close | test_history_pending, test_archive_lifecycle; forced-close restart recovery, save/retirement/read errors, limits, coalescing and replay ordering | archive history_deferred/history_recovered; existing consent/outbox authority |
+| Concurrent history writers and bounded close | test_history_pending, test_archive_lifecycle; forced-close restart recovery, save/retirement/read errors, limits, coalescing and replay ordering | archive_history_operation started/deferred/recovered/completed/failed; observed boundary/document/phase and bounded failure detail through existing consent/outbox authority |
 | Watch playlist rails, channel drilldown, unlisted saved videos, singleton layout and variants | test_archive_models, measured native geometry/keyboard/count contracts | watch opened/mode/channel/search/rail/details/singleton |
 | Canonical selection, variants, annotations and source metadata | test_library_state, test_library_projection, test_library_annotations, migrated state-authority contracts | archive version/inspection actions; no note/tag/title payloads |
 | Artwork background work and owner retirement | test_archive_artwork, test_archive_work; bounded worker and late-result rejection | artwork_loaded/unavailable with counts and time bucket |
@@ -20,6 +20,59 @@ moved, hashed or deleted.
 Evidence directory: /Users/coop/Dev/vodforge/build/archive-management-20260916.
 ARCHIVE_BASELINE_PARITY.json maps all 49 baseline capabilities with explicit
 per-capability gaps. It is a map, not 49 accepted native results.
+
+## History diagnostic follow-on: 2026-09-16
+
+Root's actual malformed-file probe exposed a producer coverage gap: session-deduplicated
+archive usage erased repeated failures and conflated malformed main JSON, unsupported
+main schema, and malformed pending JSON. Vocabulary acceptance tests alone could not
+detect it.
+
+The invariant is that an observed failure retains its actual boundary, document,
+phase, typed cause, shipped source frame and build-artifact revision through the
+existing operation owner, public serializer, consent gates and durable backend row.
+Unknown cause/location/revision stays unknown; a first-party frame is an observation,
+not proof of root cause. Operation IDs correlate steps within one boundary invocation;
+no cross-process or defer-to-restart correlation is claimed.
+
+HistoryError now carries closed observed facts; history remains the only file/journal
+owner. Explicit JSON/schema/encoding/limit checks classify validation. Typed errno
+classifies denied/full/filesystem errors without inspecting local messages. Startup,
+settlement and defer use ProductTelemetryOwner.record_operation; relink save errors
+forward the same FailureDiagnostic. Main stat permission failures fail closed and
+mkdir failures are wrapped at the existing save boundary. No new durable store,
+transport, telemetry owner or media access was added.
+
+Maintained coverage:
+- test_history_diagnostics: 38 actual app/archive producer → persisted outbox cases;
+  repeated failures, main/pending invalid content, typed IO faults at read/write/retire,
+  startup/settlement/defer, restart after retained journal, consent unknown/withdrawn,
+  production gate off, real synthetic build artifact, and message-based false-cause
+  negative. IO fault injection is controlled; physical disk-full/unplug is not claimed.
+- Expanded history pending class cases and mutation campaign detect discarded parse
+  cause and pending/main misattribution, in addition to five prior invariants.
+- Existing telemetry_local_contract now runs the three actual-file app failures
+  through real enrolled Python HTTP → Worker → local D1 and compares stored failure
+  detail and operation fields. Existing HTTP 404/500, retries, consent withdrawal,
+  six installation ownership paths and vocabulary checks remain in the same gate.
+- Backend tests retain exact desktop outbox specimens (only the existing enrolled
+  transport's legacy install-ID omission is applied), with a specimen admission clock
+  and isolated released-version fixture, independent D1 SELECT and privacy negatives.
+
+Executed evidence in build/archive-management-20260916/history-diagnostics:
+- fail-before.log: six meaningful assertions fail on the baseline producer.
+- producer-final.log: 37 passed; class-final.log: 542 passed, 23 native cases skipped;
+  the final38 producer cases include an unlocated typed-OS-error negative.
+- mutation-v1.log: unmodified45 pass, 7/7 bounded mutants detected with actual assertion
+  failures; no setup/import/skip accepted as a mutation kill.
+- backend-full.log: 158 passed; backend-v3.log: targeted49 passed.
+- local-contract/results.json: one maintained local contract passed, zero errors/skips;
+  local-d1-receipt.json and stored-history-projection.json preserve actual rows.
+- Scoped Ruff/format and mypy for four affected diagnostic/history modules passed.
+  The preceding 178 native results remain bound to6866517; this follow-on used no GUI.
+- Fixture errors remain recorded in fixture-errors.md and raw intermediate logs.
+  No deployed, preview-D1, packaged, Windows or physical-storage claim is made.
+  The inherited source/personal copy-label issue is a separate following increment.
 
 ## Final current checkpoint: 2026-09-16 18:48 UTC
 

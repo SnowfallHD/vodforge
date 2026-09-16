@@ -13,6 +13,16 @@ from .util import run_command
 
 MUTANTS = (
     (
+        "history_parse_cause_discarded",
+        'cause="malformed_json"',
+        'cause="unknown"',
+    ),
+    (
+        "pending_history_document_misattributed",
+        '_read_history_document(pending_history_path(path), document="pending")',
+        '_read_history_document(pending_history_path(path), document="main")',
+    ),
+    (
         "history_url_query_redaction_removed",
         'return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path or "/", "", ""))',
         'return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path or "/", parsed.query, parsed.fragment))',
@@ -181,7 +191,7 @@ def run_bounded_mutation_campaign(
                 f"{item['id']}: {'killed' if item['killed'] else 'survived/invalid'} (rc={item['returncode']})"
                 for item in mutant_results
             ],
-            "This score covers five bounded history/privacy/restart-recovery regressions and is not a repository-wide mutation score.",
+            "This score covers seven bounded history/privacy/restart-recovery/diagnostic regressions and is not a repository-wide mutation score.",
         ],
         "artifacts": [str(case_dir)],
         "error": None,

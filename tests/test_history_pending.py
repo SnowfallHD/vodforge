@@ -264,3 +264,25 @@ def test_invalid_staged_delta_preserves_previously_accepted_history(tmp_path, mu
     with pytest.raises(history.HistoryError):
         history.stage_history_mutation(ledger, mutation)
     assert journal.read_bytes() == accepted
+
+
+@pytest.mark.parametrize("document", ["main", "pending"])
+@pytest.mark.parametrize(
+    "raw,cause",
+    [
+        ("{bad", "malformed_json"),
+        ('{"schema_version":999}', "unsupported_schema"),
+    ],
+)
+def test_history_failure_facts_preserve_document_and_explicit_cause(
+    tmp_path, document, raw, cause
+):
+    path = tmp_path / "history.json"
+    damaged = path if document == "main" else history.pending_history_path(path)
+    damaged.write_text(raw)
+    with pytest.raises(history.HistoryError) as caught:
+        history.load_history(path)
+    assert caught.value.document == document
+    assert caught.value.cause == cause
+    assert caught.value.phase == ("parse" if cause == "malformed_json" else "validate")
+    assert damaged.read_text() == raw

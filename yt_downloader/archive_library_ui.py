@@ -11,8 +11,8 @@ from tkinter import filedialog, ttk
 from typing import Any
 
 from .archive_browser import archive_row_owner, media_source_identity
+from .archive_observations import history_failure, history_operation, relink_dimensions
 from .archive_observations import operation as archive_operation
-from .archive_observations import relink_dimensions
 from .archive_observations import usage as archive_usage
 from .archive_paths import ArchivePath, RootMapping
 from .archive_relink import (
@@ -24,6 +24,7 @@ from .archive_relink import (
     verify_relink,
 )
 from .archive_work import ArchiveWorkOwner
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .history import (
     HistoryError,
     history_archive_owner,
@@ -62,7 +63,13 @@ class ArchiveLibraryMixin:
         )
 
     def _archive_observe(
-        self: Any, feature: str, action: str, operation: str | None, **dimensions: str
+        self: Any,
+        feature: str,
+        action: str,
+        operation: str | None,
+        *,
+        failure_detail: FailureDiagnostic | None = None,
+        **dimensions: str,
     ) -> None:
         archive_operation(
             self.__dict__.get("product_telemetry"),
@@ -70,6 +77,25 @@ class ArchiveLibraryMixin:
             action,
             operation,
             dimensions,
+            failure_detail=failure_detail,
+        )
+
+    def _archive_history_observe(
+        self: Any,
+        action: str,
+        operation: str,
+        boundary: str,
+        *,
+        error: HistoryError | None = None,
+        item_count: int | None = None,
+    ) -> None:
+        history_operation(
+            self.__dict__.get("product_telemetry"),
+            action,
+            operation,
+            boundary,
+            error=error,
+            item_count=item_count,
         )
 
     def _archive_cancel_work(self: Any) -> None:
@@ -510,37 +536,54 @@ class ArchiveLibraryMixin:
         self: Any, key: Any, callback: Any, *, mutation: dict[str, Any]
     ) -> None:
         # The durable delta must precede acknowledgement and callback deferral.
+        operation = str(uuid.uuid4())
+        ArchiveLibraryMixin._archive_history_observe(
+            self, "started", operation, "defer"
+        )
         try:
             stage_history_mutation(self.history_path, mutation)
-        except HistoryError:
-            self._archive_usage("archive", "history_defer_failed")
+        except HistoryError as exc:
+            ArchiveLibraryMixin._archive_history_observe(
+                self, "failed", operation, "defer", error=exc
+            )
             raise
         self.__dict__.setdefault("_archive_deferred_history", {})[key] = callback
-        self._archive_usage("archive", "history_deferred")
+        ArchiveLibraryMixin._archive_history_observe(
+            self, "deferred", operation, "defer"
+        )
 
     def _archive_flush_history(self: Any) -> bool:
         callbacks = self.__dict__.pop("_archive_deferred_history", {})
+        operation = str(uuid.uuid4())
+        ArchiveLibraryMixin._archive_history_observe(
+            self, "started", operation, "settlement"
+        )
         try:
             # Recover the accepted deltas onto the actual committed ledger first.
             # Live callbacks may contain newer activity and must not be overwritten
             # by an earlier journal snapshot.
             self.download_history = load_history(
                 self.history_path,
-                on_recovered=lambda count: self._archive_usage(
-                    "archive", "history_recovered", item_count=str(count)
+                on_recovered=lambda count: ArchiveLibraryMixin._archive_history_observe(
+                    self, "recovered", operation, "settlement", item_count=count
                 ),
             )
             for callback in callbacks.values():
                 callback()
             self.download_history = load_history(self.history_path)
-        except HistoryError:
+        except HistoryError as exc:
             self._history_recovery_blocked = True
-            self._archive_usage("archive", "history_recovery_failed")
+            ArchiveLibraryMixin._archive_history_observe(
+                self, "failed", operation, "settlement", error=exc
+            )
             self.status_var.set(
                 "History recovery needs attention. Pending updates have been retained for the next launch."
             )
             self._event_write_diagnostic("pending history recovery could not finish")
             return False
+        ArchiveLibraryMixin._archive_history_observe(
+            self, "completed", operation, "settlement"
+        )
         return True
 
     def _archive_begin_relink(
@@ -780,6 +823,17 @@ class ArchiveLibraryMixin:
                         archive_result="changed"
                         if isinstance(exc, ValueError)
                         else "write_failed",
+                        failure_detail=history_failure(exc)
+                        if isinstance(exc, HistoryError)
+                        else capture_failure(exc, stage="commit", inspect_text=False),
+                        **(
+                            {
+                                "history_document": exc.document,
+                                "history_phase": exc.phase,
+                            }
+                            if isinstance(exc, HistoryError)
+                            else {}
+                        ),
                     )
                 raise
             # Observe the real save boundary, even if the UI closes before polling.

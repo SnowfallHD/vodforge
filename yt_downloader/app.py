@@ -9530,18 +9530,22 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self.after(250, self._request_application_close)
 
     def _load_download_history(self) -> None:
+        operation = str(uuid.uuid4())
+        ArchiveLibraryMixin._archive_history_observe(
+            self, "started", operation, "startup"
+        )
         try:
             self.download_history = load_history(
                 self.history_path,
-                on_recovered=lambda count: self._archive_usage(
-                    "archive", "history_recovered", item_count=str(count)
+                on_recovered=lambda count: ArchiveLibraryMixin._archive_history_observe(
+                    self, "recovered", operation, "startup", item_count=count
                 ),
             )
             self._history_recovery_blocked = False
         except HistoryError as exc:
             self._history_recovery_blocked = True
-            ArchiveLibraryMixin._archive_usage(
-                self, "archive", "history_recovery_failed"
+            ArchiveLibraryMixin._archive_history_observe(
+                self, "failed", operation, "startup", error=exc
             )
             self.download_history = []
             self._append_log(f"WARNING: {exc}")
@@ -9549,6 +9553,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 "Download history could not be loaded; the existing history file was left untouched."
             )
             return
+        ArchiveLibraryMixin._archive_history_observe(
+            self, "completed", operation, "startup"
+        )
         self._reconcile_library_projection()
         if self.download_history and not metadata_indices_for_output_type(
             self.download_history,

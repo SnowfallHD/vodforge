@@ -40,7 +40,11 @@ def test_all_archive_actions_obey_consent_and_exclude_private_content(
         for action in sorted(FEATURE_ACTIONS[feature]):
             assert usage(owner, feature, action) == (permission == "allowed")
             assert usage(owner, feature, action) == (permission == "allowed")
-    for feature in ("archive_relink_operation", "archive_location_operation"):
+    for feature in (
+        "archive_relink_operation",
+        "archive_location_operation",
+        "archive_history_operation",
+    ):
         for action in sorted(OPERATION_FEATURES[feature]):
             assert operation(owner, feature, action, key) == (permission == "allowed")
     owner.shutdown(2)
@@ -117,7 +121,7 @@ def test_history_failure_producers_observe_bounded_outcome_without_private_data(
     app = SimpleNamespace(
         history_path=tmp_path / "private-history.json",
         product_telemetry=SimpleNamespace(
-            record_feature=lambda *a, **k: events.append((a, k))
+            record_operation=lambda *a, **k: events.append((a, k))
         ),
         status_var=Variable(),
         _event_write_diagnostic=lambda *a: None,
@@ -144,7 +148,6 @@ def test_history_failure_producers_observe_bounded_outcome_without_private_data(
         else:
             assert not ArchiveLibraryMixin._archive_flush_history(app)
         assert app._history_recovery_blocked
-    assert [args[1] for args, kwargs in events] == [
-        "history_defer_failed" if boundary == "defer" else "history_recovery_failed"
-    ]
-    assert "private" not in json.dumps(events)
+    assert [args[1] for args, kwargs in events] == ["started", "failed"]
+    assert events[-1][1]["failure_detail"].stage == "history"
+    assert "private" not in json.dumps(events, default=lambda value: value.payload())

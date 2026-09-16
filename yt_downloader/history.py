@@ -133,7 +133,35 @@ def sanitize_heatmap(value: Any) -> list[dict[str, float]]:
 
 
 class HistoryError(RuntimeError):
-    """Raised when the local history ledger cannot be read or written safely."""
+    """Local message plus observed, closed-vocabulary history failure facts."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        document: str = "unknown",
+        phase: str = "unknown",
+        cause: str = "unknown",
+    ) -> None:
+        super().__init__(message)
+        self.document = document if document in {"main", "pending"} else "unknown"
+        self.phase = (
+            phase
+            if phase in {"read", "parse", "validate", "write", "retire"}
+            else "unknown"
+        )
+        self.cause = (
+            cause
+            if cause
+            in {
+                "malformed_json",
+                "unsupported_schema",
+                "invalid_structure",
+                "limit_exceeded",
+                "invalid_encoding",
+            }
+            else "unknown"
+        )
 
 
 def application_data_dir(
@@ -601,13 +629,13 @@ def upsert_history(
 
 
 def save_history(path: Path, records: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": HISTORY_SCHEMA_VERSION,
         "items": records[:MAX_HISTORY_ITEMS],
     }
     temporary = path.with_name(f".{path.name}.tmp")
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
@@ -619,28 +647,81 @@ def save_history(path: Path, records: list[dict[str, Any]]) -> None:
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
-        raise HistoryError(f"VODForge could not save download history: {exc}") from exc
+        raise HistoryError(
+            f"VODForge could not save download history: {exc}",
+            document="main",
+            phase="write",
+            cause="unknown" if isinstance(exc, OSError) else "invalid_structure",
+        ) from exc
+
+
+_HISTORY_ABSENT = object()
+
+
+def _read_history_document(path: Path, *, document: str) -> Any:
+    # A failed stat is not evidence that a ledger is absent. Only ENOENT permits
+    # an empty history; retain denied/unavailable files and report typed facts.
+    try:
+        try:
+            size = path.stat().st_size
+        except FileNotFoundError:
+            return _HISTORY_ABSENT
+        if size > MAX_HISTORY_FILE_BYTES:
+            raise HistoryError(
+                "History exceeds the supported size.",
+                document=document,
+                phase="validate",
+                cause="limit_exceeded",
+            )
+        raw = path.read_text(encoding="utf-8")
+    except UnicodeError as exc:
+        raise HistoryError(
+            "History text could not be decoded.",
+            document=document,
+            phase="parse",
+            cause="invalid_encoding",
+        ) from exc
+    except OSError as exc:
+        raise HistoryError(
+            "VODForge could not read history.", document=document, phase="read"
+        ) from exc
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HistoryError(
+            "VODForge could not read history JSON.",
+            document=document,
+            phase="parse",
+            cause="malformed_json",
+        ) from exc
 
 
 def _load_history_records(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
+    payload = _read_history_document(path, document="main")
+    if payload is _HISTORY_ABSENT:
         return []
-    try:
-        if path.stat().st_size > MAX_HISTORY_FILE_BYTES:
-            raise HistoryError(
-                "VODForge found an unexpectedly large download-history file."
-            )
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HistoryError(f"VODForge could not read download history: {exc}") from exc
-    if (
-        not isinstance(payload, dict)
-        or payload.get("schema_version") != HISTORY_SCHEMA_VERSION
-    ):
-        raise HistoryError("VODForge found an unsupported download-history file.")
+    if not isinstance(payload, dict):
+        raise HistoryError(
+            "VODForge found an invalid download-history file.",
+            document="main",
+            phase="validate",
+            cause="invalid_structure",
+        )
+    if payload.get("schema_version") != HISTORY_SCHEMA_VERSION:
+        raise HistoryError(
+            "VODForge found an unsupported download-history file.",
+            document="main",
+            phase="validate",
+            cause="unsupported_schema",
+        )
     raw_items = payload.get("items")
     if not isinstance(raw_items, list):
-        raise HistoryError("VODForge found an invalid download-history file.")
+        raise HistoryError(
+            "VODForge found an invalid download-history file.",
+            document="main",
+            phase="validate",
+            cause="invalid_structure",
+        )
 
     records: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -814,20 +895,29 @@ def pending_history_path(path: Path) -> Path:
 
 
 def _read_pending_history(path: Path) -> list[dict[str, Any]]:
-    journal = pending_history_path(path)
+    payload = _read_history_document(pending_history_path(path), document="pending")
+    if payload is _HISTORY_ABSENT:
+        return []
     try:
-        try:
-            size = journal.stat().st_size
-        except FileNotFoundError:
-            return []
-        if size > MAX_HISTORY_FILE_BYTES:
-            raise HistoryError("Pending history exceeds the supported size.")
-        payload = json.loads(journal.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise TypeError("Invalid pending history structure")
+        if payload.get("schema_version") != 1:
+            raise HistoryError(
+                "Unsupported pending history schema",
+                document="pending",
+                phase="validate",
+                cause="unsupported_schema",
+            )
         operations = payload["operations"]
-        if payload.get("schema_version") != 1 or not isinstance(operations, list):
-            raise ValueError("Invalid pending history schema")
+        if not isinstance(operations, list):
+            raise TypeError("Invalid pending history operations")
         if len(operations) > MAX_HISTORY_ITEMS:
-            raise ValueError("Too many pending history operations")
+            raise HistoryError(
+                "Too many pending history operations",
+                document="pending",
+                phase="validate",
+                cause="limit_exceeded",
+            )
         for operation in operations:
             if not isinstance(operation, dict) or operation.get("kind") not in {
                 "record",
@@ -853,7 +943,10 @@ def _read_pending_history(path: Path) -> list[dict[str, Any]]:
         return operations
     except (OSError, UnicodeError, ValueError, KeyError, TypeError) as exc:
         raise HistoryError(
-            "VODForge could not recover pending history updates."
+            "VODForge could not recover pending history updates.",
+            document="pending",
+            phase="validate",
+            cause="invalid_structure",
         ) from exc
 
 
@@ -884,7 +977,12 @@ def _stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
         if len(owners) > MAX_HISTORY_ITEMS or not all(
             isinstance(owner, str) and len(owner) <= 16384 for owner in owners
         ):
-            raise HistoryError("Pending history owner scope exceeds its limit.")
+            raise HistoryError(
+                "Pending history owner scope exceeds its limit.",
+                document="pending",
+                phase="validate",
+                cause="limit_exceeded",
+            )
         clean = {
             "kind": "activity",
             "owners": list(owners),
@@ -892,18 +990,33 @@ def _stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
             "run_id": str(mutation.get("run_id") or "")[:512],
         }
     else:
-        raise HistoryError("Unsupported pending history operation.")
+        raise HistoryError(
+            "Unsupported pending history operation.",
+            document="pending",
+            phase="validate",
+            cause="invalid_structure",
+        )
     existing = _read_pending_history(path)
     key = _pending_operation_key(clean)
     operations = [item for item in existing if _pending_operation_key(item) != key]
     operations.append(clean)
     if len(operations) > MAX_HISTORY_ITEMS:
-        raise HistoryError("Pending history exceeds its supported operation count.")
+        raise HistoryError(
+            "Pending history exceeds its supported operation count.",
+            document="pending",
+            phase="validate",
+            cause="limit_exceeded",
+        )
     payload = json.dumps(
         {"schema_version": 1, "operations": operations}, ensure_ascii=False
     )
     if len(payload.encode("utf-8")) > MAX_HISTORY_FILE_BYTES:
-        raise HistoryError("Pending history exceeds its supported size.")
+        raise HistoryError(
+            "Pending history exceeds its supported size.",
+            document="pending",
+            phase="validate",
+            cause="limit_exceeded",
+        )
     journal = pending_history_path(path)
     temporary = journal.with_name(journal.name + ".tmp")
     try:
@@ -917,7 +1030,11 @@ def _stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
             temporary.unlink(missing_ok=True)
         except OSError:
             pass
-        raise HistoryError("VODForge could not save pending history updates.") from exc
+        raise HistoryError(
+            "VODForge could not save pending history updates.",
+            document="pending",
+            phase="write",
+        ) from exc
 
 
 def recover_pending_history(
@@ -981,7 +1098,9 @@ def recover_pending_history(
         # Fail closed before accepting further history edits. Retaining this
         # idempotent journal permits a retry without losing either update.
         raise HistoryError(
-            "Pending history was saved but recovery cleanup failed."
+            "Pending history was saved but recovery cleanup failed.",
+            document="pending",
+            phase="retire",
         ) from exc
     return result, len(operations)
 
@@ -1002,4 +1121,9 @@ def stage_history_mutation(path: Path, mutation: dict[str, Any]) -> None:
     try:
         _stage_history_mutation(path, mutation)
     except (OSError, TypeError, ValueError, KeyError) as exc:
-        raise HistoryError("VODForge could not save pending history updates.") from exc
+        raise HistoryError(
+            "VODForge could not save pending history updates.",
+            document="pending",
+            phase="unknown" if isinstance(exc, OSError) else "validate",
+            cause="unknown" if isinstance(exc, OSError) else "invalid_structure",
+        ) from exc

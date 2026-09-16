@@ -72,6 +72,9 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
 }
 # Per-operation observations are separate from legacy once-per-session usage.
 OPERATION_FEATURES = {
+    "archive_history_operation": frozenset(
+        {"started", "deferred", "recovered", "completed", "failed"}
+    ),
     "archive_location_operation": frozenset(
         {"requested", "completed", "failed", "cancelled", "timed_out"}
     ),
@@ -168,6 +171,11 @@ DIMENSION_RANGES.update(
     }
 )
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
+    "history_boundary": frozenset({"startup", "settlement", "defer"}),
+    "history_document": frozenset({"main", "pending", "unknown"}),
+    "history_phase": frozenset(
+        {"read", "parse", "validate", "write", "retire", "unknown"}
+    ),
     "archive_mode": frozenset({"folders", "all", "activity"}),
     "watch_mode": frozenset({"playlists", "channels", "collections"}),
     "storage_kind": frozenset({"local", "drive", "network", "external", "unknown"}),

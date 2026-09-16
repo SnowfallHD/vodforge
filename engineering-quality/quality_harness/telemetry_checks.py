@@ -488,7 +488,56 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                         failure_detail=diagnostic.payload(),
                     )
                     assert usage.shutdown(10), "Usage outbox did not drain"
-                assert len(delivered) == len(dimensions) + 2, (
+                # Reproduce failures through the actual app/archive producer;
+                # hand-built vocabulary events alone cannot detect cause loss.
+                from types import SimpleNamespace
+
+                from yt_downloader.app import DownloaderApp
+                from yt_downloader.history import pending_history_path
+
+                producer_events = []
+                for document, raw, cause in (
+                    ("main", '{"PRIVATE":', "malformed_json"),
+                    ("main", '{"schema_version":999}', "unsupported_schema"),
+                    ("pending", '{"PRIVATE":', "malformed_json"),
+                ):
+                    fixture = case_dir / ("history-" + str(len(producer_events)))
+                    fixture.mkdir()
+                    history_path = fixture / "PRIVATE-history.json"
+                    damaged = (
+                        history_path
+                        if document == "main"
+                        else pending_history_path(history_path)
+                    )
+                    damaged.write_text(raw)
+                    app = SimpleNamespace(
+                        history_path=history_path,
+                        product_telemetry=usage,
+                        status_var=SimpleNamespace(set=lambda value: None),
+                        _append_log=lambda value: None,
+                    )
+                    previous = len(delivered)
+                    DownloaderApp._load_download_history(app)
+                    assert usage.shutdown(10), "History producer did not drain"
+                    observed = delivered[previous:]
+                    assert [event["action"] for event in observed] == [
+                        "started",
+                        "failed",
+                    ]
+                    failure = observed[-1]
+                    assert failure["dimensions"]["history_document"] == document
+                    assert (
+                        failure["failure_detail"]["failure_code"] == "history_" + cause
+                    )
+                    assert failure["failure_detail"]["source_module"] == "history"
+                    assert failure["dimensions"]["operation_step"] == "2"
+                    assert damaged.read_text() == raw and app._history_recovery_blocked
+                    assert "PRIVATE" not in json.dumps(observed)
+                    producer_events.extend(observed)
+                (case_dir / "history-producer-events.json").write_text(
+                    json.dumps(producer_events, indent=2)
+                )
+                assert len(delivered) == len(dimensions) + 2 + len(producer_events), (
                     f"Missing or duplicated emitted metrics: {len(delivered)}"
                 )
                 for payload in delivered:
@@ -532,6 +581,14 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                     assert (
                         json.loads(stored_event["dimensions"]) == payload["dimensions"]
                     )
+                    if "failure_detail" in payload:
+                        assert (
+                            json.loads(stored_event["failure_detail"])
+                            == payload["failure_detail"]
+                        )
+                        assert (
+                            stored_event["failure_reason"] == payload["failure_reason"]
+                        )
                     actual_time = datetime.fromisoformat(
                         stored_event["occurred_at"].replace("Z", "+00:00")
                     )
@@ -615,6 +672,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             "Real Python HTTP → real Worker owner → local D1 migrations.",
             "One installation, one observed update, exact failure retries deduplicated.",
             "Real 404/500 worker failures stored only bounded machine facts.",
+            "Actual app history failures preserve main/pending, parse/schema cause, source frame, revision and ordered operation steps in D1.",
             "Six real installation entry points: retry, second actor, durable credential count, legacy write exclusion.",
         ],
         [artifact],
