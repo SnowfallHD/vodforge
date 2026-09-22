@@ -273,36 +273,32 @@ def test_shared_choice_menu_navigation_hover_and_identical_render(root):
 
 
 def assert_field_contour_focus(idle, active, restored):
-    """Independent 1x design geometry, shared by full and nine-slice adapters."""
-    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
+    """Focus darkens the rounded face and rim, then restores exact idle pixels."""
+    from PIL import ImageChops
+
+    from yt_downloader.ui_theme import THEME
 
     width, height = idle.size
     assert active.size == restored.size == idle.size
-    allowed = Image.new("L", idle.size)
-    ImageDraw.Draw(allowed).rounded_rectangle(
-        (0, 0, width - 1, height - 1), radius=10, outline=255, width=3
-    )
-    allowed = allowed.filter(ImageFilter.MaxFilter(5))
-    change = ImageChops.difference(idle.convert("RGB"), active.convert("RGB"))
-    assert change.getbbox(), "Missing focus feedback"
-    outside = ImageChops.multiply(change, ImageOps.invert(allowed).convert("RGB"))
-    assert outside.getbbox() is None, "Focus escaped intended rounded contour"
-    interior = (12, 12, width - 12, height - 12)
-    assert (
-        ImageChops.difference(
-            idle.crop(interior).convert("RGB"), active.crop(interior).convert("RGB")
-        ).getbbox()
-        is None
-    )
+    center = (width // 2, height // 2)
+    for image, role in ((idle, "surface"), (active, "focus_surface")):
+        expected = tuple(
+            int(THEME[role][offset : offset + 2], 16) for offset in (1, 3, 5)
+        )
+        for x in range(center[0] - 2, center[0] + 3):
+            for y in range(center[1] - 2, center[1] + 3):
+                assert image.getpixel((x, y))[:3] == expected
+    assert active.getpixel((1, center[1]))[:3] != active.getpixel(center)[:3]
     assert (
         ImageChops.difference(idle.convert("RGB"), restored.convert("RGB")).getbbox()
         is None
     )
     assert (
-        ImageChops.difference(
-            idle.getchannel("A").point(lambda x: 255 if x else 0),
-            active.getchannel("A").point(lambda x: 255 if x else 0),
-        ).getbbox()
+        ImageChops.difference(idle.getchannel("A"), restored.getchannel("A")).getbbox()
+        is None
+    )
+    assert (
+        ImageChops.difference(idle.getchannel("A"), active.getchannel("A")).getbbox()
         is None
     )
 
