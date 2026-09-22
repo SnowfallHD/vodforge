@@ -162,7 +162,9 @@ def own_foreground():
 
 def cursor(x, y, *, dragged=False):
     if sys.platform == "win32":
-        u.SetCursorPos(x, y)
+        # Win32 expects integer screen coordinates; the right-edge midpoint
+        # may be fractional on an odd-height window.
+        u.SetCursorPos(round(x), round(y))
     else:
         kind = Quartz.kCGEventLeftMouseDragged if dragged else Quartz.kCGEventMouseMoved
         Quartz.CGEventPost(
