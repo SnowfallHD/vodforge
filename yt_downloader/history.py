@@ -1209,7 +1209,7 @@ def load_history(
     if count and on_recovered is not None:
         try:
             on_recovered(count)
-        except Exception:  # noqa: BLE001, S110 - optional observation cannot prevent durable recovery
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - optional observation cannot prevent durable recovery
             pass
     return records
 

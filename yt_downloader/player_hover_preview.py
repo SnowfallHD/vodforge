@@ -79,7 +79,8 @@ class PlayerHoverPreview:
                     self._condition.wait()
                 if self._closed:
                     return
-                assert self._pending is not None
+                if self._pending is None:
+                    continue
                 generation, path, second, requested = self._pending
                 remaining = self._debounce - (time.monotonic() - requested)
                 if remaining > 0:

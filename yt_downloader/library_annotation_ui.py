@@ -175,8 +175,12 @@ class LibraryAnnotationDialog:
 
         def fit_label(event: tk.Event) -> None:
             available = max(1, event.width)
-            if int(event.widget.cget("wraplength")) != available:
-                event.widget.configure(wraplength=available)
+            label = event.widget
+            if (
+                isinstance(label, ttk.Label)
+                and int(label.cget("wraplength")) != available
+            ):
+                label.configure(wraplength=available)
 
         for label in root.winfo_children():
             if isinstance(label, ttk.Label) and int(label.cget("wraplength") or 0):

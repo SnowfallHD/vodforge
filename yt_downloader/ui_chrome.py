@@ -781,7 +781,7 @@ class CanvasFieldMaterial:
 
     def __init__(self, canvas: tk.Canvas, field: tk.Misc) -> None:
         self.canvas, self.field = canvas, field
-        canvas._matte_material_surface = True
+        canvas._matte_material_surface = True  # type: ignore[attr-defined]
         self.image: ImageTk.PhotoImage | None = None
         self.snapshot: tuple | None = None
         self.item = canvas.create_image(0, 0, anchor="nw")
@@ -836,7 +836,7 @@ class RoundedFieldBorder:
         self.canvas = tk.Canvas(
             field, bd=0, highlightthickness=0, takefocus=False, bg=THEME["bg"]
         )
-        self.canvas._matte_material_surface = True
+        self.canvas._matte_material_surface = True  # type: ignore[attr-defined]
         # Chrome covers the entire shell, including its content padding. The
         # default inside mode exposes a square strip of the shell around it.
         self.canvas.place(x=0, y=0, relwidth=1, relheight=1, bordermode="outside")
@@ -922,13 +922,13 @@ def prototype_entry_style(widget: tk.Misc) -> str:
     if not metrics.physical_fonts:
         return "Product.TEntry"
     top = widget.winfo_toplevel()
-    root = top
+    root: tk.Misc = top
     while root.master is not None:
         root = root.master
     owner = getattr(root, "_product_chrome_owner", None)
     if owner is None:
         owner = ProductChromeOwner(root)
-        root._product_chrome_owner = owner
+        root._product_chrome_owner = owner  # type: ignore[attr-defined]
     name = f"Dpi{metrics.scale}.Product.TEntry"
     element = f"Dpi{metrics.scale}.Product.field"
     style = ttk.Style(root)
@@ -993,13 +993,13 @@ def prototype_button_style(widget: tk.Misc, name: str) -> str:
         name not in BUTTON_STYLE_SIZES and not navigation
     ):
         return name
-    root = widget.winfo_toplevel()
+    root: tk.Misc = widget.winfo_toplevel()
     while root.master is not None:
         root = root.master
     owner = getattr(root, "_product_chrome_owner", None)
     if owner is None:
         owner = ProductChromeOwner(root)
-        root._product_chrome_owner = owner
+        root._product_chrome_owner = owner  # type: ignore[attr-defined]
     return owner.button_style(name, metrics)
 
 

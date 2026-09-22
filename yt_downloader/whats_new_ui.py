@@ -114,7 +114,7 @@ class WhatsNewPanel:
         self.page.pack(fill="x", pady=(0, self.metrics.px(10)))
         navigation = ttk.Frame(self.surface.footer, style="FocusShell.TFrame")
         self.navigation = navigation
-        self._navigation_layout = None
+        self._navigation_layout: tuple[bool, bool] | None = None
         navigation.pack(fill="x")
         navigation.columnconfigure(0, weight=1, uniform="flank")
         navigation.columnconfigure(2, weight=1, uniform="flank")

@@ -325,7 +325,7 @@ def _tinted_ui_icon(
         from .platform_services import create_surface_image, surface_backing_scale
 
         density = surface_backing_scale(widget) if widget is not None else 1
-        physical_size = tuple(side * density for side in size)
+        physical_size = (size[0] * density, size[1] * density)
         with Image.open(_ui_icon_path(name)) as source:
             alpha = source.convert("RGBA").getchannel("A")
             resampling = getattr(Image, "Resampling", Image)
@@ -1205,7 +1205,7 @@ class ActionDialogSurface:
             return
         self._body_resized(event)
 
-    def _body_resized(self, _event: tk.Event[ttk.Frame]) -> None:
+    def _body_resized(self, _event: tk.Event[tk.Misc]) -> None:
         if self._body_width_pending is None:
             self._body_width_pending = self.body.after_idle(self._reconcile_body_width)
         self._sync_overflow()

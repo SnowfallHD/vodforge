@@ -244,9 +244,14 @@ class LibraryScene(LibrarySceneLayout, ArchiveArtworkMixin, ttk.Frame):
             if scene is None or not self.canvas.type(scene.item):
                 return
             texture_x, texture_y = self.canvas.coords(scene.item)
-            window_x, window_y = self.canvas.coords(self._search_window)
+            search_window = self._search_window
+            if search_window is None:
+                return
+            window_x, window_y = self.canvas.coords(search_window)
             canvas = self._search_field._chrome.canvas
             backdrop = draw_matte_backdrop(canvas)
+            if backdrop.item is None:
+                return
             canvas.coords(backdrop.item, texture_x - window_x, texture_y - window_y)
         except tk.TclError:
             # A geometry notification can coincide with this scene retiring.

@@ -107,7 +107,7 @@ if sys.platform == "darwin":
                 owner.dispatch("toggle", None)
 
     class VODForgePlayerVolumeCell(NSSliderCell):
-        def drawBarInside_flipped_(self, rect: Any, flipped: bool) -> None:
+        def drawBarInside_flipped_(self, rect: Any, _flipped: bool) -> None:
             x, width = rect.origin.x + 5, max(1.0, rect.size.width - 10)
             y = rect.origin.y + rect.size.height / 2 - 1.5
             _role_color("border").setFill()

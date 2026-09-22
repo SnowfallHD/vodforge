@@ -9970,7 +9970,7 @@ class DownloaderApp(
                 if is_placeholder
                 else thumbnail_size_within(tuple(source.size), size)
             )
-            physical_size = tuple(value * density for value in logical_size)
+            physical_size = (logical_size[0] * density, logical_size[1] * density)
             if is_placeholder:
                 rendered = rounded_contain_image(
                     source,
@@ -10315,7 +10315,7 @@ class DownloaderApp(
         # children continue painting. Move navigation to its own row when the
         # measured siblings cannot fit; keep the search and settings reachable.
         brand = self._focus_header_mark_label.master
-        utilities = self._global_search_field.master
+        utilities = cast(ttk.Frame, self._global_search_field.master)
         required = (
             brand.winfo_reqwidth()
             + utilities.winfo_reqwidth()
@@ -12831,7 +12831,7 @@ class DownloaderApp(
                         else "window",
                     },
                 )
-            except Exception:  # noqa: BLE001, S110 - optional observation cannot break playback or cleanup
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - optional observation cannot break playback or cleanup
                 pass
         if action in {"closed", "cancelled", "focused"}:
             self.__dict__.get("_archive_playback_origins", {}).pop(operation, None)
@@ -13512,7 +13512,7 @@ class DownloaderApp(
     ) -> Any | None:
         if placeholder:
             density = surface_backing_scale(self)
-            pixels = tuple(value * density for value in size)
+            pixels = (size[0] * density, size[1] * density)
             rendered = rounded_contain_image(
                 image,
                 pixels,

@@ -53,11 +53,11 @@ def enable_prototype_per_monitor_v2() -> None:
     import ctypes
     from ctypes import wintypes
 
-    api = ctypes.WinDLL("user32", use_last_error=True)
+    api = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
     api.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
     api.SetProcessDpiAwarenessContext.restype = wintypes.BOOL
     if not api.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
-        raise OSError(ctypes.get_last_error(), "Fresh-process PMv2 setup rejected")
+        raise OSError(ctypes.get_last_error(), "Fresh-process PMv2 setup rejected")  # type: ignore[attr-defined]
 
 
 def prototype_window_dpi(root: Any) -> int:
@@ -65,7 +65,7 @@ def prototype_window_dpi(root: Any) -> int:
     import ctypes
     from ctypes import wintypes
 
-    api = ctypes.WinDLL("user32", use_last_error=True)
+    api = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
     api.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
     api.GetAncestor.restype = wintypes.HWND
     api.GetWindowDpiAwarenessContext.argtypes = [wintypes.HWND]

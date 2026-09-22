@@ -44,7 +44,7 @@ MUTANTS = (
     ),
     (
         "pending_history_restart_replay_removed",
-        "records, count = recover_pending_history(path, _load_history_records(path))",
+        "records, count = recover_pending_history(path, records)",
         "records, count = _load_history_records(path), 0",
     ),
 )
@@ -57,8 +57,8 @@ ARTWORK_MUTANTS = (
     ),
     (
         "artwork_hero_size_ignored",
-        'requested_specs.get(key, (requested_size, ""))',
-        '(requested_size, "")',
+        'requested_specs.get(\n                        key, (requested_size, "", 8)\n                    )',
+        '(requested_size, "", 8)',
     ),
 )
 
@@ -80,6 +80,7 @@ def _workspace(repo_root: Path, destination: Path) -> Path:
         "test_archive_ui_owners.py",
         "test_archive_work.py",
         "test_archive_artwork.py",
+        "test_matte_theme.py",
     ):
         shutil.copy2(repo_root / "tests" / name, tests / name)
     return destination

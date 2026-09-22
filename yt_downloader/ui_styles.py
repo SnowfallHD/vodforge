@@ -204,7 +204,7 @@ def apply_product_styles(root: tk.Tk) -> None:
         darkcolor=THEME["bg"],
         tabmargins=(0, 0, 0, 6),
     )
-    readonly_list_selection = {
+    readonly_list_selection: dict[str, list[tuple[str, ...]]] = {
         "background": [
             ("selected", "focus", THEME["accent_dark"]),
             ("selected", THEME["accent_surface"]),
@@ -226,7 +226,8 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.layout(
         "ArchiveLocations.Treeview", [("Treeview.treearea", {"sticky": "nswe"})]
     )
-    style.map("ArchiveLocations.Treeview", **readonly_list_selection)
+    # Tk accepts state tuples with both one and two state selectors.
+    style.map("ArchiveLocations.Treeview", **readonly_list_selection)  # type: ignore[call-overload]
     style.configure("Archive.FocusNav.TButton", anchor="w")
     style.configure("Archive.FocusNavActive.TButton", anchor="w")
     style.map(
@@ -567,7 +568,7 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.layout(
         "Archive.Folders.Treeview", [("Treeview.treearea", {"sticky": "nswe"})]
     )
-    style.map("Archive.Folders.Treeview", **readonly_list_selection)
+    style.map("Archive.Folders.Treeview", **readonly_list_selection)  # type: ignore[call-overload]
     style.configure("MediaPanel.TFrame", background=THEME["panel"])
     style.configure(
         "Player.Archive.TNotebook",
@@ -590,7 +591,7 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.layout(
         "Player.Chapters.Treeview", [("Treeview.treearea", {"sticky": "nswe"})]
     )
-    style.map("Player.Chapters.Treeview", **readonly_list_selection)
+    style.map("Player.Chapters.Treeview", **readonly_list_selection)  # type: ignore[call-overload]
 
     style.configure("Material.TFrame", background=THEME["bg"])
     style.configure(

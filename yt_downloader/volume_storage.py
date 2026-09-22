@@ -88,8 +88,16 @@ def _windows_fixed_drive_kinds() -> dict[
         "Bus=[string]$disk.BusType} } | ConvertTo-Json -Compress"
     )
     try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+        powershell = (
+            Path(os.environ.get("SystemRoot", r"C:\Windows"))
+            / "System32"
+            / "WindowsPowerShell"
+            / "v1.0"
+            / "powershell.exe"
+        )
+        # Only the fixed system PowerShell is invoked, with one fixed argv and no shell.
+        result = subprocess.run(  # nosec B603
+            [str(powershell), "-NoProfile", "-NonInteractive", "-Command", command],
             capture_output=True,
             text=True,
             timeout=3,

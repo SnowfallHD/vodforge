@@ -190,7 +190,7 @@ def enroll_matte_backgrounds(frame: tk.Misc) -> list[tk.Canvas]:
         if isinstance(widget, tk.Canvas) and getattr(
             widget, "_matte_material_surface", False
         ):
-            widget._matte_anchor = frame
+            widget._matte_anchor = frame  # type: ignore[attr-defined]
             draw_matte_backdrop(widget)
             surfaces.append(widget)
         elif isinstance(widget, ttk.Frame):

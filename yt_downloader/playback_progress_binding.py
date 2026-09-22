@@ -50,7 +50,7 @@ class PlaybackProgressBinding:
             self._observe(
                 action, dimensions={"resume_reason": reason} if reason else {}
             )
-        except Exception:  # noqa: BLE001, S110 - optional telemetry cannot break playback
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - optional telemetry cannot break playback
             pass
 
     def _finish_resume(self, action: str, reason: str | None = None) -> None:

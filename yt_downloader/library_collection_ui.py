@@ -104,9 +104,9 @@ class LibraryCollectionDialog:
         bind_smooth_vertical_wheel(
             self.items, self.items, scroll, mode="rows", row_pixels=px(24)
         )
-        for index, (owner, title) in enumerate(self._items):
+        for index, (item_owner, title) in enumerate(self._items):
             self.items.insert("end", title)
-            if owner in selected:
+            if item_owner in selected:
                 self.items.selection_set(index)
         self.error = tk.StringVar(self.popup, "")
         error_label = ttk.Label(
@@ -120,8 +120,12 @@ class LibraryCollectionDialog:
 
         def fit_label(event: tk.Event) -> None:
             available = max(1, event.width)
-            if int(event.widget.cget("wraplength")) != available:
-                event.widget.configure(wraplength=available)
+            label = event.widget
+            if (
+                isinstance(label, ttk.Label)
+                and int(label.cget("wraplength")) != available
+            ):
+                label.configure(wraplength=available)
 
         for label in (description, error_label):
             label.bind("<Configure>", fit_label, add="+")

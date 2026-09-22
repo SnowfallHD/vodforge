@@ -1161,7 +1161,7 @@ class MediaPlayerWindow(PlayerSceneMixin, PlayerPresentationMixin):
                     else None,
                     dimensions=dimensions,
                 )
-            except Exception:  # noqa: BLE001, S110 - optional observation cannot change playback or close
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - optional observation cannot change playback or close
                 pass
             self._volume_last_emitted = signature
             self._volume_event_count = count + 1

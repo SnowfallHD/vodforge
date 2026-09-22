@@ -382,7 +382,7 @@ class PlayerPresentationMixin:
         self._control_failure_count = count + 1
         try:
             self._on_feature("control_failed")
-        except Exception:  # noqa: BLE001, S110 - observation must not alter playback
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - observation must not alter playback
             pass
         observe = self.__dict__.get("_on_operation")
         if observe is not None:
@@ -403,7 +403,7 @@ class PlayerPresentationMixin:
                         ),
                     },
                 )
-            except Exception:  # noqa: BLE001, S110 - optional diagnostics cannot break controls
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - optional diagnostics cannot break controls
                 pass
 
     def _native_menu_entries(

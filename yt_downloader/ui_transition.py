@@ -156,7 +156,7 @@ class ViewTransition:
         self._observed_actions.add(action)
         try:
             self._observed("appearance", action)
-        except Exception:  # noqa: BLE001, S110 - optional observation cannot interrupt navigation
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - optional observation cannot interrupt navigation
             pass
 
     def _diagnose(self, message: str) -> None:
@@ -164,7 +164,7 @@ class ViewTransition:
             return
         try:
             self._diagnostic(message)
-        except Exception:  # noqa: BLE001, S110 - diagnostics cannot block navigation
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - diagnostics cannot block navigation
             pass
 
     def _configured(self, event: Any) -> None:
