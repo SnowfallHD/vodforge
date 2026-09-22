@@ -23,9 +23,16 @@ def test_primary_hover_has_distinct_rendered_pixels():
     try:
         chrome = ProductChromeOwner(root)
         chrome.request(ttk.Style(root))
-        normal = root.tk.call(str(chrome.images["accent"]), "get", 14, 14)
-        hover = root.tk.call(str(chrome.images["accent_hover"]), "get", 14, 14)
-        assert normal != hover
+        # The matte hover changes the recessed rim while its center stays the
+        # same color. Compare rendered pixels across the surface, including
+        # that rim, so this still detects a missing hover state.
+        changed = sum(
+            root.tk.call(str(chrome.images["accent"]), "get", x, y)
+            != root.tk.call(str(chrome.images["accent_hover"]), "get", x, y)
+            for y in range(28)
+            for x in range(28)
+        )
+        assert changed >= 100
         chrome.images.clear()
     finally:
         root.destroy()
