@@ -112,19 +112,18 @@ def test_recovery_sections_keep_long_path_and_footer_bounded(surface):
 
 def test_recovery_destination_reaches_job_without_changing_saved_default(tmp_path):
     import subprocess
-    import sys
+
+    from quality_harness.native_process import native_python_command
 
     subprocess.run(
-        [
-            sys.executable,
-            "-c",
+        native_python_command(
             (
                 "import runpy,sys; from pathlib import Path; "
                 "runpy.run_path('tests/test_choice_popover_lifecycle.py')"
                 "['_check_recovery_destination'](Path(sys.argv[1]))"
             ),
-            str(tmp_path),
-        ],
+            [str(tmp_path)],
+        ),
         check=True,
         timeout=30,
     )
@@ -354,9 +353,15 @@ def test_table_focus_preserves_neutral_outline(surface):
     )
 
 
-def test_canvas_and_ttk_field_adapters_share_identical_chrome(surface):
+def test_canvas_and_ttk_fields_share_contour_focus_and_independent_backing_recipes(
+    surface, monkeypatch
+):
+    # Explicit 1x fallback backing oracle; actual Retina pixels/lifetime are
+    # independently checked in test_field_density_native.
+    monkeypatch.setattr("yt_downloader.ui_chrome.surface_backing_scale", lambda _: 1)
     from PIL import ImageTk
 
+    from tests.test_native_ui_polish import assert_field_contour_focus
     from yt_downloader.ui_chrome import ProductChromeOwner, field_border_image
 
     root, _field = surface
@@ -364,12 +369,22 @@ def test_canvas_and_ttk_field_adapters_share_identical_chrome(surface):
     shell.pack()
     chrome = RoundedFieldBorder(shell)
     root.update()
+    chrome.request(False)
+    idle = ImageTk.getimage(chrome._image)
+    chrome.request(True)
+    active = ImageTk.getimage(chrome._image)
+    chrome.request(False)
+    assert_field_contour_focus(idle, active, ImageTk.getimage(chrome._image))
+    assert idle.tobytes() == field_border_image(28, 28).tobytes()
+
     owner = ProductChromeOwner(root)
     owner.request(ttk.Style(root))
-    expected = field_border_image(28, 28).tobytes()
-    assert ImageTk.getimage(chrome._image).tobytes() == expected
-    assert ImageTk.getimage(owner.images["field"]).tobytes() == expected
-    assert ImageTk.getimage(owner.images["field_focus"]).tobytes() == expected
+    idle = ImageTk.getimage(owner.images["field"])
+    active = ImageTk.getimage(owner.images["field_focus"])
+    # ttk stretches a nine-slice backing; its edge alpha is deliberately distinct
+    # from a full-size canvas raster. Both must preserve the same focus contour.
+    assert idle.tobytes() == field_border_image(28, 28, stretch=True).tobytes()
+    assert_field_contour_focus(idle, active, idle)
 
 
 @pytest.mark.parametrize("kind", ["search", "choice"])
@@ -438,3 +453,71 @@ def test_notes_edges_remain_visible_in_actual_annotation_dialog(surface, geometr
             is chrome.canvas
         )
     dialog.popup.destroy()
+
+
+@pytest.mark.parametrize("open_before_hide", [False, True])
+def test_hidden_ancestor_cannot_retain_or_open_a_choice(surface, open_before_hide):
+    root, original = surface
+    original.pack_forget()
+    parent = tk.Frame(root)
+    parent.pack()
+    value = tk.StringVar(root, "A")
+    field = ChoiceDropdown(parent, textvariable=value, values=("A", "B"))
+    field.pack()
+    root.update()
+    stale = None
+    if open_before_hide:
+        field.open_popover()
+        assert field._popover is not None
+        stale = field._popover.winfo_children()[0]
+        stale.selection_set(1)
+    parent.pack_forget()
+    root.update_idletasks()
+    assert not field.winfo_viewable()
+    if stale is not None:
+        field._commit_listbox(stale)
+    else:
+        field.open_popover()
+    root.update()
+    assert field._popover is None and value.get() == "A"
+
+
+@pytest.mark.parametrize("state", ["focus", "hover", "theme"])
+def test_field_state_changes_reuse_live_image_handle_and_restore_pixels(
+    surface, state, monkeypatch
+):
+    monkeypatch.setattr("yt_downloader.ui_chrome.surface_backing_scale", lambda _: 1)
+    from PIL import ImageTk
+
+    root, field = surface
+    chrome = field._chrome
+    assert chrome is not None
+    chrome.request(False, False)
+    before = chrome._image
+    name = str(before)
+    pixels = ImageTk.getimage(before).tobytes()
+    previous = dict(THEME)
+    try:
+        for _ in range(8):
+            if state == "theme":
+                THEME["surface"] = "#624155"
+            chrome.request(state == "focus", state == "hover")
+            assert chrome._image is before, (
+                "Same-sized field state replaced its live Tcl image"
+            )
+            assert str(chrome._image) == name
+            assert ImageTk.getimage(before).tobytes() != pixels
+            THEME.clear()
+            THEME.update(previous)
+            chrome.request(False, False)
+            assert chrome._image is before
+            assert ImageTk.getimage(before).tobytes() == pixels
+    finally:
+        THEME.clear()
+        THEME.update(previous)
+    before = None  # Release the test's borrowed reference before owner retirement.
+    field.destroy()
+    root.update()
+    assert name not in root.tk.call("image", "names")
+    chrome.request(True, True)
+    assert chrome._image is None

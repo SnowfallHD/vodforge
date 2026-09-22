@@ -6,6 +6,8 @@ import tkinter as tk
 from collections.abc import Callable
 from typing import Any
 
+from .ui_layout import window_logical_metrics
+
 
 class ChoicePopover(tk.Frame):
     """A child surface cannot outlive or float above its native owner window."""
@@ -20,7 +22,8 @@ class ChoicePopover(tk.Frame):
         **options: Any,
     ) -> None:
         self._anchor = anchor
-        self.gap, self.align_right = gap, align_right
+        self._metrics = window_logical_metrics(anchor)
+        self.gap, self.align_right = self._metrics.px(gap), align_right
         self.owner = anchor.winfo_toplevel()
         self._interpreter_root: tk.Misc = self.owner
         while self._interpreter_root.master is not None:
@@ -69,9 +72,9 @@ class ChoicePopover(tk.Frame):
             self.close()
             return False
         below, above = ay + ah + self.gap, ay - height - self.gap
-        if below + height <= bottom - 8:
+        if below + height <= bottom - self._metrics.px(8):
             y = below
-        elif above >= top + 8:
+        elif above >= top + self._metrics.px(8):
             y = above
         else:
             self.close()

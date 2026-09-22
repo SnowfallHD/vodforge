@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from typing import Any
+from urllib.parse import quote
 
+from .interaction_coverage import interaction_coverage
 from .util import distribution
 
 TIER_LABELS = {
@@ -96,6 +98,9 @@ def summarize(scenarios: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str
         }
     summary = {
         "scenarios_attempted": len(scenarios),
+        "interaction_unproven": sum(
+            interaction_coverage(item)["status"] == "unproven" for item in scenarios
+        ),
         "passed": statuses["passed"],
         "failed": statuses["failed"],
         "errors": statuses["error"],
@@ -290,6 +295,29 @@ def markdown_report(result: dict[str, Any]) -> str:
         lines.append(
             f"| {name} | {_fmt(values.get('count'))} | {_fmt(values.get('p50'))} | {_fmt(values.get('p95'))} | {_fmt(values.get('max'))} |"
         )
+    lines.extend(
+        [
+            "",
+            "## Interaction coverage",
+            "",
+            "Functional passes retain their narrow meaning. Temporal review covers",
+            "before / during / after. Missing review blocks acceptance claims.",
+            "Usability is separate: required for enrolled UI applicability; unreviewed",
+            "applicability is not an exemption. Clarity, restraint and accessibility",
+            "need evidence and human review as well as behavioral assertions.",
+            "",
+            "| Scenario | Functional | Temporal | Usability | Reason |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for scenario in result["scenarios"]:
+        coverage = interaction_coverage(scenario)
+        usability = coverage["usability_review"]
+        lines.append(
+            f"| {scenario['id']} | {scenario.get('status', 'unproven')} | "
+            f"{coverage['status']} | {usability['status']} "
+            f"({usability['applicability']}) | {coverage['reason']} |"
+        )
     lines.extend(["", "## Scenario results", ""])
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for scenario in result["scenarios"]:
@@ -302,6 +330,14 @@ def markdown_report(result: dict[str, Any]) -> str:
             )
             for evidence in scenario.get("evidence", [])[:6]:
                 lines.append(f"  - {str(evidence).replace(chr(10), ' ')}")
+            for artifact in scenario.get("artifacts", []):
+                path = str(artifact).replace(chr(92), "/")
+                label = path.rsplit("/", 1)[-1] or path
+                label = (
+                    label.replace(chr(10), " ").replace("[", r"\[").replace("]", r"\]")
+                )
+                lines.append(f"  - Evidence: [{label}](<{quote(path, safe='/:')}>)")
+
         lines.append("")
     findings = result.get("findings", [])
     lines.extend(["## Findings", ""])

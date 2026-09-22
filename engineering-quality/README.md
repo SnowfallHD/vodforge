@@ -1,10 +1,172 @@
 # VODForge engineering-quality harness
 
+## Material states and first-map geometry — v139
+
+Invariant: each enabled hover role must change rendered material, and every
+projected backdrop/scroll body must match actual settled geometry on first map,
+ancestor movement, and remap. Mac Done exposed a default ttk role omitted from
+recessed shading; previous scene-renderer and color-role tests did not execute
+that owner. `test_ttk_owner_renders_raised_to_recessed_hover` failed before the
+one-role fix; actual Settings Enter/Leave raster tests reproduce and verify the
+response plus secondary action and own-popup192. Raised resting is preserved.
+
+Windows packaged evidence exposed correct Canvas item width but stale actual
+child allocation, plus an unchanged-size matte canvas moved by an ancestor.
+Previous Settings bounds tests resized before checking, masking first-map failure.
+`test_native_initial_geometry.py` checks first-open before any resize, ancestor
+movement/remap/retirement, and deliberate allocation/projection mutations. Fixes
+extend existing owners; no independent geometry or rendering subsystem. Bounded
+coverage is default and injected192 locally plus targeted actual Windows192;
+fractional/mixed-monitor and full package release qualification remain separate.
+
+## Constrained high-density Welcome — v142
+
+Invariant: scale fonts and their containing layout together, and keep complete
+actions reachable without shrinking text. The enabled Welcome entry shared a
+frame carousel with disabled automatic showcases, but its fixed590x560 shell and
+135px caption did not scale with inherited buttons. Earlier carousel tests covered
+only default units. New enabled-entry tests independently measure fonts and every
+visible action's requested width over all six slides, default/192, minimum/wide/
+return; rendered review caught a clipped Skip label missed by rectangle containment.
+Native text requests now drive footer reflow. The existing scroll surface handles
+constrained high-density content, including caption reach and descendant wheel
+routing; default centering and explicit Try it dismissal remain checked. No new
+onboarding behavior or automatic invocation. Physical Windows192 is separate from
+local injected metrics, and neither proves fractional/mixed-monitor qualification.
+
+## Start here
+
+Use the [harness operating and maintenance guide](HARNESS_GUIDE.md) for how the
+harness works, how to run and extend checks, and the required before/during/after
+evidence standard across every behavioral domain, including restrained controls,
+clear task flow, and explicit usability review throughout UI interactions. It also identifies current
+enforcement gaps: existing passing reports must not be mistaken for complete
+interaction coverage. [Release gates](RELEASE_GATE.md) define artifact promotion.
+
+
 Encoder quality, size and speed calibration lives in the companion
 [fine-tuning harness](../fine-tuning/README.md). Its measurements select settings;
 this harness verifies production behavior. Set `VODFORGE_NVENC_TESTS=1` on a
 supported NVIDIA Windows host to include the real preset worker GPU tests.
 A skipped GPU test is not hardware verification.
+
+## DPI caller overrides and fitted artwork — 2026-09-20
+
+Canonical dimensions must convert once at the actual window owner; measured child
+requests must remain measured. Primitive-only DPI tests missed Forge and Output
+Details callers overriding scaled font defaults and width, run-deck capacity
+using physical width with canonical tile size, and PRO artwork fixed at20 pixels.
+New root default/192 checks cover the actual820 minimum, narrow/wide/return, URL
+usable allocation, destination/action reachability, capacity and empty copy.
+Output Details covers its own popup units independently of root, lossless scroll,
+section tags and protected Done. PRO tests require window height and native backing.
+All have retained prior failures. Root brand/icon and Library field/sidebar/card
+checks provide representative cross-owner coverage, not every consumer/platform.
+
+Media image logical bounds must preserve aspect when physical backing is larger.
+Square/landscape/portrait matrices caught a native-adapter intermediate stretching
+fitted pixels into the full slot. Native real portrait and brand-placeholder cases
+now verify fitted and full-slot dimensions independently. Existing image ownership
+and renderer are reused. Actual Windows v136 card/menu/search/Forge proof is separate
+from local injected DPI and from outstanding packaged Dock/taskbar qualification.
+
+## Native list focus is distinct from selection — 2026-09-19
+
+Three current readonly list consumers (Library locations, folder ancestry and
+player ChapterList) had selected-only style maps. Actual keyboard focus moved
+and OS Down selected the next row, but focused/unfocused RGB captures were
+identical. Existing chapter selection tests asserted values and selection only;
+they could not detect missing focus presentation. Settings contains no Treeview;
+that earlier inventory label was incorrect.
+
+The existing ui_styles owner now shares focused-selected accent-dark/on-accent
+and unfocused-selected accent-surface/text maps across these three styles. No
+list implementation, keyboard behavior or data owner changed. New maintained
+shared-controls cases measure the selected-row RGB region with true focus states,
+OS Down, readonly OS typing, and focus-withheld/restoration negative. All three
+fail before the style change. Existing segmented-control and player-volume focus
+cases provide representative cross-owner coverage of the invariant: selection
+or a stored value is not keyboard focus, and losing focus restores presentation
+without changing content. Results are source-bound in the worker handoff. One
+current theme is qualified, not all themes/platforms/physical input or external AX.
+
+## Reveal readiness excludes intentionally undisplayed content — 2026-09-19
+
+Default Library missing-media dismissal exposed an indefinite restore cover:
+`WidgetReveal._managed` treated an offscreen canvas Entry and its placed hint
+as required mapped descendants. The logical overlay retired, but the visible
+error frame remained and intercepted a fresh intended click. Readiness must
+wait for required visible work, never for work excluded by the current viewport.
+The existing shared reveal owner now recognizes hidden/offscreen canvas windows
+and hints placed relative to them. Visible children retain geometry checks;
+owner-supplied readiness, cancellation and lifetime guards remain unchanged.
+
+`test_default_library_missing_media_dismissal_does_not_activate_underlying_item`
+uses the default Library fixture (not the legacy folder autouse fixture), two
+isolated subjects, OS Play/Back input, observed new playback intents, durable
+history/queue comparisons and fresh intended second-subject input. Initial
+fixture registration, offscreen driver target and duplicate accepted-operation
+counting errors are retained separately from the confirmed surviving-cover
+failure under `mac-resume-v60`. The prior generic reveal test excluded only an
+unmanaged Frame: it missed canvas-managed yet intentionally unmapped content.
+Three added shared-owner cases cover offscreen windows, hidden window items and
+placed hints; all fail with the prior implementation. Each also keeps a genuinely
+visible one-pixel control unready, then verifies completion after usable geometry.
+Existing reveal lifecycle cases cover cancel, destroy, replacement, Escape and
+stale callbacks. Representative composed consumers are playback and relink
+entry/return; cross-owner latest-intent/settings and telemetry-revocation matrices
+remain separate safeguards for excluding retired work from active progress.
+Executed source-bound outcomes are recorded in the worker handoff; this is bounded
+representative coverage, not every visibility/interleaving or packaged proof.
+
+## Viewport work must preserve reachability without rendering invisible rows — 2026-09-19
+
+The full-app native resize profile exposed home Recent Downloads rebuilding
+four offscreen cards at y669 on every changed Configure. Catalog and Watch
+virtualization already bounded visible rows, but home used a fixed one-page
+loop; existing count/paging tests did not compare that page with the viewport.
+The same Library catalog row, scroll-notification and anchor owner now handles
+the bounded home recent row with zero overscan. A wholly offscreen row has no
+rendered card or hit target, while its full extent and matching count remain.
+Scrolling admits the canonical row; its context identities and Details action
+remain current. No visible layout is deferred and no redraw debounce is added.
+
+The actual home regression fails before the fix and passes afterward across
+three widths, scroll admission and Details. Shared row-window tests cover both
+boundaries and retain ordinary catalog overscan/removed-tail behavior; existing
+Library/Watch pixel/aspect fault cases provide representative cross-owner proof.
+The native before failure is resize-home-v107-before. Current exact-source
+results remain in continuity. This fixes excess invisible work; it does not
+establish fluid native-frame tracking or waive the original resize gate.
+
+A native-backed large-background experiment improved frame cadence but failed
+bounded theme-replacement RSS checks, including the real mainloop. RGB/RGBA
+and explicit cache-policy controls did not resolve it. Both runtime experiments
+were removed; the original PhotoImage background passes the same memory bound.
+Keep this failure visible before expanding native-image adoption to large
+textures. Small-surface/native lifetime checks had not covered that workload.
+
+## Native drag observations must retain crossing intervals — 2026-09-19
+
+The v104 full-app/baseline native drag comparison exposed a diagnostic omission:
+heartbeat gaps were included only when both callbacks fell inside the gesture.
+A timer deferred until after mouse-up therefore disappeared from the summary.
+Original app/baseline traces show overlapping gaps of3107.51/2967.36ms; legacy
+contained-only summaries reported about17ms. Neither metric measures native
+frame tracking; independent cursor/frame observations remain separate.
+
+The invariant is that an observation spanning an interaction boundary must not
+be discarded precisely because the event loop was unavailable. The existing
+resize_observations owner now selects overlapping callback intervals without
+double-counting a gap spanning multiple gestures. Tests vary down/up crossings,
+whole-gesture stalls, ordinary interior samples, unrelated callbacks and no
+intervals, alongside the existing first-released-geometry checks:9pass. The
+prior contained predicate drops all3crossing examples; the corrected predicate
+retains them. Evidence is resize-frame-v104-heartbeat-{reconciliation,mutation}.json.
+Existing release-geometry tests inspected spatial samples only and never tested
+timer interval selection. Original receipts and legacy metric fields are retained;
+the runner adds explicitly labeled overlapping statistics. This is a diagnostic
+repair, not a performance fix, new latency threshold or release-gate promotion.
 
 ## When and how to strengthen the harness
 
@@ -256,6 +418,21 @@ outside clicks (including targets that stop event propagation), Escape, owner/an
 unmapping, window focus transfer, repeated cleanup, field chrome coverage and
 Canvas/ttk field-image parity. These checks complement, not replace, packaged
 Mac/Windows interaction evidence and actual cross-application switching.
+
+The runner supplies the intended source and harness roots to its child process,
+ahead of inherited Python search paths. The native report plugin records actual
+imported production/harness module paths, executable, arguments and working
+directory in native-imports.json and rejects imports outside those roots before
+tests run. Run from an unrelated directory or an inherited Python path must not
+silently select a different checkout. Bound freeze executions also retain source
+manifests before and after validation; an import receipt alone is not a source hash.
+
+Each setup, call and teardown result is written immediately to
+native-results.jsonl, preserving failures even if a later case times out.
+The final native XML and process result remain the completion gate. Partial logs,
+split focused reruns and an interrupted process cannot substitute for a clean,
+uninterrupted combined execution and teardown. Keep OS-injected and physical
+input claims separate. Only one native GUI owner may run on a host at a time.
 
 The earlier choice-control audit excluded `tk.Menu` command/context menus and
 checked selection rather than dismissal lifetime. Native command menus remain
@@ -952,3 +1129,577 @@ must pass first; all five targeted mutants must produce actual JUnit test
 failures. Import/collection/setup errors, skipped cases, empty reports, timeout
 or unavailable runners cannot qualify as detection. This is a bounded
 history/privacy/recovery score, not a repository-wide mutation score.
+
+
+## Recovery and presentation regression gates
+
+The five classes in [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md) are mandatory NORMAL/DEEP scenarios. Run the maintained before/after source contract and retain exact-artifact code binding separately from native/packaged GUI evidence. Source checks never waive the packaged journey gate.
+
+
+### Fixed-DPI shared-control prototype (v65–v66, bounded qualification)
+
+The observed Windows 200-percent virtualization and flag-only clipping share an
+invariant: intended geometry, font pixels, contour geometry and native pointer
+coordinates must describe the same admitted window. Earlier Mac backing-density
+checks validated raster transport but did not exercise a Windows PMv2 physical
+coordinate domain. The bounded opt-in metrics contract keeps measured positions
+physical and converts only canonical dimensions; default windows are unchanged.
+`test_window_logical_metrics.py` compares target-pixel chrome to the independent
+existing density rendering recipe and detects an unscaled-edge negative. Native
+shared-control checks cover editing, text fit, menu bounds and lifecycle at
+baseline/2x geometry; these are not Windows physical-resolution acceptance.
+Independent Windows capture, actual awareness/DPI and native hit provenance are
+required separately. Fixed 96/192 DPI only; mixed-monitor changes, whole-app
+adoption and installed packages remain outside this prototype.
+
+
+The v66 review strengthens two independent checks: RGBA equality now compares
+RGB and alpha separately and rejects a color-only/same-alpha negative (RGBA
+`getbbox()` alone can miss it). A surviving-interpreter native case destroys and
+recreates Toplevel entries at both admitted scales, queries live Tcl images and
+editing behavior, and checks no new images after warm-up. Density variants live
+in the existing interpreter ProductChromeOwner, not retired Toplevel objects.
+Earlier whole-root teardown could not expose stale per-window style images.
+
+
+The final fixed-192-DPI Windows fixture now has independent physical-client
+capture and native pointer/keyboard provenance, including the actual focused
+native ancestor and exact Tk leaf. OS long editing changes only the intended
+value; one effective palette change restores contour pixels/image handles.
+Actual wrong geometry, double font and downsampled checker/gradient faults are
+rejected, with positive restoration. Original receipts live in
+`mac-resume-v66/windows-remaining-passed`, bound by `remaining-proof-binding.json`.
+This covers the explicit prototype only: production awareness stays off, Windows
+100-percent/mixed-monitor/all-consumer and packaged behavior are not inferred.
+Synthetic focus/confirmation predicates remain distinct from native outcomes.
+
+
+### Continuous control material, September 19
+
+The hover navigation checks previously accepted any changed pixel plus one
+unchanged face pixel. Thin disconnected contour strokes passed those checks
+without producing a concave well. The top ttk adapter also tiled a small image
+with a zero-border layout and painted selection on a separate narrower canvas.
+The existing material owner now uses the same diffuse recessed rim as the Forge
+selector, with fixed corner regions and a stretched interior; canvas navigation
+consumes that same recipe at its actual bounds. The user's latest direction
+removes all navigation underlines. Persistent concavity and semantic icon/text
+roles indicate selection; focus remains a separate accessibility contour.
+
+The native matte case observes upper inner shading across both halves, records
+unresampled physical idle/hover/selected/focus captures, and injects a producer
+fault removing the shared rim. It verifies the physical shadow disappears and
+returns after restoration. The initial injection did not invalidate the native
+display until a state transition; that failed observation is preserved separately.
+These checks and independent scene review cover representative ttk and sidebar
+owners, not all consumers, themes, Windows, physical input or packaged artifacts.
+
+
+### Owned capture must contain the composed children
+
+Windows PrintWindow success did not establish usable pixels: the old client-only
+path returned an almost black view while the independently observed Library was
+fully rendered. The transition then displayed that buffer as its blur cover.
+The existing Windows capture adapter now requests full content from the same
+owned HWND. It never captures desktop pixels. The speculative RedrawWindow
+mitigation was removed because it did not repair this source-buffer defect.
+
+The maintained Windows native capture test samples independently chosen regions
+of a Frame, Canvas and nested child, including legitimate black content; it forces
+the actual former print flag, observes missing composition, restores exact pixels,
+and verifies an unavailable capture returns None. Facade tests keep invalid
+geometry out of the native adapter. The actual full-app before/after captures
+and source binding are under windows-transition-v74. The first independent
+physical temporal observer refused to capture after foreground ownership was
+lost; it yielded zero frames and cannot qualify transition growth or continuity.
+No generic dark-pixel heuristic rejects legitimate media. Prior settled-pixel and
+Mac transition tests missed the Windows-specific incomplete capture path.
+
+
+### Canonical units and the exact font used by a native control
+
+The opt-in button adapter initially measured a newly copied font rather than the
+font tuple given to ttk. Python Font(font=tuple) resolves actual attributes first;
+on Mac the pixel-to-point-to-pixel round trip changed line height, producing86px
+instead of the required88px. Querying Tcl metrics for the original tuple fixes
+that discrepancy without weakening geometry. The bounded native metrics suite
+now covers buttons alongside fields/menu owners: default sibling44px, opted-in
+88px, wrong-base-style negative, disabled callback exclusion, Toplevel retirement,
+image identity, rendered focus, effective theme change and exact pixel restoration.
+
+Canonical dimensions convert once; measured owner coordinates and recovery
+content height stay unchanged. Checkbox box, label and glyph now share those
+window units and use the existing backing-density image adapter. Native default
+and2x checkbox captures and valid-release/disabled cases support that consumer.
+The old source-string assertion requiring literal size12 was updated to its
+canonical12-through-metrics expression; actual native dimensions are the outcome
+check. Mac metrics tests and Windows composed-capture tests are enrolled in their
+respective existing source-native harness branches. Production DPI awareness is
+still off; fractional/mixed-monitor/full-consumer/package qualification is absent.
+
+
+### Native storage capability is separate from pixel format
+
+A 2x tooltip capture exposed PyObjC `objc.varlist` storage despite ordinary
+RGBA8 metadata. The existing fast capture guard assumed every bitmapData result
+had a length. It now requires contiguous buffer-protocol storage and sufficient
+byte capacity; unsupported storage uses the existing native PNG encoder. The
+unsized-storage case fails before the repair and passes afterward alongside
+opaque, alpha, alternate-format and truncated-buffer cases. Existing coverage
+missed this because every fake supplied a memoryview and the full-app native
+fixture supplies supported storage. The separate real full-app pixel-fidelity
+check still passes without invoking the encoder. Tooltip default/2x native
+captures pass after the repair; no universal native-storage or performance claim.
+
+
+The same units boundary now covers FactsText and ActivityLogText. Their native
+fixtures preserve source text, selection/reflow, no-op snapshots and decoration
+retirement while canonical fonts/gaps scale once. Density changes also update
+embedded severity labels: the prior default-metrics case failed because only
+the containing Text font changed. Existing spelling/wrap tests covered creation
+but missed that transition; the new default and injected2x cases exercise it.
+Host macOS, injected192 per-window metrics, native backing/capture ratio2.0;
+physical OS DPI unmeasured. This is not Windows DPI or full-app qualification.
+
+
+Scrollbar unit coverage tests both orientations with default and injected2x
+metrics: canonical track/minimum thumb/stroke scale; measured pointer travel
+produces the same fractional scroll result. Existing cross-axis drag and
+retirement checks remain enrolled. The integrated shared metrics native suite
+passes19 cases across fields, choices, buttons, toggles, segments, hints,
+documents and scrollbars. This remains bounded Mac fixture coverage.
+
+
+### State material, resting depth and nine-slice continuity
+
+A nonzero focused pixel difference did not exclude legacy perimeter rings, and
+an unchanged edge sample encoded the old flat-navigation assumption. The current
+contract requires raised resting interactive controls, concave interaction
+states and distinct focus without bright outlines/underlines. Tests now cover
+actual Tab/Shift-Tab, selected+focused state, restoration, unchanged values and
+foreground roles across five presets. Original ring captures and failed
+editor/list/volume cases remain. The scene action owner changes its base image
+for focus; adding a shaded surround over a still-raised action produced a double
+contour and was rejected by independent visual review.
+
+Feeding an unflattened raised source image into the existing nine-slice element
+produced a repeated grid. The fixed producer uses the existing stretch contract.
+The independent native oracle samples horizontal continuity over the blank area
+above the label at three widths, default and injected2x metrics; the old
+stretch=False producer mutation must violate the same<=1 channel-variation
+criterion and restoration must be exact. The first single-row mutation-strength
+check measured3 but required>3; it remains a failed test attempt. The corrected
+oracle strengthens the positive check to the whole blank upper band; old grids
+reach7. Six cases pass, including actual prior-renderer mutation. Source image
+flags or successful geometry alone are not visual proof. Mac injected metrics
+remain distinct from actual Windows DPI. No broad release journey was restarted.
+
+
+### Search-field children share their owner's units and material
+
+The v95 finite-consumer pass found LibrarySearchField's chrome already using the
+window metrics while entry, placeholder, shortcut hint, icon and padding retained
+ordinary dimensions. The new injected192 native case fails before the repair
+(point font11 instead of pixel font-29); default sizing passes. Existing
+`test_shared_control_geometry_font_and_popup_lifetime` exercised ProductEntry,
+ChoiceDropdown and PillAction, so it did not cover the search-specific children.
+LibrarySearchField now reuses the existing metrics and backing-density icon
+adapter, keeping character-count widths and measured coordinates unchanged.
+
+Rendered focus inspection also found icon/hint rectangles retaining the resting
+background after the entry adopted focus_surface. The same owner now applies its
+semantic background to its labels. New background checks fail on both prior
+sizes. Existing field-edge tests check obstruction at the contour, which cannot
+detect a wrong interior child color. New native checks preserve Unicode text,
+selection/caret through compact mode and theme refresh, placeholder return and
+safe variable writes after retirement; existing cross-owner contour and lifetime
+cases pass alongside them (26 native cases). This is bounded source-native Mac
+proof, not physical Windows DPI, every palette, or packaged acceptance.
+
+The suspected copied-font measurement issue in ChoiceMenu and PillAction was
+NOT reproduced: six native width/ellipsis/measurement cases pass before any
+runtime change. Their measurement implementations remain unchanged. ChoiceMenu's
+forced smaller test canvas can clip when its requested width exceeds its actual
+width; normal ChoicePopover refuses an oversized popup. That observation alone
+is not a production regression or authorization for a popup redesign. Revisit
+with an enabled constrained consumer if its labels demonstrably truncate.
+
+
+### Placeholder and editable-section children inherit the same unit boundary
+
+The v96 placeholder cases exercise the same font/inset/material invariant as
+search, under a different owner (ttk ProductEntry). Default focus retained a
+light hint rectangle; injected192 also retained the ordinary hint font. Both
+failures are preserved. The fix reuses the entry's actual font and window metrics
+and keeps the hint visible in an empty focused entry with a separate caret.
+Existing `test_collection_footer_placeholder_scoped_keys_and_input_lifetime`
+checked presence, content isolation, keyboard save and footer visibility, but not
+hint-font parity or interior background. That actual OS-key dialog journey still
+passes alongside the new density checks and cross-owner retirement checks.
+
+The v97 editor checks add an independent durable-save boundary: failed save keeps
+exact Unicode draft and editing state; successful retry sends the same owner/text;
+cancel after another edit restores the last saved value. Existing ordinary
+caption/footer and scoped cancel/owner-replacement checks pass. The prior
+injected192 case fails at body font size, because buttons/scrollbar had converted
+while labels, text and padding had not. The existing editor now converts canonical
+sizes once, retains measured requested heights, and measures/draws one explicitly
+pixel-sized font. No new owner or storage model. Native calculated-height footer
+checks at injected192 are prepared but NOT executed because GUI ownership was
+yielded. The first failed-save screenshot preceded a render pump: it proves
+neither visible error feedback nor settled caption layout. A pump was added and
+that rendered receipt remains pending. Do not promote source assertions to those
+unobserved native outcomes.
+
+
+### Follow-up qualification and native-window isolation
+
+The v97 resume completes the previously pending injected192 editor checks:
+11 native cases pass on unchanged source, including settled failed-save feedback,
+calculated-height caption/footer bounds at widths760/1120, and cross-owner
+placeholder/search cases. Earlier unpumped screenshots remain historical only.
+
+The v98 dialog shell check fails before at injected192 because the existing
+ActionDialogSurface retained24px shell padding instead of48px. It now converts
+its canonical padding, footer/status gap and scrollbar spacing once using the
+popup's existing metrics; all14 current callers provide canonical constants or
+defaults. Existing protected-action tests exercised ordinary metrics only. The
+new native cases independently verify child geometry and action visibility,
+Save invocation and parent-metric preservation after popup destruction; the
+actual collection keyboard/footer journey still passes (3 native cases total).
+
+A separate native Toplevel intentionally does not inherit its parent's admitted
+DPI merely through Python ancestry. The default child of an injected192 parent
+remains ordinary, while an explicitly admitted192 child uses its own metrics.
+In-window ChoicePopover is a Frame and already uses the same native window.
+Production PMv2 remains off. Future native-popup adoption must use that popup's
+actual PMv2/DPI admission before controls, with content fonts/minima/work-area
+checks; Mac injection is not evidence of physical Windows monitor inheritance.
+
+
+### Native list styles must remain local to their window units
+
+The v99 finite list audit found PixelScrollTable has no production constructor
+call (current Library creates ArchiveBrowser), so no speculative conversion was
+made there. Active ChapterList retained38px rows and ordinary fonts/columns under
+injected192. The new native row-height case fails before (38 instead of76).
+ChapterList now derives a Dpi variant from its existing Player.Chapters.Treeview
+style, scales fixed column dimensions and uses the window font tuple. Native
+input, selection and inherited palette mappings remain owned by ttk.
+
+Existing `test_readonly_native_list_selection_and_rendered_focus` exercised OS
+Down, readonly rows and focus withholding across chapter/folder/location owners,
+but only ordinary geometry. New default/injected192 cases verify actual row
+bounds, exact font units, time/title columns, final-row scroll reachability,
+selection/data preservation through style refresh and an ordinary sibling that
+stays38px before/after popup retirement. All5 native cases pass; the actual old
+38px implementation fails the new case. This does not establish physical2x OS-key
+input, complete player geometry or Windows behavior.
+
+
+### Slider geometry and pointer fractions share one conversion
+
+The v100 volume case fails before because injected192 retains92x22 geometry
+instead of184x44. PlayerVolumeControl now converts its canonical size, endpoint
+insets, thumb/stroke and focus material together, while actual pointer coordinates
+and0..100 values stay unscaled. The existing shared matte-track renderer accepts
+an explicit unit_scale, default1 for unchanged other consumers. New native cases
+assert actual0/50/100 endpoint/midpoint mapping and one callback per request,
+5-unit step, exact track/thumb bounds, trace retirement and theme refresh.
+Existing three ordinary volume focus tests additionally prove instance isolation
+and exact restoration at0/50/100, but previously omitted the injected geometry
+and pointer boundary. Five native cases pass after; original failing receipt kept.
+PlayerTransportButton retains its native style/input owner; only its18px icon
+request now uses window units and existing backing adapter at construction/theme
+refresh. Pause/Play image dimensions are checked. Full-player/native-overlay
+input and physical Windows remain separate qualification work.
+
+
+### Conversion must include the clipping parent and pointer insets
+
+v101 progress native cases retain actual400px width while25/75percent draw at100/300,
+convert only canonical thickness/minimums and retire timers/traces. The old192
+height fails5vs10;5native cases pass after with existing retirement coverage.
+
+v102 extends the existing native-list style derivation used by chapters to actual
+archive location/folder constructors. Before two ordinary cases pass and two192
+row-height cases fail. After six row/font/selection/end-scroll/sibling checks pass,
+but the actual location capture remains clipped because its parent sidebar kept
+184px. Row-height assertions alone missed that parent boundary. Sidebar width,
+padding and heading font are now converted together in source; native parent-width
+and viewport assertions passed in the33-case v103 dependency suite after the lease.
+The corrected2x capture was inspected. Preserve the initial clipped capture and
+keep physical/platform-wide acceptance separate.
+
+v103 timeline source tests show fixed10px pointer insets seek5.26percent instead of
+zero at a doubled visual inset. The existing current-media guard is checked too.
+Pointer insets, drawn track/handle/markers and transport spacing/labels/icons now
+use one window metrics boundary while measured width/coordinates, durations,
+fractions and heatmap bucket count remain unchanged.48focused headless checks
+pass. Prepared native tests use the actual transport builder to inspect endpoint
+containment, maximal heatmap, measured endpoint mapping and child bounds. They
+passed in the33-case v103 dependency suite, including existing ordinary compact
+timeline and stale-media retirement checks. Physical/platform input remains open. No global scene-font scaling was added:
+ScenePainter text, caller card/footer geometry, artwork bounds and CanvasActions
+hit targets must be converted together in their existing owners.
+
+
+### Menu scale must preserve measured text, row targeting and owner containment
+
+RunHoverMenu kept400px canvas width and31px rows under injected192 even though
+its existing ChoicePopover and scrollbar already used the window metrics. Both
+above/below192 cases fail before (400 versus800). The same menu owner now
+converts its canonical width, rows, padding, scroll increments and text together.
+It creates one explicit-size font object for both drawing and ellipsis measurement;
+actual canvas coordinates and selected record identities are not scaled. A full
+label that fits is preserved even when appending an unnecessary ellipsis would
+overflow. No native-window owner or input subsystem was added.
+
+Existing selected-material/Return dispatch proof only covered ordinary geometry
+and short labels, so it missed the unit boundary. New actual native cases cover
+ordinary/injected192 above/below placement, measured Unicode truncation, exact-fit
+labels, final-row scroll/dispatch, image retirement and out-of-viewport dismissal.
+Cross-owner ChoiceMenu width/ellipsis and existing scrolled-dropdown/command
+lifetime cases pass alongside them:11native cases in6.40s, exact source unchanged
+9c68fc59e83cfd7211c1e7bb6aba0510efb270889da6344ef9149474f8a9799f.
+Restoring the prior unconditional ellipsis predicate fails the new exact-fit
+assertion in a separate bounded native mutation; first helper-indent failure is
+retained and the corrected mutation passes.69headless run-identity/material/unit
+cases pass. This does not prove OS-key input at physical2x, native tk.Menu, all
+platforms, monitor transitions or RunHover focus-return semantics.
+
+
+### Native dialog units include content, minimum size and failure feedback
+
+Collection Listbox text remained ordinary18px line spacing when an explicitly
+admitted192 popup required34px. Its shell/buttons already scaled independently;
+the prior ordinary OS-key collection test did not exercise native popup admission
+or the font/parent coupling. The actual new default case passes before and the
+192 case fails. The dialog now uses its own metrics for fonts, padding and wheel
+row units, and reuses bounded_window_size for scaled initial/minimum dimensions.
+Centering uses measured coordinates. An ordinary popup remains ordinary even
+when its parent has injected192 metrics; production admission is unchanged.
+
+Minimum-size validation exposed a second same-owner issue: feedback wrap width
+remained492/984 after available width shrank452/904. Both native cases fail
+before the local Configure binding; the description and feedback labels now
+wrap to their actual allocated width. Current font/list/selection, screen bounds,
+final-item pointer dispatch, failed-save draft/selection retention, minimum-size
+feedback/footer and successful retry pass. Existing real OS Return/Escape, nested
+grab/input-lifetime, ordinary editor/volume focus and own-window shell cases
+provide representative cross-owner checks:8native cases in9.76s;47headless
+shell/material/units/annotation cases pass. Initial wrong test-node collection
+error is retained separately; the corrected suite ran all8. The scaled minimum
+capture visibly retains full feedback and raised Save/Cancel controls.
+
+This is Mac source-native default/injected192 proof; it does not establish
+automatic popup DPI admission, physical Windows, mixed monitors, arbitrary long
+error text or all dialog contents. Existing failures and original release gates
+remain separate.
+
+
+### Scroll chrome allocation and item endpoints share one units boundary
+
+SceneRail previously reserved12px even when its SleekScrollbar requested16px plus
+8px padding under injected192 metrics. Tk allocated the expanding canvas first,
+clipping the scrollbar to8px. Existing scrollbar primitive and ordinary Watch/Player
+rail tests did not cover this scaled parent allocation. The new ordinary case
+passes before; the injected192 case fails on actual allocated scrollbar height.
+
+The existing rail now reserves measured scrollbar request plus converted canonical
+padding, and uses its converted14px item gap for content extent and focus reveal.
+Caller y/width/height/stride remain measured. Native tests independently check actual
+child allocation, exact extent, final target at the viewport edge, one Return dispatch,
+measured resize and cache/target retirement. Existing Watch nested-scroll/endpoints
+and Player related-row/viewport journeys pass alongside the two new cases:4 native
+cases in19.18s with exact unchanged source a5e00067e6de41a590e0afcfd2330d8eb159fd941bfc6dd3ea0b83aa76463b91.
+58 headless paging/metrics/material checks pass. Prior failure and ordinary/192
+captures are retained. Full caller card/font conversion, physical DPI, actual
+Windows and full-player native video/input remain outside this bounded proof.
+
+
+### Editable dialog content must remain reachable at its bounded minimum
+
+Annotation editor proof exposed both a units boundary and parent allocation issue:
+ordinary popup geometry inherited192 parent sizing, injected192 note text remained
+18px versus34px, and after conversion the bounded body could squeeze the note to1px.
+The existing owner now derives its fonts/spacing/sizing from its own metrics and
+wraps explanatory text to measured allocation. The original ordinary430px minimum
+also clipped the note below the footer;500px preserves a visible editable area.
+
+The existing ActionDialogSurface scrolling body is admitted only for enlarged
+metrics, whose complete document cannot fit the measured screen. Ordinary layout
+remains adaptive and non-scrolling. Local FocusIn reveals note/category fields;
+footer actions remain protected. The source rule now names this explicit bounded
+exception and asserts its admission condition, supported by retained native
+failures. Initial unconditional-scroll candidate was narrowed after the existing
+source rule caught it. No new input/selection/persistence owner was introduced.
+
+Prior annotation/retry lineage cases covered real durable failures and identity,
+but ordinary geometry only. Those12 parameterized cases plus collection OS-key
+and4 new geometry cases passed17native cases on the first scrolling candidate.
+Final enlarged-only/ordinary-minimum source passes6 native cases (4 annotation,
+2 collection), covering both category constructors, exact text/font units, failed
+save retention, final-line reach, focus reveal, measured wraps and footer bounds.
+47 focused headless cases pass. Earlier source/constructor/minimum failures remain
+retained. Physical Windows, native-popup admission, arbitrary heading lengths and
+extreme work areas are outside this bounded default/injected192 Mac proof.
+
+
+The v123 continuation consolidates the repaired editors' duplicate placement into
+existing centered_toplevel_geometry(target=popup). The popup owns units/screen
+limits; centering uses measured owner coordinates. Existing callers without target
+retain their contract, and height_is_measured remains unscaled. Four parent/target
+scale combinations and screen clamping extend the headless boundary;51 focused
+cases and6 actual editor/collection cases pass. This does not automatically admit
+other native windows or prove physical/mixed-monitor placement.
+
+
+### Measured label width still includes native text insets
+
+Missing-media recovery had the same parent-versus-popup geometry boundary and
+unscaled body typography. Default/injected192 across reconnect, legacy folder
+review and exact-profile redownload first failed width/font checks. Existing
+actual relinked-media recovery covered identity/actions at ordinary geometry,
+not separate popup admission. The owner now reuses target-aware geometry and
+its own font roles/spacing; requested content height remains measured.
+
+The first converted candidate exposed a second constraint: a ttk.Label wrapping
+at its full allocated488px requested491px including native edge insets. Two real
+ordinary prompts failed the independent requested-versus-allocated width check.
+Local wrap calculation reserves4 canonical pixels, preserving the full copy.
+Final10native cases include the6new variants,2existing actual relinked recovery
+cases and2collection checks;92focused source cases pass. First precheck's wrong
+FONT_UI expectation was corrected to the actual Muted FONT_UI_SMALL role before
+runtime work, and both initial receipts remain. No text, action or recovery owner
+was replaced. Ambiguous longest-heading/extreme-screen/physical monitor behavior
+remains outside this bounded proof.
+
+
+The first v124 containment pass was insufficient: full default screenshot showed
+780px window height while settled content requested342px. The new content-height
+assertion fails that candidate. A withdrawn Configure allocation had fed unstable
+wrap width into initial requested height. Since this dialog is non-resizable,
+its existing owner now sets bounded text width (including native insets) before
+measuring height; the dynamic callback is removed. Heading uses that same wrap
+boundary. Final12native cases include two ambiguous longest-heading variants and
+exact settled height;92source cases pass. Current compact default and wrapped
+scaled-heading captures were inspected. Initial overlarge capture remains a
+rejected visual sample; containment alone is not layout acceptance.
+
+
+### Informational word fit and action visibility are separate contracts
+
+Consent's own192 metrics did not reach its benefit font/vector/spacing/layout;
+ordinary geometry passed while192 text stayed16px versus32px. After conversion,
+footer containment passed but narrow4column text split information across lines.
+The existing grid now derives4/2columns from exact measured longest-word width;
+enlarged content uses the existing document viewport while choices/privacy remain
+protected. Tests reach each benefit row and compare every word to actual wrap
+width. A temporary minimum-width0 predicate mutation recreates fixed4column
+splitting and is detected; restoration returns2columns. Initial mutation got
+corrected by normal Configure and is retained as a failed test attempt.
+
+Six native cases cover both unit modes, two parent sizes, scaled vector bounds,
+readable scrolling, repeated-finish single dispatch and focus/grab retirement,
+plus existing ordinary native consent/backdrop and collection controls.75focused
+source cases pass. No telemetry permission authority or copy changed. Physical
+Windows/fractional/mixed-monitor and platform accessibility remain separate.
+
+
+### Mode-control drawing, pointer midpoint and sibling viewport scale together
+
+ActivityLogText already scaled, while ActivityModeSlider stayed30x116 with a58px
+pointer midpoint and its parent retained8px gap. Existing ordinary disclosure and
+retired-gesture tests missed the coupled192 boundary. New ordinary case passes;
+192 size fails before. The same owners now convert shape/stroke/size/midpoint/gap,
+keeping event coordinates and log contents measured/unchanged. Six native cases
+cover actual midpoint transitions, released drag, hidden/replaced callback,
+keyboard switching, resize, repeated draw stability and lossless log text.39
+headless cases pass;7native cases explicitly skip outside the native runner.
+This does not qualify the enclosing root layout, physical input or Windows.
+
+
+### Retained icons must preserve unit dimensions during palette updates
+
+The root loader and its existing live-theme callback both used canonical18/20px
+sizes directly while their containing controls could be admitted192. Headless
+actual-method cases with real Pillow assets pass ordinary and fail injected2x
+before. Both paths now use the same root metrics; canonical per-root cache keys
+and retained image identity stay unchanged. The strict image adapter rejects
+wrong-sized theme paste, and tests verify a changed tint plus byte-exact reverse
+palette restoration.46new/related headless cases pass. Native Tk image/paste,
+control containment and actual root theme integration remain pending GUI lease;
+this source proof does not qualify whole-app scale or physical backing density.
+
+## Repeated presentation application preserves material ownership (2026-09-19)
+
+Theme/style application must preserve a control's rendering contract and geometry
+when the effective palette is unchanged. The v128 root live-theme sequence found
+that legacy navigation layouts replaced material elements after first creation.
+The existing material owner is retained; obsolete flat layouts were removed.
+`tests/test_root_logical_metrics_native.py` now compares actual native control
+pixels and dimensions before and after repeated application across root, Archive
+and Media navigation aliases. The prior source fails; corrected source passes.
+The v93 material/seam tests missed this because they installed styles once and
+then changed states. Root integration also checks all header siblings and actual
+URL children, beyond the earlier nav-only containment checks. This bounded class
+coverage does not establish every theme, every consumer or physical Windows DPI.
+
+## Transparent material must preserve its actual parent backdrop (2026-09-19)
+
+An alpha-correct rounded raster can still form a square visible box when its
+canvas uses a flat background over textured ancestors. Shared matte enrollment
+now includes the existing URL/rounded-field/PillAction material canvases. Native
+root tests expose the real parent independently by lowering each control, compare
+transparent corners, remove the projected backdrop as a negative control, and
+restore it across state/theme/width changes. v93 raster/seam tests and prior
+projected-button tests missed canvas-owned fields because those were not enrolled.
+Alpha interpolation and the single physical widget clipping edge are measured
+separately; the actual material contribution and interior corners retain a
+one-RGB-level bound. Existing projected-button and text lifecycle cases also run.
+This proves bounded source-native continuity, not all materials or physical DPI.
+
+### Window units, native artwork, and reachable root controls (v132–v133)
+
+The invariant is that a consumer allocates room for the actual scaled control,
+while artwork is sampled at window units times display backing density exactly
+once. Shared control metrics alone do not establish caller correctness. Existing
+brand source/export tests checked approved pixels and ordinary native headers;
+existing field tests checked their own requests, missing the Library scene's fixed
+200×40 allocation. New root actual-bound brand/placeholder tests exercise ordinary
+and injected192 units; Library tests exercise real child requested/allocated/font
+heights. Before fixes both brand cases and10 enlarged Library allocation cases
+failed. Integrated18 native tests pass, including thumbnail identity, palette,
+failed-render retry, and search child fit. Headless library regression85 pass.
+Windows exact79fae9 actual192 measured400×80 outer and242×42 Entry,40px linespace;
+physical search/filter/clear and Unicode Forge input passed. Native Mac P3 capture
+is converted to sRGB and an independent rendered source reference retains exact
+pixel comparison across quantization. Package/Dock/taskbar and full-scene units
+remain separate; partial caller repair does not qualify every ScenePainter owner.
+
+The related reachability invariant is that scaling cannot hide an enabled action
+below the client viewport. Existing dialog overflow tests covered ActionDialogSurface
+and native consent/settings; root Forge did not use that owner. At900×640 injected192,
+Output details was unmapped. Enlarged Forge now reuses ActionDialogSurface with
+ordinary density unchanged, and reveals only its own descendants on focus. Native
+root reachability/header4 pass; lifecycle2 pass covers compact900/1180×640,
+Violet/Cobalt, focus down/up, unrelated header focus, descendant wheel routing and
+Library/Forge navigation. Shadow lifecycle2 also passed with the new parentage.
+The first lifecycle fixture used1180×740, where Details is intentionally removed
+in favor of the expanded summary; preserve failed evidence, test the real compact
+launcher at1180×640 instead. Source tests alone do not prove physical Windows
+scrolling or full-root typography. Resize performance remains parked.
+
+The Library search follow-up also exposed the remap boundary: a caller that owns
+its own scene texture must project that texture into nested rounded chrome. The
+Forge-only v131 enrollment matrix missed this independent Library scene owner.
+Actual Windows inspection proved the backdrop absent; local projection fixed the
+missing enrollment. Default-DPI native movement/theme then caught a stale old
+position and old image after a same-sized field remap. The production field Map
+hook now refreshes projection after mapping; Configure alone cannot establish
+that invariant. Actual image black/white draws independently identify transparent
+pixels for either native NSImage or PhotoImage. Both scales retain the strict
+RGB1 interior oracle, deliberate missing-backdrop failure and exact restoration
+across home/all routes, reflow, scroll, themes and retirement. This is representative
+nested-owner coverage, not proof that every field in the app is enrolled.

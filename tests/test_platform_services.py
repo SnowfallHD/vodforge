@@ -238,3 +238,143 @@ def test_downloader_app_delegates_folder_opening_to_the_platform_service(
     DownloaderApp._open_path(tmp_path / "folder")
 
     assert opened == [tmp_path / "folder"]
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["opaque", "transparent", "other-format", "short-buffer", "unsized-buffer"],
+)
+def test_native_bitmap_snapshot_preserves_pixels_and_detaches_ownership(
+    monkeypatch, variant
+):
+    import io
+    import sys
+
+    from PIL import Image
+
+    colors = [
+        (230, 20, 40, 255),
+        (10, 220, 70, 255),
+        (30, 60, 240, 255),
+        (200, 150, 20, 255),
+    ]
+    if variant == "transparent":
+        colors[0] = (230, 20, 40, 128)
+    expected = Image.new("RGBA", (2, 2))
+    expected.putdata(colors)
+    raw = bytearray(
+        bytes(colors[0])
+        + bytes(colors[1])
+        + b"pad!"
+        + bytes(colors[2])
+        + bytes(colors[3])
+        + b"pad!"
+    )
+    if variant == "short-buffer":
+        raw = raw[:3]
+    encoded = io.BytesIO()
+    expected.save(encoded, format="PNG")
+    encodings = []
+
+    def encode(*_args):
+        encodings.append(True)
+        return encoded.getvalue()
+
+    rep = SimpleNamespace(
+        pixelsWide=lambda: 2,
+        pixelsHigh=lambda: 2,
+        bytesPerRow=lambda: 12,
+        bitsPerSample=lambda: 8,
+        samplesPerPixel=lambda: 4,
+        bitsPerPixel=lambda: 32,
+        bitmapFormat=lambda: 1 if variant == "other-format" else 0,
+        isPlanar=lambda: False,
+        bitmapData=lambda: object() if variant == "unsized-buffer" else memoryview(raw),
+        representationUsingType_properties_=encode,
+    )
+    monkeypatch.setitem(
+        sys.modules, "AppKit", SimpleNamespace(NSBitmapImageFileTypePNG=4)
+    )
+    from yt_downloader.platforms.macos.surfaces import _bitmap_rep_image
+
+    image = _bitmap_rep_image(rep)
+    raw[:] = bytes(len(raw))
+    assert image.tobytes() == expected.tobytes(), (
+        "Returned image borrowed mutable native storage"
+    )
+    assert len(encodings) == (0 if variant == "opaque" else 1)
+
+
+def test_named_native_adapters_import_without_loading_foreign_native_libraries():
+    """Import dispatch never initializes the other OS's native runtime."""
+    import subprocess
+    import sys
+
+    script = """
+import importlib
+import importlib.abc
+import subprocess  # Standard library probes msvcrt availability itself.
+import sys
+class ForeignNativeImport(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        forbidden = {"AppKit", "Foundation", "objc", "Quartz"} if sys.platform == "win32" else {"msvcrt", "win32api", "win32gui"}
+        if fullname.split(".")[0] in forbidden:
+            raise AssertionError("foreign native import: " + fullname)
+sys.meta_path.insert(0, ForeignNativeImport())
+for name in ("platforms.macos.windowing", "platforms.macos.player_overlay", "platforms.windows.video_host", "platforms.windows.update_recovery", "platforms.macos.surfaces", "platforms.macos.filesystem", "platforms.windows.surfaces", "platforms.windows.filesystem", "platforms.windows.windowing", "platforms.windows.dialogs", "platforms.windows.processes"):
+    importlib.import_module("yt_downloader." + name)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_relocated_native_failure_keeps_closed_diagnostic_label():
+    from yt_downloader.failure_diagnostics import _first_party_location
+
+    namespace = {"__name__": "yt_downloader.platforms.macos.player_overlay"}
+    exec(  # noqa: S102 - fixed synthetic traceback fixture
+        compile(
+            "def fail():\n    raise RuntimeError('private-path-sentinel')\n",
+            "private-file-sentinel",
+            "exec",
+        ),
+        namespace,
+    )
+    try:
+        namespace["fail"]()
+    except RuntimeError as error:
+        detail = _first_party_location(error)
+    assert detail == {
+        "source_module": "player_overlay_macos",
+        "source_line": 2,
+        "source_scope": "first_party_frame",
+    }
+    assert "sentinel" not in str(detail)
+    namespace["__name__"] = "yt_downloader.platforms.macos.private_user_module"
+    try:
+        namespace["fail"]()
+    except RuntimeError as error:
+        assert _first_party_location(error) == {}
+
+
+@pytest.mark.parametrize("size", [(1, 40), (40, 1), (4000, 4000)])
+def test_optional_capture_rejects_invalid_geometry_before_platform_call(
+    size, monkeypatch
+):
+    from yt_downloader.platforms.windows import surfaces
+
+    monkeypatch.setattr(platform_module, "is_windows", lambda: True)
+    monkeypatch.setattr(platform_module, "is_macos", lambda: False)
+    monkeypatch.setattr(
+        surfaces,
+        "capture_own_widget",
+        lambda *_args: pytest.fail("Invalid capture reached native adapter"),
+    )
+    widget = SimpleNamespace(winfo_width=lambda: size[0], winfo_height=lambda: size[1])
+    assert platform_module.capture_own_widget(widget) is None

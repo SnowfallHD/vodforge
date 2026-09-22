@@ -3,4 +3,7 @@ Pillow>=10.0
 imageio-ffmpeg>=0.6.0
 python-vlc==3.0.21203
 pyobjc-framework-Cocoa==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Quartz==12.2.2; sys_platform == "darwin"
 certifi>=2026.2.25
+psutil==7.2.2
+Send2Trash[nativeLib]==2.1.0; sys_platform == "win32"

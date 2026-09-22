@@ -401,19 +401,50 @@ class HeadlessPipelineRunner:
         staging_recorder = StagingTraceRecorder(output_dir, events)
         staging_recorder.start()
 
+        control_stop = threading.Event()
+        control_lock = threading.Lock()
+        control_trace: list[dict[str, Any]] = []
+        control_errors: list[str] = []
+
+        def control_observation(phase: str) -> None:
+            control_trace.append(
+                {
+                    "elapsed_seconds": round(time.monotonic() - events.started, 6),
+                    "run_id": job.run_id,
+                    "phase": phase,
+                }
+            )
+
+        control_observation("worker_started")
         if cancel_when is not None:
 
             def cancellation_watch() -> None:
                 deadline = time.monotonic() + cancel_timeout_seconds
-                while time.monotonic() < deadline:
-                    if cancel_when(events, app):
-                        if control_request == "skip_video":
-                            app.skip_video_requested = True
-                        else:
-                            app.cancel_requested = True
-                        app_module.terminate_all_active_child_processes()
-                        return
-                    time.sleep(0.02)
+                control_observation("observer_started")
+                try:
+                    while not control_stop.is_set() and time.monotonic() < deadline:
+                        requested = cancel_when(events, app)
+                        # The predicate may be delayed. Completion retires its
+                        # authority before it can mutate state or global children.
+                        with control_lock:
+                            if control_stop.is_set():
+                                return
+                            if requested:
+                                control_observation("control_requested")
+                                if control_request == "skip_video":
+                                    app.skip_video_requested = True
+                                else:
+                                    app.cancel_requested = True
+                                app_module.terminate_all_active_child_processes()
+                                control_observation("control_dispatched")
+                                return
+                        control_stop.wait(0.02)
+                    if not control_stop.is_set():
+                        control_observation("observer_timed_out")
+                except Exception as exc:  # noqa: BLE001 - observer failure must remain visible
+                    control_errors.append(f"{type(exc).__name__}: {exc}")
+                finally:
+                    control_observation("observer_stopped")
 
             cancellation_thread = threading.Thread(
                 target=cancellation_watch, name=f"quality-cancel-{case_id}", daemon=True
@@ -427,8 +458,17 @@ class HeadlessPipelineRunner:
             error = f"{type(exc).__name__}: {exc}"
         finally:
             duration = time.monotonic() - started
+            with control_lock:
+                control_stop.set()
+                control_observation("worker_finished")
             if cancellation_thread is not None:
                 cancellation_thread.join(timeout=1)
+                if cancellation_thread.is_alive():
+                    control_errors.append(
+                        "Control observer did not stop within one second"
+                    )
+            if control_errors and error is None:
+                error = "Harness control observer failed: " + "; ".join(control_errors)
             staging_trace = staging_recorder.stop()
             resource_metrics = sampler.stop()
             active_children_before_harness_cleanup = active_child_snapshot(app_module)
@@ -511,6 +551,10 @@ class HeadlessPipelineRunner:
             "control_request": control_request if cancel_when is not None else None,
             "events": events.trace,
             "progress_trace": progress_trace,
+            "control_trace": list(control_trace),
+            "control_observer_errors": list(control_errors),
+            "control_observer_stopped": cancellation_thread is None
+            or not cancellation_thread.is_alive(),
             "latest_metadata": _latest_metadata(events.trace),
             "outputs": output_probes,
             "media_output_count": len(media_outputs),

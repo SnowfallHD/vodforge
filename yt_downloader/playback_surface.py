@@ -18,31 +18,38 @@ class TkPlaybackSurfaceOwner:
         stage: tk.Widget,
         *,
         diagnostic: Callable[[str], None] | None = None,
+        on_layout: Callable[[], None] | None = None,
     ) -> None:
         self.toplevel = toplevel
         self.stage = stage
         self._diagnostic = diagnostic or (lambda _message: None)
+        self._on_layout = on_layout or (lambda: None)
         self._closed = False
         self._view: Any | None = None
+        self._windows: Any | None = None
         self._surface: NativeRenderSurface | None = None
         self._last_frame: tuple[int, int, int, int] | None = None
         self._refresh_after_id: str | None = None
         if sys.platform == "darwin":
             self._surface = self._create_macos_surface()
         elif sys.platform == "win32":
+            from .platforms.windows.video_host import WindowsVideoHost
+
             self.stage.update_idletasks()
-            self._surface = NativeRenderSurface("hwnd", int(self.stage.winfo_id()))
+            self._windows = WindowsVideoHost(int(self.stage.winfo_id()))
+            self._surface = NativeRenderSurface("hwnd", self._windows.handle)
+            self.refresh()
         else:
             raise MediaPlayerError(
                 "Internal playback is currently available on macOS and Windows."
             )
-        self._bindings: tuple[tuple[tk.Misc, str | None], ...] = (
-            (self.stage, self.stage.bind("<Configure>", self._configured, add="+")),
-            (
-                self.toplevel,
-                self.toplevel.bind("<Configure>", self._configured, add="+"),
-            ),
-        )
+        self._bindings: tuple[tuple[tk.Misc, str | None], ...] = ()
+        self._bind_geometry()
+
+    @property
+    def macos_view(self) -> Any | None:
+        """Read-only native attachment point for a same-lifetime control overlay."""
+        return None if self._closed else self._view
 
     @property
     def surface(self) -> NativeRenderSurface:
@@ -51,10 +58,18 @@ class TkPlaybackSurfaceOwner:
         return self._surface
 
     def refresh(self) -> None:
-        if self._closed or sys.platform != "darwin" or self._view is None:
+        if self._closed:
             return
         try:
             self.toplevel.update_idletasks()
+            if self._windows is not None:
+                self._windows.resize(
+                    self.stage.winfo_width(), self.stage.winfo_height()
+                )
+                self._on_layout()
+                return
+            if self._view is None:
+                return
             x = self.stage.winfo_rootx() - self.toplevel.winfo_rootx()
             y = self.stage.winfo_rooty() - self.toplevel.winfo_rooty()
             width = max(1, self.stage.winfo_width())
@@ -65,15 +80,22 @@ class TkPlaybackSurfaceOwner:
             parent_height = float(self._view.superview().bounds().size.height)
             self._view.setFrame_(((x, parent_height - y - height), (width, height)))
             self._last_frame = frame
+            self._on_layout()
         except Exception as exc:  # noqa: BLE001 - Cocoa bridge failures stay isolated
             self._diagnostic(
                 f"native playback surface resize failed: {type(exc).__name__}"
             )
 
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
+    def _bind_geometry(self) -> None:
+        self._bindings = (
+            (self.stage, self.stage.bind("<Configure>", self._configured, add="+")),
+            (
+                self.toplevel,
+                self.toplevel.bind("<Configure>", self._configured, add="+"),
+            ),
+        )
+
+    def _unbind_geometry(self) -> None:
         for widget, binding in self._bindings:
             if binding:
                 try:
@@ -87,6 +109,34 @@ class TkPlaybackSurfaceOwner:
             except tk.TclError:
                 pass
             self._refresh_after_id = None
+
+    def rehost(self, toplevel: tk.Misc, stage: tk.Widget) -> None:
+        """Move the live video tree, preserving VLC's existing video output.
+
+        Destroying a live NSView and merely setting a new VLC handle advances the
+        clock with a blank picture. The renderer and its descendants must survive.
+        """
+        if self._closed:
+            raise MediaPlayerError("This player has already closed.")
+        stage.update_idletasks()
+        if self._windows is not None:
+            self._windows.reparent(int(stage.winfo_id()))
+        elif self._view is not None:
+            parent = self._macos_parent(stage)
+            parent.addSubview_(self._view)
+        else:
+            raise MediaPlayerError("The internal playback surface is unavailable.")
+        self._unbind_geometry()
+        self.toplevel, self.stage = toplevel, stage
+        self._last_frame = None
+        self._bind_geometry()
+        self.refresh()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._unbind_geometry()
         if self._view is not None:
             try:
                 self._view.removeFromSuperview()
@@ -94,6 +144,9 @@ class TkPlaybackSurfaceOwner:
                 self._diagnostic(
                     f"native playback surface teardown failed: {type(exc).__name__}"
                 )
+        if self._windows is not None:
+            self._windows.close()
+            self._windows = None
         self._view = None
         self._surface = None
 
@@ -106,19 +159,25 @@ class TkPlaybackSurfaceOwner:
         self._refresh_after_id = None
         self.refresh()
 
+    @staticmethod
+    def _macos_parent(stage: tk.Widget) -> Any:
+        import objc  # type: ignore[import-untyped]
+
+        stage.update_idletasks()
+        get_root_control = ctypes.CDLL(None).TkMacOSXGetRootControl
+        get_root_control.argtypes = (ctypes.c_void_p,)
+        get_root_control.restype = ctypes.c_void_p
+        pointer = int(get_root_control(int(stage.winfo_id())) or 0)
+        if pointer <= 0:
+            raise MediaPlayerError("The video window is unavailable.")
+        return objc.objc_object(c_void_p=pointer)
+
     def _create_macos_surface(self) -> NativeRenderSurface:
         try:
             import objc  # type: ignore[import-untyped]
             from AppKit import NSView  # type: ignore[import-untyped]
 
-            self.stage.update_idletasks()
-            get_root_control = ctypes.CDLL(None).TkMacOSXGetRootControl
-            get_root_control.argtypes = (ctypes.c_void_p,)
-            get_root_control.restype = ctypes.c_void_p
-            parent_pointer = int(get_root_control(int(self.stage.winfo_id())) or 0)
-            if parent_pointer <= 0:
-                raise RuntimeError("Tk returned no Cocoa content view")
-            parent = objc.objc_object(c_void_p=parent_pointer)
+            parent = self._macos_parent(self.stage)
             view = NSView.alloc().initWithFrame_(((0, 0), (1, 1)))
             parent.addSubview_(view)
             self._view = view

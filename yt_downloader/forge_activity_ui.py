@@ -9,6 +9,7 @@ from typing import Any
 
 from .activity_ui import ActivityLogText
 from .library_state import library_phase_from_status
+from .ui_layout import window_logical_metrics
 from .ui_theme import THEME
 from .ui_widgets import ToolTip, bind_smooth_vertical_wheel
 
@@ -17,10 +18,11 @@ class ActivityModeSlider(tk.Canvas):
     """Small two-position control, drawn consistently on both desktop platforms."""
 
     def __init__(self, parent: tk.Misc, command: Any) -> None:
+        self._metrics = window_logical_metrics(parent)
         super().__init__(
             parent,
-            width=30,
-            height=116,
+            width=self._metrics.px(30),
+            height=self._metrics.px(116),
             bg=THEME["bg"],
             highlightthickness=0,
             takefocus=True,
@@ -28,8 +30,11 @@ class ActivityModeSlider(tk.Canvas):
         )
         self.command = command
         self.technical = False
-        self.bind("<Button-1>", self._pointer)
+        self._pointer_command: Any = None
+        self.bind("<Button-1>", self._begin_pointer)
         self.bind("<B1-Motion>", self._pointer)
+        self.bind("<ButtonRelease-1>", self._end_pointer)
+        self.bind("<Unmap>", self._end_pointer)
         self.bind("<Up>", lambda _e: self._choose(False))
         self.bind("<Down>", lambda _e: self._choose(True))
         self.bind("<space>", lambda _e: self._choose(not self.technical))
@@ -42,9 +47,19 @@ class ActivityModeSlider(tk.Canvas):
         )
         self.apply_theme()
 
+    def _begin_pointer(self, event: tk.Event) -> str:
+        self._pointer_command = self.command
+        return self._pointer(event)
+
+    def _end_pointer(self, _event: tk.Event) -> None:
+        self._pointer_command = None
+
     def _pointer(self, event: tk.Event) -> str:
+        if self._pointer_command is not self.command or not self.winfo_ismapped():
+            self._pointer_command = None
+            return "break"
         self.focus_set()
-        return self._choose(event.y >= 58)
+        return self._choose(event.y >= self._metrics.px(58))
 
     def _choose(self, technical: bool) -> str:
         self.command(technical)
@@ -55,7 +70,9 @@ class ActivityModeSlider(tk.Canvas):
         self.delete("all")
         for cy, technical in ((13, False), (103, True)):
             color = THEME["accent"] if technical == self.technical else THEME["muted"]
-            self.create_oval(5, cy - 10, 25, cy + 10, outline=color, width=1.5)
+            self.create_oval(
+                5, cy - 10, 25, cy + 10, outline=color, width=1.5 * self._metrics.scale
+            )
             for x in (11, 19):
                 self.create_oval(x - 1, cy - 3, x + 1, cy - 1, fill=color, outline="")
             self.create_arc(
@@ -67,10 +84,16 @@ class ActivityModeSlider(tk.Canvas):
                 extent=180,
                 style="arc",
                 outline=color,
-                width=1.5,
+                width=1.5 * self._metrics.scale,
             )
         self.create_line(
-            15, 35, 15, 81, fill=THEME["surface_2"], width=5, capstyle="round"
+            15,
+            35,
+            15,
+            81,
+            fill=THEME["surface_2"],
+            width=self._metrics.px(5),
+            capstyle="round",
         )
         y = 78 if self.technical else 38
         self.create_oval(
@@ -81,6 +104,7 @@ class ActivityModeSlider(tk.Canvas):
             fill=THEME["text"] if self.focus_get() is self else THEME["accent"],
             outline="",
         )
+        self.scale("all", 0, 0, self._metrics.scale, self._metrics.scale)
 
 
 def friendly_phase(status: str) -> str | None:
@@ -140,10 +164,12 @@ class ForgeActivityPanel(ttk.Frame):
         }
         self.friendly = ActivityLogText(self, **options)
         self.friendly.grid(row=0, column=1, sticky="nsew")
+        self.friendly.configure(height=2)
+        self.friendly.request("Your next run’s progress will appear here.")
         self.technical = ActivityLogText(self, **options)
         self._on_technical = on_technical or (lambda: None)
         self.toggle = ActivityModeSlider(self, self.set_technical)
-        self.toggle.grid(row=0, column=0, padx=(0, 8))
+        self.toggle.grid(row=0, column=0, padx=(0, window_logical_metrics(self).px(8)))
         bind_smooth_vertical_wheel(self.friendly, mode="pixels")
         bind_smooth_vertical_wheel(self.technical, mode="pixels")
 
@@ -198,6 +224,7 @@ class ForgeActivityPanel(ttk.Frame):
             rows.append("ERROR: An error was reported. See Technical details.")
         first, last = self.friendly.yview()
         locked = getattr(self.friendly, "_vodforge_user_scroll_locked", False)
+        self.friendly.configure(height=min(8, max(2, len(rows))))
         if self.friendly.request("\n".join(rows)):
             if locked or last < 0.995:
                 self.friendly.yview_moveto(first)

@@ -1,0 +1,2180 @@
+{
+  "scope": "Static declarations and direct call sites, with overlapping families. Not active runtime counts, duplicate proof, or complete dynamic factory/Canvas/AppKit enumeration.",
+  "families": {
+    "action_buttons": {
+      "qualification": "incomplete",
+      "owners": {
+        "ttk.Button": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        },
+        "ScenePainter": {
+          "definition": {
+            "file": "yt_downloader/scene_components.py",
+            "line": 22,
+            "bases": []
+          },
+          "direct_call_count": 5,
+          "sites": [
+            {
+              "file": "yt_downloader/library_scene_layout.py",
+              "line": 226,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_layout.py",
+              "line": 927,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 63,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/watch_scene_ui.py",
+              "line": 63,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/watch_scene_ui.py",
+              "line": 1030,
+              "keywords": {}
+            }
+          ]
+        },
+        "PlayerTransportButton": {
+          "definition": {
+            "file": "yt_downloader/media_player_ui.py",
+            "line": 121,
+            "bases": [
+              "ProductButton"
+            ]
+          },
+          "direct_call_count": 2,
+          "sites": [
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 655,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 210,
+              "keywords": {}
+            }
+          ]
+        },
+        "PosterPlayButton": {
+          "definition": {
+            "file": "yt_downloader/media_player_ui.py",
+            "line": 56,
+            "bases": [
+              "ProductButton"
+            ]
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 574,
+              "keywords": {}
+            }
+          ]
+        },
+        "RoundedIconButton": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 2703,
+            "bases": [
+              "tk.Canvas"
+            ]
+          },
+          "direct_call_count": 0,
+          "sites": []
+        },
+        "ProductButton": {
+          "definition": {
+            "file": "yt_downloader/ui_button_contract.py",
+            "line": 72,
+            "bases": [
+              "ttk.Button"
+            ]
+          },
+          "direct_call_count": 93,
+          "sites": [
+            {
+              "file": "yt_downloader/analytics_consent_ui.py",
+              "line": 117,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/analytics_consent_ui.py",
+              "line": 123,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 5705,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 5922,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6457,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'",
+                "width": "8"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6465,
+              "keywords": {
+                "style": "'Media.Accent.TButton'",
+                "width": "11"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6475,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6483,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6516,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6612,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6649,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6657,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6669,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6681,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6709,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6776,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6873,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6879,
+              "keywords": {
+                "width": "6",
+                "style": "'Media.Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6887,
+              "keywords": {
+                "width": "0",
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6941,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'",
+                "takefocus": "True"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 5770,
+              "keywords": {
+                "width": "0",
+                "style": "'FocusNav.TButton'",
+                "takefocus": "True"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7558,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9089,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9095,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 132,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 136,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 143,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 185,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 192,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 95,
+              "keywords": {
+                "style": "'Archive.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 357,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 800,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 888,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 298,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 304,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1607,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1788,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1858,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1813,
+              "keywords": {
+                "style": "'Media.Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1862,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1820,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 1872,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/detail_ui.py",
+              "line": 222,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 188,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 269,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 334,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 871,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 256,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 737,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 743,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 822,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 882,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 879,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 132,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 138,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 84,
+              "keywords": {
+                "width": "10",
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 88,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 61,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 64,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 359,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 365,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_media_recovery_ui.py",
+              "line": 210,
+              "keywords": {
+                "style": "'Accent.TButton' if self.prompt.primary_action != 'none' else 'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/library_media_recovery_ui.py",
+              "line": 204,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 227,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 253,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 260,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 289,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 505,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 513,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 176,
+              "keywords": {
+                "width": "0",
+                "style": "'Media.FocusQuiet.TButton'",
+                "takefocus": "True"
+              }
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 206,
+              "keywords": {
+                "width": "0",
+                "style": "'Streaming.Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 211,
+              "keywords": {
+                "width": "0",
+                "style": "'Streaming.Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 370,
+              "keywords": {
+                "style": "'Compact.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 205,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 211,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 107,
+              "keywords": {
+                "width": "3"
+              }
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 312,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 163,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 36,
+              "keywords": {
+                "width": "3 if self._copy_icon else 6",
+                "style": "'Compact.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 41,
+              "keywords": {
+                "width": "5",
+                "style": "'Compact.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 62,
+              "keywords": {
+                "width": "7",
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 64,
+              "keywords": {
+                "width": "7",
+                "style": "'Compact.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 111,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 119,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 140,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 145,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/watch_ui.py",
+              "line": 103,
+              "keywords": {
+                "style": "'Media.FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/watch_ui.py",
+              "line": 171,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/watch_ui.py",
+              "line": 178,
+              "keywords": {
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/watch_ui.py",
+              "line": 117,
+              "keywords": {
+                "width": "8",
+                "style": "'Media.FocusNav.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/whats_new_ui.py",
+              "line": 126,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/whats_new_ui.py",
+              "line": 128,
+              "keywords": {
+                "style": "'FocusQuiet.TButton'"
+              }
+            },
+            {
+              "file": "yt_downloader/whats_new_ui.py",
+              "line": 131,
+              "keywords": {
+                "style": "'Accent.TButton'"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "text_and_search": {
+      "qualification": "incomplete",
+      "owners": {
+        "ProductEntry": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 91,
+            "bases": [
+              "ttk.Entry"
+            ]
+          },
+          "direct_call_count": 13,
+          "sites": [
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 379,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 250,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 505,
+              "keywords": {
+                "width": "12"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 817,
+              "keywords": {
+                "width": "12"
+              }
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 76,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 93,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_media_recovery_ui.py",
+              "line": 196,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 221,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 287,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 153,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 184,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 85,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 185,
+              "keywords": {}
+            }
+          ]
+        },
+        "PlaceholderEntry": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 216,
+            "bases": [
+              "ProductEntry"
+            ]
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 49,
+              "keywords": {}
+            }
+          ]
+        },
+        "LibrarySearchField": {
+          "definition": {
+            "file": "yt_downloader/library_search_ui.py",
+            "line": 13,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 4,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 5672,
+              "keywords": {
+                "width": "25"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6861,
+              "keywords": {
+                "width": "19"
+              }
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 116,
+              "keywords": {
+                "width": "18"
+              }
+            },
+            {
+              "file": "yt_downloader/watch_ui.py",
+              "line": 96,
+              "keywords": {
+                "width": "21"
+              }
+            }
+          ]
+        },
+        "EditableTextSection": {
+          "definition": {
+            "file": "yt_downloader/ui_editable_text.py",
+            "line": 22,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 125,
+              "keywords": {}
+            }
+          ]
+        },
+        "FactsText": {
+          "definition": {
+            "file": "yt_downloader/detail_ui.py",
+            "line": 45,
+            "bases": [
+              "tk.Text"
+            ]
+          },
+          "direct_call_count": 4,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6739,
+              "keywords": {
+                "height": "4",
+                "width": "1",
+                "font": "FONT_UI_SMALL",
+                "takefocus": "0"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7220,
+              "keywords": {
+                "height": "8",
+                "width": "1",
+                "font": "FONT_UI_SMALL"
+              }
+            },
+            {
+              "file": "yt_downloader/detail_ui.py",
+              "line": 201,
+              "keywords": {
+                "height": "16",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 361,
+              "keywords": {
+                "height": "min(12, max(3, len(content.splitlines())))",
+                "font": "scene_font(14)"
+              }
+            }
+          ]
+        },
+        "ActivityLogText": {
+          "definition": {
+            "file": "yt_downloader/activity_ui.py",
+            "line": 99,
+            "bases": [
+              "tk.Text"
+            ]
+          },
+          "direct_call_count": 4,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7568,
+              "keywords": {
+                "height": "1",
+                "width": "1",
+                "font": "FONT_MONO"
+              }
+            },
+            {
+              "file": "yt_downloader/forge_activity_ui.py",
+              "line": 154,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/forge_activity_ui.py",
+              "line": 156,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 61,
+              "keywords": {
+                "height": "6"
+              }
+            }
+          ]
+        },
+        "tk.Entry": {
+          "definition": null,
+          "direct_call_count": 4,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6429,
+              "keywords": {
+                "font": "(FONT_UI_FAMILY, 12)"
+              }
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 137,
+              "keywords": {
+                "font": "scene_font(14)"
+              }
+            },
+            {
+              "file": "yt_downloader/library_search_ui.py",
+              "line": 37,
+              "keywords": {
+                "width": "max(1, width - 3)",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 452,
+              "keywords": {
+                "width": "self._width",
+                "font": "FONT_UI"
+              }
+            }
+          ]
+        },
+        "tk.Text": {
+          "definition": null,
+          "direct_call_count": 13,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7107,
+              "keywords": {
+                "height": "FOCUS_LIBRARY_SELECTED_TAGS_MAX_VISIBLE_LINES",
+                "width": "1",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7172,
+              "keywords": {
+                "height": "FOCUS_LIBRARY_SELECTED_DESCRIPTION_VISIBLE_LINES",
+                "width": "1",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9042,
+              "keywords": {
+                "height": "3",
+                "width": "1",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9065,
+              "keywords": {
+                "height": "5",
+                "width": "1",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 281,
+              "keywords": {
+                "height": "3",
+                "width": "1",
+                "font": "FONT_UI_SMALL"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 826,
+              "keywords": {
+                "width": "1",
+                "font": "FONT_UI_SMALL"
+              }
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 110,
+              "keywords": {
+                "height": "8",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 620,
+              "keywords": {
+                "width": "1",
+                "height": "bounded_content_rows(detail_text, maximum=DETAIL_ROWS_MAX)",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 185,
+              "keywords": {
+                "height": "4",
+                "width": "1",
+                "font": "scene_font(15)",
+                "takefocus": "True"
+              }
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 125,
+              "keywords": {
+                "height": "4",
+                "width": "1",
+                "font": "FONT_UI"
+              }
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 280,
+              "keywords": {
+                "width": "65",
+                "height": "18"
+              }
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 46,
+              "keywords": {
+                "width": "1",
+                "height": "3",
+                "font": "scene_font(15)"
+              }
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 86,
+              "keywords": {
+                "height": "5"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "choices_and_segments": {
+      "qualification": "incomplete",
+      "owners": {
+        "ChoiceDropdown": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 419,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 15,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6446,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7087,
+              "keywords": {
+                "width": "1"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 349,
+              "keywords": {
+                "width": "24"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 406,
+              "keywords": {
+                "width": "20"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 424,
+              "keywords": {
+                "width": "24"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 640,
+              "keywords": {
+                "width": "24"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 659,
+              "keywords": {
+                "width": "24"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 678,
+              "keywords": {
+                "width": "24"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 802,
+              "keywords": {
+                "width": "18"
+              }
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 511,
+              "keywords": {
+                "width": "12"
+              }
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 69,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 132,
+              "keywords": {
+                "width": "1"
+              }
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 183,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 99,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 192,
+              "keywords": {}
+            }
+          ]
+        },
+        "ChoiceMenu": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 290,
+            "bases": [
+              "tk.Canvas"
+            ]
+          },
+          "direct_call_count": 3,
+          "sites": [
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 606,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_audio_demo.py",
+              "line": 28,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 136,
+              "keywords": {}
+            }
+          ]
+        },
+        "ChoicePopover": {
+          "definition": {
+            "file": "yt_downloader/choice_popover.py",
+            "line": 10,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 2,
+          "sites": [
+            {
+              "file": "yt_downloader/run_hover_menu.py",
+              "line": 40,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 605,
+              "keywords": {}
+            }
+          ]
+        },
+        "SegmentedSelector": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 2936,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 4,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6833,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 312,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 709,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 119,
+              "keywords": {}
+            }
+          ]
+        }
+      }
+    },
+    "toggles": {
+      "qualification": "incomplete",
+      "owners": {
+        "ModernCheckbox": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 727,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 13,
+          "sites": [
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 285,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 577,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 692,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 770,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 552,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 557,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 562,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 567,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 147,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 158,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 167,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 101,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 110,
+              "keywords": {}
+            }
+          ]
+        },
+        "ttk.Checkbutton": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        },
+        "ttk.Radiobutton": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        }
+      }
+    },
+    "navigation_tabs": {
+      "qualification": "incomplete",
+      "owners": {
+        "ttk.Notebook": {
+          "definition": null,
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6949,
+              "keywords": {
+                "style": "'Archive.TNotebook'"
+              }
+            }
+          ]
+        },
+        "ActivityModeSlider": {
+          "definition": {
+            "file": "yt_downloader/forge_activity_ui.py",
+            "line": 16,
+            "bases": [
+              "tk.Canvas"
+            ]
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/forge_activity_ui.py",
+              "line": 158,
+              "keywords": {}
+            }
+          ]
+        }
+      }
+    },
+    "sliders_and_player": {
+      "qualification": "incomplete",
+      "owners": {
+        "PlayerTransportButton": {
+          "definition": {
+            "file": "yt_downloader/media_player_ui.py",
+            "line": 121,
+            "bases": [
+              "ProductButton"
+            ]
+          },
+          "direct_call_count": 2,
+          "sites": [
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 655,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 210,
+              "keywords": {}
+            }
+          ]
+        },
+        "PosterPlayButton": {
+          "definition": {
+            "file": "yt_downloader/media_player_ui.py",
+            "line": 56,
+            "bases": [
+              "ProductButton"
+            ]
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 574,
+              "keywords": {}
+            }
+          ]
+        },
+        "tk.Scale": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        },
+        "ttk.Scale": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        }
+      }
+    },
+    "scrollbars_and_routing": {
+      "qualification": "incomplete",
+      "owners": {
+        "SleekScrollbar": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 2408,
+            "bases": [
+              "tk.Canvas"
+            ]
+          },
+          "direct_call_count": 24,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7122,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7187,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7584,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 7237,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 119,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 160,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 259,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 338,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 340,
+              "keywords": {
+                "orient": "'horizontal'"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 854,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/detail_ui.py",
+              "line": 218,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 72,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 110,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 630,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 602,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 193,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 340,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 365,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/run_hover_menu.py",
+              "line": 62,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/scene_rail.py",
+              "line": 28,
+              "keywords": {
+                "orient": "'horizontal'"
+              }
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 290,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 53,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 985,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/watch_ui.py",
+              "line": 134,
+              "keywords": {}
+            }
+          ]
+        },
+        "ScrollBinding": {
+          "definition": {
+            "file": "yt_downloader/ui_scrolling.py",
+            "line": 53,
+            "bases": []
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/ui_scrolling.py",
+              "line": 280,
+              "keywords": {}
+            }
+          ]
+        },
+        "SceneRail": {
+          "definition": {
+            "file": "yt_downloader/scene_rail.py",
+            "line": 20,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/watch_scene_ui.py",
+              "line": 39,
+              "keywords": {}
+            }
+          ]
+        }
+      }
+    },
+    "menus": {
+      "qualification": "incomplete",
+      "owners": {
+        "tk.Menu": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        },
+        "RunHoverMenu": {
+          "definition": {
+            "file": "yt_downloader/run_hover_menu.py",
+            "line": 14,
+            "bases": []
+          },
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6785,
+              "keywords": {}
+            }
+          ]
+        },
+        "ChoiceMenu": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 290,
+            "bases": [
+              "tk.Canvas"
+            ]
+          },
+          "direct_call_count": 3,
+          "sites": [
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 606,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_audio_demo.py",
+              "line": 28,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_feature_preview.py",
+              "line": 136,
+              "keywords": {}
+            }
+          ]
+        },
+        "ChoicePopover": {
+          "definition": {
+            "file": "yt_downloader/choice_popover.py",
+            "line": 10,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 2,
+          "sites": [
+            {
+              "file": "yt_downloader/run_hover_menu.py",
+              "line": 40,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 605,
+              "keywords": {}
+            }
+          ]
+        },
+        "ContextMenu": {
+          "definition": {
+            "file": "yt_downloader/ui_context_menu.py",
+            "line": 8,
+            "bases": [
+              "tk.Menu"
+            ]
+          },
+          "direct_call_count": 15,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 8846,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 8855,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 8867,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 8888,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9718,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 11866,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 903,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 379,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/engagement_ui.py",
+              "line": 238,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 105,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 365,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 561,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 593,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 674,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/watch_scene_ui.py",
+              "line": 300,
+              "keywords": {}
+            }
+          ]
+        }
+      }
+    },
+    "dialog_focus_keyboard": {
+      "qualification": "incomplete",
+      "owners": {
+        "ActionDialogSurface": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 943,
+            "bases": []
+          },
+          "direct_call_count": 14,
+          "sites": [
+            {
+              "file": "yt_downloader/analytics_consent_ui.py",
+              "line": 42,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9010,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/detail_ui.py",
+              "line": 192,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 130,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 46,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 37,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 50,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_media_recovery_ui.py",
+              "line": 162,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 105,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 460,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 70,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 279,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/update_recovery.py",
+              "line": 65,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/whats_new_ui.py",
+              "line": 48,
+              "keywords": {}
+            }
+          ]
+        },
+        "KeyboardScope": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 161,
+            "bases": []
+          },
+          "direct_call_count": 5,
+          "sites": [
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 791,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_scene_ui.py",
+              "line": 174,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 484,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_editable_text.py",
+              "line": 106,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 1060,
+              "keywords": {}
+            }
+          ]
+        },
+        "tk.Toplevel": {
+          "definition": null,
+          "direct_call_count": 12,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9003,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/detail_ui.py",
+              "line": 184,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/focus_settings.py",
+              "line": 121,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_annotation_ui.py",
+              "line": 37,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 31,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_file_actions_ui.py",
+              "line": 44,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/library_media_recovery_ui.py",
+              "line": 154,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 90,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 448,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/player_presentation_ui.py",
+              "line": 464,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/support_ui.py",
+              "line": 276,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/ui_widgets.py",
+              "line": 1207,
+              "keywords": {}
+            }
+          ]
+        }
+      }
+    },
+    "lists_tables_selection": {
+      "qualification": "incomplete",
+      "owners": {
+        "tk.Listbox": {
+          "definition": null,
+          "direct_call_count": 1,
+          "sites": [
+            {
+              "file": "yt_downloader/library_collection_ui.py",
+              "line": 56,
+              "keywords": {
+                "font": "FONT_UI"
+              }
+            }
+          ]
+        },
+        "ttk.Treeview": {
+          "definition": null,
+          "direct_call_count": 2,
+          "sites": [
+            {
+              "file": "yt_downloader/archive_browser_ui.py",
+              "line": 110,
+              "keywords": {
+                "style": "'ArchiveLocations.Treeview'",
+                "height": "5"
+              }
+            },
+            {
+              "file": "yt_downloader/archive_library_ui.py",
+              "line": 327,
+              "keywords": {
+                "height": "4",
+                "style": "'Archive.Folders.Treeview'",
+                "takefocus": "True"
+              }
+            }
+          ]
+        },
+        "PixelScrollTable": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 1561,
+            "bases": [
+              "tk.Frame"
+            ]
+          },
+          "direct_call_count": 0,
+          "sites": []
+        },
+        "ChapterList": {
+          "definition": {
+            "file": "yt_downloader/media_player_ui.py",
+            "line": 314,
+            "bases": [
+              "ttk.Treeview"
+            ]
+          },
+          "direct_call_count": 2,
+          "sites": [
+            {
+              "file": "yt_downloader/media_player_ui.py",
+              "line": 597,
+              "keywords": {}
+            },
+            {
+              "file": "yt_downloader/player_scene_ui.py",
+              "line": 336,
+              "keywords": {}
+            }
+          ]
+        }
+      }
+    },
+    "progress_feedback": {
+      "qualification": "incomplete",
+      "owners": {
+        "SleekProgressbar": {
+          "definition": {
+            "file": "yt_downloader/ui_widgets.py",
+            "line": 1383,
+            "bases": [
+              "tk.Canvas"
+            ]
+          },
+          "direct_call_count": 4,
+          "sites": [
+            {
+              "file": "yt_downloader/app.py",
+              "line": 6630,
+              "keywords": {
+                "style": "'FocusProgress.Horizontal.TProgressbar'"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9342,
+              "keywords": {
+                "height": "4"
+              }
+            },
+            {
+              "file": "yt_downloader/app.py",
+              "line": 9351,
+              "keywords": {
+                "height": "4"
+              }
+            },
+            {
+              "file": "yt_downloader/local_audio_video_ui.py",
+              "line": 242,
+              "keywords": {
+                "height": "7"
+              }
+            }
+          ]
+        },
+        "ttk.Progressbar": {
+          "definition": null,
+          "direct_call_count": 0,
+          "sites": []
+        }
+      }
+    }
+  }
+}

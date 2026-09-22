@@ -69,6 +69,7 @@ FIRST_PARTY_MODULES = frozenset(
         "archive_relink",
         "engagement_ui",
         "history",
+        "library_annotations",
         "libvlc_backend",
         "local_audio_video",
         "local_audio_video_ui",
@@ -87,6 +88,8 @@ FIRST_PARTY_MODULES = frozenset(
         "original_audio",
         "media_preview",
         "playback_surface",
+        "player_presentation_ui",
+        "player_overlay_macos",
     }
 )
 
@@ -99,6 +102,11 @@ def _first_party_location(error: BaseException) -> dict[str, str | int]:
         name = frame.tb_frame.f_globals.get("__name__", "")
         if isinstance(name, str) and name.startswith("yt_downloader."):
             module = name.removeprefix("yt_downloader.")
+            # Preserve the existing closed telemetry label across source organization.
+            # Never accept arbitrary nested module names or widen the wire contract.
+            module = {
+                "platforms.macos.player_overlay": "player_overlay_macos",
+            }.get(module, module)
             if module in FIRST_PARTY_MODULES and 1 <= frame.tb_lineno <= 100000:
                 location = {
                     "source_module": module,

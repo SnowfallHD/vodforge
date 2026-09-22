@@ -1,0 +1,30 @@
+{
+  "library-populated": {
+    "original": "codex-clipboard-ff89752f-2ea3-42ef-95a3-3c82b588c635.png",
+    "sha256": "f33465a529a84ce5c3d8ab544e728fa6f6e41992b1b9578d327e952d934d4a1e"
+  },
+  "library-empty": {
+    "original": "codex-clipboard-17586215-5679-4723-8242-f0d94041c79f.png",
+    "sha256": "4622f7567804853028c7be065f6c2eef8303618b7082bc8fbfe11744932af72b"
+  },
+  "library-item-details": {
+    "original": "codex-clipboard-377eea00-392a-4f4b-be6b-0509943ef51a.png",
+    "sha256": "983dea51e6b27d817ebe7f28942a4628ae0a693bf2c014b4e53797713fad78e1"
+  },
+  "watch-populated": {
+    "original": "codex-clipboard-35ea4da3-e1c1-4407-96c5-b02771db76e9.png",
+    "sha256": "871bb5a2c36d1bdc9ba682fe01ea6118eadd39fe0d37dcca13084a8a927b5e31"
+  },
+  "watch-empty": {
+    "original": "codex-clipboard-c89fa0bc-ba3c-4a52-9440-70df0e962d06.png",
+    "sha256": "c04a0b7a0144e25482aa6e1be9b27cd7c5f2faa38745b897d57482ce7af9ea6c"
+  },
+  "watch-channel": {
+    "original": "codex-clipboard-c2d64806-edbb-43e0-ac95-213e8ba54cfa.png",
+    "sha256": "cf34db4b3cf3f8a5b0a16b034040b1c52b719d0af5ebcb755cb5a2cac9e7d6cd"
+  },
+  "player": {
+    "original": "codex-clipboard-639b71a4-774d-45e5-a4ef-9e5525d7b9be.png",
+    "sha256": "1dd3135148b176eea2fe9c69a0b44ba099236046929b4ea7171355644db20c7f"
+  }
+}

@@ -49,6 +49,19 @@ MUTANTS = (
     ),
 )
 
+ARTWORK_MUTANTS = (
+    (
+        "artwork_stale_size_admitted",
+        "if result is not None and self._artwork_submitted_size != self._artwork_size:",
+        "if False and result is not None:",
+    ),
+    (
+        "artwork_hero_size_ignored",
+        'requested_specs.get(key, (requested_size, ""))',
+        '(requested_size, "")',
+    ),
+)
+
 
 def _workspace(repo_root: Path, destination: Path) -> Path:
     shutil.copytree(
@@ -65,6 +78,8 @@ def _workspace(repo_root: Path, destination: Path) -> Path:
         "test_archive_relink.py",
         "test_archive_models.py",
         "test_archive_ui_owners.py",
+        "test_archive_work.py",
+        "test_archive_artwork.py",
     ):
         shutil.copy2(repo_root / "tests" / name, tests / name)
     return destination
@@ -115,6 +130,7 @@ def run_bounded_mutation_campaign(
         "-q",
         "tests/test_history.py",
         "tests/test_history_pending.py",
+        "tests/test_archive_artwork.py",
         "--junitxml=mutation.xml",
     ]
     started = time.monotonic()
@@ -125,9 +141,12 @@ def run_bounded_mutation_campaign(
     (case_dir / "baseline.stderr.txt").write_text(baseline.stderr, encoding="utf-8")
 
     mutant_results: list[dict[str, Any]] = []
-    for mutant_id, original, replacement in MUTANTS:
+    targets = [(item, "history.py") for item in MUTANTS] + [
+        (item, "archive_artwork.py") for item in ARTWORK_MUTANTS
+    ]
+    for (mutant_id, original, replacement), source_file in targets:
         mutant_root = _workspace(repo_root, case_dir / mutant_id)
-        source_path = mutant_root / "yt_downloader" / "history.py"
+        source_path = mutant_root / "yt_downloader" / source_file
         source = source_path.read_text(encoding="utf-8")
         replacement_count = source.count(original)
         if replacement_count == 1:
@@ -185,13 +204,13 @@ def run_bounded_mutation_campaign(
             "mutants": mutant_results,
         },
         "evidence": [
-            f"Unmodified copied history tests return code: {baseline.returncode}",
+            f"Unmodified copied history and artwork tests return code: {baseline.returncode}",
             f"Bounded explicit mutants killed: {killed_count}/{total}",
             *[
                 f"{item['id']}: {'killed' if item['killed'] else 'survived/invalid'} (rc={item['returncode']})"
                 for item in mutant_results
             ],
-            "This score covers seven bounded history/privacy/restart-recovery/diagnostic regressions and is not a repository-wide mutation score.",
+            "This score covers bounded history/privacy/restart-recovery/diagnostic and responsive-artwork regressions and is not a repository-wide mutation score.",
         ],
         "artifacts": [str(case_dir)],
         "error": None,
@@ -201,10 +220,10 @@ def run_bounded_mutation_campaign(
         findings.append(
             {
                 "id": "TEST-MUTATION-HISTORY-001",
-                "title": "Existing history tests did not kill every bounded high-value mutant",
+                "title": "Existing history and artwork tests did not kill every bounded high-value mutant",
                 "classification": "maintainability risk",
                 "severity": "medium",
-                "area": "tests/test_history{,_pending}.py and yt_downloader/history.py",
+                "area": "History and Archive artwork production owners and regression tests",
                 "reproduction": [
                     "Run ./engineering-quality/run normal --scenario unit_static.bounded_mutation_history.",
                     "Inspect each disposable mutant result under the scenario artifact directory.",

@@ -3,6 +3,8 @@ import tkinter as tk
 
 import pytest
 
+from yt_downloader.ui_button_contract import button_metrics
+from yt_downloader.ui_styles import apply_product_styles
 from yt_downloader.whats_new import HIGHLIGHTS
 from yt_downloader.whats_new_ui import WhatsNewPanel
 
@@ -13,6 +15,7 @@ pytestmark = pytest.mark.skipif(
 
 def test_carousel_native_child_resize_noop_and_dismissal():
     root = tk.Tk()
+    apply_product_styles(root)
     root.geometry("1180x780")
     root.update()
     dismissed = []
@@ -75,9 +78,11 @@ def test_carousel_native_child_resize_noop_and_dismissal():
                     assert demo is not None and demo.timer is not None
                     assert not panel.preview.find_all()
                     assert not hasattr(demo, "control")
-        assert panel.next.winfo_width() == panel.next.winfo_height() == 34
+        assert panel.next.cget("text") == "Next"
+        assert panel.next.winfo_height() == button_metrics().height
         assert panel.next.instate(["disabled"])
-        assert panel.back.winfo_width() == panel.back.winfo_height() == 34
+        assert panel.back.cget("text") == "Previous"
+        assert panel.back.winfo_height() == button_metrics().height
         panel.frame.focus_force()
         root.update()
         panel.frame.event_generate("<Escape>")
@@ -94,6 +99,7 @@ def test_output_settings_try_it_releases_modal_before_opening_settings():
     from yt_downloader.whats_new import WhatsNewOwner
 
     root = tk.Tk()
+    apply_product_styles(root)
     root.geometry("1180x780")
     seen = tk.StringVar(root)
     opened = []
@@ -132,4 +138,34 @@ def test_output_settings_try_it_releases_modal_before_opening_settings():
         assert owner.panel is None
     finally:
         owner.close()
+        root.destroy()
+
+
+def test_showcase_navigation_waits_for_release_and_rejects_disabled_or_outside():
+    root = tk.Tk()
+    apply_product_styles(root)
+    root.geometry("1180x780")
+    root.update()
+    panel = WhatsNewPanel(root, HIGHLIGHTS * 3, lambda: None)
+    try:
+        root.update()
+        assert panel.index == 0
+        panel.back.invoke()
+        assert panel.index == 0
+        panel.next.event_generate("<Enter>")
+        panel.next.event_generate("<ButtonPress-1>", x=20, y=20)
+        root.update()
+        assert panel.index == 0, "Mouse-down must not navigate"
+        panel.next.event_generate("<Leave>")
+        panel.next.event_generate("<ButtonRelease-1>", x=-10, y=-10)
+        root.update()
+        assert panel.index == 0, "Release outside must retire the gesture"
+        panel.next.invoke()
+        root.update()
+        assert panel.index == 1
+        panel.back.invoke()
+        root.update()
+        assert panel.index == 0
+    finally:
+        panel.close(acknowledge=False)
         root.destroy()

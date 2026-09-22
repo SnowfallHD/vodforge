@@ -27,6 +27,21 @@ def archive_row_owner(record: Mapping[str, Any]) -> str:
     return str(record.get(PROJECTION_OWNER_KEY) or history_archive_owner(dict(record)))
 
 
+def resolve_archive_subject(
+    records: Sequence[Mapping[str, Any]], captured: Mapping[str, Any]
+) -> tuple[int, Mapping[str, Any]] | None:
+    """Resolve a menu's original owner against the latest projection."""
+    owner = archive_row_owner(captured)
+    return next(
+        (
+            (index, record)
+            for index, record in enumerate(records)
+            if archive_row_owner(record) == owner
+        ),
+        None,
+    )
+
+
 def archive_directory(record: Mapping[str, Any]) -> ArchivePath | None:
     try:
         return ArchivePath.parse(str(record.get("vodforge_output_dir") or ""))
@@ -73,20 +88,53 @@ class ArchiveBrowserModel:
         self.page = 0
         self.selected_owner = ""
         self._directories: dict[int, ArchivePath] = {}
+        self._all_directories: dict[int, ArchivePath | None] = {}
+        self.mode_eligible_count = 0
         self.locations: tuple[ArchiveComponent, ...] = ()
         self.components: tuple[ArchiveComponent, ...] = ()
+        self.saved_media: tuple[ArchiveComponent, ...] = ()
 
     def replace(
         self, records: Sequence[Mapping[str, Any]], visible: Sequence[int]
     ) -> None:
-        self.records = tuple(records)
+        incoming = tuple(records)
+        if incoming != self.records:
+            self._all_directories = {
+                index: archive_directory(record)
+                for index, record in enumerate(incoming)
+            }
+        self.records = incoming
         self.visible = tuple(visible)
         self._directories = {
             index: directory
             for index in self.visible
-            if (directory := archive_directory(self.records[index])) is not None
+            if (directory := self._all_directories.get(index)) is not None
         }
         self.locations = self._locations()
+        groups: dict[tuple[Any, ...], list[int]] = {}
+        for index, directory in self._directories.items():
+            record = self.records[index]
+            key = (
+                *_source_key(record, index),
+                directory.storage[1].key,
+                str(_media_folder(record, directory)),
+            )
+            groups.setdefault(key, []).append(index)
+        self.saved_media = tuple(
+            ArchiveComponent(
+                archive_row_owner(self.records[indices[0]]),
+                "media",
+                str(
+                    self.records[indices[0]].get("title")
+                    or self.records[indices[0]].get("id")
+                    or "Untitled media"
+                ),
+                metadata_output_profile(dict(self.records[indices[0]])),
+                tuple(indices),
+                self._directories[indices[0]],
+            )
+            for indices in list(groups.values())[:8]
+        )
         self.reconcile()
 
     def _locations(self) -> tuple[ArchiveComponent, ...]:
@@ -148,6 +196,25 @@ class ArchiveBrowserModel:
         self.reconcile()
 
     def reconcile(self) -> None:
+        # All canonical records in this mode/scope, before search/category/type
+        # filters. These are metadata-only paths; no filesystem work is added.
+        self.mode_eligible_count = (
+            len(self.records)
+            if self.mode == "all"
+            else sum(path is None for path in self._all_directories.values())
+            if self.mode == "activity"
+            else sum(
+                directory is not None
+                and (
+                    self.path is None
+                    or _media_folder(self.records[index], directory).relative_to(
+                        self.path
+                    )
+                    is not None
+                )
+                for index, directory in self._all_directories.items()
+            )
+        )
         if self.mode == "folders" and self.path is None:
             self.components = self.locations
         else:

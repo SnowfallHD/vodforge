@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "defects": [
+    {
+      "id": "resize-live-layout",
+      "status": "open"
+    },
+    {
+      "id": "channels-duplicate-artwork",
+      "status": "open"
+    },
+    {
+      "id": "resize-release-following-pointer",
+      "status": "open",
+      "scope": "Retained resize follows free pointer movement or re-entry after release; reported as requiring another click. Bounded delayed completion is tracked separately."
+    },
+    {
+      "id": "scroll-lag",
+      "status": "open"
+    },
+    {
+      "id": "tab-transition-flicker",
+      "status": "open"
+    },
+    {
+      "id": "resize-delayed-completion",
+      "status": "open",
+      "scope": "Final commanded native geometry and layout complete after posted and observed OS release, even with stationary pointer; does not establish retained drag."
+    }
+  ]
+}

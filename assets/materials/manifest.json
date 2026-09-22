@@ -1,0 +1,13 @@
+{
+  "source_sha256": "c4f83227fa0b3db55cc6dc8b3e1c4d139db581b69bc48fa129f5168d7779686a",
+  "source": "generated matte atlas; smoke/splatter/blossoms rows",
+  "runtime_size": [
+    960,
+    214
+  ],
+  "exports": {
+    "splatter.png": "8f52ddbc110d4ce089ade882e29ef2c8f8f9cc4bfae5204a8fe2383b6c94fe14",
+    "blossoms.png": "0da28dbdb35b6f3948557df5e24d4bfceeabc3bbd3c3698bfe07509acdcc8299",
+    "smoke.png": "9e803c1116261df5ffef0f763e4525eab05441468c108dc72fc52c3cde64130e"
+  }
+}

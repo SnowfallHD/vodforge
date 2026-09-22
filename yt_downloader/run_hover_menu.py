@@ -6,7 +6,8 @@ from tkinter import font as tkfont
 from typing import Any
 
 from .choice_popover import ChoicePopover
-from .ui_chrome import RoundedFieldBorder
+from .ui_chrome import CanvasSurfaceCache, RoundedFieldBorder
+from .ui_layout import window_logical_metrics
 from .ui_theme import FONT_UI, THEME
 from .ui_widgets import SleekScrollbar, bind_smooth_vertical_wheel
 
@@ -41,51 +42,55 @@ class RunHoverMenu:
             self.button, self.close, gap=0, align_right=True, bg=THEME["bg"]
         )
         self.popup = popup
+        metrics = window_logical_metrics(popup)
+        px = metrics.px
         self.chrome = RoundedFieldBorder(popup)
         body = tk.Frame(popup, bg=THEME["surface"])
-        body.pack(fill="both", expand=True, padx=9, pady=9)
+        body.pack(fill="both", expand=True, padx=px(9), pady=px(9))
         body.columnconfigure(0, weight=1)
         body.rowconfigure(0, weight=1)
-        row_height = 31
+        row_height = px(31)
         menu = tk.Canvas(
             body,
-            width=400,
+            width=px(400),
             height=min(5, len(labels)) * row_height,
             bg=THEME["surface"],
             bd=0,
             highlightthickness=0,
-            yscrollincrement=1,
+            yscrollincrement=px(1),
             takefocus=True,
         )
         self.menu = menu
-        menu.grid(row=0, column=0, sticky="nsew", padx=(5, 6), pady=3)
+        self._menu_surfaces = CanvasSurfaceCache(menu)
+        menu.grid(row=0, column=0, sticky="nsew", padx=(px(5), px(6)), pady=px(3))
         scrollbar = SleekScrollbar(body, command=menu.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns", pady=1)
+        scrollbar.grid(row=0, column=1, sticky="ns", pady=px(1))
         menu.configure(yscrollcommand=scrollbar.set)
         selected = 0
-        font = tkfont.Font(font=FONT_UI)
+        role = metrics.font(FONT_UI)
+        font = tkfont.Font(root=popup, family=role[0], size=role[1])
 
         def paint(event: Any = None) -> None:
             width = menu.winfo_width()
             menu.delete("all")
             for index, label in enumerate(labels):
                 top = index * row_height
-                menu.create_rectangle(
-                    0,
-                    top,
-                    width,
-                    top + row_height - 1,
-                    fill=THEME["surface_2"] if index == selected else THEME["surface"],
-                    outline="",
+                self._menu_surfaces.draw(
+                    (0, top, width, top + row_height - px(1)),
+                    role="navigation",
+                    selected=index == selected,
+                    fill=THEME["surface"],
                 )
                 shortened = label
-                while shortened and font.measure(shortened + "…") > width - 20:
-                    shortened = shortened[:-1]
+                available = width - px(20)
+                if font.measure(shortened) > available:
+                    while shortened and font.measure(shortened + "…") > available:
+                        shortened = shortened[:-1]
                 menu.create_text(
-                    10,
+                    px(10),
                     top + row_height / 2,
                     anchor="w",
-                    font=FONT_UI,
+                    font=font,
                     fill=THEME["text"],
                     text=label if shortened == label else shortened + "…",
                 )
@@ -147,3 +152,4 @@ class RunHoverMenu:
         popup, self.popup = self.popup, None
         if popup is not None:
             popup.destroy()
+            self._menu_surfaces.clear()

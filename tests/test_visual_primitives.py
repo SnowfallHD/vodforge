@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
 from yt_downloader import (
     focus_settings,
@@ -47,12 +48,21 @@ def test_product_entry_owns_flat_surface_and_focus_ring() -> None:
     source = inspect.getsource(ProductEntry)
 
     assert "class ProductEntry(ttk.Entry)" in source
-    assert 'style="Product.TEntry"' in source
-    from yt_downloader.ui_chrome import ProductChromeOwner
+    assert "style=prototype_entry_style(parent)" in source
+    from yt_downloader.ui_chrome import ProductChromeOwner, prototype_entry_style
 
     chrome = inspect.getsource(ProductChromeOwner)
     assert '"field_focus"' in chrome
     assert '"Entry.textarea"' in chrome
+    # Default application windows retain the canonical shared style. The
+    # density-specific resolver remains the one interpreter-owned exception.
+    assert (
+        prototype_entry_style(SimpleNamespace(winfo_toplevel=lambda: SimpleNamespace()))
+        == "Product.TEntry"
+    )
+    resolver = inspect.getsource(prototype_entry_style)
+    assert 'name = f"Dpi{metrics.scale}.Product.TEntry"' in resolver
+    assert "owner.entry_variants" in resolver
     assert "def apply_theme" in source
 
 
@@ -78,7 +88,8 @@ def test_checkbox_uses_checkmark_asset_and_theme_owned_states() -> None:
     source = inspect.getsource(ModernCheckbox)
 
     assert '"check"' in source
-    assert "size=(12, 12)" in source
+    assert "size=(self._metrics.px(12), self._metrics.px(12))" in source
+    assert "widget=self" in source
     assert 'THEME["accent_dark"]' in source
     assert 'THEME["surface"]' in source
     assert "not bool(self.variable.get())" in source

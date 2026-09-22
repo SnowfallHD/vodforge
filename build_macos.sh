@@ -116,7 +116,10 @@ fi
   --add-data "$build_version_dir/VODFORGE_BUILD_REVISION:." \
   --add-data "$build_version_dir/VODFORGE_TELEMETRY_POLICY:." \
   --add-data "$icon_png:assets" \
+  --add-data "assets/brand:assets/brand" \
+  --add-data "assets/materials:assets/materials" \
   --add-data "$icon_asset_dir:assets/icons/lucide" \
+  --add-data "assets/watch-welcome-scenic.png:assets" \
   --add-data "assets/preview_thumbnails/alpine-lake.jpg:assets/preview_thumbnails" \
   --add-data "THIRD_PARTY_NOTICES.md:." \
   --add-binary "$ffmpeg:." \

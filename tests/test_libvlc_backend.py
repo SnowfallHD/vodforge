@@ -298,7 +298,8 @@ def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
         _last_snapshot=None,
         _on_feature=observed.append,
         _operation_play_observed=False,
-        _on_operation=lambda action, diagnostic=None: operations.append(
+        _observe_volume=lambda snapshot: None,
+        _on_operation=lambda action, diagnostic=None, **_fields: operations.append(
             (action, diagnostic)
         ),
         time_var=SimpleNamespace(set=lambda value: None),
@@ -309,6 +310,9 @@ def test_provider_error_edge_survives_ended_state_and_clears_on_retry(
         _drain_previews=lambda: None,
         popup=SimpleNamespace(after=lambda delay, callback: None),
         _poll=lambda: None,
+    )
+    player_window._present_native_controls = (
+        MediaPlayerWindow._present_native_controls.__get__(player_window)
     )
     player_window._present_snapshot = lambda snapshot: (
         MediaPlayerWindow._present_snapshot(player_window, snapshot)
@@ -451,3 +455,62 @@ def test_playing_callback_never_waits_for_backend_lock():
         blocked = callback.is_alive()
     callback.join(timeout=1)
     assert not blocked
+
+
+def test_volume_choice_survives_playing_state_before_audio_output_ready(tmp_path):
+    media = tmp_path / "audio.m4a"
+    media.write_bytes(b"controlled provider")
+    backend, module = make_backend()
+    backend.load(media)
+    backend.play()
+    ready = False
+
+    def set_volume(value):
+        if not ready:
+            return -1
+        module.player.volume = value
+        return 0
+
+    module.player.audio_set_volume = set_volume
+    module.player.audio_get_volume = lambda: module.player.volume
+    # Playing can arrive before the asynchronous audio output accepts volume.
+    snapshot = backend.set_volume(0)
+    assert snapshot.volume == 0
+    assert module.player.volume == 80
+    ready = True
+    assert backend.snapshot.volume == 0
+    assert module.player.volume == 0
+    assert module.player.stop_calls == 1
+
+
+def test_media_generation_retires_same_path_and_failed_provider_replacement(tmp_path):
+    backend, provider = make_backend()
+    path = tmp_path / "generation.mp4"
+    path.write_bytes(b"controlled media")
+    try:
+        assert backend.snapshot.media_generation == 0
+        first = backend.load(path).media_generation
+        backend.seek(10)
+        backend.set_volume(30)
+        assert backend.snapshot.media_generation == first
+        second = backend.load(path).media_generation
+        assert second > first
+        original = provider.player.set_media
+
+        def fail(_media):
+            raise RuntimeError("controlled replacement failure")
+
+        provider.player.set_media = fail
+        with pytest.raises(MediaPlayerError):
+            backend.load(path)
+        failed = backend.snapshot.media_generation
+        assert failed > second
+        provider.player.set_media = original
+        with pytest.raises((MediaPlayerError, FileNotFoundError)):
+            backend.load(tmp_path / "absent.mp4")
+        assert backend.snapshot.media_generation == failed
+        assert backend.load(path).media_generation > failed
+    finally:
+        backend.shutdown()
+    assert backend.snapshot.status == "Closed"
+    assert backend.snapshot.media_generation > failed

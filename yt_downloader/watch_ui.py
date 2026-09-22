@@ -8,15 +8,24 @@ from tkinter import ttk
 from typing import Any
 
 from .archive_artwork import ArchiveArtworkMixin
+from .archive_presentation import media_badge
+from .library_search_ui import LibrarySearchField
 from .library_state import format_duration
-from .run_identity import metadata_output_profile
+from .presentation_diagnostics import count_bucket
+from .ui_button_contract import ProductButton
+from .ui_canvas_actions import CanvasActions
+from .ui_chrome import CanvasSurfaceCache, draw_scene_focus_material
 from .ui_layout import ellipsize_wrapped_text
-from .ui_theme import FONT_UI, FONT_UI_SMALL, THEME
-from .ui_widgets import SleekScrollbar, bind_smooth_vertical_wheel
-from .watch_library import WatchVideo, watch_rails
+from .ui_materials import draw_matte_backdrop
+from .ui_scrolling import bind_smooth_scroll
+from .ui_theme import FONT_UI_SMALL, THEME
+from .ui_transition import cancel_view_transition
+from .ui_widgets import SleekScrollbar
+from .watch_library import watch_channels, watch_rails
+from .watch_scene_ui import WatchSceneMixin
 
 
-class WatchView(ArchiveArtworkMixin, ttk.Frame):
+class WatchView(WatchSceneMixin, ArchiveArtworkMixin, ttk.Frame):
     """Playlist rails and channel destinations, backed by the Library projection."""
 
     def __init__(
@@ -25,8 +34,15 @@ class WatchView(ArchiveArtworkMixin, ttk.Frame):
         *,
         on_play: Callable[[int], None],
         on_details: Callable[[int], None],
+        on_queue: Callable[[Sequence[str], str, bool], None] | None = None,
         thumbnail_path: Callable[[dict[str, Any]], Any],
         on_usage: Callable[..., None] | None = None,
+        telemetry: Any = None,
+        artwork_source: Callable[..., Any] | None = None,
+        channel_profile: Callable[..., Any] | None = None,
+        on_forge: Callable[[], None] | None = None,
+        on_library: Callable[[], None] | None = None,
+        progress_for: Callable[..., Any] | None = None,
     ) -> None:
         super().__init__(master, style="FocusShell.TFrame")
         self._records: tuple[dict[str, Any], ...] = ()
@@ -35,11 +51,31 @@ class WatchView(ArchiveArtworkMixin, ttk.Frame):
             on_details,
             thumbnail_path,
         )
+        self._on_queue = on_queue
         self._mode = "playlists"
+        self._scene_route = "home"
+        self._selected_playlist = ""
+        self._on_forge = on_forge or (lambda: None)
+        self._on_library = on_library or (lambda: None)
+        self._progress_for = progress_for
+        self._channel_profile = channel_profile or (lambda _record: {})
         self._channel = ""
         self._page = 0
+        self._channel_return_state = (0, 0.0)
+        self._channel_return_mode = "channels"
+        self._initial_mode_set = False
+        self._mode_origin = "default"
+        self._presentation_eligible = 0
+        self._presentation_matching = 0
+        self._presentation_mode_eligible = 0
+        self._presentation_mode_counts: dict[tuple[str, str], int] = {}
+        self._presentation_rendered: set[str] = set()
+        self._hero_seen_key = ""
+        self._card_width = 320
+        self._card_height = 180
         self._offsets: dict[str, int] = {}
         self._targets: list[tuple[tuple[int, int, int, int], Callable[[], None]]] = []
+        self._play_regions: list[tuple[int, int, int, int]] = []
         self._render_after: str | None = None
         self._closed = False
         self._keyboard_target = 0
@@ -48,50 +84,69 @@ class WatchView(ArchiveArtworkMixin, ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
         heading = ttk.Frame(self, style="FocusShell.TFrame")
-        heading.grid(row=0, column=0, sticky="ew", padx=18, pady=(20, 10))
+        self._browse_heading = heading
+        heading.grid(row=0, column=0, sticky="ew", padx=18, pady=(10, 10))
         heading.columnconfigure(0, weight=1)
         self.heading_var = tk.StringVar(self, "Watch")
-        ttk.Label(
-            heading, textvariable=self.heading_var, style="FocusTitle.TLabel"
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            heading,
-            text="Your saved playlists, channels and collections.",
-            style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self.search = tk.StringVar(self, "")
-        ttk.Label(heading, text="Search saved videos", style="Muted.TLabel").grid(
-            row=1, column=1, sticky="w", pady=(4, 0)
+        self._channel_heading = ttk.Label(
+            heading, textvariable=self.heading_var, style="FocusActiveTitle.TLabel"
         )
-        entry = ttk.Entry(heading, textvariable=self.search, width=28)
-        entry.grid(row=0, column=1, sticky="e")
+        self.subtitle_var = tk.StringVar(self, "Your playlists, ready to watch.")
+
+        self.search = tk.StringVar(self, "")
+        self.search_field = LibrarySearchField(
+            heading, variable=self.search, width=21, placeholder="Search saved videos"
+        )
+        self.search_field.grid(row=0, column=1, sticky="e")
         self.search.trace_add("write", lambda *_args: self._filters_changed())
-        filters = ttk.Frame(self, style="FocusShell.TFrame")
-        filters.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 14))
+        filters = ttk.Frame(heading, style="FocusShell.TFrame")
+        filters.grid(row=0, column=0, sticky="w")
+        self.back_button = ProductButton(
+            filters,
+            text="‹  All channels",
+            command=self._return_from_channel,
+            style="Media.FocusQuiet.TButton",
+        )
+        self.back_button.pack(side="right")
+        self.back_button.pack_forget()
         self._mode_buttons = {}
         for mode, label in (
             ("playlists", "Playlists"),
+            ("collections", "Categories"),
             ("channels", "Channels"),
-            ("collections", "Collections"),
         ):
-            button = ttk.Button(
+            button = ProductButton(
                 filters,
                 text=label,
                 command=partial(self._navigate, mode),
-                style="FocusQuiet.TButton",
+                width=8,
+                style="Media.FocusNav.TButton",
             )
             button.pack(side="left", padx=(0, 8))
             self._mode_buttons[mode] = button
         self.canvas = tk.Canvas(
             self, bg=THEME["bg"], highlightthickness=0, bd=0, takefocus=True
         )
-        self.canvas.grid(row=2, column=0, sticky="nsew", padx=18)
-        scrollbar = SleekScrollbar(self, command=self.canvas.yview)
+        self._depth = CanvasSurfaceCache(self.canvas)
+        self._card_actions: list[
+            tuple[tuple[int, int, int, int], tuple[int, int, int, int]]
+        ] = []
+        self.canvas.grid(row=2, column=0, sticky="nsew", padx=0, pady=(16, 0))
+        scrollbar = SleekScrollbar(self, command=self._scene_scroll_command)
         scrollbar.grid(row=2, column=1, sticky="ns")
-        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self._scene_scrollbar = scrollbar
+        self.canvas.configure(yscrollcommand=self._scene_scroll_changed)
         self.canvas.bind("<Configure>", self._queue_render)
-        self.canvas.bind("<Button-1>", self._click)
-        bind_smooth_vertical_wheel(self.canvas, mode="pixels")
+        self._pointer_actions = CanvasActions(self.canvas, lambda: self._targets)
+        self.canvas.bind("<Motion>", self._hover, add="+")
+        self.canvas.bind("<Leave>", self._leave_hover, add="+")
+        self.canvas.bind(
+            "<Escape>",
+            lambda event: self._return_from_channel() if self._channel else None,
+        )
+        bind_smooth_scroll(
+            self.canvas, mode="pixels", on_scroll=self._scene_catalog_scroll_used
+        )
         for sequence, delta in (
             ("<Right>", 1),
             ("<Down>", 1),
@@ -105,125 +160,220 @@ class WatchView(ArchiveArtworkMixin, ttk.Frame):
         self.canvas.bind("<Prior>", lambda event: self._change_page(-1))
         self.canvas.bind("<FocusIn>", lambda event: self._paint_focus())
         self.canvas.bind(
-            "<FocusOut>", lambda event: self.canvas.delete("keyboard-focus")
+            "<FocusOut>",
+            lambda event: self.canvas.delete("keyboard-focus", "focus-play"),
         )
         footer = ttk.Frame(self, style="FocusShell.TFrame")
+        self._browse_footer = footer
         footer.grid(row=3, column=0, sticky="ew", padx=18, pady=10)
         footer.columnconfigure(0, weight=1)
         self.count_var = tk.StringVar(self, "")
         ttk.Label(footer, textvariable=self.count_var, style="Muted.TLabel").grid(
             row=0, column=0, sticky="w"
         )
-        ttk.Button(
+        self.previous = ProductButton(
             footer,
             text="Previous",
             command=lambda: self._change_page(-1),
-            style="FocusQuiet.TButton",
-        ).grid(row=0, column=1)
-        ttk.Button(
+            style="Media.FocusNav.TButton",
+        )
+        self.previous.grid(row=0, column=1)
+        self.next = ProductButton(
             footer,
             text="Next",
             command=lambda: self._change_page(1),
-            style="FocusQuiet.TButton",
-        ).grid(row=0, column=2, padx=(6, 0))
-        self._artwork_setup(thumbnail_path, (320, 180), "watch")
+            style="Media.FocusNav.TButton",
+        )
+        self.next.grid(row=0, column=2, padx=(6, 0))
+        self._artwork_setup(
+            thumbnail_path, (320, 180), "watch", source_path=artwork_source
+        )
+        self._presentation_setup(telemetry, "watch")
         self.bind("<Destroy>", self._destroyed, add="+")
 
     def set_records(self, records: Sequence[dict[str, Any]]) -> None:
+        for rail in self.__dict__.get("_scene_rails", {}).values():
+            rail.retire()
+            rail._records = ()
         incoming = tuple(records)
         if incoming == self._records:
             return
+        if self.__dict__.get("_scene_window"):
+            self._remember_scene_anchor()
+            self._scene_pending_anchor = self.__dict__.get("_scene_anchor")
+        self._scene_window = None
         self._records = incoming
+        # Hidden scenes may not repaint immediately. Release the retired snapshot
+        # now, rather than retaining its records until a later visible render.
+        self.__dict__.pop("_scene_projection_records", None)
+        cache = self.__dict__.get("_scene_projection_cache")
+        if cache is not None:
+            cache.clear()
+        if getattr(self, "_targets", None) is not None:
+            self._targets.clear()
+        self._presentation_mode_counts.clear()
+        self._presentation_eligible = len(
+            {video.key for rail in watch_rails(incoming) for video in rail.videos}
+        )
+        self._presentation_change("data")
+        if not self._initial_mode_set and watch_rails(incoming):
+            self._initial_mode_set = True
+            if watch_rails(incoming, collection_mode=True):
+                self._mode = "collections"
         self._artwork_attempted.clear()
         self._queue_render()
 
     def activate(self) -> None:
         for name, button in self._mode_buttons.items():
             button.configure(
-                style="Accent.TButton" if name == self._mode else "FocusQuiet.TButton"
+                style="FocusNavActive.TButton"
+                if name == self._mode
+                else "FocusNav.TButton"
             )
         self._queue_render()
 
-    def _navigate(self, mode: str, channel: str = "") -> None:
+    def _return_from_channel(self) -> None:
+        if self.__dict__.get("_scene_history"):
+            self._scene_back()
+        else:
+            self._navigate(self._channel_return_mode, restore=True)
+
+    def _navigate(self, mode: str, channel: str = "", *, restore: bool = False) -> None:
+        cancel_view_transition(self)
+        for rail in self.__dict__.get("_scene_rails", {}).values():
+            rail.retire()
+        if channel:
+            self._scene_open("channel")
+        else:
+            self._scene_history = []
+        self._targets.clear()
+        self._scene_route = "channel" if channel else mode
+        returning = restore and bool(self._channel)
+        if channel and not self._channel:
+            self._channel_return_state = (self._page, self.canvas.yview()[0])
+            self._channel_return_mode = self._mode
+        if returning:
+            mode = self._channel_return_mode
+        self._initial_mode_set = True
+        self._mode_origin = "user"
+        self._presentation_change("navigation")
         self._on_usage("watch", "channel_opened" if channel else mode, watch_mode=mode)
         self._mode, self._channel, self._page = mode, channel, 0
-        for name, button in self._mode_buttons.items():
-            button.configure(
-                style="Accent.TButton" if name == mode else "FocusQuiet.TButton"
+        self.activate()
+        self.heading_var.set(
+            next(
+                (
+                    item.name
+                    for item in watch_channels(self._records)
+                    if item.key == channel
+                ),
+                channel,
             )
-        self.heading_var.set(channel or "Watch")
+            or "Watch"
+        )
+        self.subtitle_var.set(
+            "Saved playlists and videos from this channel."
+            if channel
+            else "Browse the channels in your library."
+            if mode == "channels"
+            else "Your personal Library categories, ready to watch."
+            if mode == "collections"
+            else "Your playlists, ready to watch."
+        )
+        if channel:
+            self.back_button.configure(
+                text="‹  All channels"
+                if self._channel_return_mode == "channels"
+                else "‹  Back to browse"
+            )
+            self.back_button.pack(side="right", padx=(14, 0))
+            self._channel_heading.grid(
+                row=1, column=0, columnspan=2, sticky="w", pady=(12, 0)
+            )
+        else:
+            self.back_button.pack_forget()
+            self._channel_heading.grid_remove()
+        self._scene_window = None
+        self.__dict__.pop("_scene_pending_anchor", None)
+        self.__dict__.pop("_scene_catalog_scroll_seen", None)
         self.canvas.yview_moveto(0)
-        self._queue_render()
+        if returning:
+            self._page, scroll = self._channel_return_state
+            self._render()
+            self.canvas.yview_moveto(scroll)
+        else:
+            self._queue_render()
 
     def _filters_changed(self) -> None:
+        cancel_view_transition(self)
+        for rail in self.__dict__.get("_scene_rails", {}).values():
+            rail.retire()
+        self._presentation_change("filter")
         if self.search.get().strip():
             self._on_usage("watch", "searched")
         self._page = 0
+        self._scene_window = None
+        self.__dict__.pop("_scene_pending_anchor", None)
+        self.__dict__.pop("_scene_catalog_scroll_seen", None)
+        self.canvas.yview_moveto(0)
         self._queue_render()
 
     def _change_page(self, delta: int) -> None:
+        if self.__dict__.get("_scene_window"):
+            self._scene_scroll_command("scroll", delta, "pages")
+            return
+        self._presentation_change("navigation")
         self._page = max(0, self._page + delta)
         self.canvas.yview_moveto(0)
         self._queue_render()
 
     def _queue_render(self, _event: Any = None) -> None:
-        if not self._closed and self._render_after is None:
-            self._render_after = self.after(24, self._render)
+        self._queue_scene_render(_event)
 
-    def _button(
-        self,
-        x: int,
-        y: int,
-        width: int,
-        label: str,
-        action: Callable[[], None],
-        *,
-        accent: bool = False,
+    def _cover(
+        self, record: dict[str, Any], x: int, y: int, *, duration: bool = True
     ) -> None:
-        bounds = (x, y, x + width, y + 34)
-        self.canvas.create_rectangle(
-            *bounds, fill=THEME["accent"] if accent else THEME["surface_2"], outline=""
-        )
-        self.canvas.create_text(
-            x + width / 2, y + 17, text=label, fill=THEME["text"], font=FONT_UI_SMALL
-        )
-        self._targets.append((bounds, action))
-
-    def _cover(self, record: dict[str, Any], x: int, y: int) -> None:
-        self.canvas.create_rectangle(
-            x, y, x + 320, y + 180, fill=THEME["surface_2"], outline=THEME["border"]
-        )
+        width, height = self._card_width, self._card_height
+        self._depth.draw((x, y, x + width, y + height))
         image = self._artwork_image(record)
         if image is not None:
-            self.canvas.create_image(x, y, anchor="nw", image=image)
+            self.canvas.create_image(
+                x, y, anchor="nw", image=image, tags=("presentation-artwork",)
+            )
         else:
             self.canvas.create_polygon(
-                x + 147,
-                y + 68,
-                x + 147,
-                y + 112,
-                x + 184,
-                y + 90,
+                x + width / 2 - 12,
+                y + height / 2 - 18,
+                x + width / 2 - 12,
+                y + height / 2 + 18,
+                x + width / 2 + 17,
+                y + height / 2,
                 fill=THEME["accent"],
                 outline="",
             )
-        self.canvas.create_rectangle(
-            x + 262, y + 153, x + 312, y + 174, fill=THEME["panel"], outline=""
-        )
-        self.canvas.create_text(
-            x + 287,
-            y + 164,
-            text=format_duration(record.get("duration")),
-            fill=THEME["text"],
-            font=FONT_UI_SMALL,
-        )
+        if duration:
+            media_badge(
+                self.canvas,
+                format_duration(record.get("duration")),
+                right=x + width - 8,
+                bottom=y + height - 8,
+                maximum_width=width - 16,
+                font=FONT_UI_SMALL,
+                fill=THEME["panel"],
+                foreground=THEME["text"],
+            )
 
     def _fit(
         self, value: str, width: int, lines: int, font: Any = FONT_UI_SMALL
     ) -> str:
         key = tuple(font)
         if key not in self._text_fonts:
-            self._text_fonts[key] = tkfont.Font(root=self, font=font)
+            self._text_fonts[key] = tkfont.Font(
+                root=self,
+                family=key[0],
+                size=key[1],
+                weight=key[2] if len(key) > 2 else "normal",
+            )
         return ellipsize_wrapped_text(
             str(value)[:2000],
             maximum_width=max(1, width),
@@ -233,13 +383,25 @@ class WatchView(ArchiveArtworkMixin, ttk.Frame):
 
     def _paint_focus(self) -> None:
         self.canvas.delete("keyboard-focus")
+        self.canvas.delete("focus-play")
         if not self._targets or self.canvas.focus_get() is not self.canvas:
             return
         self._keyboard_target = min(self._keyboard_target, len(self._targets) - 1)
         bounds, _action = self._targets[self._keyboard_target]
-        self.canvas.create_rectangle(
-            *bounds, outline=THEME["accent"], width=2, tags="keyboard-focus"
+        draw_scene_focus_material(self.canvas, bounds)
+        card = next(
+            (
+                cover
+                for cover, details in self._card_actions
+                if bounds in (cover, details)
+            ),
+            None,
         )
+        if card is not None:
+            self._paint_play_affordance(card, "focus-play")
+            self.canvas.tag_raise("keyboard-focus")
+        elif bounds in self._play_regions:
+            self._paint_play_affordance(bounds, "focus-play")
 
     def _focus_target(self, delta: int, _event: Any = None) -> str:
         if self._targets:
@@ -263,290 +425,143 @@ class WatchView(ArchiveArtworkMixin, ttk.Frame):
             self._targets[min(self._keyboard_target, len(self._targets) - 1)][1]()
         return "break"
 
-    def _video(
-        self,
-        video: WatchVideo,
-        x: int,
-        y: int,
-        *,
-        singleton: bool = False,
-        width: int = 700,
-    ) -> int:
-        record = self._records[video.indices[0]]
-        self._cover(record, x, y)
-        selected = video.indices[0]
-        self._targets.append(
-            ((x, y, x + 320, y + 180), partial(self._on_play, selected))
-        )
-        profile = metadata_output_profile(record)
-        if len(video.indices) > 1:
-            profile = f"{len(video.indices)} saved export versions · {profile}"
-        if singleton:
-            self._on_usage("watch", "singleton_shown")
-        if singleton and width >= 620:
-            left = x + 344
-            text_width = width - 360
-            title_item = self.canvas.create_text(
-                left,
-                y + 10,
-                text=self._fit(video.title, text_width, 2, (FONT_UI[0], 18, "bold")),
-                fill=THEME["text"],
-                font=(FONT_UI[0], 18, "bold"),
-                anchor="nw",
-                width=text_width,
-            )
-            title_box = self.canvas.bbox(title_item)
-            description_top = max(y + 60, (title_box[3] if title_box else y + 50) + 10)
-            description = str(
-                record.get("description") or "A saved video from this playlist."
-            )
-            description_item = self.canvas.create_text(
-                left,
-                description_top,
-                text=self._fit(description, text_width, 3),
-                fill=THEME["muted"],
-                font=FONT_UI_SMALL,
-                anchor="nw",
-                width=text_width,
-            )
-            description_box = self.canvas.bbox(description_item)
-            profile_top = max(
-                y + 118,
-                (description_box[3] if description_box else description_top) + 10,
-            )
-            profile_item = self.canvas.create_text(
-                left,
-                profile_top,
-                text=self._fit(profile, text_width, 2),
-                fill=THEME["muted"],
-                font=FONT_UI_SMALL,
-                anchor="nw",
-                width=text_width,
-            )
-            profile_box = self.canvas.bbox(profile_item)
-            controls_top = max(
-                y + 148, (profile_box[3] if profile_box else profile_top) + 12
-            )
-            self._button(
-                left,
-                controls_top,
-                96,
-                "Play",
-                partial(self._on_play, selected),
-                accent=True,
-            )
-            self._button(
-                left + 106,
-                controls_top,
-                126,
-                "View in Library",
-                partial(self._on_details, selected),
-            )
-            return max(192, controls_top - y + 46)
-        self.canvas.create_text(
-            x,
-            y + 191,
-            text=self._fit(video.title, 312, 2, FONT_UI),
-            fill=THEME["text"],
-            font=FONT_UI,
-            anchor="nw",
-            width=312,
-        )
-        self.canvas.create_text(
-            x,
-            y + 226,
-            text=self._fit(profile, 312, 2),
-            fill=THEME["muted"],
-            font=FONT_UI_SMALL,
-            anchor="nw",
-            width=312,
-        )
-        self._button(
-            x,
-            y + 263,
-            96,
-            "Play",
-            partial(self._on_play, selected),
-            accent=True,
-        )
-        self._button(
-            x + 106,
-            y + 263,
-            126,
-            "View in Library",
-            partial(self._on_details, selected),
-        )
-        return 310
+    def _observe_hero(self, key: str) -> None:
+        if key != self._hero_seen_key:
+            self._hero_seen_key = key
+            self._on_usage("watch", "hero_shown", watch_mode=self._mode)
+
+    def _play_hero(self, index: int) -> None:
+        self._on_usage("watch", "hero_played", watch_mode=self._mode)
+        self._on_play(index)
 
     def _render(self) -> None:
+        if self._render_after is not None:
+            self.after_cancel(self._render_after)
         self._render_after = None
         if not self.winfo_ismapped():
+            self._presentation_settle(rendered=False)
             return
-        self.canvas.delete("all")
-        self._targets.clear()
-        self._artwork_begin()
-        width = max(340, self.canvas.winfo_width() - 4)
-        query = self.search.get()
-        rails = watch_rails(
-            self._records,
-            channel=self._channel,
-            collection_mode=self._mode == "collections",
-            query=query,
-        )
-        y = 8
-        if self._mode == "channels" and not self._channel:
-            channels = tuple(dict.fromkeys(rail.channel for rail in rails))
-            per_page = 12
-            self._page = min(self._page, max(0, (len(channels) - 1) // per_page))
-            columns = max(1, width // 344)
-            for position, channel in enumerate(
-                channels[self._page * per_page : (self._page + 1) * per_page]
-            ):
-                items = [rail for rail in rails if rail.channel == channel]
-                record = self._records[items[0].videos[0].indices[0]]
-                x = (position % columns) * 344
-                top = (position // columns) * 260 + 8
-                self._cover(record, x, top)
-                self.canvas.create_text(
-                    x,
-                    top + 191,
-                    text=channel,
-                    fill=THEME["text"],
-                    font=FONT_UI,
-                    anchor="nw",
-                    width=320,
-                )
-                self.canvas.create_text(
-                    x,
-                    top + 218,
-                    text=f"{len(items)} saved playlists / video groups",
-                    fill=THEME["muted"],
-                    font=FONT_UI_SMALL,
-                    anchor="nw",
-                    width=320,
-                )
-                self._targets.append(
-                    (
-                        (x, top, x + 320, top + 245),
-                        partial(self._navigate, "channels", channel),
-                    )
-                )
-            y = (
-                max(
-                    1,
-                    (min(per_page, len(channels) - self._page * per_page) + columns - 1)
-                    // columns,
-                )
-                * 260
-            )
-            self.count_var.set(f"{len(channels)} channels · Page {self._page + 1}")
-        else:
-            per_page = 4
-            self._page = min(self._page, max(0, (len(rails) - 1) // per_page))
-            for rail in rails[self._page * per_page : (self._page + 1) * per_page]:
-                self.canvas.create_text(
-                    0,
-                    y,
-                    text=rail.title,
-                    fill=THEME["text"],
-                    font=(FONT_UI[0], 16, "bold"),
-                    anchor="nw",
-                    width=max(180, width - 260),
-                )
-                count = f"{rail.downloaded_count} downloaded video" + (
-                    "s" if rail.downloaded_count != 1 else ""
-                )
-                context = (
-                    rail.channel + " · "
-                    if rail.channel and rail.channel != self._channel
-                    else ""
-                ) + count
-                self.canvas.create_text(
-                    0,
-                    y + 29,
-                    text=context,
-                    fill=THEME["muted"],
-                    font=FONT_UI_SMALL,
-                    anchor="nw",
-                )
-                if len(rail.videos) == 1:
-                    height = self._video(
-                        rail.videos[0], 0, y + 55, singleton=True, width=width
-                    )
-                else:
-                    visible = min(6, max(1, width // 344))
-                    offset = min(
-                        self._offsets.get(rail.key, 0),
-                        max(0, len(rail.videos) - visible),
-                    )
-                    self._offsets[rail.key] = offset
-                    self._button(
-                        width - 86,
-                        y,
-                        36,
-                        "‹",
-                        partial(self._move_rail, rail.key, -1),
-                    )
-                    self._button(
-                        width - 44,
-                        y,
-                        36,
-                        "›",
-                        partial(self._move_rail, rail.key, 1),
-                    )
-                    for position, video in enumerate(
-                        rail.videos[offset : offset + visible]
-                    ):
-                        self._video(video, position * 344, y + 55)
-                    height = 310
-                y += height + 96
-            self.count_var.set(
-                f"{len(rails)} {'collections' if self._mode == 'collections' else 'saved playlists / video groups'} · Page {self._page + 1}"
-            )
-        if not rails:
-            self.canvas.create_text(
-                20,
-                40,
-                text="Your saved videos will appear here.\nBrowse channels, playlists or your Library collections.",
-                fill=THEME["muted"],
-                font=FONT_UI,
-                anchor="nw",
-                width=width - 40,
-            )
-        self.canvas.configure(scrollregion=(0, 0, width, max(y, 200)))
-        self._paint_focus()
-        self._artwork_request()
+        if self.__dict__.get("_scene_window") and not self.__dict__.get(
+            "_scene_pending_anchor"
+        ):
+            self._remember_scene_anchor()
+            self._scene_pending_anchor = self.__dict__.get("_scene_anchor")
+        self._presentation_rendered.clear()
+        with self._depth.frame():
+            self.canvas.delete("all")
+            draw_matte_backdrop(self.canvas)
+            self._button_images: list[Any] = []
+            self._button_labels: list[Any] = []
+            self._targets.clear()
+            self._play_regions.clear()
+            self._card_actions.clear()
+            width = max(340, self.canvas.winfo_width() - 4)
+            columns = max(1, min(5, (width + 14) // 244))
+            self._card_width = (width - 14 * (columns - 1)) // columns
+            numerator, denominator = getattr(self, "_thumbnail_aspect", (9, 20))
+            self._card_height = self._card_width * numerator // denominator
+            self._artwork_resize((self._card_width, self._card_height))
+            self._artwork_begin()
+            self._render_streaming_scene(width, columns)
+
+    def _presentation_dimensions(self) -> dict[str, str]:
+        return {
+            "presentation_mode": "channel" if self._channel else self._mode,
+            "mode_origin": self._mode_origin,
+            "presentation_population": "saved_media",
+            "eligible_bucket": count_bucket(self._presentation_eligible),
+            "mode_eligible_bucket": count_bucket(self._presentation_mode_eligible),
+            "query_state": "active" if self.search.get().strip() else "inactive",
+            "filter_state": "inactive",
+            "matching_bucket": count_bucket(self._presentation_matching),
+            "rendered_bucket": count_bucket(len(self._presentation_rendered)),
+        }
 
     def _move_rail(self, key: str, delta: int) -> None:
+        self._presentation_change("navigation")
         self._on_usage("watch", "rail_scrolled")
         self._offsets[key] = max(0, self._offsets.get(key, 0) + delta)
         self._queue_render()
 
-    def _click(self, event: Any) -> None:
+    def _leave_hover(self, _event: Any) -> None:
+        self.canvas.configure(cursor="")
+        self.canvas.delete("hover-play")
+        for _bounds, label, normal, enabled in getattr(self, "_button_labels", ()):
+            self.canvas.itemconfigure(
+                label, fill=normal if enabled else THEME["subtle"]
+            )
+
+    def _paint_play_affordance(
+        self, region: tuple[int, int, int, int], tag: str
+    ) -> None:
+        left, top, right, bottom = region
+        details = next(
+            (box for cover, box in self._card_actions if cover == region), None
+        )
+        controls = (
+            [
+                ((left + 8, bottom - 42, left + 76, bottom - 10), "Play"),
+                (details, "Details"),
+            ]
+            if details
+            else [
+                (
+                    (
+                        (left + right) // 2 - 38,
+                        (top + bottom) // 2 - 18,
+                        (left + right) // 2 + 38,
+                        (top + bottom) // 2 + 18,
+                    ),
+                    "Play",
+                )
+            ]
+        )
+        for bounds, label in controls:
+            background = self._depth.draw(bounds, role="action")
+            self.canvas.addtag_withtag(tag, background)
+            self.canvas.create_text(
+                (bounds[0] + bounds[2]) / 2,
+                (bounds[1] + bounds[3]) / 2,
+                text=label,
+                fill=THEME["text"],
+                font=FONT_UI_SMALL,
+                tags=tag,
+            )
+
+    def _hover(self, event: Any) -> None:
         x, y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-        action = next(
+        active = any(
+            left <= x <= right and top <= y <= bottom
+            for (left, top, right, bottom), _action in self._targets
+        )
+        self.canvas.configure(cursor="hand2" if active else "")
+        for bounds, label, normal, enabled in self._button_labels:
+            hovered = bounds[0] <= x <= bounds[2] and bounds[1] <= y <= bounds[3]
+            self.canvas.itemconfigure(
+                label,
+                fill=THEME["text"]
+                if hovered and enabled
+                else normal
+                if enabled
+                else THEME["subtle"],
+            )
+        self.canvas.delete("hover-play")
+        region = next(
             (
-                action
-                for (left, top, right, bottom), action in reversed(self._targets)
-                if left <= x <= right and top <= y <= bottom
+                box
+                for box in self._play_regions
+                if box[0] <= x <= box[2] and box[1] <= y <= box[3]
             ),
             None,
         )
-        if action:
-            action()
-
-    def _wheel(self, event: Any) -> str:
-        delta = int(event.delta)
-        self.canvas.yview_scroll(
-            -max(1, abs(delta) // 120) if delta > 0 else max(1, abs(delta) // 120),
-            "units",
-        )
-        return "break"
+        if region:
+            self._paint_play_affordance(region, "hover-play")
 
     def _destroyed(self, event: Any) -> None:
         if event.widget is not self:
             return
         self._closed = True
+        self._depth.clear()
         self._artwork_close()
         for after_id in (self._render_after,):
             if after_id:

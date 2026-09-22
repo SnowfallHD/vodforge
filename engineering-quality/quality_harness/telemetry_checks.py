@@ -17,6 +17,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from .diagnostic_fixtures import diagnostic_context
 from .util import machine_snapshot, run_command
 
 _BLOCKED_ATTEMPTS: list[str] = []
@@ -453,6 +454,7 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 for index, (name, fields) in enumerate(dimensions):
                     if str(fields.get("feature", "")).endswith("_operation"):
                         fields["dimensions"] = {
+                            **diagnostic_context(fields["feature"], fields["action"]),
                             "instrumentation": "diagnostics_v1",
                             "build_revision": "unknown",
                             "operation_id": str(uuid.uuid4()),
@@ -588,11 +590,119 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 (case_dir / "copy-producer-events.json").write_text(
                     json.dumps(copy_events, indent=2)
                 )
+                from yt_downloader.watch_ui import WatchView
+
+                watch = object.__new__(WatchView)
+                watch._hero_seen_key = ""
+                watch._mode = "playlists"
+                watch._on_usage = copy_app._archive_usage
+                played = []
+                watch._on_play = played.append
+                previous = len(delivered)
+                watch._observe_hero("PRIVATE source identity")
+                watch._observe_hero("PRIVATE source identity")
+                watch._play_hero(7)
+                assert usage.shutdown(10), "Hero producer did not drain"
+                hero_events = delivered[previous:]
+                assert played == [7]
+                assert [event["action"] for event in hero_events] == [
+                    "hero_shown",
+                    "hero_played",
+                ]
+                assert all(
+                    event["dimensions"] == {"watch_mode": "playlists"}
+                    for event in hero_events
+                )
+                assert "PRIVATE" not in json.dumps(hero_events)
+                (case_dir / "hero-producer-events.json").write_text(
+                    json.dumps(hero_events, indent=2)
+                )
+                from yt_downloader.media_player_ui import MediaPlayerWindow
+
+                player = object.__new__(MediaPlayerWindow)
+                player._details_visible = False
+                player._apply_details_visibility = lambda: None
+                player._on_feature = lambda action, **fields: copy_app._record_feature(
+                    "player", action, **fields
+                )
+                selected_panels = []
+                player._info_notebook = SimpleNamespace(select=selected_panels.append)
+                previous = len(delivered)
+                targets = ("chapters", "info", "source", "output", "notes", "moments")
+                player._detail_targets = {
+                    f"PRIVATE owned panel {i}": target
+                    for i, target in enumerate(targets)
+                }
+                for panel in player._detail_targets:
+                    player._select_information_panel(panel)
+                    player._select_information_panel(panel)
+                player._select_information_panel(
+                    "PRIVATE unregistered source path title note"
+                )
+                player._toggle_details()
+                assert usage.shutdown(10), "Player disclosure producers did not drain"
+                player_events = delivered[previous:]
+                assert selected_panels == [
+                    panel for panel in player._detail_targets for _ in range(2)
+                ]
+                assert [event["action"] for event in player_events] == [
+                    "details_opened",
+                    *(["detail_viewed"] * 6),
+                    "details_closed",
+                ]
+                assert [
+                    event["dimensions"]["detail_target"]
+                    for event in player_events
+                    if event["action"] == "detail_viewed"
+                ] == list(targets)
+                assert all(event["feature"] == "player" for event in player_events)
+                assert "PRIVATE" not in json.dumps(player_events)
+                (case_dir / "player-disclosure-producer-events.json").write_text(
+                    json.dumps(player_events, indent=2)
+                )
+                # Controlled providers exercise real backend, player, app,
+                # consent/outbox and HTTP Worker/D1 producers. This is diagnostic
+                # provenance evidence, not a native or audible-output test.
+                from quality_harness.playback_probe import CASES, run_case
+
+                control_events = []
+                control_results = []
+                for case in CASES:
+                    previous = len(delivered)
+                    result = run_case(case_dir / "playback" / case, usage, case)
+                    assert usage.shutdown(10), "Playback producer did not drain"
+                    observed = delivered[previous:]
+                    assert observed and observed[-1]["action"] == "closed"
+                    assert "PRIVATE" not in json.dumps(observed)
+                    result["event_ids"] = [event["event_id"] for event in observed]
+                    result["outcomes"] = [
+                        event["dimensions"]["volume_outcome"]
+                        for event in observed
+                        if event["action"].startswith("volume_")
+                    ]
+                    control_results.append(result)
+                    control_events.extend(observed)
+                results = {value["case"]: value for value in control_results}
+                assert results["immediate_mute"]["outcomes"] == ["applied"]
+                assert results["delayed_mute"]["outcomes"] == ["pending", "applied"]
+                assert results["pending_at_close"]["outcomes"] == [
+                    "pending",
+                    "pending_at_close",
+                ]
+                assert results["setter_exception"]["outcomes"] == ["failed"]
+                assert results["command_flood"]["outcomes"][-1] == "pending_at_close"
+                assert len(results["command_flood"]["outcomes"]) == 33
+                (case_dir / "playback-control-producer-events.json").write_text(
+                    json.dumps(control_events, indent=2)
+                )
+                (case_dir / "playback-control-results.json").write_text(
+                    json.dumps(control_results, indent=2)
+                )
                 assert len(delivered) == len(dimensions) + 2 + len(
                     producer_events
-                ) + len(copy_events), (
-                    f"Missing or duplicated emitted metrics: {len(delivered)}"
-                )
+                ) + len(copy_events) + len(hero_events) + len(player_events) + len(
+                    control_events
+                ), f"Missing or duplicated emitted metrics: {len(delivered)}"
                 for payload in delivered:
                     assert owner.event(payload)
                 process.stdin.write('{"op":"snapshot"}\n')
@@ -727,6 +837,8 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
             "Real 404/500 worker failures stored only bounded machine facts.",
             "Actual app history failures preserve main/pending, parse/schema cause, source frame, revision and ordered operation steps in D1.",
             "Six actual canonical Library copy producers store only bounded action names; source/personal content is absent.",
+            "Actual Watch hero and player disclosure producers store bounded actions without media titles, paths, notes or panel identities.",
+            "Controlled backend/player/app volume transitions and original failure boundaries survive actual HTTP and D1; repeated polls are silent, command flood is capped, final pending-at-close is retained. This does not prove native or audible output.",
             "Six real installation entry points: retry, second actor, durable credential count, legacy write exclusion.",
         ],
         [artifact],

@@ -10,8 +10,9 @@ from pathlib import Path
 from tkinter import ttk
 
 from .modal_backdrop import ModalBackdrop
+from .ui_button_contract import ProductButton
 from .ui_theme import THEME
-from .ui_widgets import ActionDialogSurface, ProductEntry
+from .ui_widgets import ActionDialogSurface, ProductEntry, bind_smooth_vertical_wheel
 from .updates import RELEASES_PAGE
 
 
@@ -28,8 +29,11 @@ def show_update_recovery(
         highlightbackground=THEME["surface_2"],
     )
     expanded = False
+    closed = False
 
     def resize(event=None) -> None:
+        if closed:
+            return
         if event is not None and event.widget is not parent:
             return
         popup.place(
@@ -43,13 +47,22 @@ def show_update_recovery(
 
     binding = parent.bind("<Configure>", resize, add="+")
 
-    def close() -> None:
+    def close(*, destroy: bool = True) -> bool:
+        nonlocal closed
+        if closed:
+            return False
+        closed = True
         if binding:
-            parent.unbind("<Configure>", binding)
+            try:
+                parent.unbind("<Configure>", binding)
+            except tk.TclError:
+                pass  # Parent teardown may already have removed the binding.
         backdrop.close()
-        popup.destroy()
+        if destroy:
+            popup.destroy()
+        return True
 
-    surface = ActionDialogSurface(popup)
+    surface = ActionDialogSurface(popup, modal=True)
     ttk.Label(
         surface.body, text="VODForge update needs attention", style="FocusTitle.TLabel"
     ).pack(anchor="w", pady=(0, 12))
@@ -82,9 +95,12 @@ def show_update_recovery(
     )
     details.insert("1.0", detail)
     details.configure(state="disabled")
+    bind_smooth_vertical_wheel(details, mode="pixels")
 
     def toggle() -> None:
         nonlocal expanded
+        if closed:
+            return
         expanded = not expanded
         if details.winfo_manager():
             details.pack_forget()
@@ -92,19 +108,21 @@ def show_update_recovery(
             details.pack(fill="both", expand=True, pady=8)
         resize()
 
-    ttk.Button(surface.body, text="Technical details", command=toggle).pack(
+    ProductButton(surface.body, text="Technical details", command=toggle).pack(
         anchor="w", pady=10
     )
 
     def retry() -> None:
-        close()
-        repair()
+        if close():
+            repair()
 
-    ttk.Button(
+    ProductButton(
         surface.footer, text="Repair VODForge", style="Accent.TButton", command=retry
     ).pack(side="right")
 
     def open_download_page() -> None:
+        if closed:
+            return
         message.configure(
             text=(
                 "Download the installer for your computer. Close VODForge, then open the downloaded file. "
@@ -119,23 +137,20 @@ def show_update_recovery(
                 + ". Download the installer, close VODForge, and open that file. Do not uninstall first."
             )
 
-    ttk.Button(
+    ProductButton(
         surface.footer,
         text="Open download page",
         command=open_download_page,
     ).pack(side="right", padx=8)
-    ttk.Button(surface.footer, text="Later", command=close).pack(side="left")
+    ProductButton(surface.footer, text="Later", command=close).pack(side="left")
     resize()
     popup.bind("<Configure>", lambda _e: backdrop.refresh(popup))
-    popup.bind("<Destroy>", lambda _e: backdrop.close())
-
-    def bind_escape(widget: tk.Misc) -> None:
-        widget.bind("<Escape>", lambda _e: close(), add="+")
-        for child in widget.winfo_children():
-            bind_escape(child)
-
-    bind_escape(popup)
+    popup.bind(
+        "<Destroy>",
+        lambda event: close(destroy=False) if event.widget is popup else None,
+        add="+",
+    )
+    surface.bind_keys({"<Escape>": close})
     popup.lift()
-    popup.grab_set()
     popup.focus_set()
     popup.wait_window()

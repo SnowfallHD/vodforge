@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import re
 import tkinter as tk
-from tkinter import font as tkfont
 from tkinter import ttk
 from typing import Any
 
+from .ui_layout import window_logical_metrics
 from .ui_theme import FONT_UI, THEME
 from .ui_widgets import _tinted_ui_icon
 
@@ -85,7 +85,11 @@ class ActivitySummary(ttk.Frame):
             if status == "Failed"
             else THEME["warning"]
             if status in {"Partial", "Stopped", "Skipped"}
-            else THEME["accent"]
+            else THEME["success"]
+            if status == "Completed"
+            else THEME["muted"]
+            if status == "Ready"
+            else THEME["progress"]
         )
         self._image = _tinted_ui_icon(
             "check" if status == "Completed" else "circle-dashed",
@@ -102,10 +106,12 @@ class ActivityLogText(tk.Text):
     def __init__(
         self, parent: tk.Misc, *, compact: bool = False, **kwargs: Any
     ) -> None:
+        self._metrics = window_logical_metrics(parent)
+        px = self._metrics.px
         kwargs.update(
-            font=FONT_UI,
-            spacing1=3 if compact else 8,
-            spacing3=4 if compact else 10,
+            font=self._metrics.font(FONT_UI),
+            spacing1=px(3 if compact else 8),
+            spacing3=px(4 if compact else 10),
         )
         super().__init__(parent, **kwargs)
         self.tag_configure("log-time", foreground=THEME["muted"])
@@ -113,15 +119,17 @@ class ActivityLogText(tk.Text):
         self.tag_configure("log-warning", foreground=THEME["warning"])
         self.tag_configure("log-error", foreground=THEME["danger"])
         self.tag_configure("log-hidden", elide=True)
-        self._icon_size = (16, 16)
+        self._icon_size = (px(16), px(16))
         self._event_icon = _tinted_ui_icon(
-            "circle-dashed", size=self._icon_size, color=THEME["accent"]
+            "circle-dashed", size=self._icon_size, color=THEME["accent"], widget=self
         )
-        self._divider = tk.PhotoImage(master=self, width=1, height=18)
+        self._divider = tk.PhotoImage(master=self, width=px(1), height=px(18))
         self._success_icon = _tinted_ui_icon(
-            "check", size=self._icon_size, color=THEME["accent"]
+            "check", size=self._icon_size, color=THEME["success"], widget=self
         )
-        self._divider.put(THEME["accent"], to=(0, 0, 1, 18))
+        self._divider.put(
+            THEME["accent"], to=(0, 0, self._divider.width(), self._divider.height())
+        )
         for child in self.winfo_children():
             if isinstance(child, tk.Label):
                 child.configure(
@@ -139,9 +147,13 @@ class ActivityLogText(tk.Text):
             return
         self._constrained = constrained
         self.configure(
-            font=(FONT_UI[0], 9) if constrained else FONT_UI,
-            pady=0 if constrained else 4,
+            font=self._metrics.font((FONT_UI[0], 9) if constrained else FONT_UI),
+            pady=0 if constrained else self._metrics.px(4),
         )
+
+        for child in self.winfo_children():
+            if isinstance(child, tk.Label):
+                child.configure(font=self.cget("font"))
 
     def request(self, text: str) -> bool:
         if self._snapshot == text:
@@ -159,11 +171,11 @@ class ActivityLogText(tk.Text):
         self.tag_configure("log-warning", foreground=THEME["warning"])
         self.tag_configure("log-error", foreground=THEME["danger"])
         self._event_icon = _tinted_ui_icon(
-            "circle-dashed", size=self._icon_size, color=THEME["accent"]
+            "circle-dashed", size=self._icon_size, color=THEME["accent"], widget=self
         )
         previous_success = str(self._success_icon)
         self._success_icon = _tinted_ui_icon(
-            "check", size=self._icon_size, color=THEME["accent"]
+            "check", size=self._icon_size, color=THEME["success"], widget=self
         )
         for name in self.image_names():
             if self.image_cget(name, "image") != str(self._divider):
@@ -174,7 +186,9 @@ class ActivityLogText(tk.Text):
                 )
                 if icon is not None:
                     self.image_configure(name, image=icon)
-        self._divider.put(THEME["accent"], to=(0, 0, 1, 18))
+        self._divider.put(
+            THEME["accent"], to=(0, 0, self._divider.width(), self._divider.height())
+        )
 
     def insert(self, index: Any, chars: str, *args: Any) -> None:
         self._snapshot = None
@@ -189,7 +203,6 @@ class ActivityLogText(tk.Text):
         def remember_text_start() -> None:
             line = self.index("log-insert").split(".")[0] + ".0"
             width = 0
-            font = tkfont.Font(self, font=self.cget("font"))
             for kind, value, position in self.dump(
                 line, "log-insert", text=True, image=True
             ):
@@ -199,7 +212,9 @@ class ActivityLogText(tk.Text):
                     )
                     width += 2 * int(self.image_cget(value, "padx"))
                 elif "log-hidden" not in self.tag_names(position):
-                    width += font.measure(value)
+                    width += int(
+                        self.tk.call("font", "measure", self.cget("font"), value)
+                    )
             indents[line] = width
 
         start = 0
@@ -209,11 +224,17 @@ class ActivityLogText(tk.Text):
             if severity in {"warning", "error"}:
                 if self.index("log-insert").endswith(".0"):
                     self.image_create(
-                        "log-insert", image=self._divider, padx=10, align="center"
+                        "log-insert",
+                        image=self._divider,
+                        padx=self._metrics.px(10),
+                        align="center",
                     )
                 if self._event_icon is not None:
                     self.image_create(
-                        "log-insert", image=self._event_icon, padx=12, align="center"
+                        "log-insert",
+                        image=self._event_icon,
+                        padx=self._metrics.px(12),
+                        align="center",
                     )
                 remember_text_start()
                 # Preserve the source token in the document, but give every
@@ -241,13 +262,16 @@ class ActivityLogText(tk.Text):
                 # inventing timestamps or changing the underlying document.
                 if self.index("log-insert").endswith(".0"):
                     self.image_create(
-                        "log-insert", image=self._divider, padx=10, align="center"
+                        "log-insert",
+                        image=self._divider,
+                        padx=self._metrics.px(10),
+                        align="center",
                     )
                     if self._event_icon is not None:
                         self.image_create(
                             "log-insert",
                             image=self._event_icon,
-                            padx=12,
+                            padx=self._metrics.px(12),
                             align="center",
                         )
                     remember_text_start()
@@ -268,13 +292,16 @@ class ActivityLogText(tk.Text):
                 # theme-aware chrome never becomes log or run authority.
                 if self.index("log-insert").endswith(".0"):
                     self.image_create(
-                        "log-insert", image=self._divider, padx=10, align="center"
+                        "log-insert",
+                        image=self._divider,
+                        padx=self._metrics.px(10),
+                        align="center",
                     )
                 super().insert("log-insert", match[0], "log-hidden")
                 self.image_create(
                     "log-insert",
                     image=icon,
-                    padx=12,
+                    padx=self._metrics.px(12),
                     align="center",
                 )
                 remember_text_start()
@@ -283,7 +310,10 @@ class ActivityLogText(tk.Text):
                 super().insert("log-insert", match[0], tag)
                 if match[1]:
                     self.image_create(
-                        "log-insert", image=self._divider, padx=10, align="center"
+                        "log-insert",
+                        image=self._divider,
+                        padx=self._metrics.px(10),
+                        align="center",
                     )
             start = match.end()
         super().insert("log-insert", chars[start:])

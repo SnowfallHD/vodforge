@@ -120,7 +120,7 @@ try:
     if process.returncode != 0:
         raise RuntimeError("Packaged app did not close cleanly")
     result["passed"] = True
-except Exception as error:
+except Exception as error:  # noqa: BLE001 - retain the QA failure receipt for any capture error
     result["error"] = str(error)
 finally:
     if raised:

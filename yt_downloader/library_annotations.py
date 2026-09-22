@@ -30,10 +30,25 @@ class LibraryAnnotation:
     note: str = ""
     tags: tuple[str, ...] = ()
     category: str = ""
+    description: str | None = None
 
     @property
     def empty(self) -> bool:
-        return not (self.note or self.tags or self.category)
+        return (
+            not (self.note or self.tags or self.category) and self.description is None
+        )
+
+
+def resolve_annotation_owner(
+    canonical_owner: str,
+    source_owner: str | None,
+    annotations: Mapping[str, LibraryAnnotation],
+) -> str:
+    """Resolve a durably captured owner without copying annotations into metadata."""
+
+    if canonical_owner in annotations or not source_owner:
+        return canonical_owner
+    return source_owner if source_owner in annotations else canonical_owner
 
 
 def library_annotations_file_path(**kwargs: Any) -> Path:
@@ -71,6 +86,11 @@ def sanitize_library_annotation(value: Any) -> LibraryAnnotation:
         note=_bounded_text(source.get("note"), MAX_NOTE_CHARS),
         tags=_clean_tags(source.get("tags")),
         category=_bounded_text(source.get("category"), MAX_CATEGORY_CHARS),
+        description=(
+            str(source["description"])[:MAX_NOTE_CHARS]
+            if source.get("description") is not None
+            else None
+        ),
     )
 
 
@@ -175,6 +195,26 @@ class LibraryAnnotationsOwner:
             prospective.pop(canonical_owner, None)
         else:
             prospective[canonical_owner] = clean
+        save_library_annotations(self.path, prospective)
+        self._annotations = prospective
+
+    def replace_many(self, changes: Mapping[str, LibraryAnnotation]) -> None:
+        prospective = dict(self._annotations)
+        for owner, annotation in changes.items():
+            canonical = _bounded_text(owner, 512)
+            if not canonical:
+                raise LibraryAnnotationsError(
+                    "A selected item has no stable Library owner."
+                )
+            clean = sanitize_library_annotation(asdict(annotation))
+            if clean.empty:
+                prospective.pop(canonical, None)
+            else:
+                prospective[canonical] = clean
+        if len(prospective) > MAX_ANNOTATIONS:
+            raise LibraryAnnotationsError(
+                "The collection exceeds the Library annotation limit."
+            )
         save_library_annotations(self.path, prospective)
         self._annotations = prospective
 

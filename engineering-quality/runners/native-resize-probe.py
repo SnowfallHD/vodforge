@@ -33,13 +33,56 @@ parser.add_argument(
     "--profile", action="store_true", help="Enable cProfile for attribution only"
 )
 parser.add_argument("--view", choices=("library", "forge"), default="library")
+parser.add_argument(
+    "--baseline",
+    action="store_true",
+    help="Representative Tk controls without app layout work",
+)
+parser.add_argument("--hz", type=int, choices=(30, 60), default=30)
+parser.add_argument("--drag-count", type=int, choices=(2, 4), default=4)
+parser.add_argument(
+    "--timing",
+    action="store_true",
+    help="Time existing layout/render calls; attribution only",
+)
+parser.add_argument(
+    "--timing-details",
+    action="store_true",
+    help="Include nested scene work; attribution only, requires --timing",
+)
+parser.add_argument(
+    "--no-observer",
+    action="store_true",
+    help="Paired observer-overhead control; no continuous native-frame evidence",
+)
+parser.add_argument("--edge", choices=("corner", "right"), default="corner")
+parser.add_argument(
+    "--baseline-chrome",
+    action="store_true",
+    help="Use app native chrome on the Tk baseline",
+)
+parser.add_argument(
+    "--pixel-capture",
+    action="store_true",
+    help="Bounded separate-process Mac window-server pixels at 10Hz; pair with no-capture control",
+)
 args = parser.parse_args()
+if args.timing_details and not args.timing:
+    parser.error("--timing-details requires --timing")
+if args.pixel_capture and sys.platform != "darwin":
+    parser.error("--pixel-capture requires the existing Mac own-window recorder")
 run = args.output.resolve()
 run.mkdir(parents=True, exist_ok=False)
 source = args.source.resolve()
+source_before = {
+    str(f.relative_to(source)): hashlib.sha256(f.read_bytes()).hexdigest()
+    for f in (source / "yt_downloader").rglob("*.py")
+}
 sys.path.insert(0, str(source))
+sys.path.insert(0, str(source / "engineering-quality"))
 os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
 from PIL import ImageGrab
+from quality_harness.resize_observations import overlapping_heartbeat_gaps
 
 from scripts.focus_ui_preview import approved_metadata, isolated_preview_services
 from yt_downloader.analytics_startup import AnalyticsStartup
@@ -65,6 +108,8 @@ events = []
 configures = []
 heartbeats = []
 native_rects = []
+work_calls = []
+observer_stop = threading.Event()
 profile = cProfile.Profile()
 failure = []
 callback_errors = []
@@ -166,6 +211,9 @@ def drag(hwnd, target_width, target_height, number):
     box = rect(hwnd)
     start = (box[2] - 2, box[3] - 2)
     end = (box[0] + target_width - 2, box[1] + target_height - 2)
+    if args.edge == "right":
+        start = (box[2] - 2, (box[1] + box[3]) / 2)
+        end = (box[0] + target_width - 2, start[1])
     cursor(*start)
     time.sleep(0.10)
     own_foreground()
@@ -178,16 +226,20 @@ def drag(hwnd, target_width, target_height, number):
     mouse_button(True)
     try:
         began = time.perf_counter()
-        for index in range(1, 91):
+        for index in range(1, 3 * args.hz + 1):
             own_foreground()
-            fraction = index / 90
-            cursor(
+            fraction = index / (3 * args.hz)
+            point = (
                 round(start[0] + (end[0] - start[0]) * fraction),
                 round(start[1] + (end[1] - start[1]) * fraction),
+            )
+            post_start = time.perf_counter()
+            cursor(
+                *point,
                 dragged=True,
             )
-            native_rects.append({"t": time.perf_counter(), "rect": rect(hwnd)})
-            time.sleep(max(0, began + index / 30 - time.perf_counter()))
+            record("drag_post", point=point, post_start=post_start)
+            time.sleep(max(0, began + index / args.hz - time.perf_counter()))
     finally:
         mouse_button(False)
     record("drag_end", rect=rect(hwnd), cpu=time.process_time())
@@ -196,6 +248,9 @@ def drag(hwnd, target_width, target_height, number):
 
 
 def drive(hwnd, screen):
+    recorder = None
+    capture_log = None
+    capture_dir = run / "pixels"
     try:
         deadline = time.monotonic() + 180
         while not (run / "continue").exists():
@@ -203,18 +258,112 @@ def drive(hwnd, screen):
                 raise RuntimeError("ready window was not released for input")
             time.sleep(0.1)
         own_foreground()
+        if args.pixel_capture:
+            capture_dir.mkdir()
+            origin = time.monotonic()
+            (capture_dir / "origin.json").write_text(
+                json.dumps(
+                    {
+                        "monotonic": origin,
+                        "perf_counter": time.perf_counter(),
+                        "pid": pid,
+                        "window": int(hwnd),
+                        "scope": "own-window server pixels; not physical display refresh",
+                    }
+                )
+            )
+            capture_log = (capture_dir / "recorder.log").open("w")
+            recorder = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "quality_harness.window_capture",
+                    str(hwnd),
+                    str(origin),
+                    str(capture_dir),
+                    "--interval",
+                    ".1",
+                ],
+                stdout=capture_log,
+                stderr=subprocess.STDOUT,
+            )
+            capture_deadline = time.monotonic() + 10
+            while not (capture_dir / "capture.ready").exists():
+                if recorder.poll() is not None or time.monotonic() > capture_deadline:
+                    raise RuntimeError("pixel recorder did not become ready")
+                time.sleep(0.05)
+            record("pixel_recorder_ready", recorder_pid=recorder.pid)
         max_width = min(1450, screen[0] - 80)
         max_height = min(900, screen[1] - 80)
-        for index, size in enumerate(
-            [(880, 610), (max_width, max_height), (920, 650), (max_width, max_height)]
-        ):
+        # Stay above admitted minimums; constraint clamping is not frame lag.
+        sizes = [
+            (max_width, max_height),
+            (1100, 740),
+            (max_width, max_height),
+            (1100, 740),
+        ]
+        for index, size in enumerate(sizes[: args.drag_count]):
             drag(hwnd, *size, index)
         record("driver_complete")
     except Exception as exc:  # noqa: BLE001 - preserve any native driver failure
         failure.append(f"{type(exc).__name__}: {exc}")
         record("driver_failed", error=failure[-1])
     finally:
+        if recorder is not None:
+            (capture_dir / "capture.stop").touch()
+            try:
+                code = recorder.wait(timeout=30)
+                if code:
+                    failure.append(f"pixel recorder exited {code}")
+            except subprocess.TimeoutExpired:
+                recorder.terminate()
+                try:
+                    recorder.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    recorder.kill()
+                    recorder.wait(timeout=5)
+                failure.append("pixel recorder did not finish within its bound")
+            capture_log.close()
+        observer_stop.set()
         finished.set()
+
+
+def observe_frame(hwnd):
+    """Independent cursor/frame samples with explicit query intervals, no pixels."""
+    try:
+        while not observer_stop.is_set():
+            begin = time.perf_counter()
+            if sys.platform == "darwin":
+                point = Quartz.CGEventGetLocation(Quartz.CGEventCreate(None))
+                pointer = [float(point.x), float(point.y)]
+                pressed = bool(
+                    Quartz.CGEventSourceButtonState(
+                        Quartz.kCGEventSourceStateCombinedSessionState,
+                        Quartz.kCGMouseButtonLeft,
+                    )
+                )
+            else:
+                point = W.POINT()
+                u.GetCursorPos(C.byref(point))
+                pointer = [point.x, point.y]
+                pressed = bool(u.GetAsyncKeyState(1) & 0x8000)
+            pointer_end = time.perf_counter()
+            box = rect(hwnd)
+            end = time.perf_counter()
+            native_rects.append(
+                {
+                    "sample_start": begin,
+                    "pointer_end": pointer_end,
+                    "t": end,
+                    "pointer": pointer,
+                    "pressed": pressed,
+                    "rect": box,
+                    "query_ms": (end - begin) * 1000,
+                }
+            )
+            observer_stop.wait(max(0, 0.01 - (time.perf_counter() - begin)))
+    except Exception as exc:  # noqa: BLE001 - observer failure invalidates evidence
+        failure.append("observer: " + repr(exc))
 
 
 with (
@@ -222,22 +371,89 @@ with (
     patch.object(AnalyticsStartup, "start", return_value=None),
     patch.object(EngagementUI, "start", return_value=None),
 ):
-    app = DownloaderApp()
+    if args.baseline:
+        from tkinter import ttk
+
+        app = tk.Tk()
+        app.minsize(880, 610)
+        if args.baseline_chrome:
+            from yt_downloader.platforms.macos.windowing import integrate_main_window
+
+            integrate_main_window(app, "VODForge Resize QA", print)
+        shell = ttk.Frame(app, padding=20)
+        shell.pack(fill="both", expand=True)
+        ttk.Label(shell, text="Representative Tk resize baseline").pack(anchor="w")
+        ttk.Button(shell, text="Ordinary native control").pack(anchor="w")
+        canvas = tk.Canvas(shell, background="#302c38", highlightthickness=0)
+        canvas.pack(fill="both", expand=True)
+        for i in range(25):
+            canvas.create_text(
+                20,
+                20 + i * 20,
+                text=f"Representative row {i}",
+                anchor="nw",
+                fill="#eeeeee",
+            )
+        app._request_application_close = app.destroy
+    else:
+        app = DownloaderApp()
     app.title("VODForge Resize QA")
     app.geometry("1100x740+30+30")
     base = approved_metadata()
-    app.metadata_items = [
-        {
-            **base[i % len(base)],
-            "id": f"resize-qa-{i}",
-            "title": f"Generated resize fixture {i:05d}",
-            "vodforge_projection_owner": f"preview:resize:{i}",
-            "vodforge_annotation_owner": f"preview:resize:{i}",
-        }
-        for i in range(args.rows)
-    ]
-    app._render_metadata_tree(selected_index=0 if args.rows else None)
-    app._select_focus_view(args.view)
+    if not args.baseline:
+        app.metadata_items = [
+            {
+                **base[i % len(base)],
+                "id": f"resize-qa-{i}",
+                "title": f"Generated resize fixture {i:05d}",
+                "vodforge_projection_owner": f"preview:resize:{i}",
+                "vodforge_annotation_owner": f"preview:resize:{i}",
+            }
+            for i in range(args.rows)
+        ]
+        app._render_metadata_tree(selected_index=0 if args.rows else None)
+        app._select_focus_view(args.view)
+        if args.timing:
+            timing_stack = []
+
+            def timed(owner, name, label=None):
+                original = getattr(owner, name)
+
+                def call(*a, **kw):
+                    start = time.perf_counter()
+                    entry = {
+                        "name": label or name,
+                        "start": start,
+                        "depth": len(timing_stack),
+                    }
+                    timing_stack.append(entry)
+                    try:
+                        return original(*a, **kw)
+                    finally:
+                        entry["end"] = time.perf_counter()
+                        timing_stack.pop()
+                        work_calls.append(entry)
+
+                setattr(owner, name, call)
+
+            timed(app, "_apply_focus_layout")
+            timed(app.library_scene, "_render")
+            if args.timing_details:
+                for name in (
+                    "_browse",
+                    "_categories",
+                    "_collection_card",
+                    "_surface",
+                    "_toolbar",
+                    "_media_card",
+                    "_artwork_begin",
+                    "_artwork_image",
+                    "_artwork_request",
+                    "_fit",
+                    "_presentation_settle",
+                ):
+                    timed(app.library_scene, name)
+                timed(app.library_scene._depth, "draw", "surface_cache.draw")
 
     def callback_failed(*items):
         callback_errors.append("".join(traceback.format_exception(*items)))
@@ -313,16 +529,31 @@ with (
                 for a, b in intervals
             )
         ]
+        # Timers can be deferred for the whole native drag. Contained-only
+        # samples omit that gap when the next callback runs after mouse-up.
+        overlapping = overlapping_heartbeat_gaps(
+            heartbeats, [(a["t"], b["t"]) for a, b in intervals]
+        )
         summary = {
             "pid": pid,
             "profiling_enabled": args.profile,
+            "pixel_capture_enabled": args.pixel_capture,
+            "baseline": args.baseline,
+            "baseline_chrome": args.baseline_chrome,
+            "edge": args.edge,
+            "work_timing_enabled": args.timing,
+            "work_timing_details": args.timing_details,
+            "frame_observer_enabled": not args.no_observer,
+            "input_hz": args.hz,
+            "window_minimum": app.minsize(),
             "python": sys.version,
             "executable": sys.executable,
             "os": platform.platform(),
             "driver_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "rows": args.rows,
             "view": args.view,
-            "tk": str(app.tk.call("info", "patchlevel")),
+            "tcl": str(app.tk.call("info", "patchlevel")),
+            "tk": str(app.tk.call("package", "provide", "Tk")),
             "dpi": window_dpi(hwnd),
             "tk_scaling": app.tk.call("tk", "scaling"),
             "screen": screen,
@@ -332,21 +563,33 @@ with (
             "configure_count": len(configures),
             "heartbeat_count": len(heartbeats),
             "max_gap_ms": max(active, default=0),
+            "heartbeat_scope": "legacy contained intervals; crossing gaps reported separately",
+            "overlapping_heartbeat_count": len(overlapping),
+            "overlapping_max_gap_ms": max(overlapping, default=0),
             "drag_cpu_seconds": sum(b["cpu"] - a["cpu"] for a, b in intervals),
             "drag_wall_seconds": sum(b["t"] - a["t"] for a, b in intervals),
             "drag_p95_gap_ms": sorted(active)[int((len(active) - 1) * 0.95)]
             if active
             else 0,
-            "measurement": "quiet native drag, no screen capture during measured intervals",
+            "measurement": (
+                "attribution native drag"
+                if args.timing or args.profile
+                else "quiet native drag"
+            )
+            + ", no screen capture during measured intervals",
             "gaps_over_50ms": sum(x > 50 for x in active),
             "gaps_over_100ms": sum(x > 100 for x in active),
             "errors": failure,
             "callback_errors": callback_errors,
             "source_hashes": {
                 str(f.relative_to(source)): hashlib.sha256(f.read_bytes()).hexdigest()
-                for f in (source / "yt_downloader").glob("*.py")
+                for f in (source / "yt_downloader").rglob("*.py")
             },
         }
+        summary["source_hashes_before"] = source_before
+        summary["source_unchanged"] = source_before == summary["source_hashes"]
+        if not summary["source_unchanged"]:
+            failure.append("runtime source changed during native measurement")
         summary["application_closed"] = False
         (run / "measurement.json").write_text(json.dumps(summary, indent=2))
         (run / "trace.json").write_text(
@@ -356,6 +599,7 @@ with (
                     "heartbeats": heartbeats,
                     "configures": configures,
                     "native_rects": native_rects,
+                    "work_calls": work_calls,
                 },
                 indent=2,
             )
@@ -380,6 +624,8 @@ with (
         )
         if args.profile:
             profile.enable()
+        if not args.no_observer:
+            threading.Thread(target=observe_frame, args=(hwnd,), daemon=True).start()
         threading.Thread(target=drive, args=(hwnd, screen), daemon=True).start()
         beat()
 

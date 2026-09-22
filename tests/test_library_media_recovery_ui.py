@@ -77,3 +77,24 @@ def test_relinked_missing_prompt_keeps_exact_profile_and_makes_folder_choice_exp
     assert prompt.primary_label == "Choose folder and redownload"
     assert "MP3 • 256 kbps" in prompt.output_settings
     assert "default location" in prompt.message
+
+
+def test_retired_preset_prompt_explains_everyday_and_single_video(tmp_path):
+    job = _job(tmp_path)
+    job.output_type = OutputType.MP4
+    job.export_mode = ExportMode.EVERYDAY
+    for relocated in (False, True):
+        prompt = library_media_recovery_prompt(
+            LibraryMediaRecoveryPlan(
+                "missing",
+                None if relocated else job.output_dir,
+                job=job,
+                preset_migrated=True,
+                requires_destination_choice=relocated,
+            )
+        )
+        assert "Everyday" in prompt.message
+        assert "exact saved output" not in prompt.message
+        assert prompt.output_settings.endswith("Everyday")
+        assert "video" in prompt.message
+        assert prompt.primary_action == "redownload"

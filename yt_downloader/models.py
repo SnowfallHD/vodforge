@@ -168,6 +168,11 @@ class DownloadJob:
     cookie_browser: str | None = None
     batch_mode: bool = False
     preview_info: dict[str, Any] | None = None
+    # Ephemeral canonical preview provenance; consumed only after run admission.
+    preview_source_owner: str | None = None
+    # Durable fallback captured before admission; preserves annotations on write failure.
+    annotation_source_owner: str | None = None
+    admission_observer: Any | None = field(default=None, repr=False)
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     origin_run_id: str | None = None
     recovery_reason: str | None = None

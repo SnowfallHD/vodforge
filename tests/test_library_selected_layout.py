@@ -48,10 +48,7 @@ def test_selected_item_height_remains_fixed_while_tags_are_capped() -> None:
     library_source = inspect.getsource(DownloaderApp._build_focus_library_view)
 
     assert FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT == 360
-    assert (
-        "details.configure(width=410, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)"
-        in library_source
-    )
+    assert "height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT" in library_source
     assert "tags_line.configure(height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT)" in (
         library_source
     )

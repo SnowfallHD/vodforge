@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal, cast, get_args
+from typing import Any, Literal, Protocol, cast, get_args
 
 from .analytics_consent import AnalyticsConsentOwner, analytics_allowed
 from .cloud_funnel import (
@@ -81,9 +81,20 @@ def product_output_kind(value: str) -> OutputKind | None:
     return cast(OutputKind, normalized) if normalized in _OUTPUT_KINDS else None
 
 
-def _supports_failure(event_name: str, action: str | None = None) -> bool:
+def _supports_failure(
+    event_name: str, action: str | None = None, feature: str | None = None
+) -> bool:
     return event_name in {"run_failed", "local_conversion_failed"} or (
-        event_name == "feature_used" and action in {"failed", "candidate_rejected"}
+        event_name == "feature_used"
+        and (
+            action
+            in {"failed", "candidate_rejected", "volume_failed", "volume_unresolved"}
+            or (feature == "playback_operation" and action == "control_failed")
+            or (
+                feature == "library_action_operation"
+                and action in {"rejected", "annotation_retained"}
+            )
+        )
     )
 
 
@@ -137,14 +148,14 @@ class ProductTelemetryEvent:
                 {"failure_reason": self.failure_reason or "unknown"}
                 if self.event_name == "run_failed"
                 or (
-                    _supports_failure(self.event_name, self.action)
+                    _supports_failure(self.event_name, self.action, self.feature)
                     and self.failure_reason is not None
                 )
                 else {}
             ),
             **(
                 {"failure_detail": self.failure_detail.payload()}
-                if _supports_failure(self.event_name, self.action)
+                if _supports_failure(self.event_name, self.action, self.feature)
                 and self.failure_detail
                 else {}
             ),
@@ -186,12 +197,12 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
     detail = value.get("failure_detail")
     if detail is not None and (
         not isinstance(detail, dict)
-        or not _supports_failure(event_name, value.get("action"))
+        or not _supports_failure(event_name, value.get("action"), value.get("feature"))
     ):
         raise ValueError("invalid failure detail")
     if failure_reason is not None and (
         failure_reason not in FAILURE_REASONS
-        or not _supports_failure(event_name, value.get("action"))
+        or not _supports_failure(event_name, value.get("action"), value.get("feature"))
     ):
         raise ValueError("invalid failure reason")
     if detail is not None:
@@ -199,7 +210,9 @@ def _parse_event(value: Any) -> ProductTelemetryEvent:
         if clean_detail.reason != (failure_reason or "unknown"):
             raise ValueError("conflicting failure reason")
     feature, action = value.get("feature"), value.get("action")
-    validate_operation_fields(feature, validate_dimensions(value.get("dimensions")))
+    validate_operation_fields(
+        feature, validate_dimensions(value.get("dimensions")), action
+    )
     if event_name == "feature_used":
         if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
             raise ValueError("invalid feature action")
@@ -326,6 +339,24 @@ def _post_d1_event(
         return False
 
 
+class OperationRecorder(Protocol):
+    def __call__(
+        self,
+        action: str,
+        dimensions: Mapping[str, str],
+        *,
+        failure_detail: FailureDiagnostic | None = None,
+    ) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class BoundProductOperation:
+    """A delayed producer remains owned by its original consent/session."""
+
+    permitted: Callable[[], bool]
+    record: OperationRecorder
+
+
 class ProductTelemetryOwner:
     """Own privacy gating, immutable events, delivery, and the bounded retry outbox."""
 
@@ -362,7 +393,7 @@ class ProductTelemetryOwner:
         self._attempt_started: dict[str, float] = {}
         self._attempt_queued: dict[str, float] = {}
         self._last_settings_snapshot: dict[str, str] | None = None
-        self._feature_observed: set[tuple[str, str]] = set()
+        self._feature_observed: set[tuple[str, str, str]] = set()
         self._operation_steps: dict[tuple[str, str], tuple[str, int]] = {}
         self._observation_drops = 0
         self._lock = threading.RLock()
@@ -427,7 +458,7 @@ class ProductTelemetryOwner:
         dimensions: Mapping[str, str] | None = None,
     ) -> bool:
         clean_dimensions = validate_dimensions(dimensions)
-        validate_operation_fields(feature, clean_dimensions)
+        validate_operation_fields(feature, clean_dimensions, action)
         if event_name == "feature_used":
             if feature not in FEATURE_ACTIONS or action not in FEATURE_ACTIONS[feature]:
                 raise ValueError("unsupported telemetry feature action")
@@ -437,7 +468,9 @@ class ProductTelemetryOwner:
             raise ValueError("invalid telemetry retry relationship")
         if event_name not in _EVENT_NAMES:
             raise ValueError("unsupported product telemetry event")
-        if failure_detail is not None and not _supports_failure(event_name, action):
+        if failure_detail is not None and not _supports_failure(
+            event_name, action, feature
+        ):
             raise ValueError("unexpected failure detail")
         detail = (
             validate_failure_detail(failure_detail)
@@ -450,7 +483,7 @@ class ProductTelemetryOwner:
             failure_reason = detail.reason
         if failure_reason is not None and (
             failure_reason not in FAILURE_REASONS
-            or not _supports_failure(event_name, action)
+            or not _supports_failure(event_name, action, feature)
         ):
             raise ValueError("unsupported failure reason")
         if run_kind is not None and run_kind not in _RUN_KINDS:
@@ -514,7 +547,7 @@ class ProductTelemetryOwner:
             run_kind=run_kind,
             output_type=output_type,
             failure_reason=(failure_reason or "unknown")
-            if _supports_failure(event_name, action)
+            if _supports_failure(event_name, action, feature)
             else None,
             failure_detail=detail,
             attempt_id=attempt_identifier(install_id, attempt_key)
@@ -568,6 +601,55 @@ class ProductTelemetryOwner:
                 self._recorded_dedupe_ids.add(event_id)
         self.flush_async()
         return True
+
+    def bind_operation(
+        self, feature: str, *, operation_key: str
+    ) -> BoundProductOperation | None:
+        """Bind before asynchronous work; re-grant never adopts prior work."""
+        if feature not in OPERATION_FEATURES:
+            raise ValueError("unsupported operation observation")
+        _valid_uuid(operation_key, version=4)
+        with self._lock:
+            if not self._permitted()[0]:
+                return None
+            generation, session = self._consent_generation, self._session_id
+            try:
+                epoch = self._consent_epoch()
+            except (OSError, ValueError):
+                return None
+            # The initial granted epoch is legitimately None. Revocation
+            # persists a new UUID, so None is still an original-context token.
+
+        def current() -> bool:
+            with self._lock:
+                try:
+                    return (
+                        generation == self._consent_generation
+                        and session == self._session_id
+                        and self._permitted()[0]
+                        and epoch == self._consent_epoch()
+                    )
+                except (OSError, ValueError):
+                    return False
+
+        def record(
+            action: str,
+            dimensions: Mapping[str, str],
+            *,
+            failure_detail: FailureDiagnostic | None = None,
+        ) -> bool:
+            with self._lock:
+                if not current():
+                    return False
+                return self.record_operation(
+                    feature,
+                    action,
+                    operation_key=operation_key,
+                    dimensions=dimensions,
+                    failure_detail=failure_detail,
+                )
+
+        return BoundProductOperation(current, record)
 
     def record_operation(
         self,
@@ -644,7 +726,16 @@ class ProductTelemetryOwner:
         """Record engagement once per session/action; avoid text-entry event floods."""
         if not self._permitted()[0]:
             return False
-        key = (feature, action)
+        target = ""
+        if feature == "player" and action == "detail_viewed":
+            try:
+                bounded = validate_dimensions(dimensions)
+            except (TypeError, ValueError):
+                return False
+            target = bounded.get("detail_target", "")
+        # Only the closed semantic panel enum extends legacy session dedupe.
+        # Neither widget identity nor user content may become a dedupe key.
+        key = (feature, action, target)
         with self._lock:
             if (
                 feature == "settings"
@@ -693,6 +784,8 @@ class ProductTelemetryOwner:
                         self._worker = None
                         return
                     self._flush_requested = False
+        except Exception as exc:  # noqa: BLE001 - optional sink must not escape the worker
+            self._diagnostic(f"product telemetry delivery paused: {type(exc).__name__}")
         finally:
             with self._lock:
                 if self._worker is threading.current_thread():

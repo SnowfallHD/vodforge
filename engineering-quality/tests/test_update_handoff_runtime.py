@@ -268,7 +268,7 @@ function Get-Process {
 )
 @pytest.mark.parametrize("response_type", ["text", "bytes", "missing", "duplicate"])
 def test_repair_parses_windows_checksum_response(tmp_path, response_type):
-    from yt_downloader.windows_update_recovery import RECOVERY_FUNCTIONS
+    from yt_downloader.platforms.windows.update_recovery import RECOVERY_FUNCTIONS
 
     # GitHub serves SHA256SUMS as an octet stream: Windows PowerShell returns byte[].
     # Stop at the network transport boundary after validating the release/checksum.
@@ -320,7 +320,7 @@ catch {{ Write-Output $_.Exception.Message }}
 def test_windows_recovery_surface_owns_frame_and_centers_on_app(tmp_path):
     import json
 
-    from yt_downloader.windows_update_recovery import RECOVERY_FUNCTIONS
+    from yt_downloader.platforms.windows.update_recovery import RECOVERY_FUNCTIONS
 
     receipt = tmp_path / "layout.json"
     capture = r"""

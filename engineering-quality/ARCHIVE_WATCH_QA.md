@@ -261,3 +261,46 @@ These source/native checks do not qualify a release or prove physical input,
 audible output, Windows behavior or packaged behavior. Production backend
 deployment must precede a future client release; no deployment, push, merge,
 app replacement or release has been performed.
+
+## Visual-polish successor and composed Library checks
+
+All evidence below is under the isolated build's visual-polish directory.
+The after-v7 freeze has403 files and30 actual native captures, with no callback/Tcl errors, source hashes unchanged, Back state preserved and root destroyed. Native-maintained-v3 passed200 cases with no skips before the subsequent owner/context fixes. Its actual MP4/MP3/M4A journeys passed. This is not a final package, Windows, physical-input or audibility result.
+
+Independent root reproduced and maintained tests now cover three related interaction classes:
+- Secondary click over primary Play/Open affordances selects without activation.
+- Folder/media subjects are exclusive across click, keyboard, navigation and the reverse media action. Folder details omit irrelevant media tabs/actions and restore them when a media item is selected.
+- Every late Open saved location/Remove action resolves its original menu owner, never the mutable current selection or a stale index. Reorder, removed owner and a projection change during confirmation are covered.
+
+The unchanged original root controller probes passed16/16. Root independently reran them and saved root-fixed-interaction-v8.json (SHA dfb4fc9b6c813eef33cd96aeaa65238f15871b3f9ef76f5ec475a682e3bac5d0). Maintained menu ownership tests passed11/11. Real native folder/media transitions and menu callbacks passed in composition-v8-native-owner-refined.log.
+
+The independent two-size composed Library journey first had two root-owned fixture corrections: mismatched variant directory names, then unsupported source/output summary keys. Those failures and original fixtures are preserved and are not classified as product regressions. The corrected fixture then reproduced a real Back-context defect: choosing MP3 changed All media into a folder. Removing implicit navigation fixed both unchanged cases (composition-v8-root-composed-after.xml). The current card's version grouping and stale out-of-context choice are also covered by maintained native tests; all three pass in composition-v8-context-final.xml.
+
+The final scoped native batch passed45 cases and found one additional maintained-test setup error: it expected MP3 while retaining the default MP4 filter. The fixture now explicitly selects All, and all three composed cases pass. That setup failure remains in composition-v8-native-final.log. This does not turn the49-capability map into49 accepted native journeys. Final visual review and release qualification remain separate.
+
+
+## v9 refinement evidence and failure retention
+
+The maintained native presentation suite now verifies stable Play/details/More order across width and detail transitions, meaningful destination leaves with exact full paths, and aligned quiet Watch actions with complete hit areas in the first compact rail. The FactsText native contract covers long path wrapping at the full text margin, long labels, all raw facts, and preserved selection through repeated width changes. The shared native gate already enrolls these suites and the composed Library workflow.
+
+A direct callback regression reproduced an incorrect Library selected event when selection was empty (one failure plus two positive controls). test_archive_selection_events.py now requires a media subject before that observation; clearing selection still clears the UI. This is callback/source evidence, not a new preview-D1 or packaged telemetry acceptance claim.
+
+The first v9 native run is retained externally:74 passed,2 failed,26 teardown errors. A shared-chrome draw before the destination control had usable dimensions produced the teardown errors; a small-window rail action exceeded the viewport. Both product failures were corrected. The complete successor content/control/composed run passed all76 cases with no skips or errors. v8 remains an immutable comparison; test counts do not confer visual or release acceptance.
+
+The v9 screenshot review additionally exposed excessive stacking of short output facts and a clipped first-card keyboard outline. v10 allows more label space for compact short facts while keeping long values full-width, and keeps the entire quiet action target inside the canvas. Maintained native geometry checks cover both defects; output-path scroll states are part of the successor visual evidence.
+
+
+The maintained scenario unit_static.telemetry_presentation_contract exercises actual
+native presentation owners plus source Library admission/removal owners through
+loopback Python HTTP, the real Worker, and all local D1 migrations. It records a
+source hash manifest before and after, verifies complete outbox delivery, exact
+stored dimensions and typed causes, replay deduplication, closed-schema rejection,
+and original-consent binding. The stored-row packet is separate from scenario
+truth for independent diagnosis. Synthetic image deletion is controlled fault
+injection; only the hidden-control case claims ordinary application Unmap dispatch.
+No source-native result is packaged, Windows, preview-D1 or deployment proof.
+
+
+## Recovery and presentation regression gates
+
+The five classes in [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md) are mandatory NORMAL/DEEP scenarios. Run the maintained before/after source contract and retain exact-artifact code binding separately from native/packaged GUI evidence. Source checks never waive the packaged journey gate.

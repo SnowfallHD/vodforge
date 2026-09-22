@@ -124,8 +124,12 @@ def test_every_content_bearing_action_dialog_uses_the_protected_surface() -> Non
 
     settings_source = inspect.getsource(FocusSettingsDialog)
     assert "allow_body_scroll=True" in settings_source
+    # Native injected192 proof shows the bounded screen can compress the note
+    # field to1px. The existing viewport is admitted only for enlarged metrics;
+    # default geometry remains an ordinary adaptive body.
+    annotation_source = inspect.getsource(LibraryAnnotationDialog)
+    assert "allow_body_scroll=metrics.scale > 1" in annotation_source
     for ordinary_dialog in (
-        LibraryAnnotationDialog,
         LibraryMediaRecoveryDialog,
         LocalAudioVideoDialog,
         DownloaderApp._show_focus_output_details,
@@ -159,7 +163,74 @@ def test_new_action_dialog_modules_must_adopt_the_shared_surface() -> None:
         "detail_ui.py",
         "focus_settings.py",
         "library_annotation_ui.py",
+        "library_collection_ui.py",
+        "library_file_actions_ui.py",
         "library_media_recovery_ui.py",
         "local_audio_video_ui.py",
         "support_ui.py",
     }
+
+
+def test_body_map_reconciles_actual_child_width_even_when_item_width_was_set():
+    calls = []
+    surface = ActionDialogSurface.__new__(ActionDialogSurface)
+    surface.viewport = SimpleNamespace(
+        winfo_width=lambda: 1060,
+        itemconfigure=lambda item, **options: calls.append((item, options)),
+    )
+    surface._body_window = 4
+    surface.body = SimpleNamespace(winfo_width=lambda: 1200)
+    surface._sync_overflow = lambda: None
+    surface._reconcile_body_width()
+    assert calls == [(4, {"width": 1060})]
+    surface.body = SimpleNamespace(winfo_width=lambda: 1060)
+    surface._reconcile_body_width()
+    assert len(calls) == 1
+
+
+def test_body_geometry_reconciliation_is_coalesced_and_cancelled_on_destroy():
+    calls = []
+    surface = ActionDialogSurface.__new__(ActionDialogSurface)
+    surface._body_width_pending = None
+    surface.body = SimpleNamespace(
+        after_idle=lambda callback: (calls.append(callback), "pending")[1],
+        after_cancel=lambda token: calls.append(token),
+    )
+    surface._sync_overflow = lambda: None
+    surface._body_resized(None)
+    surface._body_resized(None)
+    assert calls == [surface._reconcile_body_width]
+    surface._body_destroyed(SimpleNamespace(widget=object()))
+    assert surface._body_width_pending == "pending"
+    surface._body_destroyed(SimpleNamespace(widget=surface.body))
+    assert calls[-1] == "pending"
+    assert surface._body_width_pending is None
+
+
+def test_final_viewport_configure_schedules_reconcile_after_early_body_map():
+    calls = []
+    surface = ActionDialogSurface.__new__(ActionDialogSurface)
+    surface._body_width_pending = None
+    surface._body_window = 4
+    width = [1]
+    actual_body = [1200]
+    surface.viewport = SimpleNamespace(
+        winfo_width=lambda: width[0],
+        itemconfigure=lambda item, **options: calls.append(("allocation", options)),
+    )
+    surface.body = SimpleNamespace(
+        winfo_width=lambda: actual_body[0],
+        after_idle=lambda callback: (calls.append(("deferred", callback)), "pending")[
+            1
+        ],
+    )
+    surface._sync_overflow = lambda: None
+    surface._body_resized(None)
+    surface._reconcile_body_width()
+    assert not any(item[0] == "allocation" for item in calls)
+    width[0] = 1060
+    surface._viewport_resized(SimpleNamespace(width=1060))
+    assert surface._body_width_pending == "pending"
+    assert calls[-1][0] == "deferred"
+    surface._reconcile_body_width()
+    assert calls[-1] == ("allocation", {"width": 1060})

@@ -88,6 +88,7 @@ def test_backend_gate_rejects_feature_vocabulary_drift(tmp_path):
         DIMENSION_PATTERNS,
         DIMENSION_RANGES,
         FEATURE_ACTIONS,
+        OPERATION_FEATURES,
     )
 
     source = tmp_path / "src/lib/product-telemetry.ts"
@@ -138,6 +139,11 @@ def test_backend_gate_rejects_feature_vocabulary_drift(tmp_path):
     ):
         prefix = "const " + key + " =" if key == "FAILURE_REASONS" else key + ":"
         text += prefix + " new Set(" + json.dumps(sorted(values)) + ");\n"
+    text += (
+        "const OPERATION_FEATURES = new Set("
+        + json.dumps(sorted(OPERATION_FEATURES))
+        + ");\n"
+    )
     source.write_text(text)
     assert_feature_vocabulary(tmp_path)
     source.write_text(text.replace("notes_saved", "private_notes"))
@@ -150,21 +156,17 @@ def test_backend_gate_rejects_feature_vocabulary_drift(tmp_path):
     [
         ('"AttributeError"', '"UnexpectedPrivateError"'),
         ('"libvlc_backend"', '"private_module"'),
-        ("'image_preparation'", "'private_stage'"),
+        ('"image_preparation"', '"private_stage"'),
     ],
 )
 def test_backend_gate_rejects_diagnostic_vocabulary_drift(tmp_path, before, after):
     from quality_harness.telemetry_checks import assert_feature_vocabulary
 
-    actual = (
-        Path(__file__).resolve().parents[3]
-        / "vodforge-site/src/lib/product-telemetry.ts"
-    )
-    if not actual.exists():
-        pytest.skip("sibling backend repository unavailable")
+    # Construct a known-valid contract first. A stale unrelated checkout must not
+    # cause the wrong rejection to mask the deliberate diagnostic mutation.
+    test_backend_gate_rejects_feature_vocabulary_drift(tmp_path)
     source = tmp_path / "src/lib/product-telemetry.ts"
-    source.parent.mkdir(parents=True)
-    text = actual.read_text()
+    text = source.read_text().replace("private_notes", "notes_saved")
     assert before in text
     source.write_text(text.replace(before, after, 1))
     with pytest.raises(AssertionError, match="diagnostic vocabulary drift"):

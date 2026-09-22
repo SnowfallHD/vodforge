@@ -2,7 +2,7 @@
   <img src="assets/VODForge.png" width="88" alt="VODForge icon">
 </p>
 <h1 align="center">VODForge</h1>
-<p align="center">Your media. Ready to play.</p>
+<p align="center">Your media. Your way.</p>
 <p align="center">
   <a href="https://getvodforge.com/"><img src="https://img.shields.io/badge/Website-getvodforge.com-7067FF?style=for-the-badge&amp;logo=safari&amp;logoColor=white" alt="Visit the VODForge website"></a>
   <a href="https://github.com/SnowfallHD/vodforge/releases/latest"><img src="https://img.shields.io/badge/Download-latest_release-242833?style=for-the-badge&amp;logo=github&amp;logoColor=white" alt="Download the latest release"></a>
@@ -17,13 +17,29 @@ in a searchable Library with built-in playback.
 
 ![VODForge Forge workspace with progress, output details, and Run Deck](assets/readme/forge.png)
 
-> This README describes the current `main` branch. Screenshots show the actual
-> native UI with sample content; unreleased features may not yet be in the
+> This README describes this source checkout. Screenshots are illustrative captures
+> of the native UI with sample content; newer changes may not yet be pictured or in the
 > [latest public download](https://github.com/SnowfallHD/vodforge/releases/latest).
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·
 [Privacy](#privacy-and-usage-analytics) · [Welcome & feedback](docs/welcome-feedback-reviews.md) · [Development](#development) ·
 [Architecture](docs/architecture.md) · [Fine-tuning](fine-tuning/README.md)
+
+## For humans
+
+Start with install and usage below. For development, follow [Development](#development),
+[architecture and repository map](docs/architecture.md), the
+[shared UI catalog](docs/ui-components.md), and
+[harness operating and maintenance guide](engineering-quality/HARNESS_GUIDE.md), with
+[testing setup and commands](engineering-quality/README.md).
+The [release gate](engineering-quality/RELEASE_GATE.md) defines required evidence.
+The [Mac/Windows owner map](docs/architecture.md#shared-product-and-native-implementations)
+separates native implementations while keeping one shared product UI and behavior contract.
+
+## For AI agents
+
+Read [AGENTS.md](AGENTS.md) for operational navigation. It points into the same architecture,
+UI, testing and release guides used by human contributors.
 
 ## What it does
 
@@ -45,11 +61,11 @@ in a searchable Library with built-in playback.
 - Ignores playlist expansion by default so a copied watch link downloads only that video or audio item; turn **Ignore playlists** off when you intentionally want every item in a playlist.
 - Keeps YouTube access explicit: **Public** uses no cookies, while `cookies.txt` and **Browser** are separate opt-in methods for content you are authorized to access.
 - Shows friendly progress stages in Forge, with a vertical smile/frown control to switch to the styled technical log. Activity retains the full technical view.
-- Combines private local download history across app restarts with current-session metadata previews, output-type filters, a pixel-scrolling table, and draggable session-persistent columns.
+- Combines private local download history across app restarts with current-session metadata previews, visual Library browsing, search and output-type filters.
 - Keeps each Forge run's format and output details stable while the output dropdown and Settings configure only the next run.
 - Reflects the latest Library items in Run Deck as playlist items finish, without waiting for the entire playlist. Skipping an item follows the next playlist item when one remains.
-- Introduces new users with a native welcome tour. Release-selected **Did you know?** tips or **What's new** highlights share once-seen tracking; 0.2.1 uses one **What’s new** slide for the updated output settings, with **Try it** opening Settings.
-- The **All N runs** button opens Library on click and a scrollable run list on hover. Failed-run retries use current settings; redownloading previously successful media preserves its saved output profile.
+- Introduces new users with a native welcome tour. Optional release-selected **Did you know?** tips and **What's new** highlights share once-seen tracking; this checkout disables both automatic showcases.
+- The **All N runs** button opens Library on click and a scrollable run list on hover. Failed-run retries use current settings; redownloading previously successful media uses its saved output profile when available, with the Everyday preset as the legacy fallback.
 - Lets preview items start downloads directly, failed items retry, skipped or stopped items restart as fresh runs, and Library removal stop only the exact active or queued run it owns without deleting downloaded media.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
 
@@ -116,6 +132,28 @@ an exact frame height. For example, a wide `1920×1012` stream labeled **1080p**
 by YouTube is eligible at 1080p. VODForge preserves aspect ratio; it does not add
 pixels just to make the height read 1080.
 
+### Your Library and Watch
+
+Use **Library** to find and organize saved media. Browse videos, audio, channels,
+playlists, or your own collections. Open an item for its description and tags;
+the overflow menu holds file and management actions. Editing a description saves
+a local override and keeps the original provider information intact.
+
+Use **Watch** to choose something to play. A featured item leads the page,
+followed by Recently Added, your Collections, Playlists, and Channels. Scroll a
+row horizontally or choose **See All** for its complete catalog. Channels open
+their playlists and saved media. A playlist with one saved video gets a focused
+feature view instead of an almost-empty row.
+
+Playback defaults to **Fit**, so the whole source picture remains visible without
+cropping or stretching. Click the picture to pause or resume. Recommendations sit
+beside the player when there is room and below it on narrower windows. Description,
+chapters, notes, moments, tags, and source/output facts remain available below.
+Missing measurements are shown as unknown.
+
+The gear menu opens **Help and feedback**, **Rate VODForge**, and **Welcome tour**
+directly. Rating and feedback submissions remain explicit actions.
+
 ### MP4 output settings
 
 In **Settings → Optimize for**, choose the task you need:
@@ -164,11 +202,16 @@ route. See [updater recovery](docs/update-handoff.md).
 
 ![VODForge Library with search, categories, and source and output details](assets/readme/library.png)
 
-Library combines saved history and metadata-only previews. Its table scrolls by pixels and its column dividers can be dragged without changing the meaning of the columns. The **Actions** menu provides copy/open commands and, where applicable, **Start download in Forge**. Removing an item removes its VODForge Library and Forge presentation history; if that row owns an exact active or queued run, that run is stopped or dequeued, while unrelated runs and media files remain untouched.
+Library combines saved history and metadata-only previews in visual browsing and detail views. Open an item to see its description, personal tags, source and output information. Its vertical three-dot menu and right-click menu provide the same actions for that item. Use **Folders and storage** to browse saved locations and inspect their media; opening details returns to the same folder context. Use **Delete** to remove saved files and their Library entries, with a confirmation first. **File options → Remove Library entry only** keeps the files and removes their VODForge history; only that row's exact active or queued run is stopped or dequeued.
 
-Use Library search and the category filter to find items. **Organize this item** saves your own notes, tags, and category locally without changing the source's metadata. Categories are user-created collections, and saved category names can be reused for other items.
+In Library, choose **Select**, select media, then **Actions** to add a collection,
+move files, or delete them. Move carries your saved details and playback progress to
+the chosen folder. Delete normally uses system Trash; missing files remove only their
+Library entries. An interrupted change offers a review before another file change.
 
-**Play** opens the internal player on the saved artwork; press its Play overlay to begin. Playback works offline with no separately installed player. Chapters, heatmaps, and preview moments appear when their metadata or local media supports them. If a file was moved or deleted, the recovery prompt can send it back to Forge using its saved export settings and original base output folder. Existing channel/playlist/item folders are reused instead of nesting the same hierarchy again; older records without a usable saved profile require review.
+Use Library search and collections to find items. Personal notes, tags, collections and edited descriptions are saved locally; provider metadata remains intact. Description editing exposes Save and Cancel only while editing, and Copy includes the full displayed description.
+
+**Play** opens the saved media in the internal player. Click the video to pause or resume. Playback works offline with no separately installed player. Chapters, heatmaps, and preview moments appear when their metadata or local media supports them. If a file was moved or deleted, the recovery prompt can send it back to Forge using its saved export settings and original base output folder. Existing channel/playlist/item folders are reused instead of nesting the same hierarchy again; older records without a usable saved profile require review.
 
 Theme presets and custom accents apply immediately in Settings. Trackpad scrolling works throughout the Settings body, with the action footer kept visible.
 
@@ -333,7 +376,20 @@ macOS:
 .venv/bin/python macos_smoke_test.py
 ```
 
-The test suite focuses on export planning, FFmpeg command construction, metadata, path safety, batch parsing, cookie options, diagnostics, and source-format fallbacks.
+The suite covers export planning, output preservation, metadata, path safety,
+queue and player lifetime, consent, and UI ownership/geometry. Native tests are
+opt-in and separate from ordinary source tests; see the
+[engineering guide](engineering-quality/README.md) for their environment and gates.
+A passing source suite does not certify an installed application.
+
+For a UI change, start with the [component catalog](docs/ui-components.md) and
+[architecture](docs/architecture.md). Extend an existing owner, preserve a concrete
+reproducer for confirmed bugs, and update the relevant mandatory harness class.
+Test current-owner actions, cancellation, navigation, resize, and empty/small/large
+content states. Keep technical details behind the action or view that needs them.
+Record source identity and distinguish generated input, physical input, and exact
+packaged evidence. Follow the [release gate](engineering-quality/RELEASE_GATE.md)
+before producing a release.
 
 `yt-dlp` and its matching EJS challenge scripts are pinned in `requirements.txt` so every Windows and macOS artifact uses the same reviewed extractor. YouTube changes frequently, so update that pin deliberately during normal app maintenance, then run the full suite and the packaged metadata-only probe (`VODForge --debug-preflight <public-test-url>`) before releasing. VODForge leaves YouTube player-client selection to the pinned `yt-dlp` version; do not hard-code a client list without a current cross-video format-availability test.
 
@@ -348,7 +404,12 @@ The test suite focuses on export planning, FFmpeg command construction, metadata
 
 ## Contributing
 
-Bug reports and focused pull requests are welcome. Please include reproduction steps for download failures and run `python -m pytest -q` before opening a PR. Never attach cookie files or diagnostics containing private URLs.
+Bug reports and focused pull requests are welcome. Include the trigger, expected
+and observed behavior, platform, and reproducible evidence. Run the relevant tests
+and required harness classes, plus lint/type checks, and state any unavailable
+native or packaged tier in the PR. The [UI catalog](docs/ui-components.md) and
+[architecture](docs/architecture.md) are shared contributor requirements for humans
+and AI agents. Never attach cookie files or diagnostics containing private URLs.
 
 ## License
 

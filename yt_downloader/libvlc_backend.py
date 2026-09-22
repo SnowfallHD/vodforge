@@ -11,11 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .playback_backend import (
     MediaPlayerError,
     NativeRenderSurface,
     PlaybackSnapshot,
     PlaybackStatus,
+    VolumeObservation,
 )
 
 VLC_RUNTIME_VERSION = "3.0.23"
@@ -176,6 +178,11 @@ class LibVLCEngineOwner:
         return self._ready.is_set() and self._error is None
 
     @property
+    def retiring(self) -> bool:
+        with self._lock:
+            return bool(self._retirement_threads)
+
+    @property
     def failed(self) -> bool:
         return self._ready.is_set() and self._error is not None
 
@@ -326,8 +333,13 @@ class LibVLCPlaybackBackend:
         self._vlc = vlc_module or load_vlc_module(runtime)
         self._lock = threading.RLock()
         self._path: Path | None = None
+        self._media_generation = 0
         self._duration_hint = 0.0
         self._volume = 80
+        self._volume_generation = 0
+        self._volume_observation: VolumeObservation | None = None
+        self._failure_detail: FailureDiagnostic | None = None
+        self._failure_boundary = "unknown"
         self._volume_pending = threading.Event()
         self._volume_pending.set()
         self._error = ""
@@ -355,6 +367,9 @@ class LibVLCPlaybackBackend:
 
     @property
     def snapshot(self) -> PlaybackSnapshot:
+        return self._snapshot()
+
+    def _snapshot(self, *, reconcile_volume: bool = True) -> PlaybackSnapshot:
         with self._lock:
             if self._closed:
                 return PlaybackSnapshot(
@@ -363,6 +378,10 @@ class LibVLCPlaybackBackend:
                     position=0.0,
                     duration=self._duration_hint,
                     volume=self._volume,
+                    volume_observation=self._volume_observation,
+                    failure_detail=self._failure_detail,
+                    failure_boundary=self._failure_boundary,
+                    media_generation=self._media_generation,
                 )
             path = self._path
             error = self._error
@@ -375,7 +394,10 @@ class LibVLCPlaybackBackend:
                     status = self._translate_state(self._player.get_state())
                     if self._provider_failed.is_set():
                         status = "Failed"
-                    if status in {"Playing", "Paused"}:
+                        if self._failure_detail is None:
+                            self._failure_detail = FailureDiagnostic(stage="playback")
+                            self._failure_boundary = "provider_event"
+                    if reconcile_volume and status in {"Playing", "Paused"}:
                         self._sync_volume()
                     position_ms = self._safe_nonnegative(self._player.get_time())
                     duration_ms = self._safe_nonnegative(self._player.get_length())
@@ -385,6 +407,10 @@ class LibVLCPlaybackBackend:
                     position_ms = 0.0
                     duration_ms = 0.0
                     error = "The local playback engine stopped responding."
+                    self._failure_detail = capture_failure(
+                        exc, stage="playback", inspect_text=False
+                    )
+                    self._failure_boundary = "state_read"
                 if status == "Failed" and not error:
                     error = "The local media file could not be played."
             duration = duration_ms / 1000 if duration_ms > 0 else self._duration_hint
@@ -398,6 +424,10 @@ class LibVLCPlaybackBackend:
                 duration=duration,
                 volume=self._volume,
                 error=error,
+                volume_observation=self._volume_observation,
+                failure_detail=self._failure_detail,
+                failure_boundary=self._failure_boundary,
+                media_generation=self._media_generation,
             )
 
     def attach_render_surface(self, surface: NativeRenderSurface) -> None:
@@ -438,6 +468,9 @@ class LibVLCPlaybackBackend:
             raise MediaPlayerError("The saved media file is unavailable.") from exc
         with self._lock:
             self._ensure_open()
+            # Retire captured media intent before any provider mutation, including
+            # a replacement attempt that later fails after stopping the old media.
+            self._media_generation += 1
             previous = self._media
             surface = self._surface if previous is not None else None
             try:
@@ -459,6 +492,17 @@ class LibVLCPlaybackBackend:
             self._path = media_path
             self._duration_hint = self._bounded_duration(duration)
             self._error = ""
+            self._failure_detail = None
+            self._failure_boundary = "unknown"
+            if self._volume_observation is not None:
+                self._volume_observation = VolumeObservation(
+                    self._volume_generation,
+                    self._volume,
+                    None,
+                    "pending",
+                    "output_reset",
+                )
+            self._volume_pending.set()
             if previous is not None:
                 try:
                     previous.release()
@@ -482,11 +526,17 @@ class LibVLCPlaybackBackend:
                     self.load(self._path, duration=self._duration_hint)
                 self._provider_failed.clear()
                 self._error = ""
+                self._failure_detail = None
+                self._failure_boundary = "unknown"
                 result = self._player.play()
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
-                return self._fail("The local playback engine could not start.", exc)
+                return self._fail(
+                    "The local playback engine could not start.", exc, boundary="start"
+                )
             if result == -1:
-                return self._fail("The local playback engine could not start.")
+                return self._fail(
+                    "The local playback engine could not start.", boundary="start"
+                )
         return self.snapshot
 
     def pause(self) -> PlaybackSnapshot:
@@ -495,7 +545,9 @@ class LibVLCPlaybackBackend:
             try:
                 self._player.set_pause(1)
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
-                return self._fail("The local playback engine could not pause.", exc)
+                return self._fail(
+                    "The local playback engine could not pause.", exc, boundary="pause"
+                )
         return self.snapshot
 
     def toggle(self) -> PlaybackSnapshot:
@@ -513,30 +565,97 @@ class LibVLCPlaybackBackend:
             if duration > 0:
                 target = min(duration, target)
             try:
-                self._player.set_time(round(target * 1000))
+                result = self._player.set_time(round(target * 1000))
+                if result == -1:
+                    raise MediaPlayerError(
+                        "The local playback engine rejected the seek."
+                    )
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
-                return self._fail("The local playback engine could not seek.", exc)
+                return self._fail(
+                    "The local playback engine could not seek.", exc, boundary="seek"
+                )
         return self.snapshot
 
     def set_volume(self, value: int) -> PlaybackSnapshot:
         volume = min(100, max(0, int(value)))
         with self._lock:
             self._ensure_open()
-            try:
-                result = self._player.audio_set_volume(volume)
-            except Exception as exc:  # noqa: BLE001 - native provider failures are translated
-                return self._fail(
-                    "The local playback engine could not change volume.", exc
-                )
-            if result == -1:
-                state = self._translate_state(self._player.get_state())
-                if state in {"Playing", "Paused"}:
-                    return self._fail(
-                        "The local playback engine could not change volume."
-                    )
+            self._volume_generation += 1
             self._volume = volume
+            self._volume_observation = VolumeObservation(
+                self._volume_generation, volume, None, "pending", "requested"
+            )
             self._volume_pending.set()
-        return self.snapshot
+            self._sync_volume()
+            if self._volume_observation.disposition == "failed":
+                raise MediaPlayerError(
+                    "The local playback engine could not change volume.",
+                    diagnostic=self._volume_observation.diagnostic,
+                )
+        # The command made one provider attempt. Retry remains owned by the
+        # normal UI poll, not a second hidden attempt while returning a value.
+        return self._snapshot(reconcile_volume=False)
+
+    def set_video_layout(self, *, fill: bool, width: int, height: int) -> None:
+        """Fit preserves the whole image; Fill explicitly crops to the live stage."""
+        if width < 1 or height < 1:
+            raise MediaPlayerError("The video area is not ready.")
+        with self._lock:
+            self._ensure_open()
+            try:
+                self._player.video_set_crop_geometry(
+                    f"{width}:{height}" if fill else ""
+                )
+            except Exception as exc:
+                raise MediaPlayerError("The video size could not be changed.") from exc
+
+    def caption_tracks(self) -> tuple[tuple[int, str], ...]:
+        with self._lock:
+            self._ensure_open()
+            try:
+                rows = self._player.video_get_spu_description() or ()
+                return tuple(
+                    (
+                        int(track),
+                        (
+                            name.decode("utf-8", errors="replace")
+                            if isinstance(name, bytes)
+                            else str(name)
+                        )[:160],
+                    )
+                    for track, name in rows
+                    if int(track) >= 0
+                )
+            except Exception as exc:
+                raise MediaPlayerError(
+                    "Captions are unavailable for this video."
+                ) from exc
+
+    def selected_caption_track(self) -> int:
+        with self._lock:
+            self._ensure_open()
+            try:
+                return int(self._player.video_get_spu())
+            except Exception as exc:
+                raise MediaPlayerError(
+                    "Captions are unavailable for this video."
+                ) from exc
+
+    def select_caption_track(self, track: int) -> None:
+        with self._lock:
+            self._ensure_open()
+            if track != -1 and track not in {
+                key for key, _name in self.caption_tracks()
+            }:
+                raise MediaPlayerError("That caption track is no longer available.")
+            try:
+                result = self._player.video_set_spu(track)
+                if result == -1:
+                    raise RuntimeError("Provider rejected caption track")
+            except Exception as exc:
+                raise MediaPlayerError(
+                    "The caption track could not be changed."
+                ) from exc
 
     def stop(self) -> PlaybackSnapshot:
         with self._lock:
@@ -547,7 +666,9 @@ class LibVLCPlaybackBackend:
                     self._bind_provider_surface(None)
                 self._stop_provider()
             except Exception as exc:  # noqa: BLE001 - native provider failures are translated
-                return self._fail("The local playback engine could not stop.", exc)
+                return self._fail(
+                    "The local playback engine could not stop.", exc, boundary="stop"
+                )
             finally:
                 if surface is not None:
                     self._bind_provider_surface(surface)
@@ -740,25 +861,87 @@ class LibVLCPlaybackBackend:
         if not self._closed:
             self._volume_pending.set()
 
+    def _read_volume(self) -> int | None:
+        value = self._player.audio_get_volume()
+        return value if type(value) is int and 0 <= value <= 100 else None
+
     def _sync_volume(self) -> None:
-        """Reconcile desired volume after asynchronous audio-output creation."""
+        """Reconcile desired volume; only fresh readback establishes application."""
+        previous = self._volume_observation
+        if previous is not None and previous.disposition == "failed":
+            return
+
+        def observe(disposition, cause, observed=None, diagnostic=None):
+            if self._volume_generation:
+                self._volume_observation = VolumeObservation(
+                    self._volume_generation,
+                    self._volume,
+                    observed,
+                    disposition,
+                    cause,
+                    diagnostic,
+                )
+
         try:
-            current = self._player.audio_get_volume()
-            if (
-                self._volume_pending.is_set() or current != self._volume
-            ) and self._player.audio_set_volume(self._volume) != -1:
-                self._volume_pending.clear()
-        except Exception as exc:  # noqa: BLE001 - transient audio readiness stays retryable
+            current = self._read_volume()
+        except Exception:  # noqa: BLE001 - a read failure must not discard a requested command
+            current = None
+        if current == self._volume and not self._volume_pending.is_set():
+            return
+        cause = (
+            previous.cause
+            if previous and previous.disposition == "pending"
+            else "output_reset"
+        )
+        try:
+            accepted = self._player.audio_set_volume(self._volume) != -1
+        except Exception as exc:  # noqa: BLE001 - preserve original machine facts
+            observe(
+                "failed",
+                "setter_exception",
+                current,
+                capture_failure(exc, stage="playback", inspect_text=False),
+            )
+            self._volume_pending.clear()
+            return
+        try:
+            observed = self._read_volume()
+        except Exception as exc:  # noqa: BLE001 - readback absence is not successful application
+            observe(
+                "pending",
+                "readback_exception",
+                diagnostic=capture_failure(exc, stage="playback", inspect_text=False),
+            )
             self._volume_pending.set()
-            self._diagnostic(
-                f"libVLC volume synchronization failed: {type(exc).__name__}"
+            return
+        if observed == self._volume:
+            self._volume_pending.clear()
+            observe("applied", cause, observed)
+        else:
+            self._volume_pending.set()
+            observe(
+                "pending",
+                "provider_rejected"
+                if not accepted
+                else "readback_unavailable"
+                if observed is None
+                else "readback_mismatch",
+                observed,
             )
 
-    def _fail(self, message: str, exc: Exception | None = None) -> PlaybackSnapshot:
+    def _fail(
+        self, message: str, exc: Exception | None = None, *, boundary: str = "unknown"
+    ) -> PlaybackSnapshot:
+        self._failure_detail = (
+            capture_failure(exc, stage="playback", inspect_text=False)
+            if exc is not None
+            else FailureDiagnostic(stage="playback")
+        )
+        self._failure_boundary = boundary
         if exc is not None:
             self._diagnostic(f"libVLC playback failure: {type(exc).__name__}")
         self._error = message
-        raise MediaPlayerError(message) from exc
+        raise MediaPlayerError(message, diagnostic=self._failure_detail) from exc
 
     def _ensure_open(self) -> None:
         if self._closed:

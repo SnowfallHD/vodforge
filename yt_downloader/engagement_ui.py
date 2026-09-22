@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 import uuid
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from .failure_diagnostics import capture_failure
 from .support_diagnostics import FailureContext, failure_context
 from .support_transport import SupportTransport
 from .support_ui import SupportPanel
+from .ui_context_menu import ContextMenu
 from .whats_new_ui import WhatsNewPanel
 
 
@@ -221,7 +223,12 @@ class EngagementUI:
         # Keep that command alive, then dismiss before constructing a modal.
         self._menu_action = self.root.after_idle(dispatch)
 
-    def menu(self, anchor: tk.Misc) -> None:
+    def menu(
+        self,
+        anchor: tk.Misc,
+        *,
+        application_actions: tuple[tuple[str, Callable[[], None]], ...] = (),
+    ) -> None:
         if self.closed:
             return
         if self._menu is not None:
@@ -230,9 +237,17 @@ class EngagementUI:
         self._menu_operation = str(uuid.uuid4())
         operation = self._menu_operation
         self._observe("requested", operation)
-        menu = self._menu = tk.Menu(self.root, tearoff=False)
+        menu = self._menu = ContextMenu(self.root, tearoff=False)
+        for label, action in application_actions:
+            menu.add_command(
+                label=label, command=partial(self._select_menu_action, menu, action)
+            )
+        if application_actions:
+            menu.add_separator()
         menu.add_command(
-            label="Report a problem / Send feedback",
+            label="Help and feedback"
+            if application_actions
+            else "Report a problem / Send feedback",
             command=lambda: self._select_menu_action(menu, self.feedback),
         )
         menu.add_command(

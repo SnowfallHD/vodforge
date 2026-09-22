@@ -14,7 +14,7 @@ from .history import (
     history_output_dir,
     history_output_type,
 )
-from .library_annotations import LibraryAnnotation
+from .library_annotations import LibraryAnnotation, resolve_annotation_owner
 from .models import DownloadJob, OutputType
 from .run_identity import annotate_job_metadata
 from .thumbnail_state import matching_thumbnail_image
@@ -43,6 +43,7 @@ _PROJECTION_DECORATION_KEYS = (
     PROJECTION_OWNER_KIND_KEY,
     ANNOTATION_OWNER_KEY,
     "vodforge_user_note",
+    "vodforge_user_description",
     "vodforge_user_tags",
     "vodforge_user_category",
 )
@@ -266,7 +267,7 @@ class LibraryProjectionOwner:
 
     def __init__(self, *, diagnostic: Any = None) -> None:
         self._diagnostic = diagnostic or (lambda _message: None)
-        self._preview_items: dict[str, list[dict[str, Any]]] = {}
+        self._preview_items: dict[str, dict[int, dict[str, Any]]] = {}
         self._run_phases: dict[str, str] = {}
         self._snapshot = LibraryProjection(
             rows=(),
@@ -286,13 +287,43 @@ class LibraryProjectionOwner:
         owner = str(preview_run_id).strip()
         if not owner:
             return
-        self._preview_items[owner] = [dict(item) for item in items]
+        self._preview_items[owner] = {
+            index: dict(item) for index, item in enumerate(items)
+        }
 
     def remove_preview(self, preview_run_id: str) -> None:
         self._preview_items.pop(str(preview_run_id).strip(), None)
 
     def claim_preview(self, preview_run_id: str) -> list[dict[str, Any]]:
-        return self._preview_items.pop(str(preview_run_id).strip(), [])
+        return list(self._preview_items.pop(str(preview_run_id).strip(), {}).values())
+
+    def preview_subject(self, info: dict[str, Any]) -> str | None:
+        """Resolve one canonical preview without consuming it during validation."""
+        batch = str(info.get("vodforge_preview_run_id") or "").strip()
+        projected_owner = str(info.get(PROJECTION_OWNER_KEY) or "")
+        item_key = metadata_run_key(info)
+        matches = [
+            f"preview:{batch}:{index}"
+            for index, source in self._preview_items.get(batch, {}).items()
+            if (
+                f"preview:{batch}:{index}" == projected_owner
+                if projected_owner
+                else item_key is not None and metadata_run_key(source) == item_key
+            )
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    def consume_preview_subject(self, subject: str) -> bool:
+        """Consume an admitted item while preserving every sibling's ordinal."""
+        for batch, items in tuple(self._preview_items.items()):
+            for index in tuple(items):
+                if subject != f"preview:{batch}:{index}":
+                    continue
+                del items[index]
+                if not items:
+                    del self._preview_items[batch]
+                return True
+        return False
 
     def observe_phase(self, run_id: str, status: str) -> bool:
         """Record one transient run phase and report whether it changed."""
@@ -454,7 +485,7 @@ class LibraryProjectionOwner:
 
         preview_rows: list[dict[str, Any]] = []
         for preview_run_id, items in self._preview_items.items():
-            for item_index, source in enumerate(items):
+            for item_index, source in items.items():
                 row = _clean_projection_row(source)
                 row["vodforge_preview_complete"] = True
                 row["vodforge_preview_run_id"] = preview_run_id
@@ -479,11 +510,23 @@ class LibraryProjectionOwner:
                 if run_id
                 else str(row.get(PROJECTION_OWNER_KEY) or "")
             )
+            if (
+                run_id in run_sources
+                and row.get(PROJECTION_OWNER_KIND_KEY) != "history"
+            ):
+                _kind, annotation_job = run_sources[run_id]
+                annotation_owner = resolve_annotation_owner(
+                    annotation_owner,
+                    annotation_job.annotation_source_owner,
+                    annotation_snapshot,
+                )
             row[ANNOTATION_OWNER_KEY] = annotation_owner
             annotation = annotation_snapshot.get(annotation_owner)
             if annotation is None:
                 continue
             row["vodforge_user_note"] = annotation.note
+            if annotation.description is not None:
+                row["vodforge_user_description"] = annotation.description
             row["vodforge_user_tags"] = list(annotation.tags)
             row["vodforge_user_category"] = annotation.category
         rows = tuple(_freeze_projection_value(row) for row in mutable_rows)

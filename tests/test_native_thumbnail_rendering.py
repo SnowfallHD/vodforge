@@ -3,6 +3,7 @@
 import gc
 import os
 import time
+import tkinter as tk
 
 import pytest
 from PIL import Image, ImageTk
@@ -58,8 +59,59 @@ def solid(color):
     return Image.new("RGBA", (320, 180), color)
 
 
-def center(image):
-    bitmap = ImageTk.getimage(image).convert("RGB")
+def pixels(app, image, *, rendered=False):
+    if not rendered and app.tk.call("image", "type", str(image)) == "photo":
+        return ImageTk.getimage(image).convert("RGB")
+    # Native backing images deliberately are not Tcl photos. Observe their
+    # actual rendered pixels through the existing platform adapter instead of
+    # assuming Pillow can read every Tk image implementation.
+    from AppKit import NSColorSpace
+
+    from yt_downloader.platforms.macos.surfaces import _bitmap_rep_image
+    from yt_downloader.platforms.macos.windowing import _native_window
+
+    canvas = tk.Canvas(
+        app,
+        width=image.width(),
+        height=image.height(),
+        highlightthickness=0,
+        bd=0,
+        bg=THEME["bg"],
+    )
+    try:
+        canvas.create_image(0, 0, anchor="nw", image=image)
+        canvas.place(x=0, y=0, width=image.width(), height=image.height())
+        app.tk.call("raise", str(canvas))
+        app.update_idletasks()
+        view = _native_window(app).contentView()
+        bounds = view.bounds()
+        rep = view.bitmapImageRepForCachingDisplayInRect_(bounds)
+        view.cacheDisplayInRect_toBitmapImageRep_(bounds, rep)
+        # The display uses P3; compare source sRGB values only after a real
+        # color-space conversion, not by relabeling native framebuffer bytes.
+        rep = rep.bitmapImageRepByConvertingToColorSpace_renderingIntent_(
+            NSColorSpace.sRGBColorSpace(), 0
+        )
+        bitmap = _bitmap_rep_image(rep)
+        sx, sy = bitmap.width / bounds.size.width, bitmap.height / bounds.size.height
+        x, y = (
+            canvas.winfo_rootx() - app.winfo_rootx(),
+            canvas.winfo_rooty() - app.winfo_rooty(),
+        )
+        return bitmap.crop(
+            (
+                round(x * sx),
+                round(y * sy),
+                round((x + canvas.winfo_width()) * sx),
+                round((y + canvas.winfo_height()) * sy),
+            )
+        ).convert("RGB")
+    finally:
+        canvas.destroy()
+
+
+def center(app, image):
+    bitmap = pixels(app, image)
     return bitmap.getpixel((bitmap.width // 2, bitmap.height // 2))
 
 
@@ -89,7 +141,7 @@ def test_same_visual_intent_preserves_live_image_identity(application, owner):
         for _ in range(20):
             app._render_focus_thumbnail_surfaces()
         assert image_pair(app) == before
-        assert center(app.thumbnail_image) == (220, 20, 60)
+        assert center(app, app.thumbnail_image) == (220, 20, 60)
     else:
         selector = next(
             child
@@ -123,7 +175,7 @@ def test_position_only_configure_does_not_repeat_thumbnail_rasterization(
     width = event_owner.winfo_width()
     app._render_focus_thumbnail_surfaces(library_width=width)
     before = image_pair(app)
-    pixels = ImageTk.getimage(before[1]).tobytes()
+    before_pixels = pixels(app, before[1]).tobytes()
     calls = spy_renders(app, monkeypatch)
     assert event_owner.winfo_ismapped()
     for position in range(24):
@@ -137,7 +189,7 @@ def test_position_only_configure_does_not_repeat_thumbnail_rasterization(
     assert "<Configure>" in event_owner.bind()
     assert calls == []
     assert image_pair(app) == before
-    assert ImageTk.getimage(app.thumbnail_image).tobytes() == pixels
+    assert pixels(app, app.thumbnail_image).tobytes() == before_pixels
 
 
 @pytest.mark.parametrize("target", ["active", "library", "both"])
@@ -154,10 +206,10 @@ def test_new_source_with_same_dimensions_and_path_updates_requested_owner(
     app._render_focus_thumbnail_surfaces(
         solid("#0066cc"), placeholder=False, source_path=path, target=target
     )
-    assert center(app.focus_active_thumbnail_image) == (
+    assert center(app, app.focus_active_thumbnail_image) == (
         (0, 102, 204) if target in {"active", "both"} else (220, 20, 60)
     )
-    assert center(app.thumbnail_image) == (
+    assert center(app, app.thumbnail_image) == (
         (0, 102, 204) if target in {"library", "both"} else (220, 20, 60)
     )
     before = image_pair(app)
@@ -177,9 +229,9 @@ def test_geometry_and_palette_changes_refresh_real_pixels(application, monkeypat
     monkeypatch.setitem(THEME, "bg", "#123456")
     monkeypatch.setitem(THEME, "surface", "#654321")
     app._render_focus_thumbnail_surfaces(library_width=220)
-    bitmap = ImageTk.getimage(app.thumbnail_image).convert("RGB")
+    bitmap = pixels(app, app.thumbnail_image)
     assert bitmap.getpixel((0, 0)) == (18, 52, 86)
-    assert center(app.thumbnail_image) == (101, 67, 33)
+    assert center(app, app.thumbnail_image) == (101, 67, 33)
     before = image_pair(app)
     app._render_focus_thumbnail_surfaces(library_width=220)
     assert image_pair(app) == before
@@ -201,10 +253,16 @@ def test_uncommitted_render_failure_retries_instead_of_becoming_cached(
     app._render_focus_thumbnail_surfaces(
         solid("#0066cc"), placeholder=True, target="library"
     )
-    assert center(app.thumbnail_image) == (220, 20, 60)
+    assert center(app, app.thumbnail_image) == (220, 20, 60)
     app._render_focus_thumbnail_surfaces()
     assert len(attempts) == 4
-    assert center(app.thumbnail_image) == (0, 102, 204)
+    # Compare independently drawn source pixels through the same display color
+    # conversion. P3's 8-bit framebuffer round-trip shifts this zero red channel.
+    reference = ImageTk.PhotoImage(solid("#0066cc"), master=app)
+    expected = pixels(app, reference, rendered=True)
+    assert center(app, app.thumbnail_image) == expected.getpixel(
+        (expected.width // 2, expected.height // 2)
+    )
     before = image_pair(app)
     app._render_focus_thumbnail_surfaces()
     assert len(attempts) == 4
@@ -231,7 +289,7 @@ def test_externally_changed_label_is_repaired_with_unchanged_source(
     app._render_focus_thumbnail_surfaces()
     assert str(label.cget("image"))
     assert label.cget("text") == ""
-    assert center(app.thumbnail_image) == (220, 20, 60)
+    assert center(app, app.thumbnail_image) == (220, 20, 60)
 
 
 def test_retired_native_image_resource_cannot_satisfy_render_reuse(
@@ -269,3 +327,10 @@ def test_retired_native_image_resource_cannot_satisfy_render_reuse(
     assert set(current).issubset(names)
     assert not set(before).intersection(names)
     assert app.tk.call(current[1], "get", 1, 1) == (17, 170, 68)
+
+
+@pytest.fixture(autouse=True)
+def legacy_folder_workspace_for_existing_contracts(application):
+    """These contracts target the retained folder workspace, not the default scenes."""
+    application._library_scene_action("folders", None)
+    application.update()

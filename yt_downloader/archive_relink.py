@@ -169,9 +169,12 @@ def preview_relink(
     for index, record in enumerate(records):
         entry = proposed.get(index)
         try:
+            # Selected entries already validated this source in the same
+            # metadata-only snapshot. Reuse it for collision detection; never
+            # cache across proposals or skip unselected/worker validation.
             path = (
-                entry.destination
-                if entry and entry.state == "pending"
+                (entry.destination if entry.state == "pending" else entry.source)
+                if entry is not None
                 else recorded_artifact(record)
             )
         except (ValueError, TypeError):
@@ -216,12 +219,19 @@ def observe_destination(
             return FileObservation("missing")
         source = recorded_artifact(record)
         # A relink cannot silently turn a saved MP3 into a different media format.
-        expected_suffix = PurePath(str(source)).suffix.casefold() if source else ""
-        if source and path.style != source.style:
-            expected_suffix = source.name.rpartition(".")[2].casefold()
-            actual_suffix = path.name.rpartition(".")[2].casefold()
-        else:
-            actual_suffix = native.suffix.casefold()
+        expected_suffix = PurePath(source.name).suffix.casefold() if source else ""
+        if not expected_suffix:
+            # Legacy rows may retain the output format without an exact filename.
+            # Use only recorded evidence: history_output_type defaults unknown
+            # records to MP4, which would invent a format for this identity check.
+            output_type = (
+                str(record.get("vodforge_output_type") or "").strip().casefold()
+            )
+            expected_suffix = {"mp4": ".mp4", "mp3": ".mp3"}.get(output_type, "")
+        # Original audio and unknown formats have no single inferred extension.
+        # Without a canonical suffix, explicit selection supplies the file;
+        # optional companion checks below still apply, with no decoding claim.
+        actual_suffix = native.suffix.casefold()
         if expected_suffix and expected_suffix != actual_suffix:
             return FileObservation("identity_mismatch")
         companion_names: list[str] = []
@@ -414,8 +424,10 @@ def relocated_records(
             raise RelinkConflict("Destination verification is incomplete")
         record = prospective[index]
         from .history import history_annotation_owner, history_archive_owner
+        from .playback_progress import progress_key
 
         previous_annotation_owner = history_annotation_owner(record)
+        record.setdefault("vodforge_progress_key", progress_key(record))
         record.setdefault(
             "vodforge_archive_id",
             hashlib.sha256(history_archive_owner(record).encode("utf-8")).hexdigest(),

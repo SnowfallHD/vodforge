@@ -1,0 +1,49 @@
+{
+  "source": "docs/references/approved-vf-matte-logo.png",
+  "source_sha256": "4ea899554339f84c07366c2aa511b03fc96a077aab199a66c4779f50cd595c7f",
+  "method": "Original RGB crops; background alpha isolation only; proportional Lanczos resizing",
+  "tile_crop": [
+    100,
+    176,
+    688,
+    764
+  ],
+  "mark_crop": [
+    165,
+    297,
+    633,
+    707
+  ],
+  "wordmark_crop": [
+    758,
+    375,
+    1480,
+    580
+  ],
+  "tagline": "Your media. Your way.",
+  "social_preview": "Grayscale from large mark crop and native-resolution name; 0.3px alpha edge smoothing; no upscaling",
+  "source_resolution": [
+    1536,
+    1024
+  ],
+  "tile_source_resolution": [
+    588,
+    588
+  ],
+  "font_sha256": "525979822591a3447cfc49d943d6f7683508e25543407871c0ed8fed05fd2bd9",
+  "exports": {
+    "assets/VODForge.png": "c3efdaf695e116b8271c1eac23127e59b20a947ade6b840057eff3405062ec88",
+    "assets/VODForge-macos.png": "c3efdaf695e116b8271c1eac23127e59b20a947ade6b840057eff3405062ec88",
+    "assets/VODForge.ico": "2c4123ad5d6507d7a7fd4e905e5391b0abea1c9c1322adeea1946b5383d4e1c8",
+    "assets/VODForge.icns": "faf46d35db0f21d9549dd9f88e09b19fb4817580bc080740186949daf89b4427",
+    "assets/brand/approved-app-tile-source.png": "055454f362ecb760475263e1c0ef84187d89ca7faad87c26a9fff870e79d690f",
+    "assets/brand/icon-180.png": "01a88a67e15f1c5012c903ddd08f4f32999410641469e2df34eedf070d9ff10c",
+    "assets/brand/icon-192.png": "0edb0e69ab0dee5437739ce5207f0afe157522acaf65233b4906ad45aab56a97",
+    "assets/brand/icon-32.png": "866bb16ef7a3d2c56a39aaf21806f34346e219d5540fe7c728b7320073fe376e",
+    "assets/brand/icon-512.png": "94e7362c98d0675cbfe40841abaf703cd968dfa587c3652852772de7114c4fd4",
+    "assets/brand/social-preview.png": "8c2427626ba376791a58698e66d8ad7f2884ae33efd0062f3b4a5ce3c8788840",
+    "assets/brand/vf-mark.png": "d5becdb581a2a2d80e2bc0e16d72b788226265673257d953a9cdbbd7044f8f89",
+    "assets/brand/vf-name.png": "6954a2ce86fb5fb0f1ed6d1c4195dc667c5cdf1726a50b9c0251583595dea408",
+    "assets/brand/vf-wordmark.png": "fe9cb23a5664b0dfd0b3492a1bc29b6576f0cccafd7a02b9d820847c3b4a638d"
+  }
+}

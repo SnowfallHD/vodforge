@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import colorsys
 import re
 import tkinter as tk
 from collections.abc import Callable
@@ -9,72 +10,90 @@ from typing import Final
 
 from .platform_services import platform_font_families
 
-_BASE_THEME: Final[dict[str, str]] = {
-    "bg": "#08090a",
-    "panel": "#0d0f12",
-    "surface": "#121419",
-    "surface_2": "#1a1d24",
-    "text": "#f7f8f8",
-    "muted": "#9297a3",
-    "subtle": "#636874",
-    "accent": "#7170ff",
-    "accent_dark": "#5e6ad2",
-    "accent_surface": "#20213a",
-    "success": "#35d07f",
-    "warning": "#e8b15e",
-    "danger": "#ff7a7a",
-    "border": "#2b2e37",
-}
 
+def _matte_palette(seed: str) -> dict[str, str]:
+    """Monochrome materials with a separate, restrained foreground palette."""
+    rgb = tuple(int(seed[i : i + 2], 16) / 255 for i in (1, 3, 5))
+    hue, _light, saturation = colorsys.rgb_to_hls(*rgb)
+    saturation = min(0.30, saturation)
+
+    def tone(light: float, chroma: float = 1.0) -> str:
+        channels = colorsys.hls_to_rgb(hue, light, saturation * chroma)
+        return "#" + "".join(f"{round(c * 255):02x}" for c in channels)
+
+    return {
+        "bg": tone(0.19, 0.40),
+        "panel": tone(0.19, 0.40),
+        "surface": tone(0.195, 0.40),
+        "surface_2": tone(0.22, 0.40),
+        "focus_surface": tone(0.145, 0.40),
+        "text": tone(0.95, 0.40),
+        "muted": tone(0.80, 0.35),
+        "subtle": tone(0.51, 0.40),
+        "accent": tone(0.70),
+        "accent_dark": tone(0.22, 0.40),
+        "accent_surface": tone(0.20, 0.40),
+        "action": "#80d5ef",
+        "icon": "#80d5ef",
+        "selection": "#bda0ff",
+        "progress": "#bda0ff",
+        "success": "#93d9b2",
+        "warning": "#f2c078",
+        "danger": "#ffadb7",
+        "border": tone(0.29, 0.48),
+        "focus": tone(0.82),
+        "on_accent": tone(0.98, 0.30),
+    }
+
+
+_THEME_SEEDS = {
+    "Violet": "#a895c9",
+    "Cobalt": "#8ca8ca",
+    "Jade": "#94b7a3",
+    "Ember": "#c2a38b",
+    "Rose": "#c49bab",
+}
+MATERIAL_ROLES: Final = (
+    "bg",
+    "panel",
+    "surface",
+    "surface_2",
+    "focus_surface",
+    "accent",
+    "accent_dark",
+    "accent_surface",
+    "border",
+)
+FOREGROUND_ROLES: Final = (
+    "action",
+    "icon",
+    "selection",
+    "progress",
+    "success",
+    "warning",
+    "danger",
+)
 THEME_PRESETS: Final = MappingProxyType(
+    {name: _matte_palette(seed) for name, seed in _THEME_SEEDS.items()}
+)
+_BASE_THEME: Final[dict[str, str]] = dict(THEME_PRESETS["Violet"])
+THEME_MOTIFS: Final = MappingProxyType(
     {
-        "Violet": {
-            "bg": "#08090a",
-            "panel": "#0d0f12",
-            "surface": "#121419",
-            "surface_2": "#1a1d24",
-            "border": "#2b2e37",
-            "accent": "#7170ff",
-            "accent_dark": "#5e6ad2",
-        },
-        "Cobalt": {
-            "bg": "#070a0f",
-            "panel": "#0b1119",
-            "surface": "#101821",
-            "surface_2": "#182331",
-            "border": "#29384a",
-            "accent": "#4f9cff",
-            "accent_dark": "#3978cc",
-        },
-        "Jade": {
-            "bg": "#070b0a",
-            "panel": "#0b1210",
-            "surface": "#111a17",
-            "surface_2": "#19251f",
-            "border": "#2a3a33",
-            "accent": "#42d69b",
-            "accent_dark": "#2da878",
-        },
-        "Ember": {
-            "bg": "#0c0907",
-            "panel": "#140f0b",
-            "surface": "#1b1510",
-            "surface_2": "#281f18",
-            "border": "#403127",
-            "accent": "#ff9955",
-            "accent_dark": "#cf7034",
-        },
-        "Rose": {
-            "bg": "#0c080b",
-            "panel": "#140d12",
-            "surface": "#1c1319",
-            "surface_2": "#291c25",
-            "border": "#412e3b",
-            "accent": "#ef75b5",
-            "accent_dark": "#bf528b",
-        },
+        "Violet": "smoke",
+        "Cobalt": "splatter",
+        "Jade": "blossoms",
+        "Ember": "splatter",
+        "Rose": "blossoms",
+        "Custom accent": "smoke",
     }
 )
+_active_theme_name = "Violet"
+
+
+def theme_motif() -> str:
+    return THEME_MOTIFS[_active_theme_name]
+
+
 CUSTOM_THEME_NAME: Final = "Custom accent"
 THEME_NAMES: Final[tuple[str, ...]] = (*THEME_PRESETS, CUSTOM_THEME_NAME)
 DEFAULT_THEME_NAME: Final = "Violet"
@@ -92,7 +111,7 @@ ThemePaletteSnapshot = tuple[tuple[str, str], ...]
 def theme_palette_snapshot() -> ThemePaletteSnapshot:
     """Return the shared palette as an immutable render-comparison value."""
 
-    return tuple(sorted(THEME.items()))
+    return tuple(sorted((*THEME.items(), ("@motif", theme_motif()))))
 
 
 class ThemeRenderOwner:
@@ -161,6 +180,26 @@ def patch_tk_surface_palette(
                     widget.configure({option: replacement})
             except (AttributeError, tk.TclError):
                 continue
+        if isinstance(widget, tk.Text):
+            for tag in widget.tag_names():
+                for option in ("foreground", "background"):
+                    current = str(widget.tag_cget(tag, option))
+                    if current in replacements:
+                        widget.tag_configure(tag, **{option: replacements[current]})
+        if isinstance(widget, tk.Menu):
+            last = widget.index("end")
+            for index in range((last + 1) if last is not None else 0):
+                if widget.type(index) in {"separator", "tearoff"}:
+                    continue
+                for option in (
+                    "foreground",
+                    "background",
+                    "activeforeground",
+                    "activebackground",
+                ):
+                    current = str(widget.entrycget(index, option))
+                    if current in replacements:
+                        widget.entryconfigure(index, {option: replacements[current]})
         if isinstance(widget, tk.Canvas):
             try:
                 for item in widget.find_all():
@@ -177,7 +216,7 @@ def patch_tk_surface_palette(
             continue
 
 
-def normalize_hex_color(value: object, fallback: str = "#7170ff") -> str:
+def normalize_hex_color(value: object, fallback: str = "#796aff") -> str:
     text = str(value or "").strip()
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", text):
         return fallback
@@ -206,21 +245,21 @@ def _mix_hex(background: str, foreground: str, amount: float) -> str:
 
 
 def apply_theme_selection(
-    name: object, custom_accent: object = "#7170ff"
+    name: object, custom_accent: object = "#796aff"
 ) -> ThemeSelection:
     """Apply one validated startup palette to the shared widget color contract."""
 
+    global _active_theme_name
     selected = str(name or DEFAULT_THEME_NAME).strip()
     if selected not in THEME_NAMES:
         selected = DEFAULT_THEME_NAME
     accent = normalize_hex_color(custom_accent)
     palette = dict(_BASE_THEME)
     if selected == CUSTOM_THEME_NAME:
-        palette.update(THEME_PRESETS[DEFAULT_THEME_NAME])
-        palette.update(accent=accent, accent_dark=_darken(accent))
+        palette.update(_matte_palette(accent))
     else:
         palette.update(THEME_PRESETS[selected])
-    palette["accent_surface"] = _mix_hex(palette["surface"], palette["accent"], 0.18)
+    _active_theme_name = selected
     THEME.clear()
     THEME.update(palette)
     return ThemeSelection(selected, accent)
@@ -231,7 +270,14 @@ THEME: Final[dict[str, str]] = dict(_BASE_THEME)
 FONT_UI_FAMILY, FONT_MONO_FAMILY = platform_font_families()
 FONT_UI = (FONT_UI_FAMILY, 11)
 FONT_UI_SMALL = (FONT_UI_FAMILY, 10)
-FONT_UI_MEDIUM = (FONT_UI_FAMILY, 11, "bold")
-FONT_UI_SMALL_MEDIUM = (FONT_UI_FAMILY, 10, "bold")
+FONT_UI_EMPHASIS_FAMILY = (
+    "Helvetica Neue Medium"
+    if FONT_UI_FAMILY == "Helvetica Neue"
+    else "Segoe UI Semibold"
+    if FONT_UI_FAMILY == "Segoe UI"
+    else FONT_UI_FAMILY
+)
+FONT_UI_MEDIUM = (FONT_UI_EMPHASIS_FAMILY, 11, "normal")
+FONT_UI_SMALL_MEDIUM = (FONT_UI_EMPHASIS_FAMILY, 10, "normal")
 FONT_TITLE = (FONT_UI_FAMILY, 22, "bold")
 FONT_MONO = (FONT_MONO_FAMILY, 9)

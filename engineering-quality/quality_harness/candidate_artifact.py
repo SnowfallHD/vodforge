@@ -292,6 +292,8 @@ def _source_and_machine(repo_root: Path) -> tuple[dict[str, Any], dict[str, Any]
     status = list(repository.get("status_porcelain") or [])
     source = {
         "repo_root": str(repo_root.resolve()),
+        "manifest_sha256": repository.get("source_manifest_sha256"),
+        "manifest": repository.get("source_manifest"),
         "commit": commit,
         "branch": branch,
         "status_porcelain": status,
@@ -651,6 +653,7 @@ def materialize_candidate_for_e2e(
             "candidate_version": receipt.get("candidate_version"),
             "artifact_policy": receipt.get("artifact_policy"),
             "source_commit": receipt.get("source", {}).get("commit"),
+            "source_manifest_sha256": receipt.get("source", {}).get("manifest_sha256"),
             "archive_sha256": archive_hash,
             "bundle_tree_sha256": fresh_tree["sha256"],
             "receipt_sha256": sha256_file(receipt_path),

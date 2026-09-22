@@ -10,7 +10,7 @@ Introduced for the 0.2.0 release; not part of the published 0.1.9 app.
   slider animates the illustrative preview. Playlist and YouTube-access examples
   do not change saved settings. Existing users receive the release-selected
   Did you know? tip; Try it dismisses the tip and opens Settings.
-- Help & feedback is available in the header and Settings. Feedback has a reason,
+- The header gear menu opens Help and feedback directly, with Rate VODForge immediately below and Welcome tour separately available. Settings also provides Help and feedback. Feedback has a reason,
   a 2,000-character message, and optional reply email. It does not enable analytics.
 - Recent failure diagnostics are optional and unchecked. Review shows the bounded,
   redacted failure context before sending. The canonical public video URL has a
@@ -20,7 +20,7 @@ Introduced for the 0.2.0 release; not part of the published 0.1.9 app.
 - A rating is offered once after three distinct successfully completed download
   operations. A playlist counts once; partial, failed, and cancelled operations do
   not count. Prompts wait for idle state and other dialogs to close. Manual rating
-  remains available through Help. Names default to Anonymous; comments are optional.
+  remains available directly through the gear menu. Names default to Anonymous; comments are optional.
 - Ratings explicitly submit public reviews: the form discloses website publication
   of the rating, comment and display name, and the action is Submit public review.
   That action records publication permission; there is no preselected checkbox.

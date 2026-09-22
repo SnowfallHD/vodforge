@@ -391,3 +391,124 @@ def test_peer_alias_discovery_cannot_overwrite_terminal_interruption(interruptio
     }
     with pytest.raises(RelinkConflict):
         relocated_records(result, rows, accepted=[0])
+
+
+@pytest.mark.parametrize("output_type", ["MP4", "MP3"])
+@pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("candidate_kind", ["matching", "opposite", "text"])
+def test_relink_format_evidence_survives_history_reload(
+    tmp_path, output_type, canonical, candidate_kind
+):
+    from yt_downloader.archive_relink import commit_relink
+    from yt_downloader.history import sanitize_history_record
+    from yt_downloader.media_player import resolve_library_media_path
+
+    old = tmp_path / "old"
+    suffix = (
+        output_type.lower()
+        if candidate_kind == "matching"
+        else ("mp3" if output_type == "MP4" else "mp4")
+        if candidate_kind == "opposite"
+        else "txt"
+    )
+    chosen = tmp_path / "selected" / f"chosen.{suffix}"
+    chosen.parent.mkdir()
+    chosen.write_bytes(b"synthetic bytes; no decoding claim")
+    info = {
+        "id": "selected",
+        "title": "Saved item",
+        "vodforge_output_type": output_type,
+    }
+    if canonical:
+        info["vodforge_output_path"] = str(old / f"original.{output_type.lower()}")
+    rows = [
+        sanitize_history_record(info, old),
+        sanitize_history_record(
+            {"id": "sibling", "title": "Sibling", "vodforge_output_type": output_type},
+            tmp_path / "sibling",
+        ),
+    ]
+    ledger = tmp_path / "history.json"
+    save_history(ledger, rows)
+    rows = load_history(ledger)
+    before = ledger.read_bytes()
+    verified = verify_relink(
+        preview_relink(rows, selected=[0], exact_files={0: str(chosen)}), rows
+    )
+    assert verified.entries[0].companions == ()  # Companions remain optional.
+    if candidate_kind == "matching":
+        assert verified.counts == {"ready": 1}
+        commit_relink(verified, rows, ledger, accepted=[0])
+        reloaded = load_history(ledger)
+        assert reloaded[0]["vodforge_output_type"] == output_type
+        assert resolve_library_media_path(reloaded[0]) == chosen
+        assert reloaded[1] == rows[1]
+    else:
+        assert verified.counts == {"identity_mismatch": 1}
+        with pytest.raises(RelinkConflict):
+            commit_relink(verified, rows, ledger, accepted=[0])
+        assert ledger.read_bytes() == before
+    assert chosen.read_bytes() == b"synthetic bytes; no decoding claim"
+    assert not old.exists()
+
+
+@pytest.mark.parametrize("output_type", ["Original audio", "", "Unknown format"])
+@pytest.mark.parametrize("suffix", [".m4a", ".opus"])
+def test_legacy_audio_or_unknown_format_does_not_invent_single_suffix(
+    tmp_path, output_type, suffix
+):
+    chosen = tmp_path / ("selected" + suffix)
+    chosen.write_bytes(b"synthetic media")
+    row = {
+        "vodforge_output_type": output_type,
+        "vodforge_output_dir": str(tmp_path / "old"),
+    }
+    preview = preview_relink([row], exact_files={0: str(chosen)})
+    assert preview.entries[0].explicit_file
+    assert verify_relink(preview, [row]).counts == {"ready": 1}
+    # An actual canonical filename supplies stronger evidence for any format.
+    row["vodforge_output_path"] = str(tmp_path / "old" / "canonical.flac")
+    assert verify_relink(
+        preview_relink([row], exact_files={0: str(chosen)}), [row]
+    ).counts == {"identity_mismatch": 1}
+
+
+def test_legacy_format_rejection_cannot_be_overridden_by_matching_optional_sidecar(
+    tmp_path,
+):
+    chosen = tmp_path / "chosen.mp3"
+    chosen.write_bytes(b"synthetic")
+    (tmp_path / "metadata.json").write_text(
+        json.dumps({"id": "video", "vodforge_output_type": "MP4"})
+    )
+    row = {
+        "id": "video",
+        "vodforge_output_type": "MP4",
+        "vodforge_output_dir": str(tmp_path / "old"),
+    }
+    assert verify_relink(
+        preview_relink([row], exact_files={0: str(chosen)}), [row]
+    ).counts == {"identity_mismatch": 1}
+
+
+def test_preview_reuses_validated_sources_only_within_one_snapshot(monkeypatch):
+    import yt_downloader.archive_relink as owner
+
+    rows = [record("/old/a.mp4"), record("/dest/a.mp4", identity="other")]
+    calls = []
+    original = owner.recorded_artifact
+
+    def observed(row):
+        calls.append(row["id"])
+        return original(row)
+
+    monkeypatch.setattr(owner, "recorded_artifact", observed)
+    # The unresolved selected source still protects its occupied destination.
+    result = preview_relink(rows, selected=[0, 1], exact_files={0: "/dest/a.mp4"})
+    assert result.counts == {"collision": 1, "outside_mapping": 1}
+    assert calls == ["video", "other"]
+    calls.clear()
+    rows[1]["vodforge_output_dir"] = "/wrong-folder"
+    result = preview_relink(rows, selected=[0, 1], exact_files={0: "/dest/a.mp4"})
+    assert result.counts == {"pending": 1, "invalid_record": 1}
+    assert calls == ["video", "other"]

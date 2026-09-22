@@ -1,0 +1,1139 @@
+{
+  "scope": "Static constructor/render-call inventory; runtime branches and multiplicity require native evidence.",
+  "counts": {
+    "ProductButton": 93,
+    "p.button": 31
+  },
+  "style_expressions": {
+    "'Accent.TButton'": 15,
+    "TButton": 10,
+    "'Media.FocusNav.TButton'": 11,
+    "'Media.Accent.TButton'": 3,
+    "'FocusQuiet.TButton'": 32,
+    "'Media.FocusQuiet.TButton'": 13,
+    "'FocusNav.TButton'": 1,
+    "'Archive.FocusNav.TButton'": 1,
+    "'Accent.TButton' if self.prompt.primary_action != 'none' else 'FocusQuiet.TButton'": 1,
+    "'Streaming.Media.FocusQuiet.TButton'": 2,
+    "'Compact.TButton'": 4
+  },
+  "violations": [],
+  "sites": [
+    {
+      "file": "yt_downloader/analytics_consent_ui.py",
+      "line": 117,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Share analytics'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/analytics_consent_ui.py",
+      "line": 123,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Not now'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 5705,
+      "owner": "_build_focus_ui",
+      "adapter": "ProductButton",
+      "label": "'Help  \u25be'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 5922,
+      "owner": "_install_library_scene",
+      "adapter": "ProductButton",
+      "label": "'Back to Library'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6457,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Options'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6465,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Download'",
+      "style": "'Media.Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6475,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Preview metadata'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6483,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Load URL list'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6516,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Create video'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6612,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Start download'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6649,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Cancel'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6657,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Skip item'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6669,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Skip source'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6681,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Run actions'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6709,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'Output details'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6776,
+      "owner": "_build_focus_forge_view",
+      "adapter": "ProductButton",
+      "label": "'All runs'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6873,
+      "owner": "_build_focus_library_view",
+      "adapter": "ProductButton",
+      "label": "'Selected details'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6879,
+      "owner": "_build_focus_library_view",
+      "adapter": "ProductButton",
+      "label": "'Play'",
+      "style": "'Media.Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6887,
+      "owner": "_build_focus_library_view",
+      "adapter": "ProductButton",
+      "label": "'More actions  \u25be'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 6941,
+      "owner": "_build_focus_library_view",
+      "adapter": "ProductButton",
+      "label": "'\u2039  Back to Library'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 5770,
+      "owner": "_build_focus_ui",
+      "adapter": "ProductButton",
+      "label": "label",
+      "style": "'FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 7558,
+      "owner": "_build_focus_activity_view",
+      "adapter": "ProductButton",
+      "label": "'Open log folder'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 9089,
+      "owner": "_show_selected_metadata_details",
+      "adapter": "ProductButton",
+      "label": "'Copy YouTube URL'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/app.py",
+      "line": 9095,
+      "owner": "_show_selected_metadata_details",
+      "adapter": "ProductButton",
+      "label": "'Done'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_browser_ui.py",
+      "line": 132,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Up one folder'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_browser_ui.py",
+      "line": 136,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'All locations'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_browser_ui.py",
+      "line": 143,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Find moved folder\u2026'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_browser_ui.py",
+      "line": 185,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Previous'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_browser_ui.py",
+      "line": 192,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Next'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_browser_ui.py",
+      "line": 95,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "title",
+      "style": "'Archive.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 357,
+      "owner": "_build_archive_location_panel",
+      "adapter": "ProductButton",
+      "label": "'Location options  \u25be'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 800,
+      "owner": "_archive_begin_relink",
+      "adapter": "ProductButton",
+      "label": "'Back to Library'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 888,
+      "owner": "_archive_begin_relink",
+      "adapter": "ProductButton",
+      "label": "'Update locations'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 298,
+      "owner": "_build_archive_location_panel",
+      "adapter": "ProductButton",
+      "label": "'Open saved folder'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 304,
+      "owner": "_build_archive_location_panel",
+      "adapter": "ProductButton",
+      "label": "'Copy full path'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1607,
+      "owner": "_archive_request_playback",
+      "adapter": "ProductButton",
+      "label": "'Back to browse'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1788,
+      "owner": "_archive_playback_error",
+      "adapter": "ProductButton",
+      "label": "'Back to browse'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1858,
+      "owner": "_archive_missing_media",
+      "adapter": "ProductButton",
+      "label": "'Locate moved file'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1813,
+      "owner": "_archive_playback_error",
+      "adapter": "ProductButton",
+      "label": "'Open saved location'",
+      "style": "'Media.Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1862,
+      "owner": "_archive_missing_media",
+      "adapter": "ProductButton",
+      "label": "prompt.primary_label",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1820,
+      "owner": "_archive_playback_error",
+      "adapter": "ProductButton",
+      "label": "'Try again'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/archive_library_ui.py",
+      "line": 1872,
+      "owner": "_archive_missing_media",
+      "adapter": "ProductButton",
+      "label": "prompt.primary_label",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/detail_ui.py",
+      "line": 222,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Done'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 188,
+      "owner": "_build_heading",
+      "adapter": "ProductButton",
+      "label": "'VODForge PRO'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 269,
+      "owner": "_build_batch_controls",
+      "adapter": "ProductButton",
+      "label": "'Load URL list'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 334,
+      "owner": "_build_access_controls",
+      "adapter": "ProductButton",
+      "label": "'Choose cookies.txt'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 871,
+      "owner": "_build_footer",
+      "adapter": "ProductButton",
+      "label": "'Preview metadata'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 256,
+      "owner": "_build_destination_controls",
+      "adapter": "ProductButton",
+      "label": "'Browse'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 737,
+      "owner": "_build_mp3_cover_controls",
+      "adapter": "ProductButton",
+      "label": "'Replace image'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 743,
+      "owner": "_build_mp3_cover_controls",
+      "adapter": "ProductButton",
+      "label": "'Clear'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 822,
+      "owner": "_build_appearance_section",
+      "adapter": "ProductButton",
+      "label": "'Choose'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 882,
+      "owner": "_build_footer",
+      "adapter": "ProductButton",
+      "label": "'Done'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/focus_settings.py",
+      "line": 879,
+      "owner": "_build_footer",
+      "adapter": "ProductButton",
+      "label": "'Help & feedback'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_annotation_ui.py",
+      "line": 132,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Cancel'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_annotation_ui.py",
+      "line": 138,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Save details'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_collection_ui.py",
+      "line": 84,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Save'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_collection_ui.py",
+      "line": 88,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Cancel'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_detail_layout.py",
+      "line": 108,
+      "owner": "_detail_notes",
+      "adapter": "p.button",
+      "label": "''",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_detail_layout.py",
+      "line": 133,
+      "owner": "_detail_notes",
+      "adapter": "p.button",
+      "label": "''",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_detail_layout.py",
+      "line": 159,
+      "owner": "_details",
+      "adapter": "p.button",
+      "label": "'Back to folders' if self.__dict__.get('_detail_return_callback') else 'Back to Library'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_detail_layout.py",
+      "line": 247,
+      "owner": "_details",
+      "adapter": "p.button",
+      "label": "label",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_detail_layout.py",
+      "line": 70,
+      "owner": "_detail_panel",
+      "adapter": "p.button",
+      "label": "''",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_file_actions_ui.py",
+      "line": 61,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Continue'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_file_actions_ui.py",
+      "line": 64,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Cancel'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_file_actions_ui.py",
+      "line": 359,
+      "owner": "_show_file_recovery",
+      "adapter": "ProductButton",
+      "label": "'Keep as is'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_file_actions_ui.py",
+      "line": 365,
+      "owner": "_show_file_recovery",
+      "adapter": "ProductButton",
+      "label": "f'{label}: {path.name}'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_media_recovery_ui.py",
+      "line": 210,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "self.prompt.primary_label",
+      "style": "'Accent.TButton' if self.prompt.primary_action != 'none' else 'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_media_recovery_ui.py",
+      "line": 204,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Not now'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 432,
+      "owner": "_media_card",
+      "adapter": "p.button",
+      "label": "'Play'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 442,
+      "owner": "_media_card",
+      "adapter": "p.button",
+      "label": "''",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 508,
+      "owner": "_collection_card",
+      "adapter": "p.button",
+      "label": "''",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 708,
+      "owner": "_toolbar",
+      "adapter": "p.button",
+      "label": "'Newest first' if self._sort == 'recent' else 'Title A\u2013Z'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 713,
+      "owner": "_toolbar",
+      "adapter": "p.button",
+      "label": "'Filter' + (' \u00b7' if self._filter else '')",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 717,
+      "owner": "_toolbar",
+      "adapter": "p.button",
+      "label": "'Select'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 568,
+      "owner": "_empty_panel",
+      "adapter": "p.button",
+      "label": "'Clear filters'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 692,
+      "owner": "_toolbar",
+      "adapter": "p.button",
+      "label": "'Done'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 736,
+      "owner": "_paging_controls",
+      "adapter": "p.button",
+      "label": "'Previous'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 738,
+      "owner": "_paging_controls",
+      "adapter": "p.button",
+      "label": "'Next'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 570,
+      "owner": "_empty_panel",
+      "adapter": "p.button",
+      "label": "'Go to Forge'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 579,
+      "owner": "_empty_panel",
+      "adapter": "p.button",
+      "label": "'Import Media'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/library_scene_layout.py",
+      "line": 685,
+      "owner": "_toolbar",
+      "adapter": "p.button",
+      "label": "'Actions\u2026'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/local_audio_video_ui.py",
+      "line": 227,
+      "owner": "_build_destination",
+      "adapter": "ProductButton",
+      "label": "'Choose folder'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/local_audio_video_ui.py",
+      "line": 253,
+      "owner": "_build_actions",
+      "adapter": "ProductButton",
+      "label": "'Cancel'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/local_audio_video_ui.py",
+      "line": 260,
+      "owner": "_build_actions",
+      "adapter": "ProductButton",
+      "label": "'Create MP4'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/local_audio_video_ui.py",
+      "line": 289,
+      "owner": "_build_file_row",
+      "adapter": "ProductButton",
+      "label": "button_text",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/media_player_ui.py",
+      "line": 505,
+      "owner": "_build_header",
+      "adapter": "ProductButton",
+      "label": "'Done'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/media_player_ui.py",
+      "line": 513,
+      "owner": "_build_header",
+      "adapter": "ProductButton",
+      "label": "'View in Library'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/player_scene_ui.py",
+      "line": 176,
+      "owner": "_build_streaming_identity",
+      "adapter": "ProductButton",
+      "label": "'Read more'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/player_scene_ui.py",
+      "line": 206,
+      "owner": "_build_streaming_identity",
+      "adapter": "ProductButton",
+      "label": "'Back to Library' if self._entry_origin == 'library' else 'Back to Watch'",
+      "style": "'Streaming.Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/player_scene_ui.py",
+      "line": 88,
+      "owner": "_render_streaming_scene",
+      "adapter": "p.button",
+      "label": "'Back to suggestions'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/player_scene_ui.py",
+      "line": 211,
+      "owner": "_build_streaming_identity",
+      "adapter": "ProductButton",
+      "label": "'View in Library'",
+      "style": "'Streaming.Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/player_scene_ui.py",
+      "line": 370,
+      "owner": "_build_streaming_information",
+      "adapter": "ProductButton",
+      "label": "'Edit your details'",
+      "style": "'Compact.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/support_ui.py",
+      "line": 205,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Cancel' if kind == 'feedback' else 'No thanks'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/support_ui.py",
+      "line": 211,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Send feedback' if kind == 'feedback' else 'Submit public review'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/support_ui.py",
+      "line": 107,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'\u2606'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/support_ui.py",
+      "line": 312,
+      "owner": "_review_diagnostics",
+      "adapter": "ProductButton",
+      "label": "'Done'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/support_ui.py",
+      "line": 163,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Review diagnostics'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/ui_editable_text.py",
+      "line": 36,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'' if self._copy_icon else 'Copy'",
+      "style": "'Compact.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/ui_editable_text.py",
+      "line": 41,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Edit'",
+      "style": "'Compact.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/ui_editable_text.py",
+      "line": 62,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Save'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/ui_editable_text.py",
+      "line": 64,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Cancel'",
+      "style": "'Compact.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/update_recovery.py",
+      "line": 111,
+      "owner": "show_update_recovery",
+      "adapter": "ProductButton",
+      "label": "'Technical details'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/update_recovery.py",
+      "line": 119,
+      "owner": "show_update_recovery",
+      "adapter": "ProductButton",
+      "label": "'Repair VODForge'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/update_recovery.py",
+      "line": 140,
+      "owner": "show_update_recovery",
+      "adapter": "ProductButton",
+      "label": "'Open download page'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/update_recovery.py",
+      "line": 145,
+      "owner": "show_update_recovery",
+      "adapter": "ProductButton",
+      "label": "'Later'",
+      "style": "TButton",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 435,
+      "owner": "_scene_single_video",
+      "adapter": "p.button",
+      "label": "'Play'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 448,
+      "owner": "_scene_single_video",
+      "adapter": "p.button",
+      "label": "'View in Library'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 742,
+      "owner": "_scene_channel_header",
+      "adapter": "p.button",
+      "label": "WatchSceneMixin._scene_back_label(self) if self.__dict__.get('_scene_history') else 'Back to channels'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 878,
+      "owner": "_scene_empty",
+      "adapter": "p.button",
+      "label": "'Go to Forge'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 889,
+      "owner": "_scene_empty",
+      "adapter": "p.button",
+      "label": "'Open Library'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 713,
+      "owner": "_scene_hero",
+      "adapter": "p.button",
+      "label": "label",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 826,
+      "owner": "_scene_channel_header",
+      "adapter": "p.button",
+      "label": "label",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 1017,
+      "owner": "_scene_pager",
+      "adapter": "p.button",
+      "label": "'Previous'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 1019,
+      "owner": "_scene_pager",
+      "adapter": "p.button",
+      "label": "'Next'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 1057,
+      "owner": "_render_streaming_scene",
+      "adapter": "p.button",
+      "label": "WatchSceneMixin._scene_back_label(self)",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 1162,
+      "owner": "_render_streaming_scene",
+      "adapter": "p.button",
+      "label": "'Play playlist'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_scene_ui.py",
+      "line": 1167,
+      "owner": "_render_streaming_scene",
+      "adapter": "p.button",
+      "label": "'Shuffle'",
+      "style": "scene",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_ui.py",
+      "line": 103,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'\u2039  All channels'",
+      "style": "'Media.FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_ui.py",
+      "line": 171,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Previous'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_ui.py",
+      "line": 178,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Next'",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/watch_ui.py",
+      "line": 117,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "label",
+      "style": "'Media.FocusNav.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/whats_new_ui.py",
+      "line": 126,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Previous'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/whats_new_ui.py",
+      "line": 128,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "'Next'",
+      "style": "'FocusQuiet.TButton'",
+      "overrides": {}
+    },
+    {
+      "file": "yt_downloader/whats_new_ui.py",
+      "line": 131,
+      "owner": "__init__",
+      "adapter": "ProductButton",
+      "label": "finish_label or 'Done'",
+      "style": "'Accent.TButton'",
+      "overrides": {}
+    }
+  ]
+}

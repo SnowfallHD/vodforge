@@ -12,14 +12,29 @@ from typing import Any
 
 from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .history import HistoryError
+from .product_telemetry import BoundProductOperation
 from .telemetry_features import time_bucket
+
+
+def bind_operation(
+    telemetry: Any, feature: str, *, operation_key: str
+) -> BoundProductOperation | None:
+    """Capture consent before async work without making telemetry own that work."""
+    try:
+        return (
+            telemetry.bind_operation(feature, operation_key=operation_key)
+            if telemetry
+            else None
+        )
+    except Exception:  # noqa: BLE001 - unavailable observation must fail closed
+        return None
 
 
 def operation(
     telemetry: Any,
     feature: str,
     action: str,
-    key: str | None,
+    key: str | BoundProductOperation | None,
     dimensions: Mapping[str, str] | None = None,
     *,
     failure_detail: FailureDiagnostic | None = None,
@@ -27,6 +42,10 @@ def operation(
     if telemetry is None or key is None:
         return False
     try:
+        if isinstance(key, BoundProductOperation):
+            return key.record(
+                action, dict(dimensions or {}), failure_detail=failure_detail
+            )
         return bool(
             telemetry.record_operation(
                 feature,
@@ -62,6 +81,7 @@ def relink_dimensions(preview: Any) -> dict[str, str]:
         "verified_count": str(min(5000, ready)),
         "unresolved_count": str(min(5000, len(preview.entries) - ready)),
         "collision_count": str(min(5000, counts.get("collision", 0))),
+        "identity_mismatch_count": str(min(5000, counts.get("identity_mismatch", 0))),
         "missing_count": str(min(5000, counts.get("missing", 0))),
         "unavailable_count": str(
             min(5000, counts.get("unavailable", 0) + counts.get("foreign_platform", 0))

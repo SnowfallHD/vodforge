@@ -204,7 +204,9 @@ def validate_journey(data: dict[str, Any]) -> list[str]:
             errors.append("Invalid or private telemetry dimensions")
             continue
         try:
-            validate_operation_fields(event.get("feature"), dimensions)
+            validate_operation_fields(
+                event.get("feature"), dimensions, event.get("action")
+            )
         except ValueError:
             errors.append("Operation observation missing correlation")
         if event.get("feature") in OPERATION_FEATURES and (

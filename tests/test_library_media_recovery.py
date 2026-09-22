@@ -282,3 +282,150 @@ def test_relinked_marker_never_bypasses_saved_profile_signature_validation(tmp_p
     record["vodforge_output_path"] = str(tmp_path / "elsewhere" / "clip.mp3")
     record[RETRY_JOB_METADATA_KEY]["output_dir"] = str(tmp_path / "tampered")
     assert LibraryMediaRecoveryOwner().plan(record).kind == "invalid"
+
+
+@pytest.mark.parametrize(
+    ("mode", "saved_label", "expected"),
+    [
+        (ExportMode.AUTO_CBR, "Auto CBR", ExportMode.EVERYDAY),
+        (ExportMode.AUTO_CBR, "Auto CBR (Recommended)", ExportMode.EVERYDAY),
+        (ExportMode.AUTO_CBR, None, ExportMode.EVERYDAY),
+        (ExportMode.AUTO_CBR, "CTV", ExportMode.AUTO_CBR),
+        (ExportMode.STRICT_COMPLIANCE, "Strict Compliance", ExportMode.EVERYDAY),
+        (
+            ExportMode.STRICT_COMPLIANCE,
+            "CTV (legacy fixed bitrate)",
+            ExportMode.EVERYDAY,
+        ),
+        (ExportMode.EVERYDAY, "Everyday", ExportMode.EVERYDAY),
+        (ExportMode.STREAMING, "Streaming", ExportMode.STREAMING),
+        (ExportMode.EDITING, "Editing", ExportMode.EDITING),
+        (ExportMode.SHARING, "Sharing", ExportMode.SHARING),
+        (ExportMode.MANUAL_OVERRIDE, "Custom", ExportMode.MANUAL_OVERRIDE),
+        (ExportMode.MANUAL_OVERRIDE, "Manual Override", ExportMode.MANUAL_OVERRIDE),
+    ],
+)
+def test_redownload_migrates_only_retired_presets_after_authority_validation(
+    tmp_path, mode, saved_label, expected
+):
+    from copy import deepcopy
+
+    from yt_downloader.run_identity import (
+        ATTEMPT_SIGNATURE_KEY,
+        OUTPUT_PROFILE_KEY,
+        OUTPUT_VARIANT_KEY,
+        job_output_profile,
+        job_output_variant,
+    )
+
+    original = _job(tmp_path)
+    original.output_type = OutputType.MP4
+    original.export_mode = mode
+    row = _missing_record(original)
+    row["vodforge_output_path"] = str(original.output_dir / "Missing media.mp4")
+    if saved_label is None:
+        row.pop(OUTPUT_PROFILE_KEY)
+    else:
+        row[OUTPUT_PROFILE_KEY] = f"MP4 • {original.quality_label} • {saved_label}"
+    before_row = deepcopy(row)
+    before_job = serialize_download_job(original)
+
+    plan = LibraryMediaRecoveryOwner().plan(row)
+    assert plan.can_redownload and plan.job is not None
+    assert plan.job.export_mode is expected
+    assert getattr(plan, "preset_migrated", False) is (expected != mode)
+    assert plan.job.preview_info[ATTEMPT_SIGNATURE_KEY] == job_attempt_signature(
+        plan.job
+    )
+    assert plan.job.preview_info[OUTPUT_PROFILE_KEY] == job_output_profile(plan.job)
+    assert plan.job.preview_info[OUTPUT_VARIANT_KEY] == job_output_variant(plan.job)
+    assert plan.job.output_dir == original.output_dir
+    assert plan.job.manual_settings == original.manual_settings
+    assert plan.job.tags == original.tags
+    assert row == before_row
+    assert serialize_download_job(original) == before_job
+
+    # Changing the original signed intent cannot be hidden by mapping both to Everyday.
+    tampered = deepcopy(row)
+    tampered[RETRY_JOB_METADATA_KEY]["quality_label"] = "720p HD"
+    assert LibraryMediaRecoveryOwner().plan(tampered).kind == "invalid"
+
+
+@pytest.mark.parametrize("output_type", list(OutputType))
+@pytest.mark.parametrize(
+    "source_kind", ["single", "watch_playlist", "playlist", "batch"]
+)
+def test_missing_item_recovery_downloads_only_captured_video(
+    tmp_path, output_type, source_kind
+):
+    from copy import deepcopy
+    from urllib.parse import parse_qs, urlsplit
+
+    original = _job(tmp_path)
+    original.output_type = output_type
+    original.export_mode = ExportMode.SHARING
+    original.url = {
+        "single": "https://www.youtube.com/watch?v=selected",
+        "watch_playlist": "https://www.youtube.com/watch?v=first&list=PL-saved",
+        "playlist": "https://www.youtube.com/playlist?list=PL-saved",
+        "batch": "https://www.youtube.com/watch?v=first",
+    }[source_kind]
+    original.urls = [original.url]
+    original.single_video_only = source_kind == "single"
+    original.batch_mode = source_kind == "batch"
+    if original.batch_mode:
+        original.urls.append("https://www.youtube.com/watch?v=other")
+    row = _missing_record(original)
+    row.update(id="selected", title="Selected missing video")
+    if source_kind != "single":
+        row.update(playlist_id="PL-saved", playlist_title="Saved playlist")
+    before = deepcopy(row)
+    original_job = serialize_download_job(original)
+    plan = LibraryMediaRecoveryOwner(run_id_factory=lambda: "new-recovery").plan(row)
+    assert plan.can_redownload and plan.job is not None
+    job = plan.job
+    query = parse_qs(urlsplit(job.url).query)
+    assert query.get("v") == ["selected"], "Recovery must address the captured video"
+    assert job.urls == [job.url]
+    assert job.single_video_only and not job.batch_mode
+    assert job.output_type is output_type
+    assert job.export_mode is original.export_mode
+    assert job.mp3_settings == original.mp3_settings
+    assert job.output_dir == original.output_dir
+    assert job.preview_info["id"] == "selected"
+    assert job.preview_info.get("playlist_title") == row.get("playlist_title")
+    assert query.get("list") == (["PL-saved"] if source_kind != "single" else None)
+    assert plan.previous_annotation_owner == "run:completed-run"
+    assert row == before
+    assert serialize_download_job(original) == original_job
+    sibling = {
+        **row,
+        "id": "other",
+        "vodforge_output_path": str(original.output_dir / "Other.mp4"),
+    }
+    assert plan.replaced_history_identity == history_identity(row)
+    assert LibraryMediaRecoveryOwner.history_after_acceptance([row, sibling], plan) == [
+        sibling
+    ]
+
+
+@pytest.mark.parametrize("video_id", ["", "../other", "bad&list=other"])
+def test_missing_identity_never_replays_original_playlist(tmp_path, video_id):
+    original = _job(tmp_path)
+    original.single_video_only = False
+    original.url = "https://www.youtube.com/playlist?list=PL-saved"
+    original.urls = [original.url]
+    row = _missing_record(original)
+    row["id"] = video_id
+    assert LibraryMediaRecoveryOwner().plan(row).kind == "invalid"
+
+
+@pytest.mark.parametrize("output_type", [OutputType.MP3, OutputType.ORIGINAL])
+def test_audio_recovery_ignores_retired_inactive_mp4_preset(tmp_path, output_type):
+    original = _job(tmp_path)
+    original.output_type = output_type
+    original.export_mode = ExportMode.STRICT_COMPLIANCE
+    plan = LibraryMediaRecoveryOwner().plan(_missing_record(original))
+    assert plan.job.export_mode is ExportMode.STRICT_COMPLIANCE
+    assert not getattr(plan, "preset_migrated", False)
+    assert plan.job.mp3_settings == original.mp3_settings

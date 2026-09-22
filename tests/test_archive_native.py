@@ -92,7 +92,7 @@ def test_watch_singleton_keyboard_and_saved_variant_count(application, tmp_path)
         for item in watch.canvas.find_all()
         if watch.canvas.type(item) == "text"
     ]
-    assert any("1 downloaded video" in text for text in texts)
+    assert any("1 video" in text for text in texts)
     assert "Play" in texts and "View in Library" in texts
     plays = []
     watch._on_play = plays.append
@@ -183,10 +183,18 @@ def test_embedded_player_owns_child_surface_and_retires_only_its_bindings(
     assert set(app.winfo_children()) == before_children
     assert window.popup.winfo_toplevel() is app
     assert not isinstance(window.popup, tk.Toplevel)
-    tabs = [
-        window._info_notebook.tab(tab, "text") for tab in window._info_notebook.tabs()
-    ]
-    assert {"Chapters", "Info", "Source", "Output", "Notes", "Moments"}.issubset(tabs)
+    assert set(window._detail_targets.values()) == {
+        "chapters",
+        "info",
+        "source",
+        "output",
+        "notes",
+        "moments",
+    }
+    assert not hasattr(window, "_info_notebook")
+    assert all(
+        section.winfo_ismapped() for section in window._information_sections.values()
+    )
     assert len(window.preview_labels) == 5
     assert window._ensure_render_surface()
     surface = window._surface_owner
@@ -403,7 +411,7 @@ def test_native_relink_review_buttons_preserve_exact_history_and_selection(
     panel = app._archive_overlay
     buttons = [w for w in native_descendants(panel) if isinstance(w, ttk.Button)]
     apply = next(w for w in buttons if str(w.cget("text")).startswith("Update "))
-    back = next(w for w in buttons if str(w.cget("text")) == "Back to archive")
+    back = next(w for w in buttons if str(w.cget("text")) == "Back to Library")
     assert not apply.instate(["disabled"])
     assert (
         apply.winfo_ismapped()
@@ -608,5 +616,322 @@ def test_native_copy_menu_separates_personal_source_and_retains_opened_owner(
             menu.invoke(entries[label])
             pump(app, 0.02)
             assert copied == [expected]
+        opened, confirmations = [], []
+        monkeypatch.setattr(
+            app,
+            "_open_existing_saved_folder",
+            lambda path, opened=opened: opened.append(str(path)),
+        )
+        monkeypatch.setattr(
+            "yt_downloader.app.messagebox.askyesno",
+            lambda _title, text, confirmations=confirmations, **_kwargs: (
+                confirmations.append(text) or False
+            ),
+        )
+        menu.invoke(entries["Open saved location"])
+        menu.invoke(entries["Remove from Library…"])
+        assert opened == [str(rows[index]["vodforge_output_dir"])]
+        assert len(confirmations) == 1 and kind + " version" in confirmations[0]
+        # Removing the original owner from the current projection while its
+        # native menu stays open must not redirect either action.
+        saved_projection = app.metadata_items
+        app.metadata_items = tuple(
+            row for i, row in enumerate(saved_projection) if i != index
+        )
+        opened.clear()
+        confirmations.clear()
+        menu.invoke(entries["Open saved location"])
+        menu.invoke(entries["Remove from Library…"])
+        assert opened == [] and confirmations == []
+        app.metadata_items = saved_projection
         menu.destroy()
     assert app.history_path.read_bytes() == before
+
+
+@pytest.mark.parametrize("size", ["1100x600", "1440x900"])
+def test_cold_folders_overview_paints_each_available_highlight_without_navigation(
+    application, tmp_path, size
+):
+    from PIL import Image
+
+    from yt_downloader.archive_relink import record_fingerprint
+
+    app = application
+    app.geometry(size)
+    rows = []
+    for index in range(5):
+        folder = tmp_path / "Archive" / f"Episode {index}"
+        folder.mkdir(parents=True)
+        Image.new("RGB", (320, 180), (30 + index * 20, 100, 160)).save(
+            folder / "thumbnail.jpeg"
+        )
+        rows.append(saved(folder / "clip.mp4", video=f"cold-{index}"))
+    app.download_history = rows
+    app._reconcile_library_projection()
+    app._select_focus_view("library")
+    view = app.video_tree
+    assert view.model.mode == "folders" and view.model.path is None
+
+    def painted():
+        components = [c for _box, c in view._boxes if c.kind == "media"]
+        canvas_images = {
+            view.canvas.itemcget(item, "image")
+            for item in view.canvas.find_withtag("presentation-artwork")
+        }
+        return bool(components) and all(
+            str(
+                view._artwork_images.get(
+                    record_fingerprint(dict(view.model.records[c.indices[0]]))
+                )
+            )
+            in canvas_images
+            for c in components
+        )
+
+    # No refresh, selection, navigation or warm-cache return may be required.
+    wait_for(app, painted, timeout=5)
+    assert view.model.mode == "folders" and view.model.path is None
+    assert len([c for _box, c in view._boxes if c.kind == "media"]) >= 3
+    assert view._artwork_displayed
+
+
+@pytest.mark.parametrize("size", ["1100x600", "1440x900"])
+def test_watch_rail_metadata_follows_the_actual_title_without_reserved_blank_line(
+    application, tmp_path, size
+):
+    app = application
+    rows = seed(app, tmp_path, count=5)
+    rows[0]["title"] = "First saved story"
+    extra = saved(
+        tmp_path / "audio" / "clip.mp3",
+        video="video-0",
+        playlist="Series 0",
+        channel="Creator 0",
+        kind="MP3",
+    )
+    extra["title"] = rows[0]["title"]
+    app.download_history = [*rows, extra]
+    app._reconcile_library_projection()
+    app.geometry(size)
+    app._select_focus_view("watch")
+    app.focus_watch._navigate("playlists")
+    pump(app, 0.3)
+    action = next(
+        action
+        for _bounds, action in app.focus_watch._targets
+        if getattr(getattr(action, "func", None), "__name__", "") == "_scene_open"
+        and getattr(action, "keywords", {}).get("playlist")
+    )
+    action()
+    pump(app, 0.3)
+    canvas = app.focus_watch.canvas
+    texts = [
+        (canvas.itemcget(item, "text"), canvas.bbox(item))
+        for item in canvas.find_all()
+        if canvas.type(item) == "text"
+    ]
+    title = max(
+        (box for text, box in texts if text == "First saved story"),
+        key=lambda box: box[1],
+    )
+    versions = next(box for text, box in texts if "2 saved versions" in text)
+    assert 4 <= versions[1] - title[3] <= 12
+    assert versions[0] == title[0]
+    assert versions[2] - versions[0] <= app.focus_watch._card_width + 2
+
+
+def test_forge_deck_titles_fit_real_allocations_through_resize(application, tmp_path):
+    import tkinter.font as tkfont
+
+    app = application
+    rows = seed(app, tmp_path, count=4)
+    for index, row in enumerate(rows):
+        row["title"] = f"Story {index} — very wide WWW characters 日本語 " * 4
+    app.download_history = rows
+    app._reconcile_library_projection()
+    app._select_focus_view("forge")
+    for width in (1100, 1180, 1440, 1100):
+        app.geometry(f"{width}x700")
+        pump(app, 0.25)
+        labels = [
+            child
+            for tile in app.focus_run_deck.winfo_children()
+            for child in tile.winfo_children()
+            if isinstance(child, tk.Label)
+            and str(child.cget("text")).startswith("Story ")
+        ]
+        assert len(labels) >= 3
+        for label in labels:
+            text = str(label.cget("text"))
+            font = tkfont.Font(root=app, font=label.cget("font"))
+            assert text.endswith("…")
+            assert font.measure(text) <= label.winfo_width() - 4
+
+
+@pytest.mark.parametrize("size", ["1100x600", "1440x900"])
+@pytest.mark.parametrize("output_type", ["MP4", "MP3"])
+@pytest.mark.parametrize("matching", [False, True])
+def test_legacy_relink_review_uses_recorded_format_and_observes_unresolved_count(
+    application, tmp_path, size, output_type, matching
+):
+    from tkinter import ttk
+
+    from yt_downloader.history import (
+        load_history,
+        sanitize_history_record,
+        save_history,
+    )
+    from yt_downloader.media_player import resolve_library_media_path
+
+    app = application
+    app.geometry(size)
+    suffix = (
+        output_type.lower() if matching else ("mp3" if output_type == "MP4" else "mp4")
+    )
+    chosen = tmp_path / "selected" / f"chosen.{suffix}"
+    chosen.parent.mkdir()
+    chosen.write_bytes(b"synthetic candidate; no decoding claim")
+    rows = [
+        sanitize_history_record(
+            {
+                "id": "selected",
+                "title": "Saved item",
+                "vodforge_output_type": output_type,
+            },
+            tmp_path / "old",
+        )
+    ]
+    save_history(app.history_path, rows)
+    app.download_history = load_history(app.history_path)
+    app._reconcile_library_projection()
+    app._select_focus_view("library")
+    app.video_tree.selection_set("0")
+    app._display_selected_metadata(0)
+    wait_for(app, lambda: not app._archive_worker.busy)
+    before = app.history_path.read_bytes()
+    events = []
+    app._archive_observe = lambda feature, action, key, **dims: events.append(
+        (feature, action, key, dims)
+    )
+    app._archive_begin_relink(None, (0,), exact=str(chosen))
+    wait_for(app, lambda: any(event[1] == "verified" for event in events))
+    buttons = [
+        w for w in native_descendants(app._archive_overlay) if isinstance(w, ttk.Button)
+    ]
+    apply = next(w for w in buttons if str(w.cget("text")).startswith("Update "))
+    back = next(w for w in buttons if str(w.cget("text")) == "Back to Library")
+    verified = next(event for event in events if event[1] == "verified")
+    assert verified[0] == "archive_relink_operation"
+    assert verified[3]["identity_mismatch_count"] == ("0" if matching else "1")
+    assert verified[3]["verified_count"] == ("1" if matching else "0")
+    assert verified[3]["unresolved_count"] == ("0" if matching else "1")
+    assert apply.instate(["disabled"]) == (not matching)
+    # Settled review retains its explanation even when no Apply closure owns it.
+    import gc
+
+    gc.collect()
+    pump(app)
+    assert (
+        "1 file ready" if matching else "No files ready"
+    ) in app._archive_overlay._archive_relink_status.get()
+    assert (
+        abs(app._archive_overlay.winfo_width() - app.focus_library_view.winfo_width())
+        <= 2
+    )
+    if matching:
+        apply.invoke()
+        wait_for(app, lambda: not app._archive_commit_active)
+        assert resolve_library_media_path(load_history(app.history_path)[0]) == chosen
+        assert any(event[1] == "committed" for event in events)
+    else:
+        assert (
+            "file does not match the saved format or details"
+            in next(
+                w
+                for w in native_descendants(app._archive_overlay)
+                if isinstance(w, tk.Text)
+            )
+            .get("1.0", "end")
+            .lower()
+        )
+        apply.invoke()
+        assert app.history_path.read_bytes() == before
+        back.invoke()
+        assert not any(event[1] == "committed" for event in events)
+    assert app._archive_overlay is None
+
+
+@pytest.mark.parametrize("size", ["1100x600", "1440x900"])
+@pytest.mark.parametrize("count", [1, 40])
+def test_relink_review_fits_one_item_and_scrolls_many_without_losing_paths(
+    application, tmp_path, size, count
+):
+    from tkinter import ttk
+
+    from yt_downloader.history import save_history
+
+    app = application
+    app.geometry(size)
+    old, new = tmp_path / "old", tmp_path / "selected"
+    new.mkdir()
+    rows = []
+    for index in range(count):
+        name = f"Saved story {index:02}.mp4"
+        (new / name).write_bytes(b"synthetic review file")
+        rows.append(saved(old / name, video=f"review-{index}"))
+    app.download_history = rows
+    save_history(app.history_path, rows)
+    before = app.history_path.read_bytes()
+    app._reconcile_library_projection()
+    app._select_focus_view("library")
+    wait_for(app, lambda: not app._archive_worker.busy)
+    app._archive_begin_relink(
+        ArchivePath.parse(str(old)), tuple(range(count)), destination=str(new)
+    )
+    panel = app._archive_overlay
+    wait_for(
+        app,
+        lambda: (
+            "file" in panel._archive_relink_status.get()
+            and "ready" in panel._archive_relink_status.get()
+        ),
+    )
+    pump(app, 0.3)
+    document = next(w for w in native_descendants(panel) if isinstance(w, tk.Text))
+    contents = document.get("1.0", "end")
+    assert "Saved format:   MP4" in contents and "Selected format:   MP4" in contents
+    for index in range(count):
+        assert str(old / f"Saved story {index:02}.mp4") in contents
+        assert str(new / f"Saved story {index:02}.mp4") in contents
+    assert document.tag_ranges("review-title")
+    assert document.tag_ranges("review-label")
+    surface = panel._archive_relink_review
+    assert document.winfo_ismapped() and document.winfo_height() > 100
+    assert document.bbox("1.0") is not None
+    assert surface.winfo_height() > 140
+    assert (
+        surface.winfo_rooty() + surface.winfo_height()
+        <= panel.winfo_rooty() + panel.winfo_height()
+    )
+    if count == 1 and size == "1440x900":
+        assert surface.winfo_height() < panel.grid_bbox(0, 2, 1, 2)[3] - 60
+    if count > 1:
+        assert document.yview()[1] < 1
+        document.yview_moveto(1)
+        pump(app)
+        assert document.yview()[1] == 1
+    buttons = [w for w in native_descendants(panel) if isinstance(w, ttk.Button)]
+    apply = next(w for w in buttons if str(w.cget("text")).startswith("Update "))
+    assert str(apply.cget("text")) == (
+        "Update location" if count == 1 else f"Update {count} locations"
+    )
+    assert apply.winfo_ismapped()
+    next(w for w in buttons if str(w.cget("text")) == "Back to Library").invoke()
+    assert app.history_path.read_bytes() == before
+
+
+@pytest.fixture(autouse=True)
+def legacy_folder_workspace_for_existing_contracts(application):
+    """These contracts target the retained folder workspace, not the default scenes."""
+    application._library_scene_action("folders", None)
+    application.update()

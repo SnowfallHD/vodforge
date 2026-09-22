@@ -36,8 +36,14 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
+        }
+      ],
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.rows",
@@ -109,8 +115,14 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
+        }
+      ],
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.collection-filter",
@@ -150,8 +162,14 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
+        }
+      ],
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.selection",
@@ -211,9 +229,31 @@
           "test": "tests/test_archive_native.py::test_native_relink_review_buttons_preserve_exact_history_and_selection",
           "report": "archive-full-native-v3/native.xml",
           "scope": "file/folder commit/cancel/stale; filtered/deferred front insertion and exact owner restoration"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending",
+      "integration_evidence": [
+        {
+          "tests": [
+            "tests/test_archive_secondary_actions.py",
+            "tests/test_archive_folder_selection.py",
+            "tests/test_archive_menu_subject.py",
+            "tests/test_archive_presentation_native.py::test_native_folder_and_media_subjects_are_exclusive",
+            "tests/test_archive_native.py"
+          ],
+          "reports": [
+            "visual-polish/composition-v8-root-owner-probes.log",
+            "visual-polish/composition-v8-menu-maintained.log",
+            "visual-polish/composition-v8-native-owner-refined.log"
+          ],
+          "scope": "16 original root model/controller probes; native folder/media subject transitions and real Tcl menu callbacks; stable original open/remove subject after selection changes and removed-owner no-op. Confirmation-race tests use controlled mutation seams."
+        }
+      ]
     },
     {
       "id": "library.columns",
@@ -290,9 +330,14 @@
           "test": "tests/test_archive_native.py::test_description_remains_accessible_in_compact_inspector",
           "report": "archive-full-native-v3/native.xml",
           "scope": "bounded source-native fixture"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.compact-details",
@@ -322,9 +367,14 @@
           "test": "tests/test_archive_native.py::test_description_remains_accessible_in_compact_inspector",
           "report": "archive-full-native-v3/native.xml",
           "scope": "bounded source-native fixture"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.encoding-docs",
@@ -379,12 +429,18 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
+        }
+      ],
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.output-requested",
-      "baseline": "Output details\u2026 requested versus final",
+      "baseline": "Output details… requested versus final",
       "baseline_refs": [
         {
           "path": "yt_downloader/app.py",
@@ -420,8 +476,14 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "receipt": "/Users/coop/Documents/Codex/2026-09-16/coordinator-audit/vodforge-output-detail-integration/output-detail-native-receipt.json",
+          "sha256": "5d1e317b3cb67ca545c48ee11b53607013adbf853cbac79a02f43312b5ff8d5e",
+          "scope": "Independent four-case actual Output details dialog: captured subject after selection change, requested/final, long supported fact, scrolling and reachable Done; unchanged history. Source-native only."
+        }
+      ],
+      "acceptance": "bounded independent native evidence available"
     },
     {
       "id": "library.profiles",
@@ -466,12 +528,18 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
+        }
+      ],
+      "acceptance": "bounded composed native evidence available; final integrated baseline acceptance pending"
     },
     {
       "id": "library.annotations-edit",
-      "baseline": "Edit notes, tags & category\u2026",
+      "baseline": "Edit notes, tags & category…",
       "baseline_refs": [
         {
           "path": "yt_downloader/app.py",
@@ -496,11 +564,12 @@
       ],
       "current_destination": "Existing Actions/row LibraryAnnotationDialog; embedded Notes edit command",
       "source_evidence": {
-        "gate": "archive-affected-final-current.log:836 passed",
+        "gate": "visual-polish/refinement-v21/source-final.xml:1998 passed, 274 native/platform skipped",
         "tests": [
+          "tests/test_retry_annotation_lineage.py",
           "tests/test_library_annotations.py"
         ],
-        "scope": "affected source owners; not complete native action parity"
+        "scope": "Actual durable admission and annotation writers; successful, EACCES/ENOSPC and refused paths; explicit and automatic retries; fresh disk owners, edit/clear, repeated retry, completion/history and sibling isolation."
       },
       "native_evidence": [
         {
@@ -508,9 +577,14 @@
           "report": "archive-full-native-v3/native.xml",
           "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
           "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_retry_menu_retains_annotations_through_reload_and_editor",
+          "report": "visual-polish/refinement-v21/native-retry.xml",
+          "scope": "12 actual Tk cases: both sizes, Failed/Stopped, success/annotation fault/queue refusal, captured More-menu subject after selection changes, fresh queue/terminal/ledger reload, actual editor Save and second reload. Synthetic state and controlled worker; no physical input or process-restart claim."
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded native retry and annotation journey passed; integrated baseline acceptance pending"
     },
     {
       "id": "library.annotations-owner",
@@ -552,13 +626,14 @@
           "symbol": "_supersede_matching_terminal_attempt"
         }
       ],
-      "current_destination": "Unchanged LibraryAnnotationsOwner plus preserved relink annotation owner",
+      "current_destination": "Canonical annotation ledger with durably captured source-owner fallback across admitted retry, supersession, preview and missing-media replacement; completed history preserves resolved owner.",
       "source_evidence": {
-        "gate": "archive-affected-final-current.log:836 passed",
+        "gate": "visual-polish/refinement-v21/source-final.xml:1998 passed, 274 native/platform skipped",
         "tests": [
+          "tests/test_retry_annotation_lineage.py",
           "tests/test_library_annotations.py"
         ],
-        "scope": "affected source owners; not complete native action parity"
+        "scope": "Actual durable admission and annotation writers; successful, EACCES/ENOSPC and refused paths; explicit and automatic retries; fresh disk owners, edit/clear, repeated retry, completion/history and sibling isolation."
       },
       "native_evidence": [
         {
@@ -566,9 +641,19 @@
           "report": "archive-full-native-v3/native.xml",
           "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
           "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_filters_grouped_versions_details_and_back_preserve_browsing_context",
+          "report": "visual-polish/composition-v8-root-composed-after.xml",
+          "scope": "Independent unchanged two-size native composed journey: All/MP3, category/search, actual card event, grouped versions, personal/source/output facts, Back context; synthetic files, no codec/physical input claim."
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_retry_menu_retains_annotations_through_reload_and_editor",
+          "report": "visual-polish/refinement-v21/native-retry.xml",
+          "scope": "12 actual Tk cases: both sizes, Failed/Stopped, success/annotation fault/queue refusal, captured More-menu subject after selection changes, fresh queue/terminal/ledger reload, actual editor Save and second reload. Synthetic state and controlled worker; no physical input or process-restart claim."
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded native retry and annotation journey passed; integrated baseline acceptance pending"
     },
     {
       "id": "library.annotations-bounds",
@@ -659,7 +744,24 @@
           "scope": "compact/wide real Tcl actions; two variants; selection replacement; controlled clipboard/menu posting"
         }
       ],
-      "acceptance": "bounded source-native copy contract passed; Windows/package/physical-input qualification pending"
+      "acceptance": "bounded source-native copy contract passed; Windows/package/physical-input qualification pending",
+      "integration_evidence": [
+        {
+          "tests": [
+            "tests/test_archive_secondary_actions.py",
+            "tests/test_archive_folder_selection.py",
+            "tests/test_archive_menu_subject.py",
+            "tests/test_archive_presentation_native.py::test_native_folder_and_media_subjects_are_exclusive",
+            "tests/test_archive_native.py"
+          ],
+          "reports": [
+            "visual-polish/composition-v8-root-owner-probes.log",
+            "visual-polish/composition-v8-menu-maintained.log",
+            "visual-polish/composition-v8-native-owner-refined.log"
+          ],
+          "scope": "16 original root model/controller probes; native folder/media subject transitions and real Tcl menu callbacks; stable original open/remove subject after selection changes and removed-owner no-op. Confirmation-race tests use controlled mutation seams."
+        }
+      ]
     },
     {
       "id": "library.play-action",
@@ -695,6 +797,11 @@
           "report": "archive-full-native-v3/native.xml",
           "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
           "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_opening_failures_replace_loading_and_keep_captured_recovery_subject",
+          "report": "visual-polish/refinement-v24/opening-native.xml",
+          "scope": "8 maintained actual Tk cases at two sizes: controlled dependency/init/load failures and real 10s readiness timeout replace opening with same-window recovery, keep original saved-location subject, restore browsing, retire operation bookkeeping. Controlled provider, not packaged codec acceptance."
         }
       ],
       "acceptance": "bounded evidence available; integrated baseline acceptance pending"
@@ -744,7 +851,24 @@
           "scope": "file/folder commit/cancel/stale; filtered/deferred front insertion and exact owner restoration"
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded evidence available; integrated baseline acceptance pending",
+      "integration_evidence": [
+        {
+          "tests": [
+            "tests/test_archive_secondary_actions.py",
+            "tests/test_archive_folder_selection.py",
+            "tests/test_archive_menu_subject.py",
+            "tests/test_archive_presentation_native.py::test_native_folder_and_media_subjects_are_exclusive",
+            "tests/test_archive_native.py"
+          ],
+          "reports": [
+            "visual-polish/composition-v8-root-owner-probes.log",
+            "visual-polish/composition-v8-menu-maintained.log",
+            "visual-polish/composition-v8-native-owner-refined.log"
+          ],
+          "scope": "16 original root model/controller probes; native folder/media subject transitions and real Tcl menu callbacks; stable original open/remove subject after selection changes and removed-owner no-op. Confirmation-race tests use controlled mutation seams."
+        }
+      ]
     },
     {
       "id": "library.preview-start",
@@ -779,7 +903,13 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_preview_menu_admission_and_rejected_removal_preserve_real_library_state",
+          "report": "visual-polish/refinement-v16/native-preview.xml",
+          "scope": "Actual native card and More menu events at1100x600/1440x900; controlled recovery-write rejection; real projection and private annotation transfer; accepted queue only, no worker download/packaged claim."
+        }
+      ],
       "acceptance": "native action parity pending"
     },
     {
@@ -809,18 +939,25 @@
       ],
       "current_destination": "Archive terminal activation and existing Retry in Forge action",
       "source_evidence": {
-        "gate": "archive-affected-final-current.log:836 passed",
+        "gate": "visual-polish/refinement-v21/source-final.xml:1998 passed, 274 native/platform skipped",
         "tests": [
-          "tests/test_library_projection.py"
+          "tests/test_retry_annotation_lineage.py",
+          "tests/test_library_annotations.py"
         ],
-        "scope": "affected source owners; not complete native action parity"
+        "scope": "Actual durable admission and annotation writers; successful, EACCES/ENOSPC and refused paths; explicit and automatic retries; fresh disk owners, edit/clear, repeated retry, completion/history and sibling isolation."
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_retry_menu_retains_annotations_through_reload_and_editor",
+          "report": "visual-polish/refinement-v21/native-retry.xml",
+          "scope": "12 actual Tk cases: both sizes, Failed/Stopped, success/annotation fault/queue refusal, captured More-menu subject after selection changes, fresh queue/terminal/ledger reload, actual editor Save and second reload. Synthetic state and controlled worker; no physical input or process-restart claim."
+        }
+      ],
+      "acceptance": "bounded native retry and annotation journey passed; integrated baseline acceptance pending"
     },
     {
       "id": "library.remove",
-      "baseline": "Remove from Library\u2026",
+      "baseline": "Remove from Library…",
       "baseline_refs": [
         {
           "path": "yt_downloader/app.py",
@@ -856,8 +993,31 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_preview_menu_admission_and_rejected_removal_preserve_real_library_state",
+          "report": "visual-polish/refinement-v16/native-preview.xml",
+          "scope": "Actual native card and More menu events at1100x600/1440x900; controlled recovery-write rejection; real projection and private annotation transfer; accepted queue only, no worker download/packaged claim."
+        }
+      ],
+      "acceptance": "native action parity pending",
+      "integration_evidence": [
+        {
+          "tests": [
+            "tests/test_archive_secondary_actions.py",
+            "tests/test_archive_folder_selection.py",
+            "tests/test_archive_menu_subject.py",
+            "tests/test_archive_presentation_native.py::test_native_folder_and_media_subjects_are_exclusive",
+            "tests/test_archive_native.py"
+          ],
+          "reports": [
+            "visual-polish/composition-v8-root-owner-probes.log",
+            "visual-polish/composition-v8-menu-maintained.log",
+            "visual-polish/composition-v8-native-owner-refined.log"
+          ],
+          "scope": "16 original root model/controller probes; native folder/media subject transitions and real Tcl menu callbacks; stable original open/remove subject after selection changes and removed-owner no-op. Confirmation-race tests use controlled mutation seams."
+        }
+      ]
     },
     {
       "id": "library.live-states",
@@ -1188,7 +1348,13 @@
         "tests": [],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
+      "native_evidence": [
+        {
+          "test": "tests/test_native_ui_polish.py::test_shared_choice_menu_navigation_hover_and_identical_render",
+          "report": "visual-polish/native-maintained-v14/native.xml",
+          "scope": "Maintained source-native primitive boundary; successful214-case v14 report independently verified. Does not imply integrated release or packaged acceptance."
+        }
+      ],
       "acceptance": "native action parity pending"
     },
     {
@@ -1229,7 +1395,18 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
+      "native_evidence": [
+        {
+          "test": "tests/test_native_ui_polish.py::test_real_facts_keep_all_values_and_noop",
+          "report": "visual-polish/native-maintained-v14/native.xml",
+          "scope": "Maintained source-native primitive boundary; successful214-case v14 report independently verified. Does not imply integrated release or packaged acceptance."
+        },
+        {
+          "test": "tests/test_native_ui_polish.py::test_facts_reflow_paths_and_long_labels_without_losing_copy_or_selection",
+          "report": "visual-polish/native-maintained-v14/native.xml",
+          "scope": "Maintained source-native primitive boundary; successful214-case v14 report independently verified. Does not imply integrated release or packaged acceptance."
+        }
+      ],
       "acceptance": "native action parity pending"
     },
     {
@@ -1275,7 +1452,13 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
+      "native_evidence": [
+        {
+          "test": "tests/test_native_ui_polish.py::test_output_document_scrolls_without_moving_done",
+          "report": "visual-polish/native-maintained-v14/native.xml",
+          "scope": "Maintained source-native primitive boundary; successful214-case v14 report independently verified. Does not imply integrated release or packaged acceptance."
+        }
+      ],
       "acceptance": "native action parity pending"
     },
     {
@@ -1311,7 +1494,18 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
+      "native_evidence": [
+        {
+          "test": "tests/test_native_thumbnail_rendering.py::test_position_only_configure_does_not_repeat_thumbnail_rasterization",
+          "report": "visual-polish/native-maintained-v14/native.xml",
+          "scope": "Maintained source-native primitive boundary; successful214-case v14 report independently verified. Does not imply integrated release or packaged acceptance."
+        },
+        {
+          "test": "tests/test_native_thumbnail_rendering.py::test_uncommitted_render_failure_retries_instead_of_becoming_cached",
+          "report": "visual-polish/native-maintained-v14/native.xml",
+          "scope": "Maintained source-native primitive boundary; successful214-case v14 report independently verified. Does not imply integrated release or packaged acceptance."
+        }
+      ],
       "acceptance": "native action parity pending"
     },
     {
@@ -1390,7 +1584,7 @@
         "scope": "affected source owners; not complete native action parity"
       },
       "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "acceptance": "Source scope review; this absence assertion has no native action to exercise."
     },
     {
       "id": "identity_open_focus_replace",
@@ -1460,8 +1654,14 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "report": "/Users/coop/Documents/Codex/2026-09-16/coordinator-audit/vodforge-playback-failure-integration/playback-failure-after-v24.json",
+          "sha256": "8d1de2b8e4f10c5531e1a963197262f945c2da533df2720416d25d875015e73d",
+          "scope": "Independent v6 actual Tk verification on frozen v24: four exact-missing MP4/MP3 cases at two sizes with nonempty same-extension siblings never substitute those siblings; recovery keeps original subject after selection changes, restores browsing and retires opening ownership. Actual local synthetic files; not physical chooser, network-storage or package acceptance."
+        }
+      ],
+      "acceptance": "bounded exact-missing native evidence available; integrated baseline acceptance pending"
     },
     {
       "id": "header_metadata",
@@ -2037,11 +2237,12 @@
       ],
       "current_destination": "Notes edit command reuses LibraryAnnotationDialog and canonical annotation ledger",
       "source_evidence": {
-        "gate": "archive-affected-final-current.log:836 passed",
+        "gate": "visual-polish/refinement-v21/source-final.xml:1998 passed, 274 native/platform skipped",
         "tests": [
+          "tests/test_retry_annotation_lineage.py",
           "tests/test_library_annotations.py"
         ],
-        "scope": "affected source owners; not complete native action parity"
+        "scope": "Actual durable admission and annotation writers; successful, EACCES/ENOSPC and refused paths; explicit and automatic retries; fresh disk owners, edit/clear, repeated retry, completion/history and sibling isolation."
       },
       "native_evidence": [
         {
@@ -2049,9 +2250,14 @@
           "report": "archive-full-native-v3/native.xml",
           "receipts": "archive-full-native-v3/actual-{mp4,mp3,m4a}-receipt.json",
           "scope": "real libVLC synthetic media; scripted controls, no physical-input or audible-output qualification"
+        },
+        {
+          "test": "tests/test_archive_composed_native.py::test_retry_menu_retains_annotations_through_reload_and_editor",
+          "report": "visual-polish/refinement-v21/native-retry.xml",
+          "scope": "12 actual Tk cases: both sizes, Failed/Stopped, success/annotation fault/queue refusal, captured More-menu subject after selection changes, fresh queue/terminal/ledger reload, actual editor Save and second reload. Synthetic state and controlled worker; no physical input or process-restart claim."
         }
       ],
-      "acceptance": "bounded evidence available; integrated baseline acceptance pending"
+      "acceptance": "bounded native retry and annotation journey passed; integrated baseline acceptance pending"
     },
     {
       "id": "close_cleanup",
@@ -2201,8 +2407,19 @@
         ],
         "scope": "affected source owners; not complete native action parity"
       },
-      "native_evidence": [],
-      "acceptance": "native action parity pending"
+      "native_evidence": [
+        {
+          "test": "tests/test_archive_composed_native.py::test_opening_failures_replace_loading_and_keep_captured_recovery_subject",
+          "report": "visual-polish/refinement-v24/opening-native.xml",
+          "scope": "8 maintained actual Tk cases at two sizes: controlled dependency/initialization/load failures and real 10s readiness timeout replace the opening surface, keep captured saved-location recovery subject, restore browsing, and retire operation bookkeeping."
+        },
+        {
+          "report": "/Users/coop/Documents/Codex/2026-09-16/coordinator-audit/vodforge-playback-failure-integration/playback-failure-after-v24.json",
+          "sha256": "8d1de2b8e4f10c5531e1a963197262f945c2da533df2720416d25d875015e73d",
+          "scope": "Independent v6 frozen-v24 native verification: dependency/initialization/readiness/load errors at two sizes; Back and Open saved location preserve original subject, Try again uses a new operation for that subject, typed bounded failures and no stale opening state. OS location opening is intercepted after real path checks; provider readiness is controlled except actual 10s deadlines."
+        }
+      ],
+      "acceptance": "bounded opening-failure native evidence available; attach/control failures and dependency reinstall remain unaccepted by these opening cases"
     },
     {
       "id": "geometry",
@@ -2331,16 +2548,40 @@
   "remaining": [
     "Independent integrated49-capability acceptance; existing/native gates are bounded evidence",
     "Physical OS chooser, storage reconnect, native delayed/cancelled commit UI",
-    "Long-duration/native artwork and resize CPU/heartbeat",
+    "Physical live-drag/FPS and extended artwork soak beyond maintained source-native resize/heartbeat and5000-record snapshot checks",
     "Settled provider/transport consistency after seek; prior capture may precede UI poll",
     "Windows native/UNC and exact packaged qualification; audible output and physical input not established by source-native fixtures"
   ],
   "latest_native_freeze": {
-    "path": "source-freeze-20260916T184436Z",
-    "manifest_sha256": "a9a3f6dbe9c8a1be8cb94f908907ff27112b2a3dddf56caad6f2f22cd1309e69",
-    "report": "archive-full-native-v3-completion.json",
+    "path": "visual-polish/after-v18/source-freeze",
+    "manifest_sha256": "a4e1a614b28396b9c93f7df65fcefd12bb275b429f7a2b3f6b3c379d4c47d293",
+    "report": "visual-polish/native-maintained-v18/native.xml",
     "source_stable": true,
-    "cases": 178,
-    "skipped": 0
+    "cases": 224,
+    "skipped": 0,
+    "scope": "Completed v18 source-native gate; later source changes require their own bounded verification."
+  },
+  "composed_fixture_corrections": [
+    "Independent root fixture v1 used variant names different from directory basenames; root corrected its fixture and retained original bytes.",
+    "Independent root fixture v2 used unsupported arbitrary encoding-summary keys; root corrected to established keys and retained original bytes.",
+    "Corrected root fixture then reproduced two actual Back-navigation failures; fixed chooser selection while preserving view. The exact corrected test passed both sizes."
+  ],
+  "retry_annotation_correction": {
+    "before": "Root independently reproduced visible annotation loss after accepted retry plus actual annotation EACCES in frozen v18/v20.",
+    "after": "Durable source owner persists before admission; failed annotation transfer retains resolvable/editable ownership after reload without changing admitted truth. annotation_retained is bounded inside the original admission operation.",
+    "source_gate": "visual-polish/refinement-v21/retry-regression-after.xml:77 passed",
+    "native_gate": "visual-polish/refinement-v21/native-retry.xml:12 passed"
+  },
+  "recovery_regression_classes": {
+    "catalog": "engineering-quality/RECOVERY_REGRESSION_CLASSES.md",
+    "required_scenarios": [
+      "unit_static.recovery_canonical_facts",
+      "unit_static.recovery_selected_item",
+      "unit_static.recovery_retired_presets",
+      "unit_static.recovery_bounded_expansion",
+      "unit_static.recovery_draft_coherence"
+    ],
+    "scope": "Maintained source behavioral contracts and separate native resize companion; exact packaged journey remains required.",
+    "before_after_command": "python -m quality_harness.recovery_contract --source <immutable-source> --output <fresh-evidence>"
   }
 }

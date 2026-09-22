@@ -318,3 +318,44 @@ def test_update_check_failure_is_actionable_only_when_user_requested(
     UiEventHandlersMixin._handle_update_check_error(app, "network unavailable")
     assert shown == ([] if silent else ["network unavailable"])
     assert bool(logged) is silent
+
+
+def test_startup_update_dispatch_has_no_timer_delay_and_is_single_flight(monkeypatch):
+    from queue import Queue
+    from threading import Event
+
+    app = _app_stub()
+    app.worker = None
+    app.update_worker = None
+    app.update_check_after_id = None
+    app.events = Queue()
+    scheduled = []
+    app.after = lambda delay, callback: scheduled.append((delay, callback)) or "timer"
+    app.after_cancel = lambda _: None
+    monkeypatch.setattr(app_module.sys, "frozen", True, raising=False)
+    entered, release = Event(), Event()
+    calls = []
+
+    def offline():
+        calls.append(True)
+        entered.set()
+        release.wait(2)
+        raise OSError("offline")
+
+    monkeypatch.setattr(app_module, "fetch_latest_release", offline)
+    DownloaderApp._schedule_auto_update_check(
+        app, app_module.AUTO_UPDATE_INITIAL_DELAY_MS
+    )
+    assert scheduled[0][0] == 0
+    try:
+        scheduled[0][1]()
+        assert entered.wait(1)
+        # The UI call returned with network still pending.
+        assert not release.is_set() and app.update_worker.is_alive()
+        app._check_for_updates(silent=True)
+        assert calls == [True]
+        assert app.status_var.value == "Ready"
+    finally:
+        release.set()
+        app.update_worker.join(2)
+    assert app.events.get_nowait()[0] == "update_check_error"

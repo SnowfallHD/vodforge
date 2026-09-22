@@ -10,8 +10,17 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import Any
 
-from .archive_browser import archive_row_owner, media_source_identity
-from .archive_observations import history_failure, history_operation, relink_dimensions
+from .archive_browser import (
+    archive_row_owner,
+    media_source_identity,
+    resolve_archive_subject,
+)
+from .archive_observations import (
+    bind_operation,
+    history_failure,
+    history_operation,
+    relink_dimensions,
+)
 from .archive_observations import operation as archive_operation
 from .archive_observations import usage as archive_usage
 from .archive_paths import ArchivePath, RootMapping
@@ -32,9 +41,19 @@ from .history import (
     stage_history_mutation,
 )
 from .platform_services import open_path as open_system_path
+from .product_telemetry import BoundProductOperation
 from .telemetry_features import time_bucket
-from .ui_theme import FONT_UI_SMALL, THEME
-from .ui_widgets import SleekScrollbar, bind_smooth_vertical_wheel
+from .ui_button_contract import ProductButton
+from .ui_chrome import prototype_treeview_style
+from .ui_context_menu import ContextMenu
+from .ui_layout import window_logical_metrics
+from .ui_theme import FONT_UI_FAMILY, FONT_UI_SMALL, THEME
+from .ui_widgets import (
+    KeyboardScope,
+    SleekScrollbar,
+    ToolTip,
+    bind_smooth_vertical_wheel,
+)
 
 
 class ArchiveLibraryMixin:
@@ -51,6 +70,7 @@ class ArchiveLibraryMixin:
         self._archive_work_deadline = 0.0
         self._archive_commit_active = False
         self._archive_overlay = None
+        self._archive_relink_panel = None
         self._archive_hidden: list[Any] = []
         self._archive_context_path = None
         self._archive_context_indices = ()
@@ -66,7 +86,7 @@ class ArchiveLibraryMixin:
         self: Any,
         feature: str,
         action: str,
-        operation: str | None,
+        operation: str | BoundProductOperation | None,
         *,
         failure_detail: FailureDiagnostic | None = None,
         **dimensions: str,
@@ -177,7 +197,7 @@ class ArchiveLibraryMixin:
         pending = self.__dict__.get("_archive_pending_playback")
         if pending is not None:
             if self._closing or time.monotonic() >= pending["deadline"]:
-                self._archive_retire_pending_playback()
+                self._archive_retire_pending_playback(failed=not self._closing)
                 if not self._closing:
                     self.status_var.set(
                         "The saved location did not respond. Reconnect storage and retry playback."
@@ -195,6 +215,13 @@ class ArchiveLibraryMixin:
                 )
                 if current is None:
                     self._record_playback_operation(pending["operation"], "cancelled")
+                    queue = self.__dict__.get("watch_queue")
+                    if queue is not None and queue.owns(pending.get("queue_token")):
+                        queue.cancel(
+                            "failed",
+                            failure_boundary="metadata",
+                            failure_reason="source_removed",
+                        )
                 else:
                     self._archive_request_playback(current, accepted=pending)
         if (
@@ -210,10 +237,17 @@ class ArchiveLibraryMixin:
                 self._archive_selected_artwork(index, self.metadata_items[index])
         self._archive_poller = self.after(50, self._archive_poll)
 
-    def _archive_retire_pending_playback(self: Any) -> None:
+    def _archive_retire_pending_playback(self: Any, *, failed: bool = False) -> None:
         pending = self.__dict__.pop("_archive_pending_playback", None)
         if pending is not None:
             self._record_playback_operation(pending["operation"], "cancelled")
+            queue = self.__dict__.get("watch_queue")
+            if queue is not None and queue.owns(pending.get("queue_token")):
+                queue.cancel(
+                    "failed" if failed else "cancelled",
+                    failure_boundary="readiness",
+                    failure_reason="storage_wait_expired",
+                )
 
     def _archive_destroyed(self: Any, event: Any) -> None:
         if event.widget is self:
@@ -229,9 +263,7 @@ class ArchiveLibraryMixin:
     def _build_archive_location_panel(self: Any, parent: Any) -> None:
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
-        canvas = tk.Canvas(
-            parent, bg=THEME["surface"], bd=0, highlightthickness=0, width=1
-        )
+        canvas = tk.Canvas(parent, bg=THEME["bg"], bd=0, highlightthickness=0, width=1)
         canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar = SleekScrollbar(parent, command=canvas.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
@@ -252,25 +284,38 @@ class ArchiveLibraryMixin:
         self._archive_location_canvas = canvas
         parent = content
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(4, minsize=100)
-        ttk.Label(parent, text="SAVED LOCATION", style="FocusEyebrow.TLabel").grid(
+        ttk.Label(parent, text="Saved folder", style="FocusActiveTitle.TLabel").grid(
             row=0, column=0, sticky="w", pady=(8, 6)
         )
         self._archive_path_text = tk.Text(
             parent,
-            height=4,
+            height=3,
             width=1,
-            wrap="char",
-            bg=THEME["surface"],
+            wrap="word",
+            bg=THEME["bg"],
             fg=THEME["text"],
             font=FONT_UI_SMALL,
             bd=0,
             highlightthickness=0,
-            padx=10,
-            pady=8,
+            padx=0,
+            pady=4,
         )
         self._archive_path_text.grid(row=1, column=0, sticky="ew")
         self._archive_path_text.configure(state="disabled")
+        primary_actions = ttk.Frame(parent, style="FocusShell.TFrame")
+        primary_actions.grid(row=2, column=0, sticky="w", pady=(12, 4))
+        ProductButton(
+            primary_actions,
+            text="Open saved folder",
+            command=lambda: self._archive_open_path(self._archive_context_path),
+            style="Media.FocusQuiet.TButton",
+        ).pack(side="left", padx=(0, 8))
+        ProductButton(
+            primary_actions,
+            text="Copy full path",
+            command=self._archive_copy_path,
+            style="Media.FocusNav.TButton",
+        ).pack(side="left")
         self._archive_status = tk.StringVar(
             self, "Select a saved item or folder. Availability has not been checked."
         )
@@ -280,25 +325,28 @@ class ArchiveLibraryMixin:
             style="Muted.TLabel",
             wraplength=290,
             justify="left",
-        ).grid(row=2, column=0, sticky="ew", pady=(8, 10))
-        ttk.Label(
-            parent, text="PARENTS · Double-click to open", style="FocusEyebrow.TLabel"
-        ).grid(row=3, column=0, sticky="w", pady=(0, 5))
+        ).grid(row=3, column=0, sticky="ew", pady=(8, 10))
+        ttk.Label(parent, text="Folder path", style="FocusActiveTitle.TLabel").grid(
+            row=4, column=0, sticky="w", pady=(16, 8)
+        )
         shell = ttk.Frame(parent, style="FocusShell.TFrame")
-        shell.grid(row=4, column=0, sticky="nsew")
+        shell.grid(row=5, column=0, sticky="nsew")
         shell.columnconfigure(0, weight=1)
-        shell.rowconfigure(0, weight=1)
-        self._archive_ancestors = tk.Listbox(
+        shell.rowconfigure(0, weight=1, minsize=80)
+        self._archive_ancestors = ttk.Treeview(
             shell,
-            width=1,
-            height=6,
-            bg=THEME["bg"],
-            fg=THEME["text"],
-            selectbackground=THEME["accent_surface"],
-            bd=0,
-            highlightthickness=0,
-            font=FONT_UI_SMALL,
-            exportselection=False,
+            show="tree",
+            selectmode="browse",
+            height=4,
+            style=prototype_treeview_style(shell, "Archive.Folders.Treeview"),
+            takefocus=True,
+        )
+        metrics = window_logical_metrics(shell)
+        self._archive_ancestors.column(
+            "#0", width=metrics.px(240), minwidth=metrics.px(120), stretch=True
+        )
+        self._archive_folder_icon = self._load_focus_icon(
+            "folder", metrics.px(16), THEME["muted"]
         )
         self._archive_ancestors.grid(row=0, column=0, sticky="nsew")
         vertical = SleekScrollbar(shell, command=self._archive_ancestors.yview)
@@ -316,26 +364,53 @@ class ArchiveLibraryMixin:
         self._archive_ancestors.bind(
             "<Return>", lambda _event: self._archive_open_parent()
         )
-        actions = ttk.Frame(parent, style="FocusShell.TFrame")
-        actions.grid(row=5, column=0, sticky="ew", pady=(10, 0))
-        actions.columnconfigure(0, weight=1)
-        actions.columnconfigure(1, weight=1)
-        for row, column, label, command in (
-            (
-                0,
-                0,
-                "Open saved folder",
-                lambda: self._archive_open_path(self._archive_context_path),
-            ),
-            (0, 1, "Open selected parent", self._archive_open_parent),
-            (1, 0, "Copy full path", self._archive_copy_path),
-            (1, 1, "Check availability", self._archive_check_location),
-            (2, 0, "Relink selected file", self._archive_relink_selected),
-            (2, 1, "Update folder location", self._archive_relink_context),
-        ):
-            ttk.Button(
-                actions, text=label, command=command, style="FocusQuiet.TButton"
-            ).grid(row=row, column=column, sticky="ew", padx=2, pady=3)
+        ToolTip(self._archive_ancestors, self._archive_parent_tooltip)
+        ttk.Label(
+            parent, text="Double-click a folder to open it.", style="Muted.TLabel"
+        ).grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self._archive_location_options = ProductButton(
+            parent,
+            text="Location options  ▾",
+            command=self._archive_location_menu,
+            style="Media.FocusNav.TButton",
+        )
+        self._archive_location_options.grid(row=7, column=0, sticky="w", pady=(16, 8))
+
+    def _archive_parent_tooltip(self: Any) -> str:
+        paths = self.__dict__.get("_archive_parent_paths", ())
+        if not paths:
+            return ""
+        row = self._archive_ancestors.identify_row(
+            self._archive_ancestors.winfo_pointery()
+            - self._archive_ancestors.winfo_rooty()
+        )
+        return str(paths[int(row)]) if row and 0 <= int(row) < len(paths) else ""
+
+    def _archive_location_menu(self: Any) -> None:
+        previous = self.__dict__.get("_archive_location_popup")
+        if previous is not None:
+            previous.destroy()
+        menu = ContextMenu(self, tearoff=False)
+        self._archive_location_popup = menu
+        menu.add_command(
+            label="Open selected parent", command=self._archive_open_parent
+        )
+        menu.add_command(
+            label="Check availability", command=self._archive_check_location
+        )
+        menu.add_separator()
+        menu.add_command(label="Find this file…", command=self._archive_relink_selected)
+        menu.add_command(
+            label="Find this folder…", command=self._archive_relink_context
+        )
+        anchor = self._archive_location_options
+        try:
+            menu.tk_popup(
+                anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height()
+            )
+        finally:
+            # Retain one menu for platforms with nonblocking popup posting.
+            menu.grab_release()
 
     def _archive_context(
         self: Any, path: ArchivePath | None, indices: tuple[int, ...]
@@ -348,20 +423,42 @@ class ArchiveLibraryMixin:
         )
         self._archive_path_text.configure(state="disabled")
         self._archive_parent_paths = path.ancestry if path else ()
-        self._archive_ancestors.delete(0, "end")
-        for ancestor in self._archive_parent_paths:
-            self._archive_ancestors.insert("end", str(ancestor))
-        self._archive_status.set(
-            "Availability not checked. An offline drive does not remove this item from your archive."
-        )
+        self._archive_ancestors.delete(*self._archive_ancestors.get_children())
+        for depth, ancestor in enumerate(self._archive_parent_paths):
+            self._archive_ancestors.insert(
+                "",
+                "end",
+                iid=str(depth),
+                text=("  " * min(depth, 4)) + "  " + (ancestor.name or str(ancestor)),
+                image=self._archive_folder_icon or "",
+            )
+        self._archive_status.set("Availability not checked.")
         if path:
-            self._archive_ancestors.selection_set(len(self._archive_parent_paths) - 1)
-            self._archive_ancestors.see("end")
+            last = str(len(self._archive_parent_paths) - 1)
+            self._archive_ancestors.selection_set(last)
+            self._archive_ancestors.see(last)
 
     def _archive_folder_selected(
         self: Any, path: ArchivePath, indices: tuple[int, ...]
     ) -> None:
+        self._clear_library_selection()
+        self._archive_folder_identity = True
+        self.selected_title_var.set(path.name or str(path))
+        self.selected_meta_var.set(
+            f"{len(indices)} saved item" + ("s" if len(indices) != 1 else "")
+        )
+        self.focus_thumbnail_wrap.grid_remove()
+        self.focus_library_play_button.pack_forget()
+        self.focus_library_menu_button.pack_forget()
+        self._queue_focus_selected_overview_layout()
         self._archive_context(path, indices)
+        for tab in self.focus_archive_inspector.tabs():
+            self.focus_archive_inspector.tab(
+                tab,
+                state="normal"
+                if str(tab) == str(self.focus_archive_location_tab)
+                else "hidden",
+            )
         self.focus_archive_inspector.select(self.focus_archive_location_tab)
 
     def _archive_copy_path(self: Any) -> None:
@@ -372,9 +469,9 @@ class ArchiveLibraryMixin:
             self._archive_usage("archive", "location_copied")
 
     def _archive_open_parent(self: Any) -> None:
-        selected = self._archive_ancestors.curselection()
+        selected = self._archive_ancestors.selection()
         if selected:
-            self._archive_open_path(self._archive_parent_paths[selected[0]])
+            self._archive_open_path(self._archive_parent_paths[int(selected[0])])
 
     def _archive_open_path(self: Any, path: ArchivePath | None) -> None:
         if path is not None:
@@ -385,8 +482,12 @@ class ArchiveLibraryMixin:
             self._archive_location_request(self._archive_context_path, "check")
 
     def _archive_location_request(self: Any, path: ArchivePath, action: str) -> None:
-        key = str(uuid.uuid4())
         feature = "archive_location_operation"
+        key = bind_operation(
+            self.__dict__.get("product_telemetry"),
+            feature,
+            operation_key=str(uuid.uuid4()),
+        )
         dimensions = {"storage_kind": path.storage[0], "location_action": action}
 
         def work(cancelled: Any) -> str:
@@ -459,11 +560,16 @@ class ArchiveLibraryMixin:
             self.status_var.set("Select a saved export to relink.")
             return
         index = int(selection[0])
+        if not 0 <= index < len(self.metadata_items):
+            return
+        captured = self.metadata_items[index]
         chosen = filedialog.askopenfilename(
             parent=self, title="Choose the moved media file"
         )
-        if chosen:
-            self._archive_begin_relink(None, (index,), exact=chosen)
+        # The picker runs a nested loop: history may reorder while it is open.
+        subject = resolve_archive_subject(self.metadata_items, captured)
+        if chosen and subject is not None:
+            self._archive_begin_relink(None, (subject[0],), exact=chosen)
 
     def _archive_relink_context(self: Any) -> None:
         if self._archive_context_path:
@@ -480,32 +586,100 @@ class ArchiveLibraryMixin:
         if chosen:
             self._archive_begin_relink(path, indices, destination=chosen)
 
+    def _archive_retire_restoration(self: Any) -> None:
+        pending = self.__dict__.pop("_archive_restore_reveal", None)
+        if pending is not None:
+            pending.cancel()
+
     def _archive_show_overlay(self: Any, parent: Any) -> Any:
+        self._archive_retire_restoration()
         if self._archive_overlay is not None:
             self._archive_restore_browser()
+            self._archive_retire_restoration()
         self._archive_hidden = [
             widget for widget in parent.grid_slaves() if widget.winfo_manager()
         ]
-        for widget in self._archive_hidden:
-            widget.grid_remove()
-        panel = ttk.Frame(parent, style="FocusShell.TFrame")
-        panel.grid(row=0, column=0, rowspan=3, sticky="nsew")
+        panel: Any = ttk.Frame(parent, style="FocusShell.TFrame")
+        panel.grid(
+            row=0,
+            column=0,
+            rowspan=3,
+            columnspan=max(1, parent.grid_size()[0]),
+            sticky="nsew",
+        )
         panel.columnconfigure(0, weight=1)
         panel.rowconfigure(2, weight=1)
         self._archive_overlay = panel
+        from .ui_transition import WidgetReveal
+
+        panel._archive_reveal = WidgetReveal(
+            panel,
+            self._archive_hidden,
+            current=lambda: self._archive_overlay is panel and not self._closing,
+            escape=lambda: (
+                self._archive_cancel_relink()
+                if self.__dict__.get("_archive_relink_panel") is panel
+                else self._archive_cancel_playback()
+            ),
+        )
         return panel
 
     def _archive_restore_browser(self: Any) -> None:
+        self._archive_retire_restoration()
         overlay, self._archive_overlay = self._archive_overlay, None
+        if self.__dict__.get("_archive_relink_panel") is overlay:
+            self._archive_relink_panel = None
         if overlay is not None:
-            overlay.destroy()
-        for widget in self._archive_hidden:
+            reveal = getattr(overlay, "_archive_reveal", None)
+            if reveal is not None:
+                reveal.cancel()
+        if self.__dict__.get("_archive_playback_host") is overlay:
+            self._archive_playback_host = None
+            self._archive_poster_image = None
+        hidden, self._archive_hidden = self._archive_hidden, []
+        for widget in hidden:
             try:
                 widget.grid()
             except tk.TclError:
                 pass
-        self._archive_hidden = []
-        self._apply_focus_layout(force=True)
+        # Responsive layout is supplied by the composed application host.
+        host: Any = self
+        host._apply_focus_layout(force=True)
+        incoming = [w for w in hidden if w.winfo_exists() and w.winfo_manager()]
+        if (
+            overlay is not None
+            and overlay.winfo_exists()
+            and overlay.winfo_ismapped()
+            and incoming
+            and not self._closing
+        ):
+            from .ui_transition import WidgetReveal
+
+            origin = self._focus_selected_view
+
+            def finished() -> None:
+                if self.__dict__.get("_archive_restore_reveal") is restoration:
+                    self.__dict__.pop("_archive_restore_reveal", None)
+                if overlay.winfo_exists():
+                    overlay.destroy()
+
+            restoration = WidgetReveal(
+                incoming[0],
+                [overlay],
+                incoming=incoming,
+                current=lambda: (
+                    self.__dict__.get("_archive_restore_reveal") is restoration
+                    and self._archive_overlay is None
+                    and self._focus_selected_view == origin
+                    and not self._closing
+                ),
+                escape=lambda: None,
+                finished=finished,
+            )
+            self._archive_restore_reveal = restoration
+            restoration.start()
+        elif overlay is not None and overlay.winfo_exists():
+            overlay.destroy()
 
     def _archive_cancel_relink(self: Any) -> None:
         if self._archive_commit_active:
@@ -528,8 +702,7 @@ class ArchiveLibraryMixin:
         status = self.__dict__.get("_archive_commit_status")
         if status is not None:
             status.set(
-                "Cancellation requested. Waiting for storage to confirm the outcome; "
-                "other history changes will be saved after this operation settles."
+                "Cancellation requested. Waiting to confirm whether your changes were saved."
             )
 
     def _archive_defer_history(
@@ -626,7 +799,11 @@ class ArchiveLibraryMixin:
             selected=selected,
             exact_files={selected[0]: exact} if exact else {},
         )
-        key = str(uuid.uuid4())
+        key = bind_operation(
+            self.__dict__.get("product_telemetry"),
+            "archive_relink_operation",
+            operation_key=str(uuid.uuid4()),
+        )
         self._archive_relink_operation = key
         self._archive_observe(
             "archive_relink_operation",
@@ -636,20 +813,27 @@ class ArchiveLibraryMixin:
             **relink_dimensions(proposal),
         )
         panel = self._archive_show_overlay(self.focus_library_view)
+        self._archive_relink_panel = panel
+        panel._archive_relink_keys = KeyboardScope(
+            panel, {"<Escape>": self._archive_cancel_relink}
+        )
         header = ttk.Frame(panel, style="FocusShell.TFrame")
         header.grid(row=0, column=0, sticky="ew", padx=18, pady=16)
         header.columnconfigure(0, weight=1)
         ttk.Label(
             header, text="Review saved locations", style="FocusTitle.TLabel"
         ).grid(row=0, column=0, sticky="w")
-        cancel = ttk.Button(
+        cancel = ProductButton(
             header,
-            text="Back to archive",
+            text="Back to Library",
             command=self._archive_cancel_relink,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         )
         cancel.grid(row=0, column=1)
-        status = tk.StringVar(panel, "Checking exact proposed files…")
+        status = tk.StringVar(panel, "Checking selected files…")
+        panel._archive_relink_status = (
+            status  # Keep the status alive after a refused review.
+        )
         ttk.Label(
             panel,
             textvariable=status,
@@ -657,62 +841,208 @@ class ArchiveLibraryMixin:
             wraplength=820,
             justify="left",
         ).grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 12))
+        review_surface = ttk.Frame(
+            panel, style="Material.TFrame", padding=(18, 12), height=120
+        )
+        review_surface.grid(row=2, column=0, sticky="new", padx=18)
+        review_surface.grid_propagate(False)
+        review_surface.columnconfigure(0, weight=1)
+        review_surface.rowconfigure(0, weight=1)
+        panel._archive_relink_review = review_surface
         document = tk.Text(
-            panel,
+            review_surface,
             width=1,
             wrap="word",
-            bg=THEME["surface"],
+            bg=THEME["panel"],
             fg=THEME["text"],
             font=FONT_UI_SMALL,
             bd=0,
             highlightthickness=0,
-            padx=16,
-            pady=12,
+            padx=0,
+            pady=4,
         )
-        document.grid(row=2, column=0, sticky="nsew", padx=18)
-        scrollbar = SleekScrollbar(panel, command=document.yview)
-        scrollbar.grid(row=2, column=1, sticky="ns")
+        document.grid(row=0, column=0, sticky="nsew")
+        document.tag_configure(
+            "review-title", font=(FONT_UI_FAMILY, 15, "bold"), spacing3=6
+        )
+        document.tag_configure("review-state", foreground=THEME["muted"], spacing3=12)
+        document.tag_configure("review-ready", foreground=THEME["accent"])
+        document.tag_configure(
+            "review-attention", foreground=THEME.get("warning", THEME["text"])
+        )
+        document.tag_configure(
+            "review-label", foreground=THEME["muted"], spacing1=8, spacing3=3
+        )
+        document.tag_configure("review-value", spacing3=8)
+        document.tag_configure("review-note", foreground=THEME["muted"], spacing3=10)
+        document.tag_configure("review-gap", spacing1=12, spacing3=12)
+        bind_smooth_vertical_wheel(document, mode="pixels")
+        scrollbar = SleekScrollbar(review_surface, command=document.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns", padx=(10, 0))
         document.configure(yscrollcommand=scrollbar.set)
+
+        def fit_review(_event: Any = None) -> None:
+            if panel.winfo_height() <= 1 or document.winfo_width() <= 1:
+                return
+            # One native document keeps large reviews bounded. Only its material
+            # grows with content; a single item does not become a full-page slab.
+            available = max(100, panel.grid_bbox(0, 2, 1, 2)[3])
+            # Every review line uses the base font or a larger title, without
+            # elision. This prefix is enough to fill the available height, even
+            # before wrapping; measuring the rest cannot change the clamp.
+            line_height = max(
+                1,
+                int(
+                    document.tk.call(
+                        "font", "metrics", document.cget("font"), "-linespace"
+                    )
+                ),
+            )
+            end = f"{available // line_height + 2}.0"
+            # Refresh only those line metrics, never the application event loop.
+            measured = document.count("1.0", end, "update", "ypixels")
+            pixels = int(
+                measured if isinstance(measured, int) else (measured or (0,))[0]
+            )
+            height = min(available, max(100, pixels + 34))
+            if int(review_surface.cget("height")) != height:
+                review_surface.configure(height=height)
+
+        panel.bind("<Configure>", fit_review, add="+")
+        document.bind("<Configure>", fit_review, add="+")
         actions = ttk.Frame(panel, style="FocusShell.TFrame")
         actions.grid(row=3, column=0, sticky="ew", padx=18, pady=16)
         ttk.Label(
             actions,
-            text="This updates Library references only. No media or companion files are moved or changed.",
+            text="Updates saved locations in your Library. Your files stay where they are.",
             style="Muted.TLabel",
             wraplength=650,
         ).pack(side="left")
-        apply = ttk.Button(
+        apply = ProductButton(
             actions,
-            text="Update verified locations",
+            text="Update locations",
             state="disabled",
             style="Accent.TButton",
         )
         apply.pack(side="right")
 
-        def show(preview: Any) -> None:
+        relink_labels = {
+            "pending": "Checking file",
+            "ready": "File found",
+            "unchanged": "Already saved here",
+            "outside_mapping": "Choose a location for this file",
+            "ambiguous_mapping": "More than one location matches",
+            "invalid_destination": "Choose a valid location",
+            "invalid_record": "Saved details need attention",
+            "choose_file": "Choose the moved file",
+            "collision": "Another saved item uses this file",
+            "missing": "File not found or empty",
+            "unavailable": "Location unavailable",
+            "foreign_platform": "Choose a location on this computer",
+            "identity_mismatch": "File does not match the saved format or details",
+            "cancelled": "Check cancelled",
+            "timed_out": "File check took too long",
+            "stale": "Library changed; review this location again",
+        }
+
+        def show(preview: Any, *, pending_state: str | None = None) -> None:
             document.configure(state="normal")
             document.delete("1.0", "end")
-            for entry in preview.entries:
-                title = history[entry.index].get("title") or "Saved export"
-                document.insert(
-                    "end",
-                    f"{entry.state.upper()} · {title}\nFrom: {entry.source or 'Exact file was not recorded'}\nTo: {entry.destination or 'Choose a destination'}\n\n",
+            segments: list[Any] = []
+
+            def append(text: str, tags: str | tuple[str, ...]) -> None:
+                segments.extend((text, tags))
+
+            for position, entry in enumerate(preview.entries):
+                if position:
+                    append("\n", "review-gap")
+                record = history[entry.index]
+                title = record.get("title") or "Saved export"
+                append(f"{title}\n", "review-title")
+                state = (
+                    pending_state
+                    if entry.state == "pending" and pending_state
+                    else entry.state
                 )
+                state_tag = (
+                    "review-ready"
+                    if state == "ready"
+                    else "review-state"
+                    if state in {"pending", "unchanged"}
+                    else "review-attention"
+                )
+                append(
+                    f"{relink_labels[state]}\n",
+                    ("review-state", state_tag),
+                )
+                recorded_format = str(record.get("vodforge_output_type") or "").strip()
+                recorded_suffix = Path(entry.source.name).suffix if entry.source else ""
+                if (
+                    recorded_suffix
+                    and recorded_suffix[1:].casefold() != recorded_format.casefold()
+                ):
+                    recorded_format = " · ".join(
+                        value
+                        for value in (recorded_format, recorded_suffix[1:].upper())
+                        if value
+                    )
+                selected_format = (
+                    Path(entry.destination.name).suffix[1:].upper()
+                    if entry.destination
+                    else ""
+                )
+                for label, value in (
+                    ("Saved format", recorded_format or "Not recorded"),
+                    ("Selected format", selected_format or "Not known"),
+                    (
+                        "Previous file" if entry.source else "Previous folder",
+                        str(entry.source)
+                        if entry.source
+                        else str(record.get("vodforge_output_dir") or "Not recorded"),
+                    ),
+                    (
+                        "Selected file",
+                        str(entry.destination)
+                        if entry.destination
+                        else "Choose a destination",
+                    ),
+                ):
+                    append(
+                        label + (":   " if label.endswith("format") else "\n"),
+                        "review-label",
+                    )
+                    append(value + "\n", "review-value")
+                if entry.state == "identity_mismatch":
+                    append(
+                        "The file format or its accompanying metadata does not match this saved item.\n",
+                        "review-note",
+                    )
+            if segments:
+                # One tagged native insertion keeps large reviews from spending
+                # their UI budget on thousands of Python/Tcl crossings. Tk owns
+                # Unicode indices and tag ranges; no Python character offsets.
+                document.insert("end", *segments)
             document.configure(state="disabled")
+            fit_review()
 
         show(proposal)
 
+        def verification_failed() -> None:
+            self._archive_observe(
+                "archive_relink_operation",
+                "failed",
+                key,
+                archive_result="unavailable",
+            )
+            self._archive_relink_operation = None
+            show(proposal, pending_state="unavailable")
+            status.set(
+                "The files could not be checked. Return to Library and try again."
+            )
+
         def verified(result: Any) -> None:
             if result.error or result.value is None:
-                self._archive_observe(
-                    "archive_relink_operation",
-                    "failed",
-                    key,
-                    archive_result="unavailable",
-                )
-                status.set(
-                    "Verification failed. No history was changed. Reconnect the location and retry."
-                )
+                verification_failed()
                 return
             preview = result.value
             self._archive_observe(
@@ -728,25 +1058,46 @@ class ArchiveLibraryMixin:
             ready = tuple(
                 entry.index for entry in preview.entries if entry.state == "ready"
             )
+            unresolved = len(preview.entries) - len(ready)
+            summary = (
+                f"{len(ready)} {'file' if len(ready) == 1 else 'files'} ready"
+                if ready
+                else "No files ready"
+            )
+            if unresolved:
+                summary += f" · {unresolved} {'item needs' if unresolved == 1 else 'items need'} attention"
             status.set(
-                f"{len(ready)} exact files found; {len(preview.entries) - len(ready)} unresolved. Review every destination before applying. File presence does not prove identical content."
+                summary
+                + "\nReview your selected files. Their location and saved details are checked; identical content is not confirmed."
             )
             if ready:
                 apply.configure(
                     state="normal",
-                    text=f"Update {len(ready)} verified locations",
+                    text="Update location"
+                    if len(ready) == 1
+                    else f"Update {len(ready)} locations",
                     command=lambda: self._archive_apply_relink(
                         preview, history, ready, status, apply, cancel
                     ),
                 )
 
-        self._archive_submit(
+        def verification_timed_out() -> None:
+            self._archive_observe("archive_relink_operation", "timed_out", key)
+            self._archive_relink_operation = None
+            show(proposal, pending_state="timed_out")
+            status.set(
+                "Checking these files took too long. Return to Library and try again."
+            )
+
+        if not self._archive_submit(
             "relink_verify",
             lambda cancelled: verify_relink(proposal, history, cancelled=cancelled),
             verified,
-            on_timeout=lambda: self._archive_observe(
-                "archive_relink_operation", "timed_out", key
-            ),
+            on_timeout=verification_timed_out,
+        ):
+            verification_failed()
+        panel._archive_reveal.start(
+            lambda: review_surface.winfo_height() == int(review_surface.cget("height"))
         )
 
     def _archive_apply_relink(
@@ -764,6 +1115,7 @@ class ArchiveLibraryMixin:
             != preview.snapshot
         ):
             self._archive_observe("archive_relink_operation", "stale", key)
+            self._archive_relink_operation = None
             status.set(
                 "Archive changed while you reviewed it. Return and verify the locations again."
             )
@@ -794,7 +1146,7 @@ class ArchiveLibraryMixin:
         )
         button.configure(state="disabled")
         cancel.configure(state="normal", text="Cancel pending update")
-        status.set("Rechecking files and saving the verified locations…")
+        status.set("Saving the new file locations…")
 
         def work(cancelled: Any) -> Any:
             try:
@@ -849,23 +1201,45 @@ class ArchiveLibraryMixin:
         def done(result: Any) -> None:
             self._archive_commit_active = False
             self._archive_commit_status = None
-            cancel.configure(state="normal", text="Back to archive")
+            cancel.configure(state="normal", text="Back to Library")
             if result.error or result.value is None:
+                if (
+                    not result.error
+                    and result.value is None
+                    and self.__dict__.get("_archive_commit_cancel_reason")
+                ):
+                    # The worker can acknowledge cancellation before invoking
+                    # work(), so no worker-side terminal observation was emitted.
+                    self._archive_observe(
+                        "archive_relink_operation",
+                        "timed_out"
+                        if self._archive_commit_cancel_reason == "timeout"
+                        else "cancelled",
+                        key,
+                    )
+                self._archive_relink_operation = None
                 if not self._archive_flush_history():
                     status.set(
-                        "No relink was saved. Pending history recovery needs attention before further edits."
+                        "No locations were updated. Other Library changes need to be recovered before you can edit again."
                     )
                     return
+                cancelled = result.error == "RelinkCancelled" or (
+                    not result.error
+                    and self.__dict__.get("_archive_commit_cancel_reason")
+                )
                 status.set(
-                    "No relink was saved. The operation was cancelled, the locations changed, "
-                    "or history could not be written. Return to review the locations again."
+                    "The update took too long and was stopped. Your saved locations have not changed."
+                    if cancelled and self._archive_commit_cancel_reason == "timeout"
+                    else "Update cancelled. Your saved locations have not changed."
+                    if cancelled
+                    else "No locations were updated. Return to Library and choose the files again."
                 )
                 return
             self._archive_relink_operation = None
             self.download_history = result.value
             if not self._archive_flush_history():
                 status.set(
-                    "Saved locations were updated. Pending history recovery needs attention before further edits."
+                    "Locations updated. Other Library changes need to be recovered before you can edit again."
                 )
                 return
             self._reconcile_library_projection()
@@ -895,48 +1269,226 @@ class ArchiveLibraryMixin:
                 )
 
         if not self._archive_submit("relink_apply", work, done):
+            self._archive_observe(
+                "archive_relink_operation",
+                "failed",
+                key,
+                archive_result="unavailable",
+            )
+            self._archive_relink_operation = None
             self._archive_commit_active = False
             self._archive_commit_status = None
-            cancel.configure(state="normal", text="Back to archive")
+            cancel.configure(state="normal", text="Back to Library")
+            status.set("The update could not start. Return to Library and try again.")
 
     def _archive_show_inspector(self: Any) -> None:
+        scene = self.__dict__.get("library_scene")
+        if scene is not None:
+            index = self.video_tree.model.selected_index()
+            if index is not None:
+                self._archive_reveal_library_details(index)
+                return
+            if not self.__dict__.get("_legacy_archive_requested", False):
+                return
         self._archive_usage("archive", "inspector_opened")
         self._archive_inspector_expanded = not self.__dict__.get(
             "_archive_inspector_expanded", False
         )
         self._apply_focus_layout(force=True)
 
+    def _archive_arrange_actions(self: Any) -> None:
+        """One action order across layout and folder/media subject transitions."""
+        row = self.focus_library_action_row
+        desired = []
+        folder = self.__dict__.get("_archive_folder_identity", False)
+        browser = self.__dict__.get("video_tree")
+        media = not folder and bool(browser is not None and browser.selection())
+        subject = (
+            folder or media or self.__dict__.get("_archive_inspector_expanded", False)
+        )
+        if media:
+            desired.append(self.focus_library_play_button)
+        if subject and not self.__dict__.get("_archive_details_page", False):
+            desired.append(self.focus_library_details_button)
+        if media:
+            desired.append(self.focus_library_menu_button)
+        if row.pack_slaves() == desired:
+            return
+        for button in row.pack_slaves():
+            button.pack_forget()
+        for index, button in enumerate(desired):
+            button.pack(side="left", padx=(0, 6 if index < len(desired) - 1 else 0))
+
     def _apply_archive_layout(self: Any, width: int, _height: int) -> None:
+        scene = self.__dict__.get("library_scene")
+        if scene is not None:
+            if not self.__dict__.get("_legacy_archive_requested", False):
+                self.focus_library_actions.grid_remove()
+                self.focus_metadata_content.grid_remove()
+                self.video_tree.navigation.grid_remove()
+                self._library_scene_return.grid_remove()
+                self.focus_library_view.columnconfigure(0, minsize=0)
+                scene.grid(row=0, column=0, rowspan=3, columnspan=2, sticky="nsew")
+                return
+            scene.grid_remove()
+            self.focus_metadata_content.grid()
+            self._library_scene_return.grid(row=2, column=1, sticky="w", pady=8)
         expanded = self.__dict__.get("_archive_inspector_expanded", False)
         compact = width < 1260
+        detail_page = compact and expanded
+        self._archive_details_page = detail_page
+        if detail_page:
+            # An intentionally bounded reading page replaces the browse grid.
+            # Keeping one width for identity, tabs and facts avoids a thin rail
+            # floating at the left of an otherwise empty compact window.
+            inset = max(28, (width - 1040) // 2)
+            self.focus_library_actions.grid_remove()
+            self.focus_metadata_content.grid_configure(
+                padx=(inset, inset), pady=(12, 16)
+            )
+            self.focus_archive_inspector_shell.configure(padding=0)
+            self.focus_archive_identity_label.grid_remove()
+            self.focus_archive_back_button.grid(
+                row=0, column=0, columnspan=2, sticky="w", pady=(0, 16)
+            )
+            self.focus_selected_title_label.configure(font=(FONT_UI_FAMILY, 16, "bold"))
+        else:
+            self.focus_library_actions.grid()
+            self.focus_metadata_content.grid_configure(padx=(0, 18), pady=(0, 14))
+            self.focus_archive_inspector_shell.configure(padding=(14, 0, 0, 0))
+            self.focus_archive_back_button.grid_remove()
+            self.focus_archive_identity_label.grid()
+            self.focus_selected_title_label.configure(font="")
+        self.focus_archive_inspector_shell.columnconfigure(
+            1, weight=1 if detail_page else 0
+        )
+        self.focus_archive_inspector_shell.columnconfigure(
+            0, weight=0 if detail_page else 1, minsize=288 if detail_page else 0
+        )
+        self.focus_archive_inspector_shell.rowconfigure(
+            0, weight=1 if detail_page else 0
+        )
+        self.focus_archive_inspector_shell.rowconfigure(
+            1, weight=0 if detail_page else 1
+        )
+        self.focus_archive_identity.grid_configure(
+            sticky="new" if detail_page else "ew", padx=(0, 28) if detail_page else 0
+        )
+        self.focus_archive_inspector.grid_configure(
+            row=0 if detail_page else 1,
+            column=1 if detail_page else 0,
+            pady=(48, 0) if detail_page else 0,
+        )
+        if detail_page:
+            self.focus_selected_overview.grid_configure(columnspan=2, pady=(0, 16))
+            self.focus_thumbnail_wrap.grid_configure(
+                row=0, column=0, rowspan=1, columnspan=2, sticky="nw"
+            )
+            self.focus_selected_title_label.grid_configure(
+                row=1, column=0, columnspan=2, padx=0, pady=(14, 0)
+            )
+            self.focus_selected_meta_label.grid_configure(
+                row=2, column=0, columnspan=2, padx=0, pady=(6, 0)
+            )
+            self.focus_selected_location_label.grid_configure(
+                row=3, column=0, columnspan=2, padx=0, pady=(6, 0)
+            )
+            self.focus_library_action_row.grid(
+                in_=self.focus_archive_identity,
+                row=2,
+                column=0,
+                columnspan=2,
+                sticky="w",
+                padx=0,
+                pady=(0, 4),
+            )
+            self.focus_library_details_button.pack_forget()
+        elif expanded:
+            self.focus_selected_overview.grid_configure(columnspan=2, pady=(0, 8))
+            self.focus_library_action_row.grid(
+                in_=self.focus_archive_identity,
+                row=2,
+                column=0,
+                sticky="w",
+                columnspan=2,
+                padx=0,
+                pady=(0, 4),
+            )
+        else:
+            self.focus_library_action_row.grid(
+                in_=self.focus_library_actions,
+                row=0,
+                column=1,
+                columnspan=1,
+                sticky="e",
+                padx=0,
+                pady=0,
+            )
+        if not detail_page:
+            self.focus_thumbnail_wrap.grid_configure(
+                row=0, column=0, rowspan=3, columnspan=1, sticky="nw"
+            )
+            for row, label in enumerate(
+                (
+                    self.focus_selected_title_label,
+                    self.focus_selected_meta_label,
+                    self.focus_selected_location_label,
+                )
+            ):
+                label.grid_configure(
+                    row=row,
+                    column=1,
+                    columnspan=1,
+                    padx=(12, 0),
+                    pady=(0 if row == 0 else 4, 0),
+                )
+        if self.__dict__.get("_archive_folder_identity"):
+            self.focus_thumbnail_wrap.grid_remove()
+        self.focus_library_action_row.lift()
+        if compact and expanded:
+            self.focus_library_filters.grid_remove()
+            self.video_tree.navigation.grid_remove()
+            self.focus_library_view.columnconfigure(0, minsize=0)
+        else:
+            self.focus_library_filters.grid()
+            self.video_tree.navigation.grid()
+            self.focus_library_view.columnconfigure(0, minsize=176)
         self.focus_library_category_filter.set_compact(compact)
         self.focus_library_search_field.set_compact(compact)
         self.focus_library_details_button.configure(
-            text="Back to browse" if compact and expanded else "Item details"
+            text="Back to Library"
+            if compact and expanded
+            else "Hide details"
+            if expanded
+            else "Show details"
         )
-        if not self.focus_library_details_button.winfo_manager():
-            self.focus_library_details_button.pack(
-                side="left", padx=(6, 0), before=self.focus_library_menu_button
-            )
+        self._archive_arrange_actions()
         if compact:
             self.focus_metadata_content.columnconfigure(1, weight=0, minsize=0)
             if expanded:
                 self.focus_queue_panel.grid_remove()
-                self.focus_archive_inspector.grid(
+                self.focus_archive_inspector_shell.grid(
                     row=0, column=0, columnspan=2, sticky="nsew"
                 )
             else:
-                self.focus_archive_inspector.grid_remove()
+                self.focus_archive_inspector_shell.grid_remove()
                 self.focus_queue_panel.grid(
                     row=0, column=0, columnspan=2, sticky="nsew", padx=0
                 )
-        else:
+        elif expanded:
             self.focus_metadata_content.columnconfigure(1, weight=0, minsize=350)
             self.focus_queue_panel.grid(
                 row=0, column=0, columnspan=1, sticky="nsew", padx=(0, 18)
             )
-            self.focus_archive_inspector.grid(
+            self.focus_archive_inspector_shell.grid(
                 row=0, column=1, columnspan=1, sticky="nsew"
+            )
+
+        else:
+            self.focus_metadata_content.columnconfigure(1, weight=0, minsize=0)
+            self.focus_archive_inspector_shell.grid_remove()
+            self.focus_queue_panel.grid(
+                row=0, column=0, columnspan=2, sticky="nsew", padx=0
             )
 
     def _archive_activate_item(self: Any, index: int) -> None:
@@ -1010,12 +1562,24 @@ class ArchiveLibraryMixin:
         self._archive_submit("selected_artwork", work, done)
 
     def _archive_request_playback(
-        self: Any, info: Any, *, accepted: Any = None
+        self: Any, info: Any, *, accepted: Any = None, queue_token: Any = None
     ) -> None:
         import uuid
 
         from .media_player import resolve_library_media_path
 
+        queue_owner = self.__dict__.get("watch_queue")
+        if accepted is not None:
+            queue_token = accepted.get("queue_token")
+        if queue_token is not None:
+            if queue_owner is None or not queue_owner.owns(queue_token):
+                return
+        elif accepted is None and queue_owner is not None:
+            queue_owner.cancel()
+        held = self.__dict__.get("_archive_queue_presentation")
+        if held is not None and (queue_owner is None or not queue_owner.owns(held[0])):
+            self.__dict__.pop("_archive_queue_presentation", None)
+            held[1].close()
         if accepted is None:
             self._archive_retire_pending_playback()
             origin = self.__dict__.get("_focus_selected_view", "library")
@@ -1030,9 +1594,10 @@ class ArchiveLibraryMixin:
                 "origin": origin,
                 "owner": archive_row_owner(info),
                 "deadline": time.monotonic() + 20.0,
+                "queue_token": queue_token,
             }
         existing = self.__dict__.get("_media_player_window")
-        if existing is not None and not existing.closed:
+        if existing is not None and not existing.closed and queue_token is None:
             try:
                 recorded = recorded_artifact(info)
                 current = ArchivePath.parse(str(self._media_player_source))
@@ -1044,6 +1609,8 @@ class ArchiveLibraryMixin:
                 and current is not None
                 and recorded.key == current.key
             ):
+                if queue_owner is not None:
+                    existing.set_queue_keys(None)
                 existing.focus_existing()
                 self._record_playback_operation(accepted["operation"], "focused")
                 return
@@ -1056,12 +1623,23 @@ class ArchiveLibraryMixin:
             return
         existing = self.__dict__.get("_media_player_window")
         if existing is not None:
-            existing.close()
+            if queue_token is not None and queue_owner is not None:
+                host = existing.release_presentation_host(self._archive_cancel_playback)
+                if host is not None:
+                    self._archive_queue_presentation = (queue_token, host)
+                with queue_owner.retiring_player():
+                    existing.close()
+            else:
+                existing.close()
         self._media_player_launch_generation += 1
         generation = self._media_player_launch_generation
         self._archive_player_origin = accepted["origin"]
         operation = accepted["operation"]
+        self._archive_finish_opening(
+            self.__dict__.get("_archive_opening_operation"), "cancelled"
+        )
         self._archive_opening_operation = operation
+        self._archive_opening_queue_token = queue_token
         snapshot = dict(info)
         panel = self._archive_show_overlay(
             self._focus_views[self._archive_player_origin]
@@ -1071,12 +1649,13 @@ class ArchiveLibraryMixin:
             panel, text="Opening saved media…", style="FocusTitle.TLabel"
         )
         loading.grid(row=1, column=0, pady=24)
-        ttk.Button(
+        ProductButton(
             panel,
             text="Back to browse",
             command=self._archive_cancel_playback,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         ).grid(row=0, column=0, sticky="w", padx=18, pady=12)
+        panel._archive_reveal.start()
 
         def work(cancelled: Any) -> Any:
             path = resolve_library_media_path(snapshot)
@@ -1106,24 +1685,46 @@ class ArchiveLibraryMixin:
         def done(result: Any) -> None:
             if generation != self._media_player_launch_generation or self._closing:
                 return
+            if queue_token is not None and not queue_owner.owns(queue_token):
+                self._archive_finish_opening(operation, "cancelled")
+                return
             if result.error or result.value is None:
-                self._archive_playback_error(
-                    "The saved location could not be read. Reconnect the drive or update its location."
+                from .failure_diagnostics import FailureDiagnostic
+
+                self._fail_library_player_opening(
+                    snapshot,
+                    "The saved location could not be read. Reconnect the drive or update its location.",
+                    FailureDiagnostic(reason="filesystem", stage="playback"),
+                    operation=operation,
+                    launch_generation=generation,
+                    boundary="resolve",
                 )
-                self._record_playback_operation(operation, "failed")
                 return
             path, plan, image = result.value
             if path is None:
+                from .failure_diagnostics import FailureDiagnostic
+
+                self._archive_finish_opening(
+                    operation,
+                    "failed",
+                    FailureDiagnostic(reason="filesystem", stage="playback"),
+                    dimensions={"playback_failure_boundary": "resolve"},
+                )
                 self._archive_missing_media(snapshot, plan)
-                self._record_playback_operation(operation, "failed")
                 return
             from .platform_services import find_runtime_executable
 
             ffmpeg = find_runtime_executable("ffmpeg")
             if not ffmpeg or self.playback_engine is None:
-                self._record_playback_operation(operation, "failed")
-                self._archive_playback_error(
-                    "The bundled playback engine is unavailable. Reinstall VODForge or open the saved location."
+                from .failure_diagnostics import FailureDiagnostic
+
+                self._fail_library_player_opening(
+                    snapshot,
+                    "The player is unavailable. Open the saved location to watch with another player, or reinstall VODForge.",
+                    FailureDiagnostic(reason="dependency_missing", stage="playback"),
+                    operation=operation,
+                    launch_generation=generation,
+                    boundary="dependency",
                 )
                 return
             self._archive_poster_image = image
@@ -1135,24 +1736,73 @@ class ArchiveLibraryMixin:
                 launch_generation=generation,
                 deadline=time.monotonic() + 10.0,
                 operation=operation,
+                queue_token=queue_token,
             )
 
         if not self._archive_submit(
             "playback_resolve",
             work,
             done,
-            on_timeout=lambda: (
-                self._record_playback_operation(operation, "failed"),
-                self._archive_playback_error(
-                    "The saved location did not respond. Reconnect storage and try again."
-                ),
+            on_timeout=lambda: self._fail_library_player_opening(
+                snapshot,
+                "The saved location did not respond. Reconnect storage and try again.",
+                operation=operation,
+                launch_generation=generation,
+                boundary="resolve",
+                retry=True,
             ),
-            on_cancel=lambda: self._record_playback_operation(operation, "cancelled"),
+            on_cancel=lambda: self._archive_finish_opening(operation, "cancelled"),
         ):
+            self._archive_finish_opening(operation, "cancelled")
             self._archive_restore_browser()
 
+    def _archive_finish_opening(
+        self: Any,
+        operation: str | None,
+        action: str,
+        diagnostic: Any = None,
+        *,
+        dimensions: dict[str, str] | None = None,
+    ) -> None:
+        """Retire an opening intent once; a failed opening owns no live player."""
+        if (
+            operation is None
+            or self.__dict__.get("_archive_opening_operation") != operation
+        ):
+            return
+        self._record_playback_operation(
+            operation, action, diagnostic, dimensions=dimensions
+        )
+        queue_owner = self.__dict__.get("watch_queue")
+        queue_token = self.__dict__.pop("_archive_opening_queue_token", None)
+        held = self.__dict__.get("_archive_queue_presentation")
+        if held is not None and held[0] == queue_token:
+            self.__dict__.pop("_archive_queue_presentation", None)
+            held[1].close()
+        if queue_owner is not None and queue_owner.owns(queue_token):
+            queue_owner.cancel(
+                "failed" if action == "failed" else "cancelled",
+                failure_boundary=(dimensions or {}).get(
+                    "playback_failure_boundary", "unknown"
+                ),
+                failure_reason=diagnostic.reason
+                if diagnostic is not None
+                else "open_failed",
+                failure_detail=diagnostic,
+            )
+        self._archive_opening_operation = None
+        self.__dict__.get("_archive_playback_origins", {}).pop(operation, None)
+
     def _archive_cancel_playback(self: Any) -> None:
+        held = self.__dict__.pop("_archive_queue_presentation", None)
+        if held is not None:
+            held[1].close()
+        if queue_owner := self.__dict__.get("watch_queue"):
+            queue_owner.cancel()
         self._archive_retire_pending_playback()
+        self._archive_finish_opening(
+            self.__dict__.get("_archive_opening_operation"), "cancelled"
+        )
         self._media_player_launch_generation += 1
         self._archive_cancel_work()
         existing = self.__dict__.get("_media_player_window")
@@ -1162,29 +1812,69 @@ class ArchiveLibraryMixin:
             self._archive_restore_browser()
 
     def _archive_player_closed(self: Any) -> None:
+        if queue_owner := self.__dict__.get("watch_queue"):
+            queue_owner.player_closed()
         self._media_player_launch_generation += 1
         self._media_player_window = None
         self._media_player_source = None
         self._archive_poster_image = None
         if not self.__dict__.get("_closing"):
             self._archive_restore_browser()
+            watch = self.__dict__.get("focus_watch")
+            if watch is not None:
+                watch._queue_render()
 
-    def _archive_playback_error(self: Any, message: str) -> None:
+    def _archive_playback_error(
+        self: Any,
+        message: str,
+        *,
+        info: Any = None,
+        retry: bool = False,
+    ) -> None:
         panel = self._archive_playback_host
         for child in panel.winfo_children():
             child.destroy()
-        ttk.Button(
+        ProductButton(
             panel,
             text="Back to browse",
             command=self._archive_cancel_playback,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         ).grid(row=0, column=0, sticky="w", padx=18, pady=12)
         ttk.Label(panel, text="Media needs attention", style="FocusTitle.TLabel").grid(
             row=1, column=0, sticky="w", padx=18, pady=10
         )
+        panel.rowconfigure(2, weight=0)
+        panel.rowconfigure(5, weight=1)
         ttk.Label(
             panel, text=message, style="Muted.TLabel", wraplength=780, justify="left"
         ).grid(row=2, column=0, sticky="nw", padx=18, pady=10)
+        if info is not None:
+            captured = dict(info)
+            ttk.Label(
+                panel,
+                text=str(captured.get("title") or "Selected saved video"),
+                style="FocusActiveTitle.TLabel",
+                wraplength=780,
+                justify="left",
+            ).grid(row=3, column=0, sticky="w", padx=18, pady=(8, 12))
+            actions = ttk.Frame(panel, style="FocusShell.TFrame")
+            actions.grid(row=4, column=0, sticky="w", padx=18, pady=(0, 16))
+            ProductButton(
+                actions,
+                text="Open saved location",
+                command=lambda: self._open_selected_saved_location(captured),
+                style="Media.Accent.TButton",
+            ).pack(side="left", padx=(0, 10))
+            if retry:
+                ProductButton(
+                    actions,
+                    text="Try again",
+                    command=lambda: (
+                        self._archive_cancel_playback(),
+                        self._play_selected_library_item(captured),
+                    ),
+                    style="Media.FocusQuiet.TButton",
+                ).pack(side="left")
 
     def _archive_missing_media(self: Any, info: Any, plan: Any) -> None:
         from .library_media_recovery_ui import library_media_recovery_prompt
@@ -1214,35 +1904,96 @@ class ArchiveLibraryMixin:
             self.video_tree.selection_set(str(index))
             self._archive_relink_selected()
 
-        ttk.Button(
+        ProductButton(
             actions, text="Locate moved file", command=locate, style="Accent.TButton"
         ).pack(side="left", padx=(0, 10))
         if prompt.primary_action == "redownload":
-            ttk.Button(
+            ProductButton(
                 actions,
                 text=prompt.primary_label,
                 command=lambda: (
                     self._archive_cancel_playback(),
                     self._accept_library_redownload(plan),
                 ),
-                style="FocusQuiet.TButton",
+                style="Media.FocusQuiet.TButton",
             ).pack(side="left")
         elif prompt.primary_action == "open_forge":
-            ttk.Button(
+            ProductButton(
                 actions,
                 text=prompt.primary_label,
                 command=lambda: (
                     self._archive_cancel_playback(),
                     self._open_missing_media_in_forge(info, plan),
                 ),
-                style="FocusQuiet.TButton",
+                style="Media.FocusQuiet.TButton",
             ).pack(side="left")
+
+    def _archive_player_related_play(self: Any, record: Any) -> None:
+        subject = resolve_archive_subject(self.metadata_items, record)
+        if subject is None:
+            self.status_var.set("That item is no longer in your Library.")
+            return
+        queue_owner = self.__dict__.get("watch_queue")
+        if queue_owner is not None:
+            from .watch_queue import QueueContinuity, queue_media_key
+
+            current = self.__dict__.get("_media_player_window")
+            continuity = (
+                QueueContinuity(
+                    current.playback.snapshot.volume,
+                    current._unmuted_volume,
+                    current._presentation_mode,
+                )
+                if current is not None
+                else None
+            )
+            if queue_owner.jump(queue_media_key(subject[1]), continuity=continuity):
+                return
+        self._play_selected_library_item(dict(subject[1]))
+
+    def _archive_player_details(self: Any, record: Any) -> None:
+        if resolve_archive_subject(self.metadata_items, record) is None:
+            self.status_var.set("That item is no longer in your Library.")
+            return
+        self._archive_cancel_playback()
+        # Closing can reconcile the projection. Resolve the captured owner again.
+        subject = resolve_archive_subject(self.metadata_items, record)
+        if subject is None:
+            self.status_var.set("That item is no longer in your Library.")
+            return
+        self._archive_reveal_library_details(subject[0])
 
     def _archive_watch_details(self: Any, index: int) -> None:
         self._archive_usage("watch", "details")
-        self._select_record_in_library({"metadata_index": index})
+        self._archive_reveal_library_details(index)
+
+    def _archive_reveal_library_details(self: Any, index: int) -> None:
+        from_folders = self.__dict__.get("_legacy_archive_requested", False)
+        if from_folders:
+            self.video_tree.selection_set(str(index))
+            self._display_selected_metadata(index)
+        else:
+            self._select_record_in_library({"metadata_index": index})
         self._select_focus_view("library")
         self._archive_inspector_expanded = True
+        scene = self.__dict__.get("library_scene")
+        if scene is not None:
+            self._legacy_archive_requested = False
+            if from_folders:
+                values = tuple(self._archive_variant_choice.cget("values"))
+                versions = tuple(
+                    (archive_row_owner(self.metadata_items[item]), label)
+                    for item, label in zip(
+                        self._archive_variant_indices, values, strict=True
+                    )
+                )
+                scene.show_details(
+                    index,
+                    on_return=lambda: self._library_scene_action("folders", None),
+                    versions=versions,
+                )
+            else:
+                scene.show_details(index)
         self._apply_focus_layout(force=True)
 
     def _archive_update_versions(self: Any, index: int) -> None:
@@ -1251,9 +2002,20 @@ class ArchiveLibraryMixin:
             *media_source_identity(record),
             str(record.get("playlist_id") or ""),
         )
+        component = next(
+            (
+                item
+                for item in self.video_tree.model.components
+                if index in item.indices
+            ),
+            None,
+        )
+        # Library cards group exports by source folder as well as media identity.
+        # A version selector belongs to that card, not another saved copy elsewhere.
+        candidates = component.indices if component is not None else (index,)
         indices = tuple(
             candidate
-            for candidate in self.video_tree.model.visible
+            for candidate in candidates
             if (
                 *media_source_identity(self.metadata_items[candidate]),
                 str(self.metadata_items[candidate].get("playlist_id") or ""),
@@ -1280,8 +2042,18 @@ class ArchiveLibraryMixin:
         position = values.index(selected) if selected in values else -1
         indices = self.__dict__.get("_archive_variant_indices", ())
         if 0 <= position < len(indices):
-            self._archive_usage("archive", "version_selected")
             index = indices[position]
-            self.video_tree.model.reveal(index)
+            if not any(
+                index in item.indices for item in self.video_tree.model.components
+            ):
+                # A queued selection can outlive filtering/removal. Keep the
+                # current subject and restore its current choices without navigating.
+                selected = self.video_tree.model.selected_index()
+                if selected is not None:
+                    self._archive_update_versions(selected)
+                return
+            self._archive_usage("archive", "version_selected")
+            # Choosing an export version changes the selected subject, not the
+            # user's folder/mode/page. Back must return to that same browse view.
             self.video_tree.selection_set(str(index))
             self._display_selected_metadata(index)

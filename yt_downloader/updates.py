@@ -24,7 +24,7 @@ from typing import Any
 
 import certifi
 
-from .windows_update_recovery import RECOVERY_FUNCTIONS
+from .platforms.windows.update_recovery import RECOVERY_FUNCTIONS
 
 GITHUB_REPOSITORY = "SnowfallHD/vodforge"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"

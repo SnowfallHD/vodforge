@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -32,9 +33,10 @@ LIBRARY_DESCRIPTION_STRESS_DESCRIPTION = (
 )
 
 
-def _run(command: list[str], *, timeout: float = 180) -> None:
+def _run(command: list[str], *, timeout: float = 180, cwd: Path | None = None) -> None:
     completed = subprocess.run(
         command,
+        cwd=cwd,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -163,6 +165,48 @@ def _generate_hls(
     )
 
 
+def _dash_fixture_resources(manifest: Path) -> tuple[Path, ...]:
+    """Validate the bounded static SegmentTemplate emitted for our audio corpus."""
+    ns = {"d": "urn:mpeg:dash:schema:mpd:2011"}
+    document = ET.parse(manifest).getroot()
+    resources: list[Path] = []
+    for representation in document.findall(".//d:Representation", ns):
+        template = representation.find("d:SegmentTemplate", ns)
+        if template is None:
+            raise ValueError("Audio fixture lacks its segment template")
+        identity = representation.attrib["id"]
+        names = [
+            template.attrib["initialization"].replace("$RepresentationID$", identity)
+        ]
+        number = int(template.attrib.get("startNumber", "1"))
+        for segment in template.findall("d:SegmentTimeline/d:S", ns):
+            repeat = int(segment.attrib.get("r", "0"))
+            if not 0 <= repeat <= 1000:
+                raise ValueError("Audio fixture requires a bounded static timeline")
+            for _ in range(repeat + 1):
+                names.append(
+                    template.attrib["media"]
+                    .replace("$RepresentationID$", identity)
+                    .replace("$Number%05d$", f"{number:05d}")
+                    .replace("$Number$", str(number))
+                )
+                number += 1
+        if len(names) < 2:
+            raise ValueError("Audio fixture lacks media segments")
+        for name in names:
+            resource = (manifest.parent / name).resolve()
+            if "$" in name or not resource.is_relative_to(manifest.parent.resolve()):
+                raise ValueError(
+                    "Audio fixture resource escapes its manifest directory"
+                )
+            if not resource.is_file() or resource.stat().st_size == 0:
+                raise ValueError(f"Audio fixture resource missing or empty: {name}")
+            resources.append(resource)
+    if not resources:
+        raise ValueError("Audio fixture lacks representations")
+    return tuple(resources)
+
+
 def _generate_original_audio_fixtures(ffmpeg: str, source: Path, root: Path) -> None:
     aac = root / "original-aac"
     aac.mkdir(parents=True, exist_ok=True)
@@ -196,7 +240,7 @@ def _generate_original_audio_fixtures(ffmpeg: str, source: Path, root: Path) -> 
         '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=200000,CODECS="mp4a.40.2"\nmedia.m3u8\n',
         encoding="utf-8",
     )
-    opus = root / "original-opus"
+    opus = (root / "original-opus").resolve()
     opus.mkdir(parents=True, exist_ok=True)
     if not (opus / "manifest.mpd").exists():
         _run(
@@ -208,7 +252,7 @@ def _generate_original_audio_fixtures(ffmpeg: str, source: Path, root: Path) -> 
                 "-loglevel",
                 "error",
                 "-i",
-                str(source),
+                str(source.resolve()),
                 "-map",
                 "0:a:0",
                 "-c:a",
@@ -222,8 +266,12 @@ def _generate_original_audio_fixtures(ffmpeg: str, source: Path, root: Path) -> 
                 "-dash_segment_type",
                 "webm",
                 str(opus / "manifest.mpd"),
-            ]
+            ],
+            # DASH muxers can place relative chunk names in the working directory.
+            # Keep every generated resource beside its manifest on every platform.
+            cwd=opus,
         )
+    _dash_fixture_resources(opus / "manifest.mpd")
 
 
 def generate_fixtures(root: Path, *, deep: bool = False) -> dict[str, Any]:

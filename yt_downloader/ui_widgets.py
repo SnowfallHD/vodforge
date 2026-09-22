@@ -9,17 +9,23 @@ from pathlib import Path
 from tkinter import ttk
 from typing import Any, Literal, Protocol, cast
 
+from . import ui_scrolling as _scrolling
 from .choice_popover import ChoicePopover
 from .models import OutputType
-from .ui_chrome import RoundedFieldBorder, accent_hover_color
+from .ui_chrome import (
+    RoundedFieldBorder,
+    accent_hover_color,
+    field_border_image,
+    prototype_entry_style,
+)
 from .ui_layout import (
-    accumulated_row_scroll,
-    focus_wheel_pixels,
-    pixel_scroll_target,
+    compact_destination_path,
+    ellipsize_wrapped_text,
     pixel_table_visible_row_window,
     resized_table_column_width,
     responsive_table_stretch_indices,
     stretched_table_column_widths,
+    window_logical_metrics,
 )
 from .ui_theme import (
     FONT_UI,
@@ -42,7 +48,7 @@ class _ImageDrawModule(Protocol):
 
 
 class _ImageTkModule(Protocol):
-    def PhotoImage(self, image: Any) -> Any: ...
+    def PhotoImage(self, image: Any, **kwargs: Any) -> Any: ...
 
 
 Image: _ImageModule | None
@@ -62,122 +68,22 @@ else:
     ImageTk = cast(_ImageTkModule, _PILImageTk)
 
 
-class _VerticalScroller(Protocol):
-    tk: Any
-
-
 def set_user_scroll_locked(scroller: Any, locked: bool) -> None:
     """Record whether a live log reader has taken viewport ownership."""
     scroller._vodforge_user_scroll_locked = locked
 
 
-def touchpad_scroll_deltas(
-    widget: tk.Misc | _VerticalScroller,
-    packed_delta: float,
-) -> tuple[float, float]:
-    """Decode Tk 9's packed macOS precision-scroll delta into x/y motion."""
-    try:
-        raw_x, raw_y = widget.tk.call("tk::PreciseScrollDeltas", packed_delta)
-        return float(raw_x), float(raw_y)
-    except (AttributeError, TypeError, ValueError, tk.TclError):
-        return 0.0, 0.0
+touchpad_scroll_deltas = _scrolling.touchpad_scroll_deltas
 
 
 def bind_smooth_vertical_wheel(
-    scroller: tk.Text | tk.Canvas,
+    scroller: Any,
     *targets: tk.Misc,
     mode: str = "pixels",
     row_pixels: int = 30,
 ) -> None:
-    """Preserve trackpad deltas instead of letting Tk amplify them into jumps."""
-    if mode not in {"pixels", "increments", "rows"}:
-        raise ValueError(f"Unsupported smooth-scroll mode: {mode}")
-    wheel_targets = targets or (scroller,)
-    remainder = 0.0
-
-    def scroll_pixels(pixels: int) -> str:
-        nonlocal remainder
-        if not pixels:
-            return "break"
-        # A live log may append while a precision gesture is still moving.
-        # Record the reader's intent before moving the viewport so a writer
-        # cannot mistake a near-tail position for permission to snap back.
-        if pixels < 0:
-            set_user_scroll_locked(scroller, True)
-        if mode == "rows":
-            rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
-            if rows:
-                scroller.yview_scroll(rows, "units")
-            if pixels > 0:
-                try:
-                    _first, last = scroller.yview()
-                    if float(last) >= 0.995:
-                        set_user_scroll_locked(scroller, False)
-                except (AttributeError, TypeError, ValueError, tk.TclError):
-                    pass
-            return "break"
-        if mode == "pixels":
-            if isinstance(scroller, tk.Text):
-                try:
-                    # Native Text pixel scrolling does not depend on yview
-                    # fractions that may be stale while wrapped display-line
-                    # metrics settle after insertion or a resize.
-                    scroller.yview_scroll(pixels, "pixels")
-                except tk.TclError:
-                    rows, remainder = accumulated_row_scroll(
-                        remainder, pixels, row_pixels
-                    )
-                    if rows:
-                        scroller.yview_scroll(rows, "units")
-            else:
-                viewport_height = max(1, scroller.winfo_height())
-                try:
-                    first, last = scroller.yview()
-                    target = pixel_scroll_target(
-                        float(first), float(last), viewport_height, pixels
-                    )
-                    if target != float(first):
-                        scroller.yview_moveto(target)
-                except (AttributeError, TypeError, ValueError, tk.TclError):
-                    pass
-            if pixels > 0:
-                try:
-                    _first, last = scroller.yview()
-                    if float(last) >= 0.995:
-                        set_user_scroll_locked(scroller, False)
-                except (AttributeError, TypeError, ValueError, tk.TclError):
-                    pass
-            return "break"
-        try:
-            scroller.yview_scroll(pixels, "units")
-        except tk.TclError:
-            rows, remainder = accumulated_row_scroll(remainder, pixels, row_pixels)
-            if rows:
-                scroller.yview_scroll(rows, "units")
-        if pixels > 0:
-            try:
-                _first, last = scroller.yview()
-                if float(last) >= 0.995:
-                    set_user_scroll_locked(scroller, False)
-            except (AttributeError, TypeError, ValueError, tk.TclError):
-                pass
-        return "break"
-
-    def on_wheel(event: tk.Event[Any]) -> str:
-        return scroll_pixels(focus_wheel_pixels(getattr(event, "delta", 0)))
-
-    def on_touchpad_scroll(event: tk.Event[Any]) -> str:
-        _delta_x, delta_y = touchpad_scroll_deltas(scroller, getattr(event, "delta", 0))
-        return scroll_pixels(focus_wheel_pixels(delta_y))
-
-    for target in wheel_targets:
-        target.bind("<MouseWheel>", on_wheel, add="+")
-        target.bind("<Button-4>", lambda _event: scroll_pixels(-36), add="+")
-        target.bind("<Button-5>", lambda _event: scroll_pixels(36), add="+")
-        try:
-            target.bind("<TouchpadScroll>", on_touchpad_scroll, add="+")
-        except tk.TclError:
-            pass
+    """Compatibility entrance to the shared owned scrolling implementation."""
+    _scrolling.bind_smooth_scroll(scroller, *targets, mode=mode, row_pixels=row_pixels)
 
 
 def reveal_toplevel(popup: tk.Toplevel, geometry: str) -> None:
@@ -193,14 +99,14 @@ class ProductEntry(ttk.Entry):
     def __init__(self, parent: tk.Misc, **kwargs: Any) -> None:
         super().__init__(
             parent,
-            style="Product.TEntry",
-            font=FONT_UI,
+            style=prototype_entry_style(parent),
+            font=window_logical_metrics(parent).font(FONT_UI),
             **kwargs,
         )
 
     def apply_theme(self) -> None:
         # The interpreter's ProductChromeOwner updates shared images in place.
-        self.configure(style="Product.TEntry")
+        self.configure(style=prototype_entry_style(self))
 
 
 def _ui_icon_path(name: str) -> Path:
@@ -209,23 +115,225 @@ def _ui_icon_path(name: str) -> Path:
     return root / "assets" / "icons" / "lucide" / f"{name}.png"
 
 
+class _KeyboardRouter:
+    """One dispatch per keypress within one real toplevel."""
+
+    def __init__(self, top: Any) -> None:
+        self.top = top
+        self.scopes: list[KeyboardScope] = []
+        self.bindings: dict[str, str] = {}
+
+    def register(self, scope: KeyboardScope) -> None:
+        self.scopes.append(scope)
+        for sequence in scope.actions:
+            if sequence not in self.bindings:
+                self.bindings[sequence] = self.top.bind(
+                    sequence,
+                    lambda event, key=sequence: self.dispatch(key, event),
+                    add="+",
+                )
+
+    def remove(self, scope: KeyboardScope) -> None:
+        if scope in self.scopes:
+            self.scopes.remove(scope)
+        for sequence, token in tuple(self.bindings.items()):
+            if not any(sequence in item.actions for item in self.scopes):
+                try:
+                    self.top.unbind(sequence, token)
+                except tk.TclError:
+                    pass
+                del self.bindings[sequence]
+
+    def dispatch(self, sequence: str, event: Any) -> str | None:
+        candidates = []
+        for position, scope in enumerate(tuple(self.scopes)):
+            distance = scope.distance(event.widget)
+            if sequence in scope.actions and distance is not None:
+                candidates.append((distance, -position, scope))
+        for _, _, scope in sorted(candidates, key=lambda item: item[:2]):
+            try:
+                editing = event.widget.winfo_class() in {
+                    "Entry",
+                    "TEntry",
+                    "Text",
+                    "Listbox",
+                    "TCombobox",
+                    "Spinbox",
+                    "TSpinbox",
+                }
+                if editing and sequence not in scope.editing:
+                    return None
+                # Capture exactly one action before it can destroy/pop another scope.
+                action = scope.actions[sequence]
+                action()
+                return "break"
+            except tk.TclError:
+                return "break"
+        return None
+
+
+class KeyboardScope:
+    """Shortcuts scoped by widget ancestry, visibility and real modal ownership."""
+
+    def __init__(
+        self,
+        owner: tk.Misc,
+        actions: Mapping[str, Callable[[], Any]],
+        *,
+        editing: Iterable[str] = ("<Escape>",),
+        top_level_fallback: bool = False,
+    ) -> None:
+        self.owner = owner
+        self.actions = dict(actions)
+        self.editing = frozenset(editing)
+        self.top_level_fallback = top_level_fallback
+        self.closed = False
+        top: Any = owner.winfo_toplevel()
+        router = getattr(top, "_vodforge_keyboard_router", None)
+        if router is None:
+            router = _KeyboardRouter(top)
+            top._vodforge_keyboard_router = router
+        self.router = router
+        router.register(self)
+        self.destroy_binding = owner.bind("<Destroy>", self._destroyed, add="+")
+
+    def distance(self, widget: Any) -> int | None:
+        if self.closed:
+            return None
+        try:
+            if not self.owner.winfo_ismapped():
+                return None
+            grab = self.owner.grab_current()
+            if (
+                grab is not None
+                and grab.winfo_toplevel() is not self.owner.winfo_toplevel()
+            ):
+                return None
+        except tk.TclError:
+            return None
+        distance = 0
+        current = widget
+        while current is not None:
+            if current is self.owner:
+                return distance
+            current = getattr(current, "master", None)
+            distance += 1
+        return 10000 if self.top_level_fallback else None
+
+    def _destroyed(self, event: Any) -> None:
+        if event.widget is self.owner:
+            self.close()
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        self.router.remove(self)
+        try:
+            self.owner.unbind("<Destroy>", self.destroy_binding)
+        except tk.TclError:
+            pass
+
+
+class PlaceholderEntry(ProductEntry):
+    """An empty-field hint, never stored as content, with an unobscured caret."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        textvariable: tk.StringVar,
+        placeholder: str,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(parent, textvariable=textvariable, **kwargs)
+        self._placeholder_disposed = False
+        self._placeholder_variable = textvariable
+        self._placeholder = tk.Label(
+            self,
+            text=placeholder,
+            font=self.cget("font"),
+            fg=THEME["subtle"],
+            bg=THEME["surface"],
+            bd=0,
+            padx=0,
+            pady=0,
+            cursor="xterm",
+        )
+        self._placeholder.bind("<Button-1>", self._focus_placeholder)
+        self._placeholder_trace = textvariable.trace_add(
+            "write", self._sync_placeholder
+        )
+        self.bind("<Configure>", self._sync_placeholder, add="+")
+        self.bind("<FocusIn>", self._sync_placeholder, add="+")
+        self.bind("<FocusOut>", self._sync_placeholder, add="+")
+        self.bind("<Destroy>", self._dispose_placeholder, add="+")
+        self._sync_placeholder()
+
+    def _focus_placeholder(self, _event: Any) -> str:
+        if self._placeholder_disposed:
+            return "break"
+        self.focus_set()
+        self.icursor(0)
+        return "break"
+
+    def _sync_placeholder(self, *_args: Any) -> None:
+        if self._placeholder_disposed:
+            return
+        self._placeholder.configure(
+            font=self.cget("font"),
+            bg=THEME["focus_surface"] if self.focus_get() is self else THEME["surface"],
+        )
+        if self._placeholder_variable.get():
+            self._placeholder.place_forget()
+        else:
+            self._placeholder.place(
+                x=window_logical_metrics(self).px(18), rely=0.5, anchor="w"
+            )
+
+    def _dispose_placeholder(self, event: Any) -> None:
+        if event.widget is self and not self._placeholder_disposed:
+            self._placeholder_disposed = True
+            try:
+                self._placeholder_variable.trace_remove(
+                    "write", self._placeholder_trace
+                )
+            except tk.TclError:
+                pass
+            self.__dict__.pop("_placeholder_variable", None)
+
+    def apply_theme(self) -> None:
+        if self._placeholder_disposed:
+            return
+        super().apply_theme()
+        self._placeholder.configure(fg=THEME["subtle"])
+        self._sync_placeholder()
+
+
 def _tinted_ui_icon(
     name: str,
     *,
     size: tuple[int, int],
     color: str,
+    widget: tk.Misc | None = None,
 ) -> Any | None:
-    """Load one bundled Lucide glyph as a palette-colored Tk image."""
+    """Load one bundled Lucide glyph at its owning window backing density."""
 
     if Image is None or ImageTk is None:
         return None
     try:
+        from .platform_services import create_surface_image, surface_backing_scale
+
+        density = surface_backing_scale(widget) if widget is not None else 1
+        physical_size = tuple(side * density for side in size)
         with Image.open(_ui_icon_path(name)) as source:
             alpha = source.convert("RGBA").getchannel("A")
             resampling = getattr(Image, "Resampling", Image)
-            alpha = alpha.resize(size, resampling.LANCZOS)
-        rendered = Image.new("RGBA", size, color)
+            alpha = alpha.resize(physical_size, resampling.LANCZOS)
+        rendered = Image.new("RGBA", physical_size, color)
         rendered.putalpha(alpha)
+        if widget is not None:
+            return create_surface_image(widget, rendered, density, logical_size=size)[0]
         return ImageTk.PhotoImage(rendered)
     except (OSError, ValueError, tk.TclError):
         return None
@@ -235,18 +343,22 @@ class ChoiceMenu(tk.Canvas):
     """Shared theme-owned menu rows; no platform Listbox rendering."""
 
     def __init__(self, parent: tk.Misc, values: tuple[str, ...]) -> None:
+        self._metrics = window_logical_metrics(parent)
+        self._font = self._metrics.font(FONT_UI)
         self.values = values
         self.selected = 0
         self.top = 0
         self.rows = min(8, len(values))
-        self.row_height = 34
+        self.row_height = self._metrics.px(34)
         self._paint_snapshot: tuple[Any, ...] | None = None
-        font = tkfont.Font(font=FONT_UI)
-        width = max((font.measure(value) for value in values), default=80) + 52
+        font = tkfont.Font(font=self._font)
+        width = max(
+            (font.measure(value) for value in values), default=self._metrics.px(80)
+        ) + self._metrics.px(52)
         super().__init__(
             parent,
             width=width,
-            height=self.rows * self.row_height + 12,
+            height=self.rows * self.row_height + self._metrics.px(12),
             bg=THEME["bg"],
             highlightthickness=0,
             bd=0,
@@ -272,7 +384,7 @@ class ChoiceMenu(tk.Canvas):
     def index_at(self, x: int, y: int) -> int | None:
         if not 0 <= x < self.winfo_width():
             return None
-        index = self.top + (y - 6) // self.row_height
+        index = self.top + (y - self._metrics.px(6)) // self.row_height
         if self.top <= index < min(len(self.values), self.top + self.rows):
             return index
         return None
@@ -304,43 +416,46 @@ class ChoiceMenu(tk.Canvas):
         self._paint()
 
     def _paint(self) -> None:
-        from PIL import Image, ImageDraw, ImageTk
+        from PIL import ImageTk
 
         width = max(self.winfo_width(), self.winfo_reqwidth())
-        height = self.rows * self.row_height + 12
+        height = self.rows * self.row_height + self._metrics.px(12)
         snapshot = (width, height, self.selected, self.top, tuple(THEME.items()))
         if snapshot == self._paint_snapshot:
             return
         self._paint_snapshot = snapshot
-        scale = 2
-        surface = Image.new("RGB", (width * scale, height * scale), THEME["bg"])
-        draw = ImageDraw.Draw(surface)
-        draw.rounded_rectangle(
-            (1, 1, width * scale - 2, height * scale - 2),
-            radius=20,
+        from .ui_chrome import ttk_surface_image
+
+        surface = ttk_surface_image(
+            width,
+            height=height,
             fill=THEME["surface_2"],
-            outline=THEME["border"],
-            width=2,
+            edge=THEME["border"],
+            depth=0.55,
+            unit_scale=self._metrics.scale,
         )
         row = self.selected - self.top
         if 0 <= row < self.rows:
-            y = 6 + row * self.row_height
-            draw.rounded_rectangle(
-                (10, y * scale, width * scale - 10, (y + self.row_height) * scale),
-                radius=12,
+            y = self._metrics.px(6) + row * self.row_height
+            selected = ttk_surface_image(
+                width - self._metrics.px(10),
+                height=self.row_height,
                 fill=THEME["accent_surface"],
+                edge=THEME["border"],
+                recessed=True,
+                depth=0.6,
+                unit_scale=self._metrics.scale,
             )
-        self._menu_image = ImageTk.PhotoImage(
-            surface.resize((width, height), Image.Resampling.LANCZOS), master=self
-        )
+            surface.alpha_composite(selected, (self._metrics.px(5), y))
+        self._menu_image = ImageTk.PhotoImage(surface, master=self)
         self.delete("all")
         self.create_image(0, 0, image=self._menu_image, anchor="nw")
         for row, index in enumerate(
             range(self.top, min(len(self.values), self.top + self.rows))
         ):
             label = self.values[index]
-            font = tkfont.Font(font=FONT_UI)
-            available = max(0, width - 36)
+            font = tkfont.Font(font=self._font)
+            available = max(0, width - self._metrics.px(36))
             if font.measure(label) > available:
                 low, high = 0, len(label)
                 while low < high:
@@ -351,13 +466,18 @@ class ChoiceMenu(tk.Canvas):
                         high = mid - 1
                 label = label[:low] + "…"
             self.create_text(
-                18,
-                6 + row * self.row_height + self.row_height / 2,
+                self._metrics.px(18),
+                self._metrics.px(6) + row * self.row_height + self.row_height / 2,
                 text=label,
                 anchor="w",
                 fill=THEME["text"],
-                font=FONT_UI,
+                font=self._font,
             )
+
+    def apply_theme(self) -> None:
+        self.configure(bg=THEME["bg"])
+        self._paint_snapshot = None
+        self._paint()
 
 
 class ChoiceDropdown(tk.Frame):
@@ -382,6 +502,8 @@ class ChoiceDropdown(tk.Frame):
             highlightcolor=THEME["border"],
             takefocus=1,
         )
+        self._metrics = window_logical_metrics(self)
+        self._disposed = False
         self.variable = textvariable
         self._values = tuple(str(value) for value in values)
         self._state = str(state)
@@ -403,7 +525,7 @@ class ChoiceDropdown(tk.Frame):
                 relief="flat",
                 bd=0,
                 highlightthickness=0,
-                font=FONT_UI,
+                font=self._metrics.font(FONT_UI),
             )
         else:
             self._field = tk.Label(
@@ -415,22 +537,32 @@ class ChoiceDropdown(tk.Frame):
                 fg=THEME["text"],
                 bd=0,
                 highlightthickness=0,
-                font=FONT_UI,
+                font=self._metrics.font(FONT_UI),
             )
         self.columnconfigure(0, weight=1)
-        self._field.grid(row=0, column=0, sticky="nsew", padx=(10, 2), pady=8)
+        self._field.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
+            padx=(self._metrics.px(10), self._metrics.px(2)),
+            pady=self._metrics.px(8),
+        )
 
         self._chevron = tk.Canvas(
             self,
-            width=18,
-            height=18,
+            width=self._metrics.px(18),
+            height=self._metrics.px(18),
             bg=THEME["surface"],
             bd=0,
             highlightthickness=0,
             takefocus=False,
         )
-        self._chevron.grid(row=0, column=1, padx=(2, 8))
-        self._chevron_item = self._chevron.create_image(9, 9, anchor="center")
+        self._chevron.grid(
+            row=0, column=1, padx=(self._metrics.px(2), self._metrics.px(8))
+        )
+        self._chevron_item = self._chevron.create_image(
+            self._metrics.px(9), self._metrics.px(9), anchor="center"
+        )
 
         for widget in (self, self._field, self._chevron):
             widget.bind("<Enter>", lambda _event: self._set_hovered(True), add="+")
@@ -481,7 +613,12 @@ class ChoiceDropdown(tk.Frame):
         options = dict(cnf or {})
         options.update(kwargs)
         if "values" in options:
-            self._values = tuple(str(value) for value in options.pop("values"))
+            values = tuple(str(value) for value in options.pop("values"))
+            if values != self._values:
+                # The menu is a snapshot of these options. Retire it before an
+                # already queued selection can commit against a new choice set.
+                self._close_popover()
+                self._values = values
         if "width" in options:
             self._width = max(4, int(options.pop("width")))
             self._field.configure(width=self._width)
@@ -533,6 +670,8 @@ class ChoiceDropdown(tk.Frame):
         return "break"
 
     def open_popover(self) -> None:
+        if self._disposed:
+            return
         if self._state == "disabled" or not self._values:
             return
         if self._popover is not None:
@@ -608,6 +747,14 @@ class ChoiceDropdown(tk.Frame):
         try:
             focused_widget = self.focus_get()
             focused = focused_widget in {self, self._field} or self._popover is not None
+            background = (
+                THEME["focus_surface"]
+                if focused and self._state != "disabled"
+                else THEME["surface"]
+            )
+            super().configure(bg=background)
+            self._field.configure(bg=background)
+            self._chevron.configure(bg=background)
             if self._chrome is not None:
                 self._chrome.request(
                     focused, self._hovered and self._state != "disabled"
@@ -618,7 +765,7 @@ class ChoiceDropdown(tk.Frame):
     def _render_chevron(self) -> None:
         self._chevron_image = _tinted_ui_icon(
             "chevron-down",
-            size=(14, 14),
+            size=(self._metrics.px(14), self._metrics.px(14)),
             color=THEME["subtle"] if self._state == "disabled" else THEME["muted"],
         )
         if self._chevron_image is not None:
@@ -626,20 +773,18 @@ class ChoiceDropdown(tk.Frame):
         else:  # pragma: no cover - packaged runtime includes Pillow and assets
             self._chevron.delete("fallback")
             self._chevron.create_line(
-                [4, 7, 9, 12, 14, 7],
+                [self._metrics.px(n) for n in (4, 7, 9, 12, 14, 7)],
                 fill=THEME["muted"],
-                width=2,
+                width=self._metrics.px(2),
                 tags="fallback",
             )
 
     def _sync_palette(self) -> None:
         try:
             disabled = self._state == "disabled"
-            background = (
-                THEME["surface_2"]
-                if self._hovered and not disabled and not self._inline
-                else THEME["surface"]
-            )
+            # Hover changes the shared field's inset contour, not its face
+            # color. Keyboard focus remains the separately visible state.
+            background = THEME["surface"]
             foreground = THEME["subtle"] if disabled else THEME["text"]
             super().configure(bg=background)
             self._field.configure(bg=background, fg=foreground)
@@ -653,8 +798,11 @@ class ChoiceDropdown(tk.Frame):
         self._sync_palette()
 
     def _destroyed(self, event: tk.Event[Any]) -> None:
-        if event.widget is self:
+        if event.widget is self and not self._disposed:
+            self._disposed = True
             self._close_popover()
+            self._chevron_image = None
+            self.__dict__.pop("variable", None)
 
 
 class ModernCheckbox(tk.Frame):
@@ -668,43 +816,47 @@ class ModernCheckbox(tk.Frame):
         variable: tk.BooleanVar,
         command: Callable[[], object] | None = None,
     ) -> None:
+        self._metrics = window_logical_metrics(parent)
         super().__init__(
             parent,
             bg=THEME["bg"],
             bd=0,
-            highlightthickness=1,
+            highlightthickness=self._metrics.px(1),
             highlightbackground=THEME["bg"],
             takefocus=1,
             cursor="hand2",
         )
+        self._disposed = False
         self.variable = variable
         self._text = str(text)
         self._command = command
         self._state = "normal"
         self._hovered = False
+        self._pointer_admission: tuple[object, object] | None = None
         self._check_image: Any | None = None
         self._last_render_snapshot: tuple[object, ...] | None = None
         self._box = tk.Canvas(
             self,
-            width=18,
-            height=18,
+            width=self._metrics.px(18),
+            height=self._metrics.px(18),
             bg=THEME["bg"],
             bd=0,
             highlightthickness=0,
         )
-        self._box.pack(side="left", padx=(0, 7))
+        self._box.pack(side="left", padx=(0, self._metrics.px(7)))
         self._label = tk.Label(
             self,
             text=self._text,
             bg=THEME["bg"],
             fg=THEME["text"],
-            font=FONT_UI,
+            font=self._metrics.font(FONT_UI),
             bd=0,
             highlightthickness=0,
         )
         self._label.pack(side="left")
         for widget in (self, self._box, self._label):
-            widget.bind("<Button-1>", self._toggle_from_event, add="+")
+            widget.bind("<Button-1>", self._pointer_press, add="+")
+            widget.bind("<ButtonRelease-1>", self._pointer_release, add="+")
             widget.bind("<Enter>", lambda _event: self._set_hovered(True), add="+")
             widget.bind("<Leave>", lambda _event: self._set_hovered(False), add="+")
         self.bind("<Return>", self._toggle_from_event, add="+")
@@ -713,6 +865,7 @@ class ModernCheckbox(tk.Frame):
         self.bind("<FocusOut>", lambda _event: self._render(), add="+")
         self._trace_id = variable.trace_add("write", lambda *_args: self._render())
         self.bind("<Destroy>", self._destroyed, add="+")
+        self.bind("<Unmap>", self._retire_pointer, add="+")
         self._render()
 
     def state(self, statespec: Iterable[str] | None = None) -> tuple[str, ...]:
@@ -720,6 +873,7 @@ class ModernCheckbox(tk.Frame):
             return ("disabled",) if self._state == "disabled" else ()
         requested = tuple(statespec)
         if "disabled" in requested:
+            self._pointer_admission = None
             self._state = "disabled"
         elif "!disabled" in requested:
             self._state = "normal"
@@ -745,6 +899,8 @@ class ModernCheckbox(tk.Frame):
         options.update(kwargs)
         if "state" in options:
             self._state = str(options.pop("state"))
+            if self._state == "disabled":
+                self._pointer_admission = None
         if "text" in options:
             self._text = str(options.pop("text"))
             self._label.configure(text=self._text)
@@ -754,8 +910,37 @@ class ModernCheckbox(tk.Frame):
 
     config = configure
 
+    def _retire_pointer(self, _event: Any = None) -> None:
+        self._pointer_admission = None
+
+    def _pointer_press(self, _event: tk.Event[Any]) -> str:
+        if self._disposed:
+            return "break"
+        self._pointer_admission = (
+            (self.variable, self._command) if self._state != "disabled" else None
+        )
+        self.focus_set()
+        return "break"
+
+    def _pointer_release(self, event: tk.Event[Any]) -> str:
+        if self._disposed:
+            return "break"
+        admitted, self._pointer_admission = self._pointer_admission, None
+        # Events originate from the frame, checkmark canvas or text label.
+        x = event.widget.winfo_rootx() + event.x - self.winfo_rootx()
+        y = event.widget.winfo_rooty() + event.y - self.winfo_rooty()
+        if (
+            admitted == (self.variable, self._command)
+            and self._state != "disabled"
+            and self.winfo_viewable()
+            and 0 <= x < self.winfo_width()
+            and 0 <= y < self.winfo_height()
+        ):
+            self._toggle_from_event(event)
+        return "break"
+
     def _toggle_from_event(self, _event: tk.Event[Any]) -> str:
-        if self._state != "disabled":
+        if not self._disposed and self._state != "disabled":
             self.variable.set(not bool(self.variable.get()))
             if self._command is not None:
                 self._command()
@@ -767,6 +952,8 @@ class ModernCheckbox(tk.Frame):
         self._render()
 
     def _render(self) -> None:
+        if self._disposed:
+            return
         try:
             selected = bool(self.variable.get())
             disabled = self._state == "disabled"
@@ -785,16 +972,12 @@ class ModernCheckbox(tk.Frame):
             border = (
                 THEME["subtle"]
                 if disabled
-                else THEME["accent"]
-                if selected or self._hovered
+                else THEME["selection"]
+                if selected
                 else THEME["border"]
             )
             fill = (
-                THEME["accent_dark"]
-                if selected and not disabled
-                else THEME["surface_2"]
-                if self._hovered or focused
-                else THEME["surface"]
+                THEME["accent_dark"] if selected and not disabled else THEME["surface"]
             )
             super().configure(
                 bg=background,
@@ -809,15 +992,58 @@ class ModernCheckbox(tk.Frame):
                 cursor="arrow" if disabled else "hand2",
             )
             self._box.delete("all")
-            self._box.create_rectangle(2, 2, 16, 16, fill=fill, outline=border, width=1)
+            from .ui_chrome import ttk_surface_image
+
+            if ImageTk is not None:
+                from .platform_services import (
+                    create_surface_image,
+                    surface_backing_scale,
+                )
+
+                size = self._metrics.px(16)
+                density = surface_backing_scale(self)
+                bitmap = ttk_surface_image(
+                    size,
+                    fill=fill,
+                    edge=THEME["focus"] if focused else border,
+                    recessed=selected or self._hovered,
+                    depth=0.2 if disabled else 0.62 if self._hovered else 0.75,
+                    radius=4,
+                    density=density,
+                    unit_scale=self._metrics.scale,
+                )
+                self._box_surface, _ = create_surface_image(
+                    self,
+                    bitmap,
+                    density,
+                    logical_size=(size, size),
+                    existing=getattr(self, "_box_surface", None),
+                )
+                self._box.create_image(
+                    self._metrics.px(1),
+                    self._metrics.px(1),
+                    image=self._box_surface,
+                    anchor="nw",
+                )
+            else:
+                self._box.create_rectangle(
+                    *(self._metrics.px(n) for n in (2, 2, 16, 16)),
+                    fill=fill,
+                    outline=border,
+                )
             if selected:
                 self._check_image = _tinted_ui_icon(
                     "check",
-                    size=(12, 12),
-                    color="#ffffff" if not disabled else THEME["muted"],
+                    size=(self._metrics.px(12), self._metrics.px(12)),
+                    widget=self,
+                    color=THEME["selection"] if not disabled else THEME["subtle"],
                 )
                 if self._check_image is not None:
-                    self._box.create_image(9, 9, image=self._check_image)
+                    self._box.create_image(
+                        self._metrics.px(9),
+                        self._metrics.px(9),
+                        image=self._check_image,
+                    )
             self._last_render_snapshot = snapshot
         except tk.TclError:
             return
@@ -826,12 +1052,17 @@ class ModernCheckbox(tk.Frame):
         self._render()
 
     def _destroyed(self, event: tk.Event[Any]) -> None:
-        if event.widget is not self:
+        if event.widget is not self or self._disposed:
             return
+        self._disposed = True
         try:
             self.variable.trace_remove("write", self._trace_id)
         except (tk.TclError, AttributeError, ValueError):
             pass
+        self._pointer_admission = None
+        self._command = None
+        self._check_image = None
+        self.__dict__.pop("variable", None)
 
 
 class ActionDialogSurface:
@@ -851,7 +1082,16 @@ class ActionDialogSurface:
         footer_gap: int = 18,
         allow_body_scroll: bool = False,
         protect_status: bool = False,
+        modal: bool = False,
     ) -> None:
+        metrics = window_logical_metrics(popup)
+        padx, pady, footer_gap = map(metrics.px, (padx, pady, footer_gap))
+        self._previous_focus = popup.focus_get() if modal else None
+        self._previous_grab = popup.grab_current() if modal else None
+        self._modal = modal
+        if modal:
+            popup.grab_set()
+            popup.bind("<Destroy>", self._dialog_destroyed, add="+")
         shell = ttk.Frame(popup, style="FocusShell.TFrame")
         shell.pack(fill="both", expand=True, padx=padx, pady=pady)
         shell.columnconfigure(0, weight=1)
@@ -873,13 +1113,15 @@ class ActionDialogSurface:
                 shell,
                 command=viewport.yview,
             )
-            scrollbar.grid(row=0, column=1, sticky="ns", padx=(8, 0))
+            scrollbar.grid(row=0, column=1, sticky="ns", padx=(metrics.px(8), 0))
             scrollbar.grid_remove()
             viewport.configure(yscrollcommand=scrollbar.set)
             body = ttk.Frame(viewport, style="FocusShell.TFrame")
             body_window = viewport.create_window((0, 0), window=body, anchor="nw")
             viewport.bind("<Configure>", self._viewport_resized, add="+")
             body.bind("<Configure>", self._body_resized, add="+")
+            body.bind("<Map>", self._body_resized, add="+")
+            body.bind("<Destroy>", self._body_destroyed, add="+")
             # Descendant controls receive pointer/trackpad events under Tk's
             # toplevel bindtag; binding the popup keeps the scroll owner local
             # while covering the complete Settings document surface.
@@ -916,6 +1158,43 @@ class ActionDialogSurface:
         self.status = status
         self.footer = footer
         self._body_window = body_window
+        self._body_width_pending: str | None = None
+
+    def _dialog_destroyed(self, event: Any) -> None:
+        if event.widget is not self.popup or not self._modal:
+            return
+        previous, self._previous_grab = self._previous_grab, None
+        focus, self._previous_focus = self._previous_focus, None
+        self._modal = False
+        try:
+            current = self.popup.grab_current()
+            if current is self.popup:
+                self.popup.grab_release()
+            # A successor modal owns both grab and focus. Closing this older
+            # surface must not steal either from it.
+            if current in (None, self.popup):
+                if previous is not None and previous.winfo_exists():
+                    previous.grab_set()
+                if (
+                    focus is not None
+                    and focus.winfo_exists()
+                    and focus.winfo_viewable()
+                ):
+                    focus.focus_set()
+        except tk.TclError:
+            pass
+
+    def bind_keys(
+        self,
+        actions: Mapping[str, Callable[[], Any]],
+        *,
+        editing: Iterable[str] = ("<Escape>",),
+    ) -> KeyboardScope:
+        previous = getattr(self, "_keyboard_scope", None)
+        if previous is not None:
+            previous.close()
+        self._keyboard_scope = KeyboardScope(self.popup, actions, editing=editing)
+        return self._keyboard_scope
 
     def _viewport_resized(self, event: tk.Event[tk.Canvas]) -> None:
         if self.viewport is None or self._body_window is None:
@@ -924,10 +1203,32 @@ class ActionDialogSurface:
             self.viewport.itemconfigure(self._body_window, width=max(1, event.width))
         except tk.TclError:
             return
-        self._sync_overflow()
+        self._body_resized(event)
 
     def _body_resized(self, _event: tk.Event[ttk.Frame]) -> None:
+        if self._body_width_pending is None:
+            self._body_width_pending = self.body.after_idle(self._reconcile_body_width)
         self._sync_overflow()
+
+    def _reconcile_body_width(self) -> None:
+        self._body_width_pending = None
+        if self.viewport is None or self._body_window is None:
+            return
+        try:
+            width = self.viewport.winfo_width()
+            # Windows may finish mapping at the requested width after Configure.
+            # Reconcile actual allocation after native layout has settled, even
+            # when the canvas item's configured width is already correct.
+            if width > 1 and self.body.winfo_width() != width:
+                self.viewport.itemconfigure(self._body_window, width=width)
+        except tk.TclError:
+            return
+        self._sync_overflow()
+
+    def _body_destroyed(self, event: tk.Event[ttk.Frame]) -> None:
+        if event.widget is self.body and self._body_width_pending is not None:
+            self.body.after_cancel(self._body_width_pending)
+            self._body_width_pending = None
 
     def _sync_overflow(self) -> None:
         if self.viewport is None or self.scrollbar is None:
@@ -1060,6 +1361,8 @@ class _TooltipController:
             return
         self._destroy_tip()
         try:
+            metrics = window_logical_metrics(self.host)
+            margin = metrics.px(8)
             left, top, _right, bottom = tooltip.anchor_bounds()
             tip = tk.Toplevel(self.host)
             tip.withdraw()
@@ -1068,14 +1371,14 @@ class _TooltipController:
                 tip,
                 text=tooltip.current_text(),
                 justify="left",
-                wraplength=320,
-                bg="#111214",
+                wraplength=metrics.px(320),
+                bg=THEME["panel"],
                 fg=THEME["text"],
                 relief="solid",
-                borderwidth=1,
-                padx=8,
-                pady=6,
-                font=FONT_UI_SMALL,
+                borderwidth=metrics.px(1),
+                padx=metrics.px(8),
+                pady=metrics.px(6),
+                font=metrics.font(FONT_UI_SMALL),
             )
             label.pack()
             tip.update_idletasks()
@@ -1083,10 +1386,10 @@ class _TooltipController:
             screen_height = tip.winfo_screenheight()
             tip_width = tip.winfo_reqwidth()
             tip_height = tip.winfo_reqheight()
-            x = min(max(8, left), max(8, screen_width - tip_width - 8))
-            y = bottom + 8
-            if y + tip_height > screen_height - 8:
-                y = max(8, top - tip_height - 8)
+            x = min(max(margin, left), max(margin, screen_width - tip_width - margin))
+            y = bottom + margin
+            if y + tip_height > screen_height - margin:
+                y = max(margin, top - tip_height - margin)
             self.tip = tip
             self.pending = None
             self.active = tooltip
@@ -1249,31 +1552,66 @@ class SleekProgressbar(tk.Canvas):
         value: float = 0.0,
         mode: str = "determinate",
         height: int = 5,
-        track_color: str = THEME["surface_2"],
-        bar_color: str = THEME["accent"],
+        track_color: str | None = None,
+        bar_color: str | None = None,
         **kwargs: Any,
     ) -> None:
+        self._metrics = window_logical_metrics(parent)
+        track_color = track_color or THEME["surface_2"]
+        bar_color = bar_color or THEME["progress"]
         kwargs.pop("style", None)
         super().__init__(
-            parent, height=height, bg=THEME["bg"], bd=0, highlightthickness=0, **kwargs
+            parent,
+            height=self._metrics.px(height),
+            bg=THEME["bg"],
+            bd=0,
+            highlightthickness=0,
+            **kwargs,
         )
         self._maximum = max(1.0, float(maximum))
         self._mode = mode
         self._track_color = track_color
         self._bar_color = bar_color
         self._track_uses_theme = track_color == THEME["surface_2"]
-        self._bar_uses_theme = bar_color == THEME["accent"]
+        self._bar_uses_theme = bar_color == THEME["progress"]
         self._phase = 0.0
         self._after_id: str | None = None
+        self._idle_id: str | None = None
+        self._disposed = False
         self._variable = (
             variable if variable is not None else tk.DoubleVar(master=self, value=value)
         )
         self._suspend_variable_redraw = False
         if variable is not None and value:
             self._variable.set(value)
-        self._variable.trace_add("write", self._on_variable_changed)
+        self._variable_trace: str | None = self._variable.trace_add(
+            "write", self._on_variable_changed
+        )
         self.bind("<Configure>", lambda _event: self._redraw(), add="+")
-        self.after_idle(self._redraw)
+        self.bind("<Destroy>", self._dispose, add="+")
+        self._idle_id = self.after_idle(self._initial_redraw)
+
+    def _initial_redraw(self) -> None:
+        self._idle_id = None
+        self._redraw()
+
+    def _dispose(self, event: tk.Event[Any]) -> None:
+        if event.widget is not self or self._disposed:
+            return
+        self._disposed = True
+        self.stop()
+        if self._idle_id is not None:
+            try:
+                self.after_cancel(self._idle_id)
+            except tk.TclError:
+                pass
+            self._idle_id = None
+        if self._variable_trace is not None:
+            try:
+                self._variable.trace_remove("write", self._variable_trace)
+            except tk.TclError:
+                pass
+            self._variable_trace = None
 
     def configure(self, cnf: Any | None = None, **kwargs: Any) -> Any:
         if cnf:
@@ -1325,22 +1663,28 @@ class SleekProgressbar(tk.Canvas):
         if self._track_uses_theme:
             self._track_color = THEME["surface_2"]
         if self._bar_uses_theme:
-            self._bar_color = THEME["accent"]
+            self._bar_color = THEME["progress"]
         super().configure(bg=THEME["bg"])
         self._redraw()
 
     def _on_variable_changed(self, *_args: Any) -> None:
-        if not self._suspend_variable_redraw:
+        if not self._disposed and not self._suspend_variable_redraw:
             self._redraw()
 
     def start(self, interval: int = 50) -> None:
+        if self._disposed:
+            return
         self.stop()
         self._mode = "indeterminate"
 
         def tick() -> None:
+            if self._disposed:
+                return
+            self._after_id = None
             self._phase = (self._phase + 0.035) % 1.0
             self._redraw()
-            self._after_id = self.after(interval, tick)
+            if not self._disposed:
+                self._after_id = self.after(interval, tick)
 
         tick()
 
@@ -1353,17 +1697,31 @@ class SleekProgressbar(tk.Canvas):
             self._after_id = None
 
     def _redraw(self) -> None:
+        if self._disposed:
+            return
         try:
             width = max(1, self.winfo_width())
-            height = max(3, self.winfo_height())
+            height = max(self._metrics.px(3), self.winfo_height())
         except tk.TclError:
             return
         self.delete("all")
-        y1 = max(0, (height - 3) // 2)
-        y2 = min(height, y1 + 3)
+        px = self._metrics.px
+        y1 = max(0, (height - px(3)) // 2)
+        y2 = min(height, y1 + px(3))
+        from .ui_chrome import draw_matte_track
+
+        draw_matte_track(
+            self,
+            px(1),
+            (y1 + y2) / 2,
+            width - px(1),
+            0,
+            thickness=3,
+            unit_scale=self._metrics.scale,
+        )
         self.create_rectangle(0, y1, width, y2, fill=self._track_color, outline="")
         if self._mode == "indeterminate":
-            segment = max(24, int(width * 0.24))
+            segment = max(px(24), int(width * 0.24))
             start = max(0, int((width + segment) * self._phase) - segment)
             end = min(width, start + segment)
         else:
@@ -1377,7 +1735,7 @@ class SleekProgressbar(tk.Canvas):
         if end > start:
             self.create_rectangle(start, y1, end, y2, fill=self._bar_color, outline="")
             if y1 > 0:
-                self.create_line(start, y1, end, y1, fill=self._bar_color)
+                self.create_line(start, y1, end, y1, fill=self._bar_color, width=px(1))
 
 
 class PixelScrollTable(tk.Frame):
@@ -1478,8 +1836,14 @@ class PixelScrollTable(tk.Frame):
         self._header.bind("<ButtonPress-1>", self._begin_column_resize, add="+")
         self._header.bind("<B1-Motion>", self._drag_column_resize, add="+")
         self._header.bind("<ButtonRelease-1>", self._end_column_resize, add="+")
-        self._bind_precision_scroll(self._body)
-        self._bind_precision_scroll(self._header, horizontal_only=True)
+        self._scroll_binding = _scrolling.bind_smooth_scroll(
+            self._body,
+            self._body,
+            self._header,
+            axis="both",
+            horizontal_targets=(self._header,),
+            on_scroll=self._schedule_redraw,
+        )
 
     def __getitem__(self, key: str) -> Any:
         if key == "columns":
@@ -1913,7 +2277,7 @@ class PixelScrollTable(tk.Frame):
             and item == self._hovered_row
             and item in self._leading_hover_values
         ):
-            return THEME["accent"]
+            return THEME["action"]
         return THEME["text"] if value_index == 1 else THEME["muted"]
 
     def _patch_rows(
@@ -1954,7 +2318,7 @@ class PixelScrollTable(tk.Frame):
                 )
                 self._body.itemconfigure(
                     indicator_item,
-                    fill=THEME["accent"],
+                    fill=THEME["selection"],
                     state="normal" if selected else "hidden",
                 )
                 values = self._items.get(item, ())
@@ -2033,7 +2397,7 @@ class PixelScrollTable(tk.Frame):
                         5,
                         divider_x,
                         self._header_height - 5,
-                        fill=THEME["accent"],
+                        fill=THEME["selection"],
                         width=2,
                     )
             self._header.create_line(
@@ -2068,7 +2432,7 @@ class PixelScrollTable(tk.Frame):
                     top + 4,
                     3,
                     top + self._row_height - 4,
-                    fill=THEME["accent"],
+                    fill=THEME["selection"],
                     outline="",
                     state="normal" if selected else "hidden",
                 )
@@ -2207,53 +2571,9 @@ class PixelScrollTable(tk.Frame):
         self._schedule_redraw()
 
     def _scroll_pixels(self, dx: int, dy: int) -> str:
-        if dy:
-            content_height = max(
-                self._body.winfo_height(), len(self._order) * self._row_height
-            )
-            self._body.yview_moveto(
-                max(
-                    0.0, min(1.0, self._body.yview()[0] + (dy / max(1, content_height)))
-                )
-            )
-            self._schedule_redraw()
-        if dx:
-            content_width = max(
-                self._body.winfo_width(),
-                sum(width for _column, width, _anchor in self._layout_columns()),
-            )
-            scroll_target = max(
-                0.0,
-                min(1.0, self._body.xview()[0] + (dx / max(1, content_width))),
-            )
-            self.xview("moveto", scroll_target)
+        """Compatibility adapter; pixel math and input lifetime have one owner."""
+        self._scroll_binding.scroll(dx, dy)
         return "break"
-
-    def _bind_precision_scroll(
-        self, target: tk.Misc, *, horizontal_only: bool = False
-    ) -> None:
-        def on_wheel(event: tk.Event[Any]) -> str:
-            pixels = focus_wheel_pixels(getattr(event, "delta", 0))
-            horizontal = horizontal_only or bool(getattr(event, "state", 0) & 0x0001)
-            return self._scroll_pixels(
-                pixels if horizontal else 0, 0 if horizontal else pixels
-            )
-
-        def on_touchpad(event: tk.Event[Any]) -> str:
-            delta_x, delta_y = touchpad_scroll_deltas(self, getattr(event, "delta", 0))
-            return self._scroll_pixels(
-                focus_wheel_pixels(delta_x),
-                0 if horizontal_only else focus_wheel_pixels(delta_y),
-            )
-
-        target.bind("<MouseWheel>", on_wheel, add="+")
-        target.bind("<Shift-MouseWheel>", on_wheel, add="+")
-        target.bind("<Button-4>", lambda _event: self._scroll_pixels(0, -36), add="+")
-        target.bind("<Button-5>", lambda _event: self._scroll_pixels(0, 36), add="+")
-        try:
-            target.bind("<TouchpadScroll>", on_touchpad, add="+")
-        except tk.TclError:
-            pass
 
 
 class _LibraryFocusTarget(Protocol):
@@ -2278,11 +2598,15 @@ class SleekScrollbar(tk.Canvas):
         command: Callable[..., Any],
         orient: str = "vertical",
         width: int = 8,
-        thumb_color: str = THEME["border"],
-        hover_color: str = THEME["subtle"],
+        thumb_color: str | None = None,
+        hover_color: str | None = None,
     ) -> None:
+        thumb_color = thumb_color or THEME["border"]
+        hover_color = hover_color or THEME["subtle"]
         if orient not in {"vertical", "horizontal"}:
             raise ValueError(f"Unsupported scrollbar orientation: {orient}")
+        self._metrics = window_logical_metrics(parent)
+        width = self._metrics.px(width)
         self._orient = orient
         super().__init__(
             parent,
@@ -2309,6 +2633,7 @@ class SleekScrollbar(tk.Canvas):
         self.bind("<Button-1>", self._begin_drag, add="+")
         self.bind("<B1-Motion>", self._drag, add="+")
         self.bind("<ButtonRelease-1>", self._end_drag, add="+")
+        self.bind("<Unmap>", self._end_drag, add="+")
 
     def set(self, first: str | float, last: str | float) -> None:
         try:
@@ -2316,6 +2641,8 @@ class SleekScrollbar(tk.Canvas):
             self._last = max(self._first, min(1.0, float(last)))
         except (TypeError, ValueError):
             self._first, self._last = 0.0, 1.0
+        if self._thumb_bounds() is None:
+            self._drag_offset = None
         self._redraw()
 
     def _thumb_bounds(self) -> tuple[float, float] | None:
@@ -2325,7 +2652,9 @@ class SleekScrollbar(tk.Canvas):
         visible = max(0.0, min(1.0, self._last - self._first))
         if visible >= 0.999:
             return None
-        thumb_length = min(float(length), max(28.0, length * visible))
+        thumb_length = min(
+            float(length), max(float(self._metrics.px(28)), length * visible)
+        )
         travel = max(1.0, length - thumb_length)
         scrollable = max(0.001, 1.0 - visible)
         start = travel * min(1.0, self._first / scrollable)
@@ -2340,25 +2669,25 @@ class SleekScrollbar(tk.Canvas):
             start, end = bounds
             color = self._hover_color if self._hovered else self._thumb_color
             if self._orient == "vertical":
-                cross = max(2, self.winfo_width() // 2)
+                cross = max(self._metrics.px(2), self.winfo_width() // 2)
                 self.create_line(
                     cross,
-                    start + 3,
+                    start + self._metrics.px(3),
                     cross,
-                    max(start + 3, end - 3),
+                    max(start + self._metrics.px(3), end - self._metrics.px(3)),
                     fill=color,
-                    width=4,
+                    width=self._metrics.px(4),
                     capstyle=tk.ROUND,
                 )
             else:
-                cross = max(2, self.winfo_height() // 2)
+                cross = max(self._metrics.px(2), self.winfo_height() // 2)
                 self.create_line(
-                    start + 3,
+                    start + self._metrics.px(3),
                     cross,
-                    max(start + 3, end - 3),
+                    max(start + self._metrics.px(3), end - self._metrics.px(3)),
                     cross,
                     fill=color,
-                    width=4,
+                    width=self._metrics.px(4),
                     capstyle=tk.ROUND,
                 )
         except tk.TclError:
@@ -2380,7 +2709,8 @@ class SleekScrollbar(tk.Canvas):
 
     def _set_unhovered(self, _event: tk.Event[Any]) -> None:
         self._hovered = False
-        self._drag_offset = None
+        # The implicit pointer grab keeps a drag active outside this narrow track.
+        # Only release, unmapping, or losing scrollable content retires it.
         self._redraw()
 
     def _begin_drag(self, event: tk.Event[Any]) -> None:
@@ -2426,7 +2756,7 @@ class SleekScrollbar(tk.Canvas):
 
 
 class PillAction(tk.Canvas):
-    """A compact rounded action surface for header utilities."""
+    """A compact context action using the shared product field chrome."""
 
     def __init__(
         self,
@@ -2437,7 +2767,10 @@ class PillAction(tk.Canvas):
         image: Any | None = None,
         width: int = 240,
         height: int = 34,
+        path_display: bool = False,
     ) -> None:
+        self._metrics = window_logical_metrics(parent)
+        width, height = self._metrics.px(width), self._metrics.px(height)
         super().__init__(
             parent,
             width=width,
@@ -2448,26 +2781,37 @@ class PillAction(tk.Canvas):
             cursor="hand2",
             takefocus=1,
         )
+        self._matte_material_surface = True
         self._textvariable = textvariable
+        self._path_display = path_display
+        self._text_font = tkfont.Font(root=self, font=self._metrics.font(FONT_UI_SMALL))
         self._command = command
         self._icon = image
         self._hovered = False
         self._background_image: Any | None = None
         self._background_item = self.create_image(0, 0, anchor="nw")
         self._icon_item = (
-            self.create_image(15, height // 2, image=image, anchor="w")
+            self.create_image(
+                self._metrics.px(15), height // 2, image=image, anchor="w"
+            )
             if image is not None
             else None
         )
         self._text_item = self.create_text(
-            18 if image is None else 38,
+            self._metrics.px(18 if image is None else 38),
             height // 2,
             text=textvariable.get(),
             fill=THEME["muted"],
-            font=FONT_UI_SMALL,
+            font=self._metrics.font(FONT_UI_SMALL),
             anchor="w",
         )
-        textvariable.trace_add("write", lambda *_args: self._sync_text())
+        self._text_trace = textvariable.trace_add(
+            "write", lambda *_args: self._sync_text()
+        )
+        self._tooltip = ToolTip(self, lambda: self._textvariable.get())
+        self.bind("<Destroy>", self._destroyed, add="+")
+        self.bind("<FocusIn>", lambda _event: self._redraw(), add="+")
+        self.bind("<FocusOut>", lambda _event: self._redraw(), add="+")
         self.bind("<Configure>", lambda _event: self._redraw(), add="+")
         self.bind("<Enter>", lambda _event: self._set_hover(True), add="+")
         self.bind("<Leave>", lambda _event: self._set_hover(False), add="+")
@@ -2478,9 +2822,27 @@ class PillAction(tk.Canvas):
 
     def _sync_text(self) -> None:
         try:
-            self.itemconfigure(self._text_item, text=self._textvariable.get())
+            left = self._metrics.px(18 if self._icon is None else 42)
+            width = max(1, self.winfo_width() - left - self._metrics.px(18))
+            text = (
+                compact_destination_path(
+                    self._textvariable.get(), width, self._text_font.measure
+                )
+                if self._path_display
+                else ellipsize_wrapped_text(
+                    self._textvariable.get(),
+                    maximum_width=width,
+                    maximum_lines=1,
+                    measure_width=self._text_font.measure,
+                )
+            )
+            self.itemconfigure(self._text_item, text=text)
         except tk.TclError:
             pass
+
+    def _destroyed(self, event: tk.Event[Any]) -> None:
+        if event.widget is self:
+            self._textvariable.trace_remove("write", self._text_trace)
 
     def _set_hover(self, hovered: bool) -> None:
         self._hovered = hovered
@@ -2498,22 +2860,33 @@ class PillAction(tk.Canvas):
             height = max(1, self.winfo_height())
         except tk.TclError:
             return
+        if width < 2 or height < 2:
+            return
         if Image is not None and ImageDraw is not None and ImageTk is not None:
-            surface = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-            ImageDraw.Draw(surface).rounded_rectangle(
-                (0, 0, width - 1, height - 1),
-                radius=min(17, height // 2),
-                fill=THEME["surface_2"] if self._hovered else THEME["surface"],
-                outline=THEME["border"],
-                width=1,
+            surface = field_border_image(
+                width,
+                height,
+                hovered=self._hovered,
+                focused=self.focus_get() is self,
+                unit_scale=self._metrics.scale,
             )
             self._background_image = ImageTk.PhotoImage(surface)
             self.itemconfigure(self._background_item, image=self._background_image)
             self.coords(self._background_item, 0, 0)
             self.tag_lower(self._background_item)
+            if hasattr(self, "_matte_anchor"):
+                from .ui_materials import draw_matte_backdrop
+
+                draw_matte_backdrop(self)
         if self._icon_item is not None:
-            self.coords(self._icon_item, 15, height // 2)
-        self.coords(self._text_item, 18 if self._icon is None else 38, height // 2)
+            self.coords(self._icon_item, self._metrics.px(15), height // 2)
+        self.coords(
+            self._text_item,
+            self._metrics.px(18 if self._icon is None else 42),
+            height // 2,
+        )
+        self._sync_text()
+        self.delete("keyboard-focus")
 
     def apply_theme(self) -> None:
         """Patch this control's palette while preserving its live binding."""
@@ -2571,7 +2944,7 @@ class RoundedIconButton(tk.Canvas):
                 resolved_width // 2,
                 height // 2,
                 text=text,
-                fill="#ffffff" if primary else THEME["muted"],
+                fill=THEME["on_accent"] if primary else THEME["muted"],
                 font=FONT_UI_SMALL_MEDIUM,
                 anchor="center",
             )
@@ -2703,29 +3076,20 @@ class RoundedIconButton(tk.Canvas):
             if width <= 2 or height <= 2:
                 return
             if Image is not None and ImageDraw is not None and ImageTk is not None:
-                scale = 4
-                surface = Image.new(
-                    "RGBA", (width * scale, height * scale), THEME["bg"]
+                from .ui_chrome import action_button_image
+
+                surface = action_button_image(
+                    width,
+                    height,
+                    accent=self._primary,
+                    state="pressed"
+                    if self._pressed
+                    else "hover"
+                    if self._hovered
+                    else "normal",
                 )
-                draw = ImageDraw.Draw(surface)
-                radius = min(self._radius, height // 2) * scale
-                draw.rounded_rectangle(
-                    (0, 0, width * scale - 1, height * scale - 1),
-                    radius=radius,
-                    fill=border,
-                )
-                draw.rounded_rectangle(
-                    (
-                        scale,
-                        scale,
-                        width * scale - scale - 1,
-                        height * scale - scale - 1,
-                    ),
-                    radius=max(0, radius - scale),
-                    fill=fill,
-                )
-                resampling = getattr(Image, "Resampling", Image)
-                surface = surface.resize((width, height), resampling.LANCZOS)
+                if disabled:
+                    surface = field_border_image(width, height)
                 self._background_image = ImageTk.PhotoImage(surface)
                 self.itemconfigure(self._background_item, image=self._background_image)
                 self.coords(self._background_item, 0, 0)
@@ -2754,7 +3118,7 @@ class RoundedIconButton(tk.Canvas):
         if self._button_image is None:
             self.itemconfigure(
                 self._content_item,
-                fill="#ffffff" if self._primary else THEME["muted"],
+                fill=THEME["on_accent"] if self._primary else THEME["muted"],
             )
         self._redraw()
 
@@ -2768,12 +3132,20 @@ class SegmentedSelector(tk.Frame):
         *,
         variable: tk.StringVar,
         values: tuple[str, ...] = (OutputType.MP4.value, OutputType.MP3.value),
-        background: str = THEME["surface"],
+        background: str | None = None,
         compact: bool = False,
+        separated: bool = False,
     ) -> None:
+        self._metrics = window_logical_metrics(parent)
+        self._font = self._metrics.font(
+            FONT_UI_SMALL if separated else FONT_UI_SMALL_MEDIUM
+        )
+        background = background or THEME["surface"]
         super().__init__(
             parent, bg=background, bd=0, highlightthickness=0, padx=0, pady=0
         )
+        self._separated = separated
+        self._disposed = False
         self._variable = variable
         self._background_role = (
             "bg"
@@ -2787,8 +3159,11 @@ class SegmentedSelector(tk.Frame):
         self._segment_images: dict[str, Any] = {}
         self._segment_snapshots: dict[str, tuple[object, ...]] = {}
         self._hovered: str | None = None
-        horizontal_padding = 7 if compact else 10
-        vertical_padding = 3 if compact else 4
+        self._pressed_segment: tuple[object, ...] | None = None
+        horizontal_padding = 11 if separated else 7 if compact else 10
+        vertical_padding = 6 if separated else 3 if compact else 4
+        horizontal_padding = self._metrics.px(horizontal_padding)
+        vertical_padding = self._metrics.px(vertical_padding)
         self._segment_padding = (horizontal_padding, vertical_padding)
         for value in values:
             label = tk.Label(
@@ -2800,12 +3175,16 @@ class SegmentedSelector(tk.Frame):
                 highlightthickness=0,
                 padx=horizontal_padding,
                 pady=vertical_padding,
-                font=FONT_UI_SMALL_MEDIUM,
+                font=self._font,
                 cursor="hand2",
                 takefocus=1,
             )
-            label.pack(side="left")
-            label.bind("<Button-1>", partial(self._select_from_event, value))
+            label.pack(side="left", padx=(0, self._metrics.px(6)) if separated else 0)
+            label.bind("<Button-1>", partial(self._press_segment, value))
+            label.bind("<ButtonRelease-1>", partial(self._release_segment, value))
+            label.bind("<Unmap>", self._retire_segment, add="+")
+            label.bind("<FocusIn>", lambda _event: self._sync(), add="+")
+            label.bind("<FocusOut>", lambda _event: self._sync(), add="+")
             label.bind("<Return>", partial(self._select_from_event, value))
             label.bind("<space>", partial(self._select_from_event, value))
             label.bind(
@@ -2822,8 +3201,34 @@ class SegmentedSelector(tk.Frame):
         """Use only the visible segments as tooltip hit zones, not the frame."""
         return tuple(self._labels.values())
 
+    def _retire_segment(self, _event: Any = None) -> None:
+        self._pressed_segment = None
+
+    def _press_segment(self, value: str, event: tk.Event[tk.Label]) -> str:
+        if self._disposed:
+            return "break"
+        self._pressed_segment = (value, event.widget, self._variable)
+        event.widget.focus_set()
+        return "break"
+
+    def _release_segment(self, value: str, event: tk.Event[tk.Label]) -> str:
+        if self._disposed:
+            return "break"
+        admitted, self._pressed_segment = self._pressed_segment, None
+        label = self._labels.get(value)
+        if (
+            admitted == (value, label, self._variable)
+            and event.widget is label
+            and label.winfo_viewable()
+            and 0 <= event.x < label.winfo_width()
+            and 0 <= event.y < label.winfo_height()
+        ):
+            self._select_from_event(value, event)
+        return "break"
+
     def _select_from_event(self, value: str, _event: tk.Event[tk.Label]) -> None:
-        self._variable.set(value)
+        if not self._disposed:
+            self._variable.set(value)
 
     def _set_hover_from_event(
         self,
@@ -2838,49 +3243,72 @@ class SegmentedSelector(tk.Frame):
         self._sync()
 
     def _sync(self) -> None:
+        if self._disposed:
+            return
         selected = self._variable.get()
-        values = tuple(self._labels)
-        for index, (value, label) in enumerate(self._labels.items()):
+        for value, label in self._labels.items():
             active = value == selected
+            hovered = self._hovered == value
             fill = (
-                THEME["accent"]
+                (THEME["accent_surface"] if self._separated else THEME["accent_dark"])
                 if active
-                else (
-                    THEME["surface_2"] if self._hovered == value else self._background
-                )
+                else self._background
             )
-            foreground = "#ffffff" if active else THEME["muted"]
-            snapshot = (fill, foreground, THEME["border"], self._background)
+            foreground = THEME["selection"] if active else THEME["muted"]
+            focused = self.focus_get() is label
+            snapshot = (
+                fill,
+                foreground,
+                THEME["border"],
+                self._background,
+                focused,
+                hovered,
+                THEME["text"],
+            )
             if self._segment_snapshots.get(value) == snapshot:
                 continue
             if Image is not None and ImageDraw is not None and ImageTk is not None:
-                font = tkfont.Font(root=self, font=FONT_UI_SMALL_MEDIUM)
-                px, py = self._segment_padding
-                width = font.measure(value) + px * 2
-                height = font.metrics("linespace") + py * 2
-                image = Image.new("RGB", (width * 3, height * 3), self._background)
-                draw = ImageDraw.Draw(image)
-                draw.rounded_rectangle(
-                    (1, 1, width * 3 - 2, height * 3 - 2),
-                    radius=15,
-                    fill=fill,
-                    outline=THEME["border"],
-                    width=2,
+                from .platform_services import (
+                    create_surface_image,
+                    surface_backing_scale,
                 )
-                if index > 0:
-                    draw.rectangle((0, 2, 15, height * 3 - 3), fill=fill)
-                if index < len(values) - 1:
-                    draw.rectangle(
-                        (width * 3 - 16, 2, width * 3, height * 3 - 3), fill=fill
-                    )
-                self._segment_images[value] = ImageTk.PhotoImage(
-                    image.resize((width, height), Image.LANCZOS)
+
+                px, py = self._segment_padding
+                width = int(self.tk.call("font", "measure", self._font, value)) + px * 2
+                height = (
+                    int(self.tk.call("font", "metrics", self._font, "-linespace"))
+                    + py * 2
+                )
+                density = surface_backing_scale(self)
+                from .ui_chrome import ttk_surface_image
+
+                image = ttk_surface_image(
+                    width,
+                    height=height,
+                    fill=fill,
+                    edge=THEME["focus"] if focused else THEME["border"],
+                    recessed=active or hovered,
+                    depth=0.8 if active else 0.62 if hovered else 0.45,
+                    density=density,
+                    unit_scale=self._metrics.scale,
+                )
+                self._segment_images[value], _ = create_surface_image(
+                    self,
+                    image,
+                    density,
+                    logical_size=(width, height),
+                    existing=self._segment_images.get(value),
                 )
                 label.configure(
                     image=self._segment_images[value], compound="center", padx=0, pady=0
                 )
+            else:
+                # The text-only fallback uses the same semantic focus value.
+                label.configure(underline=-1)
             label.configure(
-                bg=self._background,
+                bg=THEME["focus_surface"]
+                if focused and Image is None
+                else self._background,
                 fg=foreground,
             )
             self._segment_snapshots[value] = snapshot
@@ -2894,8 +3322,14 @@ class SegmentedSelector(tk.Frame):
         self._sync()
 
     def destroy(self) -> None:
+        if self._disposed:
+            return
+        self._disposed = True
         try:
             self._variable.trace_remove("write", self._trace_id)
         except (tk.TclError, AttributeError, ValueError):
             pass
+        self._pressed_segment = None
         super().destroy()
+        self._segment_images.clear()
+        self.__dict__.pop("_variable", None)

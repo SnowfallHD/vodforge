@@ -50,3 +50,31 @@ def test_standalone_urls_and_windows_paths_are_not_labels(raw):
     line = detail_lines(raw)[0]
     assert line.raw == raw
     assert line.label == ""
+
+
+@pytest.mark.parametrize(
+    ("path", "suffix"),
+    [
+        ("/Volumes/An external archive/Projects/Finished films", "/Finished films"),
+        (r"C:\An external archive\Projects\Finished films", r"\Finished films"),
+        (r"\\server\archive\Projects\Finished films", r"\Finished films"),
+        ("/Volumes/旅行記/完成した動画", "/完成した動画"),
+    ],
+)
+def test_destination_compaction_preserves_leaf_across_path_dialects(path, suffix):
+    from yt_downloader.ui_layout import compact_destination_path
+
+    short = compact_destination_path(path, 24, len)
+    assert short.endswith(suffix)
+    assert len(short) <= 24
+    assert compact_destination_path(path, 1000, len) == path
+
+
+def test_destination_with_very_long_leaf_keeps_both_ends():
+    from yt_downloader.ui_layout import compact_destination_path
+
+    path = "/Volumes/Archive/" + "Long named project " * 10 + "Final"
+    shortened = compact_destination_path(path, 30, len)
+    assert shortened.startswith("…/Long")
+    assert shortened.endswith("Final")
+    assert len(shortened) <= 30

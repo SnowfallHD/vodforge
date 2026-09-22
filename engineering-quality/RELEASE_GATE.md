@@ -2,6 +2,18 @@
 
 The gate binds one source commit to one immutable ZIP and never treats a rebuild as equivalent. It preserves the existing architecture and complexity findings as visible debt; only explicitly reviewed debt is nonblocking.
 
+## Behavioral acceptance prerequisite
+
+Apply the [harness-wide evidence and acceptance standard](HARNESS_GUIDE.md)
+before private review promotion or public release. Required in-flight evidence,
+independent assertions, and unresolved user failures are acceptance blockers;
+settled-state passes and test totals do not waive them. NORMAL/DEEP evaluation now adds required interaction-coverage checks and defaults
+unreviewed behavioral scenarios to unproven. This initial migration blocks
+promotion; it does not claim domain coverage is implemented. The private-install
+entry point uses the same blockers. Detailed domain evaluator enrollment remains
+incomplete; record and enforce those remaining gaps explicitly.
+A known-rejected installed artifact remains failed acceptance evidence.
+
 ## Required telemetry journey
 
 Every public release additionally requires [the preview-D1 telemetry gate](TELEMETRY_RELEASE_GATE.md)
@@ -119,3 +131,54 @@ export-dimension and updater-outcome requirements in
 migration and backend before the desktop release. A passing serializer probe or
 telemetry-disabled app smoke cannot substitute for final-artifact preview-D1 UI
 journeys on both Mac and Windows.
+
+
+## Recovery and presentation regression gates
+
+The five classes in [RECOVERY_REGRESSION_CLASSES.md](RECOVERY_REGRESSION_CLASSES.md) are mandatory NORMAL/DEEP scenarios. Run the maintained before/after source contract and retain exact-artifact code binding separately from native/packaged GUI evidence. Source checks never waive the packaged journey gate.
+
+
+## Private review installation
+
+Use the maintained private installation entry point; do not repeat ad-hoc bundle
+swaps. It evaluates NORMAL's required checks including interaction coverage,
+packaged journey and exact candidate bindings, negative-control prerequisites,
+and the checkout-owned acceptance/user-reported-defects.json ledger before any
+extraction or installed-app mutation:
+
+~~~sh
+./engineering-quality/run private-install \
+  --candidate engineering-quality/candidates/<id>/candidate-artifact.json \
+  --normal-result engineering-quality/reports/<normal-id>/results.json \
+  --e2e-result engineering-quality/reports/<e2e-id>/e2e-result.json \
+  --negative-controls engineering-quality/reports/<id>/negative-controls.json \
+  --target /absolute/path/to/VODForge.app
+~~~
+
+The installation must be closed. The command preserves a uniquely named adjacent
+rollback app, does not launch the replacement, and does not touch user data.
+It uses the existing immutable-candidate verifier and materializer, including
+fresh tree verification. A private install confers no public release eligibility.
+
+Current migration state: behavioral coverage is still unproven, so this entry
+point blocks current candidates. The five user-reported defects remain open in
+the ledger even where a focused source check improved. Closing one requires
+verified full source-manifest binding and its negative-control requirement mapping.
+Commit identity alone is insufficient for dirty source trees. The normal runner
+captures source content before/after checks; candidate creation and materialization
+propagate that identity. Private installation rejects a changed source snapshot
+or a different candidate between preflight and namespace mutation.
+
+The native_channels_v1 negative evaluator currently recomputes three narrow
+invariants from ordered observations: duplicate artwork bounds, layout updates
+while the drag is held, and geometry movement after release. It rejects invalid
+or incomplete traces and requires a distinct known-bad source identity. It does
+not certify compositor frames, physical input, scrolling, transitions, or other
+domains. A supplied status or hash alone does not prove detection. Do not remove the default coverage blockers before
+those evaluators and their integration tests are complete.
+
+
+Source-manifest labels are checked against the canonical manifest payload in both
+the candidate and NORMAL receipt. Materialization must return the same manifest
+identity that passed preflight. Matching commit or hash strings alone do not
+qualify changed payloads.

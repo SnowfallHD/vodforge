@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -25,10 +27,12 @@ from .library_state import (
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
 )
-from .models import DownloadJob
+from .models import DownloadJob, ExportMode, OutputType
 from .run_identity import (
+    OUTPUT_PROFILE_KEY,
     annotate_job_metadata,
     job_attempt_signature,
+    job_output_profile,
     metadata_attempt_signature,
 )
 from .run_state import RunStateError, deserialize_download_job
@@ -48,10 +52,56 @@ class LibraryMediaRecoveryPlan:
     replaced_history_identity: tuple[str, str, str] | None = None
     previous_annotation_owner: str = ""
     requires_destination_choice: bool = False
+    preset_migrated: bool = False
 
     @property
     def can_redownload(self) -> bool:
         return self.kind == "missing" and self.job is not None
+
+
+def _selected_item_url(info: Mapping[str, Any]) -> str | None:
+    """Recover the captured video only; playlist identity remains organization."""
+    video_id = str(info.get("id") or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", video_id) is None:
+        return None
+    query = {"v": video_id}
+    playlist_id = str(info.get("playlist_id") or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", playlist_id):
+        query["list"] = playlist_id
+    return "https://www.youtube.com/watch?" + urllib.parse.urlencode(query)
+
+
+def _redownload_export_mode(job: DownloadJob, info: Mapping[str, Any]) -> ExportMode:
+    """Retire old MP4 presets without changing current CTV or custom intent."""
+    if job.output_type is not OutputType.MP4:
+        return job.export_mode
+    if job.export_mode is ExportMode.STRICT_COMPLIANCE:
+        return ExportMode.EVERYDAY
+    # AUTO_CBR is also the current CTV engine value. Only its exact saved
+    # current profile proves that choice; ambiguous old records use Everyday.
+    if job.export_mode is ExportMode.AUTO_CBR and info.get(
+        OUTPUT_PROFILE_KEY
+    ) != job_output_profile(job):
+        return ExportMode.EVERYDAY
+    return job.export_mode
+
+
+def _legacy_preset_needs_everyday(info: Mapping[str, Any]) -> bool:
+    """Recognize retired MP4 labels without inventing an incomplete saved job."""
+    parts = [
+        part.strip() for part in str(info.get(OUTPUT_PROFILE_KEY) or "").split("•")
+    ]
+    return (
+        len(parts) == 3
+        and parts[0] == "MP4"
+        and parts[-1]
+        in {
+            "Auto CBR",
+            "Auto CBR (Recommended)",
+            "Strict Compliance",
+            "CTV (legacy fixed bitrate)",
+        }
+    )
 
 
 def _normalized_path(path: Path) -> str:
@@ -109,13 +159,35 @@ class LibraryMediaRecoveryOwner:
         self._run_id_factory = run_id_factory or (lambda: uuid.uuid4().hex)
         self._artifact_directory = artifact_directory
         self._draft_destination: tuple[str, Path] | None = None
+        self._draft_export_mode: ExportMode | None = None
 
-    def prepare_destination(self, source_url: str, destination: Path) -> None:
+    def prepare_destination(
+        self,
+        source_url: str,
+        destination: Path,
+        *,
+        export_mode: ExportMode | None = None,
+    ) -> None:
         """Session-only recovery draft; durable settings and history are untouched."""
         self._draft_destination = (source_url.strip(), destination)
+        self._draft_export_mode = export_mode
 
     def clear_destination(self) -> None:
         self._draft_destination = None
+        self._draft_export_mode = None
+
+    def is_draft_for(self, source_url: str) -> bool:
+        draft = self._draft_destination
+        return draft is not None and draft[0] == source_url.strip()
+
+    def export_mode_for(self, source_url: str) -> ExportMode | None:
+        return self._draft_export_mode if self.is_draft_for(source_url) else None
+
+    def update_export_mode(self, source_url: str, mode: ExportMode) -> bool:
+        if not self.is_draft_for(source_url) or self._draft_export_mode is None:
+            return False
+        self._draft_export_mode = mode
+        return True
 
     def destination_for(self, source_url: str, default: str) -> str:
         draft = self._draft_destination
@@ -182,7 +254,10 @@ class LibraryMediaRecoveryOwner:
             if root is not None and self._legacy_root(root, row) is not None:
                 root = None
             return LibraryMediaRecoveryPlan(
-                "legacy", root, requires_destination_choice=root is None
+                "legacy",
+                root,
+                requires_destination_choice=root is None,
+                preset_migrated=_legacy_preset_needs_everyday(row),
             )
         # History's location is the committed artifact parent and may include
         # VODForge's channel/playlist/video hierarchy. The durable job owns the
@@ -201,13 +276,26 @@ class LibraryMediaRecoveryOwner:
             # A previous legacy recovery may already have saved a nested base.
             # Do not silently reinterpret a durable job or alter its signature.
             return LibraryMediaRecoveryPlan(
-                "legacy", None, requires_destination_choice=True
+                "legacy",
+                None,
+                requires_destination_choice=True,
+                preset_migrated=_redownload_export_mode(saved_job, row)
+                != saved_job.export_mode,
             )
 
+        source_url = _selected_item_url(row)
+        if source_url is None:
+            return LibraryMediaRecoveryPlan("invalid", destination)
+        export_mode = _redownload_export_mode(saved_job, row)
         previous_run_id = str(row.get("vodforge_run_id") or saved_job.run_id).strip()
         preview = _clean_preview(row)
         job = replace(
             saved_job,
+            url=source_url,
+            urls=[source_url],
+            single_video_only=True,
+            batch_mode=False,
+            export_mode=export_mode,
             run_id=self._run_id_factory(),
             origin_run_id=previous_run_id or saved_job.run_id,
             execution_run_id=None,
@@ -229,6 +317,7 @@ class LibraryMediaRecoveryOwner:
             None if relocated else saved_job.output_dir,
             job=job,
             requires_destination_choice=relocated,
+            preset_migrated=export_mode != saved_job.export_mode,
             replaced_history_identity=history_identity(row),
             previous_annotation_owner=previous_annotation_owner,
         )

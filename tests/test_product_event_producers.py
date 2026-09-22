@@ -123,15 +123,21 @@ def test_playback_producer_keeps_original_audio_unlabeled(output, expected):
         (OutputType.ORIGINAL, "original"),
     ],
 )
-def test_actual_worker_launch_emits_start_with_attempt_identity(output, expected):
+def test_actual_worker_launch_emits_start_with_attempt_identity(
+    output, expected, tmp_path
+):
     import queue
     import threading
+
+    from tests.test_state_authority import make_job
 
     recorder = Recorder()
     started = threading.Event()
     control = SimpleNamespace(config=lambda **kwargs: None)
     value = SimpleNamespace(set=lambda value: None)
-    app = SimpleNamespace(
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.tk = None
+    app.__dict__.update(
         _closing=False,
         product_telemetry=recorder,
         _project_preparing_job_to_library=lambda job: None,
@@ -144,7 +150,9 @@ def test_actual_worker_launch_emits_start_with_attempt_identity(output, expected
         skip_url_button=control,
         _download_worker=lambda job: started.set(),
     )
-    job = SimpleNamespace(run_id="actual-worker-attempt", output_type=output)
+    job = make_job(tmp_path, video_id="actual-worker-attempt")
+    job.output_type = output
+
     assert DownloaderApp._launch_download_job(app, job, select_detail=False)
     app.worker.join(timeout=2)
     assert started.is_set()
@@ -156,13 +164,15 @@ def test_actual_worker_launch_emits_start_with_attempt_identity(output, expected
                 "attempt_key": job.run_id,
                 "retry_key": None,
                 "dimensions": {
+                    **({"preset": "ctv"} if output == OutputType.MP4 else {}),
+                    **({"artwork": "none"} if output == OutputType.MP3 else {}),
                     "cookie_access": "disabled",
-                    "provider": "other",
+                    "provider": "youtube",
                     "encoder_preference": "cpu",
                     "architecture": "x64",
                     "input_kind": "single",
                     "item_count_bucket": "1",
-                    "metadata": "disabled",
+                    "metadata": "enabled" if output == OutputType.MP3 else "disabled",
                 },
                 "run_kind": "youtube",
                 "output_type": expected,

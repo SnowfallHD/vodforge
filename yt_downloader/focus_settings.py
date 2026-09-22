@@ -7,9 +7,14 @@ from tkinter import colorchooser, ttk
 from typing import Any
 
 from .models import CookieSource, OutputType
+from .ui_button_contract import ProductButton
 from .ui_chrome import pro_wordmark
-from .ui_layout import centered_toplevel_geometry
-from .ui_theme import CUSTOM_THEME_NAME, THEME
+from .ui_layout import (
+    bounded_window_size,
+    centered_toplevel_geometry,
+    window_logical_metrics,
+)
+from .ui_theme import CUSTOM_THEME_NAME, FONT_UI, THEME
 from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
@@ -123,7 +128,11 @@ class FocusSettingsDialog:
         popup.transient(owner)
         popup.configure(bg=THEME["bg"])
         popup.resizable(True, True)
-        popup.minsize(700, 540)
+        metrics = window_logical_metrics(popup)
+        limit = bounded_window_size(
+            popup.winfo_screenwidth(), popup.winfo_screenheight()
+        )
+        popup.minsize(min(metrics.px(700), limit[0]), min(metrics.px(540), limit[1]))
         self.popup = popup
 
         surface = ActionDialogSurface(
@@ -148,10 +157,51 @@ class FocusSettingsDialog:
         self._build_privacy_section(root)
         self._build_footer(surface.footer)
         self._bind_responsive_copy(root)
+        self._columns_stacked: bool | None = None
+        root.bind("<Configure>", self._arrange_columns, add="+")
 
         popup.protocol("WM_DELETE_WINDOW", self.close)
         popup.bind("<Escape>", lambda _event: self.close())
         popup.bind("<Destroy>", self._on_destroy, add="+")
+
+    def _px(self, value: int) -> int:
+        return window_logical_metrics(self.dialog_surface.body).px(value)
+
+    def _arrange_columns(self, _event: Any = None) -> None:
+        root = self.dialog_surface.body
+        outputs = (self.mp4_frame, self.mp3_frame, self.original_audio_frame)
+        visible = tuple(frame for frame in outputs if frame.winfo_manager())
+        required = (
+            self.source_frame.winfo_reqwidth()
+            + max((frame.winfo_reqwidth() for frame in visible), default=0)
+            + self._px(32)
+        )
+        stacked = required > root.winfo_width()
+        if stacked == self._columns_stacked:
+            return
+        self._columns_stacked = stacked
+        self.source_frame.grid_configure(
+            columnspan=2 if stacked else 1, padx=0 if stacked else (0, self._px(16))
+        )
+        for frame in outputs:
+            frame.grid_configure(
+                row=2 if stacked else 1,
+                column=0 if stacked else 1,
+                columnspan=2 if stacked else 1,
+                padx=0 if stacked else (self._px(16), 0),
+                pady=(self._px(18), 0) if stacked else 0,
+            )
+            if frame not in visible:
+                frame.grid_remove()
+        self.appearance_frame.grid_configure(row=3 if stacked else 2)
+        self.privacy_frame.grid_configure(row=4 if stacked else 3)
+
+    @staticmethod
+    def _label(parent: tk.Misc, **options: Any) -> ttk.Label:
+        role = ttk.Style(parent).lookup(options.get("style", "TLabel"), "font")
+        font = tuple(parent.tk.splitlist(role)) if role else FONT_UI
+        options["font"] = window_logical_metrics(parent).font(font)
+        return ttk.Label(parent, **options)
 
     @staticmethod
     def _bind_responsive_copy(parent: tk.Misc) -> None:
@@ -176,30 +226,30 @@ class FocusSettingsDialog:
 
     def _build_heading(self, root: ttk.Frame) -> None:
         heading = ttk.Frame(root, style="FocusShell.TFrame")
-        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 16))
+        heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, self._px(16)))
         heading.columnconfigure(0, weight=1)
-        ttk.Label(
+        self._label(
             heading,
             text="Forge settings",
             style="FocusTitle.TLabel",
         ).grid(row=0, column=0, sticky="w")
         self._pro_wordmark = pro_wordmark(heading)
-        self.pro_button = ttk.Button(
+        self.pro_button = ProductButton(
             heading,
             text="VODForge PRO",
             image=self._pro_wordmark,
             command=self.actions.open_cloud_early_access,
             style="FocusQuiet.TButton",
         )
-        self.pro_button.grid(row=0, column=1, sticky="e", padx=(16, 0))
+        self.pro_button.grid(row=0, column=1, sticky="e", padx=(self._px(16), 0))
         self._pro_seen_requested = False
         self.pro_button.bind("<Map>", self._record_visible_pro, add="+")
         self.pro_button.bind("<Configure>", self._record_visible_pro, add="+")
-        ttk.Label(
+        self._label(
             heading,
             text="Every option is available here; the main workspace stays focused.",
             style="Muted.TLabel",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 0))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(self._px(3), 0))
 
     def _record_visible_pro(self, _event: tk.Event | None = None) -> None:
         """Report exposure only after the complete control is in the viewport.
@@ -230,7 +280,8 @@ class FocusSettingsDialog:
 
     def _build_source_section(self, root: ttk.Frame) -> None:
         source = ttk.Frame(root, style="FocusShell.TFrame")
-        source.grid(row=1, column=0, sticky="nsew", padx=(0, 16))
+        self.source_frame = source
+        source.grid(row=1, column=0, sticky="nsew", padx=(0, self._px(16)))
         source.columnconfigure(0, weight=1)
         self._build_destination_controls(source)
         self._build_batch_controls(source)
@@ -238,11 +289,11 @@ class FocusSettingsDialog:
         self._build_metadata_controls(source)
 
     def _build_destination_controls(self, source: ttk.Frame) -> None:
-        ttk.Label(
+        self._label(
             source,
             text="SAVE LOCATION",
             style="FocusEyebrow.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 7))
+        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(7)))
         destination = ttk.Frame(source, style="FocusShell.TFrame")
         destination.grid(row=1, column=0, sticky="ew")
         destination.columnconfigure(0, weight=1)
@@ -250,9 +301,9 @@ class FocusSettingsDialog:
             row=0,
             column=0,
             sticky="ew",
-            padx=(0, 6),
+            padx=(0, self._px(6)),
         )
-        ttk.Button(
+        ProductButton(
             destination,
             text="Browse",
             command=self.actions.browse_output,
@@ -260,12 +311,12 @@ class FocusSettingsDialog:
         ).grid(row=0, column=1, sticky="e")
 
     def _build_batch_controls(self, source: ttk.Frame) -> None:
-        ttk.Label(
+        self._label(
             source,
             text="BATCH AND PLAYLISTS",
             style="FocusEyebrow.TLabel",
-        ).grid(row=2, column=0, sticky="w", pady=(16, 7))
-        batch_button = ttk.Button(
+        ).grid(row=2, column=0, sticky="w", pady=(self._px(16), self._px(7)))
+        batch_button = ProductButton(
             source,
             text="Load URL list",
             command=self.actions.load_url_list_file,
@@ -275,12 +326,12 @@ class FocusSettingsDialog:
         ToolTip(
             batch_button, "Process a batch of links from a text file, one URL per line."
         )
-        ttk.Label(
+        self._label(
             source,
             textvariable=self.bindings.url_list_file,
             style="Muted.TLabel",
-            wraplength=300,
-        ).grid(row=4, column=0, sticky="w", pady=(4, 6))
+            wraplength=self._px(300),
+        ).grid(row=4, column=0, sticky="w", pady=(self._px(4), self._px(6)))
         ignore_playlists = ModernCheckbox(
             source,
             text="Ignore playlists",
@@ -294,20 +345,20 @@ class FocusSettingsDialog:
         )
 
     def _build_access_controls(self, source: ttk.Frame) -> None:
-        ttk.Label(
+        self._label(
             source,
             text=ACCESS_TITLE,
             style="FocusEyebrow.TLabel",
-            wraplength=300,
+            wraplength=self._px(300),
             justify="left",
-        ).grid(row=6, column=0, sticky="w", pady=(16, 5))
-        ttk.Label(
+        ).grid(row=6, column=0, sticky="w", pady=(self._px(16), self._px(5)))
+        self._label(
             source,
             text=ACCESS_DESCRIPTION,
             style="Muted.TLabel",
-            wraplength=300,
+            wraplength=self._px(300),
             justify="left",
-        ).grid(row=7, column=0, sticky="w", pady=(0, 7))
+        ).grid(row=7, column=0, sticky="w", pady=(0, self._px(7)))
         cookie_selector = SegmentedSelector(
             source,
             variable=self.bindings.cookie_source,
@@ -322,28 +373,28 @@ class FocusSettingsDialog:
         )
 
         cookie_file = ttk.Frame(source, style="FocusShell.TFrame")
-        cookie_file.grid(row=9, column=0, sticky="ew", pady=(7, 0))
+        cookie_file.grid(row=9, column=0, sticky="ew", pady=(self._px(7), 0))
         cookie_file.columnconfigure(0, weight=1)
-        ttk.Label(
+        self._label(
             cookie_file,
             textvariable=self.bindings.cookie_file,
             style="Muted.TLabel",
-            wraplength=180,
+            wraplength=self._px(180),
         ).grid(row=0, column=0, sticky="w")
-        cookie_file_button = ttk.Button(
+        cookie_file_button = ProductButton(
             cookie_file,
             text="Choose cookies.txt",
             command=self.actions.load_cookie_file,
             style="FocusQuiet.TButton",
         )
-        cookie_file_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        cookie_file_button.grid(row=0, column=1, sticky="e", padx=(self._px(8), 0))
         ToolTip(
             cookie_file_button,
             "Manual alternative: choose an exported YouTube cookies.txt file. Try Browser first for easier setup.",
         )
 
         browser_frame = ttk.Frame(source, style="FocusShell.TFrame")
-        browser_frame.grid(row=9, column=0, sticky="ew", pady=(7, 0))
+        browser_frame.grid(row=9, column=0, sticky="ew", pady=(self._px(7), 0))
         browser_frame.columnconfigure(0, weight=1)
         browser_combo = ChoiceDropdown(
             browser_frame,
@@ -365,16 +416,16 @@ class FocusSettingsDialog:
         self.cookie_browser_frame = browser_frame
 
     def _build_metadata_controls(self, source: ttk.Frame) -> None:
-        ttk.Label(
+        self._label(
             source,
             text="METADATA",
             style="FocusEyebrow.TLabel",
-        ).grid(row=10, column=0, sticky="w", pady=(16, 5))
-        ttk.Label(
+        ).grid(row=10, column=0, sticky="w", pady=(self._px(16), self._px(5)))
+        self._label(
             source,
             text="Extra tags (comma-separated)",
             style="Muted.TLabel",
-        ).grid(row=11, column=0, sticky="w", pady=(0, 3))
+        ).grid(row=11, column=0, sticky="w", pady=(0, self._px(3)))
         tags_entry = ProductEntry(source, textvariable=self.bindings.tags)
         tags_entry.grid(row=12, column=0, sticky="ew")
         ToolTip(
@@ -384,24 +435,24 @@ class FocusSettingsDialog:
 
     def _build_mp4_section(self, root: ttk.Frame, *, macos: bool) -> None:
         mp4_output = ttk.Frame(root, style="FocusShell.TFrame")
-        mp4_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        mp4_output.grid(row=1, column=1, sticky="nsew", padx=(self._px(16), 0))
         mp4_output.columnconfigure(1, weight=1)
-        ttk.Label(
+        self._label(
             mp4_output,
             text="MP4 VIDEO",
             style="FocusEyebrow.TLabel",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, self._px(8)))
         self._build_mp4_mode_controls(mp4_output)
         self._build_manual_controls(mp4_output)
         self._build_mp4_output_flags(mp4_output, macos=macos)
         self.mp4_frame = mp4_output
 
     def _build_mp4_mode_controls(self, mp4_output: ttk.Frame) -> None:
-        ttk.Label(
+        self._label(
             mp4_output,
             text="Quality ceiling",
             style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=4)
+        ).grid(row=1, column=0, sticky="w", pady=self._px(4))
         quality_combo = ChoiceDropdown(
             mp4_output,
             textvariable=self.bindings.quality,
@@ -409,17 +460,17 @@ class FocusSettingsDialog:
             state="readonly",
             width=20,
         )
-        quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        quality_combo.grid(row=1, column=1, sticky="ew", pady=self._px(4))
         self._bind_readonly_combo(quality_combo)
         ToolTip(
             quality_combo,
             "Set the highest resolution VODForge may select from the available YouTube source formats.",
         )
-        ttk.Label(
+        self._label(
             mp4_output,
             text="Optimize for",
             style="Muted.TLabel",
-        ).grid(row=2, column=0, sticky="w", pady=4)
+        ).grid(row=2, column=0, sticky="w", pady=self._px(4))
         export_combo = ChoiceDropdown(
             mp4_output,
             textvariable=self.bindings.export_mode_choice,
@@ -427,23 +478,27 @@ class FocusSettingsDialog:
             state="readonly",
             width=24,
         )
-        export_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        export_combo.grid(row=2, column=1, sticky="ew", pady=self._px(4))
         self._bind_readonly_combo(
             export_combo,
             self.actions.refresh_manual_visibility,
         )
-        ttk.Label(
+        self._label(
             mp4_output,
             textvariable=self.bindings.export_mode_description,
             style="Muted.TLabel",
-            wraplength=360,
+            wraplength=self._px(360),
             justify="left",
-        ).grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 8))
+        ).grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(self._px(2), self._px(8))
+        )
 
     def _build_manual_controls(self, mp4_output: ttk.Frame) -> None:
         bindings = self.bindings
         manual = ttk.Frame(mp4_output, style="FocusShell.TFrame")
-        manual.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3, 8))
+        manual.grid(
+            row=4, column=0, columnspan=2, sticky="ew", pady=(self._px(3), self._px(8))
+        )
         manual.columnconfigure(0, weight=1, uniform="manual-field")
         manual.columnconfigure(1, weight=1, uniform="manual-field")
         quality_fields = (
@@ -491,15 +546,15 @@ class FocusSettingsDialog:
                 row=index // 2,
                 column=index % 2,
                 sticky="ew",
-                padx=(0, 8) if index % 2 == 0 else (8, 0),
-                pady=(0, 7),
+                padx=(0, self._px(8)) if index % 2 == 0 else (self._px(8), 0),
+                pady=(0, self._px(7)),
             )
             field.columnconfigure(0, weight=1)
-            ttk.Label(
+            self._label(
                 field,
                 text=label,
                 style="Muted.TLabel",
-            ).grid(row=0, column=0, sticky="w", pady=(0, 3))
+            ).grid(row=0, column=0, sticky="w", pady=(0, self._px(3)))
             if values is None:
                 widget: ProductEntry | ChoiceDropdown = ProductEntry(
                     field,
@@ -552,22 +607,22 @@ class FocusSettingsDialog:
             mp4_output,
             text="Save thumbnail",
             variable=bindings.write_thumbnail,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=5)
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=self._px(5))
         ModernCheckbox(
             mp4_output,
             text="Save compact JSON",
             variable=bindings.write_info_json,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=5)
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=self._px(5))
         ModernCheckbox(
             mp4_output,
             text="Embed thumbnail",
             variable=bindings.embed_thumbnail,
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=5)
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=self._px(5))
         ModernCheckbox(
             mp4_output,
             text="Embed metadata",
             variable=bindings.embed_metadata,
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=5)
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=self._px(5))
         nvenc_label = (
             "NVIDIA NVENC (Windows only)"
             if macos
@@ -578,7 +633,7 @@ class FocusSettingsDialog:
             text=nvenc_label,
             variable=bindings.use_nvenc,
         )
-        nvenc.grid(row=9, column=0, columnspan=2, sticky="w", pady=5)
+        nvenc.grid(row=9, column=0, columnspan=2, sticky="w", pady=self._px(5))
         ToolTip(
             nvenc,
             "Use a supported NVIDIA GPU for MP4 encoding on Windows. "
@@ -589,53 +644,53 @@ class FocusSettingsDialog:
 
     def _build_original_audio_section(self, root: ttk.Frame) -> None:
         frame = ttk.Frame(root, style="FocusShell.TFrame")
-        frame.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        frame.grid(row=1, column=1, sticky="nsew", padx=(self._px(16), 0))
         frame.columnconfigure(0, weight=1)
-        ttk.Label(frame, text="ORIGINAL AUDIO", style="FocusEyebrow.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 12)
+        self._label(frame, text="ORIGINAL AUDIO", style="FocusEyebrow.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, self._px(12))
         )
-        ttk.Label(
+        self._label(
             frame,
             text="Keep the source. Skip the extra compression.",
             style="FocusSection.TLabel",
-            wraplength=330,
-        ).grid(row=1, column=0, sticky="ew", pady=(0, 12))
-        ttk.Label(
+            wraplength=self._px(330),
+        ).grid(row=1, column=0, sticky="ew", pady=(0, self._px(12)))
+        self._label(
             frame,
             text="Saves the best available Opus or AAC audio stream without re-encoding. The codec, sample rate, and channels stay unchanged.",
             style="Muted.TLabel",
-            wraplength=330,
+            wraplength=self._px(330),
             justify="left",
         ).grid(row=2, column=0, sticky="ew")
-        ttk.Label(
+        self._label(
             frame,
             text="Opus saves as .opus. AAC saves as .m4a.\nNo bitrate or conversion settings needed.",
             style="Muted.TLabel",
-            wraplength=330,
+            wraplength=self._px(330),
             justify="left",
-        ).grid(row=3, column=0, sticky="ew", pady=(16, 0))
+        ).grid(row=3, column=0, sticky="ew", pady=(self._px(16), 0))
         self.original_audio_frame = frame
 
     def _build_mp3_section(self, root: ttk.Frame) -> None:
         mp3_output = ttk.Frame(root, style="FocusShell.TFrame")
-        mp3_output.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
+        mp3_output.grid(row=1, column=1, sticky="nsew", padx=(self._px(16), 0))
         mp3_output.columnconfigure(1, weight=1)
-        ttk.Label(
+        self._label(
             mp3_output,
             text="MP3 AUDIO",
             style="FocusEyebrow.TLabel",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, self._px(8)))
         self._build_mp3_encoding_controls(mp3_output)
         self._build_mp3_cover_controls(mp3_output)
         self.mp3_frame = mp3_output
 
     def _build_mp3_encoding_controls(self, mp3_output: ttk.Frame) -> None:
         bindings = self.bindings
-        ttk.Label(
+        self._label(
             mp3_output,
             text="Encoding quality",
             style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=4)
+        ).grid(row=1, column=0, sticky="w", pady=self._px(4))
         mp3_quality_combo = ChoiceDropdown(
             mp3_output,
             textvariable=bindings.mp3_quality,
@@ -643,18 +698,18 @@ class FocusSettingsDialog:
             state="readonly",
             width=24,
         )
-        mp3_quality_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        mp3_quality_combo.grid(row=1, column=1, sticky="ew", pady=self._px(4))
         self._bind_readonly_combo(mp3_quality_combo)
         ToolTip(
             mp3_quality_combo,
             "Set the MP3 export bitrate. Higher settings reduce additional encoding "
             "loss but cannot restore detail missing from YouTube's source audio.",
         )
-        ttk.Label(
+        self._label(
             mp3_output,
             text="Sample rate",
             style="Muted.TLabel",
-        ).grid(row=2, column=0, sticky="w", pady=4)
+        ).grid(row=2, column=0, sticky="w", pady=self._px(4))
         sample_rate_combo = ChoiceDropdown(
             mp3_output,
             textvariable=bindings.mp3_sample_rate,
@@ -662,18 +717,18 @@ class FocusSettingsDialog:
             state="readonly",
             width=24,
         )
-        sample_rate_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        sample_rate_combo.grid(row=2, column=1, sticky="ew", pady=self._px(4))
         self._bind_readonly_combo(sample_rate_combo)
         ToolTip(
             sample_rate_combo,
             "Preserve source avoids unnecessary resampling. Choose 44.1 or 48 kHz "
             "only when a music or DAW workflow requires it.",
         )
-        ttk.Label(
+        self._label(
             mp3_output,
             text="Channels",
             style="Muted.TLabel",
-        ).grid(row=3, column=0, sticky="w", pady=4)
+        ).grid(row=3, column=0, sticky="w", pady=self._px(4))
         channels_combo = ChoiceDropdown(
             mp3_output,
             textvariable=bindings.mp3_channels,
@@ -681,7 +736,7 @@ class FocusSettingsDialog:
             state="readonly",
             width=24,
         )
-        channels_combo.grid(row=3, column=1, sticky="ew", pady=4)
+        channels_combo.grid(row=3, column=1, sticky="ew", pady=self._px(4))
         self._bind_readonly_combo(channels_combo)
         ToolTip(
             channels_combo,
@@ -693,18 +748,20 @@ class FocusSettingsDialog:
             text="Embed title, artist, and tags",
             variable=bindings.mp3_embed_metadata,
         )
-        mp3_metadata.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 2))
+        mp3_metadata.grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(self._px(5), self._px(2))
+        )
         ToolTip(
             mp3_metadata,
             "Write standard ID3 title, artist, and tag information into the MP3 file.",
         )
 
     def _build_mp3_cover_controls(self, mp3_output: ttk.Frame) -> None:
-        ttk.Label(
+        self._label(
             mp3_output,
             text="Cover art",
             style="Muted.TLabel",
-        ).grid(row=5, column=0, sticky="w", pady=(8, 4))
+        ).grid(row=5, column=0, sticky="w", pady=(self._px(8), self._px(4)))
         cover_selector = SegmentedSelector(
             mp3_output,
             variable=self.bindings.mp3_cover_art_mode,
@@ -712,60 +769,65 @@ class FocusSettingsDialog:
             background=THEME["bg"],
             compact=True,
         )
-        cover_selector.grid(row=5, column=1, sticky="w", pady=(8, 4))
+        cover_selector.grid(
+            row=5, column=1, sticky="w", pady=(self._px(8), self._px(4))
+        )
         ToolTip(
             cover_selector,
             "No Art leaves the MP3 unembedded. YouTube art or Custom art writes a "
             "front-cover image into the file.",
         )
-        ttk.Label(
+        self._label(
             mp3_output,
             textvariable=self.bindings.mp3_cover_art_description,
             style="Muted.TLabel",
-            wraplength=330,
+            wraplength=self._px(330),
             justify="left",
-        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(3, 0))
+        ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(self._px(3), 0))
         cover_file = ttk.Frame(mp3_output, style="FocusShell.TFrame")
-        cover_file.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        cover_file.grid(
+            row=7, column=0, columnspan=2, sticky="ew", pady=(self._px(8), 0)
+        )
         cover_file.columnconfigure(0, weight=1)
-        ttk.Label(
+        self._label(
             cover_file,
             textvariable=self.bindings.mp3_custom_cover_art,
             style="Muted.TLabel",
         ).grid(row=0, column=0, sticky="w")
-        ttk.Button(
+        ProductButton(
             cover_file,
             text="Replace image",
             command=self.actions.choose_custom_cover_art,
             style="FocusQuiet.TButton",
-        ).grid(row=0, column=1, padx=(8, 0))
-        ttk.Button(
+        ).grid(row=0, column=1, padx=(self._px(8), 0))
+        ProductButton(
             cover_file,
             text="Clear",
             command=self.actions.clear_custom_cover_art,
             style="FocusQuiet.TButton",
-        ).grid(row=0, column=2, padx=(6, 0))
-        ttk.Label(
+        ).grid(row=0, column=2, padx=(self._px(6), 0))
+        self._label(
             mp3_output,
             text=(
                 "YouTube audio is already compressed. MP3 adds another encoding step; "
                 "320 kbps reduces that loss but cannot restore missing detail."
             ),
             style="Muted.TLabel",
-            wraplength=330,
+            wraplength=self._px(330),
             justify="left",
-        ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(self._px(12), 0))
         self.mp3_cover_file_frame = cover_file
 
     def _build_privacy_section(self, root: ttk.Frame) -> None:
         privacy = ttk.Frame(root, style="FocusShell.TFrame")
-        privacy.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        self.privacy_frame = privacy
+        privacy.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(self._px(18), 0))
         privacy.columnconfigure(0, weight=1)
-        ttk.Label(
+        self._label(
             privacy,
             text="PRIVACY",
             style="FocusEyebrow.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 7))
+        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(7)))
         usage = ModernCheckbox(
             privacy,
             text="Share anonymous analytics",
@@ -777,27 +839,29 @@ class FocusSettingsDialog:
             "Share coarse feature and reliability events. VODForge never sends "
             "download URLs, titles, filenames, paths, searches, tags, or notes.",
         )
-        ttk.Label(
+        self._label(
             privacy,
             text=("Analytics helps improve VODForge, turn off at any time."),
             style="Muted.TLabel",
-            wraplength=680,
+            wraplength=self._px(680),
             justify="left",
-        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ).grid(row=2, column=0, sticky="w", pady=(self._px(4), 0))
 
     def _build_appearance_section(self, root: ttk.Frame) -> None:
         appearance = ttk.Frame(root, style="FocusShell.TFrame")
-        appearance.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(18, 0))
+        self.appearance_frame = appearance
+        appearance.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(self._px(18), 0)
+        )
         appearance.columnconfigure(1, weight=1)
         appearance.columnconfigure(3, weight=1)
-        ttk.Label(
+        self._label(
             appearance,
             text="APPEARANCE",
             style="FocusEyebrow.TLabel",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 7))
-        ttk.Label(appearance, text="Theme", style="Muted.TLabel").grid(
-            row=1, column=0, sticky="w", padx=(0, 8)
-        )
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, self._px(7)))
+        theme_label = self._label(appearance, text="Theme", style="Muted.TLabel")
+        theme_label.grid(row=1, column=0, sticky="w", padx=(0, self._px(8)))
         theme_combo = ChoiceDropdown(
             appearance,
             textvariable=self.bindings.appearance_theme,
@@ -805,11 +869,12 @@ class FocusSettingsDialog:
             state="readonly",
             width=18,
         )
-        theme_combo.grid(row=1, column=1, sticky="ew", padx=(0, 18))
+        theme_combo.grid(row=1, column=1, sticky="ew", padx=(0, self._px(18)))
         self._bind_readonly_combo(theme_combo, self.actions.apply_appearance)
-        ttk.Label(appearance, text="Custom accent", style="Muted.TLabel").grid(
-            row=1, column=2, sticky="w", padx=(0, 8)
+        accent_label = self._label(
+            appearance, text="Custom accent", style="Muted.TLabel"
         )
+        accent_label.grid(row=1, column=2, sticky="w", padx=(0, self._px(8)))
         accent_controls = ttk.Frame(appearance, style="FocusShell.TFrame")
         accent_controls.grid(row=1, column=3, sticky="ew")
         accent_controls.columnconfigure(0, weight=1)
@@ -818,19 +883,51 @@ class FocusSettingsDialog:
             textvariable=self.bindings.custom_accent,
             width=12,
         ).grid(row=0, column=0, sticky="ew")
-        ttk.Button(
+        ProductButton(
             accent_controls,
             text="Choose",
             command=self._choose_accent_color,
             style="FocusQuiet.TButton",
-        ).grid(row=0, column=1, padx=(6, 0))
-        ttk.Label(
+        ).grid(row=0, column=1, padx=(self._px(6), 0))
+        explanation = self._label(
             appearance,
             text="Choose Custom accent to use a #RRGGBB color. Appearance updates immediately.",
             style="Muted.TLabel",
-            wraplength=680,
+            wraplength=self._px(680),
             justify="left",
-        ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(5, 0))
+        )
+        explanation.grid(
+            row=2, column=0, columnspan=4, sticky="w", pady=(self._px(5), 0)
+        )
+        appearance_stacked: bool | None = None
+
+        def arrange_appearance(_event: Any = None) -> None:
+            nonlocal appearance_stacked
+            required = sum(
+                w.winfo_reqwidth()
+                for w in (theme_label, theme_combo, accent_label, accent_controls)
+            ) + self._px(34)
+            stacked = required > appearance.winfo_width()
+            if stacked == appearance_stacked:
+                return
+            appearance_stacked = stacked
+            theme_combo.grid_configure(
+                columnspan=3 if stacked else 1, padx=0 if stacked else (0, self._px(18))
+            )
+            accent_label.grid_configure(
+                row=2 if stacked else 1,
+                column=0 if stacked else 2,
+                pady=(self._px(8), 0) if stacked else 0,
+            )
+            accent_controls.grid_configure(
+                row=2 if stacked else 1,
+                column=1 if stacked else 3,
+                columnspan=3 if stacked else 1,
+                pady=(self._px(8), 0) if stacked else 0,
+            )
+            explanation.grid_configure(row=3 if stacked else 2)
+
+        appearance.bind("<Configure>", arrange_appearance, add="+")
         self._accent_trace_id = self.bindings.custom_accent.trace_add(
             "write", lambda *_args: self.actions.apply_appearance()
         )
@@ -853,6 +950,8 @@ class FocusSettingsDialog:
             self.popup.configure(bg=THEME["bg"])
         except tk.TclError:
             return
+        self._pro_wordmark = pro_wordmark(self.pro_button)
+        self.pro_button.configure(image=self._pro_wordmark)
         self.dialog_surface.apply_theme()
         pending = list(self.popup.winfo_children())
         while pending:
@@ -867,7 +966,7 @@ class FocusSettingsDialog:
 
     def _build_footer(self, footer: ttk.Frame) -> None:
         footer.columnconfigure(0, weight=1)
-        preview_button = ttk.Button(
+        preview_button = ProductButton(
             footer,
             text="Preview metadata",
             command=self._preview_and_close,
@@ -875,10 +974,10 @@ class FocusSettingsDialog:
         )
         preview_button.grid(row=0, column=0, sticky="w")
         if self.actions.help_feedback is not None:
-            ttk.Button(
+            ProductButton(
                 footer, text="Help & feedback", command=self.actions.help_feedback
-            ).grid(row=0, column=1, padx=8)
-        ttk.Button(
+            ).grid(row=0, column=1, padx=self._px(8))
+        ProductButton(
             footer,
             text="Done",
             command=self.close,
@@ -926,6 +1025,7 @@ class FocusSettingsDialog:
         self._set_frame_visible(
             self.original_audio_frame, output_type == OutputType.ORIGINAL
         )
+        self._arrange_columns()
 
     def refresh_manual_settings(self, manual_override: bool) -> None:
         self._set_frame_visible(self.manual_frame, manual_override)
@@ -952,7 +1052,7 @@ class FocusSettingsDialog:
         height = 720
         reveal_toplevel(
             self.popup,
-            centered_toplevel_geometry(self.owner, width, height),
+            centered_toplevel_geometry(self.owner, width, height, target=self.popup),
         )
         self.popup.after_idle(self._record_visible_pro)
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import threading
+import urllib.parse
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -44,6 +46,19 @@ PERSISTED_TERMINAL_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
 
 class RunStateError(RuntimeError):
     """Raised when durable active-run ownership cannot be maintained safely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        cause: str = "invalid_record",
+        stage: str = "journal_validation",
+        attempt_key: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.cause = cause
+        self.stage = stage
+        self.attempt_key = attempt_key
 
 
 def run_state_file_path(**kwargs: Any) -> Path:
@@ -100,6 +115,45 @@ def _required_bool(values: Mapping[str, Any], key: str) -> bool:
     return value
 
 
+RETRY_SOURCE_STATES = frozenset(
+    {
+        "retained",
+        "sanitized",
+        "missing_original",
+        "unsupported_scheme",
+        "invalid_source",
+        "legacy_unknown",
+    }
+)
+
+
+def retry_source_state(value: Any) -> str:
+    """Explain durable source handling without retaining rejected input."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return "missing_original"
+    text = str(value).strip()
+    safe = sanitize_durable_url(value, preserve_youtube_context=True)
+    if safe:
+        return "retained" if safe == text else "sanitized"
+    try:
+        scheme = urllib.parse.urlsplit(text).scheme.casefold()
+    except ValueError:
+        return "invalid_source"
+    if scheme and scheme not in {"http", "https"}:
+        return "unsupported_scheme"
+    return "invalid_source"
+
+
+def saved_retry_source_state(payload: Mapping[str, Any]) -> str:
+    """Older records cannot establish why a source was absent."""
+    value = payload.get("retry_source_state")
+    return (
+        value
+        if isinstance(value, str) and value in RETRY_SOURCE_STATES
+        else "legacy_unknown"
+    )
+
+
 def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
     """Persist retry authority without cookie files, browser profiles, or secrets."""
 
@@ -112,6 +166,10 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
     return {
         "url": safe_url or "",
         "urls": safe_urls,
+        "retry_source_state": retry_source_state(job.url),
+        "retry_source_states": [
+            retry_source_state(value) for value in (job.urls or [job.url])
+        ],
         "output_dir": str(job.output_dir),
         "output_type": job.output_type.value,
         "quality_label": job.quality_label,
@@ -151,18 +209,26 @@ def serialize_download_job(job: DownloadJob) -> dict[str, Any]:
         "recovery_reason": job.recovery_reason,
         "execution_run_id": job.execution_run_id,
         "retry_of_run_id": job.retry_of_run_id,
+        "annotation_source_owner": (job.annotation_source_owner or "").strip()[:512]
+        or None,
     }
 
 
-def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
+def deserialize_download_job(
+    payload: Mapping[str, Any], *, allow_missing_retry_url: bool = False
+) -> DownloadJob:
     try:
         manual = payload.get("manual_settings")
         mp3 = payload.get("mp3_settings")
         if not isinstance(manual, Mapping) or not isinstance(mp3, Mapping):
             raise TypeError("missing export settings")
         url = sanitize_durable_url(payload.get("url"), preserve_youtube_context=True)
-        if not url:
-            raise ValueError("missing safe retry URL")
+        if not url and not allow_missing_retry_url:
+            raise RunStateError(
+                "The interrupted run record is invalid: missing safe retry URL",
+                cause="missing_retry_url",
+            )
+        url = url or ""
         output_dir_value = payload.get("output_dir")
         if not isinstance(output_dir_value, str) or not output_dir_value.strip():
             raise ValueError("invalid output directory")
@@ -176,7 +242,7 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
                 for value in payload.get("urls", [])
                 if (safe := sanitize_durable_url(value, preserve_youtube_context=True))
             ]
-            or [url],
+            or ([url] if url else []),
             output_dir=output_dir,
             output_type=OutputType(str(payload.get("output_type"))),
             quality_label=str(payload.get("quality_label") or "1080p Full HD"),
@@ -220,6 +286,9 @@ def deserialize_download_job(payload: Mapping[str, Any]) -> DownloadJob:
             run_id=str(payload.get("run_id") or "")[:128],
             execution_run_id=str(payload.get("execution_run_id") or "")[:128] or None,
             retry_of_run_id=str(payload.get("retry_of_run_id") or "")[:128] or None,
+            annotation_source_owner=(
+                str(payload.get("annotation_source_owner") or "").strip()[:512] or None
+            ),
             recovery_reason="missing_media"
             if payload.get("recovery_reason") == "missing_media"
             else None,
@@ -244,6 +313,22 @@ def _terminal_activity(activity_lines: list[str] | None, message: str) -> list[s
     return sanitize_run_activity(details[-1:] + [message])
 
 
+def _serialize_executable_job(job: DownloadJob) -> dict[str, Any]:
+    payload = serialize_download_job(job)
+    original_sources = job.urls or [job.url]
+    if not payload["url"] or len(payload["urls"]) != len(original_sources):
+        raise RunStateError(
+            "The source link cannot be saved safely for this download. Paste a valid web link.",
+            cause="missing_retry_url",
+            stage="journal_validation",
+            attempt_key=job.run_id,
+        )
+    # Admission and the next cold reader share a class contract; terminal/history
+    # serialization deliberately remains tolerant for old nonretryable attempts.
+    deserialize_download_job(payload)
+    return payload
+
+
 class ActiveRunStore:
     """One sequential-run journal shared by UI, staging, and child ownership."""
 
@@ -256,17 +341,30 @@ class ActiveRunStore:
             if not self.path.exists():
                 return None
             if self.path.stat().st_size > MAX_RUN_STATE_BYTES:
-                raise RunStateError("The active-run record is unexpectedly large.")
+                raise RunStateError(
+                    "The active-run record is unexpectedly large.",
+                    cause="size_limit",
+                    stage="journal_read",
+                )
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise RunStateError(
-                f"The active-run record could not be loaded: {exc}"
+                f"The active-run record could not be loaded: {exc}",
+                cause="malformed_json"
+                if isinstance(exc, json.JSONDecodeError)
+                else "invalid_encoding"
+                if isinstance(exc, UnicodeError)
+                else "read_failed",
+                stage="journal_read",
             ) from exc
         if (
             not isinstance(payload, dict)
             or payload.get("schema_version") != RUN_STATE_SCHEMA_VERSION
         ):
-            raise RunStateError("The active-run record has an unsupported schema.")
+            raise RunStateError(
+                "The active-run record has an unsupported schema.",
+                cause="unsupported_schema",
+            )
         return payload
 
     def load(self) -> dict[str, Any] | None:
@@ -278,13 +376,19 @@ class ActiveRunStore:
             "utf-8"
         )
         if len(encoded) > MAX_RUN_STATE_BYTES:
-            raise RunStateError("The active-run record exceeds the safe size limit.")
+            raise RunStateError(
+                "The active-run record exceeds the safe size limit.",
+                cause="size_limit",
+                stage="journal_write",
+            )
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             write_private_bytes(self.path, encoded)
         except OSError as exc:
             raise RunStateError(
-                f"The active-run record could not be saved: {exc}"
+                f"The active-run record could not be saved: {exc}",
+                cause="write_failed",
+                stage="journal_write",
             ) from exc
 
     def _unlink_unlocked(self) -> None:
@@ -337,12 +441,13 @@ class ActiveRunStore:
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
                     "state": "active",
                     "owner_pid": os.getpid(),
-                    "job": serialize_download_job(job),
+                    "job": _serialize_executable_job(job),
                     "staging_dirs": [],
                     "children": [],
                     "recovered_failures": failures,
                     "queued_jobs": [
-                        serialize_download_job(queued_job) for queued_job in queued_jobs
+                        _serialize_executable_job(queued_job)
+                        for queued_job in queued_jobs
                     ],
                 }
             )
@@ -369,7 +474,7 @@ class ActiveRunStore:
                     "schema_version": RUN_STATE_SCHEMA_VERSION,
                     "state": "idle",
                 }
-            payload["queued_jobs"] = [serialize_download_job(job) for job in jobs]
+            payload["queued_jobs"] = [_serialize_executable_job(job) for job in jobs]
             if failures:
                 payload["recovered_failures"] = failures
             else:
@@ -379,13 +484,46 @@ class ActiveRunStore:
                 return
             self._write_unlocked(payload)
 
-    def load_queued_jobs(self) -> list[DownloadJob]:
+    def load_queued_jobs(
+        self, *, retire_missing_sources: bool = False
+    ) -> list[DownloadJob]:
         with self._lock:
             payload = self._read_unlocked()
-            return [
-                deserialize_download_job(record)
-                for record in self._queued_records(payload)
-            ]
+            records = self._queued_records(payload)
+            jobs: list[DownloadJob] = []
+            retained: list[dict[str, Any]] = []
+            unavailable: list[dict[str, Any]] = []
+            for record in records:
+                try:
+                    job = deserialize_download_job(record)
+                except RunStateError as exc:
+                    if not retire_missing_sources or exc.cause != "missing_retry_url":
+                        raise
+                    # Validate every other field before retaining this as history.
+                    deserialize_download_job(record, allow_missing_retry_url=True)
+                    unavailable.append(
+                        {
+                            "job": dict(record),
+                            "terminal_status": "Failed",
+                            "terminal_message": "The queued download has no saved source link. Paste the link to start it again.",
+                        }
+                    )
+                else:
+                    jobs.append(job)
+                    retained.append(record)
+            if unavailable:
+                if payload is None or payload.get("state") == "active":
+                    raise RunStateError(
+                        "Active ownership must be recovered before queue repair."
+                    )
+                payload["queued_jobs"] = retained
+                payload["recovered_failures"] = (
+                    self._failure_records(payload) + unavailable
+                )
+                # Keep the original job/metadata under terminal history; do not
+                # erase records, invent URLs, or launch incomplete jobs.
+                self._write_unlocked(payload)
+            return jobs
 
     @staticmethod
     def _failure_records(payload: Mapping[str, Any] | None) -> list[dict[str, Any]]:
@@ -478,7 +616,7 @@ class ActiveRunStore:
             payload = self._read_unlocked()
             if payload is None or not isinstance(payload.get("job"), dict):
                 raise RunStateError("No active run is available to terminalize.")
-            job = deserialize_download_job(payload["job"])
+            job = deserialize_download_job(payload["job"], allow_missing_retry_url=True)
             job.terminal_status = status
             job.terminal_message = message
             job.activity_lines = _terminal_activity(activity_lines, message)
@@ -547,7 +685,9 @@ class ActiveRunStore:
             payload = self._read_unlocked()
             jobs: list[DownloadJob] = []
             for record in self._failure_records(payload):
-                job = deserialize_download_job(record["job"])
+                job = deserialize_download_job(
+                    record["job"], allow_missing_retry_url=True
+                )
                 status = str(record.get("terminal_status") or "Failed")
                 if status not in PERSISTED_TERMINAL_STATUSES:
                     raise RunStateError(
@@ -559,6 +699,8 @@ class ActiveRunStore:
                     or INTERRUPTED_FAILURE_MESSAGE
                 )
                 job.terminal_status = status
+                if not job.url:
+                    message += "\nThe saved source link is unavailable. Paste the source link to start a new download."
                 job.terminal_message = message
                 job.activity_lines = sanitize_run_activity(
                     record.get("activity_lines")
@@ -658,17 +800,24 @@ def recover_interrupted_run(
         raise RunStateError("The active-run owner record is invalid.")
     if owner_pid != os.getpid() and owner_command_reader(owner_pid) is not None:
         raise RunStateError(
-            "Another live process still owns the active VODForge run; recovery was not attempted."
+            "Another live process still owns the active VODForge run; recovery was not attempted.",
+            cause="live_owner",
+            stage="owner_check",
         )
     job_payload = payload.get("job")
     if not isinstance(job_payload, dict):
         raise RunStateError("The active-run record has no job.")
-    job = deserialize_download_job(job_payload)
+    job = deserialize_download_job(job_payload, allow_missing_retry_url=True)
     staging_values = payload.get("staging_dirs", [])
     if not isinstance(staging_values, list) or not all(
         isinstance(value, str) for value in staging_values
     ):
-        raise RunStateError("The active-run staging record is invalid.")
+        raise RunStateError(
+            "The active-run staging record is invalid.",
+            cause="invalid_staging",
+            stage="staging_validation",
+            attempt_key=job.run_id,
+        )
     expected_staging_root = (
         Path(os.path.abspath(os.fspath(job.output_dir))).resolve(strict=False)
         / ".vfstage"
@@ -676,7 +825,10 @@ def recover_interrupted_run(
     staging_dirs = [Path(value) for value in staging_values]
     if any(path.parent != expected_staging_root for path in staging_dirs):
         raise RunStateError(
-            "The active-run staging record is outside its selected output root."
+            "The active-run staging record is outside its selected output root.",
+            cause="invalid_staging",
+            stage="staging_validation",
+            attempt_key=job.run_id,
         )
     children = payload.get("children", [])
     if not isinstance(children, list) or not all(
@@ -685,9 +837,22 @@ def recover_interrupted_run(
         raise RunStateError("The active-run child record is invalid.")
     try:
         terminate_children(children, staging_dirs)
+    except (ProcessOwnershipError, OSError) as exc:
+        raise RunStateError(
+            str(exc),
+            cause="child_ownership",
+            stage="child_cleanup",
+            attempt_key=job.run_id,
+        ) from exc
+    try:
         cleanup_staging(staging_dirs)
-    except (ProcessOwnershipError, UnsafeOutputPathError) as exc:
-        raise RunStateError(str(exc)) from exc
+    except (UnsafeOutputPathError, OSError) as exc:
+        raise RunStateError(
+            str(exc),
+            cause="cleanup_failed",
+            stage="staging_cleanup",
+            attempt_key=job.run_id,
+        ) from exc
     store.mark_failed()
     return store.load_terminal_jobs()
 
@@ -699,12 +864,161 @@ class RunRecoveryOwner:
         self.store = ActiveRunStore(path)
         self._diagnostic = diagnostic or (lambda _message: None)
         self._available = True
+        self._failure: RunStateError | None = None
+        self._failure_facts: Any = None
+        self._failure_dimensions: dict[str, str] = {}
+        self._operation_key = str(uuid.uuid4())
+        self._observer: Any = None
+        self._startup_pending = False
+        self._startup_action = "failed"
+
+    def _failed_startup(self, exc: RunStateError, *, queue: bool = False) -> None:
+        from .failure_diagnostics import capture_failure
+
+        self._available = False
+        self._startup_action = "failed"
+        # Retain bounded typed facts, not exception text/traceback, for telemetry.
+        self._failure = RunStateError(
+            "Recovery needs attention.",
+            cause=exc.cause,
+            stage=exc.stage,
+            attempt_key=exc.attempt_key,
+        )
+        self._failure_facts = capture_failure(
+            exc, stage="preparation", inspect_text=False
+        )
+        self._failure_dimensions = {
+            "recovery_cause": exc.cause,
+            "recovery_entry": "startup",
+            "recovery_stage": "queue_loading" if queue else exc.stage,
+            "recovery_schema": str(RUN_STATE_SCHEMA_VERSION),
+            "recovery_disposition": "blocked_preserved",
+        }
+        self._startup_pending = True
+
+    @property
+    def recovery_notice(self) -> str | None:
+        if self._available or self._failure is None:
+            return None
+        cause = self._failure.cause
+        if cause == "live_owner":
+            guidance = (
+                "Another process may still own a previous download. Close other "
+                "VODForge windows, then reopen VODForge and try again."
+            )
+        elif cause in {"read_failed", "write_failed"}:
+            guidance = (
+                "VODForge cannot read or save its download recovery data. Check "
+                "available disk space and access to the app data folder, then reopen VODForge."
+            )
+        else:
+            guidance = (
+                "VODForge could not safely restore a previous download. Open "
+                "Help & feedback → Send feedback and include diagnostics so the "
+                "recovery data can be reviewed."
+            )
+        return (
+            "Downloads need attention. "
+            + guidance
+            + "\n\nSaved media has not been removed. Local MP3-to-video conversion "
+            "uses separate recovery data and remains available."
+        )
+
+    def bind_observer(self, observer: Any, *, report_startup: bool) -> None:
+        self._observer = observer
+        pending, self._startup_pending = self._startup_pending, False
+        if pending and report_startup:
+            self._observe(self._startup_action)
+
+    def _observe(self, action: str, attempt_key: str | None = None) -> None:
+        if self._observer is None or self._failure is None:
+            return
+        try:
+            self._observer(
+                "run_recovery_operation",
+                action,
+                operation_key=self._operation_key,
+                attempt_key=attempt_key or self._failure.attempt_key,
+                dimensions=dict(self._failure_dimensions),
+                failure_detail=self._failure_facts if action == "failed" else None,
+            )
+        except Exception:  # noqa: BLE001 - optional diagnostics never change recovery
+            self._diagnostic("Recovery observation could not be recorded.")
+
+    def _observe_write_failure(
+        self, exc: RunStateError, attempt_key: str | None = None, *, entry: str
+    ) -> None:
+        """Observe a refused intent without turning it into a startup lockout."""
+        if self._observer is None:
+            return
+        try:
+            from .failure_diagnostics import capture_failure
+
+            self._observer(
+                "run_recovery_operation",
+                "failed",
+                operation_key=str(uuid.uuid4()),
+                attempt_key=exc.attempt_key or attempt_key,
+                dimensions={
+                    "recovery_cause": exc.cause,
+                    "recovery_entry": entry,
+                    "recovery_stage": exc.stage,
+                    "recovery_schema": str(RUN_STATE_SCHEMA_VERSION),
+                    "recovery_disposition": "blocked_preserved",
+                },
+                failure_detail=capture_failure(
+                    exc, stage="preparation", inspect_text=False
+                ),
+            )
+        except Exception:  # noqa: BLE001 - optional observation cannot replace the refusal
+            try:
+                self._diagnostic("Recovery observation could not be recorded.")
+            except Exception:  # noqa: BLE001 - preserve the original journal failure
+                return
+
+    def startup_recovery(self) -> tuple[list[DownloadJob], list[DownloadJob]]:
+        terminal = self.recover_at_startup()
+        queued = self.queued_at_startup()
+        if self._available:
+            try:
+                terminal = self.store.load_terminal_jobs()
+            except RunStateError as exc:
+                self._failed_startup(exc)
+                self._diagnostic(f"terminal run recovery failed closed: {exc}")
+                return [], []
+        missing = sum(not job.url for job in terminal)
+        if self._available and missing:
+            self._failure = RunStateError(
+                "Retained without retry authority.", cause="missing_retry_url"
+            )
+            self._failure_facts = None
+            self._failure_dimensions = {
+                "recovery_cause": "missing_retry_url",
+                "recovery_entry": "startup",
+                "recovery_stage": "terminal_restore",
+                "recovery_schema": str(RUN_STATE_SCHEMA_VERSION),
+                "recovery_disposition": "restored_without_retry",
+                "item_count_bucket": (
+                    "1"
+                    if missing == 1
+                    else "2_5"
+                    if missing <= 5
+                    else "6_20"
+                    if missing <= 20
+                    else "21_100"
+                    if missing <= 100
+                    else "101_plus"
+                ),
+            }
+            self._startup_action = "restored_without_retry"
+            self._startup_pending = True
+        return terminal, queued
 
     def recover_at_startup(self) -> list[DownloadJob]:
         try:
             return recover_interrupted_run(self.store)
         except RunStateError as exc:
-            self._available = False
+            self._failed_startup(exc)
             self._diagnostic(f"interrupted run recovery failed closed: {exc}")
             return []
 
@@ -712,9 +1026,9 @@ class RunRecoveryOwner:
         if not self._available:
             return []
         try:
-            return self.store.load_queued_jobs()
+            return self.store.load_queued_jobs(retire_missing_sources=True)
         except RunStateError as exc:
-            self._available = False
+            self._failed_startup(exc, queue=True)
             self._diagnostic(f"queued run recovery failed closed: {exc}")
             return []
 
@@ -726,14 +1040,19 @@ class RunRecoveryOwner:
         superseded_run_id: str | None = None,
     ) -> None:
         if not self._available:
+            self._observe("start_blocked", job.run_id)
             raise RunStateError(
                 "The previous active-run record could not be recovered safely."
             )
-        self.store.begin(
-            job,
-            queued_jobs,
-            superseded_run_id=superseded_run_id,
-        )
+        try:
+            self.store.begin(
+                job,
+                queued_jobs,
+                superseded_run_id=superseded_run_id,
+            )
+        except RunStateError as exc:
+            self._observe_write_failure(exc, job.run_id, entry="run_admission")
+            raise
 
     def queue_changed(
         self,
@@ -745,7 +1064,13 @@ class RunRecoveryOwner:
             raise RunStateError(
                 "The durable run queue is unavailable because recovery failed safely."
             )
-        self.store.replace_queue(jobs, superseded_run_id=superseded_run_id)
+        try:
+            self.store.replace_queue(jobs, superseded_run_id=superseded_run_id)
+        except RunStateError as exc:
+            self._observe_write_failure(
+                exc, jobs[0].run_id if len(jobs) == 1 else None, entry="queue_update"
+            )
+            raise
 
     def staging_started(self, job: DownloadJob, path: Path) -> None:
         self.store.add_staging_dir(job.run_id, path)

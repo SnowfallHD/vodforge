@@ -79,6 +79,9 @@ if (-not (Test-Path $iconFile) -or -not (Test-Path $iconPng) -or -not (Test-Path
 }
 $iconArgs = @("--icon", $iconFile)
 $addData += @("--add-data", "$iconFile;assets", "--add-data", "$iconPng;assets", "--add-data", "$iconAssetDir;assets/icons/lucide")
+$addData += @("--add-data", "assets/brand;assets/brand")
+$addData += @("--add-data", "assets/materials;assets/materials")
+$addData += @("--add-data", "assets/watch-welcome-scenic.png;assets")
 $addData += @("--add-data", "assets/preview_thumbnails/alpine-lake.jpg;assets/preview_thumbnails")
 $addData += @("--add-data", "THIRD_PARTY_NOTICES.md;.")
 

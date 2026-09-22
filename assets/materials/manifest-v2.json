@@ -1,0 +1,22 @@
+{
+  "purpose": "Full composition grayscale artworks, runtime-tinted; original generated pixels preserved",
+  "render_size": [
+    1200,
+    800
+  ],
+  "maximum_tint_opacity": 0.28,
+  "sources": {
+    "smoke": {
+      "file": "smoke-v2.png",
+      "sha256": "33a8085eade6eacceba9b11d68b6794277b930ce1d45a07095afa37fa0bb7491"
+    },
+    "blossoms": {
+      "file": "blossoms-v2.png",
+      "sha256": "baa46b5ff377f0f00a7079766b3d3e1a1097fb36169e3b9037f851ab7cb13b8e"
+    },
+    "splatter": {
+      "file": "splatter-v2.png",
+      "sha256": "ee5b89f0fb869439bd4214da8c85e3a1fd41ee6702ea27ff57c6ee549abe89e0"
+    }
+  }
+}

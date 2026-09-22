@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.test_archive_relink import mapping, record
+from tests.test_archive_relink import record
 from tests.test_product_telemetry import _permitted_installation
 from yt_downloader.archive_observations import operation, relink_dimensions, usage
 from yt_downloader.archive_relink import preview_relink, verify_relink
@@ -65,17 +65,21 @@ def test_all_archive_actions_obey_consent_and_exclude_private_content(
     )
 
 
-def test_preview_observations_contain_only_counts_and_time(tmp_path):
+@pytest.mark.parametrize("legacy_mismatch", [False, True])
+def test_preview_observations_contain_only_counts_and_time(tmp_path, legacy_mismatch):
     new = tmp_path / "Secret Channel" / "Private Playlist"
     new.mkdir(parents=True)
-    (new / "Private title.mp4").write_bytes(b"synthetic")
+    chosen = new / ("Private title.mp3" if legacy_mismatch else "Private title.mp4")
+    chosen.write_bytes(b"synthetic")
     rows = [record(tmp_path / "old" / "Private title.mp4")]
-    preview = verify_relink(
-        preview_relink(rows, [mapping(tmp_path / "old", new)]), rows
-    )
+    if legacy_mismatch:
+        rows[0].pop("vodforge_output_path")
+        rows[0]["vodforge_encoding_summary"]["output"].pop("Output file path")
+    preview = verify_relink(preview_relink(rows, exact_files={0: str(chosen)}), rows)
     dimensions = relink_dimensions(preview)
-    assert dimensions["verified_count"] == "1"
-    assert dimensions["unresolved_count"] == "0"
+    assert dimensions["identity_mismatch_count"] == ("1" if legacy_mismatch else "0")
+    assert dimensions["verified_count"] == ("0" if legacy_mismatch else "1")
+    assert dimensions["unresolved_count"] == ("1" if legacy_mismatch else "0")
     assert not any(
         value in json.dumps(dimensions)
         for value in ("Private", "Secret", str(tmp_path))
@@ -92,7 +96,10 @@ def test_preview_observations_contain_only_counts_and_time(tmp_path):
         owner, "archive_relink_operation", "verified", str(uuid.uuid4()), dimensions
     )
     owner.shutdown(2)
-    assert _load_outbox(tmp_path / "events.json")[0].dimensions["verified_count"] == "1"
+    persisted = _load_outbox(tmp_path / "events.json")[0].dimensions
+    assert persisted["identity_mismatch_count"] == dimensions["identity_mismatch_count"]
+    assert persisted["verified_count"] == dimensions["verified_count"]
+    assert persisted["unresolved_count"] == dimensions["unresolved_count"]
 
 
 def test_optional_observation_failure_cannot_replace_operation_outcome():
@@ -151,3 +158,123 @@ def test_history_failure_producers_observe_bounded_outcome_without_private_data(
     assert [args[1] for args, kwargs in events] == ["started", "failed"]
     assert events[-1][1]["failure_detail"].stage == "history"
     assert "private" not in json.dumps(events, default=lambda value: value.payload())
+
+
+@pytest.mark.parametrize("consent", [False, True])
+def test_hero_observations_use_actual_consented_outbox_without_content(
+    tmp_path, monkeypatch, consent
+):
+    import json
+
+    from tests.test_history_diagnostics import make_app, payloads
+    from yt_downloader.watch_ui import WatchView
+
+    holder = make_app(tmp_path, monkeypatch, consent=consent)
+    watch = object.__new__(WatchView)
+    watch._hero_seen_key = ""
+    watch._mode = "playlists"
+    watch._on_usage = holder._archive_usage
+    played = []
+    watch._on_play = played.append
+    watch._observe_hero("PRIVATE title source path")
+    watch._observe_hero("PRIVATE title source path")
+    watch._play_hero(4)
+    assert played == [4]
+    events = payloads(holder)
+    assert [event["action"] for event in events] == (
+        ["hero_shown", "hero_played"] if consent else []
+    )
+    assert all(event["dimensions"] == {"watch_mode": "playlists"} for event in events)
+    assert "PRIVATE" not in json.dumps(events)
+
+
+@pytest.mark.parametrize("consent", [False, True])
+def test_player_disclosure_producers_obey_consent_without_panel_content(
+    tmp_path, monkeypatch, consent
+):
+    from tests.test_history_diagnostics import make_app, payloads
+    from yt_downloader.media_player_ui import MediaPlayerWindow
+
+    holder = make_app(tmp_path, monkeypatch, consent=consent)
+    player = object.__new__(MediaPlayerWindow)
+    player._closed = False
+    player.popup = SimpleNamespace(winfo_ismapped=lambda: True)
+    player._page_surface = SimpleNamespace(
+        viewport=SimpleNamespace(winfo_rooty=lambda: 0, winfo_height=lambda: 100)
+    )
+    player._information_seen = set()
+    player._on_feature = lambda action, **fields: (
+        holder.product_telemetry.record_feature("player", action, **fields)
+    )
+    targets = ("chapters", "info", "source", "output", "notes", "moments")
+    player._detail_targets = {
+        f"PRIVATE owned panel {i}": target for i, target in enumerate(targets)
+    }
+    positions = {key: 200 for key in player._detail_targets}
+    player._information_sections = {
+        key: SimpleNamespace(
+            winfo_rooty=lambda key=key: positions[key], winfo_height=lambda: 40
+        )
+        for key in player._detail_targets
+    }
+    player._observe_information()
+    assert not payloads(holder)
+    for key in player._detail_targets:
+        positions[key] = 10
+        player._observe_information()
+        player._observe_information()
+        positions[key] = 200
+    events = payloads(holder)
+    assert [event["action"] for event in events] == (
+        ["detail_viewed"] * 6 if consent else []
+    )
+    assert [event["dimensions"]["detail_target"] for event in events] == (
+        list(targets) if consent else []
+    )
+    assert all(event["feature"] == "player" for event in events)
+    assert not holder.product_telemetry.record_feature(
+        "player", "detail_viewed", dimensions={"detail_target": "PRIVATE raw path"}
+    )
+    assert "PRIVATE" not in json.dumps(events)
+
+
+@pytest.mark.parametrize("consent", [False, True])
+def test_continuous_catalog_scroll_is_bounded_and_content_free(
+    tmp_path, monkeypatch, consent
+):
+    from tests.test_history_diagnostics import make_app, payloads
+    from yt_downloader.watch_ui import WatchView
+
+    holder = make_app(tmp_path, monkeypatch, consent=consent)
+    watch = object.__new__(WatchView)
+    watch._on_usage = holder._archive_usage
+    watch._scene_window = ("PRIVATE catalog content",)
+    for _ in range(100):
+        watch._scene_catalog_scroll_used()
+    events = payloads(holder)
+    assert [event["action"] for event in events] == (
+        ["catalog_scrolled"] if consent else []
+    )
+    assert all(event["dimensions"] == {} for event in events)
+
+
+@pytest.mark.parametrize("consent", [False, True])
+def test_library_continuous_scroll_reports_route_without_search_content(
+    tmp_path, monkeypatch, consent
+):
+    from tests.test_history_diagnostics import make_app, payloads
+    from yt_downloader.library_scene_ui import LibraryScene
+
+    holder = make_app(tmp_path, monkeypatch, consent=consent)
+    view = object.__new__(LibraryScene)
+    view._on_usage = holder._archive_usage
+    view._catalog_window = ("PRIVATE content",)
+    view._route, view._query, view._sort = "all", "PRIVATE query", "recent"
+    view._filter = view._group_kind = view._group_key = view._category = ""
+    for _ in range(100):
+        view._catalog_scroll_used()
+    events = payloads(holder)
+    assert [event["action"] for event in events] == (
+        ["scene_scrolled"] if consent else []
+    )
+    assert all(event["dimensions"] == {"scene_route": "all"} for event in events)

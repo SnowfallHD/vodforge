@@ -359,7 +359,7 @@ def test_packaged_receipt_requires_independent_pipeline_and_provenance_receipts(
     )
 
 
-def test_release_receipt_allows_visible_debt_but_blocks_required_gaps() -> None:
+def test_legacy_success_receipt_keeps_debt_visible_but_blocks_temporal_gaps() -> None:
     from test_telemetry_release import telemetry_fixture
 
     candidate = _candidate()
@@ -388,13 +388,16 @@ def test_release_receipt_allows_visible_debt_but_blocks_required_gaps() -> None:
         generated_at="2026-08-31T00:00:00+00:00",
     )
 
-    assert receipt["status"] == "passed"
-    assert receipt["release_eligible"] is True
+    assert receipt["status"] == "unproven"
+    assert receipt["release_eligible"] is False
     assert receipt["test_counts"]["repository"] == 548
     assert receipt["test_counts"]["harness_self_tests"] == 24
     assert receipt["known_debt"]
     assert {item["status"] for item in receipt["known_debt"]} == {"failed"}
-    assert receipt["summary"]["blocking_check_ids"] == []
+    blockers = receipt["summary"]["blocking_check_ids"]
+    assert any(".interaction." in item for item in blockers)
+    assert any(".usability." in item for item in blockers)
+    assert all(".interaction." in item or ".usability." in item for item in blockers)
     schema = json.loads(
         (
             Path(__file__).parents[1] / "schemas" / "release-receipt.schema.json"

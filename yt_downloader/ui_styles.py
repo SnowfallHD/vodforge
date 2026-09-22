@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
+from .ui_button_contract import apply_button_metrics
 from .ui_chrome import apply_product_chrome
 from .ui_theme import (
     FONT_TITLE,
@@ -46,7 +47,7 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.configure(
         "Accent.TLabel",
         background=THEME["bg"],
-        foreground=THEME["accent"],
+        foreground=THEME["action"],
         font=FONT_UI_MEDIUM,
     )
     style.configure(
@@ -59,7 +60,7 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.configure(
         "TLabelframe.Label",
         background=THEME["bg"],
-        foreground=THEME["accent"],
+        foreground=THEME["action"],
         font=FONT_UI_MEDIUM,
     )
     style.configure(
@@ -74,16 +75,16 @@ def apply_product_styles(root: tk.Tk) -> None:
     )
     style.map(
         "TEntry",
-        bordercolor=[("focus", THEME["surface"])],
-        lightcolor=[("focus", THEME["surface"])],
-        darkcolor=[("focus", THEME["surface"])],
+        bordercolor=[("focus", THEME["focus"])],
+        lightcolor=[("focus", THEME["focus"])],
+        darkcolor=[("focus", THEME["focus"])],
     )
     style.configure(
         "TCombobox",
         fieldbackground=THEME["surface"],
         foreground=THEME["text"],
         background=THEME["surface"],
-        arrowcolor=THEME["accent"],
+        arrowcolor=THEME["icon"],
         bordercolor=THEME["border"],
         padding=6,
     )
@@ -140,7 +141,7 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.configure(
         "Accent.TButton",
         background=THEME["accent_dark"],
-        foreground="#ffffff",
+        foreground=THEME["action"],
         bordercolor=THEME["accent"],
     )
     style.map(
@@ -165,11 +166,11 @@ def apply_product_styles(root: tk.Tk) -> None:
     )
     style.configure(
         "TProgressbar",
-        background=THEME["accent"],
+        background=THEME["progress"],
         troughcolor=THEME["surface"],
         bordercolor=THEME["border"],
-        lightcolor=THEME["accent"],
-        darkcolor=THEME["accent_dark"],
+        lightcolor=THEME["progress"],
+        darkcolor=THEME["progress"],
     )
     style.configure(
         "TNotebook",
@@ -191,7 +192,7 @@ def apply_product_styles(root: tk.Tk) -> None:
             ("selected", THEME["accent_dark"]),
             ("active", THEME["surface_2"]),
         ],
-        foreground=[("selected", "#ffffff"), ("active", THEME["text"])],
+        foreground=[("selected", THEME["on_accent"]), ("active", THEME["text"])],
         expand=[("selected", (0, 0, 0, 0))],
     )
     style.configure(
@@ -203,9 +204,41 @@ def apply_product_styles(root: tk.Tk) -> None:
         darkcolor=THEME["bg"],
         tabmargins=(0, 0, 0, 6),
     )
+    readonly_list_selection = {
+        "background": [
+            ("selected", "focus", THEME["accent_dark"]),
+            ("selected", THEME["accent_surface"]),
+        ],
+        "foreground": [
+            ("selected", "focus", THEME["on_accent"]),
+            ("selected", THEME["text"]),
+        ],
+    }
+    style.configure(
+        "ArchiveLocations.Treeview",
+        background=THEME["panel"],
+        fieldbackground=THEME["panel"],
+        foreground=THEME["muted"],
+        rowheight=52,
+        borderwidth=0,
+        font=FONT_UI_SMALL,
+    )
+    style.layout(
+        "ArchiveLocations.Treeview", [("Treeview.treearea", {"sticky": "nswe"})]
+    )
+    style.map("ArchiveLocations.Treeview", **readonly_list_selection)
+    style.configure("Archive.FocusNav.TButton", anchor="w")
+    style.configure("Archive.FocusNavActive.TButton", anchor="w")
+    style.map(
+        "Archive.TNotebook.Tab",
+        expand=[("selected", (0, 0, 0, 0))],
+        # Clam inherits a smaller selected-state padding in physical points.
+        # Explicit symmetric padding keeps every text tab on one baseline.
+        padding=[("selected", (8, 8)), ("!selected", (8, 8))],
+    )
     style.configure(
         "Archive.TNotebook.Tab",
-        background=THEME["surface"],
+        background=THEME["bg"],
         foreground=THEME["muted"],
         padding=(8, 8),
         font=FONT_UI_SMALL,
@@ -213,15 +246,15 @@ def apply_product_styles(root: tk.Tk) -> None:
         bordercolor=THEME["bg"],
         lightcolor=THEME["bg"],
         darkcolor=THEME["bg"],
-        focuscolor=THEME["accent"],
+        focuscolor=THEME["focus"],
     )
     style.map(
         "Archive.TNotebook.Tab",
         background=[
-            ("selected", THEME["accent_surface"]),
-            ("active", THEME["surface_2"]),
+            ("selected", THEME["bg"]),
+            ("active", THEME["bg"]),
         ],
-        foreground=[("selected", THEME["accent"]), ("active", THEME["text"])],
+        foreground=[("selected", THEME["selection"]), ("active", THEME["text"])],
         lightcolor=[("selected", THEME["bg"]), ("!selected", THEME["bg"])],
         darkcolor=[("selected", THEME["bg"]), ("!selected", THEME["bg"])],
         bordercolor=[("selected", THEME["bg"]), ("!selected", THEME["bg"])],
@@ -245,15 +278,21 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.map(
         "Treeview",
         background=[("selected", THEME["accent_dark"])],
-        foreground=[("selected", "#ffffff")],
+        foreground=[("selected", THEME["on_accent"])],
     )
     style.configure("FocusShell.TFrame", background=THEME["bg"])
     style.configure("FocusSurface.TFrame", background=THEME["surface"])
+    style.configure("FocusPanel.TFrame", background=THEME["panel"])
+    style.configure(
+        "Sidebar.FocusEyebrow.TLabel", background=THEME["panel"], font=FONT_UI_SMALL
+    )
+    style.configure("Archive.FocusNav.TButton", background=THEME["panel"])
+    style.configure("Archive.FocusNavActive.TButton", background=THEME["panel"])
     style.configure(
         "FocusBrand.TLabel",
         background=THEME["bg"],
         foreground=THEME["text"],
-        font=(FONT_UI_FAMILY, 18, "bold"),
+        font=(FONT_UI_FAMILY, -24, "bold"),
     )
     style.configure(
         "FocusTitle.TLabel",
@@ -270,13 +309,13 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.configure(
         "FocusProfile.TLabel",
         background=THEME["bg"],
-        foreground=THEME["accent"],
+        foreground=THEME["muted"],
         font=FONT_UI_SMALL,
     )
     style.configure(
         "FocusPercent.TLabel",
         background=THEME["bg"],
-        foreground=THEME["accent"],
+        foreground=THEME["progress"],
         font=(FONT_UI_FAMILY, 24),
     )
     style.configure(
@@ -310,46 +349,24 @@ def apply_product_styles(root: tk.Tk) -> None:
     style.configure(
         "FocusNavActive.TButton",
         background=THEME["bg"],
-        foreground=THEME["accent"],
+        foreground=THEME["text"],
         bordercolor=THEME["bg"],
         focusthickness=0,
         focuscolor=THEME["bg"],
-        padding=(12, 8),
+        padding=(10, 1),
         font=FONT_UI,
-    )
-    style.layout(
-        "FocusNav.TButton",
-        [
-            (
-                "Button.padding",
-                {
-                    "sticky": "nswe",
-                    "children": [("Button.label", {"sticky": "nswe"})],
-                },
-            )
-        ],
-    )
-    style.layout(
-        "FocusNavActive.TButton",
-        [
-            (
-                "Button.padding",
-                {
-                    "sticky": "nswe",
-                    "children": [("Button.label", {"sticky": "nswe"})],
-                },
-            )
-        ],
     )
     style.map(
         "FocusNav.TButton",
-        background=[("active", THEME["surface"])],
+        # The shared chrome image supplies the concise inset hover contour.
+        # Do not add a full-control fill or border highlight on top of it.
+        background=[("active", THEME["bg"])],
         foreground=[("active", THEME["text"])],
     )
     style.map(
         "FocusNavActive.TButton",
-        background=[("active", THEME["surface"])],
-        foreground=[("active", THEME["accent"])],
+        background=[("active", THEME["bg"])],
+        foreground=[("active", THEME["selection"])],
     )
     style.configure(
         "FocusQuiet.TButton",
@@ -368,9 +385,9 @@ def apply_product_styles(root: tk.Tk) -> None:
         "FocusQuiet.TButton",
         background=[("active", THEME["surface_2"]), ("pressed", THEME["panel"])],
         foreground=[("active", THEME["text"])],
-        bordercolor=[("focus", THEME["surface"])],
-        lightcolor=[("focus", THEME["surface"])],
-        darkcolor=[("focus", THEME["surface"])],
+        bordercolor=[("focus", THEME["focus"])],
+        lightcolor=[("focus", THEME["focus"])],
+        darkcolor=[("focus", THEME["focus"])],
     )
     style.configure(
         "CloudDisabled.TButton",
@@ -437,21 +454,21 @@ def apply_product_styles(root: tk.Tk) -> None:
     )
     style.configure(
         "FocusProgress.Horizontal.TProgressbar",
-        background=THEME["accent"],
+        background=THEME["progress"],
         troughcolor=THEME["surface_2"],
         bordercolor=THEME["bg"],
-        lightcolor=THEME["accent"],
-        darkcolor=THEME["accent"],
+        lightcolor=THEME["progress"],
+        darkcolor=THEME["progress"],
         thickness=4,
         borderwidth=0,
     )
     style.configure(
         "FocusDeck.Horizontal.TProgressbar",
-        background=THEME["accent"],
+        background=THEME["progress"],
         troughcolor=THEME["border"],
         bordercolor=THEME["surface"],
-        lightcolor=THEME["accent"],
-        darkcolor=THEME["accent"],
+        lightcolor=THEME["progress"],
+        darkcolor=THEME["progress"],
         thickness=3,
         borderwidth=0,
     )
@@ -467,5 +484,160 @@ def apply_product_styles(root: tk.Tk) -> None:
     root.option_add("*TCombobox*Listbox.background", THEME["surface"])
     root.option_add("*TCombobox*Listbox.foreground", THEME["text"])
     root.option_add("*TCombobox*Listbox.selectBackground", THEME["accent_dark"])
-    style.configure("Violet.FocusBrand.TLabel", foreground=THEME["accent"])
+    style.configure("Violet.FocusBrand.TLabel", foreground=THEME["action"])
     apply_product_chrome(root, style)
+    for tab_style in ("TNotebook.Tab", "Archive.TNotebook.Tab"):
+        style.layout(
+            tab_style,
+            [
+                (
+                    "Product.tab",
+                    {
+                        "sticky": "nsew",
+                        "children": [
+                            (
+                                "Notebook.padding",
+                                {
+                                    "sticky": "nsew",
+                                    "children": [
+                                        ("Notebook.label", {"sticky": "nsew"})
+                                    ],
+                                },
+                            )
+                        ],
+                    },
+                )
+            ],
+        )
+        style.map(
+            tab_style,
+            background=[("selected", THEME["bg"]), ("active", THEME["bg"])],
+            foreground=[("selected", THEME["selection"]), ("active", THEME["text"])],
+        )
+    style.layout(
+        "FocusNavActive.TButton",
+        [
+            (
+                "Product.nav_selected",
+                {
+                    "sticky": "nsew",
+                    "children": [
+                        (
+                            "Button.padding",
+                            {
+                                "sticky": "nsew",
+                                "children": [("Button.label", {"sticky": "nsew"})],
+                            },
+                        )
+                    ],
+                },
+            )
+        ],
+    )
+
+    for role in ("Media.Accent.TButton", "Media.FocusQuiet.TButton"):
+        style.configure(role, font=FONT_UI, padding=(5, 0), foreground=THEME["text"])
+    style.configure("Media.Accent.TButton", foreground=THEME["action"])
+    style.configure("Media.FocusNav.TButton", font=FONT_UI, padding=(8, 5))
+    style.configure(
+        "Streaming.Media.FocusQuiet.TButton",
+        font=(FONT_UI_FAMILY, -15, "normal"),
+        padding=(15, 7),
+    )
+
+    style.map(
+        "Media.FocusNav.TButton",
+        foreground=[
+            ("disabled", THEME["subtle"]),
+            ("focus", THEME["focus"]),
+            ("active", THEME["text"]),
+        ],
+    )
+    # Media content uses one quiet outlined action role and one primary role.
+    # Parent-surface variants retain transparent rounded corners in every state.
+    style.configure(
+        "Archive.Folders.Treeview",
+        background=THEME["bg"],
+        fieldbackground=THEME["bg"],
+        foreground=THEME["text"],
+        rowheight=34,
+        borderwidth=0,
+        font=FONT_UI_SMALL,
+    )
+    style.layout(
+        "Archive.Folders.Treeview", [("Treeview.treearea", {"sticky": "nswe"})]
+    )
+    style.map("Archive.Folders.Treeview", **readonly_list_selection)
+    style.configure("MediaPanel.TFrame", background=THEME["panel"])
+    style.configure(
+        "Player.Archive.TNotebook",
+        background=THEME["panel"],
+        bordercolor=THEME["panel"],
+        lightcolor=THEME["panel"],
+        darkcolor=THEME["panel"],
+        borderwidth=0,
+        padding=0,
+    )
+    style.configure(
+        "Player.Chapters.Treeview",
+        background=THEME["panel"],
+        fieldbackground=THEME["panel"],
+        foreground=THEME["text"],
+        rowheight=38,
+        borderwidth=0,
+        font=FONT_UI_SMALL,
+    )
+    style.layout(
+        "Player.Chapters.Treeview", [("Treeview.treearea", {"sticky": "nswe"})]
+    )
+    style.map("Player.Chapters.Treeview", **readonly_list_selection)
+
+    style.configure("Material.TFrame", background=THEME["bg"])
+    style.configure(
+        "Player.Transport.TLabel",
+        background=THEME["panel"],
+        foreground=THEME["muted"],
+        font=FONT_UI_SMALL,
+    )
+    style.configure("Player.Media.Accent.TButton", background=THEME["panel"])
+    style.map(
+        "Player.Media.Accent.TButton",
+        background=[("active", THEME["panel"]), ("disabled", THEME["panel"])],
+    )
+    style.configure("Sidebar.FocusEyebrow.TLabel", font=(FONT_UI_FAMILY, 9))
+    style.configure("Archive.FocusNav.TButton", font=FONT_UI_SMALL)
+    style.configure("Archive.FocusNavActive.TButton", font=FONT_UI_SMALL)
+
+    style.configure("Transport.TButton", background=THEME["panel"])
+    style.map(
+        "Transport.TButton",
+        background=[
+            (state, THEME["panel"])
+            for state in ("active", "pressed", "focus", "disabled")
+        ],
+    )
+    for role in ("Player.Media.FocusQuiet.TButton", "Player.Media.FocusNav.TButton"):
+        style.configure(role, background=THEME["panel"])
+        style.map(
+            role,
+            background=[
+                (state, THEME["panel"])
+                for state in ("active", "pressed", "focus", "disabled")
+            ],
+        )
+    style.configure(
+        "Player.Media.FocusNav.TButton",
+        font=(FONT_UI_FAMILY, 13, "bold"),
+        foreground=THEME["text"],
+        anchor="w",
+        padding=(2, 4),
+    )
+    style.configure(
+        "Player.PanelMuted.TLabel",
+        background=THEME["panel"],
+        foreground=THEME["muted"],
+        font=FONT_UI_SMALL,
+    )
+
+    # Resolve shared action metrics last; surface aliases only choose backgrounds.
+    apply_button_metrics(root, style)

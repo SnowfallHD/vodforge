@@ -31,6 +31,19 @@ from yt_downloader.focus_settings import FocusSettingsDialog
 from yt_downloader.history import HistoryError, history_identity, upsert_history
 from yt_downloader.run_identity import annotate_job_metadata, job_attempt_signature
 from yt_downloader.run_state import ActiveRunStore, RunRecoveryOwner
+from yt_downloader.ui_layout import WindowLogicalMetrics
+
+
+class LogicalMetricsProbe:
+    _vodforge_logical_metrics = WindowLogicalMetrics()
+
+    def winfo_toplevel(self):
+        return self
+
+
+def contains_code(source: str, snippet: str) -> bool:
+    """Compare source-bound contracts across formatter-only line wrapping."""
+    return re.sub(r"\s+", "", snippet) in re.sub(r"\s+", "", source)
 
 
 class Value:
@@ -1823,8 +1836,13 @@ def test_all_resizable_popouts_enforce_content_appropriate_minimums():
     output_source = inspect.getsource(app_module.OutputDetailsDialog.__init__)
     selected_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
 
-    assert "popup.minsize(700, 540)" in settings_source
-    assert "popup.minsize(460, 320)" in output_source
+    assert (
+        "popup.minsize(min(metrics.px(700), limit[0]), min(metrics.px(540), limit[1]))"
+        in settings_source
+    )
+    assert (
+        "popup.minsize(min(px(460), limit[0]), min(px(320), limit[1]))" in output_source
+    )
     assert "popup.minsize(560, 520)" in selected_source
     assert "height=135" in selected_source
 
@@ -1855,7 +1873,9 @@ def test_focus_settings_keep_manual_controls_in_the_mp4_flow_and_release_combo_s
     assert description_index < manual_index < checkboxes_index
     assert "textvariable=self.bindings.export_mode_description" in mode_source
     assert "manual = ttk.Frame(root" not in manual_source
-    assert 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"' in manual_source
+    assert contains_code(
+        manual_source, 'manual.grid(row=4, column=0, columnspan=2, sticky="ew"'
+    )
     assert '"CBR video bitrate (kbps)"' in manual_source
     assert '"Audio bitrate (kbps)"' in manual_source
     assert '"Audio codec",' in manual_source
@@ -1894,6 +1914,8 @@ def test_focus_settings_dialog_owns_conditional_widget_visibility():
     dialog.cookie_file_frame = Frame()
     dialog.cookie_browser_frame = Frame()
     dialog.mp3_cover_file_frame = Frame()
+    arranged = []
+    dialog._arrange_columns = lambda: arranged.append(True)
 
     dialog.refresh_output_sections(OutputType.MP3)
     dialog.refresh_manual_settings(False)
@@ -1906,6 +1928,7 @@ def test_focus_settings_dialog_owns_conditional_widget_visibility():
     assert dialog.cookie_file_frame.visible is False
     assert dialog.cookie_browser_frame.visible is True
     assert dialog.mp3_cover_file_frame.visible is False
+    assert arranged == [True]
 
 
 def test_focus_settings_preview_closes_only_after_success_and_close_is_idempotent():
@@ -1984,11 +2007,14 @@ def test_all_runs_navigates_to_library_without_hover_popup():
     destination_sync = layout_source.index("self._sync_focus_destination()")
     deck_refresh = layout_source.index("self._refresh_focus_run_deck(")
     assert destination_sync < deck_refresh
-    assert "limit = focus_run_deck_capacity(deck_width)" in deck_source
+    assert contains_code(
+        deck_source,
+        "focus_run_deck_capacity(deck_width // window_logical_metrics(self).scale)",
+    )
     assert "for column in range(4):" in deck_source
     assert "self._render_focus_run_deck_tile(" in deck_source
     assert "visible_count=len(visible)" in deck_source
-    assert "right_pad = 5 if column < visible_count - 1 else 9" in tile_source
+    assert "right_pad = px(5 if column < visible_count - 1 else 9)" in tile_source
     assert re.search(
         r'deck\.bind\(\s*"<Configure>",\s*'
         r"self\._schedule_focus_run_deck_geometry_refresh",
@@ -2199,7 +2225,7 @@ def test_ultrawide_resize_burst_releases_large_live_padding_once():
 
 
 def test_run_deck_capacity_crossing_refreshes_synchronously_once():
-    class DeckProbe:
+    class DeckProbe(LogicalMetricsProbe):
         def __init__(self):
             self._focus_run_deck_rendered_capacity = 3
             self.refreshes = 0
@@ -2229,7 +2255,7 @@ def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
         def columnconfigure(self, *_args, **_kwargs):
             return None
 
-    class Probe:
+    class Probe(LogicalMetricsProbe):
         _focus_layout = "wide"
         focus_run_deck = Deck()
         rendered = 0
@@ -2294,7 +2320,7 @@ def test_run_deck_active_live_status_change_does_not_rebuild_widgets():
         def columnconfigure(self, *_args, **_kwargs):
             return None
 
-    class Probe:
+    class Probe(LogicalMetricsProbe):
         _focus_layout = "wide"
         focus_run_deck = Deck()
         rendered = 0
@@ -2342,7 +2368,7 @@ def test_run_deck_active_progress_with_queued_successor_does_not_rebuild_cards()
         def columnconfigure(self, *_args, **_kwargs):
             return None
 
-    class Probe:
+    class Probe(LogicalMetricsProbe):
         _focus_layout = "wide"
         focus_run_deck = Deck()
         focus_run_count_var = SimpleNamespace(set=lambda _value: None)
@@ -2490,8 +2516,8 @@ def test_library_actions_remain_one_stable_menu_at_every_width():
     popup_source = inspect.getsource(DownloaderApp._show_selected_metadata_details)
     forge_actions_source = inspect.getsource(DownloaderApp._show_focus_run_actions_menu)
 
-    assert 'text="Actions"' in library_source
-    assert "width=7" in library_source
+    assert 'text="More actions  ▾"' in library_source
+    assert "command=self._show_library_actions_menu" in library_source
     assert "focus_library_action_buttons" not in library_source
     assert "focus_library_copy_buttons" not in library_source
     for label in (
@@ -2525,21 +2551,22 @@ def test_primary_scroll_surfaces_use_high_resolution_trackpad_bindings():
     from yt_downloader.archive_browser_ui import ArchiveBrowser
     from yt_downloader.watch_ui import WatchView
 
-    for widget in (ArchiveBrowser, WatchView):
-        assert (
-            'bind_smooth_vertical_wheel(self.canvas, mode="pixels")'
-            in inspect.getsource(widget)
-        )
-    assert 'target.bind("<TouchpadScroll>"' in pixel_table_source
+    assert (
+        'bind_smooth_vertical_wheel(self.canvas, mode="pixels")'
+        in inspect.getsource(ArchiveBrowser)
+    )
+    assert contains_code(
+        inspect.getsource(WatchView),
+        'bind_smooth_scroll(self.canvas, mode="pixels", on_scroll=self._scene_catalog_scroll_used)',
+    )
+    assert "_scrolling.bind_smooth_scroll(" in pixel_table_source
+    assert "_bind_precision_scroll" not in pixel_table_source
     assert "tk::PreciseScrollDeltas" in inspect.getsource(
         app_module.touchpad_scroll_deltas
     )
-    assert "yview_moveto" in pixel_table_source
-    assert 'xview("moveto"' in pixel_table_source
-    assert 'target.bind("<TouchpadScroll>"' in wheel_binding_source
-    assert "pixel_scroll_target" in wheel_binding_source
-    assert 'scroller.yview_scroll(pixels, "pixels")' in wheel_binding_source
-    assert 'count("1.0", "end", "ypixels")' not in wheel_binding_source
+    assert "_scrolling.bind_smooth_scroll(" in wheel_binding_source
+    # Delta, nesting and lifetime outcomes are exercised in test_shared_input;
+    # this contract only ensures active consumers enroll in the shared owner.
     assert "bind_smooth_vertical_wheel(self.log" in activity_source
     assert 'mode="pixels"' in activity_source
     assert "bind_smooth_vertical_wheel(self.focus_log" in forge_source
@@ -2553,10 +2580,7 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
     forge_source = inspect.getsource(DownloaderApp._build_focus_forge_view)
 
     assert app_module.FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT == 360
-    assert (
-        "details.configure(width=410, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)"
-        in library_source
-    )
+    assert "height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT" in library_source
     assert (
         "overview.configure(height=FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT)"
         in library_source
@@ -2580,7 +2604,10 @@ def test_library_tags_keep_a_usable_scrollable_surface_and_command_box_resize_is
         in library_layout_source
     )
     assert 'bind_smooth_vertical_wheel(text_widget, mode="pixels")' in library_source
-    assert "rounded_canvas_rectangle_points" in forge_source
+    assert contains_code(
+        forge_source, "CanvasFieldMaterial(command_box, self.focus_url_entry)"
+    )
+    assert "rounded_canvas_rectangle_points" not in forge_source
     assert 'Image.new("RGBA", (width * scale, height * scale)' not in forge_source
 
 
@@ -2664,7 +2691,7 @@ def test_legacy_pixel_table_columns_remain_resizable_without_losing_pixel_scroll
     assert "if column in {self._resize_column, self._resize_hover_column}" in (
         pixel_table_source
     )
-    assert 'fill=THEME["accent"]' in pixel_table_source
+    assert 'fill=THEME["selection"]' in pixel_table_source
     assert "self._manually_resized_columns.add(column)" in pixel_table_source
     assert "self._last_manually_resized_column = column" in pixel_table_source
     assert "responsive_table_stretch_indices" in column_layout_source
@@ -2939,7 +2966,7 @@ def test_library_table_selection_and_hover_use_restrained_surface_tokens():
     assert table._row_fill("plain") == app_module.THEME["panel"]
     assert table._cell_color("plain", 1) == app_module.THEME["text"]
     assert table._cell_color("plain", 3) == app_module.THEME["muted"]
-    assert table._cell_color("hovered", 0) == app_module.THEME["accent"]
+    assert table._cell_color("hovered", 0) == app_module.THEME["action"]
 
 
 def test_pixel_table_snapshot_is_atomic_and_idempotent():
@@ -3169,8 +3196,8 @@ def test_preview_items_expose_fresh_forge_start_actions_without_library_ownershi
         build_calls.append((list(urls), dict(kwargs))) or built_job
     )
     app._select_focus_view = selected_views.append
-    app._start_or_queue_download_job = lambda job, *, clear_source: submitted.append(
-        (job, clear_source)
+    app._start_or_queue_download_job = lambda job, *, clear_source: (
+        submitted.append((job, clear_source)) or True
     )
 
     app._start_preview_download(preview)
@@ -3505,13 +3532,14 @@ def test_custom_popouts_are_positioned_before_they_become_visible():
     assert "self.popup.after_idle(self._record_visible_pro)" in settings_show_source
     for source in (output_source, selected_source):
         assert "popup.withdraw()" in source
-        assert "reveal_toplevel(popup," in source
-        assert source.index("popup.withdraw()") < source.index("reveal_toplevel(popup,")
+        assert contains_code(source, "reveal_toplevel(popup,")
+        assert source.index("popup.withdraw()") < source.index("reveal_toplevel(")
 
     assert (
-        "centered_toplevel_geometry(self.owner, width, height)" in settings_show_source
+        "centered_toplevel_geometry(self.owner, width, height, target=self.popup)"
+        in settings_show_source
     )
-    assert "centered_toplevel_geometry(parent, 620, 700)" in output_source
+    assert "centered_toplevel_geometry(parent, 620, 700, target=popup)" in output_source
     assert "centered_toplevel_geometry(self, 680, 620)" in selected_source
 
 
@@ -4593,7 +4621,7 @@ def test_geometry_uses_rendered_data_but_data_refresh_advances_run_state(record_
         def columnconfigure(self, *_args, **_kwargs):
             pass
 
-    class Probe:
+    class Probe(LogicalMetricsProbe):
         _refresh_focus_run_deck = DownloaderApp._refresh_focus_run_deck
         _focus_layout = "wide"
 

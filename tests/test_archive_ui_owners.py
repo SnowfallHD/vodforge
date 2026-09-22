@@ -38,6 +38,23 @@ def owner():
             record_operation=lambda *args, **kwargs: events.append((args, kwargs))
         ),
     )
+    from yt_downloader.product_telemetry import BoundProductOperation
+
+    # This fixture checks UI ownership, while the real-owner consent matrix
+    # independently verifies permission and outbox behavior.
+    def bind(feature, *, operation_key):
+        return BoundProductOperation(
+            lambda: True,
+            lambda action, dimensions, **kwargs: app.product_telemetry.record_operation(
+                feature,
+                action,
+                operation_key=operation_key,
+                dimensions=dimensions,
+                **kwargs,
+            ),
+        )
+
+    app.product_telemetry.bind_operation = bind
     for name in (
         "_archive_observe",
         "_archive_retire_pending_playback",
@@ -169,6 +186,9 @@ def test_watch_details_passes_exact_projection_index_to_library_selection():
         _select_record_in_library=lambda record: selected.append(record),
         _select_focus_view=lambda view: views.append(view),
         _apply_focus_layout=lambda **kwargs: layout.append(kwargs),
+    )
+    app._archive_reveal_library_details = (
+        ArchiveLibraryMixin._archive_reveal_library_details.__get__(app)
     )
     ArchiveLibraryMixin._archive_watch_details(app, 1)
     assert selected == [{"metadata_index": 1}]

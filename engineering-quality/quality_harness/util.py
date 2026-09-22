@@ -148,8 +148,12 @@ def run_command(
             command,
             None,
             time.monotonic() - started,
-            (exc.stdout or "") if isinstance(exc.stdout, str) else "",
-            (exc.stderr or "") if isinstance(exc.stderr, str) else "",
+            exc.stdout.decode("utf-8", errors="replace")
+            if isinstance(exc.stdout, bytes)
+            else (exc.stdout or ""),
+            exc.stderr.decode("utf-8", errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else (exc.stderr or ""),
             timed_out=True,
         )
 
@@ -190,9 +194,17 @@ def machine_snapshot(repo_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
         "disk_free_bytes_at_start": disk.free,
         "timezone": time.tzname[0] if time.tzname else None,
     }
+    from .source_identity import source_manifest
+
+    try:
+        manifest = source_manifest(repo_root)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        manifest = {"sha256": None, "error": type(exc).__name__}
     tracked_files = git_value(repo_root, "ls-files")
     repository = {
         "root": str(repo_root),
+        "source_manifest_sha256": manifest["sha256"],
+        "source_manifest": manifest,
         "commit": git_value(repo_root, "rev-parse", "HEAD"),
         "branch": git_value(repo_root, "branch", "--show-current"),
         "status_porcelain": (

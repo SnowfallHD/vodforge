@@ -40,6 +40,7 @@ from . import ui_widgets as _ui_widgets
 from .activity_ui import ActivityLogText, ActivitySummary, terminal_activity_line
 from .analytics_consent import AnalyticsConsentOwner
 from .analytics_startup import AnalyticsStartup
+from .archive_browser import archive_row_owner, resolve_archive_subject
 from .archive_browser_ui import ArchiveBrowser
 from .archive_library_ui import ArchiveLibraryMixin
 from .archive_paths import ArchivePath
@@ -54,6 +55,7 @@ from .cloud_funnel import (
 )
 from .detail_ui import FactsText, OutputDetailsDialog
 from .download_error_presentation import technical_download_error
+from .encoding_summary import AUDIO_SUMMARY_COMPARISON_ROWS, SUMMARY_COMPARISON_ROWS
 from .engagement_ui import EngagementUI
 from .export_planning import (
     DEFAULT_MAX_HEIGHT,
@@ -106,7 +108,11 @@ from .library_annotations import (
     LibraryAnnotationsError,
     LibraryAnnotationsOwner,
     library_annotations_file_path,
+    resolve_annotation_owner,
 )
+from .library_artwork_source import LibraryArtworkSource
+from .library_diagnostics import begin_library_action, observe_library_action
+from .library_file_actions_ui import LibraryFileActionsMixin
 from .library_media_recovery import (
     LibraryMediaRecoveryOwner,
     LibraryMediaRecoveryPlan,
@@ -126,6 +132,7 @@ from .library_state import (
     ACTIVE_METADATA_RUN_ID_KEY,
     ANNOTATION_OWNER_KEY,
     PROJECTION_OWNER_KEY,
+    PROJECTION_OWNER_KIND_KEY,
     QUEUED_METADATA_RUN_ID_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
@@ -155,7 +162,9 @@ from .local_audio_video import (
 )
 from .local_audio_video_ui import LocalAudioVideoDialog
 from .media_player import (
-    MediaPlayerError,
+    MediaPlayerError as MediaPlayerError,  # noqa: PLC0414 - compatibility export
+)
+from .media_player import (
     resolve_library_media_path,
 )
 from .media_player_ui import MediaPlayerWindow
@@ -189,20 +198,24 @@ from .output_validation import validate_output_artifact as _validate_output_arti
 from .platform_services import (
     choose_output_directory,
     configure_windows_app_identity,
+    create_surface_image,
     diagnostics_dir,
     find_runtime_executable,
     focus_view_shortcut_bindings,
     hidden_window_subprocess_kwargs,
     install_native_quit_handler,
+    integrate_main_window,
     is_macos,
     is_windows,
     output_directory_failure_guidance,
     probe_runtime_version,
     runtime_window_icon_asset,
+    surface_backing_scale,
 )
 from .platform_services import (
     open_path as open_system_path,
 )
+from .playback_progress import PlaybackProgressOwner
 from .private_files import open_private_text_file, write_private_bytes
 from .process_lifecycle import ACTIVE_CHILD_PROCESS_REGISTRY
 from .product_telemetry import (
@@ -257,6 +270,9 @@ from .telemetry_features import (
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .thumbnail_state import advance_thumbnail_item
+from .ui_button_contract import ProductButton
+from .ui_chrome import brand_mark, brand_name
+from .ui_context_menu import ContextMenu
 from .ui_events import (
     UiEvent,
     UiEventHandlersMixin,
@@ -286,13 +302,14 @@ from .ui_layout import (
     library_table_column_layout,
     library_thumbnail_size,
     measured_wrapped_line_count,
-    rounded_canvas_rectangle_points,
     selected_description_max_height,
     selected_overview_height,
     selected_overview_line_budget,
     thumbnail_size_within,
+    window_logical_metrics,
     youtube_thumbnail_size,
 )
+from .ui_materials import attach_matte_frame, enroll_matte_backgrounds, tint_brand
 from .ui_styles import apply_product_styles
 from .ui_theme import (
     DEFAULT_THEME_NAME,
@@ -312,7 +329,6 @@ from .ui_widgets import (
     ChoiceDropdown,
     PillAction,
     PixelScrollTable,
-    RoundedIconButton,
     SegmentedSelector,
     SleekProgressbar,
     SleekScrollbar,
@@ -339,6 +355,7 @@ from .updates import (
     verify_windows_authenticode,
 )
 from .version import __version__
+from .watch_queue import QueueContinuity, QueueToken, WatchQueueOwner
 from .watch_ui import WatchView
 from .whats_new import WhatsNewOwner
 from .youtube_access import (
@@ -347,6 +364,8 @@ from .youtube_access import (
     COOKIE_BROWSER_VALUES,
     COOKIE_SOURCE_OPTIONS,
 )
+
+RoundedIconButton = _ui_widgets.RoundedIconButton
 
 # Compatibility re-exports keep the long-standing ``yt_downloader.app``
 # helper surface stable while implementation ownership moves to focused UI
@@ -375,7 +394,15 @@ pointer_inside_widget_bounds = _ui_widgets.pointer_inside_widget_bounds
 touchpad_scroll_deltas = _ui_widgets.touchpad_scroll_deltas
 
 try:
-    from PIL import Image, ImageDraw, ImageOps, ImageTk
+    from PIL import Image as _PILImage
+    from PIL import ImageDraw as _PILImageDraw
+    from PIL import ImageOps as _PILImageOps
+    from PIL import ImageTk as _PILImageTk
+
+    Image: Any = _PILImage
+    ImageDraw: Any = _PILImageDraw
+    ImageOps: Any = _PILImageOps
+    ImageTk: Any = _PILImageTk
 except Exception:  # noqa: BLE001  # pragma: no cover - optional rendering boundary
     Image = None
     ImageDraw = None
@@ -469,7 +496,7 @@ MP3_COVER_ART_OPTIONS = ("No Art", "YouTube art", "Custom art")
 DEFAULT_IGNORE_PLAYLISTS = True
 BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
-AUTO_UPDATE_INITIAL_DELAY_MS = 5_000
+AUTO_UPDATE_INITIAL_DELAY_MS = 0
 AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1_000
 
 
@@ -1698,52 +1725,6 @@ def _ffprobe_output_summary(
         "Output file size": _format_bytes(fmt.get("size")),
         "Output duration": format_duration(fmt.get("duration")),
     }
-
-
-SUMMARY_COMPARISON_ROWS = [
-    ("Format selector", "Source format selector used", None),
-    ("Video format ID", "Video format ID", None),
-    ("Audio format ID", "Audio format ID", None),
-    ("Container/ext", "Source container/ext", "Output container"),
-    ("Resolution", "Source resolution", "Output resolution"),
-    ("Frame rate", "Source frame rate", "Output frame rate"),
-    ("Video codec", "Source video codec", "Output video codec"),
-    ("Video bitrate", "Source video bitrate", "Measured video bitrate"),
-    ("Audio codec", "Source audio codec", "Output audio codec"),
-    ("Audio bitrate", "Source audio bitrate", "Measured audio bitrate"),
-    ("Audio sample rate", "Source audio sample rate", "Audio sample rate"),
-    ("Audio channels", "Source audio channels", "Audio channels"),
-    ("HDR/SDR or pixel format", "HDR/SDR status", "Pixel format"),
-    ("File size", "File size estimate", "Output file size"),
-    (
-        "Effective/target video bitrate",
-        "Effective H.264-equivalent video bitrate",
-        "Target video bitrate",
-    ),
-    (
-        "Effective/target audio bitrate",
-        "Effective AAC-equivalent audio bitrate",
-        "Target audio bitrate",
-    ),
-    ("Selection/status", "Reason selected", "Validation status"),
-]
-
-AUDIO_SUMMARY_COMPARISON_ROWS = [
-    ("Format selector", "Source format selector used", None),
-    ("Audio format ID", "Audio format ID", None),
-    ("Container/ext", "Source container/ext", "Output container"),
-    ("Audio codec", "Source audio codec", "Output audio codec"),
-    ("Audio bitrate", "Source audio bitrate", "Measured audio bitrate"),
-    ("Audio sample rate", "Source audio sample rate", "Audio sample rate"),
-    ("Audio channels", "Source audio channels", "Audio channels"),
-    ("File size", "File size estimate", "Output file size"),
-    (
-        "Effective/target audio bitrate",
-        "Effective MP3-equivalent audio bitrate",
-        "Target audio bitrate",
-    ),
-    ("Selection/status", "Reason selected", "Validation status"),
-]
 
 
 # Keep source/output comparisons visually traceable without turning the summaries
@@ -5002,7 +4983,13 @@ def _resolve_run_finish_decision(
     )
 
 
-class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
+class DownloaderApp(
+    LibraryFileActionsMixin, ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk
+):
+    _focus_brand_source_image: _PILImage.Image | None
+    _focus_thumbnail_source_image: _PILImage.Image | None
+    _focus_active_thumbnail_source_image: _PILImage.Image | None
+
     _event_app_name = APP_NAME
     _event_subtle_color = THEME["subtle"]
     video_tree: PixelScrollTable | ArchiveBrowser
@@ -5025,7 +5012,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         except (AttributeError, OSError) as exc:
             write_diagnostic(f"Windows taskbar identity could not be set: {exc}")
         super().__init__()
-        self.title(APP_NAME)
+        self._integrated_header = integrate_main_window(
+            self, APP_NAME, write_diagnostic
+        )
         self._app_icon_image: tk.PhotoImage | None = None
         try:
             runtime_icon_asset = runtime_window_icon_asset()
@@ -5100,8 +5089,16 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         self.local_audio_video.recover_interrupted()
         self._local_audio_video_dialog: LocalAudioVideoDialog | None = None
-        recovered_terminal_jobs = self.run_recovery.recover_at_startup()
-        recovered_queued_jobs = self.run_recovery.queued_at_startup()
+        self.analytics_consent = AnalyticsConsentOwner(
+            self.installation_state_path.parent
+        )
+        recovery_consent_allowed = self.analytics_consent.allowed
+        recovery_consent_epoch = self.analytics_consent.snapshot().get(
+            "collection_epoch"
+        )
+        recovered_terminal_jobs, recovered_queued_jobs = (
+            self.run_recovery.startup_recovery()
+        )
         set_active_child_process_observer(self.run_recovery.child_event)
         self.settings_persistence = SettingsPersistenceOwner(
             settings_file_path(),
@@ -5126,7 +5123,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             )
 
         self.anonymous_usage_analytics_var = tk.BooleanVar(
-            value=False  # AnalyticsStartup synchronizes the canonical consent choice.
+            value=self.analytics_consent.allowed
         )
         self.product_telemetry = ProductTelemetryOwner(
             state_path=product_telemetry_path(),
@@ -5135,8 +5132,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             enabled=self.anonymous_usage_analytics_var.get(),
             diagnostic=write_diagnostic,
         )
-        self.analytics_consent = AnalyticsConsentOwner(
-            self.installation_state_path.parent,
+        self.run_recovery.bind_observer(
+            self.product_telemetry.record_operation,
+            report_startup=(
+                recovery_consent_allowed
+                and self.analytics_consent.allowed
+                and recovery_consent_epoch
+                == self.analytics_consent.snapshot().get("collection_epoch")
+            ),
         )
         self.analytics_startup = AnalyticsStartup(
             self,
@@ -5360,6 +5363,34 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self._last_library_invariant_violations: tuple[Any, ...] = ()
         self.download_history: list[dict[str, Any]] = []
         self.history_path = history_file_path()
+        self.playback_progress = PlaybackProgressOwner(
+            self.history_path.parent / "watch-progress.json",
+            diagnostic=write_diagnostic,
+        )
+        self.playback_progress.load()
+        self.watch_queue = WatchQueueOwner(
+            records=lambda: self.metadata_items,
+            open_record=lambda record, token: self._archive_request_playback(
+                record, queue_token=token
+            ),
+            schedule=lambda callback: self.after_idle(callback),
+            observe=self._record_watch_queue_operation,
+            unavailable=lambda: self.status_var.set(
+                "Playback stopped. That item is no longer in your Library."
+            ),
+        )
+        self.library_artwork = LibraryArtworkSource(
+            self.history_path.parent / "artwork",
+            thumbnail_path=self._library_thumbnail_path,
+            media_path=resolve_library_media_path,
+        )
+        self.bind(
+            "<Destroy>",
+            lambda event: (
+                self.library_artwork.close() if event.widget is self else None
+            ),
+            add="+",
+        )
         self.last_output_dirs: list[Path] = []
         self.video_output_dirs_by_id: dict[str, Path] = {}
         self._active_progress_context: tuple[int, int, float, float] | None = None
@@ -5406,6 +5437,17 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if bool(getattr(sys, "frozen", False)):
             self.whats_new.start()
             self._schedule_auto_update_check(AUTO_UPDATE_INITIAL_DELAY_MS)
+        if self.run_recovery.recovery_notice:
+            self._startup_after_ids.append(
+                self.after(0, self._show_download_recovery_notice)
+            )
+
+    def _show_download_recovery_notice(self) -> None:
+        if self._closing:
+            return
+        notice = self.run_recovery.recovery_notice
+        if notice:
+            messagebox.showwarning("Downloads need attention", notice, parent=self)
 
     def _apply_theme(self) -> None:
         apply_product_styles(self)
@@ -5425,13 +5467,73 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 "changed",
                 dimensions={"theme": "custom" if theme == "custom accent" else theme},
             )
+        for surface in (
+            self.__dict__.get("video_tree"),
+            self.__dict__.get("focus_watch"),
+        ):
+            if surface is not None:
+                surface._presentation_change("theme")
         patch_tk_surface_palette(self, previous, incoming)
         self._apply_theme()
+        label = self.__dict__.get("_focus_header_mark_label")
+        if label is not None:
+            self._focus_header_mark = brand_mark(label)
+            label.configure(image=self._focus_header_mark)
+            self._focus_header_name = brand_name(label)
+            for name_label in self._focus_brand_labels:
+                name_label.configure(image=self._focus_header_name)
+        # Recolor existing app-owned images in place so all consumers refresh.
+        before, after = dict(previous), dict(incoming)
+        roles = {value: key for key, value in before.items()}
+        recolored = {}
+        for (icon_name, size, color), photo in self.__dict__.get(
+            "_focus_icon_images", {}
+        ).items():
+            next_color = after.get(roles.get(color, ""), color)
+            logical_size = window_logical_metrics(self).px(size)
+            density = surface_backing_scale(self)
+            path = bundled_asset_path(
+                f"icons/lucide/{icon_name}-{logical_size * density}.png"
+            )
+            if not path.is_file():
+                path = bundled_asset_path(f"icons/lucide/{icon_name}.png")
+            if path.is_file():
+                with Image.open(path) as source:
+                    bitmap = render_monochrome_icon(
+                        source, logical_size * density, next_color
+                    )
+                photo, _bytes = create_surface_image(
+                    self,
+                    bitmap,
+                    density,
+                    logical_size=(logical_size, logical_size),
+                    existing=photo,
+                )
+            recolored[(icon_name, size, next_color)] = photo
+        self._focus_icon_images = recolored
+        if self.__dict__.get("_focus_brand_source_image") is not None:
+            with Image.open(bundled_asset_path("VODForge.png")) as source:
+                brand_source = tint_brand(source)
+            self._focus_brand_source_image = brand_source
+            if self.__dict__.get("_focus_active_thumbnail_is_placeholder"):
+                self._focus_active_thumbnail_source_image = brand_source.copy()
+            if self.__dict__.get("_focus_thumbnail_is_placeholder"):
+                self._focus_thumbnail_source_image = brand_source.copy()
+            brand_tile = self.__dict__.get("_focus_brand_tile_image")
+            if brand_tile is not None:
+                self._focus_brand_tile_image = self._render_focus_thumbnail_image(
+                    brand_source,
+                    youtube_thumbnail_size(window_logical_metrics(self).px(152)),
+                    placeholder=True,
+                    source_path=None,
+                    existing=brand_tile,
+                )
+            self._render_focus_thumbnail_surfaces()
         selected_view = self.__dict__.get("_focus_selected_view", "forge")
         if self.__dict__.get("_focus_views"):
             self._select_focus_view(str(selected_view))
         shell = self.__dict__.get("focus_shell")
-        pending = list(shell.winfo_children()) if shell is not None else []
+        pending = list(self.winfo_children()) if shell is not None else []
         while pending:
             widget = pending.pop()
             apply_widget_theme = getattr(widget, "apply_theme", None)
@@ -5466,45 +5568,27 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         key = (name, size, color)
         if key in cache:
             return cache[key]
-        color_variant = focus_icon_color_variant(color)
-        vector_asset = (
-            bundled_asset_path(f"icons/lucide/{name}-{size}-{color_variant}.svg")
-            if color_variant
-            else None
-        )
-        if is_macos() and vector_asset is not None and vector_asset.is_file():
-            try:
-                image_types = self.tk.splitlist(self.tk.call("image", "types"))
-                if "nsimage" in image_types:
-                    rendered = self.tk.call(
-                        "image",
-                        "create",
-                        "nsimage",
-                        "-source",
-                        str(vector_asset),
-                        "-as",
-                        "file",
-                        "-width",
-                        size,
-                        "-height",
-                        size,
-                    )
-                    cache[key] = rendered
-                    return rendered
-            except tk.TclError as exc:
-                write_diagnostic(
-                    f"native vector icon could not be loaded ({name}): {exc}"
-                )
+        # Runtime palette tinting owns every variant; precolored SVGs bypass
+        # live themes. Keep one raster source and recolor the retained image.
         try:
-            exact_asset = bundled_asset_path(f"icons/lucide/{name}-{size}.png")
+            logical_size = window_logical_metrics(self).px(size)
+            density = surface_backing_scale(self)
+            exact_asset = bundled_asset_path(
+                f"icons/lucide/{name}-{logical_size * density}.png"
+            )
             icon_asset = (
                 exact_asset
                 if exact_asset.is_file()
                 else bundled_asset_path(f"icons/lucide/{name}.png")
             )
             with Image.open(icon_asset) as source:
-                icon = render_monochrome_icon(source, size, color)
-            rendered = ImageTk.PhotoImage(icon)
+                icon = render_monochrome_icon(source, logical_size * density, color)
+            rendered, _bytes = create_surface_image(
+                self,
+                icon,
+                density,
+                logical_size=(logical_size, logical_size),
+            )
         except Exception as exc:  # noqa: BLE001 - optional icon rendering falls back cleanly
             write_diagnostic(f"in-app icon could not be loaded ({name}): {exc}")
             return None
@@ -5512,7 +5596,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         return rendered
 
     def _build_focus_ui(self) -> None:
-        """Build the flat, command-first VODForge workspace."""
+        """Build the shared VODForge navigation and task-focused workspace."""
         self._compact_popup = None
         self._focus_layout: str | None = None
         self._focus_settings_dialog: FocusSettingsDialog | None = None
@@ -5544,13 +5628,18 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             value="VOD-ready MP4 / H.264 video / AAC audio"
         )
         self.focus_run_count_var = tk.StringVar(value="No runs yet")
-        self.focus_engine_var = tk.StringVar(value="Sequential queue  /  Auto start on")
+        self.focus_engine_var = tk.StringVar(value="Runs process one at a time")
         self.focus_output_display_var = tk.StringVar()
         self.focus_update_state_var = tk.StringVar(value="Check updates")
         self._focus_update_full_text = "Check updates"
 
         shell = ttk.Frame(self, style="FocusShell.TFrame")
-        shell.pack(fill="both", expand=True, padx=20, pady=(16, 14))
+        shell.pack(
+            fill="both",
+            expand=True,
+            padx=20,
+            pady=(5 if getattr(self, "_native_toolbar_header", False) else 10, 14),
+        )
         shell.columnconfigure(0, weight=1)
         shell.rowconfigure(3, weight=1)
         self.focus_shell = shell
@@ -5561,9 +5650,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self.focus_header = header
 
         brand = ttk.Frame(header, style="FocusShell.TFrame")
-        brand.grid(row=0, column=0, sticky="w", pady=(0, 8))
-        self._focus_brand_image = None
-        self._focus_brand_nav_image = None
+        brand.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        brand.grid_configure(padx=(82 if self._integrated_header else 0, 0))
+        self._focus_brand_labels: list[ttk.Label] = []
+        self._focus_header_compact: bool | None = None
         self._focus_brand_tile_image = None
         self._focus_brand_source_image = None
         self._focus_thumbnail_source_image = None
@@ -5575,39 +5665,39 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if Image is not None and ImageOps is not None and ImageTk is not None:
             try:
                 with Image.open(bundled_asset_path("VODForge.png")) as source:
-                    icon = source.convert("RGBA")
-                resampling = getattr(Image, "Resampling", Image)
+                    icon = tint_brand(source)
                 self._focus_brand_source_image = icon.copy()
                 self._focus_thumbnail_source_image = icon.copy()
                 self._focus_active_thumbnail_source_image = icon.copy()
-                self._focus_brand_image = ImageTk.PhotoImage(
-                    icon.resize((34, 34), resampling.LANCZOS)
+                self._focus_brand_tile_image = self._render_focus_thumbnail_image(
+                    icon,
+                    youtube_thumbnail_size(window_logical_metrics(self).px(152)),
+                    placeholder=True,
+                    source_path=None,
                 )
-                self._focus_brand_nav_image = ImageTk.PhotoImage(
-                    icon.resize((20, 20), resampling.LANCZOS)
-                )
-                tile_icon = rounded_contain_image(
-                    icon, youtube_thumbnail_size(152), 10, THEME["surface"]
-                )
-                self._focus_brand_tile_image = ImageTk.PhotoImage(tile_icon)
             except Exception as exc:  # noqa: BLE001 - optional brand rendering falls back cleanly
                 write_diagnostic(f"in-app brand mark could not be loaded: {exc}")
-        if self._focus_brand_image is not None:
-            ttk.Label(brand, image=self._focus_brand_image, style="TLabel").pack(
-                side="left", padx=(0, 10)
-            )
-        ttk.Label(brand, text="VOD", style="Violet.FocusBrand.TLabel").pack(side="left")
-        ttk.Label(brand, text="Forge", style="FocusBrand.TLabel").pack(side="left")
+        self._focus_header_mark = brand_mark(brand)
+        self._focus_header_mark_label = ttk.Label(
+            brand, text="VODForge", image=self._focus_header_mark, style="TLabel"
+        )
+        self._focus_header_mark_label.pack(side="left", padx=(0, 10))
+        self._focus_header_name = brand_name(brand)
+        brand_label = ttk.Label(
+            brand, text="VODForge", image=self._focus_header_name, style="TLabel"
+        )
+        brand_label.pack(side="left")
+        self._focus_brand_labels.append(brand_label)
 
         utilities = ttk.Frame(header, style="FocusShell.TFrame")
-        utilities.grid(row=0, column=2, sticky="e", pady=(0, 8))
+        utilities.grid(row=0, column=2, sticky="e", pady=(0, 4))
         self.focus_update_dot = tk.Canvas(
             utilities, width=10, height=10, bg=THEME["bg"], bd=0, highlightthickness=0
         )
         self.focus_update_dot.create_oval(
             2, 2, 8, 8, fill=THEME["subtle"], outline="", tags="dot"
         )
-        self.focus_update_dot.pack(side="left", padx=(0, 4))
+        # Update state remains available in the application menu.
         self.update_button = tk.Label(
             utilities,
             text="Check updates",
@@ -5628,8 +5718,25 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 else None
             ),
         )
-        self.update_button.pack(side="left", padx=(0, 8))
-        settings_icon = self._load_focus_icon("settings", 20, THEME["muted"])
+        self._global_search_var = tk.StringVar(self, "")
+        self._global_search_field = LibrarySearchField(
+            utilities,
+            variable=self._global_search_var,
+            width=25,
+            placeholder="Search your library…",
+            shortcut_hint="\u2318 K" if is_macos() else "Ctrl K",
+        )
+        self._global_search_field.pack(side="left", padx=(0, 18))
+        self._global_search_var.trace_add(
+            "write", lambda *_: self._global_library_search()
+        )
+        self.bind(
+            "<Command-k>" if is_macos() else "<Control-k>",
+            self._focus_global_search,
+            add="+",
+        )
+
+        settings_icon = self._load_focus_icon("settings", 20, THEME["icon"])
         settings_hover_icon = self._load_focus_icon("settings", 20, THEME["text"])
         self.focus_settings_button = tk.Label(
             utilities,
@@ -5645,19 +5752,19 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             takefocus=1,
         )
         self.focus_settings_button.pack(side="left")
-        help_button = ttk.Button(
-            utilities, text="Help & feedback", style="FocusQuiet.TButton"
+        help_button = ProductButton(
+            utilities, text="Help  ▾", style="Media.FocusNav.TButton"
         )
         help_button.configure(command=lambda: self.engagement.menu(help_button))
-        help_button.pack(side="left", padx=(10, 0))
+        self._focus_help_menu_anchor = help_button
         self.focus_settings_button.bind(
-            "<Button-1>", lambda _event: self._show_focus_settings(), add="+"
+            "<Button-1>", lambda _event: self._show_application_menu(), add="+"
         )
         self.focus_settings_button.bind(
-            "<Return>", lambda _event: self._show_focus_settings(), add="+"
+            "<Return>", lambda _event: self._show_application_menu(), add="+"
         )
         self.focus_settings_button.bind(
-            "<space>", lambda _event: self._show_focus_settings(), add="+"
+            "<space>", lambda _event: self._show_application_menu(), add="+"
         )
         if settings_icon is not None and settings_hover_icon is not None:
             self.focus_settings_button.bind(
@@ -5676,25 +5783,28 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             )
 
         nav_row = ttk.Frame(header, style="FocusShell.TFrame")
-        nav_row.grid(row=1, column=0, columnspan=3, sticky="ew")
+        nav_row.grid(row=0, column=1, padx=(20, 12))
+        self._focus_nav_row = nav_row
         nav_row.columnconfigure(1, weight=1)
         nav = ttk.Frame(nav_row, style="FocusShell.TFrame")
         nav.grid(row=0, column=0, sticky="w")
         self._focus_nav_buttons: dict[str, ttk.Button] = {}
-        self._focus_nav_underlines: dict[str, tk.Frame] = {}
         self._focus_nav_icons: dict[str, tuple[Any | None, Any | None]] = {
-            "forge": (self._focus_brand_nav_image, self._focus_brand_nav_image),
+            "forge": (
+                self._load_focus_icon("download", 20, THEME["icon"]),
+                self._load_focus_icon("download", 20, THEME["selection"]),
+            ),
             "library": (
-                self._load_focus_icon("library", 20, THEME["muted"]),
-                self._load_focus_icon("library", 20, THEME["accent"]),
+                self._load_focus_icon("folder", 20, THEME["icon"]),
+                self._load_focus_icon("folder", 20, THEME["selection"]),
             ),
             "watch": (
-                self._load_focus_icon("play", 20, THEME["muted"]),
-                self._load_focus_icon("play", 20, THEME["accent"]),
+                self._load_focus_icon("play", 20, THEME["icon"]),
+                self._load_focus_icon("play", 20, THEME["selection"]),
             ),
             "activity": (
-                self._load_focus_icon("activity", 20, THEME["muted"]),
-                self._load_focus_icon("activity", 20, THEME["accent"]),
+                self._load_focus_icon("activity", 20, THEME["icon"]),
+                self._load_focus_icon("activity", 20, THEME["selection"]),
             ),
         }
         for view_name, label in (
@@ -5706,32 +5816,18 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             item = ttk.Frame(nav, style="FocusShell.TFrame")
             item.pack(side="left", padx=(0, 8))
             inactive_icon, _active_icon = self._focus_nav_icons[view_name]
-            button = ttk.Button(
+            button = ProductButton(
                 item,
                 text=label,
                 image=inactive_icon if inactive_icon is not None else "",
                 compound="left",
+                width=0,
                 style="FocusNav.TButton",
                 takefocus=True,
-                command=partial(self._select_focus_view, view_name),
+                command=partial(self._navigate_focus_view, view_name),
             )
             button.pack(fill="x")
-            underline = tk.Frame(
-                item, height=2, bg=THEME["bg"], bd=0, highlightthickness=0
-            )
-            underline.pack(fill="x")
             self._focus_nav_buttons[view_name] = button
-            self._focus_nav_underlines[view_name] = underline
-
-        folder_icon = self._load_focus_icon("folder", 20, THEME["muted"])
-        self.focus_destination_button = PillAction(
-            nav_row,
-            textvariable=self.focus_output_display_var,
-            image=folder_icon,
-            command=self._browse_output,
-            width=240,
-        )
-        self.focus_destination_button.grid(row=0, column=2, sticky="e")
 
         separator = tk.Frame(
             shell, bg=THEME["border"], height=1, bd=0, highlightthickness=0
@@ -5756,12 +5852,37 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             "watch": watch_view,
             "activity": activity_view,
         }
+        self._matte_frames = [
+            attach_matte_frame(view) for view in self._focus_views.values()
+        ]
         self._bind_focus_view_shortcuts()
         self.download_tab = forge_view
         self.metadata_tab = library_view
 
-        self._build_focus_forge_view(forge_view)
+        forge_body = forge_view
+        self._focus_forge_surface = None
+        if window_logical_metrics(self).scale > 1:
+            # Enlarged controls must remain reachable when the available client
+            # height is smaller than their document. Reuse the existing local
+            # scrolling owner; ordinary-density adaptive layout stays unchanged.
+            surface = ActionDialogSurface(
+                forge_view,
+                padx=0,
+                pady=0,
+                footer_gap=0,
+                allow_body_scroll=True,
+            )
+            self._focus_forge_surface = surface
+            forge_body = surface.body
+            self.bind("<FocusIn>", self._reveal_focus_forge_control, add="+")
+        self._build_focus_forge_view(forge_body)
+        self._forge_matte_backgrounds = enroll_matte_backgrounds(forge_view)
+        from .ui_materials import enroll_matte_text
+
+        self._forge_matte_text = enroll_matte_text(forge_view)
+
         self._build_focus_library_view(library_view)
+        self._install_library_scene(library_view)
         watch_view.columnconfigure(0, weight=1)
         watch_view.rowconfigure(0, weight=1)
         self.focus_watch = WatchView(
@@ -5770,11 +5891,28 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 self.metadata_items[index]
             ),
             on_details=lambda index: self._archive_watch_details(index),
+            on_queue=lambda keys, kind, shuffled: self.watch_queue.start(
+                keys, kind=kind, shuffled=shuffled
+            ),
+            on_forge=lambda: self._select_focus_view("forge"),
+            on_library=lambda: self._select_focus_view("library"),
             thumbnail_path=self._library_thumbnail_path,
+            progress_for=self.playback_progress.for_record,
+            channel_profile=self.library_artwork.channels.snapshot,
+            artwork_source=self.library_artwork.resolve_asset,
             on_usage=self._archive_usage,
+            telemetry=self.product_telemetry,
         )
         self.focus_watch.grid(row=0, column=0, sticky="nsew")
+        self.focus_watch.search.trace_add(
+            "write", lambda *_: self._sync_global_search_from_view("watch")
+        )
+        self.library_search_var.trace_add(
+            "write", lambda *_: self._sync_global_search_from_view("library")
+        )
         self._build_focus_activity_view(activity_view)
+        self._activity_matte_backgrounds = enroll_matte_backgrounds(activity_view)
+        self._activity_matte_text = enroll_matte_text(activity_view)
 
         self.progress_var.trace_add("write", lambda *_args: self._sync_focus_progress())
         self.status_var.trace_add("write", lambda *_args: self._sync_focus_status())
@@ -5830,12 +5968,548 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self.bind("<Configure>", self._schedule_focus_layout, add="+")
         self.after_idle(self.focus_url_entry.focus_set)
 
+    def _install_library_scene(self, parent: ttk.Frame) -> None:
+        from .library_scene_ui import LibraryScene
+
+        self.library_scene = LibraryScene(
+            parent,
+            thumbnail_path=self._library_thumbnail_path,
+            action=self._library_scene_action,
+            on_usage=self._archive_usage,
+            telemetry=self.product_telemetry,
+            add_tag=self._library_scene_add_tag,
+            save_description=self._library_scene_save_description,
+            artwork_source=self.library_artwork.resolve_asset,
+            storage_changed=(
+                self.video_tree.set_storage_volumes
+                if isinstance(self.video_tree, ArchiveBrowser)
+                else None
+            ),
+        )
+        self._legacy_archive_requested = False
+        if isinstance(self.video_tree, ArchiveBrowser):
+            self.video_tree.set_scene_projection_callback(
+                self.library_scene.set_records
+            )
+        self.library_scene.set_records(self.metadata_items)
+        self._library_scene_return = ProductButton(
+            parent,
+            text="Back to Library",
+            style="Media.FocusNav.TButton",
+            command=lambda: self._library_scene_action("home", None),
+        )
+
+    def _library_scene_action(self, action: str, index: int | None) -> None:
+        if index is not None:
+            if not 0 <= index < len(self.metadata_items):
+                return
+            if action in {"move", "delete"}:
+                # A file decision owns its preflight. Rendering the legacy
+                # inspector here can start a competing storage check first.
+                self._begin_library_file_action(
+                    action, (archive_row_owner(self.metadata_items[index]),)
+                )
+                return
+            self.video_tree.selection_set(str(index))
+            self._display_selected_metadata(index)
+        if action == "select_version":
+            self._archive_usage("archive", "version_selected")
+        elif action == "play":
+            self._play_selected_library_item()
+        elif action == "folder":
+            self._open_selected_saved_location()
+        elif action == "open_file":
+            self._library_scene_open_file(index)
+        elif action == "location":
+            self._archive_relink_selected()
+        elif action == "source_url" and index is not None:
+            url = str(
+                self.metadata_items[index].get("webpage_url")
+                or self.metadata_items[index].get("original_url")
+                or ""
+            )
+            if url.startswith(("https://", "http://")):
+                webbrowser.open(url)
+        elif action == "source_details" and index is not None:
+            info = self.metadata_items[index]
+            source, _output = build_encoding_summary_display(info)
+            OutputDetailsDialog(
+                self,
+                title=str(info.get("title") or ""),
+                sections=(("Source details", source),),
+            )
+        elif action == "output_details":
+            self._show_library_output_details()
+        elif action == "notes":
+            self._show_library_annotation_editor()
+        elif action == "more" and index is not None:
+            self._show_library_scene_menu(index)
+        elif action == "copy_path" and index is not None:
+            from .library_scene_facts import saved_file_path
+
+            value = saved_file_path(self.metadata_items[index])
+            if value:
+                self.clipboard_clear()
+                self.clipboard_append(value)
+                self._archive_usage("archive", "location_copied")
+        elif action == "remove" and index is not None:
+            self._remove_selected_library_item(self.metadata_items[index])
+        elif action == "forge":
+            self._select_focus_view("forge")
+        elif action == "home":
+            self._legacy_archive_requested = False
+            self.library_scene.navigate("home")
+            self._apply_focus_layout(force=True)
+        elif action in {"folders", "advanced"}:
+            self._legacy_archive_requested = True
+            self._archive_inspector_expanded = action == "advanced"
+            self._apply_focus_layout(force=True)
+        elif action == "selection_actions":
+            self._show_library_selection_actions()
+        elif action == "collection":
+            self._show_library_collection_editor(index)
+        elif action == "import":
+            self._import_library_media()
+
+    def _library_scene_save_description(self, captured_owner: str, value: str) -> bool:
+        from dataclasses import replace
+
+        from .archive_browser import archive_row_owner
+        from .library_annotations import MAX_NOTE_CHARS
+
+        if len(value) > MAX_NOTE_CHARS:
+            messagebox.showinfo(
+                APP_NAME,
+                f"Use up to {MAX_NOTE_CHARS:,} characters for your description.",
+            )
+            return False
+        found = next(
+            (
+                (i, row)
+                for i, row in enumerate(self.metadata_items)
+                if archive_row_owner(row) == captured_owner
+            ),
+            None,
+        )
+        if found is None:
+            return False
+        index, row = found
+        owner = str(
+            row.get(ANNOTATION_OWNER_KEY) or row.get(PROJECTION_OWNER_KEY) or ""
+        )
+        previous = self.library_annotations.annotation_for(owner)
+        try:
+            self.library_annotations.replace(
+                owner, replace(previous, description=value)
+            )
+        except LibraryAnnotationsError as exc:
+            messagebox.showerror(APP_NAME, str(exc), parent=self)
+            return False
+        self._reconcile_library_projection(selected_index=index)
+        self._record_feature("organization", "description_saved")
+        return True
+
+    def _library_scene_add_tag(
+        self, captured_owner: str, value: str, remove: bool = False
+    ) -> bool:
+        from dataclasses import replace
+
+        from .archive_browser import archive_row_owner
+        from .library_annotations import MAX_TAG_CHARS, MAX_TAGS
+
+        tag = value.strip()
+        if not tag:
+            return False
+        if len(tag) > MAX_TAG_CHARS:
+            messagebox.showinfo(
+                APP_NAME, f"Use up to {MAX_TAG_CHARS} characters for a tag."
+            )
+            return False
+        found = next(
+            (
+                (index, row)
+                for index, row in enumerate(self.metadata_items)
+                if archive_row_owner(row) == captured_owner
+            ),
+            None,
+        )
+        if found is None:
+            return False
+        index, row = found
+        owner = str(
+            row.get(ANNOTATION_OWNER_KEY) or row.get(PROJECTION_OWNER_KEY) or ""
+        )
+        previous = self.library_annotations.annotation_for(owner)
+        if not remove and tag.casefold() in {item.casefold() for item in previous.tags}:
+            return True
+        if not remove and len(previous.tags) >= MAX_TAGS:
+            messagebox.showinfo(
+                APP_NAME, "This item already has the maximum number of tags."
+            )
+            return False
+        try:
+            self.library_annotations.replace(
+                owner,
+                replace(
+                    previous,
+                    tags=tuple(
+                        item
+                        for item in previous.tags
+                        if item.casefold() != tag.casefold()
+                    )
+                    if remove
+                    else (*previous.tags, tag),
+                ),
+            )
+        except LibraryAnnotationsError as exc:
+            messagebox.showerror(APP_NAME, str(exc), parent=self)
+            return False
+        self._reconcile_library_projection(selected_index=index)
+        self._record_feature("organization", "tags_saved")
+        return True
+
+    def _library_scene_open_file(self, index: int | None) -> None:
+        from .media_player import resolve_library_media_path
+
+        if index is None or not 0 <= index < len(self.metadata_items):
+            return
+        snapshot = dict(self.metadata_items[index])
+
+        def work(cancelled: Any) -> str:
+            path = resolve_library_media_path(snapshot)
+            if cancelled.is_set():
+                return "cancelled"
+            if path is None:
+                return "missing"
+            open_system_path(path)
+            return "opened"
+
+        def done(result: Any) -> None:
+            if result.value == "opened" and not result.error:
+                self.status_var.set("Opened in your default media app.")
+            elif result.value != "cancelled":
+                messagebox.showinfo(
+                    APP_NAME,
+                    "The saved file is unavailable. Reconnect its drive or update its location in Library.",
+                )
+
+        if not self._archive_submit("open_media_file", work, done):
+            self.status_var.set(
+                "A storage check is running. Try Open File again in a moment."
+            )
+
+    def _show_library_collection_editor(
+        self,
+        initial_index: int | None = None,
+        *,
+        captured_owners: tuple[str, ...] | None = None,
+    ) -> None:
+        from dataclasses import replace
+
+        from .library_collection_ui import LibraryCollectionDialog
+
+        items = tuple(
+            (
+                str(
+                    row.get(ANNOTATION_OWNER_KEY) or row.get(PROJECTION_OWNER_KEY) or ""
+                ),
+                str(row.get("title") or "Saved media"),
+            )
+            for row in self.metadata_items
+            if row.get("vodforge_output_dir")
+        )
+        items = tuple((owner, title) for owner, title in items if owner)
+        if not items:
+            messagebox.showinfo(
+                APP_NAME, "Save or import media first, then group it in a collection."
+            )
+            return
+
+        def save(name: str, owners: tuple[str, ...]) -> None:
+            current = {
+                str(
+                    row.get(ANNOTATION_OWNER_KEY) or row.get(PROJECTION_OWNER_KEY) or ""
+                )
+                for row in self.metadata_items
+                if row.get("vodforge_output_dir")
+            }
+            if not set(owners) <= current:
+                raise ValueError(
+                    "The selected media changed. Reopen the collection editor."
+                )
+            changes = {
+                owner: replace(
+                    self.library_annotations.annotation_for(owner), category=name
+                )
+                for owner in owners
+            }
+            self.library_annotations.replace_many(changes)
+            self._reconcile_library_projection()
+            self._record_feature("organization", "category_saved")
+
+        indices = (
+            tuple(
+                i
+                for i, row in enumerate(self.metadata_items)
+                if archive_row_owner(row) in captured_owners
+            )
+            if captured_owners is not None
+            else (initial_index,)
+            if initial_index is not None
+            else self.library_scene.selected_indices
+        )
+        if captured_owners is not None and len(indices) != len(captured_owners):
+            messagebox.showinfo(
+                APP_NAME, "The selected items changed. Select them again."
+            )
+            return
+        selected = tuple(
+            str(
+                self.metadata_items[i].get(ANNOTATION_OWNER_KEY)
+                or self.metadata_items[i].get(PROJECTION_OWNER_KEY)
+                or ""
+            )
+            for i in indices
+            if 0 <= i < len(self.metadata_items)
+        )
+        self._library_collection_dialog = LibraryCollectionDialog(
+            self, items, save, selected=selected
+        )
+
+    def _import_library_media(self) -> None:
+        import uuid
+
+        from .archive_observations import bind_operation
+        from .archive_work import ArchiveWorkOwner
+        from .library_import import commit_imports, inspect_local_media
+        from .telemetry_features import time_bucket
+
+        if self.__dict__.get("_history_recovery_blocked"):
+            messagebox.showinfo(
+                APP_NAME, "Finish history recovery before importing media."
+            )
+            return
+        owner = self.__dict__.get("_library_import_owner")
+        if owner is not None and owner.busy:
+            messagebox.showinfo(APP_NAME, "Your selected media is still being checked.")
+            return
+        paths = filedialog.askopenfilenames(
+            parent=self,
+            title="Add media to Library",
+            filetypes=[
+                ("Video and audio", "*.mp4 *.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus")
+            ],
+        )
+        if not paths:
+            return
+        if len(paths) > 64:
+            messagebox.showinfo(APP_NAME, "Choose up to 64 files at a time.")
+            return
+        if owner is None:
+            owner = self._library_import_owner = ArchiveWorkOwner()
+            self.bind(
+                "<Destroy>",
+                lambda event: owner.close() if event.widget is self else None,
+                add="+",
+            )
+
+        def inspect(cancelled: Any) -> Any:
+            completed, failed = [], []
+            for raw in paths:
+                if cancelled.is_set():
+                    break
+                try:
+                    completed.append(inspect_local_media(Path(raw), cancelled))
+                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+                    failed.append(Path(raw).name)
+            return completed, failed
+
+        operation = bind_operation(
+            self.__dict__.get("product_telemetry"),
+            "library_import_operation",
+            operation_key=str(uuid.uuid4()),
+        )
+        started = time.monotonic()
+        finished = False
+        self._archive_observe(
+            "library_import_operation",
+            "requested",
+            operation,
+            item_count=str(len(paths)),
+        )
+
+        def cancelled_on_close(event: Any) -> None:
+            if event.widget is self and not finished:
+                self._archive_observe(
+                    "library_import_operation", "cancelled", operation
+                )
+
+        destroy_binding = self.bind("<Destroy>", cancelled_on_close, add="+")
+        if owner.submit("library_import", inspect) is None:
+            finished = True
+            if destroy_binding:
+                self.unbind("<Destroy>", destroy_binding)
+            self._archive_observe(
+                "library_import_operation",
+                "failed",
+                operation,
+                stage="analysis",
+                item_count=str(len(paths)),
+                committed_count="0",
+                failed_count=str(len(paths)),
+                processing_bucket=time_bucket(time.monotonic() - started),
+            )
+            self.status_var.set("Media could not be checked. Please try again.")
+            return
+        self.status_var.set("Checking selected media…")
+
+        def commit(completed: list[dict[str, Any]], failed: list[str]) -> None:
+            nonlocal finished
+            if self.__dict__.get("_archive_commit_active"):
+                self.status_var.set(
+                    "Media checked. Waiting for the current Library update…"
+                )
+                self.after(100, lambda: commit(completed, failed))
+                return
+            saved = 0
+            if completed and not self.__dict__.get("_history_recovery_blocked"):
+                try:
+                    prospective = commit_imports(
+                        self.download_history, completed, self.history_path
+                    )
+                except HistoryError:
+                    prospective = None
+                if prospective is not None:
+                    self.download_history = prospective
+                    self._reconcile_library_projection(selected_index=0)
+                    saved = len(completed)
+            finished = True
+            if destroy_binding:
+                self.unbind("<Destroy>", destroy_binding)
+            self._archive_observe(
+                "library_import_operation",
+                "completed" if saved == len(paths) else "failed",
+                operation,
+                item_count=str(len(paths)),
+                committed_count=str(saved),
+                failed_count=str(len(paths) - saved),
+                processing_bucket=time_bucket(time.monotonic() - started),
+            )
+            self.library_scene.navigate("home")
+            self._select_focus_view("library")
+            self.status_var.set(f"Added {saved} media files to Library.")
+            if failed or saved != len(completed):
+                messagebox.showinfo(
+                    APP_NAME,
+                    f"Added {saved} files. {len(paths) - saved} could not be added.",
+                )
+
+        def poll() -> None:
+            result = owner.poll()
+            if result is None:
+                self.after(100, poll)
+                return
+            completed, failed = (
+                result.value if not result.error and result.value else ([], list(paths))
+            )
+            commit(completed, failed)
+
+        self.after(100, poll)
+
+    def _show_application_menu(self) -> None:
+        self.engagement.menu(
+            self.focus_settings_button,
+            application_actions=(
+                ("Settings\u2026", self._show_focus_settings),
+                ("Check for updates", self._check_for_updates),
+            ),
+        )
+
+    def _focus_global_search(self, _event: tk.Event[Any] | None = None) -> str:
+        entry = self._global_search_field.entry
+        entry.focus_set()
+        entry.selection_range(0, "end")
+        self._archive_usage(
+            "watch" if self._focus_selected_view == "watch" else "library",
+            "search_focused",
+        )
+        return "break"
+
+    def _sync_global_search_from_view(self, view: str) -> None:
+        if self.__dict__.get("_focus_selected_view") != view:
+            return
+        field = self.__dict__.get("_global_search_var")
+        watch = self.__dict__.get("focus_watch")
+        source = (
+            getattr(watch, "search", None)
+            if view == "watch"
+            else self.__dict__.get("library_search_var")
+        )
+        if field is None or source is None or field.get() == source.get():
+            return
+        self._global_search_syncing = True
+        try:
+            field.set(source.get())
+        finally:
+            self._global_search_syncing = False
+
+    def _global_library_search(self) -> None:
+        if self.__dict__.get("_global_search_syncing"):
+            return
+        text = self._global_search_var.get()
+        if self.__dict__.get("_focus_selected_view") == "watch":
+            self.focus_watch.search.set(text)
+        else:
+            self.library_search_var.set(text)
+            if self.__dict__.get("library_scene") is not None:
+                self.library_scene.set_query(text)
+            if text:
+                self._select_focus_view("library")
+
+    def _reveal_focus_forge_control(self, event: Any) -> None:
+        surface = self.__dict__.get("_focus_forge_surface")
+        if surface is None or surface.viewport is None:
+            return
+        control = event.widget
+        ancestor = control
+        while ancestor is not None and ancestor is not surface.body:
+            ancestor = getattr(ancestor, "master", None)
+        if ancestor is None:
+            return
+        viewport = surface.viewport
+        top = control.winfo_rooty() - surface.body.winfo_rooty()
+        bottom = top + control.winfo_height()
+        visible_top = viewport.canvasy(0)
+        visible_height = viewport.winfo_height()
+        target = (
+            top
+            if top < visible_top
+            else bottom - visible_height
+            if bottom > visible_top + visible_height
+            else None
+        )
+        if target is not None:
+            viewport.yview_moveto(max(0, target) / max(1, surface.body.winfo_height()))
+
     def _build_focus_forge_view(self, parent: ttk.Frame) -> None:
+        metrics = window_logical_metrics(self)
+        px = metrics.px
+        style = ttk.Style(self)
+
+        def label(owner: tk.Misc, **options: Any) -> ttk.Label:
+            # Keep the existing style role as the font authority; only this
+            # admitted root consumer translates its canonical units.
+            font = options.get("font") or self.tk.splitlist(
+                style.lookup(options.get("style", "TLabel"), "font")
+            )
+            options["font"] = metrics.font(tuple(font))
+            return ttk.Label(owner, **options)
+
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(2, weight=1)
 
         command_area = ttk.Frame(parent, style="FocusShell.TFrame")
-        command_area.grid(row=0, column=0, sticky="ew", padx=70, pady=(34, 12))
+        command_area.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, px(12)))
         command_area.columnconfigure(0, weight=1)
         self.focus_command_area = command_area
 
@@ -5844,44 +6518,36 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         command_row.columnconfigure(0, weight=1)
         command_box = tk.Canvas(
             command_row,
-            height=40,
+            height=px(40),
             bg=THEME["bg"],
             bd=0,
             highlightthickness=0,
         )
-        command_box.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        command_box.grid(row=0, column=0, sticky="ew", padx=(0, px(12)))
         command_inner = tk.Frame(
             command_box, bg=THEME["surface"], bd=0, highlightthickness=0
         )
         command_inner.columnconfigure(1, weight=1)
         command_window = command_box.create_window(
-            12, 2, anchor="nw", window=command_inner
+            px(12), px(6), anchor="nw", window=command_inner
         )
-        command_background = command_box.create_polygon(
-            rounded_canvas_rectangle_points(1, 40, 8),
-            smooth=True,
-            splinesteps=16,
-            fill=THEME["surface"],
-            outline=THEME["border"],
-            width=1,
-        )
-        command_box.tag_lower(command_background)
 
         def redraw_command_box(_event: Any = None) -> None:
             width = max(1, command_box.winfo_width())
             height = max(1, command_box.winfo_height())
-            command_box.coords(
-                command_background,
-                *rounded_canvas_rectangle_points(width, height, min(8, height // 2)),
-            )
-            command_box.tag_lower(command_background)
-            command_box.coords(command_window, 10, 2)
+            requested = max(px(40), command_inner.winfo_reqheight() + px(12))
+            if int(command_box.cget("height")) != requested:
+                command_box.configure(height=requested)
+            command_box.coords(command_window, px(12), px(6))
             command_box.itemconfigure(
-                command_window, width=max(1, width - 20), height=max(1, height - 4)
+                command_window,
+                width=max(1, width - px(24)),
+                height=max(1, height - px(12)),
             )
 
         command_box.bind("<Configure>", redraw_command_box, add="+")
-        link_icon = self._load_focus_icon("link-2", 20, THEME["muted"])
+        command_inner.bind("<Configure>", redraw_command_box, add="+")
+        link_icon = self._load_focus_icon("link-2", 20, THEME["icon"])
         self.focus_command_link_label = tk.Label(
             command_inner,
             image=link_icon if link_icon is not None else "",
@@ -5891,9 +6557,11 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             bd=0,
             padx=0,
             pady=0,
-            font=FONT_UI_SMALL,
+            font=metrics.font(FONT_UI_SMALL),
         )
-        self.focus_command_link_label.grid(row=0, column=0, sticky="w", padx=(3, 13))
+        self.focus_command_link_label.grid(
+            row=0, column=0, sticky="w", padx=(px(3), px(13))
+        )
         self.focus_url_entry = tk.Entry(
             command_inner,
             textvariable=self.url_var,
@@ -5904,12 +6572,19 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             relief="flat",
             bd=0,
             highlightthickness=0,
-            font=(FONT_UI_FAMILY, 12),
+            font=metrics.font((FONT_UI_FAMILY, 12)),
         )
-        self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=7)
+        self.focus_url_entry.grid(row=0, column=1, sticky="ew", ipady=px(7))
         self.focus_url_entry.bind("<Return>", lambda _event: self._start_download())
-        tk.Frame(command_inner, bg=THEME["border"], width=1, height=22).grid(
-            row=0, column=2, padx=(12, 4)
+        from .ui_chrome import CanvasFieldMaterial
+
+        self._command_field_material = CanvasFieldMaterial(
+            command_box, self.focus_url_entry
+        )
+        command_box.apply_theme = self._command_field_material.apply_theme  # type: ignore[attr-defined]
+
+        tk.Frame(command_inner, bg=THEME["border"], width=px(1), height=px(22)).grid(
+            row=0, column=2, padx=(px(12), px(4))
         )
         self.focus_output_type_selector = ChoiceDropdown(
             command_inner,
@@ -5917,63 +6592,142 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             values=tuple(kind.value for kind in OutputType),
             inline=True,
         )
-        self.focus_output_type_selector.grid(row=0, column=3, sticky="e", padx=(0, 1))
+        self.focus_output_type_selector.grid(
+            row=0, column=3, sticky="e", padx=(0, px(1))
+        )
         ToolTip(
             self.focus_output_type_selector,
             "MP4 video, MP3 audio, or original audio without re-encoding",
         )
-        sliders_icon = self._load_focus_icon("sliders-horizontal", 20, THEME["muted"])
-        self.focus_options_button = RoundedIconButton(
+        self.focus_options_button = ProductButton(
             command_row,
-            image=sliders_icon,
-            text="Options" if sliders_icon is None else "",
+            text="Options",
             command=self._show_focus_settings,
+            style="Media.FocusNav.TButton",
+            width=8,
         )
-        self.focus_options_button.grid(row=0, column=1, padx=(0, 8))
-        send_icon = self._load_focus_icon("send-filled", 20, "#ffffff")
-        self.download_button = RoundedIconButton(
+        self.focus_options_button.grid(row=0, column=1, padx=(0, px(8)))
+        self.download_button = ProductButton(
             command_row,
-            image=send_icon,
-            text="Forge" if send_icon is None else "",
+            text="Download",
             command=self._start_download,
-            primary=True,
+            style="Media.Accent.TButton",
+            width=11,
         )
         self.download_button.grid(row=0, column=2)
+        command_stacked: bool | None = None
+
+        def arrange_command_row(_event: Any = None) -> None:
+            nonlocal command_stacked
+            required = (
+                command_inner.winfo_reqwidth()
+                + px(24)
+                + self.focus_options_button.winfo_reqwidth()
+                + self.download_button.winfo_reqwidth()
+                + px(20)
+            )
+            stacked = required > command_row.winfo_width()
+            if stacked == command_stacked:
+                return
+            command_stacked = stacked
+            command_box.grid_configure(
+                columnspan=3 if stacked else 1, padx=0 if stacked else (0, px(12))
+            )
+            self.focus_options_button.grid_configure(
+                row=1 if stacked else 0,
+                padx=(0, px(8)),
+                pady=(px(8), 0) if stacked else 0,
+            )
+            self.download_button.grid_configure(
+                row=1 if stacked else 0, pady=(px(8), 0) if stacked else 0
+            )
+
+        command_row.bind("<Configure>", arrange_command_row, add="+")
         ToolTip(self.focus_options_button, "Download options and settings")
         ToolTip(self.download_button, "Start or queue this run")
-        self.preview_metadata_button = ttk.Button(
+        self.preview_metadata_button = ProductButton(
             command_row,
             text="Preview metadata",
             command=self._fetch_metadata,
             style="FocusQuiet.TButton",
         )
         local_media_row = ttk.Frame(command_area, style="FocusShell.TFrame")
-        local_media_row.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        self.load_url_list_button = ttk.Button(
+        local_media_row.grid(row=1, column=0, sticky="ew", pady=(px(8), 0))
+        local_media_row.columnconfigure(1, weight=1)
+        self.load_url_list_button = ProductButton(
             local_media_row,
             text="Load URL list",
             command=self._load_url_list_file,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         )
-        self.load_url_list_button.pack(side="left")
+        self.load_url_list_button.grid(row=0, column=0, sticky="w")
+        destination = ttk.Frame(local_media_row, style="FocusShell.TFrame")
+        destination.grid(row=0, column=1, sticky="w", padx=(px(18), 0))
+        label(destination, text="Save to", style="Muted.TLabel").pack(
+            side="left", padx=(0, px(8))
+        )
+        folder_icon = self._load_focus_icon("folder", 18, THEME["icon"])
+        self.focus_destination_button = PillAction(
+            destination,
+            textvariable=self.focus_output_display_var,
+            image=folder_icon,
+            command=self._browse_output,
+            width=240,
+            path_display=True,
+        )
+        self.focus_destination_button.pack(side="left")
         ToolTip(
             self.load_url_list_button,
             "Load a text file of links to download in sequence",
         )
         local_audio_actions = ttk.Frame(local_media_row, style="FocusShell.TFrame")
-        local_audio_actions.pack(side="right")
-        ttk.Label(
+        local_audio_actions.grid(row=0, column=2, sticky="e")
+        label(
             local_audio_actions,
             text="Have local audio?",
             style="Muted.TLabel",
-        ).pack(side="left", padx=(0, 8))
-        self.local_audio_video_button = ttk.Button(
+        ).pack(side="left", padx=(0, px(8)))
+        self.local_audio_video_button = ProductButton(
             local_audio_actions,
-            text="MP3 + image → MP4",
+            text="Create video",
             command=self._show_local_audio_video,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         )
         self.local_audio_video_button.pack(side="left")
+        local_stacked: tuple[bool, bool] | None = None
+
+        def arrange_local_row(_event: Any = None) -> None:
+            nonlocal local_stacked
+            destination_required = (
+                self.load_url_list_button.winfo_reqwidth()
+                + destination.winfo_reqwidth()
+                + px(18)
+            )
+            required = (
+                destination_required + local_audio_actions.winfo_reqwidth() + px(12)
+            )
+            stacked = required > local_media_row.winfo_width()
+            destination_stacked = destination_required > local_media_row.winfo_width()
+            signature = (stacked, destination_stacked)
+            if signature == local_stacked:
+                return
+            local_stacked = signature
+            destination.grid_configure(
+                row=1 if destination_stacked else 0,
+                column=0 if destination_stacked else 1,
+                columnspan=3 if destination_stacked else 1,
+                padx=0 if destination_stacked else (px(18), 0),
+                pady=(px(8), 0) if destination_stacked else 0,
+            )
+            local_audio_actions.grid_configure(
+                row=2 if destination_stacked else 1 if stacked else 0,
+                column=0 if stacked else 2,
+                columnspan=3 if stacked else 1,
+                pady=(px(8), 0) if stacked else 0,
+            )
+
+        local_media_row.bind("<Configure>", arrange_local_row, add="+")
+        destination.bind("<Configure>", arrange_local_row, add="+")
         ToolTip(
             self.local_audio_video_button,
             "Create an MP4 from local MP3 audio and one still image",
@@ -5982,11 +6736,11 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self.focus_command_box = command_box
 
         active = ttk.Frame(parent, style="FocusShell.TFrame")
-        active.grid(row=1, column=0, sticky="ew", padx=70, pady=(10, 14))
+        active.grid(row=1, column=0, sticky="ew", padx=0, pady=(px(10), px(14)))
         active.columnconfigure(1, weight=1)
         self.focus_active_frame = active
 
-        active_thumbnail_size = youtube_thumbnail_size(152)
+        active_thumbnail_size = youtube_thumbnail_size(px(152))
         thumb_wrap = tk.Frame(
             active,
             bg=THEME["bg"],
@@ -5995,7 +6749,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             bd=0,
             highlightthickness=0,
         )
-        thumb_wrap.grid(row=0, column=0, rowspan=3, sticky="w", padx=(0, 18))
+        thumb_wrap.grid(row=0, column=0, rowspan=3, sticky="w", padx=(0, px(18)))
         thumb_wrap.grid_propagate(False)
         self.focus_active_thumbnail_label = tk.Label(
             thumb_wrap,
@@ -6005,7 +6759,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             text="" if self._focus_brand_tile_image is not None else APP_NAME,
             bg=THEME["bg"],
             fg=THEME["muted"],
-            font=FONT_UI_SMALL_MEDIUM,
+            font=metrics.font(FONT_UI_SMALL_MEDIUM),
             bd=0,
             highlightthickness=0,
         )
@@ -6015,10 +6769,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             textvariable=self.focus_active_duration_var,
             bg="#08090a",
             fg="#ffffff",
-            font=(FONT_UI_FAMILY, 8, "bold"),
+            font=metrics.font((FONT_UI_FAMILY, 8, "bold")),
             bd=0,
-            padx=4,
-            pady=1,
+            padx=px(4),
+            pady=px(1),
         )
         self.focus_active_duration_label.place(relx=0.96, rely=0.91, anchor="se")
         self.focus_active_duration_var.trace_add(
@@ -6030,40 +6784,45 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         title_block = ttk.Frame(active, style="FocusShell.TFrame")
         title_block.grid(row=0, column=1, sticky="ew")
         title_block.columnconfigure(0, weight=1)
-        self.focus_active_title_label = ttk.Label(
+        self.focus_active_title_label = label(
             title_block,
             textvariable=self.focus_active_title_var,
             style="FocusActiveTitle.TLabel",
             justify="left",
         )
         self.focus_active_title_label.grid(row=0, column=0, sticky="w")
-        self.focus_active_detail_label = ttk.Label(
+        self.focus_active_detail_label = label(
             title_block,
             textvariable=self.focus_active_detail_var,
             style="Muted.TLabel",
             justify="left",
-            wraplength=260,
+            wraplength=px(260),
         )
-        self.focus_active_detail_label.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-        title_block.bind(
-            "<Configure>",
-            lambda event: self.focus_active_detail_label.configure(
-                wraplength=max(1, event.width - 2)
-            ),
-            add="+",
+        self.focus_active_detail_label.grid(
+            row=1, column=0, sticky="w", pady=(px(4), 0)
         )
-        ttk.Label(
+
+        def wrap_active_text(event: Any) -> None:
+            self.focus_active_title_label.configure(
+                wraplength=max(1, event.width - px(2))
+            )
+            self.focus_active_detail_label.configure(
+                wraplength=max(1, event.width - px(2))
+            )
+
+        title_block.bind("<Configure>", wrap_active_text, add="+")
+        label(
             title_block,
             textvariable=self.focus_active_profile_var,
             style="FocusProfile.TLabel",
-        ).grid(row=2, column=0, sticky="w", pady=(5, 0))
-        self.focus_percent_label = ttk.Label(
+        ).grid(row=2, column=0, sticky="w", pady=(px(5), 0))
+        self.focus_percent_label = label(
             active, textvariable=self.focus_percent_var, style="FocusPercent.TLabel"
         )
         self.focus_percent_label.grid(
-            row=0, column=2, rowspan=3, sticky="e", padx=(18, 0)
+            row=0, column=2, rowspan=3, sticky="e", padx=(px(18), 0)
         )
-        self.focus_preview_start_button = ttk.Button(
+        self.focus_preview_start_button = ProductButton(
             active,
             text="Start download",
             command=self._start_selected_preview_download,
@@ -6074,14 +6833,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             column=2,
             rowspan=3,
             sticky="e",
-            padx=(22, 0),
-            ipadx=10,
-            ipady=5,
+            padx=(px(22), 0),
         )
         self.focus_preview_start_button.grid_remove()
 
         progress_row = ttk.Frame(active, style="FocusShell.TFrame")
-        progress_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(14, 0))
+        progress_row.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(px(14), 0))
         progress_row.columnconfigure(0, weight=1)
         self.progress_bar = SleekProgressbar(
             progress_row,
@@ -6091,57 +6848,57 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             style="FocusProgress.Horizontal.TProgressbar",
         )
         self.progress_bar.grid(row=0, column=0, columnspan=5, sticky="ew", ipady=0)
-        ttk.Label(
+        label(
             progress_row,
             textvariable=self.focus_display_status_var,
             style="Muted.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(7, 0))
-        self.focus_transfer_label = ttk.Label(
+        ).grid(row=1, column=0, sticky="w", pady=(px(7), 0))
+        self.focus_transfer_label = label(
             progress_row, textvariable=self.focus_transfer_var, style="Muted.TLabel"
         )
         self.focus_transfer_label.grid(
-            row=1, column=1, sticky="e", pady=(7, 0), padx=(12, 0)
+            row=1, column=1, sticky="e", pady=(px(7), 0), padx=(px(12), 0)
         )
-        self.cancel_button = ttk.Button(
+        self.cancel_button = ProductButton(
             progress_row,
             text="Cancel",
             command=self._cancel,
             state="disabled",
             style="FocusQuiet.TButton",
         )
-        self.cancel_button.grid(row=1, column=2, padx=(14, 6), pady=(5, 0))
-        self.skip_video_button = ttk.Button(
+        self.cancel_button.grid(row=1, column=2, padx=(px(14), px(6)), pady=(px(5), 0))
+        self.skip_video_button = ProductButton(
             progress_row,
             text="Skip item",
             command=self._skip_video,
             state="disabled",
             style="FocusQuiet.TButton",
         )
-        self.skip_video_button.grid(row=1, column=3, pady=(5, 0))
+        self.skip_video_button.grid(row=1, column=3, pady=(px(5), 0))
         ToolTip(
             self.skip_video_button,
             "Skip only the current video or audio item. If this source is a playlist, continue with its next item.",
         )
-        self.skip_url_button = ttk.Button(
+        self.skip_url_button = ProductButton(
             progress_row,
             text="Skip source",
             command=self._skip_url,
             state="disabled",
             style="FocusQuiet.TButton",
         )
-        self.skip_url_button.grid(row=1, column=4, padx=(6, 0), pady=(5, 0))
+        self.skip_url_button.grid(row=1, column=4, padx=(px(6), 0), pady=(px(5), 0))
         ToolTip(
             self.skip_url_button,
             "Skip the rest of this source URL. If a URL list is loaded, continue with its next URL.",
         )
-        self.focus_compact_run_actions_button = ttk.Button(
+        self.focus_compact_run_actions_button = ProductButton(
             progress_row,
             text="Run actions",
             command=self._show_active_focus_run_actions,
             style="FocusQuiet.TButton",
         )
         self.focus_compact_run_actions_button.grid(
-            row=1, column=2, padx=(14, 0), pady=(5, 0)
+            row=1, column=2, padx=(px(14), 0), pady=(px(5), 0)
         )
         self.focus_compact_run_actions_button.grid_remove()
         self.focus_run_controls = (
@@ -6152,17 +6909,17 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self._set_focus_run_controls_visible(False)
 
         detail_wrap = ttk.Frame(parent, style="FocusShell.TFrame")
-        detail_wrap.grid(row=2, column=0, sticky="nsew", padx=70, pady=(0, 12))
+        detail_wrap.grid(row=2, column=0, sticky="nsew", padx=0, pady=(0, px(12)))
         detail_wrap.columnconfigure(0, weight=1)
         detail_wrap.rowconfigure(1, weight=1)
         self.focus_detail_wrap = detail_wrap
         detail_header = ttk.Frame(detail_wrap, style="FocusShell.TFrame")
-        detail_header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        detail_header.grid(row=0, column=0, sticky="ew", pady=(0, px(6)))
         detail_header.columnconfigure(0, weight=1)
-        ttk.Label(
-            detail_header, text="LIVE ACTIVITY", style="FocusEyebrow.TLabel"
-        ).grid(row=0, column=0, sticky="w")
-        self.focus_details_button = ttk.Button(
+        label(detail_header, text="LIVE ACTIVITY", style="FocusEyebrow.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        self.focus_details_button = ProductButton(
             detail_header,
             text="Output details",
             command=self._show_focus_output_details,
@@ -6190,11 +6947,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             live_frame,
             on_technical=lambda: self._record_feature("guidance", "technical_opened"),
         )
-        self.forge_activity.grid(row=0, column=0, sticky="nsew", padx=(0, 22))
+        self.forge_activity.grid(row=0, column=0, sticky="nsew", padx=(0, px(22)))
         self.focus_log = self.forge_activity.technical
         self.focus_summary_text = FactsText(
             summary_frame,
-            height=4,
+            fit_content=True,
+            height=6,
             width=1,
             wrap="word",
             state="disabled",
@@ -6205,12 +6963,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             bd=0,
             highlightthickness=0,
             padx=0,
-            pady=7,
-            font=FONT_UI_SMALL,
+            pady=px(7),
+            font=metrics.font(FONT_UI_SMALL),
             takefocus=0,
             insertwidth=0,
         )
-        self.focus_summary_text.grid(row=0, column=0, sticky="nsew")
+        self.focus_summary_text.grid(row=0, column=0, sticky="new")
         bind_smooth_vertical_wheel(self.focus_log, mode="pixels")
         bind_smooth_vertical_wheel(self.focus_summary_text, mode="pixels")
         self._set_text(
@@ -6221,21 +6979,23 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
 
         deck_area = ttk.Frame(parent, style="FocusShell.TFrame")
-        deck_area.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 4))
+        deck_area.grid(row=3, column=0, sticky="ew", padx=px(20), pady=(0, px(4)))
         deck_area.columnconfigure(0, weight=1)
         deck_header = ttk.Frame(deck_area, style="FocusShell.TFrame")
-        deck_header.grid(row=0, column=0, sticky="ew", padx=6, pady=(0, 6))
+        deck_header.grid(row=0, column=0, sticky="ew", padx=px(6), pady=(0, px(6)))
         deck_header.columnconfigure(0, weight=1)
-        ttk.Label(deck_header, text="RUN DECK", style="FocusEyebrow.TLabel").grid(
+        label(deck_header, text="RUN DECK", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w"
         )
-        self.focus_run_overflow_button = ttk.Button(
+        self.focus_run_overflow_button = ProductButton(
             deck_header,
             text="All runs",
             command=lambda: self._select_focus_view("library"),
             style="FocusQuiet.TButton",
         )
-        self.focus_run_overflow_button.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        self.focus_run_overflow_button.grid(
+            row=0, column=1, sticky="e", padx=(px(8), 0)
+        )
         from .run_hover_menu import RunHoverMenu
 
         self.focus_run_hover_menu = RunHoverMenu(
@@ -6250,30 +7010,31 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         deck_border.grid(row=1, column=0, sticky="ew")
         deck = ttk.Frame(deck_border, style="FocusShell.TFrame")
-        deck.pack(fill="both", expand=True, padx=1, pady=1)
+        deck.pack(fill="both", expand=True, padx=px(1), pady=px(1))
         self.focus_run_deck = deck
         deck.bind(
             "<Configure>", self._schedule_focus_run_deck_geometry_refresh, add="+"
         )
 
         footer = ttk.Frame(parent, style="FocusShell.TFrame")
-        footer.grid(row=4, column=0, sticky="ew", padx=26, pady=(4, 0))
+        footer.grid(row=4, column=0, sticky="ew", padx=px(26), pady=(px(4), 0))
         footer.columnconfigure(1, weight=1)
-        ttk.Label(
-            footer, textvariable=self.focus_run_count_var, style="Muted.TLabel"
-        ).grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            footer, textvariable=self.focus_engine_var, style="Muted.TLabel"
-        ).grid(row=0, column=2, sticky="e")
+        label(footer, textvariable=self.focus_run_count_var, style="Muted.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        label(footer, textvariable=self.focus_engine_var, style="Muted.TLabel").grid(
+            row=0, column=2, sticky="e"
+        )
 
     def _build_focus_library_view(self, parent: ttk.Frame) -> None:
-        parent.columnconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=0, minsize=176)
+        parent.columnconfigure(1, weight=1)
         parent.rowconfigure(1, weight=1, minsize=240)
         parent.rowconfigure(2, weight=0, minsize=0)
         self.focus_library_view = parent
 
         actions = ttk.Frame(parent, style="FocusShell.TFrame")
-        actions.grid(row=0, column=0, sticky="ew", padx=18, pady=(24, 10))
+        actions.grid(row=0, column=1, sticky="ew", padx=(0, 18), pady=(20, 12))
         actions.columnconfigure(0, weight=1)
         heading = ttk.Frame(actions, style="FocusShell.TFrame")
         heading.grid(row=0, column=0, sticky="w")
@@ -6282,23 +7043,30 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         ttk.Label(heading_title, text="Library", style="FocusTitle.TLabel").pack(
             side="left"
         )
+        filters = ttk.Frame(actions, style="FocusShell.TFrame")
+        self.focus_library_filters = filters
+        filters.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(16, 4))
         self.focus_library_output_type_selector = SegmentedSelector(
-            heading_title,
+            filters,
             variable=self.library_output_type_var,
             values=(LIBRARY_ALL_MEDIA, *(kind.value for kind in OutputType)),
             background=THEME["bg"],
             compact=True,
+            separated=True,
         )
-        self.focus_library_output_type_selector.pack(side="left", padx=(14, 0))
+        self.focus_library_output_type_selector.pack(side="left")
         ttk.Label(
             heading,
-            text="Your archive across folders, collections and devices",
+            text="Your videos, audio and saved folders.",
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(3, 0))
-        action_row = ttk.Frame(actions, style="FocusShell.TFrame")
-        action_row.grid(row=0, column=1, sticky="e")
+        action_row = ttk.Frame(parent, style="FocusShell.TFrame")
+        action_row.grid(in_=actions, row=0, column=1, sticky="e")
+        self.focus_library_action_row = action_row
+        filter_actions = ttk.Frame(filters, style="FocusShell.TFrame")
+        filter_actions.pack(side="right")
         self.focus_library_category_filter = LibraryCategoryFilter(
-            action_row,
+            filter_actions,
             variable=self.library_category_var,
         )
         self.focus_library_category_filter.pack(side="left", padx=(0, 8))
@@ -6307,7 +7075,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             "Filter by the personal category assigned in Library actions.",
         )
         search_shell = LibrarySearchField(
-            action_row,
+            filter_actions,
             variable=self.library_search_var,
             width=19,
         )
@@ -6318,33 +7086,35 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self.focus_library_search_entry,
             "Search titles, creators, notes, tags, categories, status, and saved location.",
         )
-        self.focus_library_details_button = ttk.Button(
+        self.focus_library_details_button = ProductButton(
             action_row,
             text="Selected details",
             command=self._archive_show_inspector,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         )
-        self.focus_library_play_button = ttk.Button(
+        self.focus_library_play_button = ProductButton(
             action_row,
             text="Play",
             width=6,
             command=self._play_selected_library_item,
-            style="Accent.TButton",
+            style="Media.Accent.TButton",
             state="disabled",
         )
-        self.focus_library_menu_button = ttk.Button(
+        self.focus_library_menu_button = ProductButton(
             action_row,
-            text="Actions",
-            width=7,
+            text="More actions  ▾",
+            width=0,
             command=self._show_library_actions_menu,
-            style="FocusQuiet.TButton",
+            style="Media.FocusQuiet.TButton",
         )
         self._focus_library_action_feedback_after_id: str | None = None
         self.focus_library_play_button.pack(side="left", padx=(0, 6))
         self.focus_library_menu_button.pack(side="left")
 
         metadata_content = ttk.Frame(parent, style="FocusShell.TFrame")
-        metadata_content.grid(row=1, column=0, sticky="nsew", padx=18, pady=(0, 14))
+        metadata_content.grid(
+            row=1, column=1, sticky="nsew", padx=(0, 18), pady=(0, 14)
+        )
         # The media table owns the flexible width. Selected Item is a compact
         # inspection rail, not a second equal-width workspace.
         metadata_content.columnconfigure(0, weight=1)
@@ -6367,13 +7137,33 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             on_relink=self._archive_relink_folder,
             thumbnail_path=self._library_thumbnail_path,
             on_usage=self._archive_usage,
+            telemetry=self.product_telemetry,
+            nav_master=parent,
         )
         video_tree = self.video_tree
         video_tree.grid(row=1, column=0, sticky="nsew")
         self.focus_queue_panel = queue_panel
 
-        inspector = ttk.Notebook(metadata_content, style="Archive.TNotebook")
-        inspector.grid(row=0, column=1, sticky="nsew")
+        inspector_shell = ttk.Frame(
+            metadata_content, style="FocusShell.TFrame", padding=(14, 0, 0, 0)
+        )
+        inspector_shell.grid(row=0, column=1, sticky="nsew")
+        inspector_shell.columnconfigure(0, weight=1)
+        inspector_shell.rowconfigure(1, weight=1)
+        self.focus_archive_inspector_shell = inspector_shell
+        identity = ttk.Frame(inspector_shell, style="FocusShell.TFrame")
+        identity.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        identity.columnconfigure(0, weight=1)
+        self.focus_archive_back_button = ProductButton(
+            identity,
+            text="‹  Back to Library",
+            command=self._archive_show_inspector,
+            style="Media.FocusNav.TButton",
+            takefocus=True,
+        )
+        self.focus_archive_identity = identity
+        inspector = ttk.Notebook(inspector_shell, style="Archive.TNotebook")
+        inspector.grid(row=1, column=0, sticky="nsew")
         self.focus_archive_inspector = inspector
         details = ttk.Frame(inspector, style="FocusShell.TFrame", padding=10)
         inspector.add(details, text="Item")
@@ -6381,7 +7171,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         # Keep the inspection rail authoritative instead of letting wrapped
         # child requests feed back into Grid and progressively starve the
         # table after repeated resize cycles.
-        details.configure(width=410, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)
+        details.configure(width=350, height=FOCUS_LIBRARY_SELECTED_DETAILS_HEIGHT)
         details.grid_propagate(False)
         details.columnconfigure(0, weight=1)
         details.rowconfigure(3, weight=0)
@@ -6396,14 +7186,18 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         self.selected_meta_display_var = tk.StringVar(value="")
         self.selected_location_display_var = tk.StringVar(value="")
-        ttk.Label(details, text="SELECTED ITEM", style="FocusEyebrow.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 6)
+        self.focus_archive_identity_label = ttk.Label(
+            identity, text="SELECTED ITEM", style="FocusEyebrow.TLabel"
         )
-        overview = ttk.Frame(details, style="FocusShell.TFrame")
+        self.focus_archive_identity_label.grid(
+            row=0, column=0, sticky="w", pady=(0, 10)
+        )
+        overview = ttk.Frame(identity, style="FocusShell.TFrame")
         overview.configure(height=FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT)
         overview.grid_propagate(False)
         overview.grid(row=1, column=0, sticky="ew", pady=(0, 12))
-        overview.columnconfigure(0, weight=1)
+        overview.columnconfigure(0, weight=0)
+        overview.columnconfigure(1, weight=1)
         self.focus_selected_overview = overview
         self._focus_selected_overview_height = FOCUS_LIBRARY_SELECTED_OVERVIEW_HEIGHT
         self._focus_selected_overview_layout_after_id: str | None = None
@@ -6417,7 +7211,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             style="FocusActiveTitle.TLabel",
         )
         self.focus_selected_title_label.grid(
-            row=0, column=0, sticky="new", padx=(0, 12)
+            row=0, column=1, sticky="new", padx=(12, 0)
         )
         self.focus_selected_meta_label = ttk.Label(
             overview,
@@ -6427,7 +7221,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             style="Muted.TLabel",
         )
         self.focus_selected_meta_label.grid(
-            row=1, column=0, sticky="new", padx=(0, 12), pady=(4, 0)
+            row=1, column=1, sticky="new", padx=(12, 0), pady=(4, 0)
         )
         self.focus_selected_location_label = ttk.Label(
             overview,
@@ -6437,7 +7231,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             style="FocusProfile.TLabel",
         )
         self.focus_selected_location_label.grid(
-            row=2, column=0, sticky="new", padx=(0, 12), pady=(4, 0)
+            row=2, column=1, sticky="new", padx=(12, 0), pady=(4, 0)
         )
         thumbnail_wrap = tk.Frame(
             overview,
@@ -6447,7 +7241,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             bd=0,
             highlightthickness=0,
         )
-        thumbnail_wrap.grid(row=0, column=1, rowspan=3, sticky="ne")
+        thumbnail_wrap.grid(row=0, column=0, rowspan=3, sticky="nw")
         # The thumbnail label is packed inside this wrapper, so pack—not Grid—
         # owns child geometry. Disabling the correct propagation keeps the
         # responsive 104/124/144 px artwork cap authoritative.
@@ -6472,13 +7266,24 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
 
         def layout_selected_overview(event: tk.Event[Any]) -> None:
+            stacked = self.__dict__.get("_archive_details_page", False)
             artwork_width = (
-                104 if event.height < 300 else 124 if event.width < 380 else 144
+                min(288, max(104, event.width))
+                if stacked
+                else 104
+                if event.height < 300
+                else 124
+                if event.width < 380
+                else 144
             )
             thumbnail_wrap.configure(
                 width=artwork_width, height=youtube_thumbnail_size(artwork_width)[1]
             )
-            text_width = max(130, event.width - artwork_width - 24)
+            text_width = (
+                max(130, event.width - 4)
+                if stacked
+                else min(470, max(130, event.width - artwork_width - 24))
+            )
             self.focus_selected_title_label.configure(wraplength=text_width)
             self.focus_selected_meta_label.configure(wraplength=text_width)
             self.focus_selected_location_label.configure(wraplength=text_width)
@@ -6486,14 +7291,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self._queue_focus_selected_overview_layout()
             self._queue_focus_description_layout()
 
-        details.bind("<Configure>", layout_selected_overview, add="+")
+        overview.bind("<Configure>", layout_selected_overview, add="+")
 
         version_line = ttk.Frame(details, style="FocusShell.TFrame")
-        version_line.grid(row=2, column=0, sticky="ew", pady=(0, 10))
-        version_line.columnconfigure(0, weight=1)
-        ttk.Label(
-            version_line, text="SAVED EXPORT VERSION", style="FocusEyebrow.TLabel"
-        ).grid(row=0, column=0, sticky="w")
+        version_line.grid(row=0, column=0, sticky="w", pady=(6, 16))
+        version_line.columnconfigure(0, weight=1, minsize=320)
+        ttk.Label(version_line, text="Saved version", style="FocusEyebrow.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
         self._archive_variant_var = tk.StringVar(self, "")
         self._archive_variant_choice = ChoiceDropdown(
             version_line,
@@ -6509,10 +7314,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         tags_line = ttk.Frame(details, style="FocusShell.TFrame")
         tags_line.configure(height=FOCUS_LIBRARY_SELECTED_TAGS_MAX_HEIGHT)
         tags_line.grid_propagate(False)
-        tags_line.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+        tags_line.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         tags_line.columnconfigure(0, weight=1)
         tags_line.rowconfigure(1, weight=1)
-        ttk.Label(tags_line, text="TAGS", style="FocusEyebrow.TLabel").grid(
+        ttk.Label(tags_line, text="Tags", style="FocusEyebrow.TLabel").grid(
             row=0, column=0, sticky="w", pady=(0, 4)
         )
         self.pulled_tags_text = tk.Text(
@@ -6534,6 +7339,40 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self.pulled_tags_text.configure(yscrollcommand=tags_scroll.set)
         self.pulled_tags_text.grid(row=1, column=0, sticky="nsew")
         tags_scroll.grid(row=1, column=1, sticky="ns", padx=(5, 0))
+
+        self.focus_library_note = ttk.Frame(details, style="FocusShell.TFrame")
+        self.focus_library_note.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
+        self.focus_library_note.columnconfigure(0, weight=1)
+        ttk.Label(
+            self.focus_library_note, text="Your note", style="FocusEyebrow.TLabel"
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.selected_note_var = tk.StringVar(self, "")
+        self.selected_note_display_var = tk.StringVar(self, "")
+        self.focus_library_note_text = ttk.Label(
+            self.focus_library_note,
+            textvariable=self.selected_note_display_var,
+            style="Muted.TLabel",
+            wraplength=300,
+            justify="left",
+        )
+        self.focus_library_note_text.grid(row=1, column=0, sticky="ew")
+
+        def fit_note(_event: Any = None) -> None:
+            width = max(100, self.focus_library_note.winfo_width() - 4)
+            font = self._focus_selected_label_font(self.focus_library_note_text)
+            self.focus_library_note_text.configure(wraplength=width)
+            self.selected_note_display_var.set(
+                ellipsize_wrapped_text(
+                    self.selected_note_var.get(),
+                    maximum_width=width,
+                    maximum_lines=3,
+                    measure_width=font.measure,
+                )
+            )
+
+        self.focus_library_note.bind("<Configure>", fit_note, add="+")
+        self.selected_note_var.trace_add("write", lambda *_args: fit_note())
+        ToolTip(self.focus_library_note_text, lambda: self.selected_note_var.get())
 
         description_line = ttk.Frame(inspector, style="FocusShell.TFrame", padding=10)
         inspector.add(description_line, text="Description")
@@ -6588,7 +7427,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             document = ttk.Frame(inspector, style="FocusShell.TFrame", padding=10)
             inspector.add(document, text=title)
             document.columnconfigure(0, weight=1)
-            document.rowconfigure(0, weight=1)
+            document.rowconfigure(1, weight=1)
+            ttk.Label(
+                document,
+                text="Source media" if title == "Source" else "Saved output",
+                style="FocusActiveTitle.TLabel",
+            ).grid(row=0, column=0, sticky="w", pady=(6, 14))
             text = FactsText(
                 document,
                 height=8,
@@ -6605,9 +7449,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 pady=4,
                 font=FONT_UI_SMALL,
             )
-            text.grid(row=0, column=0, sticky="nsew")
+            text.grid(row=1, column=0, sticky="nsew")
             scrollbar = SleekScrollbar(document, command=text.yview)
-            scrollbar.grid(row=0, column=1, sticky="ns")
+            scrollbar.grid(row=1, column=1, sticky="ns")
             text.configure(yscrollcommand=scrollbar.set)
             setattr(self, attribute, text)
         self.focus_library_summary = inspector
@@ -6626,7 +7470,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
 
     def _focus_selected_label_font(self, label: ttk.Label) -> tkfont.Font:
         style_name = str(label.cget("style") or "TLabel")
-        font_spec = ttk.Style(self).lookup(style_name, "font") or FONT_UI
+        font_spec = (
+            label.cget("font") or ttk.Style(self).lookup(style_name, "font") or FONT_UI
+        )
         return tkfont.Font(root=self, font=font_spec)
 
     def _queue_focus_selected_overview_layout(self) -> None:
@@ -6736,6 +7582,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         title = self.selected_title_var.get()
         metadata = self.selected_meta_var.get()
         location = self.selected_location_var.get()
+        archive_identity = isinstance(self.__dict__.get("video_tree"), ArchiveBrowser)
+        if archive_identity and not self.__dict__.get(
+            "_focus_selected_location_is_status"
+        ):
+            location = ""
+            self.focus_selected_location_label.grid_remove()
+        else:
+            self.focus_selected_location_label.grid()
         title_font = self._focus_selected_label_font(self.focus_selected_title_label)
         metadata_font = self._focus_selected_label_font(self.focus_selected_meta_label)
         location_font = self._focus_selected_label_font(
@@ -6745,7 +7599,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             selected_overview_height(title_line_height=title_font.metrics("linespace"))
             + 12
         )  # Account for the three native labels' vertical chrome.
-        if self.__dict__.get("_focus_selected_overview_height") != overview_height:
+        if (
+            not archive_identity
+            and self.__dict__.get("_focus_selected_overview_height") != overview_height
+        ):
             self.focus_selected_overview.configure(height=overview_height)
             self._focus_selected_overview_height = overview_height
             self._queue_focus_description_layout()
@@ -6777,18 +7634,21 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 self.__dict__.get("_focus_selected_location_is_status")
             ),
         )
+        reading_page = archive_identity and self.__dict__.get(
+            "_archive_details_page", False
+        )
         self.selected_location_display_var.set(
             ellipsize_wrapped_text(
                 location,
                 maximum_width=text_width,
-                maximum_lines=line_budget.location,
+                maximum_lines=1 if reading_page else line_budget.location,
                 measure_width=location_font.measure,
             )
         )
         displayed_title = ellipsize_wrapped_text(
             title,
             maximum_width=text_width,
-            maximum_lines=line_budget.title,
+            maximum_lines=2 if reading_page else line_budget.title,
             measure_width=title_font.measure,
         )
         self.selected_title_display_var.set(displayed_title)
@@ -6801,10 +7661,51 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             ellipsize_wrapped_text(
                 metadata,
                 maximum_width=text_width,
-                maximum_lines=line_budget.metadata,
+                maximum_lines=2 if reading_page else line_budget.metadata,
                 measure_width=metadata_font.measure,
             )
         )
+        if archive_identity:
+            displayed = (
+                (self.selected_title_display_var.get(), title_font),
+                (self.selected_meta_display_var.get(), metadata_font),
+                (self.selected_location_display_var.get(), location_font),
+            )
+            actual = sum(
+                measured_wrapped_line_count(
+                    text, maximum_width=text_width, measure_width=font.measure
+                )
+                * font.metrics("linespace")
+                for text, font in displayed
+                if text
+            )
+            minimum = 64
+            if self.__dict__.get("_archive_details_page", False):
+                # Use Tk's real label requests, including native chrome, after
+                # fitting with each label's effective font. Estimated line
+                # heights alone can crop metadata on scaled native displays.
+                labels = (
+                    self.focus_selected_title_label,
+                    self.focus_selected_meta_label,
+                    self.focus_selected_location_label,
+                )
+                compact_height = (
+                    0
+                    if self.__dict__.get("_archive_folder_identity")
+                    else self.focus_thumbnail_wrap.winfo_reqheight()
+                ) + 20
+                compact_height += sum(
+                    label.winfo_reqheight()
+                    for label, (text, _font) in zip(labels, displayed, strict=True)
+                    if text
+                )
+                if self.selected_location_display_var.get():
+                    compact_height += 6
+            else:
+                compact_height = max(minimum, min(overview_height, actual + 14))
+            if self.__dict__.get("_focus_selected_overview_height") != compact_height:
+                self.focus_selected_overview.configure(height=compact_height)
+                self._focus_selected_overview_height = compact_height
 
     def _queue_quality_e2e_library_visibility_receipt(self) -> None:
         if not quality_e2e_mode_enabled():
@@ -6870,7 +7771,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         ttk.Label(title, text="Activity", style="FocusTitle.TLabel").pack(anchor="w")
         self.activity_summary = ActivitySummary(title)
         self.activity_summary.pack(anchor="w", fill="x", pady=(8, 8))
-        ttk.Button(
+        ProductButton(
             header,
             text="Open log folder",
             command=self._open_log_folder,
@@ -6907,7 +7808,31 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         for control in controls:
             control.grid_remove()
 
+    def _navigate_focus_view(self, name: str) -> None:
+        """A deliberate top-level navigation click returns to that section's home."""
+        if name in {"watch", "library"}:
+            overlay = self.__dict__.get("_archive_overlay")
+            if overlay is not None:
+                if overlay is self.__dict__.get("_archive_relink_panel"):
+                    self._archive_cancel_relink()
+                    # Keep the review and its callback alive until storage reports
+                    # whether cancellation preceded or followed the durable save.
+                    if self._archive_commit_active:
+                        return
+                else:
+                    self._archive_cancel_playback()
+            if name == "watch":
+                self.focus_watch.show_home()
+            else:
+                self.library_scene.navigate("home")
+        self._select_focus_view(name)
+
     def _select_focus_view(self, name: str) -> None:
+        previous_view = self.__dict__.get("_focus_selected_view")
+        transition = self.__dict__.get("_view_transition")
+        changing_view = previous_view is not None and previous_view != name
+        if transition is not None:
+            transition.cancel()
         if menu := self.__dict__.get("focus_run_hover_menu"):
             menu.close()
         frame = self._focus_views.get(name)
@@ -6924,6 +7849,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             is self.__dict__.get("_archive_overlay")
         ):
             self._archive_cancel_playback()
+        if changing_view:
+            from .ui_transition import ViewTransition
+
+            if transition is None:
+                transition = self._view_transition = ViewTransition(
+                    self, observed=self._record_feature, diagnostic=write_diagnostic
+                )
+            transition.prepare(self._focus_views.get(str(previous_view)))
         if name == "watch" and self.__dict__.get("_focus_selected_view") != name:
             self._archive_usage("watch", "opened")
         if name == "library" and self.__dict__.get("_focus_selected_view") != name:
@@ -6947,16 +7880,17 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 style="FocusNavActive.TButton" if active else "FocusNav.TButton",
                 image=icon if icon is not None else "",
             )
-            underline = self._focus_nav_underlines.get(view_name)
-            if underline is not None:
-                underline.configure(bg=THEME["accent"] if active else THEME["bg"])
         self._focus_selected_view = name
+        if name in {"watch", "library"}:
+            DownloaderApp._sync_global_search_from_view(self, name)
         self._apply_focus_layout(force=True)
         if name == "library":
             self._queue_focus_selected_overview_layout()
             self._queue_quality_e2e_library_visibility_receipt()
         if name == "watch":
             self.focus_watch.activate()
+        if changing_view and transition is not None:
+            transition.reveal(frame)
         if name == "activity":
             activity_log = self.__dict__.get("log")
             if activity_log is not None:
@@ -6993,6 +7927,19 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self.library_media_recovery.clear_destination()
         self._sync_focus_destination()
 
+    def _submission_export_mode(self) -> ExportMode:
+        owner = self.__dict__.get("library_media_recovery")
+        source = self.__dict__.get("url_var")
+        if (
+            owner is not None
+            and source is not None
+            and not self.__dict__.get("batch_urls")
+        ):
+            mode = owner.export_mode_for(source.get())
+            if mode is not None:
+                return mode
+        return ExportMode(self.export_mode_var.get())
+
     def _submission_output_text(self) -> str:
         owner = self.__dict__.get("library_media_recovery")
         default = self.output_var.get()
@@ -7002,15 +7949,26 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
 
     def _sync_focus_destination(self) -> None:
         path = self._submission_output_text().strip() or "Choose destination"
-        max_chars = 34 if self._focus_layout == "compact" else 52
-        if len(path) > max_chars:
-            path = "..." + path[-(max_chars - 3) :]
+        choice = self.__dict__.get("export_mode_choice_var")
+        if choice is not None:
+            label = export_mode_display_name(
+                DownloaderApp._submission_export_mode(self)
+            )
+            if choice.get() != label:
+                choice.set(label)
         self.focus_output_display_var.set(path)
         if (
             hasattr(self, "focus_summary_text")
             and self._focus_shows_next_run_defaults()
         ):
-            current = self.focus_summary_text.get("1.0", "end").strip().splitlines()
+            # FactsText projects long values onto separate display lines. Read
+            # its canonical snapshot so resize never retains an orphaned path.
+            snapshot = (
+                self.focus_summary_text.raw_snapshot
+                if isinstance(self.focus_summary_text, FactsText)
+                else self.focus_summary_text.get("1.0", "end")
+            )
+            current = snapshot.strip().splitlines()
             retained = [line for line in current if not line.startswith("Save to")]
             retained.append(f"Save to       {self._submission_output_text()}")
             self._set_text(self.focus_summary_text, "\n".join(retained), disabled=True)
@@ -7153,7 +8111,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 source_label="Source rate",
             )
             return f"MP3  •  {rate}  •  {sample_rate}"
-        return f"{quality_label or self.quality_var.get()}  •  {export_mode_display_name(export_mode or ExportMode(self.export_mode_var.get()))}"
+        return f"{quality_label or self.quality_var.get()}  •  {export_mode_display_name(export_mode or DownloaderApp._submission_export_mode(self))}"
 
     def _on_output_type_changed(self) -> None:
         self._sync_focus_settings_summary()
@@ -7169,8 +8127,21 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 self.export_mode_choice_var.set(recommended)
                 return
         self.export_mode_description_var.set(export_mode_description(mode))
+        owner = self.__dict__.get("library_media_recovery")
+        if (
+            owner is not None
+            and not self.__dict__.get("batch_urls")
+            and owner.update_export_mode(self.url_var.get(), mode)
+        ):
+            self._sync_focus_settings_summary()
+            self._refresh_manual_settings_visibility()
+            return
         if self.export_mode_var.get() != mode.value:
             self.export_mode_var.set(mode.value)
+        else:
+            # A recovery draft can expire without changing the saved variable.
+            # Refresh every visible summary even when its trace does not fire.
+            self._sync_focus_settings_summary()
         self._refresh_manual_settings_visibility()
 
     def _library_filter_changed(self, action: str) -> None:
@@ -7211,7 +8182,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             cover = self.mp3_cover_art_mode_var.get()
             summary = f"Press Return to start  /  MP3 audio  /  {self.mp3_quality_var.get()}  /  {self.mp3_sample_rate_var.get()}  /  {cover}"
         else:
-            summary = f"Press Return to start  /  {self.quality_var.get()}  /  {self.export_mode_var.get()}"
+            summary = f"Press Return to start  /  {self.quality_var.get()}  /  {export_mode_display_name(DownloaderApp._submission_export_mode(self))}"
         if self.batch_urls:
             summary += f"  /  {len(self.batch_urls)} URLs loaded"
         self.focus_command_hint_var.set(summary)
@@ -7316,7 +8287,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 )
             )
         try:
-            export_mode = ExportMode(self.export_mode_var.get())
+            export_mode = DownloaderApp._submission_export_mode(self)
         except ValueError:
             export_mode = ExportMode.AUTO_CBR
         audio_codec = self._focus_next_run_mp4_audio_codec(export_mode)
@@ -7342,7 +8313,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
     ) -> str:
         if export_mode is None:
             try:
-                export_mode = ExportMode(self.export_mode_var.get())
+                export_mode = DownloaderApp._submission_export_mode(self)
             except ValueError:
                 export_mode = ExportMode.AUTO_CBR
         if export_mode != ExportMode.MANUAL_OVERRIDE:
@@ -7426,7 +8397,17 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
     ) -> None:
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is not None:
-            telemetry.record_feature(feature, action, dimensions=dimensions)
+            try:
+                telemetry.record_feature(feature, action, dimensions=dimensions)
+            except Exception:  # noqa: BLE001 - optional observation cannot interrupt the user's action
+                failures = self.__dict__.get("_feature_observation_failures", 0)
+                if failures < 3:
+                    self._feature_observation_failures = failures + 1
+                    # Fixed local diagnosis only: no event content, exception text,
+                    # recursive telemetry or delayed replay after consent changes.
+                    write_diagnostic(
+                        "Optional feature observation could not be recorded."
+                    )
 
     def _record_update_telemetry_receipt(self) -> None:
         from .updates import (
@@ -7856,10 +8837,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         percent_label.grid_remove()
         action_button.grid()
 
-    def _set_focus_progress_color(self, color: str = THEME["accent"]) -> None:
+    def _set_focus_progress_color(self, color: str | None = None) -> None:
         progress_bar = self.__dict__.get("progress_bar")
         if progress_bar is not None:
-            progress_bar.configure(bar_color=color)
+            progress_bar.configure(bar_color=color or THEME["progress"])
 
     def _display_metadata_preview_request(self, record: dict[str, Any]) -> None:
         """Show a metadata request without turning it into a media-run authority."""
@@ -8062,8 +9043,88 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             return
         self._reset_active_thumbnail()
 
-    def _show_library_actions_menu(self) -> None:
-        menu = tk.Menu(
+    def _library_scene_owner_action(
+        self, action: str, captured: dict[str, Any]
+    ) -> None:
+        subject = resolve_archive_subject(self.metadata_items, captured)
+        if subject is not None:
+            self._library_scene_action(action, subject[0])
+
+    def _show_library_scene_menu(self, index: int) -> None:
+        if not 0 <= index < len(self.metadata_items):
+            return
+        captured = self.metadata_items[index]
+        previous = self.__dict__.get("_library_scene_popup_menu")
+        if previous is not None:
+            previous.unpost()
+            previous.destroy()
+        style: dict[str, Any] = {
+            "tearoff": False,
+            "bg": THEME["surface"],
+            "fg": THEME["text"],
+            "activebackground": THEME["accent_dark"],
+            "activeforeground": "#ffffff",
+        }
+        menu = ContextMenu(self, **style)
+        self._library_scene_popup_menu = menu
+        for label, action in (
+            ("Play", "play"),
+            ("Show in Folder", "folder"),
+            ("Add to Collection…", "collection"),
+            ("Edit notes, tags & category…", "notes"),
+        ):
+            menu.add_command(
+                label=label,
+                command=partial(self._library_scene_owner_action, action, captured),
+            )
+        files = ContextMenu(menu, **style)
+        for label, action in (
+            ("Open in default app", "open_file"),
+            ("Move to…", "move"),
+            ("Update file location…", "location"),
+            ("Copy file path", "copy_path"),
+            ("Source details…", "source_details"),
+            ("Output details…", "output_details"),
+        ):
+            files.add_command(
+                label=label,
+                command=partial(self._library_scene_owner_action, action, captured),
+            )
+        menu.add_cascade(label="File options", menu=files)
+        copy = ContextMenu(menu, **style)
+        for label, method in (
+            ("Source tags", "_copy_tags"),
+            ("Source description", "_copy_description"),
+            ("Your tags", "_copy_personal_tags"),
+            ("Your note", "_copy_personal_note"),
+            ("Thumbnail URL", "_copy_thumbnail_url"),
+            ("Source URL", "_copy_youtube_url"),
+        ):
+            copy.add_command(
+                label=label,
+                command=partial(
+                    self._run_library_copy_action,
+                    partial(getattr(self, method), captured),
+                ),
+            )
+        menu.add_cascade(label="Copy", menu=copy)
+        menu.add_separator()
+        menu.add_command(
+            label="Delete…",
+            command=partial(self._library_scene_owner_action, "delete", captured),
+        )
+        files.add_command(
+            label="Remove Library entry only…",
+            command=partial(self._library_scene_owner_action, "remove", captured),
+        )
+        self._archive_usage("library", "menu_opened")
+        try:
+            menu.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+        finally:
+            menu.grab_release()
+
+    def _show_library_actions_menu(self, *, at_pointer: bool = False) -> None:
+        menu = ContextMenu(
             self,
             tearoff=False,
             bg=THEME["surface"],
@@ -8154,15 +9215,21 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         menu.add_separator()
         menu.add_command(
-            label="Open saved location", command=self._open_selected_saved_location
+            label="Open saved location",
+            command=partial(self._open_selected_saved_location, selected_info),
         )
         menu.add_command(
-            label="Remove from Library…", command=self._remove_selected_library_item
+            label="Remove from Library…",
+            command=partial(self._remove_selected_library_item, selected_info),
         )
         try:
             menu.tk_popup(
-                self.focus_library_menu_button.winfo_rootx(),
-                self.focus_library_menu_button.winfo_rooty()
+                self.winfo_pointerx()
+                if at_pointer
+                else self.focus_library_menu_button.winfo_rootx(),
+                self.winfo_pointery()
+                if at_pointer
+                else self.focus_library_menu_button.winfo_rooty()
                 + self.focus_library_menu_button.winfo_height(),
             )
         finally:
@@ -8263,13 +9330,13 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         bind_smooth_vertical_wheel(description, mode="pixels")
         popup_actions = surface.footer
         popup_actions.columnconfigure(0, weight=1)
-        ttk.Button(
+        ProductButton(
             popup_actions,
             text="Copy YouTube URL",
             command=lambda: self._copy_youtube_url(info),
             style="FocusQuiet.TButton",
         ).grid(row=0, column=1, padx=(0, 8))
-        ttk.Button(
+        ProductButton(
             popup_actions, text="Done", command=popup.destroy, style="Accent.TButton"
         ).grid(row=0, column=2)
         popup.update_idletasks()
@@ -8417,7 +9484,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         native resize gesture. Rebuilding only at 220 px capacity boundaries is
         both immediate and bounded.
         """
-        capacity = focus_run_deck_capacity(max(1, int(event.width)))
+        capacity = focus_run_deck_capacity(
+            max(1, int(event.width) // window_logical_metrics(self).scale)
+        )
         if capacity == self.__dict__.get("_focus_run_deck_rendered_capacity"):
             return
         try:
@@ -8432,45 +9501,63 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         column: int,
         visible_count: int,
     ) -> None:
+        metrics = window_logical_metrics(self)
+        px = metrics.px
         tile_bg = THEME["bg"]
         tile = tk.Frame(
             self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2"
         )
-        left_pad = 9 if column == 0 else 5
-        right_pad = 5 if column < visible_count - 1 else 9
+        left_pad = px(9 if column == 0 else 5)
+        right_pad = px(5 if column < visible_count - 1 else 9)
         tile.grid(
             row=0,
             column=column,
             sticky="nsew",
             padx=(left_pad, right_pad),
-            pady=6 if self._focus_layout == "compact" else 9,
+            pady=px(6 if self._focus_layout == "compact" else 9),
         )
         tile.columnconfigure(1, weight=1)
         source = self._focus_thumbnail_source_for_record(record)
         thumbnail_size = youtube_thumbnail_size(
-            64 if self._focus_layout == "compact" else 80
+            px(64 if self._focus_layout == "compact" else 80)
         )
         thumbnail = self._focus_photo_from_source(
-            source, thumbnail_size, 6 if self._focus_layout == "compact" else 7
+            source, thumbnail_size, px(6 if self._focus_layout == "compact" else 7)
         )
         if thumbnail is not None:
             self._focus_run_thumbnail_images.append(thumbnail)
             image_label = tk.Label(
                 tile, image=thumbnail, bg=tile_bg, bd=0, highlightthickness=0
             )
-            image_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 9))
+            image_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, px(9)))
         title = str(record.get("title") or "Untitled run")
         status = str(record.get("status") or "Ready")
         title_label = tk.Label(
             tile,
-            text=title[:27] + ("..." if len(title) > 27 else ""),
+            text=title,
+            width=1,
+            padx=0,
             bg=tile_bg,
             fg=THEME["text"],
             anchor="w",
-            font=FONT_UI_SMALL_MEDIUM,
+            font=metrics.font(FONT_UI_SMALL_MEDIUM),
             bd=0,
         )
-        title_label.grid(row=0, column=1, sticky="ew", padx=(0, 4))
+        title_label.grid(row=0, column=1, sticky="ew", padx=(0, px(4)))
+        title_font = tkfont.Font(root=tile, font=metrics.font(FONT_UI_SMALL_MEDIUM))
+
+        def fit_tile_title(event: tk.Event[Any]) -> None:
+            title_label.configure(
+                text=ellipsize_wrapped_text(
+                    title,
+                    maximum_width=max(1, event.width - px(4)),
+                    maximum_lines=1,
+                    measure_width=title_font.measure,
+                )
+            )
+
+        title_label.bind("<Configure>", fit_tile_title, add="+")
+        ToolTip(title_label, title)
         record_kind = str(record.get("kind"))
         status_color = (
             THEME["success"]
@@ -8479,7 +9566,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             if record_kind == "failed"
             else THEME["warning"]
             if record_kind == "skipped"
-            else THEME["accent"]
+            else THEME["progress"]
             if record_kind in {"active", "preview_loading"}
             else THEME["muted"]
         )
@@ -8488,14 +9575,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             text=status,
             bg=tile_bg,
             fg=status_color,
-            font=FONT_UI_SMALL,
+            font=metrics.font(FONT_UI_SMALL),
             bd=0,
             anchor="w",
         )
         is_primary_active = column == 0 and str(record.get("kind")) == "active"
         if is_primary_active:
             status_label.configure(textvariable=self.focus_run_status_var)
-        status_label.grid(row=1, column=1, sticky="w", pady=(3, 0))
+        status_label.grid(row=1, column=1, sticky="w", pady=(px(3), 0))
         value = max(0.0, min(100.0, float(record.get("progress") or 0)))
         bar: SleekProgressbar | None = None
         if is_primary_active or 0 < value < 100:
@@ -8517,7 +9604,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                     height=4,
                     track_color=THEME["border"],
                 )
-            bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(7, 0))
+            bar.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(px(7), 0))
         widgets: list[tk.Widget] = [tile, title_label, status_label]
         if thumbnail is not None:
             widgets.append(image_label)
@@ -8536,18 +9623,28 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
 
             retry_button = tk.Canvas(
                 tile,
-                width=30,
-                height=30,
+                width=px(30),
+                height=px(30),
                 bg=tile_bg,
                 bd=0,
                 highlightthickness=0,
                 cursor="hand2",
             )
             retry_button.create_oval(
-                2, 2, 28, 28, fill=THEME["surface"], outline=THEME["border"], width=1
+                px(2),
+                px(2),
+                px(28),
+                px(28),
+                fill=THEME["surface"],
+                outline=THEME["border"],
+                width=px(1),
             )
             retry_button.create_text(
-                15, 14, text="↻", fill=THEME["text"], font=(FONT_UI[0], 15, "bold")
+                px(15),
+                px(14),
+                text="↻",
+                fill=THEME["text"],
+                font=metrics.font((FONT_UI[0], 15, "bold")),
             )
             retry_button.bind(
                 "<Button-1>",
@@ -8566,19 +9663,25 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
 
             play_button = tk.Canvas(
                 tile,
-                width=30,
-                height=30,
+                width=px(30),
+                height=px(30),
                 bg=tile_bg,
                 bd=0,
                 highlightthickness=0,
                 cursor="hand2",
             )
             play_button.create_oval(
-                2, 2, 28, 28, fill=THEME["accent"], outline=THEME["border"], width=1
+                px(2),
+                px(2),
+                px(28),
+                px(28),
+                fill=THEME["icon"],
+                outline=THEME["border"],
+                width=px(1),
             )
             play_icon = self._load_focus_icon("send-filled", 20, "#ffffff")
             if play_icon is not None:
-                play_button.create_image(15, 15, image=play_icon)
+                play_button.create_image(px(15), px(15), image=play_icon)
             play_button.bind(
                 "<Button-1>",
                 start_preview_from_tile,
@@ -8673,8 +9776,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self._focus_run_deck_projection = (records, summary_text, record_count)
         deck_width = self.focus_run_deck.winfo_width()
         if deck_width <= 1:
-            deck_width = max(1, self.winfo_width() - 52)
-        limit = focus_run_deck_capacity(deck_width)
+            deck_width = max(
+                1, self.winfo_width() - window_logical_metrics(self).px(52)
+            )
+        limit = focus_run_deck_capacity(
+            deck_width // window_logical_metrics(self).scale
+        )
         visible = records[:limit]
         snapshot = RunDeckSnapshot(
             layout=str(self._focus_layout or ""),
@@ -8731,6 +9838,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             update_summary(next_snapshot)
 
         def rebuild(_snapshot: RunDeckSnapshot) -> None:
+            metrics = window_logical_metrics(self)
             for child in self.focus_run_deck.winfo_children():
                 child.destroy()
             self._focus_run_thumbnail_images: list[Any] = []
@@ -8741,15 +9849,33 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 self.focus_run_deck.columnconfigure(column, weight=0, uniform="")
             if not visible:
                 empty = ttk.Frame(self.focus_run_deck, style="FocusShell.TFrame")
-                empty.grid(row=0, column=0, sticky="ew", padx=16, pady=14)
+                empty.grid(
+                    row=0,
+                    column=0,
+                    sticky="ew",
+                    padx=metrics.px(16),
+                    pady=metrics.px(14),
+                )
                 ttk.Label(
-                    empty, text="Your runs will collect here", style="TLabel"
+                    empty,
+                    text="Your runs will collect here",
+                    style="TLabel",
+                    font=metrics.font(FONT_UI),
                 ).pack(anchor="w")
-                ttk.Label(
+                description = ttk.Label(
                     empty,
                     text="Start with a URL above. Completed downloads stay available in Library.",
                     style="Muted.TLabel",
-                ).pack(anchor="w", pady=(4, 0))
+                    font=metrics.font(FONT_UI_SMALL),
+                )
+                description.pack(anchor="w", fill="x", pady=(metrics.px(4), 0))
+                description.bind(
+                    "<Configure>",
+                    lambda event: event.widget.configure(
+                        wraplength=max(1, event.width)
+                    ),
+                    add="+",
+                )
                 self.focus_run_deck.columnconfigure(0, weight=1)
                 update_summary(snapshot)
                 return
@@ -8838,12 +9964,28 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                     and self._focus_active_thumbnail_is_placeholder
                 )
             )
-            rendered = (
-                rounded_contain_image(source, size, radius, THEME["surface"])
+            density = surface_backing_scale(self)
+            logical_size = (
+                size
                 if is_placeholder
-                else rounded_fit_image(source, size, radius)
+                else thumbnail_size_within(tuple(source.size), size)
             )
-            return ImageTk.PhotoImage(rendered)
+            physical_size = tuple(value * density for value in logical_size)
+            if is_placeholder:
+                rendered = rounded_contain_image(
+                    source,
+                    physical_size,
+                    radius * density,
+                    THEME["surface"],
+                )
+            else:
+                # Preserve the aspect-fitted logical extent; the maximum slot
+                # must not stretch a portrait or square into a landscape image.
+                pixels = source.resize(physical_size, Image.Resampling.LANCZOS)
+                rendered = rounded_fit_image(pixels, physical_size, radius * density)
+            return create_surface_image(
+                self, rendered, density, logical_size=logical_size
+            )[0]
         except Exception as exc:  # noqa: BLE001 - optional image rendering falls back cleanly
             write_diagnostic(f"thumbnail surface could not be rendered: {exc}")
             return None
@@ -8853,10 +9995,36 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
     ) -> None:
         self._focus_select_run_record(record)
 
+    def _run_focus_active_action(self, job: DownloadJob | None, action: str) -> None:
+        """A delayed menu action belongs only to the execution that opened it."""
+        from .archive_observations import operation
+
+        commands = {
+            "cancel": self._cancel,
+            "skip_item": self._skip_video,
+            "skip_source": self._skip_url,
+        }
+        if action not in commands:
+            return
+        admitted = job is not None and self.active_job is job
+        operation(
+            self.__dict__.get("product_telemetry"),
+            "run_control_operation",
+            "admitted" if admitted else "rejected",
+            str(uuid.uuid4()),
+            {
+                "run_control_action": action,
+                "run_control_origin": "run_menu",
+                "run_control_owner": "current" if admitted else "retired",
+            },
+        )
+        if admitted:
+            commands[action]()
+
     def _show_focus_run_actions_menu(
         self, record: dict[str, Any], event: tk.Event[Any] | None = None
     ) -> None:
-        menu = tk.Menu(
+        menu = ContextMenu(
             self,
             tearoff=False,
             bg=THEME["surface"],
@@ -8865,9 +10033,18 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             activeforeground="#ffffff",
         )
         if str(record.get("kind")) == "active":
-            menu.add_command(label="Cancel run", command=self._cancel)
-            menu.add_command(label="Skip current item", command=self._skip_video)
-            menu.add_command(label="Skip current source URL", command=self._skip_url)
+            captured_job = record.get("job")
+            for label, action in (
+                ("Cancel run", "cancel"),
+                ("Skip current item", "skip_item"),
+                ("Skip current source URL", "skip_source"),
+            ):
+                menu.add_command(
+                    label=label,
+                    command=partial(
+                        self._run_focus_active_action, captured_job, action
+                    ),
+                )
             menu.add_separator()
         terminal_job = record.get("job")
         if str(record.get("kind")) == "preview":
@@ -8963,6 +10140,13 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 if event is not None
                 else max(1, self.winfo_height())
             )
+            # Aqua can deliver a queued 1x1 setup Configure after the real
+            # window is mapped. Preserve live resize dimensions, but reject
+            # that stale sentinel before it changes layout or resize telemetry.
+            if width <= 1:
+                width = max(width, self.winfo_width())
+            if height <= 1:
+                height = max(height, self.winfo_height())
             DownloaderApp._observe_resize_geometry(self, width, height)
             self._apply_focus_layout(width=width, height=height)
         except tk.TclError:
@@ -8988,10 +10172,28 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             telemetry = self.__dict__.get("product_telemetry")
             if telemetry is None or not telemetry.permitted():
                 return
+            # A delayed pump may run after navigation/history replacement.
+            # Bind this burst to its first changed geometry, not settlement.
+            view = self.__dict__.get("_focus_selected_view", "unknown")
+            rows = len(self.__dict__.get("download_history", ()))
             observation = self._resize_observation = {
                 "operation": str(uuid.uuid4()),
                 "last": now,
                 "delay": 0.0,
+                "view": view
+                if view in {"forge", "library", "watch", "activity"}
+                else "unknown",
+                "row_count_bucket": (
+                    "0"
+                    if rows == 0
+                    else "1_25"
+                    if rows <= 25
+                    else "26_500"
+                    if rows <= 500
+                    else "501_5000"
+                    if rows <= 5000
+                    else "5001_plus"
+                ),
             }
         observation["last"] = now
 
@@ -9026,26 +10228,13 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             ),
             "1000ms_plus",
         )
-        rows = len(self.__dict__.get("download_history", ()))
-        count = (
-            "0"
-            if rows == 0
-            else "1_25"
-            if rows <= 25
-            else "26_500"
-            if rows <= 500
-            else "501_5000"
-            if rows <= 5000
-            else "5001_plus"
-        )
-        view = self.__dict__.get("_focus_selected_view", "unknown")
         telemetry.record_operation(
             "resize_operation",
             "settled",
             operation_key=observation["operation"],
             dimensions={
-                "view": view if view in {"forge", "library", "activity"} else "unknown",
-                "row_count_bucket": count,
+                "view": observation["view"],
+                "row_count_bucket": observation["row_count_bucket"],
                 "lag_bucket": lag,
                 "window_change": "resize",
                 "lag_measurement": "ui_pump_delay",
@@ -9108,6 +10297,45 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             return
         self._focus_library_horizontal_padding = requested
 
+    def _layout_focus_header(self, width: int) -> None:
+        px = window_logical_metrics(self).px
+        compact = width < px(1100 if self._integrated_header else 1000)
+        if compact != self._focus_header_compact:
+            self._focus_header_compact = compact
+            for label in self._focus_brand_labels:
+                if compact:
+                    label.pack_forget()
+                else:
+                    label.pack(side="left")
+            self._global_search_field.set_compact(compact)
+            self._focus_nav_row.grid_configure(
+                padx=(px(8 if compact else 20), px(8 if compact else 12))
+            )
+        # Grid can shrink the middle column below its requested width while its
+        # children continue painting. Move navigation to its own row when the
+        # measured siblings cannot fit; keep the search and settings reachable.
+        brand = self._focus_header_mark_label.master
+        utilities = self._global_search_field.master
+        required = (
+            brand.winfo_reqwidth()
+            + utilities.winfo_reqwidth()
+            + self._focus_nav_row.winfo_reqwidth()
+            + px(16 if compact else 32)
+            + (82 if self._integrated_header else 0)
+        )
+        stacked = required > max(1, width - px(40))
+        if stacked != self.__dict__.get("_focus_header_stacked"):
+            self._focus_header_stacked = stacked
+            utilities.grid_configure(
+                column=1 if stacked else 2, columnspan=2 if stacked else 1
+            )
+            self._focus_nav_row.grid_configure(
+                row=1 if stacked else 0,
+                column=0 if stacked else 1,
+                columnspan=3 if stacked else 1,
+                pady=(px(6), px(6)) if stacked else 0,
+            )
+
     def _apply_focus_layout(
         self,
         event: tk.Event[Any] | None = None,
@@ -9125,7 +10353,11 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         height = (
             max(1, int(height)) if height is not None else max(1, self.winfo_height())
         )
-        mode = focus_layout_mode(width, height)
+        self._layout_focus_header(width)
+        metrics = window_logical_metrics(self)
+        canonical_width = max(1, width // metrics.scale)
+        canonical_height = max(1, height // metrics.scale)
+        mode = focus_layout_mode(canonical_width, canonical_height)
         compact = mode == "compact"
         balanced = mode == "balanced"
         library_vertical_mode = focus_library_vertical_layout_mode(height)
@@ -9137,13 +10369,13 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         library_padding = focus_library_horizontal_padding(width)
         if isinstance(video_tree, PixelScrollTable):
             self._schedule_focus_library_padding(library_padding)
-        focus_shell_padding = 12 if compact else 20
+        focus_shell_padding = metrics.px(12 if compact else 20)
         layout_signature = (
             mode,
             library_mode,
             library_vertical_mode,
-            focus_run_deck_capacity(max(1, width - 52)),
-            focus_hero_thumbnail_visible(width),
+            focus_run_deck_capacity(max(1, width - metrics.px(52)) // metrics.scale),
+            focus_hero_thumbnail_visible(canonical_width),
         )
         if (
             layout_signature == self.__dict__.get("_focus_layout_signature")
@@ -9152,31 +10384,40 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             return
         self._focus_layout_signature = layout_signature
         self._focus_layout = mode
-        horizontal_pad = 20 if compact else 42 if balanced else 100
+        horizontal_pad = metrics.px(20 if compact else 42 if balanced else 100)
         self.focus_shell.pack_configure(
             padx=focus_shell_padding,
-            pady=(10 if compact else 16, 10 if compact else 14),
+            pady=(
+                metrics.px(5 if getattr(self, "_native_toolbar_header", False) else 10),
+                metrics.px(10 if compact else 14),
+            ),
         )
         self.focus_command_area.grid_configure(
             padx=horizontal_pad,
-            pady=(18 if compact else 26 if balanced else 42, 8 if compact else 14),
+            pady=(
+                metrics.px(18 if compact else 26 if balanced else 42),
+                metrics.px(8 if compact else 14),
+            ),
         )
         self.focus_active_frame.grid_configure(
             padx=horizontal_pad,
-            pady=(6 if compact else 10 if balanced else 16, 9 if compact else 14),
+            pady=(
+                metrics.px(6 if compact else 10 if balanced else 16),
+                metrics.px(9 if compact else 14),
+            ),
         )
         self.focus_detail_wrap.grid_configure(
-            padx=horizontal_pad, pady=(0, 7 if compact else 12)
+            padx=horizontal_pad, pady=(0, metrics.px(7 if compact else 12))
         )
         self.focus_destination_button.configure(
-            width=170 if compact else 210 if balanced else 240
+            width=window_logical_metrics(self).px(
+                170 if compact else 210 if balanced else 240
+            )
         )
-        show_hero_thumbnail = focus_hero_thumbnail_visible(width)
-        active_title_width = max(
-            260,
-            width - (2 * horizontal_pad) - (180 if show_hero_thumbnail else 0) - 150,
-        )
-        self.focus_active_title_label.configure(wraplength=active_title_width)
+        show_hero_thumbnail = focus_hero_thumbnail_visible(canonical_width)
+        active_title_width = self.focus_active_title_label.master.winfo_width()
+        if active_title_width > 1:
+            self.focus_active_title_label.configure(wraplength=active_title_width)
         self.focus_log.request_density(constrained=compact)
 
         active = bool(
@@ -9203,10 +10444,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             if not self.focus_detail_header.winfo_manager():
                 self.focus_detail_header.grid()
         else:
-            if not self.focus_update_dot.winfo_manager():
-                self.focus_update_dot.pack(
-                    side="left", padx=(0, 4), before=self.update_button
-                )
+            self.focus_update_dot.pack_forget()
             self.update_button.configure(text=self._focus_update_full_text)
             self.focus_active_thumb_wrap.grid()
             self.focus_transfer_label.grid()
@@ -9382,7 +10620,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             return
         self.update_check_silent = silent
         self.update_button.config(state="disabled")
-        self._set_focus_update_state("Checking…", THEME["accent"])
+        self._set_focus_update_state("Checking…", THEME["progress"])
         if not silent:
             self.status_var.set("Checking GitHub Releases for a VODForge update…")
         self.update_worker = threading.Thread(
@@ -9412,7 +10650,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 )
             return
         self.status_var.set(f"VODForge {release.tag_name} is available.")
-        self._set_focus_update_state(f"Update {release.tag_name}", THEME["accent"])
+        self._set_focus_update_state(f"Update {release.tag_name}", THEME["action"])
         asset = release_asset_for_platform(release)
         if asset is None:
             if messagebox.askyesno(
@@ -9432,7 +10670,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self._update_repair_requested = False
         self._record_feature("updater", "download_started")
         self.update_button.config(state="disabled")
-        self._set_focus_update_state("Downloading update…", THEME["accent"])
+        self._set_focus_update_state("Downloading update…", THEME["progress"])
         self.status_var.set(f"Downloading and verifying VODForge {release.tag_name}…")
         self.update_worker = threading.Thread(
             target=self._update_download_worker, args=(release,), daemon=True
@@ -9446,7 +10684,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self._record_feature("updater", "repair_started")
         self.update_check_silent = False
         self.update_button.config(state="disabled")
-        self._set_focus_update_state("Preparing repair…", THEME["accent"])
+        self._set_focus_update_state("Preparing repair…", THEME["progress"])
         self.status_var.set("Downloading and verifying the latest VODForge installer…")
         self.update_worker = threading.Thread(
             target=self._update_download_worker, args=(None,), daemon=True
@@ -9500,7 +10738,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             or (local is not None and local.active)
             or self.__dict__.get("pending_jobs")
         ):
-            self._set_focus_update_state("Update ready", THEME["accent"])
+            self._set_focus_update_state("Update ready", THEME["success"])
             self.update_button.config(state="normal")
             self.status_var.set(
                 "Update downloaded. Finish or stop queued downloads and conversions, then check for updates again to install."
@@ -9509,12 +10747,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if not isinstance(update, MacUpdatePlan) and (
             not is_windows() or update.suffix.lower() != ".exe"
         ):
-            self._set_focus_update_state("Update downloaded", THEME["accent"])
+            self._set_focus_update_state("Update downloaded", THEME["success"])
             self.update_button.config(state="normal")
             self.status_var.set(f"Verified update downloaded: {update.name}")
             self._open_path(update.parent)
             return
-        self._set_focus_update_state("Preparing update…", THEME["accent"])
+        self._set_focus_update_state("Preparing update…", THEME["progress"])
         self.update_button.config(state="disabled")
         telemetry = self.__dict__.get("product_telemetry")
         telemetry_permitted = telemetry is not None and telemetry.permitted()
@@ -9548,7 +10786,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self._show_update_recovery(str(exc))
             return
         self._record_feature("updater", "handoff")
-        self._set_focus_update_state("Installing update…", THEME["accent"])
+        self._set_focus_update_state("Installing update…", THEME["progress"])
         self.status_var.set(
             "Verified update ready. VODForge will close safely and reopen after installation."
         )
@@ -9567,10 +10805,29 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 ),
             )
             self._history_recovery_blocked = False
-        except HistoryError as exc:
+            from .history import file_operations_pending
+
+            self._archive_file_recovery_blocked = file_operations_pending(
+                self.history_path
+            )
+            if self._archive_file_recovery_blocked:
+                self.after_idle(self._show_library_file_recovery)
+            else:
+                from .archive_file_operations import _retire_finished_receipts
+
+                # Startup only: previous producers are gone and load_history has
+                # durably replayed their pending deltas before retirement.
+                _retire_finished_receipts(self.history_path.parent / "file-operations")
+        except (HistoryError, OSError, ValueError) as exc:
             self._history_recovery_blocked = True
             ArchiveLibraryMixin._archive_history_observe(
-                self, "failed", operation, "startup", error=exc
+                self,
+                "failed",
+                operation,
+                "startup",
+                error=exc
+                if isinstance(exc, HistoryError)
+                else HistoryError("File recovery needs attention."),
             )
             self.download_history = []
             self._append_log(f"WARNING: {exc}")
@@ -9612,11 +10869,17 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         history_info.pop("vodforge_preview_run_id", None)
         if owning_job is not None:
             history_info["vodforge_run_id"] = owning_job.run_id
+            if owning_job.annotation_source_owner:
+                history_info["vodforge_archive_annotation_owner"] = (
+                    self._annotation_owner_for_job(owning_job)
+                )
             history_info["vodforge_run_activity"] = sanitize_run_activity(
                 owning_job.activity_lines
             )
             history_info[RETRY_JOB_METADATA_KEY] = serialize_download_job(owning_job)
-        if self.__dict__.get("_archive_commit_active"):
+        if self.__dict__.get("_archive_commit_active") or self.__dict__.get(
+            "_archive_file_recovery_blocked"
+        ):
             pending_record = sanitize_history_record(history_info, output_dir)
             try:
                 self._archive_defer_history(
@@ -9641,14 +10904,26 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 )
             return
         try:
-            self.download_history = upsert_history(
+            from .archive_file_operations import reconcile_file_record_delta
+
+            history_info.setdefault("vodforge_output_dir", str(output_dir))
+            reconciled = reconcile_file_record_delta(
+                history_info,
+                self.download_history,
+                self.history_path.parent / "file-operations",
+            )
+            if reconciled is None:
+                return
+            history_info = reconciled
+            output_dir = Path(history_info.get("vodforge_output_dir") or output_dir)
+            prospective_history = upsert_history(
                 self.download_history,
                 history_info,
                 output_dir,
                 replace_missing_media=True,
             )
-            save_history(self.history_path, self.download_history)
-        except HistoryError as exc:
+            save_history(self.history_path, prospective_history)
+        except (HistoryError, OSError, ValueError) as exc:
             if owning_job is not None:
                 self._append_job_log(owning_job, f"WARNING: {exc}")
             else:
@@ -9658,6 +10933,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             )
             return
 
+        self.download_history = prospective_history
         saved_record = self.download_history[0]
         if owning_job is not None:
             owning_job.history_identities.add(history_identity(saved_record))
@@ -9838,7 +11114,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 or history_archive_owner(record) in owner_keys
             )
 
-        if self.__dict__.get("_archive_commit_active"):
+        if self.__dict__.get("_archive_commit_active") or self.__dict__.get(
+            "_archive_file_recovery_blocked"
+        ):
             try:
                 self._archive_defer_history(
                     ("activity", job.run_id),
@@ -9887,7 +11165,8 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
     def _refresh_manual_settings_visibility(self) -> None:
         manual_override = (
             self._selected_output_type() == OutputType.MP4
-            and self.export_mode_var.get() == ExportMode.MANUAL_OVERRIDE.value
+            and DownloaderApp._submission_export_mode(self)
+            == ExportMode.MANUAL_OVERRIDE
         )
         dialog = self.__dict__.get("_focus_settings_dialog")
         if dialog is not None:
@@ -9975,8 +11254,16 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             return
         self._open_path(self._folder_to_open())
 
-    def _open_selected_saved_location(self) -> None:
-        saved = self._selected_saved_folder()
+    def _open_selected_saved_location(
+        self, captured: dict[str, Any] | None = None
+    ) -> None:
+        if captured is not None:
+            subject = resolve_archive_subject(self.metadata_items, captured)
+            if subject is None:
+                return
+            saved = history_output_dir(dict(subject[1]))
+        else:
+            saved = self._selected_saved_folder()
         if saved is None:
             messagebox.showinfo(
                 APP_NAME, "This preview does not have a saved download location yet."
@@ -10707,6 +11994,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             ),
         )
         self.metadata_items = projection.rows
+        player = self.__dict__.get("_media_player_window")
+        update_player = getattr(player, "set_library_records", None)
+        if callable(update_player):
+            update_player(projection.rows)
         if self.__dict__.get("focus_watch") is not None:
             self.focus_watch.set_records(projection.rows)
         self._last_library_invariant_violations = projection.violations
@@ -10754,11 +12045,29 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         if isinstance(self.video_tree, ArchiveBrowser):
             self.video_tree.set_records(
-                self.metadata_items, visible_indices, select_index=selected_index
+                self.metadata_items,
+                visible_indices,
+                select_index=selected_index,
+                query_active=bool(self.__dict__["library_search_var"].get().strip())
+                if "library_search_var" in self.__dict__
+                else False,
+                filters_active=(
+                    self.library_output_type_var.get() != "All"
+                    or (
+                        self.__dict__["library_category_var"].get()
+                        != LIBRARY_ALL_CATEGORIES
+                        if "library_category_var" in self.__dict__
+                        else False
+                    )
+                ),
             )
             selection = self.video_tree.selection()
             if selection:
                 self._display_selected_metadata(int(selection[0]))
+            elif (
+                folder := self.video_tree._selected_folder
+            ) is not None and folder.path is not None:
+                self._archive_folder_selected(folder.path, folder.indices)
             else:
                 self._clear_library_selection()
             if hasattr(self, "focus_run_deck"):
@@ -10807,6 +12116,20 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self._refresh_focus_run_deck()
 
     def _clear_library_selection(self) -> None:
+        self._archive_folder_identity = False
+        self.__dict__.pop("_archive_artwork_owner", None)
+        if "focus_thumbnail_wrap" in self.__dict__:
+            self._invalidate_thumbnail_request("library")
+        menu_button = self.__dict__.get("focus_library_menu_button")
+        if menu_button is not None:
+            menu_button.configure(state="disabled")
+        if "selected_note_var" in self.__dict__:
+            self.selected_note_var.set("")
+            self.focus_library_note.grid_remove()
+        if "_archive_variant_choice" in self.__dict__:
+            self._archive_variant_indices = ()
+            self._archive_variant_choice.configure(values=(), state="disabled")
+            self._archive_variant_choice.set("")
         output_type = self.library_output_type_var.get()
         search_query = (
             self.__dict__["library_search_var"].get()
@@ -10822,7 +12145,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if play_button is not None:
             play_button.configure(state="disabled")
         self.selected_title_var.set(
-            "No Library items match these filters."
+            "Choose a saved item or folder."
+            if isinstance(browser := self.__dict__.get("video_tree"), ArchiveBrowser)
+            and browser.model.visible
+            else "No Library items match these filters."
             if search_query.strip() or category != LIBRARY_ALL_CATEGORIES
             else f"No {output_type} items yet. Preview or forge a URL to add one."
         )
@@ -10848,16 +12174,20 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 placeholder=True,
                 target="library",
             )
+        if "focus_library_action_row" in self.__dict__:
+            self._archive_arrange_actions()
 
     def _on_video_selected(self, _event: Any = None) -> None:
-        self._record_feature("library", "selected")
         selection = self.video_tree.selection()
         if selection:
+            self._record_feature("library", "selected")
             try:
                 index = int(selection[0])
             except (TypeError, ValueError):
                 index = 0
             self._display_selected_metadata(index)
+        else:
+            self._clear_library_selection()
 
     def _on_library_double_click(self, event: tk.Event[Any]) -> str | None:
         row = self.video_tree.identify_row(event.y)
@@ -10904,7 +12234,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self.video_tree.selection_set(row)
             _focus_library_table_item(self.video_tree, row)
             self._display_selected_metadata(int(row))
-        menu = tk.Menu(
+        menu = ContextMenu(
             self,
             tearoff=False,
             bg=THEME["surface"],
@@ -11148,6 +12478,58 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             operation=operation,
         )
 
+    def _fail_library_player_opening(
+        self,
+        info: dict[str, Any],
+        message: str,
+        diagnostic: FailureDiagnostic | None = None,
+        *,
+        operation: str | None,
+        launch_generation: int,
+        boundary: str,
+        retry: bool = False,
+    ) -> None:
+        """Present a terminal opening failure without stranding its loading host."""
+        if launch_generation != self._media_player_launch_generation or self._closing:
+            return
+        queue_token = self.__dict__.get("_archive_opening_queue_token")
+        queue_owner = self.__dict__.get("watch_queue")
+        if queue_token is not None and (
+            queue_owner is None or not queue_owner.owns(queue_token)
+        ):
+            self._archive_finish_opening(operation, "cancelled")
+            return
+        diagnostic = diagnostic or FailureDiagnostic(
+            reason="filesystem" if boundary == "resolve" else "unknown",
+            stage="playback",
+            failure_code="timeout" if boundary in {"resolve", "readiness"} else None,
+        )
+        dimensions = {"playback_failure_boundary": boundary}
+        embedded = isinstance(self.__dict__.get("video_tree"), ArchiveBrowser)
+        if embedded:
+            host = self.__dict__.get("_archive_playback_host")
+            if (
+                host is None
+                or host is not self.__dict__.get("_archive_overlay")
+                or self.__dict__.get("_archive_opening_operation") != operation
+            ):
+                return
+            self._archive_finish_opening(
+                operation, "failed", diagnostic, dimensions=dimensions
+            )
+            self._archive_poster_image = None
+            self._archive_playback_error(message, info=info, retry=retry)
+            self.status_var.set("Playback needs attention")
+        else:
+            DownloaderApp._record_playback_operation(
+                self,
+                operation,
+                "failed",
+                diagnostic,
+                dimensions=dimensions,
+            )
+            messagebox.showerror(f"{APP_NAME} Player", message, parent=self)
+
     def _open_library_player_when_ready(
         self,
         info: dict[str, Any],
@@ -11157,42 +12539,57 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         launch_generation: int,
         deadline: float,
         operation: str | None = None,
+        queue_token: QueueToken | None = None,
     ) -> None:
         """Open from the warm engine without ever waiting on Tk's render thread."""
 
         if launch_generation != self._media_player_launch_generation or self._closing:
-            DownloaderApp._record_playback_operation(self, operation, "cancelled")
+            if isinstance(self.__dict__.get("video_tree"), ArchiveBrowser):
+                self._archive_finish_opening(operation, "cancelled")
+            else:
+                DownloaderApp._record_playback_operation(self, operation, "cancelled")
+            return
+        queue_owner = self.__dict__.get("watch_queue")
+        if queue_token is not None and (
+            queue_owner is None or not queue_owner.owns(queue_token)
+        ):
+            self._archive_finish_opening(operation, "cancelled")
             return
         playback_engine = self.playback_engine
         if playback_engine is None:
+            self._fail_library_player_opening(
+                info,
+                "The player is unavailable. Open the saved location or restart VODForge.",
+                FailureDiagnostic(reason="dependency_missing", stage="playback"),
+                operation=operation,
+                launch_generation=launch_generation,
+                boundary="dependency",
+            )
             return
         if playback_engine.failed:
-            DownloaderApp._record_playback_operation(
-                self,
-                operation,
-                "failed",
+            self._fail_library_player_opening(
+                info,
+                "The player could not start. Open the saved location, or restart VODForge and try again.",
                 FailureDiagnostic(reason="unknown", stage="playback"),
-            )
-            messagebox.showerror(
-                f"{APP_NAME} Player",
-                "The bundled playback engine could not initialize. Reinstall VODForge or use Open saved location.",
-                parent=self,
+                operation=operation,
+                launch_generation=launch_generation,
+                boundary="initialization",
             )
             return
-        if not playback_engine.ready:
+        if not playback_engine.ready or (
+            queue_token is not None and getattr(playback_engine, "retiring", False)
+        ):
             if time.monotonic() >= deadline:
-                DownloaderApp._record_playback_operation(
-                    self,
-                    operation,
-                    "failed",
+                self._fail_library_player_opening(
+                    info,
+                    "The player is taking too long to get ready. Try again or open the saved location.",
                     FailureDiagnostic(
                         reason="unknown", stage="playback", failure_code="timeout"
                     ),
-                )
-                messagebox.showerror(
-                    f"{APP_NAME} Player",
-                    "The offline playback engine did not become ready in time.",
-                    parent=self,
+                    operation=operation,
+                    launch_generation=launch_generation,
+                    boundary="readiness",
+                    retry=True,
                 )
                 return
             self.status_var.set("Preparing the offline player…")
@@ -11205,6 +12602,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                     launch_generation=launch_generation,
                     deadline=deadline,
                     operation=operation,
+                    queue_token=queue_token,
                 ),
             )
             return
@@ -11214,6 +12612,8 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             duration = 0.0
         if not 0 < duration < 60 * 60 * 48:
             duration = 0.0
+        queue_owner = self.__dict__.get("watch_queue")
+        queue_continuity = queue_owner.continuity if queue_owner is not None else None
         playback: LibVLCPlaybackBackend | None = None
         previews: MediaPreviewOwner | None = None
         try:
@@ -11223,31 +12623,46 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 duration=duration,
                 audio_only=metadata_output_type(info) != OutputType.MP4,
             )
+            if queue_continuity is not None:
+                playback.set_volume(queue_continuity.volume)
             previews = MediaPreviewOwner(
                 ffmpeg=ffmpeg,
                 diagnostic=write_diagnostic,
             )
             previews.load(media_path)
-        except MediaPlayerError as exc:
-            DownloaderApp._record_playback_operation(
-                self, operation, "failed", capture_failure(exc, stage="playback")
-            )
+        except Exception as exc:  # noqa: BLE001 - provider boundary must release its opening surface
             if previews is not None:
                 previews.shutdown()
             if playback is not None:
                 playback.shutdown()
-            messagebox.showerror(f"{APP_NAME} Player", str(exc), parent=self)
+            self._fail_library_player_opening(
+                info,
+                "The player could not open this file. Try again or open its saved location.",
+                capture_failure(exc, stage="playback", inspect_text=False),
+                operation=operation,
+                launch_generation=launch_generation,
+                boundary="load",
+                retry=True,
+            )
             return
         if playback is None or previews is None:
             if previews is not None:
                 previews.shutdown()
             if playback is not None:
                 playback.shutdown()
-            messagebox.showerror(
-                f"{APP_NAME} Player",
-                "The bundled playback engine could not initialize.",
-                parent=self,
+            self._fail_library_player_opening(
+                info,
+                "The player could not start. Open the saved location or restart VODForge.",
+                operation=operation,
+                launch_generation=launch_generation,
+                boundary="initialization",
             )
+            return
+        if launch_generation != self._media_player_launch_generation or self._closing:
+            previews.shutdown()
+            playback.shutdown()
+            if isinstance(self.__dict__.get("video_tree"), ArchiveBrowser):
+                self._archive_finish_opening(operation, "cancelled")
             return
         embedded_host = (
             self.__dict__.get("_archive_playback_host")
@@ -11263,42 +12678,139 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             + "\n\nFinal output\n"
             + output_details
         )
-        window = MediaPlayerWindow(
-            self,
-            playback=playback,
-            previews=previews,
-            info=info,
-            thumbnail_path=None
-            if embedded_host is not None
-            else self._library_thumbnail_path(info),
-            host=embedded_host,
-            on_closed=self._archive_player_closed
-            if embedded_host is not None
-            else None,
-            autoplay=embedded_host is not None,
-            poster_image=self.__dict__.get("_archive_poster_image"),
-            source_details=source_details,
-            output_details=output_details,
-            on_edit_notes=lambda: self._show_library_annotation_editor(info),
-            on_first_play=lambda: self._record_product_playback_started(info),
-            on_feature=lambda action: self._record_feature("player", action),
-            on_operation=lambda action, diagnostic=None: (
-                DownloaderApp._record_playback_operation(
-                    self, operation, action, diagnostic
-                )
-            ),
-        )
+        held_presentation = self.__dict__.get("_archive_queue_presentation")
+        presentation_host = None
+        if held_presentation is not None and held_presentation[0] == queue_token:
+            self.__dict__.pop("_archive_queue_presentation", None)
+            presentation_host = held_presentation[1]
+        try:
+            window = MediaPlayerWindow(
+                self,
+                playback=playback,
+                previews=previews,
+                info=info,
+                thumbnail_path=None
+                if embedded_host is not None
+                else self._library_thumbnail_path(info),
+                host=embedded_host,
+                on_closed=self._archive_player_closed
+                if embedded_host is not None
+                else None,
+                autoplay=embedded_host is not None,
+                poster_image=self.__dict__.get("_archive_poster_image"),
+                source_details=source_details,
+                output_details=output_details,
+                on_edit_notes=lambda: self._show_library_annotation_editor(info),
+                progress_owner=self.__dict__.get("playback_progress"),
+                entry_origin=self.__dict__.get("_archive_player_origin", "watch"),
+                queue_keys=queue_owner.remaining_keys
+                if queue_owner is not None
+                else None,
+                unmuted_volume=queue_continuity.unmuted_volume
+                if queue_continuity
+                else 80,
+                initial_presentation=queue_continuity.presentation
+                if queue_continuity
+                else "embedded",
+                initial_presentation_host=presentation_host,
+                on_state=self._watch_queue_state,
+                library_records=self.metadata_items,
+                on_related_play=self._archive_player_related_play,
+                on_record_details=self._archive_player_details,
+                on_details=lambda: self._archive_player_details(info),
+                related_thumbnail_path=self._library_thumbnail_path,
+                related_artwork_source=self.library_artwork.resolve_asset,
+                on_first_play=lambda: self._record_product_playback_started(info),
+                on_feature=lambda action, **fields: self._record_feature(
+                    "player", action, **fields
+                ),
+                on_operation=lambda action, diagnostic=None, dimensions=None: (
+                    DownloaderApp._record_playback_operation(
+                        self, operation, action, diagnostic, dimensions=dimensions
+                    )
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - no partial player may retain the queue host
+            if presentation_host is not None:
+                presentation_host.close()
+            previews.shutdown()
+            playback.shutdown()
+            self._fail_library_player_opening(
+                info,
+                "The next video could not open. Try again from your Library.",
+                capture_failure(exc, stage="playback", inspect_text=False),
+                operation=operation,
+                launch_generation=launch_generation,
+                boundary="constructor",
+            )
+            return
         self._media_player_window = window
         self._media_player_source = media_path
+        if queue_owner is not None:
+            queue_owner.attach(window, info, queue_token)
         window.show()
         DownloaderApp._record_playback_operation(self, operation, "ready")
+        if self.__dict__.get("_archive_opening_operation") == operation:
+            self._archive_opening_operation = None
+            self.__dict__.pop("_archive_opening_queue_token", None)
         self.status_var.set("Player ready")
+
+    def _record_watch_queue_operation(
+        self,
+        action: str,
+        operation: str,
+        dimensions: dict[str, str],
+        *,
+        failure_detail: FailureDiagnostic | None = None,
+    ) -> None:
+        observations = self.__dict__.setdefault("_watch_queue_observations", {})
+        if action == "requested":
+            telemetry = self.__dict__.get("product_telemetry")
+            observations[operation] = (
+                telemetry.bind_operation(
+                    "watch_queue_operation", operation_key=operation
+                )
+                if telemetry is not None
+                else None
+            )
+        observation = observations.get(operation)
+        try:
+            if observation is not None:
+                observation.record(action, dimensions, failure_detail=failure_detail)
+        finally:
+            if action in {"completed", "cancelled", "failed"}:
+                observations.pop(operation, None)
+
+    def _watch_queue_state(
+        self,
+        player: MediaPlayerWindow,
+        status: str,
+        *,
+        failure_boundary: str = "provider",
+        failure_detail: FailureDiagnostic | None = None,
+    ) -> None:
+        queue_owner = self.__dict__.get("watch_queue")
+        if queue_owner is not None:
+            snapshot = player._last_snapshot or player.playback.snapshot
+            queue_owner.present(
+                player,
+                status,
+                failure_detail=failure_detail or snapshot.failure_detail,
+                failure_boundary=failure_boundary,
+                continuity=QueueContinuity(
+                    max(0, min(100, int(snapshot.volume))),
+                    max(1, min(100, int(player._unmuted_volume))),
+                    player._presentation_mode,
+                ),
+            )
 
     def _record_playback_operation(
         self,
         operation: str | None,
         action: str,
         diagnostic: FailureDiagnostic | None = None,
+        *,
+        dimensions: dict[str, str] | None = None,
     ) -> None:
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is not None and operation is not None:
@@ -11309,6 +12821,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                     operation_key=operation,
                     failure_detail=diagnostic,
                     dimensions={
+                        **(dimensions or {}),
                         "playback_origin": self.__dict__.get(
                             "_archive_playback_origins", {}
                         ).get(operation, "library"),
@@ -11320,7 +12833,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 )
             except Exception:  # noqa: BLE001, S110 - optional observation cannot break playback or cleanup
                 pass
-        if action in {"closed", "failed", "cancelled", "focused"}:
+        if action in {"closed", "cancelled", "focused"}:
             self.__dict__.get("_archive_playback_origins", {}).pop(operation, None)
 
     def _handle_missing_library_media(self, info: dict[str, Any]) -> None:
@@ -11366,12 +12879,18 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self._reset_source_input_after_send()
             self.url_var.set(source_url)
         if destination is not None and source_url:
-            self.library_media_recovery.prepare_destination(source_url, destination)
+            self.library_media_recovery.prepare_destination(
+                source_url,
+                destination,
+                export_mode=ExportMode.EVERYDAY if plan.preset_migrated else None,
+            )
             self._sync_focus_destination()
         self.output_type_var.set(metadata_output_type(info).value)
         self._select_focus_view("forge")
         self.status_var.set(
-            "Review the saved destination and output settings, then Forge again."
+            "Everyday is selected for this video. Review the settings, then Forge again."
+            if plan.preset_migrated
+            else "Review the saved destination and output settings, then Forge again."
         )
 
     def _accept_library_redownload(self, plan: LibraryMediaRecoveryPlan) -> None:
@@ -11394,22 +12913,19 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if job is None:
             return
         job.recovery_reason = "missing_media"
+        job.annotation_source_owner = plan.previous_annotation_owner
         accepted = self._start_or_queue_download_job(job, clear_source=False)
         if not accepted:
             return
-        self._record_feature("missing_media", "accepted")
-        previous_owner = plan.previous_annotation_owner
-        if previous_owner:
-            try:
-                self.library_annotations.transfer(
-                    previous_owner,
-                    f"run:{job.run_id}",
-                )
-            except LibraryAnnotationsError as exc:
-                write_diagnostic(
-                    "missing-media Library annotation transfer failed: "
-                    f"{type(exc).__name__}: {exc}"
-                )
+        self._record_feature(
+            "missing_media", "accepted", dimensions={"input_kind": "single"}
+        )
+        if plan.preset_migrated:
+            self._record_feature(
+                "missing_media",
+                "preset_migrated",
+                dimensions={"preset": "everyday", "input_kind": "single"},
+            )
         updated_history = self.library_media_recovery.history_after_acceptance(
             self.download_history,
             plan,
@@ -11424,18 +12940,29 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         self._focus_selected_run_id = job.run_id
         self._select_focus_view("forge")
         self.status_var.set(
-            "Redownloading with the saved output settings and location."
+            "Redownloading this video with Everyday and its saved location."
+            if plan.preset_migrated
+            else "Redownloading this video with its saved output settings and location."
         )
 
-    def _remove_selected_library_item(self) -> None:
-        selection = self.video_tree.selection()
-        if not selection:
-            return
-        try:
-            index = int(selection[0])
-            info = self.metadata_items[index]
-        except (IndexError, TypeError, ValueError):
-            return
+    def _remove_selected_library_item(
+        self, captured: dict[str, Any] | None = None
+    ) -> None:
+        if captured is not None:
+            subject = resolve_archive_subject(self.metadata_items, captured)
+            if subject is None:
+                return
+            index, current = subject
+            info = dict(current)
+        else:
+            selection = self.video_tree.selection()
+            if not selection:
+                return
+            try:
+                index = int(selection[0])
+                info = self.metadata_items[index]
+            except (IndexError, TypeError, ValueError):
+                return
         title = str(info.get("title") or info.get("id") or "this item")
         active_job_value = self.__dict__.get("active_job")
         active_job = (
@@ -11446,6 +12973,17 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             active_job=active_job,
             pending_jobs=self.__dict__.get("pending_jobs", []),
         )
+        observation = begin_library_action(
+            self.__dict__.get("product_telemetry"),
+            "remove",
+            str(info.get(PROJECTION_OWNER_KIND_KEY) or "run")
+            if info.get(PROJECTION_OWNER_KIND_KEY)
+            in {"preview", "queued", "active", "terminal"}
+            else "saved"
+            if history_output_dir(info) is not None
+            else "run",
+            "confirmation",
+        )
         if not messagebox.askyesno(
             APP_NAME,
             (
@@ -11454,12 +12992,36 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 + plan.execution_notice
             ),
         ):
+            observe_library_action(observation, "cancelled", "confirmation")
             return
+        # Confirmation runs a nested event loop. Resolve the same owner again;
+        # a refreshed projection must never redirect removal to a different row.
+        subject = resolve_archive_subject(self.metadata_items, info)
+        if subject is None:
+            observe_library_action(observation, "cancelled", "confirmation")
+            return
+        index, current = subject
+        info = dict(current)
+        active_job_value = self.__dict__.get("active_job")
+        plan = resolve_library_removal_plan(
+            info,
+            active_job=active_job_value
+            if isinstance(active_job_value, DownloadJob)
+            else None,
+            pending_jobs=self.__dict__.get("pending_jobs", []),
+        )
         try:
             removed_run_ids = self._apply_library_removal_plan(info, index, plan)
         except HistoryError as exc:
+            observe_library_action(
+                observation,
+                "rejected",
+                "queue" if plan.queued_run_ids else "history",
+                error=exc,
+            )
             messagebox.showerror(APP_NAME, str(exc))
             return
+        observe_library_action(observation, "completed", "completed")
         self._reconcile_focus_after_library_removal(removed_run_ids)
         if plan.active_run_id is not None:
             self.status_var.set(
@@ -11479,6 +13041,8 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         info: dict[str, Any],
         index: int,
         plan: LibraryRemovalPlan,
+        *,
+        history_committed: bool = False,
     ) -> set[str]:
         """Persist removal before applying its live Library and Forge effects."""
         if self.__dict__.get("_history_recovery_blocked"):
@@ -11489,8 +13053,18 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             raise HistoryError(
                 "Saved locations are being updated; try removal again when it finishes."
             )
+        if history_committed and (
+            plan.execution_run_ids
+            or any(
+                history_archive_owner(row) == history_archive_owner(info)
+                for row in self.download_history
+            )
+        ):
+            raise HistoryError(
+                "File removal has not been confirmed for this exact saved item."
+            )
         prospective_history = self.download_history
-        if plan.history_identity is not None:
+        if plan.history_identity is not None and not history_committed:
             prospective_history = [
                 item
                 for item in self.download_history
@@ -11499,12 +13073,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             save_history(self.history_path, prospective_history)
             self.download_history = prospective_history
 
-        self._record_feature("library", "removed")
         removed_run_ids = set(plan.execution_run_ids)
-        if removed_run_ids:
-            self.__dict__.setdefault("_library_suppressed_run_ids", set()).update(
-                removed_run_ids
-            )
         if plan.queued_run_ids:
             remaining_jobs = [
                 job
@@ -11524,13 +13093,26 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 if removed_job.run_id in plan.queued_run_ids:
                     self._record_queue_event("run_dequeued", removed_job)
             self.pending_jobs = remaining_jobs
+        if removed_run_ids:
+            self.__dict__.setdefault("_library_suppressed_run_ids", set()).update(
+                removed_run_ids
+            )
         if plan.active_run_id is not None:
             self._cancel()
         removed_run_ids.update(self._remove_library_item_from_forge_recents(info))
         preview_run_id = str(info.get("vodforge_preview_run_id") or "")
         if preview_run_id:
-            removed_run_ids.add(preview_run_id)
-            self._library_projection_owner().remove_preview(preview_run_id)
+            owner = self._library_projection_owner()
+            subject = owner.preview_subject(info)
+            if subject is not None:
+                owner.consume_preview_subject(subject)
+            # Keep the shared Forge navigation identity while siblings survive.
+            if not any(
+                row.get("vodforge_preview_run_id") == preview_run_id
+                and row.get(PROJECTION_OWNER_KEY) != subject
+                for row in self.metadata_items
+            ):
+                removed_run_ids.add(preview_run_id)
         recovery_owner = self.__dict__.get("run_recovery")
         for run_id in removed_run_ids:
             try:
@@ -11551,6 +13133,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                     f"{type(exc).__name__}: {exc}"
                 )
         self._reconcile_library_projection()
+        self._record_feature("library", "removed")
         return removed_run_ids
 
     def _remove_library_item_from_forge_recents(self, info: dict[str, Any]) -> set[str]:
@@ -11660,6 +13243,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if index < 0 or index >= len(self.metadata_items):
             return
         self._invalidate_thumbnail_request("library")
+        self._archive_folder_identity = False
+        if isinstance(self.__dict__.get("video_tree"), ArchiveBrowser):
+            self.focus_thumbnail_wrap.grid()
+            self._archive_variant_choice.configure(state="readonly")
+            for tab in self.focus_archive_inspector.tabs():
+                self.focus_archive_inspector.tab(tab, state="normal")
+            self.focus_library_menu_button.configure(state="normal")
+            self._archive_arrange_actions()
         info = self.metadata_items[index]
         play_button = self.__dict__.get("focus_library_play_button")
         if play_button is not None:
@@ -11716,6 +13307,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         source_description = build_description_display_text(info)
         user_note = str(info.get("vodforge_user_note") or "").strip()
+        if "selected_note_var" in self.__dict__:
+            self.selected_note_var.set(user_note)
+            if user_note:
+                self.focus_library_note.grid()
+            else:
+                self.focus_library_note.grid_remove()
         description = "\n\n".join(
             section
             for section in (
@@ -11837,7 +13434,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         width = library_width or max(1, self.focus_thumbnail_wrap.winfo_width())
         if width <= 1:
             width = max(180, self.focus_thumbnail_wrap.winfo_reqwidth())
-        active_size = youtube_thumbnail_size(152)
+        active_size = youtube_thumbnail_size(window_logical_metrics(self).px(152))
         library_size = library_thumbnail_size(width)
         if int(self.focus_thumbnail_wrap.cget("height")) != library_size[1]:
             self.focus_thumbnail_wrap.configure(height=library_size[1])
@@ -11911,7 +13508,24 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         *,
         placeholder: bool,
         source_path: Path | None,
+        existing: Any | None = None,
     ) -> Any | None:
+        if placeholder:
+            density = surface_backing_scale(self)
+            pixels = tuple(value * density for value in size)
+            rendered = rounded_contain_image(
+                image,
+                pixels,
+                window_logical_metrics(self).px(10) * density,
+                THEME["surface"],
+            )
+            return create_surface_image(
+                self,
+                flatten_alpha_image(rendered, THEME["bg"]),
+                density,
+                logical_size=size,
+                existing=existing,
+            )[0]
         if not placeholder and source_path is not None:
             native = self._create_focus_native_image(
                 source_path,
@@ -11920,11 +13534,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             )
             if native is not None:
                 return native
-        rendered = (
-            rounded_contain_image(image, size, 10, THEME["surface"])
-            if placeholder
-            else rounded_fit_image(image, size, 10)
-        )
+        rendered = rounded_fit_image(image, size, 10)
         return ImageTk.PhotoImage(flatten_alpha_image(rendered, THEME["bg"]))
 
     def _create_focus_native_image(
@@ -12232,6 +13842,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             target_label.config(text=f"Thumbnail preview failed:\n{exc}\n\nURL:\n{url}")
 
     def _start_download(self) -> None:
+        observation = begin_library_action(
+            self.__dict__.get("product_telemetry"), "source_start", "source"
+        )
         urls = (
             list(self.batch_urls) if self.batch_urls else [self.url_var.get().strip()]
         )
@@ -12242,7 +13855,9 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             batch_mode=bool(self.batch_urls),
         )
         if job is None:
+            observe_library_action(observation, "rejected", "validation")
             return
+        job.admission_observer = observation
         self._adopt_matching_preview_for_download_job(job)
         self._start_or_queue_download_job(job, clear_source=True)
 
@@ -12265,13 +13880,14 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         )
         if preview is None:
             return False
-        preview_run_id = str(preview.get("vodforge_preview_run_id") or "")
+        job.preview_source_owner = self._library_projection_owner().preview_subject(
+            preview
+        )
         job.preview_info = dict(preview)
         job.preview_info.pop("vodforge_preview_complete", None)
         job.preview_info.pop("vodforge_preview_run_id", None)
         job.preview_info = annotate_job_metadata(job, job.preview_info)
         job.metadata_keys.add(preview_key)
-        self._library_projection_owner().remove_preview(preview_run_id)
         return True
 
     def _validated_submission_urls(
@@ -12334,7 +13950,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
     def _validated_submission_export_settings(
         self, output_type: OutputType
     ) -> tuple[ExportMode, ManualExportSettings, Mp3ExportSettings] | None:
-        export_mode = ExportMode(self.export_mode_var.get())
+        export_mode = DownloaderApp._submission_export_mode(self)
         try:
             manual_settings = (
                 self._manual_export_settings()
@@ -12360,6 +13976,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         single_video_only: bool,
         batch_mode: bool,
     ) -> DownloadJob | None:
+        recovery = self.__dict__.get("library_media_recovery")
+        if recovery is not None and len(urls) == 1 and recovery.is_draft_for(urls[0]):
+            single_video_only = True
+            batch_mode = False
         normalized_urls = self._validated_submission_urls(
             urls, single_video_only=single_video_only
         )
@@ -12427,6 +14047,10 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
     def _start_or_queue_download_job(
         self, job: DownloadJob, *, clear_source: bool
     ) -> bool:
+        if job.admission_observer is None:
+            job.admission_observer = begin_library_action(
+                self.__dict__.get("product_telemetry"), "run_start", "run"
+            )
         duplicate = matching_attempt(
             job,
             [
@@ -12435,12 +14059,27 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             ],
         )
         if duplicate is not None:
+            observe_library_action(
+                job.admission_observer, "duplicate_focused", "duplicate"
+            )
             self._focus_existing_duplicate_attempt(duplicate)
             if clear_source:
                 self._reset_source_input_after_send()
             return False
 
-        superseded = self._matching_supersedable_terminal_attempt(job)
+        # A missing-media replacement owns the explicitly selected history row.
+        # Other terminal attempts can carry independent notes and remain intact.
+        superseded = (
+            None
+            if job.recovery_reason == "missing_media"
+            else self._matching_supersedable_terminal_attempt(job)
+        )
+        if job.recovery_reason != "missing_media":
+            job.annotation_source_owner = (
+                self._annotation_owner_for_job(superseded)
+                if superseded is not None
+                else job.preview_source_owner or job.annotation_source_owner
+            )
         superseded_run_id = superseded.run_id if superseded is not None else None
         if self.worker is not None and self.worker.is_alive():
             queued_jobs = [*self.pending_jobs, job]
@@ -12455,27 +14094,30 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                             superseded_run_id=superseded_run_id,
                         )
             except RunStateError as exc:
+                observe_library_action(
+                    job.admission_observer, "rejected", "queue", error=exc
+                )
                 messagebox.showerror(
                     APP_NAME,
                     "VODForge could not save this run to its private queue, so it "
                     f"was not queued.\n\n{exc}",
                 )
                 return False
+            self.pending_jobs = queued_jobs
+            observe_library_action(job.admission_observer, "admitted", "queue")
+            self._settle_admitted_library_annotations(job)
+            self._record_queue_event("run_queued", job)
             self._supersede_matching_terminal_attempt(
                 job,
                 previous=superseded,
                 cleanup_recovery=False,
             )
-            self.pending_jobs = queued_jobs
-            self._record_queue_event("run_queued", job)
             if hasattr(self, "focus_run_deck"):
-                self.focus_engine_var.set(
-                    f"1 active  /  {len(self.pending_jobs)} queued  /  runs process one at a time"
-                )
                 self._append_log(f"Queued {job.output_type.value} run: {job.url}")
                 self._refresh_focus_run_deck()
                 self.download_button.configure(text="Queue run", state="normal")
             self._enqueue_queue_preview(job)
+            observe_library_action(job.admission_observer, "completed", "queue")
             if clear_source:
                 self._reset_source_input_after_send()
             return True
@@ -12491,9 +14133,45 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 previous=superseded,
                 cleanup_recovery=False,
             )
-        if clear_source:
-            self._reset_source_input_after_send()
+            if clear_source:
+                self._reset_source_input_after_send()
         return launched
+
+    def _annotation_owner_for_job(self, job: DownloadJob) -> str:
+        annotations = self.__dict__.get("library_annotations")
+        return resolve_annotation_owner(
+            f"run:{job.run_id}",
+            job.annotation_source_owner,
+            annotations.snapshot if annotations is not None else {},
+        )
+
+    def _settle_admitted_library_annotations(self, job: DownloadJob) -> None:
+        """Move annotations only after their fallback owner is durably admitted."""
+
+        annotations = self.__dict__.get("library_annotations")
+        if annotations is not None and job.annotation_source_owner:
+            try:
+                annotations.transfer(job.annotation_source_owner, f"run:{job.run_id}")
+            except LibraryAnnotationsError as exc:
+                observe_library_action(
+                    job.admission_observer,
+                    "annotation_retained",
+                    "annotation",
+                    error=exc,
+                )
+                # Admission already persisted this source owner. Projection and
+                # later retries can still resolve and edit it after a restart.
+                write_diagnostic(
+                    f"Library annotation transfer deferred: {type(exc).__name__}"
+                )
+                return
+        subject = job.preview_source_owner
+        if (
+            subject is not None
+            and self._library_projection_owner().consume_preview_subject(subject)
+        ):
+            job.preview_source_owner = None
+            self._reconcile_library_projection()
 
     def _focus_existing_duplicate_attempt(self, job: DownloadJob) -> None:
         """Focus one exact live attempt instead of scheduling duplicate work."""
@@ -12549,18 +14227,6 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         previous_status = str(previous.terminal_status or "Stopped")
         if previous_status not in {"Stopped", "Skipped", "Failed"}:
             return
-        annotations = self.__dict__.get("library_annotations")
-        if annotations is not None:
-            try:
-                annotations.transfer(
-                    f"run:{previous.run_id}",
-                    f"run:{job.run_id}",
-                )
-            except LibraryAnnotationsError as exc:
-                write_diagnostic(
-                    "superseded Library annotation transfer failed: "
-                    f"{type(exc).__name__}: {exc}"
-                )
         metadata_items = self.__dict__.get("metadata_items", [])
         previous_row = next(
             (
@@ -12609,11 +14275,15 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
 
     def _start_preview_download(self, info: dict[str, Any]) -> None:
         """Turn one metadata preview into a fresh Forge-owned one-item run."""
+        observation = begin_library_action(
+            self.__dict__.get("product_telemetry"), "preview_start", "preview"
+        )
         fallback_url = str(
             info.get("webpage_url") or info.get("original_url") or info.get("url") or ""
         ).strip()
         source_url = retry_url_for_item(info, fallback_url) if fallback_url else ""
         if not source_url:
+            observe_library_action(observation, "rejected", "validation")
             messagebox.showinfo(
                 APP_NAME, "This preview does not include a source URL to download."
             )
@@ -12626,7 +14296,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             batch_mode=False,
         )
         if job is None:
+            observe_library_action(observation, "rejected", "validation")
             return
+        job.admission_observer = observation
+        job.preview_source_owner = self._library_projection_owner().preview_subject(
+            info
+        )
         job.preview_info = dict(info)
         job.preview_info.pop("vodforge_preview_complete", None)
         job.preview_info.pop("vodforge_preview_run_id", None)
@@ -12634,11 +14309,11 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         key = metadata_run_key(info)
         if key is not None:
             job.metadata_keys.add(key)
-        self._library_projection_owner().remove_preview(
-            str(info.get("vodforge_preview_run_id") or "")
-        )
+        if not self._start_or_queue_download_job(job, clear_source=False):
+            # Duplicate admission already focuses the existing run. Rejection
+            # keeps the preview, selection and current view intact.
+            return
         self._focus_selected_run_id = job.run_id
-        self._start_or_queue_download_job(job, clear_source=False)
         self._select_focus_view("forge")
         if any(pending is job for pending in self.pending_jobs):
             record = next(
@@ -12661,6 +14336,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         superseded_run_id: str | None = None,
     ) -> bool:
         if self.__dict__.get("_closing", False):
+            observe_library_action(job.admission_observer, "rejected", "closing")
             return False
         recovery_owner = self.__dict__.get("run_recovery")
         if recovery_owner is not None:
@@ -12677,13 +14353,25 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                         superseded_run_id=superseded_run_id,
                     )
             except RunStateError as exc:
+                observe_library_action(
+                    job.admission_observer, "rejected", "launch", error=exc
+                )
                 messagebox.showerror(
                     APP_NAME,
-                    "VODForge could not create the private recovery record required "
-                    f"to start this run. No download was started.\n\n{exc}",
+                    getattr(recovery_owner, "recovery_notice", None)
+                    or (
+                        "VODForge could not save this source link. Paste a valid web link "
+                        "and try again. No download was started."
+                        if exc.cause == "missing_retry_url"
+                        else "VODForge could not save the recovery data needed to start this download. "
+                        "Check available disk space and app data folder access, then try again. "
+                        "No download was started."
+                    ),
                 )
                 return False
         self.active_job = job
+        observe_library_action(job.admission_observer, "admitted", "launch")
+        self._settle_admitted_library_annotations(job)
         self._project_preparing_job_to_library(job)
         if select_detail:
             self._focus_selected_run_id = job.run_id
@@ -12762,6 +14450,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         if hasattr(self, "focus_run_controls"):
             self._set_focus_run_controls_visible(True)
             self._apply_focus_layout(force=True)
+        observe_library_action(job.admission_observer, "completed", "launch")
         return True
 
     def _restore_recovered_terminal_run(self, job: DownloadJob) -> None:
@@ -12802,8 +14491,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self.active_job = None
             self._reconcile_library_projection()
             if hasattr(self, "focus_run_deck"):
-                self.download_button.configure(text="Forge", state="normal")
-                self.focus_engine_var.set("Runs process one at a time")
+                self.download_button.configure(text="Download", state="normal")
             return False
         job = self.pending_jobs[0]
         remaining_jobs = self.pending_jobs[1:]
@@ -12929,8 +14617,20 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             self._focus_select_run_record(record)
 
     def _retry_terminal_job(self, failed_job: DownloadJob) -> None:
+        operation = begin_library_action(
+            self.__dict__.get("product_telemetry"), "run_start", "terminal"
+        )
         recovery_owner = self.__dict__.get("run_recovery")
         retry_url = retry_url_for_item(failed_job.preview_info or {}, failed_job.url)
+        if not retry_url:
+            observe_library_action(operation, "rejected", "validation")
+            messagebox.showinfo(
+                "Source link needed",
+                "This saved run has no source link to retry. Paste its source link in Forge "
+                "to start a new download. The saved run and your media are unchanged.",
+                parent=self,
+            )
+            return
         settings_job = failed_job
         if failed_job.terminal_status == "Failed":
             current_job = self._build_download_job_from_current_settings(
@@ -12940,6 +14640,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                 batch_mode=False,
             )
             if current_job is None:
+                observe_library_action(operation, "rejected", "validation")
                 return
             settings_job = current_job
         retry_preview = dict(failed_job.preview_info or {})
@@ -12958,6 +14659,13 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             urls=[retry_url],
             run_id=uuid.uuid4().hex,
             origin_run_id=failed_job.run_id,
+            preview_source_owner=None,
+            annotation_source_owner=(
+                self._annotation_owner_for_job(failed_job)
+                if failed_job.terminal_status in {"Stopped", "Skipped", "Failed"}
+                else None
+            ),
+            admission_observer=operation,
             execution_run_id=None,
             retry_of_run_id=failed_job.execution_run_id or failed_job.run_id,
             failure_diagnostic=None,
@@ -12980,21 +14688,27 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
                         queued_jobs, superseded_run_id=failed_job.run_id
                     )
             except RunStateError as exc:
+                observe_library_action(
+                    retry_job.admission_observer, "rejected", "queue", error=exc
+                )
                 messagebox.showerror(
                     APP_NAME,
                     "VODForge could not save this retry to its private queue, so "
                     f"it was not queued.\n\n{exc}",
                 )
                 return
+            self.pending_jobs = queued_jobs
+            observe_library_action(retry_job.admission_observer, "admitted", "queue")
+            self._settle_admitted_library_annotations(retry_job)
             self._supersede_matching_terminal_attempt(
                 retry_job,
                 previous=failed_job,
                 cleanup_recovery=False,
             )
-            self.pending_jobs = queued_jobs
             self._record_queue_event("run_queued", retry_job)
             self._enqueue_queue_preview(retry_job)
             self._refresh_focus_run_deck()
+            observe_library_action(retry_job.admission_observer, "completed", "queue")
             return
         launched = self._launch_download_job(
             retry_job,
@@ -13045,6 +14759,12 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             "custom_accent": self.custom_accent_var,
             "whats_new_seen": self.whats_new_seen_var,
         }
+
+    def destroy(self) -> None:
+        # Direct root teardown (including startup/QA cleanup) also retires child
+        # callbacks before Tk destroys the widget tree from the leaves upward.
+        self._closing = True
+        super().destroy()
 
     def _request_application_close(self) -> None:
         if self._closing:
@@ -13973,6 +15693,32 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
         blocking_step_cancelled: Callable[[], bool],
     ) -> _ExpandedDownloadSource:
         """Resolve one submitted source into ordered item inputs and playlist identity."""
+        saved = job.preview_info or {}
+        if (
+            job.recovery_reason == "missing_media"
+            and job.single_video_only
+            and not job.batch_mode
+            and (job.urls or [job.url]) == [job.url]
+            and youtube_url_video_id(job.url)
+            and youtube_url_video_id(job.url) == str(saved.get("id") or "")
+            and (youtube_url_playlist_id(job.url) or "")
+            == str(saved.get("playlist_id") or "")
+        ):
+            # The recovery owner validated this saved item. Its captured playlist
+            # is organization only; item preflight still reads current formats.
+            control_check()
+            playlist_info: dict[str, Any] = {
+                key: saved[key]
+                for key in ("playlist_id", "playlist_title")
+                if saved.get(key)
+            }
+            playlist_info["webpage_url"] = job.url
+            entry = {"webpage_url": job.url}
+            if saved.get("playlist_index") is not None:
+                entry["playlist_index"] = saved["playlist_index"]
+            write_diagnostic("playlist detection skipped: selected Library recovery")
+            return _ExpandedDownloadSource(playlist_info=playlist_info, entries=[entry])
+
         single_playlist_context = bool(
             job.single_video_only
             and youtube_url_video_id(job.url)
@@ -13982,7 +15728,7 @@ class DownloaderApp(ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk):
             # The source URL was already normalized and playlist expansion is
             # disabled. Avoid a full extractor pass whose only result would be
             # confirming the single item that preflight analyzes next.
-            playlist_info: dict[str, Any] = {"webpage_url": job.url}
+            playlist_info = {"webpage_url": job.url}
             entries = [{"webpage_url": job.url}]
             write_diagnostic("playlist detection skipped: Ignore playlists is active")
             if youtube_url_video_id(job.url):
@@ -15744,6 +17490,10 @@ def runtime_smoke() -> int:
 
 
 def main() -> None:
+    if len(sys.argv) == 2 and sys.argv[1] == "--channel-artwork-worker":
+        from .channel_artwork_worker import main as channel_artwork_main
+
+        raise SystemExit(channel_artwork_main())
     if len(sys.argv) == 2 and sys.argv[1] == "--runtime-smoke":
         raise SystemExit(runtime_smoke())
     if len(sys.argv) >= 3 and sys.argv[1] == "--playback-smoke":

@@ -1,6 +1,7 @@
 from copy import deepcopy
 
 import pytest
+from quality_harness.diagnostic_fixtures import diagnostic_context
 from quality_harness.telemetry_release import (
     CHECKPOINTS,
     PREVIEW_DATABASE_ID,
@@ -75,6 +76,7 @@ def telemetry_fixture(candidate, platform="macos"):
         if str(event.get("feature", "")).endswith("_operation"):
             event["dimensions"] = json.dumps(
                 {
+                    **diagnostic_context(event["feature"], event["action"]),
                     "instrumentation": "diagnostics_v1",
                     "build_revision": candidate["source"]["commit"],
                     "operation_id": str(uuid.uuid4()),
@@ -396,3 +398,18 @@ def test_operation_release_observations_require_correlation_and_exact_source():
         "Operation build revision does not match packaged source"
         in validate_journey(data)
     )
+
+
+def test_release_readback_rejects_contradictory_presentation_action():
+    import json
+
+    data = telemetry_fixture(candidate())
+    event = next(
+        e
+        for e in data["snapshots"]["events_complete"]["events"]
+        if e.get("feature") == "presentation_operation" and e.get("action") == "fault"
+    )
+    dimensions = json.loads(event["dimensions"])
+    dimensions.update(missing_image_bucket="0", missing_image_role="none")
+    event["dimensions"] = json.dumps(dimensions)
+    assert validate_journey(data)

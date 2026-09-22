@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Mapping
 from urllib.parse import parse_qs, urlsplit
 
-from .failure_diagnostics import FAILURE_CODES
+from .failure_diagnostics import FAILURE_CODES, FAILURE_REASONS
 
 FEATURE_ACTIONS: dict[str, frozenset[str]] = {
     "settings": frozenset({"snapshot"}),
@@ -25,6 +25,12 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
             "folder_opened",
             "location_copied",
             "version_selected",
+            "scene_navigated",
+            "scene_sorted",
+            "scene_paged",
+            "scene_scrolled",
+            "volume_selected",
+            "file_opened",
             "inspector_opened",
             "history_deferred",
             "history_recovered",
@@ -38,13 +44,18 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
         {
             "opened",
             "searched",
+            "search_focused",
             "playlists",
             "channels",
             "channel_opened",
             "collections",
             "rail_scrolled",
+            "catalog_scrolled",
             "details",
+            "details_retired",
             "singleton_shown",
+            "hero_shown",
+            "hero_played",
             "artwork_loaded",
             "artwork_unavailable",
         }
@@ -53,8 +64,12 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
         {
             "opened",
             "searched",
+            "search_focused",
             "filtered",
             "selected",
+            "selection_started",
+            "selection_finished",
+            "menu_opened",
             "removed",
             "source_tags_copied",
             "source_description_copied",
@@ -64,14 +79,46 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
             "youtube_url_copied",
         }
     ),
-    "organization": frozenset({"notes_saved", "tags_saved", "category_saved"}),
-    "player": frozenset(
-        {"completed", "failed", "seek", "chapter", "heatmap", "preview"}
+    "organization": frozenset(
+        {"notes_saved", "tags_saved", "category_saved", "description_saved"}
     ),
-    "missing_media": frozenset({"offered", "accepted", "completed"}),
+    "player": frozenset(
+        {
+            "description_opened",
+            "description_closed",
+            "completed",
+            "failed",
+            "seek",
+            "chapter",
+            "heatmap",
+            "preview",
+            "details_opened",
+            "details_closed",
+            "detail_viewed",
+            "related_shown",
+            "related_selected",
+            "related_details",
+            "fit",
+            "fill",
+            "fullscreen",
+            "floating",
+            "returned",
+            "captions_selected",
+            "controls_fallback",
+            "control_failed",
+            "controls_hidden",
+            "controls_shown",
+            "hover_preview_shown",
+            "hover_preview_unavailable",
+            "caption_fit_applied",
+            "caption_fill_restored",
+            "caption_fill_unavailable",
+        }
+    ),
+    "missing_media": frozenset({"offered", "accepted", "completed", "preset_migrated"}),
     "announcement": frozenset({"shown", "try_it"}),
     "guidance": frozenset({"technical_opened", "recovery_selected"}),
-    "appearance": frozenset({"changed"}),
+    "appearance": frozenset({"changed", "transition_shown", "transition_skipped"}),
     "updater": frozenset(
         {
             "download_started",
@@ -86,6 +133,48 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
 }
 # Per-operation observations are separate from legacy once-per-session usage.
 OPERATION_FEATURES = {
+    "run_control_operation": frozenset({"admitted", "rejected"}),
+    "run_recovery_operation": frozenset(
+        {"failed", "start_blocked", "restored_without_retry"}
+    ),
+    "watch_queue_operation": frozenset(
+        {
+            "requested",
+            "started",
+            "advanced",
+            "completed",
+            "cancelled",
+            "failed",
+        }
+    ),
+    "presentation_operation": frozenset(
+        {
+            "observed",
+            "superseded",
+            "sampled",
+            "settled",
+            "retired",
+            "fault",
+            "recovered",
+        }
+    ),
+    "library_action_operation": frozenset(
+        {
+            "requested",
+            "admitted",
+            "completed",
+            "rejected",
+            "duplicate_focused",
+            "cancelled",
+            "annotation_retained",
+        }
+    ),
+    "library_file_operation": frozenset(
+        {"requested", "started", "completed", "needs_attention", "cancelled"}
+    ),
+    "library_import_operation": frozenset(
+        {"requested", "completed", "failed", "cancelled"}
+    ),
     "archive_history_operation": frozenset(
         {"started", "deferred", "recovered", "completed", "failed"}
     ),
@@ -143,6 +232,17 @@ OPERATION_FEATURES = {
             "failed",
             "closed",
             "cancelled",
+            "volume_pending",
+            "volume_applied",
+            "volume_failed",
+            "volume_unresolved",
+            "control_failed",
+            "resume_requested",
+            "resume_completed",
+            "resume_failed",
+            "resume_cancelled",
+            "progress_saved",
+            "progress_save_failed",
         }
     ),
     "resize_operation": frozenset({"settled"}),
@@ -167,6 +267,9 @@ DIMENSION_RANGES = {
 }
 DIMENSION_RANGES.update(
     {
+        "volume_request": (1, 999999),
+        "volume_requested": (0, 100),
+        "volume_observed": (0, 100),
         "observed_audio_bitrate_kbps": (1, 100000),
         "observed_audio_sample_rate_hz": (1, 768000),
         "observed_audio_channels": (1, 64),
@@ -178,6 +281,7 @@ DIMENSION_RANGES.update(
                 "verified_count",
                 "unresolved_count",
                 "collision_count",
+                "identity_mismatch_count",
                 "missing_count",
                 "unavailable_count",
             )
@@ -185,6 +289,207 @@ DIMENSION_RANGES.update(
     }
 )
 DIMENSION_CHOICES: dict[str, frozenset[str]] = {
+    "run_control_action": frozenset(["cancel", "skip_item", "skip_source"]),
+    "run_control_origin": frozenset(["run_menu"]),
+    "run_control_owner": frozenset(["current", "retired"]),
+    "recovery_entry": frozenset({"startup", "run_admission", "queue_update"}),
+    "recovery_cause": frozenset(
+        {
+            "missing_retry_url",
+            "invalid_record",
+            "malformed_json",
+            "invalid_encoding",
+            "read_failed",
+            "write_failed",
+            "unsupported_schema",
+            "size_limit",
+            "live_owner",
+            "invalid_staging",
+            "child_ownership",
+            "cleanup_failed",
+        }
+    ),
+    "recovery_stage": frozenset(
+        {
+            "terminal_restore",
+            "journal_read",
+            "journal_validation",
+            "journal_write",
+            "owner_check",
+            "staging_validation",
+            "child_cleanup",
+            "staging_cleanup",
+            "queue_loading",
+        }
+    ),
+    "recovery_schema": frozenset({"1"}),
+    "recovery_disposition": frozenset({"blocked_preserved", "restored_without_retry"}),
+    "file_action": frozenset({"move", "delete", "recovery"}),
+    "queue_kind": frozenset({"channel", "playlist"}),
+    "queue_order": frozenset({"ordered", "shuffle"}),
+    "queue_position_bucket": frozenset({"1", "2_5", "6_20", "21_100", "101_plus"}),
+    "queue_completed_bucket": frozenset(
+        {"0", "1", "2_5", "6_20", "21_100", "101_plus"}
+    ),
+    "queue_failure_boundary": frozenset(
+        {
+            "metadata",
+            "resolve",
+            "dependency",
+            "initialization",
+            "readiness",
+            "load",
+            "surface",
+            "provider",
+            "unexpected_end",
+            "constructor",
+            "presentation",
+            "unknown",
+        }
+    ),
+    "queue_failure_reason": FAILURE_REASONS
+    | frozenset(
+        {
+            "source_removed",
+            "saved_output_missing",
+            "provider_failed",
+            "ended_before_playing",
+            "open_failed",
+            "storage_wait_expired",
+            "surface_unavailable",
+        }
+    ),
+    "playback_control_origin": frozenset({"user", "caption_safety", "caption_restore"}),
+    "playback_control": frozenset(
+        {
+            "fit",
+            "fill",
+            "captions",
+            "fullscreen",
+            "floating",
+            "return",
+            "seek",
+            "volume",
+            "toggle",
+            "unknown",
+        }
+    ),
+    "playback_view": frozenset({"embedded", "fullscreen", "floating", "unknown"}),
+    "control_failure_kind": frozenset({"provider_error", "unexpected_error"}),
+    "artwork_source": frozenset(
+        {
+            "thumbnail",
+            "local_frame",
+            "embedded_art",
+            "channel_avatar",
+            "channel_banner",
+            "mixed",
+            "none",
+        }
+    ),
+    "artwork_role": frozenset({"media", "avatar", "banner", "playlist", "mixed"}),
+    "resume_reason": frozenset(
+        {
+            "provider_failed",
+            "seek_rejected",
+            "seek_timeout",
+            "media_changed",
+            "manual_seek",
+            "closed",
+        }
+    ),
+    "scene_route": frozenset(
+        {
+            "home",
+            "all",
+            "detail",
+            "videos",
+            "audio",
+            "channels",
+            "playlists",
+            "collections",
+            "playlist",
+            "channel",
+        }
+    ),
+    "mode_eligible_bucket": frozenset({"0", "1", "2_5", "6_20", "21_100", "101_plus"}),
+    "query_state": frozenset({"active", "inactive"}),
+    "filter_state": frozenset({"active", "inactive"}),
+    "presentation_surface": frozenset({"watch", "library"}),
+    "presentation_mode": frozenset(
+        {
+            "channel",
+            "all",
+            "channels",
+            "activity",
+            "folders",
+            "playlists",
+            "collections",
+        }
+    ),
+    "mode_origin": frozenset({"user", "default"}),
+    "presentation_population": frozenset({"library_projection", "saved_media"}),
+    "presentation_trigger": frozenset(
+        {"artwork", "entry", "resize", "data", "filter", "navigation", "hide", "theme"}
+    ),
+    "presentation_replacement": frozenset(
+        {
+            "artwork",
+            "entry",
+            "resize",
+            "data",
+            "filter",
+            "navigation",
+            "hide",
+            "theme",
+            "none",
+        }
+    ),
+    "presentation_visibility": frozenset({"visible", "hidden"}),
+    "presentation_scene": frozenset({"retired", "current", "awaiting", "retained"}),
+    "artwork_state": frozenset(
+        {"pending", "unavailable", "decoded_awaiting_render", "mixed", "ready", "none"}
+    ),
+    "missing_image_role": frozenset(
+        {"artwork", "surface", "control", "unknown", "mixed", "none"}
+    ),
+    "presentation_sampling": frozenset(
+        {"healthy_sampled", "transition_limited", "exhausted", "full"}
+    ),
+    "presentation_audit": frozenset({"under_2ms", "50ms_plus", "2_9ms", "10_49ms"}),
+    "artwork_batch": frozenset({"current", "superseded"}),
+    "eligible_bucket": frozenset({"21_100", "2_5", "101_plus", "1", "0", "6_20"}),
+    "matching_bucket": frozenset({"21_100", "2_5", "101_plus", "1", "0", "6_20"}),
+    "rendered_bucket": frozenset({"21_100", "2_5", "101_plus", "1", "0", "6_20"}),
+    "artwork_expected_bucket": frozenset(
+        {"21_100", "2_5", "101_plus", "1", "0", "6_20"}
+    ),
+    "artwork_displayed_bucket": frozenset(
+        {"21_100", "2_5", "101_plus", "1", "0", "6_20"}
+    ),
+    "artwork_unavailable_bucket": frozenset(
+        {"21_100", "2_5", "101_plus", "1", "0", "6_20"}
+    ),
+    "missing_image_bucket": frozenset({"21_100", "2_5", "101_plus", "1", "0", "6_20"}),
+    "library_intent": frozenset(
+        {"source_start", "preview_start", "run_start", "remove"}
+    ),
+    "library_subject": frozenset(
+        {"source", "preview", "queued", "active", "terminal", "saved", "run"}
+    ),
+    "library_boundary": frozenset(
+        {
+            "validation",
+            "duplicate",
+            "queue",
+            "launch",
+            "confirmation",
+            "history",
+            "annotation",
+            "closing",
+            "completed",
+        }
+    ),
     "history_boundary": frozenset({"startup", "settlement", "defer"}),
     "history_document": frozenset({"main", "pending", "unknown"}),
     "history_phase": frozenset(
@@ -212,6 +517,52 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     ),
     "playback_origin": frozenset({"library", "watch", "unknown"}),
     "player_surface": frozenset({"embedded", "window"}),
+    "volume_outcome": frozenset({"pending", "applied", "failed", "pending_at_close"}),
+    "volume_cause": frozenset(
+        {
+            "requested",
+            "output_reset",
+            "provider_rejected",
+            "readback_unavailable",
+            "readback_mismatch",
+            "readback_exception",
+            "setter_exception",
+        }
+    ),
+    "volume_phase": frozenset(
+        {
+            "idle",
+            "ready",
+            "starting",
+            "playing",
+            "paused",
+            "stopped",
+            "ended",
+            "failed",
+            "closed",
+            "unknown",
+        }
+    ),
+    "playback_failure_boundary": frozenset(
+        {
+            "provider_event",
+            "state_read",
+            "start",
+            "pause",
+            "seek",
+            "stop",
+            "unknown",
+            "resolve",
+            "constructor",
+            "dependency",
+            "initialization",
+            "readiness",
+            "load",
+        }
+    ),
+    "detail_target": frozenset(
+        {"chapters", "info", "source", "output", "notes", "moments"}
+    ),
     "intent_relation": frozenset(
         {
             "first_observed",
@@ -505,8 +856,41 @@ def validate_dimensions(value: Mapping[str, str] | None) -> dict[str, str]:
     return result
 
 
+PRESENTATION_REQUIRED_DIMENSIONS = frozenset(
+    [
+        "mode_eligible_bucket",
+        "query_state",
+        "filter_state",
+        "presentation_surface",
+        "presentation_mode",
+        "mode_origin",
+        "presentation_population",
+        "presentation_trigger",
+        "presentation_visibility",
+        "presentation_scene",
+        "eligible_bucket",
+        "matching_bucket",
+        "rendered_bucket",
+        "artwork_expected_bucket",
+        "artwork_displayed_bucket",
+        "artwork_unavailable_bucket",
+        "artwork_state",
+        "missing_image_bucket",
+        "missing_image_role",
+        "presentation_sampling",
+        "presentation_audit",
+        "lag_bucket",
+        "lag_measurement",
+        "artwork_batch",
+    ]
+)
+LIBRARY_REQUIRED_DIMENSIONS = frozenset(
+    ["library_intent", "library_subject", "library_boundary"]
+)
+
+
 def validate_operation_fields(
-    feature: str | None, dimensions: Mapping[str, str]
+    feature: str | None, dimensions: Mapping[str, str], action: str | None = None
 ) -> None:
     if feature in OPERATION_FEATURES:
         required = {
@@ -519,6 +903,91 @@ def validate_operation_fields(
             raise ValueError("operation correlation is required")
     elif "operation_id" in dimensions or "operation_step" in dimensions:
         raise ValueError("unexpected operation correlation")
+    if feature == "run_control_operation":
+        if not {
+            "run_control_action",
+            "run_control_origin",
+            "run_control_owner",
+        }.issubset(dimensions):
+            raise ValueError("run control context is required")
+        expected_owner = {"admitted": "current", "rejected": "retired"}.get(
+            action or ""
+        )
+        if dimensions["run_control_owner"] != expected_owner:
+            raise ValueError("run control owner conflicts with admission")
+    if feature == "run_recovery_operation":
+        if not {
+            "recovery_cause",
+            "recovery_stage",
+            "recovery_schema",
+            "recovery_disposition",
+        }.issubset(dimensions):
+            raise ValueError("run recovery context is required")
+        restored = action == "restored_without_retry"
+        if restored != (dimensions["recovery_disposition"] == "restored_without_retry"):
+            raise ValueError("recovery disposition conflicts with action")
+        if restored and (
+            dimensions["recovery_cause"] != "missing_retry_url"
+            or dimensions["recovery_stage"] != "terminal_restore"
+            or "item_count_bucket" not in dimensions
+        ):
+            raise ValueError("restored source context is required")
+
+    if feature == "watch_queue_operation":
+        if not {
+            "queue_kind",
+            "queue_order",
+            "item_count_bucket",
+            "queue_position_bucket",
+            "queue_completed_bucket",
+        }.issubset(dimensions):
+            raise ValueError("watch queue context is required")
+        failure_fields = {"queue_failure_boundary", "queue_failure_reason"}
+        if action == "failed":
+            if not failure_fields.issubset(dimensions):
+                raise ValueError("watch queue failure context is required")
+        elif failure_fields.intersection(dimensions):
+            raise ValueError("healthy watch queue cannot have failure context")
+    if feature == "library_action_operation":
+        if not LIBRARY_REQUIRED_DIMENSIONS.issubset(dimensions):
+            raise ValueError("library action context is required")
+        boundaries = {
+            "requested": {"validation", "confirmation"},
+            "admitted": {"queue", "launch"},
+            "completed": {"queue", "launch", "completed"},
+            "rejected": {"validation", "queue", "launch", "history", "closing"},
+            "duplicate_focused": {"duplicate"},
+            "cancelled": {"confirmation"},
+            "annotation_retained": {"annotation"},
+        }
+        if dimensions["library_boundary"] not in boundaries.get(action or "", set()):
+            raise ValueError("library action boundary conflicts with outcome")
+    if feature == "presentation_operation":
+        if not PRESENTATION_REQUIRED_DIMENSIONS.issubset(dimensions):
+            raise ValueError("presentation context is required")
+        missing = dimensions["missing_image_role"] != "none"
+        if missing == (dimensions["missing_image_bucket"] == "0"):
+            raise ValueError("missing image evidence conflicts")
+        if action == "fault" and not missing:
+            raise ValueError("fault needs missing image evidence")
+        if action in {"observed", "recovered", "settled"} and missing:
+            raise ValueError("healthy presentation cannot have missing images")
+        if (
+            action in {"settled", "superseded", "retired"}
+            and "presentation_replacement" not in dimensions
+        ):
+            raise ValueError("presentation terminal context is required")
+        if action == "superseded" and dimensions["presentation_replacement"] == "none":
+            raise ValueError("supersession needs a replacement trigger")
+        if action == "retired" and dimensions["presentation_scene"] != "retired":
+            raise ValueError("retirement needs a retired scene")
+        if action == "settled" and (
+            dimensions["presentation_scene"] == "awaiting"
+            or dimensions["artwork_state"] in {"pending", "decoded_awaiting_render"}
+        ):
+            raise ValueError("pending presentation cannot be settled")
+        if action == "sampled" and dimensions["presentation_sampling"] == "full":
+            raise ValueError("sampling needs an explicit limit")
 
 
 def attempt_identifier(install_id: str, run_id: str) -> str:

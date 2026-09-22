@@ -135,3 +135,20 @@ def test_archive_folder_mapping_uses_components_and_keeps_innermost_export():
     assert [component.indices for component in model.components] == [(0,)]
     model.reveal(0)
     assert str(model.path) == "/archive/Series/Export"
+
+
+def test_overview_saved_media_preserves_owner_grouping_and_filters(tmp_path):
+    from yt_downloader.archive_browser import ArchiveBrowserModel
+
+    rows = [
+        saved(tmp_path / "one" / "clip.mp4", video="one"),
+        saved(tmp_path / "two" / "clip.mp4", video="two"),
+        {"id": "preview", "title": "Preview"},
+    ]
+    model = ArchiveBrowserModel()
+    model.replace(rows, [0, 1, 2])
+    assert [item.indices for item in model.saved_media] == [(0,), (1,)]
+    assert all(item.kind == "media" for item in model.saved_media)
+    assert model.components == model.locations
+    model.replace(rows, [1, 2])
+    assert [item.indices for item in model.saved_media] == [(1,)]

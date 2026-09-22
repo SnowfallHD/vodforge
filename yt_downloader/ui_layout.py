@@ -3,9 +3,50 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from .platform_services import is_macos
+
+
+@dataclass(frozen=True)
+class WindowLogicalMetrics:
+    """Opt-in fixed-DPI prototype boundary; measured Tk coordinates stay physical.
+
+    Default windows retain point fonts and their existing Tk units. An opted-in
+    PMv2 window uses physical pixels for canonical geometry and fonts, avoiding
+    interpreter-global Tk point scaling. Monitor transitions are not supported.
+    """
+
+    scale: int = 1
+    physical_fonts: bool = False
+
+    def px(self, logical: int) -> int:
+        return logical * self.scale
+
+    def font(self, role: tuple[Any, ...]) -> tuple[Any, ...]:
+        if not self.physical_fonts:
+            return role
+        size = int(role[1])
+        pixels = round(size * 96 / 72 * self.scale) if size > 0 else -size * self.scale
+        return (role[0], -max(1, pixels), *role[2:])
+
+
+def window_logical_metrics(widget: Any) -> WindowLogicalMetrics:
+    return getattr(
+        widget.winfo_toplevel(), "_vodforge_logical_metrics", WindowLogicalMetrics()
+    )
+
+
+def install_window_logical_metrics(window: Any, *, dpi: int) -> WindowLogicalMetrics:
+    """Prototype only: install before controls, after native PMv2/DPI admission."""
+    if dpi not in (96, 192):
+        raise ValueError("The bounded prototype supports fixed 100% or 200% DPI only")
+    if window.winfo_children():
+        raise ValueError("Logical metrics must be installed before child controls")
+    metrics = WindowLogicalMetrics(dpi // 96, physical_fonts=True)
+    window._vodforge_logical_metrics = metrics
+    return metrics
+
 
 INITIAL_WINDOW_MAX_WIDTH = 1180
 INITIAL_WINDOW_MAX_HEIGHT = 900
@@ -123,17 +164,34 @@ def measured_wrapped_line_count(
     maximum_width: int,
     measure_width: Callable[[str], float],
 ) -> int:
+    """Count every display line for full document layout."""
+    return _measured_wrapped_line_count(
+        text, maximum_width=maximum_width, measure_width=measure_width
+    )
+
+
+def _measured_wrapped_line_count(
+    text: str,
+    *,
+    maximum_width: int,
+    measure_width: Callable[[str], float],
+    stop_after: int | None = None,
+) -> int:
     """Count display lines using the active font's width measurement."""
 
     width = max(1, int(maximum_width))
     paragraphs = str(text).splitlines() or [""]
     line_count = 0
     for paragraph in paragraphs:
+        if stop_after is not None and line_count >= stop_after:
+            return line_count + 1
         remaining = paragraph
         if not remaining:
             line_count += 1
             continue
         while remaining:
+            if stop_after is not None and line_count >= stop_after:
+                return line_count + 1
             if measure_width(remaining) <= width:
                 line_count += 1
                 break
@@ -171,13 +229,19 @@ def ellipsize_wrapped_text(
 ) -> str:
     """Ellipsize only when measured wrapping exceeds the allowed line count."""
 
+    # Prefix searches revisit the same strings. Keep measurements local to
+    # this font/layout calculation; no cache survives a font or scale change.
+    from functools import lru_cache
+
+    measured_width = lru_cache(maxsize=128)(measure_width)
     value = str(text)
     lines = max(1, int(maximum_lines))
     if (
-        measured_wrapped_line_count(
+        _measured_wrapped_line_count(
             value,
             maximum_width=maximum_width,
-            measure_width=measure_width,
+            measure_width=measured_width,
+            stop_after=lines,
         )
         <= lines
     ):
@@ -198,10 +262,11 @@ def ellipsize_wrapped_text(
         midpoint = (low + high) // 2
         proposed = candidate(midpoint)
         if (
-            measured_wrapped_line_count(
+            _measured_wrapped_line_count(
                 proposed,
                 maximum_width=maximum_width,
-                measure_width=measure_width,
+                measure_width=measured_width,
+                stop_after=lines,
             )
             <= lines
         ):
@@ -212,7 +277,32 @@ def ellipsize_wrapped_text(
     return best
 
 
+def prose_excerpt(original: str, fitted: str) -> str:
+    """Keep a bounded prose summary from ending halfway through a spaced word."""
+    if not fitted.endswith("\u2026") or original == fitted:
+        return fitted
+    prefix = fitted[:-1]
+    if not original.startswith(prefix) or len(prefix) >= len(original):
+        return fitted
+    next_char = original[len(prefix)]
+    if not (
+        next_char.isalnum()
+        or unicodedata.combining(next_char)
+        or next_char in "'\u2019-"
+    ):
+        return fitted
+    spaces = [i for i, char in enumerate(prefix) if char.isspace()]
+    if not spaces:
+        return (
+            fitted  # Preserve useful bounded output for scripts/tokens without spaces.
+        )
+    whole = prefix[: spaces[-1]].rstrip()
+    return whole + "\u2026" if whole else fitted
+
+
 class _WindowGeometryOwner(Protocol):
+    def winfo_toplevel(self) -> Any: ...
+
     def winfo_rootx(self) -> int: ...
 
     def winfo_rooty(self) -> int: ...
@@ -229,10 +319,28 @@ def centered_toplevel_geometry(
     *,
     minimum_x: int = 20,
     minimum_y: int = 40,
+    height_is_measured: bool = False,
+    target: Any | None = None,
 ) -> str:
-    """Return owner-centered geometry without mapping a Toplevel early."""
+    """Center in measured owner bounds; an explicit popup owns units and limits."""
+    metrics = window_logical_metrics(target if target is not None else owner)
+    width = metrics.px(width)
+    height = height if height_is_measured else metrics.px(height)
+    if target is None:
+        minimum_x, minimum_y = metrics.px(minimum_x), metrics.px(minimum_y)
+    else:
+        # Native coordinates/margins are measured; only content dimensions scale.
+        screen_width, screen_height = (
+            target.winfo_screenwidth(),
+            target.winfo_screenheight(),
+        )
+        limit_width, limit_height = bounded_window_size(screen_width, screen_height)
+        width, height = min(width, limit_width), min(height, limit_height)
     x = max(minimum_x, owner.winfo_rootx() + (owner.winfo_width() - width) // 2)
     y = max(minimum_y, owner.winfo_rooty() + (owner.winfo_height() - height) // 2)
+    if target is not None:
+        x = min(x, max(0, screen_width - width - minimum_x))
+        y = min(y, max(0, screen_height - height - minimum_y))
     return f"{width}x{height}+{x}+{y}"
 
 
@@ -551,3 +659,40 @@ def thumbnail_size_within(
         return 1, 1
     scale = min(maximum_width / source_width, maximum_height / source_height)
     return max(1, round(source_width * scale)), max(1, round(source_height * scale))
+
+
+def compact_destination_path(
+    value: str, maximum_width: int, measure_width: Callable[[str], float]
+) -> str:
+    """Preserve the destination leaf, without changing the authoritative path."""
+    width = max(1, maximum_width)
+    if measure_width(value) <= width:
+        return value
+    trimmed = value.rstrip("/\\")
+    separator = "\\" if "\\" in trimmed else "/"
+    parts = trimmed.split(separator)
+    if len(parts) == 1:
+        return ellipsize_wrapped_text(
+            value, maximum_width=width, maximum_lines=1, measure_width=measure_width
+        )
+    suffix = parts[-1]
+    # Retain as much local context as fits, rather than an uninformative root.
+    for part in reversed(parts[:-1]):
+        candidate = part + separator + suffix
+        if measure_width("…" + separator + candidate) > width:
+            break
+        suffix = candidate
+    prefix = "…" + separator
+    if measure_width(prefix + suffix) <= width:
+        return prefix + suffix
+    # A very long leaf still shows both its beginning and distinctive ending.
+    leaf = parts[-1]
+    keep = len(leaf)
+    while keep > 0:
+        left = (keep + 1) // 2
+        right = keep // 2
+        candidate = prefix + leaf[:left] + "…" + (leaf[-right:] if right else "")
+        if measure_width(candidate) <= width:
+            return candidate
+        keep -= 1
+    return "…" if measure_width("…") <= width else ""

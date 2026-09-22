@@ -42,6 +42,99 @@ def until(app, predicate, timeout=12):
     raise AssertionError("Native condition did not become true before its deadline")
 
 
+def assert_native_overlay_roles(app, overlay, evidence):
+    """Observe actual AppKit glyphs/rails after normal presentation polling."""
+    from AppKit import NSColorSpace
+
+    from yt_downloader.platforms.macos.surfaces import _bitmap_rep_image
+    from yt_downloader.ui_theme import THEME
+
+    def rgb(color):
+        value = color.colorUsingColorSpace_(NSColorSpace.sRGBColorSpace())
+        return tuple(
+            round(channel * 255)
+            for channel in (
+                value.redComponent(),
+                value.greenComponent(),
+                value.blueComponent(),
+            )
+        )
+
+    def expected(role):
+        return tuple(int(THEME[role][i : i + 2], 16) for i in (1, 3, 5))
+
+    def capture_view(view):
+        bounds = view.bounds()
+        rep = view.bitmapImageRepForCachingDisplayInRect_(bounds)
+        view.cacheDisplayInRect_toBitmapImageRep_(bounds, rep)
+        # Native backing may use the display's P3 profile. Compare semantic
+        # sRGB tokens only after an explicit native color-space conversion.
+        rep = rep.bitmapImageRepByConvertingToColorSpace_renderingIntent_(
+            NSColorSpace.sRGBColorSpace(), 0
+        )
+        assert rep is not None
+        return _bitmap_rep_image(rep).convert("RGB")
+
+    def matching(image, target):
+        return sum(
+            max(abs(a - b) for a, b in zip(pixel, target)) <= 8
+            for y in range(image.height)
+            for x in range(image.width)
+            for pixel in (image.getpixel((x, y)),)
+        )
+
+    original = {key: THEME[key] for key in ("icon", "progress", "text", "focus")}
+    try:
+        for label, colors in (
+            ("approved", original),
+            (
+                "changed",
+                {
+                    "icon": "#66ddcc",
+                    "progress": "#ccaaff",
+                    "text": "#e5e5e5",
+                    "focus": "#ffdd99",
+                },
+            ),
+            ("restored", original),
+        ):
+            THEME.update(colors)
+            deadline = time.monotonic() + 0.2
+            while time.monotonic() < deadline:
+                app.update()
+                time.sleep(0.01)
+            assert all(
+                rgb(button.contentTintColor()) == expected("icon")
+                for button in overlay.buttons
+            ), "Native action glyph roles are stale"
+            assert rgb(overlay.time.textColor()) == expected("text")
+            # Real rendered controls, not merely requested tint metadata.
+            glyph = capture_view(overlay.buttons[0])
+            timeline = capture_view(overlay.timeline)
+            volume = capture_view(overlay.volume)
+            destination = Path(os.environ["VODFORGE_NATIVE_EVIDENCE_DIR"])
+            for name, image in (
+                ("glyph", glyph),
+                ("timeline", timeline),
+                ("volume", volume),
+            ):
+                image.save(destination / f"native-player-{label}-{name}.png")
+            assert matching(glyph, expected("icon")) > 5, (
+                "Action tint did not reach native pixels"
+            )
+            assert matching(timeline, expected("progress")) > 5, (
+                "Timeline progress role missing"
+            )
+            assert matching(volume, expected("progress")) > 5, (
+                "Volume progress role missing"
+            )
+            evidence.setdefault("native_role_pixels", []).append(
+                {"state": label, "colors": dict(colors)}
+            )
+    finally:
+        THEME.update(original)
+
+
 def descendants(widget):
     for child in widget.winfo_children():
         yield child
@@ -49,16 +142,20 @@ def descendants(widget):
 
 
 def tab(player, label):
-    key = next(
-        key
-        for key in player._info_notebook.tabs()
-        if player._info_notebook.tab(key, "text") == label
-    )
-    player._info_notebook.select(key)
-    return player._info_notebook.nametowidget(key)
+    target = {
+        "Chapters": "chapters",
+        "About": "info",
+        "Source": "source",
+        "File": "output",
+        "Notes": "notes",
+        "Moments": "moments",
+    }[label]
+    key = next(key for key, value in player._detail_targets.items() if value == target)
+    player._select_information_panel(key)
+    return player._information_sections[key]
 
 
-def capture(app, label, evidence):
+def capture(app, label, evidence, *, window_id=None):
     if sys.platform != "darwin" or not os.environ.get("VODFORGE_NATIVE_EVIDENCE_DIR"):
         return
     import Quartz
@@ -74,7 +171,10 @@ def capture(app, label, evidence):
         and window.get("kCGWindowLayer") == 0
     ]
     assert owned
-    window_id = int(owned[0]["kCGWindowNumber"])
+    if window_id is None:
+        window_id = int(owned[0]["kCGWindowNumber"])
+    else:
+        assert any(int(window["kCGWindowNumber"]) == window_id for window in owned)
     argv = [
         "/usr/sbin/screencapture",
         "-x",
@@ -282,13 +382,22 @@ def test_real_embedded_media_annotation_transport_preview_and_release(
             if origin == "watch":
                 watch = app.focus_watch
                 watch._navigate("channels", "Synthetic creator")
-                watch.search.set("fixture")
-                until(app, lambda: watch._render_after is None and bool(watch._offsets))
-                watch._move_rail(next(iter(watch._offsets)), 1)
-                until(app, lambda: watch._render_after is None)
+                # Exercise the current channel page and vertical scroll restoration.
+                # Horizontal rail pagination has its separate scene contract.
+                watch.search.set("")
+                until(
+                    app,
+                    lambda: (
+                        watch._render_after is None
+                        and watch.canvas.bbox("all") is not None
+                    ),
+                )
                 watch.canvas.yview_moveto(0.35)
                 app.update()
-                assert any(watch._offsets.values()) and watch.canvas.yview()[0] > 0
+                assert (
+                    watch._channel == "Synthetic creator"
+                    and watch.canvas.yview()[0] > 0
+                )
             state = browser_state()
             evidence["browser_before"] = state
             app._play_selected_library_item(app.metadata_items[0])
@@ -330,13 +439,402 @@ def test_real_embedded_media_annotation_transport_preview_and_release(
                 assert (
                     counters["decoded_video"] > 0 and counters["displayed_pictures"] > 0
                 )
-            assert player.play_button.winfo_ismapped()
-            assert (
-                player.timeline.winfo_rooty() + player.timeline.winfo_height()
-                <= app.winfo_rooty() + app.winfo_height()
-            )
+            if player._native_overlay is not None:
+                assert not player.transport.winfo_ismapped()
+                assert (
+                    player.stage.winfo_rooty() + player.stage.winfo_height()
+                    <= app.winfo_rooty() + app.winfo_height()
+                )
+            else:
+                assert player.play_button.winfo_ismapped()
+                assert (
+                    player.timeline.winfo_rooty() + player.timeline.winfo_height()
+                    <= app.winfo_rooty() + app.winfo_height()
+                )
+            if format_name == "MP4" and sys.platform == "darwin":
+                from threading import Thread
+
+                import Quartz
+                from AppKit import NSApplication
+
+                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                app.lift()
+                app.update()
+                center = (
+                    player.stage.winfo_rootx() + player.stage.winfo_width() // 2,
+                    player.stage.winfo_rooty() + player.stage.winfo_height() // 2,
+                )
+                Quartz.CGEventPost(
+                    Quartz.kCGHIDEventTap,
+                    Quartz.CGEventCreateMouseEvent(
+                        None,
+                        Quartz.kCGEventMouseMoved,
+                        center,
+                        Quartz.kCGMouseButtonLeft,
+                    ),
+                )
+                overlay = player._native_overlay
+                assert overlay is not None
+                assert_native_overlay_roles(app, overlay, evidence)
+                capture(app, "actual-mp4-before-click", evidence)
+                evidence["click_geometry"] = {
+                    "tk_center": center,
+                    "native_frame": str(overlay.video_click.frame()),
+                    "native_screen": str(
+                        overlay.video_click.window().convertPointToScreen_(
+                            overlay.video_click.convertPoint_toView_(
+                                (
+                                    overlay.video_click.bounds().size.width / 2,
+                                    overlay.video_click.bounds().size.height / 2,
+                                ),
+                                None,
+                            )
+                        )
+                    ),
+                }
+                until(app, lambda: overlay.view.isHidden(), timeout=6)
+                toggles = []
+                evidence["body_click_toggles"] = toggles
+                window_point = overlay.video_click.convertPoint_toView_(
+                    (
+                        overlay.video_click.bounds().size.width / 2,
+                        overlay.video_click.bounds().size.height / 2,
+                    ),
+                    None,
+                )
+                evidence["body_hit_view"] = str(
+                    overlay.video_click.window().contentView().hitTest_(window_point)
+                )
+                evidence["native_key_window"] = bool(
+                    overlay.video_click.window().isKeyWindow()
+                )
+                original_toggle = backend.toggle
+
+                def observed_toggle():
+                    toggles.append(backend.snapshot.status)
+                    return original_toggle()
+
+                monkeypatch.setattr(backend, "toggle", observed_toggle)
+                for expected in ("Paused", "Playing"):
+
+                    def click():
+                        for kind in (
+                            Quartz.kCGEventLeftMouseDown,
+                            Quartz.kCGEventLeftMouseUp,
+                        ):
+                            event = Quartz.CGEventCreateMouseEvent(
+                                None, kind, center, Quartz.kCGMouseButtonLeft
+                            )
+                            Quartz.CGEventSetFlags(event, 0)
+                            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+                            time.sleep(0.06)
+
+                    driver = Thread(target=click, daemon=True)
+                    driver.start()
+                    until(
+                        app,
+                        lambda expected=expected: backend.snapshot.status == expected,
+                    )
+                    # Keep pumping after the expected transition to catch duplicate dispatch.
+                    deadline = time.monotonic() + 0.35
+                    while time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(0.01)
+                    driver.join(1)
+                    assert not driver.is_alive()
+                    assert backend.snapshot.status == expected
+                    if expected == "Paused":
+                        assert not overlay.view.isHidden()
+                assert toggles == ["Playing", "Paused"]
+                evidence["outcomes"].append(
+                    "OS video-body clicks toggle exactly once with native controls hidden and visible"
+                )
+                capture(app, "actual-mp4-player", evidence)
+            elif sys.platform == "darwin":
+                from threading import Thread
+
+                import Quartz
+                from AppKit import NSApplication
+
+                assert player._native_overlay is None
+                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                app.lift()
+                app.update()
+                point = (
+                    player.stage.winfo_rootx() + player.stage.winfo_width() // 4,
+                    player.stage.winfo_rooty() + player.stage.winfo_height() // 3,
+                )
+                audio_toggles = []
+                original_audio_toggle = backend.toggle
+
+                def observed_audio_toggle():
+                    audio_toggles.append(backend.snapshot.status)
+                    return original_audio_toggle()
+
+                monkeypatch.setattr(backend, "toggle", observed_audio_toggle)
+                for expected in ("Paused", "Playing"):
+
+                    def click_audio():
+                        for kind in (
+                            Quartz.kCGEventLeftMouseDown,
+                            Quartz.kCGEventLeftMouseUp,
+                        ):
+                            event = Quartz.CGEventCreateMouseEvent(
+                                None, kind, point, Quartz.kCGMouseButtonLeft
+                            )
+                            Quartz.CGEventSetFlags(event, 0)
+                            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+                            time.sleep(0.06)
+
+                    driver = Thread(target=click_audio, daemon=True)
+                    driver.start()
+                    until(
+                        app,
+                        lambda expected=expected: backend.snapshot.status == expected,
+                    )
+                    deadline = time.monotonic() + 0.35
+                    while time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(0.01)
+                    driver.join(1)
+                    assert not driver.is_alive() and backend.snapshot.status == expected
+                assert audio_toggles == ["Playing", "Paused"]
+                evidence["outcomes"].append(
+                    "OS audio-artwork clicks toggle exactly once with usable fallback controls"
+                )
             player._toggle()
             until(app, lambda: backend.snapshot.status == "Paused")
+            if format_name == "MP4" and sys.platform == "darwin":
+                # Native transport targets must consume input without a body toggle.
+                def control_click(view, fraction=0.5, dismiss_menu=False):
+                    local = (
+                        view.bounds().size.width * fraction,
+                        view.bounds().size.height / 2,
+                    )
+                    screen = view.window().convertPointToScreen_(
+                        view.convertPoint_toView_(local, None)
+                    )
+                    screen_height = Quartz.CGDisplayBounds(
+                        Quartz.CGMainDisplayID()
+                    ).size.height
+                    point = (screen.x, screen_height - screen.y)
+                    move = Quartz.CGEventCreateMouseEvent(
+                        None,
+                        Quartz.kCGEventMouseMoved,
+                        point,
+                        Quartz.kCGMouseButtonLeft,
+                    )
+                    Quartz.CGEventSetFlags(move, 0)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, move)
+                    deadline = time.monotonic() + 0.15
+                    while time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(0.01)
+                    if view is overlay.volume or view in overlay.buttons:
+                        expected_control = (
+                            len(overlay.buttons)
+                            if view is overlay.volume
+                            else overlay.buttons.index(view)
+                        )
+                        until(
+                            app,
+                            lambda: any(
+                                item[0] == expected_control
+                                for item in overlay._control_highlights
+                            ),
+                            timeout=2,
+                        )
+                        evidence.setdefault("native_control_hover", []).append(
+                            expected_control
+                        )
+                        if view is overlay.volume:
+                            capture(app, "actual-mp4-volume-hover", evidence)
+                    local = (
+                        view.bounds().size.width * fraction,
+                        view.bounds().size.height / 2,
+                    )
+                    window_point = view.convertPoint_toView_(local, None)
+                    screen = view.window().convertPointToScreen_(window_point)
+                    point = (screen.x, screen_height - screen.y)
+                    evidence.setdefault("control_clicks", []).append(
+                        {
+                            "target": str(view),
+                            "point": point,
+                            "hidden": bool(view.isHidden()),
+                            "hit_view": str(
+                                view.window().contentView().hitTest_(window_point)
+                            ),
+                            "frame": str(view.frame()),
+                            "window": int(view.window().windowNumber()),
+                            "before_volume": backend.snapshot.volume,
+                        }
+                    )
+
+                    def send():
+                        for kind in (
+                            Quartz.kCGEventLeftMouseDown,
+                            Quartz.kCGEventLeftMouseUp,
+                        ):
+                            event = Quartz.CGEventCreateMouseEvent(
+                                None, kind, point, Quartz.kCGMouseButtonLeft
+                            )
+                            Quartz.CGEventSetFlags(event, 0)
+                            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+                            time.sleep(0.06)
+                        if dismiss_menu:
+                            time.sleep(0.2)
+                            for down in (True, False):
+                                event = Quartz.CGEventCreateKeyboardEvent(
+                                    None, 53, down
+                                )
+                                Quartz.CGEventSetFlags(event, 0)
+                                Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
+                    driver = Thread(target=send, daemon=True)
+                    driver.start()
+                    deadline = time.monotonic() + 0.65
+                    while time.monotonic() < deadline:
+                        app.update()
+                        time.sleep(0.01)
+                    driver.join(1)
+                    assert not driver.is_alive()
+
+                toggle_count = len(toggles)
+                control_click(overlay.timeline, 0.25)
+                until(app, lambda: abs(backend.snapshot.position - 3) < 0.8)
+                control_click(overlay.volume, 0.6)
+                until(app, lambda: backend.snapshot.volume != 37)
+                control_click(overlay.buttons[4], dismiss_menu=True)
+                assert (
+                    backend.snapshot.status == "Paused" and len(toggles) == toggle_count
+                )
+                evidence["outcomes"].append(
+                    "OS native seek volume and options-menu clicks do not bubble into body playback toggle"
+                )
+                player._open_presentation("fullscreen")
+                until(
+                    app,
+                    lambda: (
+                        player._presentation_mode == "fullscreen"
+                        and player._presentation_window.winfo_ismapped()
+                    ),
+                )
+                assert (
+                    player.playback is backend and backend.snapshot.status == "Paused"
+                )
+                assert not player.transport.winfo_ismapped()
+                assert (
+                    player._native_overlay.video_click.window()
+                    == player._native_overlay.view.window()
+                )
+                player._return_presentation()
+                until(
+                    app,
+                    lambda: (
+                        player._presentation_window is None
+                        and player.stage.winfo_ismapped()
+                    ),
+                )
+                assert (
+                    player.playback is backend and backend.snapshot.status == "Paused"
+                )
+                assert not player.transport.winfo_ismapped()
+                evidence["outcomes"].append(
+                    "fullscreen round trip retains paused backend and one native control surface"
+                )
+                # Floating mode is a separate native host contract from fullscreen.
+                overlay = player._native_overlay
+                assert overlay is not None
+                floating_actions = []
+                original_action = overlay._on_action
+
+                def observe_floating_action(action, value):
+                    floating_actions.append({"action": action, "value": value})
+                    original_action(action, value)
+
+                monkeypatch.setattr(overlay, "_on_action", observe_floating_action)
+                key_window = NSApplication.sharedApplication().keyWindow()
+                evidence["floating_before"] = {
+                    "native_window": int(overlay.view.window().windowNumber()),
+                    "key_window": int(key_window.windowNumber())
+                    if key_window
+                    else None,
+                    "window_is_key": bool(overlay.view.window().isKeyWindow()),
+                    "button_enabled": bool(overlay.buttons[7].isEnabled()),
+                    "closed": overlay._closed,
+                    "actions": floating_actions,
+                    "main_geometry": app.geometry(),
+                    "stage_size": [
+                        player.stage.winfo_width(),
+                        player.stage.winfo_height(),
+                    ],
+                    "provider_media": str(backend.snapshot.path),
+                    "provider_position": backend.snapshot.position,
+                }
+                control_click(overlay.buttons[7])
+                evidence["floating_after_click"] = {
+                    "mode": player._presentation_mode,
+                    "pending": list(player._overlay_actions),
+                    "notice": player._control_notice,
+                }
+                until(
+                    app,
+                    lambda: (
+                        player._presentation_mode == "floating"
+                        and player._presentation_window.winfo_ismapped()
+                    ),
+                )
+                floating = player._presentation_window
+                overlay = player._native_overlay
+                assert overlay is not None
+                floating_id = int(overlay.view.window().windowNumber())
+                assert bool(floating.attributes("-topmost"))
+                assert (
+                    player.playback is backend and backend.snapshot.status == "Paused"
+                )
+                assert overlay.video_click.window() == overlay.view.window()
+                assert not player.transport.winfo_ismapped()
+                capture(app, "actual-mp4-floating", evidence, window_id=floating_id)
+                evidence["floating_window"] = {
+                    "window_id": floating_id,
+                    "title": floating.title(),
+                    "topmost": True,
+                    "provider_preserved": True,
+                    "paused": True,
+                }
+                control_click(overlay.buttons[7])
+                until(
+                    app,
+                    lambda: (
+                        player._presentation_window is None
+                        and player.stage.winfo_ismapped()
+                    ),
+                )
+                assert not floating.winfo_exists()
+                assert (
+                    player.playback is backend and backend.snapshot.status == "Paused"
+                )
+                assert (
+                    str(backend.snapshot.path)
+                    == evidence["floating_before"]["provider_media"]
+                )
+                assert app.geometry() == evidence["floating_before"]["main_geometry"]
+                assert [
+                    player.stage.winfo_width(),
+                    player.stage.winfo_height(),
+                ] == evidence["floating_before"]["stage_size"]
+                evidence["floating_restored"] = {
+                    "host_destroyed": True,
+                    "main_geometry": app.geometry(),
+                    "provider_media": str(backend.snapshot.path),
+                    "provider_position": backend.snapshot.position,
+                    "same_provider": True,
+                }
+                assert not player.transport.winfo_ismapped()
+                evidence["outcomes"].append(
+                    "OS floating-window button round trip retires the owned host and preserves paused provider"
+                )
+
             poll_token = player._poll_after_id
             for _ in range(3):
                 app._play_selected_library_item(app.metadata_items[0])

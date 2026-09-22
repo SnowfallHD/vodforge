@@ -272,10 +272,47 @@ def test_shared_choice_menu_navigation_hover_and_identical_render(root):
     assert dropdown._popover is None
 
 
-def test_shared_fields_do_not_draw_focus_rings(root):
-    """Settings, search, notes and entries share the ring-free chrome contract."""
+def assert_field_contour_focus(idle, active, restored):
+    """Independent 1x design geometry, shared by full and nine-slice adapters."""
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
+
+    width, height = idle.size
+    assert active.size == restored.size == idle.size
+    allowed = Image.new("L", idle.size)
+    ImageDraw.Draw(allowed).rounded_rectangle(
+        (0, 0, width - 1, height - 1), radius=10, outline=255, width=3
+    )
+    allowed = allowed.filter(ImageFilter.MaxFilter(5))
+    change = ImageChops.difference(idle.convert("RGB"), active.convert("RGB"))
+    assert change.getbbox(), "Missing focus feedback"
+    outside = ImageChops.multiply(change, ImageOps.invert(allowed).convert("RGB"))
+    assert outside.getbbox() is None, "Focus escaped intended rounded contour"
+    interior = (12, 12, width - 12, height - 12)
+    assert (
+        ImageChops.difference(
+            idle.crop(interior).convert("RGB"), active.crop(interior).convert("RGB")
+        ).getbbox()
+        is None
+    )
+    assert (
+        ImageChops.difference(idle.convert("RGB"), restored.convert("RGB")).getbbox()
+        is None
+    )
+    assert (
+        ImageChops.difference(
+            idle.getchannel("A").point(lambda x: 255 if x else 0),
+            active.getchannel("A").point(lambda x: 255 if x else 0),
+        ).getbbox()
+        is None
+    )
+
+
+def test_shared_fields_show_contour_focus_and_restore_idle(root, monkeypatch):
+    """1x fallback focus contour; faults cannot hide behind equal alpha."""
+    monkeypatch.setattr("yt_downloader.ui_chrome.surface_backing_scale", lambda _: 1)
+    from PIL import ImageDraw, ImageTk
+
     from yt_downloader.ui_chrome import RoundedFieldBorder
-    from yt_downloader.ui_theme import THEME
 
     root.deiconify()
     field = tk.Frame(root, width=220, height=40)
@@ -283,19 +320,32 @@ def test_shared_fields_do_not_draw_focus_rings(root):
     root.update()
     chrome = RoundedFieldBorder(field)
     chrome.request(False)
-    before = chrome._committed
-    image_before = chrome._image
+    size = (field.winfo_width(), field.winfo_height())
+    idle = ImageTk.getimage(chrome._image).convert("RGBA")
     chrome.request(True)
-    assert chrome._committed == before
-    assert chrome._image is image_before
-    styles = ttk.Style(root)
-    for name in ("TEntry", "TButton", "FocusQuiet.TButton"):
-        for option in ("bordercolor", "lightcolor", "darkcolor"):
-            assert styles.lookup(name, option, ("focus",)) != THEME["accent"]
-    owner = root._product_chrome_owner
-    assert root.tk.call(str(owner.images["field"]), "get", 1, 20) == root.tk.call(
-        str(owner.images["field_focus"]), "get", 1, 20
-    )
+    focused = ImageTk.getimage(chrome._image).convert("RGBA")
+    assert (field.winfo_width(), field.winfo_height()) == size
+    chrome.request(False)
+    restored = ImageTk.getimage(chrome._image).convert("RGBA")
+
+    def verify(active, after):
+        assert_field_contour_focus(idle, active, after)
+
+    verify(focused, restored)  # Actual antialiased native-image positive.
+    faults = {"missing": (idle, restored), "stale": (focused, focused)}
+    rectangle = focused.copy()
+    ImageDraw.Draw(rectangle).rectangle((0, 0, 219, 39), outline="#ffffff", width=1)
+    faults["rectangular"] = (rectangle, restored)
+    face = focused.copy()
+    # Preserve alpha exactly: RGBA.getbbox(alpha_only=True) would miss this.
+    face.putpixel((110, 20), (255, 0, 0, face.getpixel((110, 20))[3]))
+    faults["face-color"] = (face, restored)
+    stale_color = restored.copy()
+    stale_color.putpixel((110, 20), (255, 0, 0, stale_color.getpixel((110, 20))[3]))
+    faults["restored-color"] = (focused, stale_color)
+    for active, after in faults.values():
+        with pytest.raises(AssertionError):
+            verify(active, after)
 
 
 @pytest.mark.parametrize("geometry", ["700x540", "820x720"])
@@ -358,21 +408,53 @@ def test_real_facts_keep_all_values_and_noop(root):
     assert str(text.cget("state")) == "disabled"
 
 
-def test_facts_wrapped_values_keep_value_column(root):
+def test_facts_reflow_paths_and_long_labels_without_losing_copy_or_selection(root):
     root.deiconify()
     text = FactsText(root)
     text.pack(fill="both", expand=True)
     value = "/Users/example/Downloads/" + "a long folder name/" * 15
-    text.request("Output file path: " + value)
-    for width in (650, 420):
+    raw = (
+        "Output video codec: H.264\n"
+        "Target audio bitrate: 192 kbps\n"
+        "Output file path: " + value + "\n"
+        "HDR/SDR or pixel format reported by this provider: SDR\n"
+        "Unknown provider fact: Keep this exact value"
+    )
+    text.request(raw)
+    for width in (650, 300, 650):
         root.geometry(f"{width}x400")
         settle_native(root)
-        first = text.bbox("1.17")  # First value character after label and tab.
-        continuation = text.dlineinfo("1.0 + 1 display lines")
+        value_start = text.search(value[:30], "1.0", exact=True)
+        text.see(value_start)
+        settle_native(root)
+        first = text.bbox(value_start)
+        continuation = text.dlineinfo(f"{value_start} + 1 display lines")
         assert first is not None and continuation is not None
-        assert abs(first[0] - continuation[0]) <= 1
-        assert int(text.tag_cget("fact-row", "lmargin2")) == text._layout_width
-        assert text.get("1.0", "end-1c") == "Output file path\t" + value
+        assert first[0] > 10 and abs(first[0] - continuation[0]) <= 1
+        assert text.raw_snapshot == raw
+        rendered = text.get("1.0", "end-1c")
+        assert value in rendered
+        assert "Unknown provider fact" in rendered
+        text.tag_add("sel", value_start, f"{value_start} + {len(value)} chars")
+    root.geometry("300x400")
+    settle_native(root)
+    assert text.get("sel.first", "sel.last") == value
+    text.yview_moveto(0)
+    settle_native(root)
+    for label, fact in (
+        ("Output video codec", "H.264"),
+        ("Target audio bitrate", "192 kbps"),
+    ):
+        label_box = text.bbox(text.search(label, "1.0", exact=True))
+        value_box = text.bbox(text.search(fact, "1.0", exact=True))
+        assert label_box and value_box and label_box[1] == value_box[1]
+    label = text.search("HDR/SDR or pixel format", "1.0", exact=True)
+    val = text.search("SDR", f"{label} lineend", exact=True)
+    text.see(val)
+    settle_native(root)
+    label_box, val_box = text.bbox(label), text.bbox(val)
+    assert label_box and val_box
+    assert val_box[0] > label_box[0] + 20 and val_box[1] >= label_box[1]
 
 
 def test_log_decoration_is_character_exact_and_clear_invalidates(root):
@@ -909,6 +991,7 @@ def test_player_overlay_corners_match_poster_and_native_input(root):
 
     player = object.__new__(MediaPlayerWindow)
     player.popup = root
+    player.embedded = False
     player.thumbnail_path = None
     player._poster_image = None
     player._audio_only = False
@@ -949,8 +1032,9 @@ def test_player_overlay_corners_match_poster_and_native_input(root):
     assert len(calls) == 6
 
 
-def test_library_description_stays_inside_inspector_after_resize():
+def test_library_description_stays_inside_inspector_after_resize(tmp_path):
     from scripts.focus_ui_preview import isolated_preview_services
+    from tests.test_archive_models import saved
     from yt_downloader.app import DownloaderApp
 
     with isolated_preview_services():
@@ -961,24 +1045,36 @@ def test_library_description_stays_inside_inspector_after_resize():
                 + "Middle description line\n" * 100
                 + "Description sentinel last"
             )
-            app.metadata_items = [
+            app.download_history = [
                 {
-                    "id": "layout",
+                    **saved(tmp_path / "layout.mp4", video="layout"),
                     "title": "A long selected title " * 8,
                     "description": description,
                     "tags": ["tag"] * 20,
                 }
             ]
-            app._display_selected_metadata(0)
+            app._reconcile_library_projection()
             app._select_focus_view("library")
+            scene = app.library_scene
+            scene.show_details(0)
             for size in ("1320x820", "1100x600", "1440x900"):
                 app.geometry(size)
-                app._archive_inspector_expanded = True
-                app._apply_focus_layout(force=True)
-                app.focus_archive_inspector.select(app.focus_archive_description_tab)
                 settle_native(app)
-                body = app.description_text
-                details = app.focus_archive_description_tab
+                details = scene._description_section
+                body = details.text
+                window = next(
+                    item
+                    for item in scene.canvas.find_all()
+                    if scene.canvas.type(item) == "window"
+                    and scene.canvas.itemcget(item, "window") == str(details)
+                )
+                region = tuple(
+                    float(v) for v in scene.canvas.cget("scrollregion").split()
+                )
+                scene.canvas.yview_moveto(
+                    max(0, scene.canvas.bbox(window)[1] - 20) / region[3]
+                )
+                settle_native(app)
                 assert body.winfo_ismapped()
                 assert body.winfo_height() > 100
                 assert body.winfo_rooty() >= details.winfo_rooty()
@@ -1199,3 +1295,219 @@ def test_thumbnail_configure_after_sibling_removal_and_native_close():
                     application.destroy()
             except tk.TclError:
                 pass
+
+
+@pytest.mark.parametrize("output_type", ["MP4", "MP3", "Original audio"])
+def test_forge_destination_stays_single_across_resizes_and_path_changes(output_type):
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.detail_ui import detail_lines
+
+    paths = (
+        "/Volumes/An external archive/Projects/Finished films",
+        r"C:\\Media archive\\Projects\\A new destination",
+        "/Volumes/旅行記/完成した動画",
+    )
+    with isolated_preview_services():
+        application = DownloaderApp()
+        try:
+            application.output_type_var.set(output_type)
+            application._select_focus_view("forge")
+            application.deiconify()
+            document = application.focus_summary_text
+            for path in paths:
+                application.output_var.set(path)
+                for size in ("1100x600", "1440x900", "1180x700", "1280x780") * 2:
+                    application.geometry(size)
+                    settle_native(application)
+                    application._sync_focus_destination()
+                    application.update_idletasks()
+                    raw = document.raw_snapshot
+                    rendered = document.get("1.0", "end-1c")
+                    facts = detail_lines(raw)
+                    destinations = [line for line in facts if line.label == "Save to"]
+                    assert len(destinations) == 1
+                    assert destinations[0].value == path
+                    assert raw.count(path) == rendered.count(path) == 1
+                    assert all(
+                        old not in raw and old not in rendered
+                        for old in paths
+                        if old != path
+                    )
+                    assert all(line.label for line in facts)
+                    mode = next(line for line in facts if line.label == "Output mode")
+                    assert path not in mode.value
+                    if document.winfo_ismapped():
+                        assert document.dlineinfo("1.0") is not None
+                    else:
+                        assert application.focus_details_button.winfo_ismapped()
+        finally:
+            application.destroy()
+
+
+@pytest.mark.parametrize(
+    "label,width,variant,icon",
+    [
+        ("Update location", 174, "inline", "folder"),
+        ("Update location", 148, "default", "folder"),
+        ("Back to suggestions", 180, "default", "back"),
+        ("View in Library", 181, "default", "folder"),
+        ("Show in Folder", 184, "default", "folder"),
+        ("Go to Forge", 217, "default", "download"),
+        ("Sort: Recently Added", 205, "compact", "sort"),
+    ],
+)
+def test_fixed_scene_action_labels_fit_without_user_content_ellipsis(
+    root, label, width, variant, icon
+):
+    from tkinter import font as tkfont
+
+    from yt_downloader.scene_components import ScenePainter
+    from yt_downloader.ui_button_contract import button_metrics
+    from yt_downloader.ui_layout import ellipsize_wrapped_text
+
+    height = button_metrics(variant).height
+    canvas = tk.Canvas(root, width=width + 40, height=height + 40)
+    canvas.pack()
+    fonts = {}
+
+    def fit(value, maximum_width, maximum_lines, font):
+        key = tuple(font)
+        if key not in fonts:
+            fonts[key] = tkfont.Font(root=root, font=font)
+        return ellipsize_wrapped_text(
+            str(value)[:2000],
+            maximum_width=max(1, maximum_width),
+            maximum_lines=maximum_lines,
+            measure_width=fonts[key].measure,
+        )
+
+    # Preserve the real user-content fitting contract so the same fixture
+    # demonstrates label truncation on the previous ScenePainter.
+    view = SimpleNamespace(
+        canvas=canvas, _button_images=[], _button_labels=[], _targets=[], _fit=fit
+    )
+    ScenePainter(view).button(
+        20, 20, width, label, lambda: None, icon=icon, variant=variant
+    )
+    settle_native(root)
+    bounds, item, _color, _active = view._button_labels[0]
+    assert canvas.itemcget(item, "text") == label
+    text_bounds = canvas.bbox(item)
+    assert text_bounds is not None
+    assert bounds[0] + 38 <= text_bounds[0] < text_bounds[2] <= bounds[2] - 8
+    assert bounds[1] <= text_bounds[1] < text_bounds[3] <= bounds[3]
+
+
+def test_shared_header_initial_map_and_responsive_controls():
+    from unittest.mock import patch
+
+    from scripts.focus_ui_preview import isolated_preview_services
+    from yt_downloader.analytics_startup import AnalyticsStartup
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.engagement_ui import EngagementUI
+
+    with (
+        isolated_preview_services(),
+        patch.object(AnalyticsStartup, "start", lambda _: None),
+        patch.object(EngagementUI, "start", lambda _: None),
+    ):
+        application = DownloaderApp()
+        try:
+            # Set geometry before the first map: Aqua previously delivered a
+            # stale1x1 Configure after this actual1414px window was visible.
+            application.geometry("1414x800+40+40")
+            application._select_focus_view("watch")
+            application.deiconify()
+            settle_native(application)
+            assert application.winfo_width() == 1414
+            assert not application._focus_header_compact
+            for width in (1414, 980, 820, 1414):
+                application.geometry(f"{width}x800+40+40")
+                settle_native(application)
+                widgets = [
+                    *application._focus_nav_buttons.values(),
+                    application._global_search_field,
+                    application.focus_settings_button,
+                ]
+                right = application.winfo_rootx() + application.winfo_width()
+                previous = application.winfo_rootx()
+                for widget in widgets:
+                    assert widget.winfo_ismapped()
+                    assert widget.winfo_rootx() >= previous
+                    previous = widget.winfo_rootx() + widget.winfo_width()
+                    assert previous <= right
+                expected = width < (1100 if application._integrated_header else 1000)
+                assert application._focus_header_compact == expected
+                assert all(
+                    bool(label.winfo_ismapped()) != expected
+                    for label in application._focus_brand_labels
+                )
+        finally:
+            application.destroy()
+
+
+@pytest.mark.parametrize("theme", ["Jade", "Ember"])
+@pytest.mark.parametrize("role", ["selection", "progress", "action-icon"])
+def test_shared_foreground_roles_are_independent_of_material_hue(root, theme, role):
+    from yt_downloader.ui_theme import apply_theme_selection
+
+    previous = dict(THEME)
+    try:
+        apply_theme_selection(theme)
+        apply_product_styles(root)
+        style = ttk.Style(root)
+        if role == "selection":
+            assert (
+                style.lookup("Archive.TNotebook.Tab", "foreground", ("selected",))
+                == THEME["selection"]
+            )
+        elif role == "progress":
+            for name in (
+                "TProgressbar",
+                "FocusProgress.Horizontal.TProgressbar",
+                "FocusDeck.Horizontal.TProgressbar",
+            ):
+                assert style.lookup(name, "background") == THEME["progress"]
+        else:
+            assert style.lookup("TCombobox", "arrowcolor") == THEME["icon"]
+    finally:
+        THEME.clear()
+        THEME.update(previous)
+
+
+@pytest.mark.parametrize(
+    "sequence, supported",
+    [("<MouseWheel>", True), ("<VODForgeUnsupportedEvent>", False)],
+)
+def test_optional_event_probe_parses_without_registering_callback_or_input(
+    root, sequence, supported
+):
+    from yt_downloader.platform_services import supports_tk_event
+
+    commands = tuple(root._tclCommands)
+    tags = root.bindtags()
+    assert supports_tk_event(root, sequence) is supported
+    assert tuple(root._tclCommands) == commands
+    assert root.bindtags() == tags
+
+
+def test_optional_event_probe_preserves_preexisting_tag(root, monkeypatch):
+    import uuid
+
+    from yt_downloader.platform_services import supports_tk_event
+
+    tag = "VODForgeEventProbe-reserved-by-another-owner"
+    monkeypatch.setattr(
+        uuid, "uuid4", lambda: SimpleNamespace(hex="reserved-by-another-owner")
+    )
+    root.tk.call("bind", tag, "<MouseWheel>", "break")
+    before = root.tk.call("bind", tag, "<MouseWheel>")
+    commands = tuple(root._tclCommands)
+    try:
+        assert supports_tk_event(root, "<MouseWheel>") is False
+        assert root.tk.call("bind", tag, "<MouseWheel>") == before
+        assert tuple(root._tclCommands) == commands
+        assert tag not in root.bindtags()
+    finally:
+        root.tk.call("bind", tag, "<MouseWheel>", "")

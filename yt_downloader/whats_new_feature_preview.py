@@ -10,14 +10,16 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
-from PIL import Image, ImageOps, ImageTk
+from PIL import Image, ImageOps
 
 from .activity_ui import ActivityLogText
 from .export_planning import EXPORT_MODES, QUALITY_OPTIONS, export_mode_description
 from .local_audio_video import LOCAL_VIDEO_PROFILE_OPTIONS
 from .media_player_ui import PlayerTransportButton, PlayerVolumeControl
 from .models import CookieSource
-from .ui_theme import THEME
+from .platform_services import create_surface_image, surface_backing_scale
+from .ui_layout import window_logical_metrics
+from .ui_theme import FONT_UI, THEME
 from .ui_widgets import (
     ChoiceDropdown,
     ChoiceMenu,
@@ -51,6 +53,7 @@ class FeaturePreview(ttk.Frame):
 
     def __init__(self, parent: tk.Misc, key: str) -> None:
         super().__init__(parent, style="FocusShell.TFrame")
+        self.metrics = window_logical_metrics(self)
         self.columnconfigure(0, weight=1)
         self.variables: list[tk.Variable] = []
         self.preferred_width = 430
@@ -78,14 +81,14 @@ class FeaturePreview(ttk.Frame):
             self._label("OPTIMIZE FOR", 0)
             self._choice("Everyday", tuple(EXPORT_MODES), 1)
             selection = self.variables[-1]
-            description = ttk.Label(
+            description = self._text_label(
                 self,
                 text=export_mode_description(selection.get()),
                 style="Muted.TLabel",
-                wraplength=370,
+                wraplength=self.metrics.px(370),
                 justify="left",
             )
-            description.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+            description.grid(row=2, column=0, sticky="ew", pady=(self.metrics.px(8), 0))
             selection.trace_add(
                 "write",
                 lambda *_: description.configure(
@@ -99,7 +102,7 @@ class FeaturePreview(ttk.Frame):
             value = tk.BooleanVar(self, True)
             self.variables.append(value)
             ModernCheckbox(self, text="Save thumbnail", variable=value).grid(
-                row=3, column=0, sticky="w", pady=5
+                row=3, column=0, sticky="w", pady=self.metrics.px(5)
             )
         elif key == "playlists":
             self.preferred_width = 220
@@ -109,7 +112,7 @@ class FeaturePreview(ttk.Frame):
             self.variables.append(ignore_playlists)
             ModernCheckbox(
                 self, text="Ignore playlists", variable=ignore_playlists
-            ).grid(row=1, column=0, sticky="w", pady=5)
+            ).grid(row=1, column=0, sticky="w", pady=self.metrics.px(5))
         elif key in {"youtube-access", "youtube-access-expanded"}:
             self.preferred_width = 340
             self.preferred_height = 110
@@ -122,7 +125,7 @@ class FeaturePreview(ttk.Frame):
                 values=COOKIE_SOURCE_OPTIONS,
                 background=THEME["bg"],
                 compact=True,
-            ).grid(row=1, column=0, sticky="w", pady=(0, 8))
+            ).grid(row=1, column=0, sticky="w", pady=(0, self.metrics.px(8)))
             if key == "youtube-access":
                 self._choice("Chrome", tuple(COOKIE_BROWSER_OPTIONS), 2)
             else:
@@ -135,18 +138,24 @@ class FeaturePreview(ttk.Frame):
                 )
                 menu = ChoiceMenu(self, values)
                 menu.rows = 3
-                menu.configure(height=menu.rows * menu.row_height + 12)
+                menu.configure(height=menu.rows * menu.row_height + self.metrics.px(12))
                 menu.selection_set(values.index("Chrome"))
-                menu.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+                menu.grid(row=3, column=0, sticky="ew", pady=(self.metrics.px(4), 0))
 
                 def fit_menu(event: tk.Event) -> None:
                     rows = max(
                         1,
-                        min(3, (event.height - menu.winfo_y() - 12) // menu.row_height),
+                        min(
+                            3,
+                            (event.height - menu.winfo_y() - self.metrics.px(12))
+                            // menu.row_height,
+                        ),
                     )
                     if rows != menu.rows:
                         menu.rows = rows
-                        menu.configure(height=rows * menu.row_height + 12)
+                        menu.configure(
+                            height=rows * menu.row_height + self.metrics.px(12)
+                        )
                         menu.see(menu.selected)
 
                 self.bind("<Configure>", fit_menu, add="+")
@@ -174,23 +183,28 @@ class FeaturePreview(ttk.Frame):
         else:
             raise ValueError(f"Unknown native feature exhibit: {key}")
 
+    def _text_label(self, parent: tk.Misc, **options) -> ttk.Label:
+        role = ttk.Style(parent).lookup(options.get("style", "TLabel"), "font")
+        font = tuple(parent.tk.splitlist(role)) if role else FONT_UI
+        return ttk.Label(parent, font=self.metrics.font(font), **options)
+
     def _label(self, text: str, row: int) -> None:
-        ttk.Label(self, text=text, style="FocusEyebrow.TLabel").grid(
-            row=row, column=0, sticky="w", pady=(5, 2)
+        self._text_label(self, text=text, style="FocusEyebrow.TLabel").grid(
+            row=row, column=0, sticky="w", pady=(self.metrics.px(5), self.metrics.px(2))
         )
 
     def _entry(self, value: str, row: int) -> None:
         variable = tk.StringVar(self, value)
         self.variables.append(variable)
         ProductEntry(self, textvariable=variable).grid(
-            row=row, column=0, sticky="ew", pady=(0, 3)
+            row=row, column=0, sticky="ew", pady=(0, self.metrics.px(3))
         )
 
     def _choice(self, value: str, values: tuple[str, ...], row: int) -> None:
         variable = tk.StringVar(self, value)
         self.variables.append(variable)
         ChoiceDropdown(self, textvariable=variable, values=values).grid(
-            row=row, column=0, sticky="ew", pady=(0, 5)
+            row=row, column=0, sticky="ew", pady=(0, self.metrics.px(5))
         )
 
     def _player(self, include_artwork: bool) -> None:
@@ -201,25 +215,28 @@ class FeaturePreview(ttk.Frame):
                 / "assets/preview_thumbnails/alpine-lake.jpg"
             )
             with Image.open(path) as source:
-                self.artwork = ImageTk.PhotoImage(
-                    ImageOps.fit(source, (360, 130)), master=self
-                )
+                density = surface_backing_scale(self)
+                size = (self.metrics.px(360), self.metrics.px(130))
+                image = ImageOps.fit(source, tuple(value * density for value in size))
+                self.artwork = create_surface_image(
+                    self, image, density, logical_size=size
+                )[0]
             tk.Label(self, image=self.artwork, bg=THEME["bg"], bd=0).pack()
         controls = ttk.Frame(self, style="FocusShell.TFrame")
-        controls.pack(fill="x", pady=8)
+        controls.pack(fill="x", pady=self.metrics.px(8))
         PlayerTransportButton(controls, command=lambda: None).pack(side="left")
-        ttk.Label(controls, text="0:00 / 32:47", style="Muted.TLabel").pack(
-            side="left", padx=12
+        self._text_label(controls, text="0:00 / 32:47", style="Muted.TLabel").pack(
+            side="left", padx=self.metrics.px(12)
         )
         variable = tk.IntVar(self, 80)
         self.variables.append(variable)
         PlayerVolumeControl(controls, variable=variable, command=lambda *_: None).pack(
             side="right"
         )
-        ttk.Label(controls, text="Volume", style="Muted.TLabel").pack(
-            side="right", padx=8
+        self._text_label(controls, text="Volume", style="Muted.TLabel").pack(
+            side="right", padx=self.metrics.px(8)
         )
-        ttk.Label(
+        self._text_label(
             self,
             text="PREVIEW MOMENTS" if include_artwork else "Ready",
             style="Muted.TLabel",

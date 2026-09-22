@@ -8,8 +8,10 @@ import os
 import re
 import stat
 import sys
+import threading
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, cast
@@ -38,6 +40,9 @@ HISTORY_METADATA_KEYS = (
     "duration",
     "uploader",
     "channel",
+    "channel_id",
+    "channel_url",
+    "uploader_url",
     "tags",
     "extra_tags",
     "categories",
@@ -59,6 +64,7 @@ HISTORY_METADATA_KEYS = (
     "vodforge_run_activity",
     "vodforge_archive_id",
     "vodforge_archive_annotation_owner",
+    "vodforge_progress_key",
     "vodforge_relinked",
     RETRY_JOB_METADATA_KEY,
 )
@@ -571,10 +577,22 @@ def sanitize_history_record(
             value = sanitize_run_activity(value)
         elif key == "vodforge_run_id":
             value = str(value or "").strip()[:128]
+        elif key == "vodforge_progress_key":
+            value = (
+                value
+                if (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value))
+                else None
+            )
         elif key == RETRY_JOB_METADATA_KEY:
             value = _json_safe(dict(value)) if isinstance(value, dict) else None
         elif key in {"webpage_url", "original_url"}:
             value = sanitize_durable_url(value, preserve_youtube_context=True)
+        elif key in {"channel_url", "uploader_url"}:
+            value = sanitize_durable_url(value, preserve_youtube_context=False)
+        elif key == "channel_id":
+            value = str(value or "").strip()[:256]
+            if any(ord(character) < 32 or ord(character) == 127 for character in value):
+                value = None
         elif key == "thumbnail":
             value = sanitize_durable_url(value, preserve_youtube_context=False)
         elif key == "best_thumbnail":
@@ -628,7 +646,60 @@ def upsert_history(
     return [record, *remaining][:MAX_HISTORY_ITEMS]
 
 
+_FILE_OPERATION_WRITE = threading.local()
+
+
+def file_operations_pending(path: Path) -> bool:
+    from .archive_file_operations import pending_file_operations
+
+    return bool(pending_file_operations(path.parent / "file-operations"))
+
+
+@contextmanager
+def file_operation_history_write(journal: Path, records: Sequence[Mapping[str, Any]]):
+    """Permit only the active operation worker to cross its history boundary."""
+    previous = getattr(_FILE_OPERATION_WRITE, "journal", None)
+    from .archive_relink import record_fingerprint
+
+    _FILE_OPERATION_WRITE.journal = (
+        journal,
+        tuple(record_fingerprint(record) for record in records),
+    )
+    try:
+        yield
+    finally:
+        _FILE_OPERATION_WRITE.journal = previous
+
+
+def _guard_file_operation_history(path: Path, records: list[dict[str, Any]]) -> None:
+    from .archive_file_operations import pending_file_operations
+
+    try:
+        pending = pending_file_operations(path.parent / "file-operations")
+    except (OSError, ValueError) as exc:
+        raise HistoryError(
+            "File recovery needs attention before Library changes.",
+            document="main",
+            phase="write",
+        ) from exc
+    lease = getattr(_FILE_OPERATION_WRITE, "journal", None)
+    from .archive_relink import record_fingerprint
+
+    if pending and not (
+        len(pending) == 1
+        and lease is not None
+        and pending[0].path == lease[0]
+        and tuple(record_fingerprint(record) for record in records) == lease[1]
+    ):
+        raise HistoryError(
+            "Review the interrupted file operation before Library changes.",
+            document="main",
+            phase="write",
+        )
+
+
 def save_history(path: Path, records: list[dict[str, Any]]) -> None:
+    _guard_file_operation_history(path, records)
     payload = {
         "schema_version": HISTORY_SCHEMA_VERSION,
         "items": records[:MAX_HISTORY_ITEMS],
@@ -1052,7 +1123,20 @@ def recover_pending_history(
     result = [dict(record) for record in current]
     for operation in operations:
         if operation["kind"] == "record":
-            record = operation["record"]
+            from .archive_file_operations import reconcile_file_record_delta
+
+            try:
+                record = reconcile_file_record_delta(
+                    operation["record"], result, path.parent / "file-operations"
+                )
+            except (OSError, ValueError) as exc:
+                raise HistoryError(
+                    "File recovery needs attention before pending updates.",
+                    document="pending",
+                    phase="read",
+                ) from exc
+            if record is None:
+                continue
             result = upsert_history(
                 result,
                 record,
@@ -1108,7 +1192,20 @@ def recover_pending_history(
 def load_history(
     path: Path, *, on_recovered: Callable[[int], None] | None = None
 ) -> list[dict[str, Any]]:
-    records, count = recover_pending_history(path, _load_history_records(path))
+    records = _load_history_records(path)
+    try:
+        pending_file_work = file_operations_pending(path)
+    except (OSError, ValueError) as exc:
+        raise HistoryError(
+            "File recovery needs attention before Library changes.",
+            document="main",
+            phase="read",
+        ) from exc
+    # Browsing/playback can use the actual committed ledger while recovery is
+    # pending. Durable incoming deltas remain staged until file work is settled.
+    if pending_file_work:
+        return records
+    records, count = recover_pending_history(path, records)
     if count and on_recovered is not None:
         try:
             on_recovered(count)

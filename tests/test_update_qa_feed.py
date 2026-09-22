@@ -147,7 +147,9 @@ def test_real_qa_feed_download(isolated_qa, monkeypatch, fault, entrypoint):
     destination = isolated_qa / "downloads"
     try:
         if entrypoint == "detached_repair":
-            from yt_downloader.windows_update_recovery import RECOVERY_FUNCTIONS
+            from yt_downloader.platforms.windows.update_recovery import (
+                RECOVERY_FUNCTIONS,
+            )
 
             destination.mkdir()
             script = isolated_qa / "repair.ps1"

@@ -16,13 +16,17 @@ from typing import Any
 from .modal_backdrop import ModalBackdrop
 from .support_diagnostics import FailureContext
 from .support_transport import SubmissionError, SupportTransport, VerificationRequired
+from .ui_button_contract import ProductButton
 from .ui_chrome import RoundedFieldBorder
+from .ui_layout import window_logical_metrics
 from .ui_theme import FONT_UI, THEME
 from .ui_widgets import (
     ActionDialogSurface,
     ChoiceDropdown,
     ModernCheckbox,
     ProductEntry,
+    SleekScrollbar,
+    bind_smooth_vertical_wheel,
 )
 from .version import __version__
 
@@ -46,6 +50,7 @@ class SupportPanel:
         context: FailureContext | None = None,
     ):
         self.parent, self.kind, self.transport = parent, kind, transport
+        self.metrics = window_logical_metrics(parent)
         self.on_closed, self.context = closed, context
         self.closed = False
         self.busy = False
@@ -65,7 +70,7 @@ class SupportPanel:
             highlightcolor=THEME["surface_2"],
         )
         self.surface = ActionDialogSurface(
-            self.frame, protect_status=True, padx=24, pady=18
+            self.frame, protect_status=True, allow_body_scroll=True, padx=24, pady=18
         )
         body = self.surface.body
         body.rowconfigure(4, weight=1)
@@ -101,7 +106,7 @@ class SupportPanel:
             star_row.grid(row=2, column=0, sticky="w", pady=(0, 8))
             self.star_buttons = []
             for n in range(1, 6):
-                button = ttk.Button(
+                button = ProductButton(
                     star_row,
                     text="☆",
                     width=3,
@@ -129,9 +134,10 @@ class SupportPanel:
             insertbackground=THEME["text"],
             bd=0,
             highlightthickness=0,
-            font=FONT_UI,
+            font=self.metrics.font(FONT_UI),
         )
         self.message.grid(row=0, column=0, sticky="nsew", padx=12, pady=9)
+        bind_smooth_vertical_wheel(self.message, mode="pixels")
         self.counter = ttk.Label(body, style="Muted.TLabel")
         self.counter.grid(row=5, column=0, sticky="e")
         self.message.bind("<<Modified>>", self._count)
@@ -156,7 +162,7 @@ class SupportPanel:
                     text="Include recent diagnostics",
                     variable=self.diagnostics,
                 ).grid(row=3, column=0, sticky="w", pady=(6, 0))
-                ttk.Button(
+                ProductButton(
                     options, text="Review diagnostics", command=self._review_diagnostics
                 ).grid(row=3, column=1, sticky="e")
                 if context.video_url:
@@ -198,13 +204,13 @@ class SupportPanel:
         )
         self.status.pack(fill="x")
         footer = self.surface.footer
-        self.cancel = ttk.Button(
+        self.cancel = ProductButton(
             footer,
             text="Cancel" if kind == "feedback" else "No thanks",
             command=self.close,
         )
         self.cancel.pack(side="left")
-        self.send = ttk.Button(
+        self.send = ProductButton(
             footer,
             text="Send feedback" if kind == "feedback" else "Submit public review",
             style="Accent.TButton",
@@ -235,10 +241,23 @@ class SupportPanel:
             relx=0.5,
             rely=0.5,
             anchor="center",
-            width=min(580, max(340, self.parent.winfo_width() - 36)),
-            height=min(
-                (580 if self.reply.get() else 510) if self.kind == "feedback" else 480,
-                max(400, self.parent.winfo_height() - 36),
+            width=max(
+                1,
+                min(
+                    self.metrics.px(580),
+                    self.parent.winfo_width() - self.metrics.px(18),
+                ),
+            ),
+            height=max(
+                1,
+                min(
+                    self.metrics.px(
+                        (580 if self.reply.get() else 510)
+                        if self.kind == "feedback"
+                        else 480
+                    ),
+                    self.parent.winfo_height() - self.metrics.px(18),
+                ),
             ),
         )
         self.backdrop.refresh(self.frame)
@@ -282,10 +301,12 @@ class SupportPanel:
             fg=THEME["text"],
             bd=0,
             highlightthickness=0,
+            font=window_logical_metrics(popup).font(FONT_UI),
         )
-        scrollbar = ttk.Scrollbar(surface.body, orient="vertical", command=text.yview)
+        scrollbar = SleekScrollbar(surface.body, command=text.yview)
         scrollbar.pack(side="right", fill="y")
         text.configure(yscrollcommand=scrollbar.set)
+        bind_smooth_vertical_wheel(text, scrollbar, mode="pixels")
         text.pack(fill="both", expand=True)
         text.insert(
             "1.0",
@@ -304,7 +325,7 @@ class SupportPanel:
                 self.frame.grab_set()
                 self.message.focus_set()
 
-        ttk.Button(surface.footer, text="Done", command=close).pack(side="right")
+        ProductButton(surface.footer, text="Done", command=close).pack(side="right")
         popup.protocol("WM_DELETE_WINDOW", close)
         popup.bind("<Escape>", lambda _e: close())
         popup.grab_set()

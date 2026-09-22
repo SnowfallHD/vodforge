@@ -74,6 +74,7 @@ def clean_repository(monkeypatch: pytest.MonkeyPatch) -> None:
             {"system": "Darwin", "machine": "arm64", "python": "3.13.7"},
             {
                 "commit": "a" * 40,
+                "source_manifest_sha256": "e" * 64,
                 "branch": "codex/release-gate",
                 "status_porcelain": [],
             },
@@ -229,6 +230,7 @@ def test_e2e_materialization_uses_frozen_zip_not_prior_extraction(
         "candidate_version": "1.2.3-dev",
         "artifact_policy": "development",
         "source_commit": "a" * 40,
+        "source_manifest_sha256": "e" * 64,
         "archive_sha256": receipt["immutable_archive"]["sha256"],
         "bundle_tree_sha256": receipt["artifact"]["bundle_tree"]["sha256"],
         "receipt_sha256": sha256_file(receipt_path),

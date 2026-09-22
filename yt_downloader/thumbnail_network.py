@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -13,6 +14,24 @@ THUMBNAIL_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 # yt-dlp metadata used by the application currently exposes. Keep this exact:
 # suffix matching would allow attacker-controlled deceptive hostnames.
 YOUTUBE_THUMBNAIL_HOSTS = frozenset({"i.ytimg.com", "img.youtube.com"})
+YOUTUBE_CHANNEL_ART_HOSTS = frozenset({"yt3.googleusercontent.com", "yt3.ggpht.com"})
+
+
+def validated_channel_url(url: str) -> str:
+    origin = _normalized_origin(url, label="Channel URL")
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        origin.scheme != "https"
+        or origin.port != 443
+        or origin.host not in {"youtube.com", "www.youtube.com"}
+        or parsed.query
+        or parsed.fragment
+        or not re.fullmatch(
+            r"/(?:channel/UC[A-Za-z0-9_-]{22}|@[A-Za-z0-9_.-]{3,40})/?", parsed.path
+        )
+    ):
+        raise RuntimeError("Only a canonical YouTube channel URL is supported")
+    return "https://www.youtube.com" + parsed.path.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -57,6 +76,7 @@ class ThumbnailUrlPolicy:
     """Authority policy applied to an initial thumbnail URL and every redirect."""
 
     source_origin: _Origin | None = None
+    channel_artwork: bool = False
 
     @classmethod
     def for_source(cls, source_url: str | None = None) -> ThumbnailUrlPolicy:
@@ -79,13 +99,20 @@ class ThumbnailUrlPolicy:
                     origin = candidate
         return cls(source_origin=origin)
 
+    @classmethod
+    def for_youtube_channel(cls, channel_url: str) -> ThumbnailUrlPolicy:
+        validated_channel_url(channel_url)
+        return cls(channel_artwork=True)
+
     def validate(self, url: str) -> str:
         raw_url = str(url)
         parsed = urllib.parse.urlsplit(raw_url)
         if parsed.fragment:
             raise RuntimeError("Thumbnail URLs must not contain fragments")
         origin = _normalized_origin(raw_url, label="Thumbnail URL")
-        if origin.host in YOUTUBE_THUMBNAIL_HOSTS:
+        if origin.host in YOUTUBE_THUMBNAIL_HOSTS or (
+            self.channel_artwork and origin.host in YOUTUBE_CHANNEL_ART_HOSTS
+        ):
             if origin.scheme != "https" or origin.port != 443:
                 raise RuntimeError(
                     "YouTube thumbnail URLs must use the standard HTTPS authority"
@@ -120,6 +147,7 @@ def download_bounded_url_bytes(
     source_url: str | None = None,
     timeout_seconds: float = 30,
     max_bytes: int = THUMBNAIL_DOWNLOAD_MAX_BYTES,
+    policy: ThumbnailUrlPolicy | None = None,
 ) -> bytes:
     """Download a thumbnail with strict authority, redirect, time, and memory bounds."""
     if timeout_seconds <= 0:
@@ -127,7 +155,7 @@ def download_bounded_url_bytes(
     if max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
 
-    policy = ThumbnailUrlPolicy.for_source(source_url)
+    policy = policy or ThumbnailUrlPolicy.for_source(source_url)
     requested_url = policy.validate(url)
     opener = urllib.request.build_opener(_PolicyRedirectHandler(policy))
     request = urllib.request.Request(

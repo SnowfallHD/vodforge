@@ -166,6 +166,18 @@ def _parser() -> argparse.ArgumentParser:
     telemetry.add_argument("--expected-counts", type=Path, required=True)
     telemetry.add_argument("--platform", choices=("macos", "windows"), required=True)
     telemetry.add_argument("--output", type=Path, required=True)
+    private = subparsers.add_parser(
+        "private-install",
+        help="Gate and install an exact private candidate; preserve rollback",
+    )
+    for flag in (
+        "candidate",
+        "normal-result",
+        "e2e-result",
+        "negative-controls",
+        "target",
+    ):
+        private.add_argument("--" + flag, type=Path, required=True)
     doctor = subparsers.add_parser(
         "doctor",
         help="Verify harness runtimes and dependencies without running media jobs",
@@ -540,6 +552,13 @@ def run_profile(
             ),
         )
         server_receipt = server.state.snapshot()
+    from .source_identity import source_manifest
+
+    after_manifest = source_manifest(repo_root)
+    repository["source_manifest_unchanged"] = (
+        repository.get("source_manifest_sha256") == after_manifest["sha256"]
+    )
+    repository["source_manifest_after_sha256"] = after_manifest["sha256"]
     summary, aggregate = summarize(scenarios)
     result: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -625,6 +644,10 @@ def main(argv: list[str] | None = None) -> None:
                 args, repo_root=repo_root, harness_root=harness_root
             )
         )
+    if args.command == "private-install":
+        from .private_review import install_private_review
+
+        raise SystemExit(install_private_review(args, harness_root=harness_root))
     if args.command == "doctor":
         raise SystemExit(
             run_doctor(args, repo_root=repo_root, harness_root=harness_root)

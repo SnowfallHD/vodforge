@@ -11,6 +11,7 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
+from .diagnostic_pipeline import diagnostic_surface_contract
 from .fault_server import FixtureHTTPServer
 from .maintainability import change_surface_probe
 from .metrics import LifecycleCheckpointRecorder, lifecycle_growth_summary
@@ -23,8 +24,10 @@ from .pipeline import (
     build_job,
     make_headless_app,
 )
+from .recovery_contract import REGRESSION_CLASSES, recovery_class_contract
 from .reliability import batch_failure_report_reset_probe
 from .reliability_static import activity_log_failure_receipt_probe
+from .scene_contract import SCENE_CLASSES, scene_class_contract
 from .security import (
     fresh_output_contract_probe,
     path_and_subprocess_probe,
@@ -118,6 +121,10 @@ def _scenario_from_pipeline(
     metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resources = result.get("resource_metrics") or {}
+    observer_failed = (
+        bool(result.get("control_observer_errors"))
+        or result.get("control_observer_stopped") is False
+    )
     job_completed = int(
         result.get("error") is None and int(result.get("media_output_count") or 0) > 0
     )
@@ -159,10 +166,18 @@ def _scenario_from_pipeline(
         "id": scenario_id,
         "evidence_tier": "headless_production_pipeline",
         "category": category,
-        "status": "passed" if passed else "failed",
+        "status": "error" if observer_failed else "passed" if passed else "failed",
         "duration_seconds": float(result.get("duration_seconds") or 0),
         "metrics": combined_metrics,
-        "evidence": evidence,
+        "evidence": evidence
+        + (
+            [
+                "Harness control observer failed or remained active: "
+                + str(result.get("control_observer_errors"))
+            ]
+            if observer_failed
+            else []
+        ),
         "artifacts": [str(Path(entry["path"])) for entry in result.get("outputs", [])]
         + [result.get("diagnostics_path", "")],
         "error": result.get("error"),
@@ -2736,14 +2751,38 @@ def run_scenarios(
                 repo_root, run_root / "cases" / "telemetry-local", runner, server
             ),
         ),
+        (
+            "unit_static.telemetry_presentation_contract",
+            lambda: diagnostic_surface_contract(
+                repo_root, run_root / "cases" / "telemetry-presentation"
+            ),
+        ),
         ("unit_static.telemetry_isolation", isolation_receipt),
         (
             "unit_static.native_surface_contract",
             lambda: native_surface_contract(
-                repo_root, run_root / "cases" / "native-ui"
+                repo_root, run_root / "cases" / "native-ui", profile=profile
             ),
         ),
     ]
+    registry.extend(
+        (
+            "unit_static.recovery_" + name,
+            lambda name=name: recovery_class_contract(
+                repo_root, run_root / "cases" / ("recovery-" + name), name
+            ),
+        )
+        for name in REGRESSION_CLASSES
+    )
+    registry.extend(
+        (
+            "unit_static.scene_" + name,
+            lambda name=name: scene_class_contract(
+                repo_root, run_root / "cases" / ("scene-" + name), name
+            ),
+        )
+        for name in SCENE_CLASSES
+    )
     if include_public or deep:
         registry.insert(
             2,
@@ -2785,6 +2824,9 @@ def run_scenarios(
                     "Reproduce the recorded exception, determine whether the harness contract or production seam changed, and add a harness self-test.",
                 )
             ]
+        from .interaction_coverage import interaction_coverage
+
+        scenario["interaction_coverage"] = interaction_coverage(scenario)
         scenarios.append(scenario)
         findings.extend(scenario_findings)
     return scenarios, findings

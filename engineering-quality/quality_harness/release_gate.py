@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from .recovery_contract import REQUIRED_SCENARIOS as RECOVERY_REQUIRED_SCENARIOS
+from .scene_contract import REQUIRED_SCENARIOS as SCENE_REQUIRED_SCENARIOS
 from .schema_validation import validate_receipt_schema
 from .util import json_dump
 
@@ -55,6 +57,8 @@ NORMAL_REQUIRED_SCENARIOS = frozenset(
         "unit_static.bounded_mutation_history",
     }
 )
+
+NORMAL_REQUIRED_SCENARIOS |= RECOVERY_REQUIRED_SCENARIOS | SCENE_REQUIRED_SCENARIOS
 
 DEEP_REQUIRED_SCENARIOS = NORMAL_REQUIRED_SCENARIOS | {
     "correctness.public_w3c_generic_boundary",
@@ -413,6 +417,38 @@ def evaluate_engineering_result(
                 scenarios[scenario_id],
                 prefix=prefix,
                 required=True,
+            )
+        )
+
+    from .interaction_coverage import interaction_coverage
+
+    for scenario_id in sorted(set(expected) | set(scenarios)):
+        # NORMAL deliberately uses separate packaged evidence; its absence here
+        # cannot waive the independent packaged release gate.
+        if scenario_id == "packaged_app_e2e.full_journey" and profile == "normal":
+            continue
+        coverage = interaction_coverage(scenarios.get(scenario_id, {"id": scenario_id}))
+        checks.append(
+            _check(
+                f"{prefix}.interaction.{scenario_id}",
+                label=f"Interaction assertion coverage: {scenario_id}",
+                status="passed"
+                if coverage["status"] == "not_applicable"
+                else "unproven",
+                required=True,
+                evidence=[coverage["reason"]],
+            )
+        )
+        usability = coverage["usability_review"]
+        checks.append(
+            _check(
+                f"{prefix}.usability.{scenario_id}",
+                label=f"Usability evidence: {scenario_id}",
+                status="passed"
+                if usability["status"] == "not_applicable"
+                else "unproven",
+                required=True,
+                evidence=[usability["reason"]],
             )
         )
 

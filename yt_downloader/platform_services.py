@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 
@@ -13,6 +12,38 @@ from typing import Any
 
 APPLICATION_NAME = "VODForge"
 RUNTIME_SMOKE_PROBE_TIMEOUT_SECONDS = 60
+
+
+def file_change_time_ns(descriptor: int, observed: os.stat_result) -> int:
+    """Use the owned handle's mutation clock, never Windows path birth time."""
+    if os.name == "nt":
+        from .platforms.windows.filesystem import file_change_time_ns as native_time
+
+        return native_time(descriptor)
+    return observed.st_ctime_ns
+
+
+def supports_tk_event(widget: Any, sequence: str) -> bool:
+    """Parse an event on an unattached Tcl tag without registering a Python callback."""
+    import tkinter as tk
+    from uuid import uuid4
+
+    # A read-only bind lookup accepts even unknown event names on Tk 8.6.
+    # A script binding forces parsing. The private tag is never attached to a
+    # widget, so the probe cannot consume input or invoke application callbacks.
+    tag = f"VODForgeEventProbe-{uuid4().hex}"
+    if widget.tk.call("bind", tag):
+        return False  # Never replace or clean up another owner's tag.
+    try:
+        widget.tk.call("bind", tag, sequence, "break")
+    except tk.TclError:
+        return False
+    finally:
+        try:
+            widget.tk.call("bind", tag, sequence, "")
+        except tk.TclError:
+            pass
+    return True
 
 
 def is_windows(platform_name: str | None = None) -> bool:
@@ -28,59 +59,17 @@ def is_macos(platform_name: str | None = None) -> bool:
 
 
 def request_window_foreground(root: Any) -> bool:
-    """Request activation once, or briefly signal taskbar attention on refusal.
-
-    Tk keyboard focus alone does not activate a Windows application. Never
-    attach input queues, synthesize input, or leave the window always-on-top.
-    """
+    """Request cooperative activation; attention is never successful activation."""
     root.lift()
     if is_macos():
-        try:
-            from AppKit import NSApplication
+        from .platforms.macos.windowing import request_window_foreground as activate
 
-            application = NSApplication.sharedApplication()
-            if application.respondsToSelector_("activate"):
-                application.activate()  # Current AppKit cooperative activation API.
-            else:
-                application.activateIgnoringOtherApps_(True)  # macOS before 14.
-            return bool(application.isActive())
-        except (ImportError, AttributeError, RuntimeError):
-            return False  # Tk focus remains available if the bridge is unavailable.
-    if not is_windows():
-        return False
-    import ctypes
-    from ctypes import wintypes
+        return activate(root)
+    if is_windows():
+        from .platforms.windows.windowing import request_window_foreground as activate
 
-    try:
-        user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
-        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
-        user32.GetAncestor.restype = wintypes.HWND
-        user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-        user32.SetForegroundWindow.restype = wintypes.BOOL
-        hwnd = user32.GetAncestor(root.winfo_id(), 2)  # GA_ROOT: Tk's native wrapper
-        if not hwnd:
-            return False
-        if user32.SetForegroundWindow(hwnd):
-            return True
-
-        # Windows may withhold foreground permission after a browser handoff.
-        # FLASHW_TRAY is attention only, not activation or an infinite flash loop.
-        class FlashInfo(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", wintypes.UINT),
-                ("hwnd", wintypes.HWND),
-                ("dwFlags", wintypes.DWORD),
-                ("uCount", wintypes.UINT),
-                ("dwTimeout", wintypes.DWORD),
-            ]
-
-        user32.FlashWindowEx.argtypes = [ctypes.POINTER(FlashInfo)]
-        user32.FlashWindowEx.restype = wintypes.BOOL
-        info = FlashInfo(ctypes.sizeof(FlashInfo), hwnd, 2, 3, 0)
-        user32.FlashWindowEx(ctypes.byref(info))
-        return False  # Attention is never reported as successful activation.
-    except (AttributeError, OSError):
-        return False
+        return activate(root)
+    return False
 
 
 def install_native_quit_handler(
@@ -147,15 +136,11 @@ def runtime_window_icon_asset(platform_name: str | None = None) -> str | None:
 
 
 def configure_windows_app_identity(platform_name: str | None = None) -> bool:
-    """Give Windows a stable taskbar identity instead of a Python/Tk fallback."""
     if not is_windows(platform_name):
         return False
-    import ctypes
+    from .platforms.windows.windowing import configure_app_identity
 
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(  # type: ignore[attr-defined]
-        "SnowfallHD.VODForge"
-    )
-    return True
+    return configure_app_identity()
 
 
 def runtime_executable_candidates(
@@ -218,61 +203,22 @@ def find_runtime_executable(tool_name: str) -> str | None:
     return shutil.which(tool_name)
 
 
-def hidden_window_subprocess_kwargs(
-    platform_name: str | None = None,
-) -> dict[str, Any]:
-    """Return the one shared policy for console-free child processes on Windows."""
-    startupinfo = None
-    creationflags = 0
+def hidden_window_subprocess_kwargs(platform_name: str | None = None) -> dict[str, Any]:
     if is_windows(platform_name):
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore[attr-defined]
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW  # type: ignore[attr-defined]
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return {"startupinfo": startupinfo, "creationflags": creationflags}
+        from .platforms.windows.processes import (
+            hidden_window_subprocess_kwargs as options,
+        )
+
+        return options()
+    return {"startupinfo": None, "creationflags": 0}
 
 
 def choose_windows_output_directory(
-    initial_dir: str,
-    *,
-    runner: Any = subprocess.run,
+    initial_dir: str, *, runner: Any = subprocess.run
 ) -> str | None:
-    """Run the Windows shell folder picker out of process so shell failures cannot close VODForge."""
-    command = (
-        "$utf8=New-Object System.Text.UTF8Encoding($false);"
-        "[Console]::OutputEncoding=$utf8;$OutputEncoding=$utf8;"
-        "Add-Type -AssemblyName System.Windows.Forms;"
-        "$dialog=New-Object System.Windows.Forms.FolderBrowserDialog;"
-        "$dialog.Description='Choose where VODForge should save downloads.';"
-        "$dialog.ShowNewFolderButton=$true;"
-        "$initial=$env:VODFORGE_INITIAL_OUTPUT_DIR;"
-        "if($initial -and (Test-Path -LiteralPath $initial -PathType Container)){$dialog.SelectedPath=$initial};"
-        "if($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){"
-        "@{path=$dialog.SelectedPath} | ConvertTo-Json -Compress}"
-    )
-    environment = os.environ.copy()
-    environment["VODFORGE_INITIAL_OUTPUT_DIR"] = initial_dir
-    result = runner(
-        ["powershell.exe", "-NoProfile", "-STA", "-Command", command],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=environment,
-        **hidden_window_subprocess_kwargs("win32"),
-    )
-    if result.returncode:
-        detail = str(result.stderr or "").strip()
-        raise RuntimeError(detail or "Windows could not open the folder browser.")
-    output = str(result.stdout or "").strip()
-    if not output:
-        return None
-    try:
-        payload = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("Windows returned an unreadable folder selection.") from exc
-    selected = payload.get("path") if isinstance(payload, dict) else None
-    return str(selected) if selected else None
+    from .platforms.windows.dialogs import choose_windows_output_directory as choose
+
+    return choose(initial_dir, runner=runner)
 
 
 def choose_output_directory(
@@ -333,13 +279,17 @@ def probe_runtime_version(
 def open_path(
     path: Path,
     *,
+    create: bool = True,
     platform_name: str | None = None,
     popen: Callable[[list[str]], Any] = subprocess.Popen,
     which: Callable[[str], str | None] = shutil.which,
     startfile: Callable[[Path], Any] | None = None,
 ) -> None:
     """Open a folder without deferring executable selection to subprocess PATH lookup."""
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    elif not path.is_dir():
+        raise OSError("The folder is unavailable.")
     if is_windows(platform_name):
         windows_startfile = (
             getattr(os, "startfile", None) if startfile is None else startfile
@@ -365,3 +315,124 @@ def open_path(
         opener = str(resolved_opener)
 
     popen([opener, str(path)])
+
+
+def capture_own_widget(widget: Any) -> Any:
+    """Capture only an owned view; an unavailable optional effect cannot block navigation."""
+    width, height = widget.winfo_width(), widget.winfo_height()
+    if width < 2 or height < 2 or width * height > 4_000_000:
+        return None
+    try:
+        if is_macos():
+            from .platforms.macos.surfaces import capture_own_widget as capture
+
+            return capture(widget, width, height)
+        if is_windows():
+            from .platforms.windows.surfaces import capture_own_widget as capture
+
+            return capture(widget, width, height)
+    except Exception:  # noqa: BLE001 - optional effect cannot block navigation
+        return None
+    return None
+
+
+def system_trash_available() -> bool:
+    """Recoverable native backends only; never permanent-delete fallback."""
+    try:
+        if is_macos():
+            from .platforms.macos.filesystem import system_trash_available as available
+
+            return available()
+        if is_windows():
+            from .platforms.windows.filesystem import (
+                system_trash_available as available,
+            )
+
+            return available()
+    except (ImportError, AttributeError, OSError):
+        pass
+    return False
+
+
+def trash_file(path: Path) -> str | None:
+    """Trash one authorized file, or fail without permanent deletion."""
+    if is_macos():
+        from .platforms.macos.filesystem import trash_file as trash
+
+        return trash(path)
+    if is_windows() and system_trash_available():
+        from .platforms.windows.filesystem import trash_file as trash
+
+        return trash(path)
+    raise OSError("System Trash is unavailable for this file.")
+
+
+def surface_backing_scale(widget: Any) -> int:
+    """Native raster backing scale; separate from typography and Tk scaling."""
+    if is_macos():
+        from .platforms.macos.surfaces import surface_backing_scale as backing_scale
+
+        return backing_scale(widget)
+    return 1
+
+
+def create_surface_image(
+    widget: Any,
+    bitmap: Any,
+    scale: int,
+    *,
+    logical_size: tuple[int, int] | None = None,
+    existing: Any = None,
+) -> tuple[Any, int]:
+    """Use native pixel backing when supported; preserve common Tk fallback."""
+    from PIL import Image, ImageTk
+
+    width, height = logical_size if logical_size is not None else bitmap.size
+    if is_macos() and scale > 1:
+        from .platforms.macos.surfaces import create_surface_image as native_image
+
+        result = native_image(
+            widget, bitmap, scale, logical_size=(width, height), existing=existing
+        )
+        if result is not None:
+            return result
+    fallback = (
+        bitmap
+        if bitmap.size == (width, height)
+        else bitmap.resize((width, height), Image.Resampling.LANCZOS)
+    )
+    if isinstance(existing, ImageTk.PhotoImage) and (
+        existing.width(),
+        existing.height(),
+    ) == (width, height):
+        existing.paste(fallback)
+        return existing, width * height * 4
+    return ImageTk.PhotoImage(fallback, master=widget), width * height * 4
+
+
+def present_pending_drawing(widget: Any, *, child_canvas_only: bool = False) -> bool:
+    """Bounded platform drawing before a shared surface becomes visible."""
+    if is_macos():
+        from .platforms.macos.surfaces import present_pending_drawing as present
+
+        return present(widget, child_canvas_only=child_canvas_only)
+    return True
+
+
+# Scrolling needs explicit drawing only for embedded child viewports; complete
+# destination reveals use the same owner for all widget layouts.
+def present_scrolled_canvas(widget: Any) -> None:
+    present_pending_drawing(widget, child_canvas_only=True)
+
+
+def integrate_main_window(
+    window: Any, title: str, diagnostic: Callable[[str], None]
+) -> bool:
+    """Keep common title semantics; native header integration requires Aqua."""
+    if window.tk.call("tk", "windowingsystem") != "aqua":
+        window.title(title)
+        window._native_toolbar_header = False
+        return False
+    from .platforms.macos.windowing import integrate_main_window as integrate
+
+    return integrate(window, title, diagnostic)
