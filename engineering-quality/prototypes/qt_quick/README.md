@@ -3,12 +3,14 @@
 The resize experiment has become an isolated application port under
 `yt_downloader/qt_quick`. The release entrypoint remains Tk while this port is
 qualified. Qt now uses the shared `DownloadWorkerCore` for real downloads,
-durable queue/recovery, and history writes; Library reads that history; Watch
+durable queue/recovery, and history writes; Library reads that history with
+the existing search/type projection; Watch
 uses Qt Multimedia; Activity shows in-session and recovered run status. Basic
-output, quality, and mode preferences use the existing settings store.
+output, quality, and mode preferences use the existing settings store. The
+existing local MP3 plus still-image transaction owner also feeds Qt and Library.
 
 This is not a replacement application or release candidate. Forge's remaining
-options, Library management, complete Watch behavior, local conversion,
+options, Library management, complete Watch behavior,
 analytics consent and telemetry, updater/repair, signed packaging, installed
 journeys, accessibility, and both-platform visual gates remain open.
 
@@ -19,7 +21,9 @@ journeys, accessibility, and both-platform visual gates remain open.
   `ui_button_contract.button_metrics` through one Qt adapter.
 - `StoneButton.qml` owns all button labels, icons, sizes, focus, pointer input,
   and material states in this slice. Navigation and popup options instantiate
-  that same control. Each material image is rendered at its allocated size;
+  that same control. The Watch controls pass the shared control's static-material
+  option, retaining their filled stone surface without a transient hover/press
+  background. Each material image is rendered at its allocated size;
   there is no nine-slice stretch of a nonstretchable surface.
 - `StoneField.qml` owns the shared recessed field surface. Qt Quick lays out
   and composites the view; backdrop artwork uses `PreserveAspectCrop` to stay
@@ -39,9 +43,20 @@ non-widget class; the remaining product owners still need port qualification.
   then completed, and only that valid output entered Library.
 - Mac Qt Multimedia loaded the committed MP4 with a 6037 ms duration and
   reached 2800 ms playback position without a provider error in offscreen QA.
+- Mac local conversion: a real 6-second fixture MP3 and still image created a
+  validated 720p MP4; a second run through the Qt bridge committed the output
+  into durable Library history. The shared-control QML dialog was rendered
+  and inspected. Library filter/Play source-index regression passes.
+- Genesis exact `86ef55c`: QA-only source and fixture hashes verified, real
+  MP4 worker/Library/ffprobe proof passed, offscreen Qt Multimedia advanced,
+  and physical Forge/Options/Library/Watch screens were inspected. The first
+  interactive Watch attempt failed because the elevated QA fixture file lacked
+  interactive `coop` read access. Granting that one QA file read permission
+  and restarting the exact QA app produced physical playback at 1/6 seconds.
+  Newer source changes still require Genesis qualification.
 - Existing Tk/worker/recovery tests passed after extracting the shared worker:
-  366 focused, then 3528 full-suite passing with 813 platform skips.
-- These are source-native checks. Windows, packaged, installed, and full visual
+  366 focused, then 3529 full-suite passing with 814 platform skips.
+- These are source-native checks. Packaged, installed, and full visual
   acceptance for this new port are still unverified.
 
 ## Native observations

@@ -20,6 +20,10 @@ Window {
             bridge.cancel()
             close.accepted = false
         }
+        if (bridge.localRunning) {
+            bridge.cancelLocalConversion()
+            close.accepted = false
+        }
     }
 
     MediaPlayer {
@@ -34,6 +38,18 @@ Window {
         id: outputFolderDialog
         title: "Choose output folder"
         onAccepted: bridge.chooseOutputUrl(selectedFolder)
+    }
+    FileDialog {
+        id: localAudioDialog
+        title: "Choose MP3 audio"
+        nameFilters: ["MP3 audio (*.mp3)"]
+        onAccepted: bridge.setLocalAudioUrl(selectedFile)
+    }
+    FileDialog {
+        id: localImageDialog
+        title: "Choose still image"
+        nameFilters: ["Images (*.jpg *.jpeg *.png *.webp)"]
+        onAccepted: bridge.setLocalImageUrl(selectedFile)
     }
 
     Image {
@@ -97,6 +113,7 @@ Window {
                     placeholderTextColor: theme.muted
                     background: Item {}
                     font.pixelSize: 15
+                    onTextChanged: bridge.setLibrarySearch(text)
                     onAccepted: bridge.select("Library")
                 }
             }
@@ -225,8 +242,7 @@ Window {
                     label: "Create video"
                     Layout.preferredWidth: 132
                     Layout.preferredHeight: 42
-                    enabled: false
-                    onActivated: bridge.select("Forge")
+                    onActivated: localConversionPopup.open()
                 }
             }
 
@@ -340,7 +356,22 @@ Window {
                 anchors.fill: parent
                 spacing: 16
                 Text { text: "Library"; color: theme.text; font.pixelSize: 26; font.bold: true }
-                Text { text: bridge.history.length + " saved item(s)"; color: theme.muted; font.pixelSize: 15 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: bridge.history.length + " matching item(s)"; color: theme.muted; font.pixelSize: 15 }
+                    Item { Layout.fillWidth: true }
+                    Repeater {
+                        model: ["All", "MP4", "MP3", "Original audio"]
+                        StoneButton {
+                            required property string modelData
+                            label: modelData === "All" ? "All media" : modelData
+                            selected: bridge.libraryType === modelData
+                            Layout.preferredWidth: modelData === "Original audio" ? 130 : 96
+                            Layout.preferredHeight: 38
+                            onActivated: bridge.setLibraryType(modelData)
+                        }
+                    }
+                }
                 ListView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -365,7 +396,7 @@ Window {
                                 label: "Play"
                                 Layout.preferredWidth: 72
                                 Layout.preferredHeight: 38
-                                onActivated: bridge.openLibraryItem(index)
+                                onActivated: bridge.openLibraryItem(modelData.sourceIndex)
                             }
                         }
                     }
@@ -400,12 +431,13 @@ Window {
                     value: mediaPlayer.position
                     onMoved: mediaPlayer.setPosition(value)
                     background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                    handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: "" }
+                    handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                 }
                 RowLayout {
                     Layout.fillWidth: true
                     StoneButton {
                         label: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
+                        transientMaterial: false
                         Layout.preferredWidth: 95
                         Layout.preferredHeight: 40
                         onActivated: mediaPlayer.playbackState === MediaPlayer.PlayingState ? mediaPlayer.pause() : mediaPlayer.play()
@@ -418,7 +450,7 @@ Window {
                         from: 0; to: 1; value: audioOutput.volume
                         onMoved: audioOutput.volume = value
                         background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                        handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: "" }
+                        handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                     }
                 }
             }
@@ -455,6 +487,77 @@ Window {
         }
     }
 
+    Popup {
+        id: localConversionPopup
+        objectName: "localConversionPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(500, window.width - 40)
+        height: 310
+        padding: 18
+        modal: true
+        closePolicy: bridge.localRunning ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+            Text { text: "Create video from local audio"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text { text: "Choose an MP3 and a still image. The MP4 saves to your output folder."; color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneField {
+                    Layout.fillWidth: true; Layout.preferredHeight: 42
+                    Text { anchors.fill: parent; anchors.margins: 12; text: bridge.localAudio || "Choose MP3 audio"; color: theme.text; font.pixelSize: 14; elide: Text.ElideMiddle; verticalAlignment: Text.AlignVCenter }
+                }
+                StoneButton { label: "Browse"; Layout.preferredWidth: 85; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localAudioDialog.open() }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneField {
+                    Layout.fillWidth: true; Layout.preferredHeight: 42
+                    Text { anchors.fill: parent; anchors.margins: 12; text: bridge.localImage || "Choose still image"; color: theme.text; font.pixelSize: 14; elide: Text.ElideMiddle; verticalAlignment: Text.AlignVCenter }
+                }
+                StoneButton { label: "Browse"; Layout.preferredWidth: 85; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localImageDialog.open() }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "Profile"; color: theme.muted; font.pixelSize: 14 }
+                Item { Layout.fillWidth: true }
+                StoneButton { label: bridge.localProfile + "  ▾"; Layout.preferredWidth: 295; Layout.preferredHeight: 38; enabled: !bridge.localRunning; onActivated: localProfilePopup.open() }
+            }
+            Text { text: bridge.localProgress || bridge.status; color: theme.muted; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Close"; Layout.preferredWidth: 82; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localConversionPopup.close() }
+                StoneButton { label: bridge.localRunning ? "Stop" : "Create MP4"; emphasized: !bridge.localRunning; Layout.preferredWidth: 110; Layout.preferredHeight: 40; onActivated: bridge.localRunning ? bridge.cancelLocalConversion() : bridge.startLocalConversion() }
+            }
+        }
+    }
+    Popup {
+        id: localProfilePopup
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: 320
+        height: 184
+        padding: 3
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
+        Column {
+            anchors.fill: parent
+            spacing: 2
+            Repeater {
+                model: localVideoProfiles
+                StoneButton {
+                    required property string modelData
+                    width: 314; height: 42
+                    label: modelData
+                    selected: bridge.localProfile === modelData
+                    onActivated: { bridge.setLocalProfile(modelData); localProfilePopup.close() }
+                }
+            }
+        }
+    }
     Popup {
         id: formatMenu
         x: Math.max(0, window.width - window.gutter - 375)

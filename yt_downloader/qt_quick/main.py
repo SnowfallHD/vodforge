@@ -20,7 +20,15 @@ from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.export_planning import QUALITY_OPTIONS
 from yt_downloader.history import HistoryError, history_output_path
+from yt_downloader.library_search import LIBRARY_ALL_MEDIA, library_visible_indices
+from yt_downloader.local_audio_video import (
+    LOCAL_VIDEO_PROFILE_OPTIONS,
+    LocalAudioVideoError,
+    LocalAudioVideoProgress,
+    LocalAudioVideoResult,
+)
 from yt_downloader.models import OutputType
+from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadRuntime
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
@@ -107,10 +115,14 @@ class Bridge(QObject):
     outputFormatChanged = Signal()
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
+    librarySearchChanged = Signal()
+    libraryTypeChanged = Signal()
+    localChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._local = LocalConversionRuntime()
         self._settings_path = settings_file_path()
         try:
             self._settings = load_settings(self._settings_path)
@@ -148,6 +160,13 @@ class Bridge(QObject):
             saved_quality if saved_quality in QUALITY_OPTIONS else "1080p Full HD"
         )
         self._playback_url = QUrl()
+        self._library_search = ""
+        self._library_type = LIBRARY_ALL_MEDIA
+        self._local_audio = ""
+        self._local_image = ""
+        self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
+        self._local_progress = ""
+        self._local_running = False
         self._event_log = event_log
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pump)
@@ -196,12 +215,44 @@ class Bridge(QObject):
     def history(self) -> list[dict[str, str]]:
         return [
             {
+                "sourceIndex": index,
                 "title": str(item.get("title") or "Untitled media"),
                 "type": str(item.get("vodforge_output_type") or "MP4"),
                 "path": str(item.get("vodforge_output_path") or ""),
             }
-            for item in self._runtime.history
+            for index in library_visible_indices(
+                self._runtime.history, self._library_type, self._library_search
+            )
+            for item in [self._runtime.history[index]]
         ]
+
+    @Property(str, notify=librarySearchChanged)
+    def librarySearch(self) -> str:
+        return self._library_search
+
+    @Property(str, notify=libraryTypeChanged)
+    def libraryType(self) -> str:
+        return self._library_type
+
+    @Property(str, notify=localChanged)
+    def localAudio(self) -> str:
+        return self._local_audio
+
+    @Property(str, notify=localChanged)
+    def localImage(self) -> str:
+        return self._local_image
+
+    @Property(str, notify=localChanged)
+    def localProfile(self) -> str:
+        return self._local_profile
+
+    @Property(str, notify=localChanged)
+    def localProgress(self) -> str:
+        return self._local_progress
+
+    @Property(bool, notify=localChanged)
+    def localRunning(self) -> bool:
+        return self._local_running
 
     @Property("QVariantList", notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
@@ -219,6 +270,70 @@ class Bridge(QObject):
         self._selection = name
         self.selectionChanged.emit()
         self._record("select", name)
+
+    @Slot(str)
+    def setLibrarySearch(self, query: str) -> None:
+        query = query[:500]
+        if query == self._library_search:
+            return
+        self._library_search = query
+        self.librarySearchChanged.emit()
+        self.historyChanged.emit()
+
+    @Slot(str)
+    def setLibraryType(self, output_type: str) -> None:
+        if output_type not in {LIBRARY_ALL_MEDIA, *(item.value for item in OutputType)}:
+            return
+        if output_type == self._library_type:
+            return
+        self._library_type = output_type
+        self.libraryTypeChanged.emit()
+        self.historyChanged.emit()
+
+    @Slot(QUrl)
+    def setLocalAudioUrl(self, url: QUrl) -> None:
+        if url.isLocalFile():
+            self._local_audio = url.toLocalFile()
+            self.localChanged.emit()
+
+    @Slot(QUrl)
+    def setLocalImageUrl(self, url: QUrl) -> None:
+        if url.isLocalFile():
+            self._local_image = url.toLocalFile()
+            self.localChanged.emit()
+
+    @Slot(str)
+    def setLocalProfile(self, profile: str) -> None:
+        if profile in LOCAL_VIDEO_PROFILE_OPTIONS:
+            self._local_profile = profile
+            self.localChanged.emit()
+
+    @Slot()
+    def startLocalConversion(self) -> None:
+        try:
+            if not self._settings_writable:
+                raise SettingsError(
+                    "Settings need attention before a conversion can start."
+                )
+            self._local.start(
+                Path(self._local_audio),
+                Path(self._local_image),
+                Path(self._output_path),
+                self._local_profile,
+            )
+        except (LocalAudioVideoError, OSError, SettingsError, ValueError) as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return
+        self._local_running = True
+        self._local_progress = "Preparing local video…"
+        self.localChanged.emit()
+
+    @Slot()
+    def cancelLocalConversion(self) -> None:
+        self._local.cancel()
+        self._local_progress = "Stopping local conversion…"
+        self.localChanged.emit()
 
     @Slot(str)
     def setOutputPath(self, value: str) -> None:
@@ -326,8 +441,28 @@ class Bridge(QObject):
         if events:
             self.activityChanged.emit()
             self.runningChanged.emit()
+        for kind, payload in self._local.poll():
+            if kind == "progress" and isinstance(payload, LocalAudioVideoProgress):
+                self._local_progress = payload.label
+            elif kind == "done" and isinstance(payload, LocalAudioVideoResult):
+                try:
+                    self._runtime.record_local_conversion(payload)
+                except (HistoryError, OSError, ValueError):
+                    self._status = "Video saved, but Library history needs attention."
+                else:
+                    self._status = f"Created {payload.output_path.name}"
+                    self.historyChanged.emit()
+                    self.select("Library")
+                self._local_running = False
+                self.statusChanged.emit()
+            elif kind == "error":
+                self._status = str(payload)
+                self._local_running = False
+                self.statusChanged.emit()
+            self.localChanged.emit()
 
     def close(self) -> None:
+        self._local.close()
         self._runtime.close()
 
     @Slot(str, str)
@@ -368,6 +503,9 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine.rootContext().setContextProperty("theme", dict(THEME))
     engine.rootContext().setContextProperty("buttonFontFamily", FONT_UI_FAMILY)
     engine.rootContext().setContextProperty("qualityOptions", list(QUALITY_OPTIONS))
+    engine.rootContext().setContextProperty(
+        "localVideoProfiles", list(LOCAL_VIDEO_PROFILE_OPTIONS)
+    )
     engine.rootContext().setContextProperty(
         "buttonMetrics",
         {

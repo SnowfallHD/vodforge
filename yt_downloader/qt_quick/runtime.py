@@ -29,6 +29,7 @@ from yt_downloader.history import (
     save_history,
     upsert_history,
 )
+from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.models import (
     DownloadJob,
     ExportMode,
@@ -258,6 +259,25 @@ class DownloadRuntime:
         target = Path(reconciled.get("vodforge_output_dir") or target)
         updated = upsert_history(
             self.history, reconciled, target, replace_missing_media=True
+        )
+        save_history(self.history_path, updated)
+        self.history = updated
+
+    def record_local_conversion(self, result: LocalAudioVideoResult) -> None:
+        """Commit a completed local video through the same durable Library owner."""
+        from yt_downloader.app import save_custom_cached_thumbnail_image
+
+        metadata = dict(result.history_metadata)
+        try:
+            save_custom_cached_thumbnail_image(metadata, result.image_path)
+        except (OSError, RuntimeError, ValueError):
+            # The media and Library record remain valid without cached artwork.
+            pass
+        updated = upsert_history(
+            self.history,
+            metadata,
+            result.output_path.parent,
+            replace_missing_media=True,
         )
         save_history(self.history_path, updated)
         self.history = updated

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from yt_downloader.app import DownloaderApp, DownloadWorkerCore
+from yt_downloader.history import load_history
+from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.qt_quick import runtime as qt_runtime
 from yt_downloader.run_state import ActiveRunStore
 
@@ -74,4 +76,41 @@ def test_qt_queue_survives_stopped_attempt_and_starts_next(
         ] == [first.run_id]
     finally:
         first_may_finish.set()
+        runtime.close()
+
+
+def test_qt_local_conversion_commits_into_the_durable_library(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from yt_downloader import app as app_module
+
+    history_path = tmp_path / "download-history.json"
+    state_path = tmp_path / "active-run.json"
+    output_path = tmp_path / "created.mp4"
+    image_path = tmp_path / "cover.jpg"
+    output_path.write_bytes(b"media")
+    image_path.write_bytes(b"image")
+    monkeypatch.setattr(qt_runtime, "history_file_path", lambda: history_path)
+    monkeypatch.setattr(qt_runtime, "run_state_file_path", lambda: state_path)
+    monkeypatch.setattr(
+        app_module, "save_custom_cached_thumbnail_image", lambda *_args: None
+    )
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        runtime.record_local_conversion(
+            LocalAudioVideoResult(
+                output_path=output_path,
+                image_path=image_path,
+                history_metadata={
+                    "id": "local-1",
+                    "title": "Created locally",
+                    "vodforge_output_type": "MP4",
+                    "vodforge_output_path": str(output_path),
+                    "vodforge_run_id": "local-run-1",
+                },
+            )
+        )
+        assert len(runtime.history) == 1
+        assert load_history(history_path)[0]["vodforge_run_id"] == "local-run-1"
+    finally:
         runtime.close()

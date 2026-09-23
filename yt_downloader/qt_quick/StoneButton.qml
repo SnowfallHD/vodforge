@@ -6,6 +6,8 @@ Item {
     property string icon: ""
     property bool selected: false
     property bool emphasized: false
+    property bool transientMaterial: true
+    property bool interactive: true
     property string size: "default"
     signal activated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
@@ -17,7 +19,7 @@ Item {
         anchors.fill: parent
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
-                + (mouse.pressed ? "pressed" : (mouse.containsMouse || control.selected ? "hover" : "normal"))
+                + (!control.transientMaterial ? "normal" : mouse.pressed ? "pressed" : (mouse.containsMouse || control.selected ? "hover" : "normal"))
                 + "/" + (control.emphasized ? "1" : "0")
         fillMode: Image.Stretch
         cache: true
@@ -48,9 +50,10 @@ Item {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
+        enabled: control.interactive
         cursorShape: Qt.PointingHandCursor
         onClicked: control.activated()
     }
-    Keys.onReturnPressed: control.activated()
-    Keys.onSpacePressed: control.activated()
+    Keys.onReturnPressed: { if (control.interactive && control.enabled) control.activated() }
+    Keys.onSpacePressed: { if (control.interactive && control.enabled) control.activated() }
 }
