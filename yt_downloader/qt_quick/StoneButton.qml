@@ -14,6 +14,13 @@ Item {
                             + (icon.length ? buttonMetrics[size].iconPixels + 8 : 0), 44)
     implicitHeight: buttonMetrics[size].height
     activeFocusOnTab: true
+    Accessible.role: Accessible.Button
+    Accessible.name: control.label
+    Accessible.focusable: control.interactive && control.enabled
+    Accessible.focused: control.activeFocus
+    Accessible.onPressAction: {
+        if (control.interactive && control.enabled) control.activated()
+    }
 
     Image {
         anchors.fill: parent

@@ -82,7 +82,7 @@ journeys, accessibility, and both-platform visual gates remain open.
   `field_border_image`, `ui_materials.backdrop_pixels`, theme, and
   `ui_button_contract.button_metrics` through one Qt adapter.
 - `StoneButton.qml` owns all button labels, icons, sizes, focus, pointer input,
-  and material states in this slice. Navigation and popup options instantiate
+  accessibility role/name/press action, and material states in this slice. Navigation and popup options instantiate
   that same control. The Watch controls pass the shared control's static-material
   option, retaining their filled stone surface without a transient hover/press
   background. Each material image is rendered at its allocated size;
@@ -144,6 +144,17 @@ non-widget class; the remaining product owners still need port qualification.
   Mac. This is source proof for the current dirty checkout, not a package.
 - The functional journeys above are source-native checks. Full packaged,
   installed, and visual acceptance for this new port remain open.
+
+The exact `13315ed` Mac diagnostic package rendered Forge, Library, Watch,
+chapter and heatmap views through its isolated profile. Its saved 6-second
+fixture played with sound/video timing and a chapter click moved the observed
+timeline to 2 seconds. The package still lacks Developer ID signing and
+installed acceptance. Native macOS AX inspection exposed a separate defect:
+the visually rendered shared stone buttons were absent from the accessibility
+tree. `StoneButton` now owns Qt's button role, label, focus state, and press
+action; an offscreen Qt accessibility test invokes Library through that action
+and verifies hidden-view controls remain invisible. This newer control change
+still needs an exact packaged AX readback on both platforms.
 
 An opt-in `VODFORGE_UI=qt` package path now builds an ad hoc signed Mac Qt app
 without changing the production Tk entrypoint. The first Mac candidate passed
