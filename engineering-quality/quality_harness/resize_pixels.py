@@ -87,3 +87,14 @@ def assess_static_resize_frames(
         "drag_width_changes": drag_changes,
         "scope": "sampled own-window server pixels; static Forge fixture",
     }
+
+
+def require_responsive_resize(
+    assessment: dict[str, Any], max_gap_ms: float
+) -> dict[str, Any]:
+    """A visually complete frame cannot excuse a frozen native sizing loop."""
+    result = {**assessment, "max_heartbeat_gap_ms": round(max_gap_ms, 1)}
+    if max_gap_ms > 200:
+        result["passed"] = False
+        result["cadence_failure"] = "UI timer stalled over 200 ms during native drag"
+    return result

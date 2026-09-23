@@ -63,6 +63,7 @@ class MatteBackdrop:
         self.photo: ImageTk.PhotoImage | None = None
         self.item: int | None = None
         self.identity: tuple | None = None
+        self.position: tuple[int, int] | None = None
         self.builds = 0
         self.pending: str | None = None
         self.geometry_bindings: list[tuple[tk.Misc, str, str]] = []
@@ -104,10 +105,12 @@ class MatteBackdrop:
             self.geometry_bindings.clear()
             self.photo = None
             self.item = None
+            self.position = None
 
     def draw(self) -> None:
         identity = theme_palette_snapshot()
-        if identity != self.identity:
+        theme_changed = identity != self.identity
+        if theme_changed:
             root = self.canvas.winfo_toplevel()
             shared = getattr(root, "_matte_texture", None)
             if shared is None or shared[0] != identity:
@@ -123,12 +126,15 @@ class MatteBackdrop:
             self.identity = identity
             self.builds += 1
         try:
-            self.canvas.configure(bg=THEME["bg"])
+            if theme_changed:
+                self.canvas.configure(bg=THEME["bg"])
             if self.item is None or not self.canvas.type(self.item):
                 self.item = self.canvas.create_image(
                     0, 0, anchor="ne", image=self.photo, tags=("matte-decoration",)
                 )
-            else:
+                self.position = None
+                self.canvas.tag_lower(self.item)
+            elif theme_changed:
                 self.canvas.itemconfigure(self.item, image=self.photo)
             anchor = getattr(self.canvas, "_matte_anchor", None)
             x = max(1, self.canvas.winfo_width())
@@ -140,8 +146,9 @@ class MatteBackdrop:
                     - self.canvas.winfo_rootx()
                 )
                 y = anchor.winfo_rooty() - self.canvas.winfo_rooty()
-            self.canvas.coords(self.item, x, y)
-            self.canvas.tag_lower(self.item)
+            if self.position != (x, y):
+                self.canvas.coords(self.item, x, y)
+                self.position = (x, y)
         except tk.TclError:
             return
 

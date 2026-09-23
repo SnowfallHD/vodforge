@@ -553,9 +553,20 @@ with (
             app.after(16, beat)
 
     def complete():
+        starts = [x for x in events if x["event"] == "drag_start"]
+        ends = [x for x in events if x["event"] == "drag_end"]
+        intervals = list(zip(starts, ends, strict=False))
+        # Include timer gaps crossing release, not just callbacks wholly inside
+        # the drag. A synchronous paint can make pixels correct but freeze UI.
+        overlapping = overlapping_heartbeat_gaps(
+            heartbeats, [(a["t"], b["t"]) for a, b in intervals]
+        )
         pixel_assessment = None
         if args.assert_inflight_pixels:
-            from quality_harness.resize_pixels import assess_static_resize_frames
+            from quality_harness.resize_pixels import (
+                assess_static_resize_frames,
+                require_responsive_resize,
+            )
 
             report = run / "pixels" / "capture.json"
             if report.exists():
@@ -567,6 +578,9 @@ with (
                     failure.extend(capture["errors"])
             else:
                 pixel_assessment = {"passed": False, "reason": "Pixel report missing"}
+            pixel_assessment = require_responsive_resize(
+                pixel_assessment, max(overlapping, default=0)
+            )
             (run / "pixel-assessment.json").write_text(
                 json.dumps(pixel_assessment, indent=2)
             )
@@ -580,9 +594,6 @@ with (
                 "cumulative"
             ).print_stats(70)
             (run / "profile.txt").write_text(stream.getvalue())
-        starts = [x for x in events if x["event"] == "drag_start"]
-        ends = [x for x in events if x["event"] == "drag_end"]
-        intervals = list(zip(starts, ends, strict=False))
         active = [
             x["gap_ms"]
             for x in heartbeats
@@ -593,9 +604,6 @@ with (
         ]
         # Timers can be deferred for the whole native drag. Contained-only
         # samples omit that gap when the next callback runs after mouse-up.
-        overlapping = overlapping_heartbeat_gaps(
-            heartbeats, [(a["t"], b["t"]) for a, b in intervals]
-        )
         summary = {
             "pid": pid,
             "profiling_enabled": args.profile,

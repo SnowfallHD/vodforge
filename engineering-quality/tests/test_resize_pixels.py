@@ -1,7 +1,10 @@
 """A transition oracle must reject delayed partial paint, not just final state."""
 
 from PIL import Image, ImageDraw
-from quality_harness.resize_pixels import assess_static_resize_frames
+from quality_harness.resize_pixels import (
+    assess_static_resize_frames,
+    require_responsive_resize,
+)
 
 
 def _sequence(tmp_path, *, delayed: bool):
@@ -54,3 +57,11 @@ def test_static_resize_pixels_requires_both_native_drags(tmp_path):
     )
     assert not result["passed"]
     assert result["drag_width_changes"] == [100, 5]
+
+
+def test_complete_pixels_do_not_excuse_a_frozen_resize_loop(tmp_path):
+    pixels = assess_static_resize_frames(_sequence(tmp_path, delayed=False), tmp_path)
+    assert require_responsive_resize(pixels, 199)["passed"]
+    stalled = require_responsive_resize(pixels, 733)
+    assert not stalled["passed"]
+    assert "stalled" in stalled["cadence_failure"]
