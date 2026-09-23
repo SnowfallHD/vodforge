@@ -985,7 +985,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(540, window.width - 40)
-        height: bridge.analyticsAvailable ? 548 : 495
+        height: bridge.analyticsAvailable ? 588 : 535
         padding: 18
         modal: true
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
@@ -1037,10 +1037,97 @@ Window {
                 Layout.preferredHeight: 39
                 onActivated: { settingsPopup.close(); accessPopup.open() }
             }
+            StoneButton {
+                label: "Check for updates"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 39
+                onActivated: {
+                    settingsPopup.close()
+                    updatePopup.open()
+                    bridge.checkForUpdates()
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40; onActivated: settingsPopup.close() }
+            }
+        }
+    }
+    Popup {
+        id: updatePopup
+        objectName: "updatePopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(480, window.width - 40)
+        height: 265
+        padding: 18
+        modal: true
+        closePolicy: bridge.updateBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Text { text: "VODForge updates"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text {
+                text: bridge.updateStatus
+                color: theme.muted
+                font.pixelSize: 15
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    label: "Check again"
+                    enabled: !bridge.updateBusy
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.checkForUpdates()
+                }
+                StoneButton {
+                    visible: bridge.updateAvailable && !bridge.updateReady && !bridge.updateRecovery
+                    label: "Download update"
+                    enabled: !bridge.updateBusy
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.downloadUpdate()
+                }
+                StoneButton {
+                    visible: bridge.updateReady
+                    label: "Install update"
+                    enabled: !bridge.updateBusy
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.installUpdate()
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    visible: bridge.updateRecovery
+                    label: "Repair VODForge"
+                    enabled: !bridge.updateBusy
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.repairUpdate()
+                }
+                StoneButton {
+                    visible: bridge.updateRecovery || bridge.updateManualAvailable
+                    label: "Download page"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.openDownloadPage()
+                }
+                Item { Layout.fillWidth: true }
+                StoneButton {
+                    label: "Close"
+                    enabled: !bridge.updateBusy
+                    Layout.preferredWidth: 90
+                    Layout.preferredHeight: 40
+                    onActivated: updatePopup.close()
+                }
             }
         }
     }

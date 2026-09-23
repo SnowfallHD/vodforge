@@ -65,6 +65,7 @@ def test_qt_disabled_build_does_not_create_consent_or_outbox(
     monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: False)
     recovery = _Recovery()
     session = analytics.QtAnalyticsSession(tmp_path, "0.2.3", recovery)
+    assert not session.update_receipt_decided
     session.start()
     assert session.settled and not session.poll()
     session.choose(True)
@@ -95,11 +96,14 @@ def test_qt_permission_waits_for_choice_and_revokes_without_replay(
     _await_resolution(session)
     assert session.poll()
     assert session.settled and not session.allowed
+    assert not session.update_receipt_decided
     assert _Telemetry.instances[0].opens == 0
     session.choose(True)
     assert session.allowed and _Telemetry.instances[0].opens == 1
+    assert session.update_receipt_decided
     session.choose(False)
     assert not session.allowed and not _Telemetry.instances[0].enabled
+    assert session.update_receipt_decided
     assert not session.poll() and _Telemetry.instances[0].opens == 1
     assert AnalyticsConsentOwner(tmp_path).snapshot()["choice"] == "denied"
 

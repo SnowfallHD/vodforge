@@ -60,6 +60,18 @@ class QtAnalyticsSession:
     def settled(self) -> bool:
         return self.owner is None or self._presented
 
+    @property
+    def update_receipt_decided(self) -> bool:
+        """Unknown consent cannot discard an inherited update outcome."""
+        return bool(
+            self.owner is not None
+            and self._presented
+            and (
+                self.owner.allowed
+                or self.owner.snapshot().get("choice") in {"granted", "denied"}
+            )
+        )
+
     def start(self) -> None:
         if self.owner is None or self._started:
             return

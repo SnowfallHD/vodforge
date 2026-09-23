@@ -63,6 +63,16 @@ existing recovery owner durably saves the new queue. Focused tests cover stale
 identity, worker signal handoff, durable queue removal, and retained queue
 execution order. Move/Trash and terminal Retry remain to be ported.
 
+Qt Settings now exposes the existing verified update and Repair owners through
+the shared stone controls. The Qt adapter checks releases and downloads on a
+worker thread, reuses signed asset verification and platform handoff, and
+keeps the app open if verified handoff fails or work is active. A packaged Qt
+app schedules the initial and six-hour release check; helper outcomes use one
+consent-gated receipt function shared with Tk. Focused tests cover stale
+installer retirement, no-platform-asset fallback, downgrade refusal, busy
+work, helper failure, bounded telemetry, and once-only receipt queueing.
+Actual signed update and Repair handoffs for Qt remain unqualified.
+
 An exact `24e3ef1` ad hoc Mac Qt package passed 3551 repository tests with
 813 platform skips, strict code-sign verification, and packaged runtime smoke.
 Its revision marker matches source, no native VLC files are included, and its

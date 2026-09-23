@@ -10427,68 +10427,17 @@ class DownloaderApp(
                     )
 
     def _record_update_telemetry_receipt(self) -> None:
-        from .updates import (
-            confirmed_update_telemetry_receipt,
-            pending_update_telemetry_receipts,
-        )
+        from .updates import record_update_telemetry_receipts
 
         telemetry = self.__dict__.get("product_telemetry")
         if telemetry is None or self._closing:
             return
-        permitted = telemetry.permitted()
-        receipts = list(
-            pending_update_telemetry_receipts(
-                application_data_dir() / "updates", Path(sys.executable)
-            )
+        record_update_telemetry_receipts(
+            telemetry,
+            application_data_dir() / "updates",
+            Path(sys.executable),
+            inherited_receipt=os.environ.get("VODFORGE_UPDATE_RECEIPT"),
         )
-        raw = os.environ.get("VODFORGE_UPDATE_RECEIPT")
-        if raw:
-            path = Path(raw)
-            receipt = confirmed_update_telemetry_receipt(path, Path(sys.executable))
-            if (
-                receipt is not None
-                and not path.with_suffix(
-                    "." + receipt[2] + ".telemetry-queued"
-                ).exists()
-                and not path.with_suffix(
-                    "." + receipt[2] + ".telemetry-discarded"
-                ).exists()
-                and all(existing != path for existing, _ in receipts)
-            ):
-                receipts.append((path, receipt))
-        for path, (token, repair, action, stage) in receipts:
-            if not permitted:
-                try:
-                    path.with_suffix("." + action + ".telemetry-discarded").write_text(
-                        "discarded\n"
-                    )
-                except OSError:
-                    pass
-                continue
-            accepted = telemetry.record(
-                "feature_used",
-                dedupe_key=token + ":" + action,
-                feature="updater",
-                action=action,
-                dimensions={"update_stage": stage},
-            )
-            if repair:
-                accepted = (
-                    telemetry.record(
-                        "feature_used",
-                        dedupe_key=token + ":repair",
-                        feature="updater",
-                        action="repair_completed",
-                    )
-                    and accepted
-                )
-            if accepted:
-                try:
-                    path.with_suffix("." + action + ".telemetry-queued").write_text(
-                        "queued\n"
-                    )
-                except OSError:
-                    pass
         os.environ.pop("VODFORGE_UPDATE_RECEIPT", None)
 
     def _record_settings_snapshot(self, values: dict | None = None) -> None:

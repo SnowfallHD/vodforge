@@ -987,3 +987,65 @@ def pending_update_telemetry_receipts(update_root: Path, executable: Path):
                 yield path, receipt
         except OSError:
             continue
+
+
+def record_update_telemetry_receipts(
+    telemetry: Any,
+    update_root: Path,
+    executable: Path,
+    *,
+    inherited_receipt: str | None = None,
+) -> None:
+    """Queue or discard verified helper outcomes under the existing consent gate.
+
+    Tk and Qt both call this after permission resolves. The helper receipt remains
+    authoritative and opaque; no installer path or error text enters telemetry.
+    """
+    permitted = telemetry.permitted()
+    receipts = list(pending_update_telemetry_receipts(update_root, executable))
+    if inherited_receipt:
+        path = Path(inherited_receipt)
+        receipt = confirmed_update_telemetry_receipt(path, executable)
+        if (
+            receipt is not None
+            and not path.with_suffix("." + receipt[2] + ".telemetry-queued").exists()
+            and not path.with_suffix("." + receipt[2] + ".telemetry-discarded").exists()
+            and all(existing != path for existing, _ in receipts)
+        ):
+            receipts.append((path, receipt))
+    for path, (token, repair, action, stage) in receipts:
+        if not permitted:
+            try:
+                path.with_suffix("." + action + ".telemetry-discarded").write_text(
+                    "discarded\n"
+                )
+            except OSError:
+                pass
+            continue
+        try:
+            accepted = telemetry.record(
+                "feature_used",
+                dedupe_key=token + ":" + action,
+                feature="updater",
+                action=action,
+                dimensions={"update_stage": stage},
+            )
+            if repair:
+                accepted = (
+                    telemetry.record(
+                        "feature_used",
+                        dedupe_key=token + ":repair",
+                        feature="updater",
+                        action="repair_completed",
+                    )
+                    and accepted
+                )
+        except (OSError, ValueError):
+            continue
+        if accepted:
+            try:
+                path.with_suffix("." + action + ".telemetry-queued").write_text(
+                    "queued\n"
+                )
+            except OSError:
+                pass

@@ -85,6 +85,7 @@ from yt_downloader.product_telemetry import product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
+from yt_downloader.qt_quick.update_session import QtUpdateSession
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
     SettingsError,
@@ -98,6 +99,7 @@ from yt_downloader.ui_button_contract import button_metrics
 from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
 from yt_downloader.ui_theme import FONT_UI_FAMILY, THEME, theme_motif
+from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
 from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
 from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
@@ -189,6 +191,7 @@ class Bridge(QObject):
     annotationChanged = Signal()
     analyticsChanged = Signal()
     analyticsPromptRequested = Signal()
+    updateChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -200,6 +203,8 @@ class Bridge(QObject):
         self._analytics_allowed = self._analytics.allowed
         self._analytics_snapshot_sent = False
         self._runtime.resume_queued()
+        self._updates = QtUpdateSession(__version__)
+        self._window: Any | None = None
         self._annotations_writable = True
         self._annotations = LibraryAnnotationsOwner(
             self._runtime.history_path.parent / "library-annotations.json",
@@ -335,6 +340,100 @@ class Bridge(QObject):
     def analyticsAllowed(self) -> bool:
         return self._analytics.allowed
 
+    @Property(str, notify=updateChanged)
+    def updateStatus(self) -> str:
+        return self._updates.status
+
+    @Property(bool, notify=updateChanged)
+    def updateBusy(self) -> bool:
+        return self._updates.busy
+
+    @Property(bool, notify=updateChanged)
+    def updateAvailable(self) -> bool:
+        return self._updates.available
+
+    @Property(bool, notify=updateChanged)
+    def updateManualAvailable(self) -> bool:
+        return self._updates.manual
+
+    @Property(bool, notify=updateChanged)
+    def updateReady(self) -> bool:
+        return self._updates.ready is not None
+
+    @Property(bool, notify=updateChanged)
+    def updateRecovery(self) -> bool:
+        return self._updates.recovery
+
+    @Slot()
+    def checkForUpdates(self) -> None:
+        if self._updates.check():
+            self.updateChanged.emit()
+
+    @Slot()
+    def downloadUpdate(self) -> None:
+        if self._updates.download():
+            self._record_update_feature("updater", "download_started")
+            self.updateChanged.emit()
+
+    @Slot()
+    def repairUpdate(self) -> None:
+        if self._updates.download(repair=True):
+            self._record_update_feature("guidance", "recovery_selected")
+            self._record_update_feature("updater", "repair_started")
+            self.updateChanged.emit()
+
+    def _record_update_feature(
+        self, feature: str, action: str, dimensions: dict[str, str] | None = None
+    ) -> None:
+        telemetry = self._analytics.telemetry
+        if telemetry is None:
+            return
+        try:
+            telemetry.record_feature(feature, action, dimensions=dimensions)
+        except (OSError, ValueError):
+            pass
+
+    def _auto_check_updates(self) -> None:
+        if (
+            self._updates.busy
+            or self._runtime.busy
+            or self._runtime.active_job is not None
+        ):
+            QTimer.singleShot(10 * 60 * 1000, self._auto_check_updates)
+            return
+        self.checkForUpdates()
+        QTimer.singleShot(6 * 60 * 60 * 1000, self._auto_check_updates)
+
+    @Slot()
+    def openDownloadPage(self) -> None:
+        QDesktopServices.openUrl(QUrl(RELEASES_PAGE))
+
+    @Slot()
+    def installUpdate(self) -> None:
+        window = self._window
+        bounds = (
+            (window.x(), window.y(), window.width(), window.height())
+            if window is not None
+            else None
+        )
+        telemetry = self._analytics.telemetry
+        accepted = self._updates.install(
+            downloads_busy=(
+                self._runtime.active_job is not None
+                or self._runtime.busy
+                or bool(getattr(self._runtime, "queued", []))
+                or self._local_running
+            ),
+            telemetry_permitted=telemetry is not None and telemetry.permitted(),
+            window_bounds=bounds,
+        )
+        self.updateChanged.emit()
+        if accepted:
+            self._record_update_feature("updater", "handoff")
+            QTimer.singleShot(250, QCoreApplication.quit)
+        for action, dimensions in self._updates.take_observations():
+            self._record_update_feature("updater", action, dimensions)
+
     @Slot()
     def startSession(self) -> None:
         self._analytics.start()
@@ -354,7 +453,21 @@ class Bridge(QObject):
                 "Analytics choice could not be saved. Check the app data folder."
             )
             self.statusChanged.emit()
+        else:
+            QTimer.singleShot(6000, self._record_update_telemetry_receipt)
         return saved
+
+    def _record_update_telemetry_receipt(self) -> None:
+        telemetry = self._analytics.telemetry
+        if telemetry is None or not self._analytics.update_receipt_decided:
+            return
+        record_update_telemetry_receipts(
+            telemetry,
+            application_data_dir() / "updates",
+            Path(sys.executable),
+            inherited_receipt=os.environ.get("VODFORGE_UPDATE_RECEIPT"),
+        )
+        os.environ.pop("VODFORGE_UPDATE_RECEIPT", None)
 
     @Slot()
     def openPrivacy(self) -> None:
@@ -1130,6 +1243,10 @@ class Bridge(QObject):
         return removed
 
     def _pump(self) -> None:
+        if self._updates.poll():
+            self.updateChanged.emit()
+        for action, dimensions in self._updates.take_observations():
+            self._record_update_feature("updater", action, dimensions)
         if not self._analytics.settled:
             if self._analytics.poll():
                 self.analyticsPromptRequested.emit()
@@ -1320,6 +1437,10 @@ def main() -> int:
             smoke_home.cleanup()
         return 2
     bridge.startSession()
+    bridge._window = engine.rootObjects()[0]
+    QTimer.singleShot(6000, bridge._record_update_telemetry_receipt)
+    if bool(getattr(sys, "frozen", False)) and not args.runtime_smoke:
+        QTimer.singleShot(0, bridge._auto_check_updates)
     if args.runtime_smoke:
         application.processEvents()
         engine.deleteLater()
