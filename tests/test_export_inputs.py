@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import pytest
 
 from yt_downloader.app import DownloaderApp
+from yt_downloader.cookie_inputs import windows_chromium_cookie_warning
 from yt_downloader.export_inputs import manual_export_settings, mp3_export_settings
-from yt_downloader.models import ExportMode, OutputType
+from yt_downloader.models import CookieSource, ExportMode, OutputType
 from yt_downloader.qt_quick.runtime import DownloadRuntime
 from yt_downloader.url_list_inputs import parse_url_list_text, read_url_list_file
 
@@ -113,6 +114,53 @@ def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(tmp_path: Pa
     assert job.url == urls[0]
     assert job.urls == urls
     assert job.batch_mode is True
+
+
+def test_qt_cookie_access_uses_only_the_explicit_session_choice(tmp_path: Path):
+    cookie_file = tmp_path / "cookies.txt"
+    cookie_file.write_text("private")
+    runtime = _idle_runtime()
+    base = ("https://example.com/watch?v=abc123", tmp_path, "MP4", "Everyday")
+
+    public = runtime.start(
+        *base,
+        cookie_source=CookieSource.PUBLIC,
+        cookie_file=cookie_file,
+        cookie_browser="Firefox",
+    )
+    assert (public.use_cookies, public.cookie_file, public.cookie_browser) == (
+        False,
+        None,
+        None,
+    )
+    browser = runtime.start(
+        *base,
+        cookie_source=CookieSource.BROWSER,
+        cookie_file=cookie_file,
+        cookie_browser="Firefox",
+    )
+    assert (browser.use_cookies, browser.cookie_file, browser.cookie_browser) == (
+        True,
+        None,
+        "firefox",
+    )
+    file = runtime.start(
+        *base,
+        cookie_source=CookieSource.FILE,
+        cookie_file=cookie_file,
+        cookie_browser="Firefox",
+    )
+    assert (file.use_cookies, file.cookie_file, file.cookie_browser) == (
+        True,
+        cookie_file,
+        None,
+    )
+    with pytest.raises(ValueError, match="existing YouTube cookies"):
+        runtime.start(*base, cookie_source=CookieSource.FILE)
+    with pytest.raises(ValueError, match="browser profile"):
+        runtime.start(*base, cookie_source=CookieSource.BROWSER, cookie_browser="bad")
+    assert windows_chromium_cookie_warning("Chrome", platform="win32")
+    assert windows_chromium_cookie_warning("Firefox", platform="win32") is None
 
 
 def _idle_runtime() -> DownloadRuntime:

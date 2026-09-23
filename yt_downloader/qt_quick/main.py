@@ -31,6 +31,7 @@ from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.app import validate_custom_cover_art
+from yt_downloader.cookie_inputs import browser_cookie_value
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
     MP3_COVER_ART_OPTIONS,
@@ -48,7 +49,7 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
 )
-from yt_downloader.models import ExportMode, OutputType
+from yt_downloader.models import CookieSource, ExportMode, OutputType
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
@@ -66,6 +67,7 @@ from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
 from yt_downloader.ui_theme import FONT_UI_FAMILY, THEME, theme_motif
 from yt_downloader.url_list_inputs import read_url_list_file
+from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
 
 
 def qt_image(source: Image.Image) -> QImage:
@@ -149,6 +151,7 @@ class Bridge(QObject):
     exportSettingsChanged = Signal()
     batchListChanged = Signal()
     sourceAccepted = Signal()
+    cookieAccessChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -249,6 +252,9 @@ class Bridge(QObject):
         self._local_running = False
         self._batch_urls: list[str] = []
         self._batch_name = ""
+        self._cookie_source = CookieSource.PUBLIC
+        self._cookie_browser = ""
+        self._cookie_file: Path | None = None
         self._event_log = event_log
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pump)
@@ -373,6 +379,22 @@ class Bridge(QObject):
         if not self._batch_urls:
             return "No URL list loaded"
         return f"{self._batch_name} · {len(self._batch_urls)} URL(s) loaded"
+
+    @Property(str, notify=cookieAccessChanged)
+    def cookieSource(self) -> str:
+        return self._cookie_source.value
+
+    @Property(str, notify=cookieAccessChanged)
+    def cookieBrowser(self) -> str:
+        return self._cookie_browser or "Choose a browser"
+
+    @Property(str, notify=cookieAccessChanged)
+    def cookieFileName(self) -> str:
+        return self._cookie_file.name if self._cookie_file else "Choose cookies.txt"
+
+    @Property("QVariantList", constant=True)
+    def cookieBrowserOptions(self) -> list[str]:
+        return list(COOKIE_BROWSER_OPTIONS[1:])
 
     @Property("QVariantList", notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
@@ -502,6 +524,35 @@ class Bridge(QObject):
         self._batch_urls = []
         self._batch_name = ""
         self.batchListChanged.emit()
+
+    @Slot(str)
+    def setCookieSource(self, value: str) -> None:
+        try:
+            self._cookie_source = CookieSource(value)
+        except ValueError:
+            return
+        self.cookieAccessChanged.emit()
+
+    @Slot(str)
+    def setCookieBrowser(self, value: str) -> None:
+        if value not in COOKIE_BROWSER_OPTIONS[1:] or not browser_cookie_value(value):
+            return
+        self._cookie_browser = value
+        self._cookie_source = CookieSource.BROWSER
+        self.cookieAccessChanged.emit()
+
+    @Slot(QUrl)
+    def setCookieFileUrl(self, url: QUrl) -> None:
+        if not url.isLocalFile():
+            return
+        path = Path(url.toLocalFile())
+        if not path.is_file():
+            self._status = "That cookies file does not exist."
+            self.statusChanged.emit()
+            return
+        self._cookie_file = path
+        self._cookie_source = CookieSource.FILE
+        self.cookieAccessChanged.emit()
 
     @Slot()
     def startLocalConversion(self) -> None:
@@ -751,6 +802,9 @@ class Bridge(QObject):
                 mp3,
                 urls=self._batch_urls if self._batch_urls else None,
                 batch_mode=bool(self._batch_urls),
+                cookie_source=self._cookie_source,
+                cookie_file=self._cookie_file,
+                cookie_browser=self._cookie_browser,
             )
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)

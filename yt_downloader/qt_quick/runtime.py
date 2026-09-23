@@ -20,6 +20,10 @@ from yt_downloader.app import (
     single_video_url_requires_video_id_error,
     validate_output_directory_access,
 )
+from yt_downloader.cookie_inputs import (
+    cookie_inputs_for_source,
+    windows_chromium_cookie_warning,
+)
 from yt_downloader.history import (
     RETRY_JOB_METADATA_KEY,
     HistoryError,
@@ -32,6 +36,7 @@ from yt_downloader.history import (
 )
 from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.models import (
+    CookieSource,
     DownloadJob,
     ExportMode,
     ManualExportSettings,
@@ -45,6 +50,7 @@ from yt_downloader.run_state import (
     run_state_file_path,
     serialize_download_job,
 )
+from yt_downloader.youtube_access import COOKIE_BROWSER_VALUES
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +108,9 @@ class DownloadRuntime:
         *,
         urls: list[str] | None = None,
         batch_mode: bool = False,
+        cookie_source: CookieSource = CookieSource.PUBLIC,
+        cookie_file: Path | None = None,
+        cookie_browser: str | None = None,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -126,6 +135,19 @@ class DownloadRuntime:
         url = selected_urls[0]
         selected_type = OutputType(output_type)
         selected_mode = ExportMode(export_mode)
+        use_cookies, selected_file, selected_browser = cookie_inputs_for_source(
+            cookie_source, cookie_file, cookie_browser
+        )
+        if cookie_source is CookieSource.FILE and (
+            selected_file is None or not selected_file.is_file()
+        ):
+            raise ValueError("Choose an existing YouTube cookies.txt file.")
+        if cookie_source is CookieSource.BROWSER:
+            if selected_browser not in COOKIE_BROWSER_VALUES.values():
+                raise ValueError("Choose a browser profile for YouTube access.")
+            warning = windows_chromium_cookie_warning(selected_browser)
+            if warning:
+                raise ValueError(warning)
         validate_output_directory_access(output_dir)
         job = DownloadJob(
             url=url,
@@ -143,6 +165,9 @@ class DownloadRuntime:
             else Mp3ExportSettings(),
             single_video_only=preferences.single_video_only,
             batch_mode=batch_mode,
+            use_cookies=use_cookies,
+            cookie_file=selected_file,
+            cookie_browser=selected_browser,
             use_nvenc=preferences.use_nvenc
             if selected_type == OutputType.MP4
             else False,

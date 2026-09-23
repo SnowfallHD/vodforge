@@ -21,6 +21,12 @@ accepted only the parent job object while the existing batch worker emits
 copied child jobs. The adapter now accepts only a child with the active run ID,
 listed source URL, output type and directory; a stale child regression rejects
 unrelated run IDs.
+The existing YouTube access choice is now shared through `cookie_inputs.py`.
+Qt exposes Public, Browser, and cookies.txt as session-only choices, passes only
+the selected source into `DownloadJob`, and applies the existing Windows
+Chromium warning. The file path is not saved in user settings. Browser/file
+access has job-field and validation proof, but account-gated live download
+qualification remains open.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,

@@ -87,6 +87,12 @@ Window {
         nameFilters: ["Text files (*.txt)", "All files (*)"]
         onAccepted: bridge.loadBatchUrl(selectedFile)
     }
+    FileDialog {
+        id: cookieFileDialog
+        title: "Choose YouTube cookies.txt"
+        nameFilters: ["Cookie text files (*.txt)", "All files (*)"]
+        onAccepted: bridge.setCookieFileUrl(selectedFile)
+    }
 
     Image {
         id: artwork
@@ -682,7 +688,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(540, window.width - 40)
-        height: 445
+        height: 495
         padding: 18
         modal: true
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
@@ -715,10 +721,83 @@ Window {
                 }
             }
             Item { Layout.fillHeight: true }
+            StoneButton {
+                label: "YouTube access: " + bridge.cookieSource
+                Layout.fillWidth: true
+                Layout.preferredHeight: 39
+                onActivated: { settingsPopup.close(); accessPopup.open() }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40; onActivated: settingsPopup.close() }
+            }
+        }
+    }
+    Popup {
+        id: accessPopup
+        objectName: "youtubeAccessPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(560, window.width - 40)
+        height: 410
+        padding: 18
+        modal: true
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+            Text { text: "YouTube access"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text {
+                text: "Public needs no account. For restricted videos, choose a signed-in browser or a cookies.txt file."
+                color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap; Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Repeater {
+                    model: ["Public", "Browser", "cookies.txt"]
+                    StoneButton {
+                        required property string modelData
+                        label: modelData
+                        selected: bridge.cookieSource === modelData
+                        Layout.fillWidth: true; Layout.preferredHeight: 39
+                        onActivated: bridge.setCookieSource(modelData)
+                    }
+                }
+            }
+            Flow {
+                visible: bridge.cookieSource === "Browser"
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 125 : 0
+                spacing: 6
+                Repeater {
+                    model: bridge.cookieBrowserOptions
+                    StoneButton {
+                        required property string modelData
+                        label: modelData
+                        selected: bridge.cookieBrowser === modelData
+                        width: 115; height: 37
+                        onActivated: bridge.setCookieBrowser(modelData)
+                    }
+                }
+            }
+            RowLayout {
+                visible: bridge.cookieSource === "cookies.txt"
+                Layout.fillWidth: true
+                Text { text: bridge.cookieFileName; color: theme.muted; font.pixelSize: 14; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                StoneButton { label: "Choose file"; Layout.preferredWidth: 108; Layout.preferredHeight: 38; onActivated: cookieFileDialog.open() }
+            }
+            Text {
+                text: bridge.cookieSource === "Browser" ? "VODForge reads this browser’s sign-in store for the run. On Windows, use Firefox or cookies.txt for Chromium browsers." :
+                      bridge.cookieSource === "cookies.txt" ? "The selected file is used for this session. Its contents are not stored in settings." :
+                      "No account information is used."
+                color: theme.muted; font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Done"; Layout.preferredWidth: 84; Layout.preferredHeight: 40; onActivated: accessPopup.close() }
             }
         }
     }
