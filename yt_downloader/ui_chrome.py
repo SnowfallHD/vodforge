@@ -808,11 +808,16 @@ class CanvasFieldMaterial:
             field_border_image(width, height, focused=self.focused), master=self.canvas
         )
         self.canvas.itemconfigure(self.item, image=self.image)
-        self.canvas.tag_lower(self.item)
         if hasattr(self.canvas, "_matte_anchor"):
             from .ui_materials import draw_matte_backdrop
 
             draw_matte_backdrop(self.canvas)
+            # The field face belongs directly above the shared matte and below
+            # the entry window. Lowering it to the absolute bottom hides the
+            # recessed material when the matte owner skips unchanged work.
+            self.canvas.tag_raise(self.item, "matte-decoration")
+        else:
+            self.canvas.tag_lower(self.item)
         self.snapshot = snapshot
 
     def apply_theme(self) -> None:

@@ -133,6 +133,7 @@ class MatteBackdrop:
                     0, 0, anchor="ne", image=self.photo, tags=("matte-decoration",)
                 )
                 self.position = None
+                self.canvas.tag_lower(self.item)
             elif theme_changed:
                 self.canvas.itemconfigure(self.item, image=self.photo)
             anchor = getattr(self.canvas, "_matte_anchor", None)
@@ -148,11 +149,6 @@ class MatteBackdrop:
             if self.position != (x, y):
                 self.canvas.coords(self.item, x, y)
                 self.position = (x, y)
-            # Another shared material owner may later insert/lower its field
-            # face. Keep the matte decoration behind that face without
-            # invalidating the canvas when its order is already correct.
-            if self.canvas.find_all()[0] != self.item:
-                self.canvas.tag_lower(self.item)
         except tk.TclError:
             return
 

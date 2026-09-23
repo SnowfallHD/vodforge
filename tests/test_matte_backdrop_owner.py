@@ -12,8 +12,6 @@ def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):
     calls = []
 
     class Canvas:
-        _items = (7,)
-
         def winfo_toplevel(self):
             return root
 
@@ -44,10 +42,6 @@ def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):
 
         def tag_lower(self, *args):
             calls.append(("lower", args))
-            self._items = (7, 8)
-
-        def find_all(self):
-            return self._items
 
     anchor = SimpleNamespace(x=10, width=240, y=20)
     anchor.winfo_rootx = lambda: anchor.x
@@ -70,12 +64,6 @@ def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):
     assert owner.builds == 1
     owner.draw()
     assert len(calls) == first_count
-
-    # The shared field renderer may lower its face after the matte was made.
-    canvas._items = (8, 7)
-    owner.draw()
-    assert calls[-1] == ("lower", (7,))
-    first_count = len(calls)
 
     anchor.x += 20
     owner.draw()

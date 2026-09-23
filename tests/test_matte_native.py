@@ -273,6 +273,9 @@ def test_rendered_hover_and_navigation_keep_the_idle_face(
     pump(app, 0.3)
     composer = capture_own_widget(app.focus_command_box).convert("RGB")
     composer.save(out / "forge-composer-focused.png")
+    items = app.focus_command_box.find_all()
+    matte_item = app.focus_command_box._matte_backdrop.item
+    assert items.index(matte_item) < items.index(app._command_field_material.item)
     y = composer.height // 2
     center = composer.getpixel((composer.width // 2, y))
     assert composer.getpixel((8, y)) == center
