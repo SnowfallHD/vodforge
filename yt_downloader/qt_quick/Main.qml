@@ -19,6 +19,8 @@ Window {
     property string pendingRelinkOwner: ""
     property string missingAction: ""
     property var mediaPlayer: playerLoader.item
+    readonly property bool showingForgePreview: bridge.forgePreview.phase !== "idle"
+    readonly property string forgeDisplayType: showingForgePreview ? bridge.forgePreview.type : window.outputFormat
     readonly property bool playerSurfaceBound: mediaPlayer && mediaPlayer.videoOutput === playerScene.activeVideoSurface
     property int pendingPlaybackGeneration: -1
     onClosing: function(close) {
@@ -731,25 +733,38 @@ Window {
                 ColumnLayout {
                     spacing: window.compactHeight ? 3 : 7
                     Text {
-                        text: bridge.running ? "Download in progress" : "Ready for a new run"
+                        text: bridge.running ? "Download in progress" :
+                              bridge.forgePreview.phase !== "idle" ? bridge.forgePreview.title : "Ready for a new run"
                         color: theme.text
                         font.pixelSize: window.compactHeight ? 21 : 24
                         font.bold: true
                     }
                     Text {
-                        text: "Paste a video URL above, then press Return to begin."
+                        text: bridge.forgePreview.phase !== "idle" ? bridge.forgePreview.status :
+                              "Paste a video URL above, then press Return to begin."
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
                     Text {
-                        text: bridge.quality + "  ·  " + bridge.exportMode
+                        text: bridge.forgePreview.phase !== "idle" ?
+                              bridge.forgePreview.creator + "  ·  " + bridge.forgePreview.type :
+                              bridge.quality + "  ·  " + bridge.exportMode
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
+                    }
+                    StoneButton {
+                        visible: bridge.forgePreview.canStart
+                        label: "Start download"
+                        Layout.preferredWidth: 142
+                        Layout.preferredHeight: 38
+                        onActivated: bridge.startPreviewDownload()
                     }
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: Math.round(bridge.progress) + "%"
+                    text: window.showingForgePreview ?
+                          (bridge.forgePreview.phase === "complete" ? "Preview" : "…") :
+                          Math.round(bridge.progress) + "%"
                     color: theme.selection
                     font.pixelSize: window.compactHeight ? 28 : 34
                 }
@@ -803,7 +818,9 @@ Window {
                             objectName: "forgeActivityText"
                             readOnly: true
                             selectByMouse: true
-                            text: forgeLivePane.technical ? bridge.forgeActivity.technical : bridge.forgeActivity.friendly
+                            text: window.showingForgePreview ?
+                                  "Metadata only — no media is being downloaded" :
+                                  forgeLivePane.technical ? bridge.forgeActivity.technical : bridge.forgeActivity.friendly
                             color: theme.muted
                             font.pixelSize: 14
                             font.family: forgeLivePane.technical ? monoFontFamily : buttonFontFamily
@@ -843,26 +860,28 @@ Window {
                     Layout.fillHeight: true
                     spacing: 11
                     Text {
-                        text: "Output: " + window.outputFormat + " · " + bridge.exportMode
+                        text: window.showingForgePreview ?
+                              "Preview: " + window.forgeDisplayType + " · metadata only" :
+                              "Output: " + window.outputFormat + " · " + bridge.exportMode
                         color: theme.muted
                         font.pixelSize: 14
                         wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                     }
-                    Text { text: "Format             " + window.outputFormat; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: "Format             " + window.forgeDisplayType; color: theme.muted; font.pixelSize: 14 }
                     Text {
-                        text: "Video               " + (window.outputFormat === "MP4" ? "H.264" : "None")
+                        text: "Video               " + (window.showingForgePreview ? "Not downloaded" : window.outputFormat === "MP4" ? "H.264" : "None")
                         color: theme.muted
                         font.pixelSize: 14
                     }
                     Text {
-                        text: "Audio               " + (window.outputFormat === "MP3" ? "MP3" :
+                        text: "Audio               " + (window.showingForgePreview ? "Not downloaded" : window.outputFormat === "MP3" ? "MP3" :
                               window.outputFormat === "Original audio" ? "Source" :
                               bridge.exportMode === "Manual Override" ? bridge.manualValues.manual_audio_codec : "AAC")
                         color: theme.muted
                         font.pixelSize: 14
                     }
-                    Text { text: "Output mode     " + bridge.exportMode; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: window.showingForgePreview ? "Output mode     Preview only" : "Output mode     " + bridge.exportMode; color: theme.muted; font.pixelSize: 14 }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -1715,6 +1734,14 @@ Window {
             }
             RowLayout {
                 Layout.fillWidth: true
+                StoneButton {
+                    label: "Preview metadata"
+                    Layout.preferredWidth: 170
+                    Layout.preferredHeight: 40
+                    onActivated: {
+                        if (bridge.previewMetadata(urlInput.text, window.outputFormat)) settingsPopup.close()
+                    }
+                }
                 StoneButton { label: "Help & feedback"; Layout.preferredWidth: 160; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); bridge.openSupport("feedback") } }
                 StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.open(); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }

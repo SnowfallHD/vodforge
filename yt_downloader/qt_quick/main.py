@@ -38,10 +38,13 @@ from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.app import (
     DownloaderApp,
+    ProviderNetworkCoordinator,
     append_activity_log,
     canonical_youtube_url,
+    iter_video_infos,
     load_activity_log_tail,
     prepare_activity_log,
+    retry_url_for_item,
 )
 from yt_downloader.archive_browser import PAGE_SIZE, ArchiveBrowserModel
 from yt_downloader.archive_observations import (
@@ -101,7 +104,9 @@ from yt_downloader.library_state import (
     PROJECTION_OWNER_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
+    is_metadata_preview,
     metadata_output_type,
+    metadata_run_key,
     persisted_run_deck_records,
     resolve_library_removal_plan,
 )
@@ -129,13 +134,14 @@ from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
+from yt_downloader.qt_quick.metadata_preview import QtMetadataPreview
 from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.relink import QtRelinkSession
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
-from yt_downloader.run_identity import metadata_output_profile
+from yt_downloader.run_identity import annotate_job_metadata, metadata_output_profile
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
     SettingsError,
@@ -247,6 +253,7 @@ class Bridge(QObject):
     historyChanged = Signal()
     activityChanged = Signal()
     runDeckChanged = Signal()
+    forgePreviewChanged = Signal()
     exportModeChanged = Signal()
     outputFormatChanged = Signal()
     qualityChanged = Signal()
@@ -345,6 +352,13 @@ class Bridge(QObject):
         )
         self._annotations.load()
         self._library_projection = LibraryProjectionOwner()
+        self._metadata = QtMetadataPreview(
+            getattr(self._runtime, "provider_network", ProviderNetworkCoordinator())
+        )
+        self._metadata_preview_record: dict[str, Any] = {}
+        self._metadata_preview_info: dict[str, Any] | None = None
+        self._metadata_pending_run_id = ""
+        self._preview_download_info: dict[str, Any] | None = None
         self._annotation_owner = ""
         self._library_detail_owner = ""
         self._library_detail_origin: tuple[str, str, str] | None = None
@@ -896,6 +910,7 @@ class Bridge(QObject):
         if self._analytics_allowed:
             self._record_settings_snapshot()
             self._analytics_snapshot_sent = True
+            self._analytics.start_first_launch_delivery()
         else:
             self._analytics_snapshot_sent = False
         if not saved:
@@ -1623,9 +1638,39 @@ class Bridge(QObject):
             self._status = "The Activity log folder is unavailable."
             self.statusChanged.emit()
 
+    @Property("QVariantMap", notify=forgePreviewChanged)
+    def forgePreview(self) -> dict[str, Any]:
+        record = self._metadata_preview_record
+        info = self._metadata_preview_info or {}
+        return {
+            "phase": str(record.get("phase") or "idle"),
+            "title": str(info.get("title") or record.get("title") or ""),
+            "creator": str(info.get("uploader") or info.get("channel") or ""),
+            "status": str(record.get("status") or ""),
+            "type": str(record.get("type") or ""),
+            "artwork": self._artwork.request(info) if info else "",
+            "canStart": bool(
+                is_metadata_preview(info) and record.get("phase") == "complete"
+            ),
+        }
+
     @Property("QVariantMap", notify=runDeckChanged)
     def runDeck(self) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
+        preview = self.forgePreview
+        if preview["phase"] in {"loading", "failed"}:
+            records.append(
+                {
+                    "runId": str(self._metadata_preview_record.get("runId") or ""),
+                    "owner": "",
+                    "kind": "preview",
+                    "title": preview["title"],
+                    "status": preview["status"],
+                    "type": preview["type"],
+                    "progress": 100 if preview["phase"] == "complete" else 0,
+                    "artwork": preview["artwork"],
+                }
+            )
         active = self._runtime.active_job
         if active is not None:
             preview = active.preview_info or {}
@@ -1661,17 +1706,18 @@ class Bridge(QObject):
                         "artwork": self._artwork.request(preview) if preview else "",
                     }
                 )
-        for record in persisted_run_deck_records(
-            self._runtime.history, completed_jobs=()
-        ):
+        projected = self._projected_library()
+        for record in persisted_run_deck_records(projected, completed_jobs=()):
             index = record.get("metadata_index")
             if not isinstance(index, int):
                 continue
-            item = self._runtime.history[index]
+            item = projected[index]
             records.append(
                 {
                     "runId": str(record["run_id"]),
-                    "owner": history_archive_owner(item),
+                    "owner": str(
+                        item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)
+                    ),
                     "kind": str(record["kind"]),
                     "title": str(record["title"]),
                     "status": str(record["status"]),
@@ -1689,7 +1735,7 @@ class Bridge(QObject):
             if not records
             else f"{len(records)} run{'s' if len(records) != 1 else ''}"
         )
-        for kind in ("active", "queued", "completed", "terminal"):
+        for kind in ("active", "queued", "completed", "terminal", "preview"):
             if count := counts.get(kind, 0):
                 summary += f"  •  {count} {kind}"
         return {
@@ -1881,6 +1927,15 @@ class Bridge(QObject):
         if component.kind == "folder" and component.path is not None:
             self._folder_browser.navigate(component.path)
             self.historyChanged.emit()
+            return True
+        if component.kind == "activity":
+            rows = self._folder_browser.records
+            if not component.indices:
+                return False
+            row = rows[component.indices[0]]
+            if is_metadata_preview(row):
+                return self.openPreviewOwner(str(row.get(PROJECTION_OWNER_KEY) or ""))
+            self.select("Forge")
             return True
         if component.kind != "media":
             return False
@@ -3025,6 +3080,43 @@ class Bridge(QObject):
     def _pump(self) -> None:
         if self._closed:
             return
+        if self._metadata.poll():
+            record = self._metadata_preview_record
+            pending_run_id = self._metadata_pending_run_id
+            current = record.get("runId") == pending_run_id
+            self._metadata_pending_run_id = ""
+            info = self._metadata.info
+            if info is not None:
+                items = [dict(item) for item in iter_video_infos(info)]
+                if items:
+                    self._library_projection.record_preview(pending_run_id, items)
+                    if current:
+                        projected = self._projected_library()
+                        self._metadata_preview_info = next(
+                            (
+                                item
+                                for item in projected
+                                if item.get("vodforge_preview_run_id") == pending_run_id
+                            ),
+                            None,
+                        )
+                if current:
+                    record["phase"] = (
+                        "complete" if self._metadata_preview_info else "failed"
+                    )
+                    record["status"] = (
+                        "Preview complete — no media downloaded"
+                        if self._metadata_preview_info
+                        else "No usable media in this preview"
+                    )
+            elif current:
+                record["phase"] = "failed"
+                record["status"] = self._metadata.message
+            if current:
+                self._set_status(str(record["status"]))
+                self.forgePreviewChanged.emit()
+            self.runDeckChanged.emit()
+            self.historyChanged.emit()
         if self._relink.poll():
             phase = self._relink.phase
             preview = self._relink.preview
@@ -3178,6 +3270,9 @@ class Bridge(QObject):
         ):
             self._record_settings_snapshot()
             self._analytics_snapshot_sent = True
+        if self._analytics.settled and self._analytics.allowed:
+            self._analytics.start_first_launch_delivery()
+        self._analytics.poll_first_launch_delivery()
         try:
             active_job_before = self._runtime.active_job
             if (
@@ -3275,6 +3370,7 @@ class Bridge(QObject):
             self._save_preferences()
         self._watch_queue.cancel()
         self._previews.close()
+        self._metadata.close()
         if self._import_pending:
             operation(
                 self._analytics.telemetry,
@@ -3292,6 +3388,7 @@ class Bridge(QObject):
             self._playback_binding = None
         self._local.close()
         self._runtime.close()
+        self._analytics.close()
         if self._analytics.telemetry is not None:
             self._analytics.telemetry.shutdown(timeout_seconds=1.0)
 
@@ -3315,8 +3412,86 @@ class Bridge(QObject):
         )
         return manual, mp3
 
-    @Slot(str, str)
-    def submit(self, value: str, output_format: str) -> None:
+    @Slot(str, str, result=bool)
+    def previewMetadata(self, value: str, output_format: str) -> bool:
+        try:
+            selected_type = OutputType(output_format)
+        except ValueError:
+            self._set_status("Choose an output format first.")
+            return False
+        if not self._metadata.begin(
+            value,
+            selected_type,
+            ignore_playlists=self._download_preferences.single_video_only,
+            cookie_source=self._cookie_source,
+            cookie_file=self._cookie_file,
+            cookie_browser=self._cookie_browser,
+            ffmpeg=DownloaderApp._find_ffmpeg(),
+            deno=DownloaderApp._find_deno(),
+        ):
+            self._set_status(self._metadata.message)
+            return False
+        run_id = f"preview:{uuid.uuid4().hex}"
+        self._metadata_pending_run_id = run_id
+        self._metadata_preview_info = None
+        self._metadata_preview_record = {
+            "runId": run_id,
+            "source": value.strip(),
+            "phase": "loading",
+            "title": "Loading preview…",
+            "status": "Fetching title, creator, and thumbnail",
+            "type": selected_type.value,
+        }
+        self._set_status("Fetching metadata preview…")
+        self.forgePreviewChanged.emit()
+        self.runDeckChanged.emit()
+        self.select("Forge")
+        return True
+
+    @Slot(str, result=bool)
+    def openPreviewOwner(self, owner: str) -> bool:
+        info = next(
+            (
+                row
+                for row in self._projected_library()
+                if row.get(PROJECTION_OWNER_KEY) == owner and is_metadata_preview(row)
+            ),
+            None,
+        )
+        if info is None:
+            return False
+        self._metadata_preview_info = info
+        self._metadata_preview_record = {
+            "runId": str(info.get("vodforge_preview_run_id") or ""),
+            "source": str(info.get("webpage_url") or info.get("original_url") or ""),
+            "phase": "complete",
+            "title": str(info.get("title") or "Metadata preview"),
+            "status": "Preview complete — no media downloaded",
+            "type": metadata_output_type(info).value,
+        }
+        self.forgePreviewChanged.emit()
+        self.select("Forge")
+        return True
+
+    @Slot(result=bool)
+    def startPreviewDownload(self) -> bool:
+        info = self._metadata_preview_info
+        if info is None or not is_metadata_preview(info):
+            self._set_status("Choose a completed metadata preview first.")
+            return False
+        fallback = str(self._metadata_preview_record.get("source") or "")
+        source = retry_url_for_item(info, fallback)
+        if not source:
+            self._set_status("This preview has no source URL to download.")
+            return False
+        self._preview_download_info = info
+        try:
+            return self.submit(source, str(self._metadata_preview_record["type"]))
+        finally:
+            self._preview_download_info = None
+
+    @Slot(str, str, result=bool)
+    def submit(self, value: str, output_format: str) -> bool:
         try:
             if self._recovery_source_url and (
                 value.strip() != self._recovery_source_url or self._batch_urls
@@ -3339,7 +3514,7 @@ class Bridge(QObject):
                 )
             selected_type = OutputType(output_format)
             manual, mp3 = self._current_export_inputs(selected_type)
-            job = self._runtime.start(
+            job_arguments = (
                 value,
                 Path(
                     self._media_recovery.destination_for(value, self._output_path)
@@ -3352,13 +3527,46 @@ class Bridge(QObject):
                 self._download_preferences,
                 manual,
                 mp3,
-                urls=self._batch_urls if self._batch_urls else None,
-                batch_mode=bool(self._batch_urls),
-                cookie_source=self._cookie_source,
-                cookie_file=self._cookie_file,
-                cookie_browser=self._cookie_browser,
-                tags=self._current_extra_tags(),
             )
+            job_options = {
+                "urls": self._batch_urls if self._batch_urls else None,
+                "batch_mode": bool(self._batch_urls),
+                "cookie_source": self._cookie_source,
+                "cookie_file": self._cookie_file,
+                "cookie_browser": self._cookie_browser,
+                "tags": self._current_extra_tags(),
+            }
+            preview = self._preview_download_info
+            if (
+                preview is None
+                and not self._batch_urls
+                and value.strip() == self._metadata_preview_record.get("source")
+                and output_format == self._metadata_preview_record.get("type")
+            ):
+                preview = self._metadata_preview_info
+            subject = None
+            if preview is not None and is_metadata_preview(preview):
+                job = self._runtime.prepare_job(*job_arguments, **job_options)
+                subject = self._library_projection.preview_subject(preview)
+                if subject is None:
+                    raise RuntimeError(
+                        "The preview changed. Fetch it again before downloading."
+                    )
+                job.preview_info = dict(preview)
+                job.preview_info.pop("vodforge_preview_complete", None)
+                job.preview_info.pop("vodforge_preview_run_id", None)
+                job.preview_info = annotate_job_metadata(job, job.preview_info)
+                if key := metadata_run_key(preview):
+                    job.metadata_keys.add(key)
+                job.preview_source_owner = subject
+                self._runtime.start_job(job)
+            else:
+                job = self._runtime.start(*job_arguments, **job_options)
+            if subject is not None:
+                self._library_projection.consume_preview_subject(subject)
+                self._metadata_preview_info = None
+                self._metadata_preview_record = {}
+                self.forgePreviewChanged.emit()
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)
             outcome = "rejected"
@@ -3382,6 +3590,7 @@ class Bridge(QObject):
             self.activityChanged.emit()
         self.statusChanged.emit()
         self._record("submit", outcome)
+        return outcome in {"queued", "started"}
 
     def _current_extra_tags(self) -> list[str]:
         return [item.strip() for item in self._extra_tags.split(",") if item.strip()]

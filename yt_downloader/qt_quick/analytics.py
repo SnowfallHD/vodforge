@@ -12,7 +12,12 @@ import time
 from pathlib import Path
 
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
-from yt_downloader.cloud_funnel import installation_state_path
+from yt_downloader.archive_work import ArchiveWorkOwner
+from yt_downloader.cloud_funnel import (
+    installation_state_path,
+    load_or_create_installation_state,
+)
+from yt_downloader.install_attribution import InstallationAttributionOwner
 from yt_downloader.product_telemetry import (
     PRODUCT_TELEMETRY_STATE_FILENAME,
     ProductTelemetryOwner,
@@ -30,6 +35,14 @@ class QtAnalyticsSession:
         self._started = False
         self._presented = False
         self._opened = False
+        self._app_version = app_version
+        self._attribution_path = installation_state_path(data_dir=directory)
+        self._attribution = InstallationAttributionOwner(
+            self._attribution_path,
+            browser_opener=lambda *_args, **_kwargs: False,
+        )
+        self._attribution_work: ArchiveWorkOwner | None = None
+        self._attribution_attempted = False
         if not telemetry_collection_allowed():
             return
         owner = AnalyticsConsentOwner(directory)
@@ -144,3 +157,35 @@ class QtAnalyticsSession:
             and self.telemetry.record_app_opened()
         ):
             self._opened = True
+
+    def start_first_launch_delivery(self) -> None:
+        """Use Tk's consent-gated attribution owner once per Qt session."""
+        if not self.allowed or self._attribution_attempted:
+            return
+        self._attribution_attempted = True
+        try:
+            state = load_or_create_installation_state(self._attribution_path)
+        except (OSError, ValueError):
+            return
+        if not self._attribution.needs_delivery(state):
+            return
+        self._attribution_work = ArchiveWorkOwner()
+
+        def deliver(_cancelled: threading.Event) -> bool:
+            result = self._attribution.deliver_first_launch(
+                state, app_version=self._app_version
+            )
+            return result.first_launch_confirmed
+
+        self._attribution_work.submit("first_launch", deliver)
+
+    def poll_first_launch_delivery(self) -> None:
+        work = self._attribution_work
+        if work is not None and work.poll() is not None:
+            work.close()
+            self._attribution_work = None
+
+    def close(self) -> None:
+        if self._attribution_work is not None:
+            self._attribution_work.close()
+            self._attribution_work = None

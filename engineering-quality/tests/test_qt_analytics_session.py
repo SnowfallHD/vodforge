@@ -126,6 +126,45 @@ def test_qt_existing_permission_reports_recovery_and_one_open(
     assert not session.poll() and _Telemetry.instances[0].opens == 1
 
 
+def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(analytics, "telemetry_collection_allowed", lambda: True)
+
+    class Attribution:
+        def __init__(self, _path: Path, **_kwargs: Any) -> None:
+            pass
+
+        def needs_delivery(self, _state: object) -> bool:
+            calls.append("needs")
+            return True
+
+        def deliver_first_launch(self, _state: object, *, app_version: str) -> Any:
+            calls.append(app_version)
+            return SimpleNamespace(first_launch_confirmed=True)
+
+    monkeypatch.setattr(analytics, "InstallationAttributionOwner", Attribution)
+    monkeypatch.setattr(
+        analytics, "load_or_create_installation_state", lambda _path: object()
+    )
+    session = analytics.QtAnalyticsSession(tmp_path, "0.2.3", _Recovery())
+    try:
+        session.start_first_launch_delivery()
+        assert calls == []
+        session.choose(True)
+        session.start_first_launch_delivery()
+        deadline = time.monotonic() + 1
+        while "0.2.3" not in calls and time.monotonic() < deadline:
+            session.poll_first_launch_delivery()
+            time.sleep(0.005)
+        assert calls == ["needs", "0.2.3"]
+        session.start_first_launch_delivery()
+        assert calls == ["needs", "0.2.3"]
+    finally:
+        session.close()
+
+
 def test_qt_permission_write_failure_keeps_delivery_disabled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

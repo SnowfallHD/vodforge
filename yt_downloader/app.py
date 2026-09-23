@@ -1291,6 +1291,73 @@ def mark_metadata_output_type(
     return marked
 
 
+def fetch_metadata_preview(
+    url: str,
+    output_type: OutputType,
+    *,
+    ignore_playlists: bool,
+    cookie_inputs: tuple[bool, Path | None, str | None],
+    ffmpeg: str | None,
+    deno: str | None,
+    logger: Any,
+    coordinator: ProviderNetworkCoordinator,
+    should_abort: Callable[[], bool],
+) -> dict[str, Any] | None:
+    """Fetch one metadata-only preview through the shared provider gate.
+
+    None means the request was retired before entering the provider. Preview
+    metadata is not a durable download or history record.
+    """
+    ytdlp_module = load_yt_dlp()
+    if ytdlp_module is None:
+        raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
+    opts: dict[str, Any] = {
+        "quiet": True,
+        "skip_download": True,
+        "noplaylist": ignore_playlists,
+        "extract_flat": False,
+        "logger": logger,
+        "socket_timeout": 15,
+    }
+    apply_ytdlp_network_retry_policy(opts, source_analysis=True)
+    use_cookies, cookie_file, cookie_browser = cookie_inputs
+    apply_ytdlp_cookie_options(
+        opts,
+        use_cookies=use_cookies,
+        cookie_file=cookie_file,
+        cookie_browser=cookie_browser,
+    )
+    if ffmpeg:
+        opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
+    apply_youtube_runtime_options(opts, deno_path=deno)
+
+    def control_check() -> None:
+        if should_abort():
+            raise RuntimeError("Metadata preview cancelled")
+
+    def extract_metadata() -> Any:
+        def extract() -> Any:
+            with ytdlp_module.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=False)
+
+        return run_with_bounded_transient_retries(
+            lambda: run_tracked_ytdlp_operation(extract, control_check=control_check),
+            control_check=control_check,
+            on_retry=lambda attempt, maximum, delay, exc: write_diagnostic(
+                source_analysis_retry_message(
+                    "metadata preview", attempt, maximum, delay, exc
+                )
+            ),
+        )
+
+    ran, info = coordinator.run_preview(extract_metadata, should_abort=should_abort)
+    if not ran:
+        return None
+    if not isinstance(info, dict):
+        raise TypeError("Metadata preview returned no usable item.")
+    return mark_metadata_output_type(info, output_type)
+
+
 def _float_or_none(value: Any) -> float | None:
     number = _finite_float(value)
     if number is None:
@@ -13348,97 +13415,21 @@ class DownloaderApp(
     def _metadata_worker(
         self, url: str, output_type: OutputType, ignore_playlists: bool = False
     ) -> None:
-        ytdlp_module = load_yt_dlp()
-        if ytdlp_module is None:
-            self.events.put(
-                (
-                    "metadata_error",
-                    {
-                        "message": format_ytdlp_user_error(
-                            f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}"
-                        ),
-                        "details": technical_download_error(
-                            f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}"
-                        ),
-                    },
-                )
-            )
-            self.events.put(("metadata_fetch_done", None))
-            return
         try:
-            opts = {
-                "quiet": True,
-                "skip_download": True,
-                "noplaylist": ignore_playlists,
-                "extract_flat": False,
-                "logger": QueueLogger(self.events),
-                "socket_timeout": 15,
-            }
-            apply_ytdlp_network_retry_policy(opts, source_analysis=True)
-            use_cookies, cookie_file, cookie_browser = self._cookie_inputs()
-            apply_ytdlp_cookie_options(
-                opts,
-                use_cookies=use_cookies,
-                cookie_file=cookie_file,
-                cookie_browser=cookie_browser,
-            )
-            ffmpeg = self._find_ffmpeg()
-            if ffmpeg:
-                opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
-            deno = self._find_deno()
-            apply_youtube_runtime_options(opts, deno_path=deno)
-
-            def extract_metadata() -> Any:
-                def extract() -> Any:
-                    with ytdlp_module.YoutubeDL(opts) as ydl:
-                        return ydl.extract_info(url, download=False)
-
-                def control_check() -> None:
-                    if self.__dict__.get("_closing", False):
-                        raise RuntimeError(
-                            "Metadata preview cancelled during application close"
-                        )
-
-                return run_with_bounded_transient_retries(
-                    lambda: run_tracked_ytdlp_operation(
-                        extract,
-                        control_check=control_check,
-                    ),
-                    control_check=control_check,
-                    on_retry=lambda attempt, maximum, delay, exc: write_diagnostic(
-                        source_analysis_retry_message(
-                            "metadata preview",
-                            attempt,
-                            maximum,
-                            delay,
-                            exc,
-                        )
-                    ),
-                )
-
-            ran, info = self._provider_network_coordinator().run_preview(
-                extract_metadata,
+            info = fetch_metadata_preview(
+                url,
+                output_type,
+                ignore_playlists=ignore_playlists,
+                cookie_inputs=self._cookie_inputs(),
+                ffmpeg=self._find_ffmpeg(),
+                deno=self._find_deno(),
+                logger=QueueLogger(self.events),
+                coordinator=self._provider_network_coordinator(),
                 should_abort=lambda: bool(self.__dict__.get("_closing", False)),
             )
-            if not ran:
+            if info is None:
                 return
-            if isinstance(info, dict):
-                info = mark_metadata_output_type(info, output_type)
-                self.events.put(("metadata", info))
-            else:
-                self.events.put(
-                    (
-                        "metadata_error",
-                        {
-                            "message": format_ytdlp_user_error(
-                                "Metadata preview returned no usable item."
-                            ),
-                            "details": technical_download_error(
-                                "Metadata preview returned no usable item."
-                            ),
-                        },
-                    )
-                )
+            self.events.put(("metadata", info))
         except Exception as exc:  # noqa: BLE001 - worker converts provider failures into UI events
             self.events.put(
                 (

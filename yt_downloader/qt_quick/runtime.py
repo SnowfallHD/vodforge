@@ -83,6 +83,7 @@ class DownloadRuntime:
         self.worker: threading.Thread | None = None
         self.active_job: DownloadJob | None = None
         self._worker_app: DownloadWorkerCore | None = None
+        self.provider_network = ProviderNetworkCoordinator()
         self._closing = False
         self._history_error = False
         self.product_telemetry: Any | None = None
@@ -442,7 +443,7 @@ class DownloadRuntime:
         worker_app.video_output_dirs_by_id = {}
         worker_app.download_history = self.history
         worker_app.run_recovery = self.recovery
-        worker_app._provider_network = ProviderNetworkCoordinator()
+        worker_app._provider_network = self.provider_network
         worker_app.product_telemetry = self.product_telemetry
         self._worker_app = worker_app
         self._history_error = False

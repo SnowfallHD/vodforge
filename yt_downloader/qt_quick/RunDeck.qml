@@ -141,6 +141,15 @@ Item {
                 onActivated: { deck.openSaved(deck.selectedRecord.owner); actionsPopup.close() }
             }
             StoneButton {
+                visible: deck.selectedRecord.kind === "preview"
+                label: "Start download"
+                Layout.fillWidth: true
+                onActivated: {
+                    if (deck.appBridge.openPreviewOwner(deck.selectedRecord.owner)) deck.appBridge.startPreviewDownload()
+                    actionsPopup.close()
+                }
+            }
+            StoneButton {
                 label: "View Activity"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.select("Activity"); actionsPopup.close() }
@@ -172,7 +181,8 @@ Item {
                         size: "inline"
                         onActivated: {
                             if (modelData.kind === "completed") deck.openSaved(modelData.owner)
-                            else deck.appBridge.select("Activity")
+                            else if (modelData.kind === "preview") deck.appBridge.openPreviewOwner(modelData.owner)
+                            else deck.appBridge.select("Forge")
                             allRunsPopup.close()
                         }
                     }
