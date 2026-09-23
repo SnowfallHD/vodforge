@@ -1527,6 +1527,15 @@ Window {
     Popup {
         id: settingsPopup
         objectName: "downloadSettingsPopup"
+        function observeVisiblePro() {
+            if (!opened || !proButton.visible) return
+            const point = proButton.mapToItem(contentItem, 0, 0)
+            if (point.x >= 0 && point.y >= 0 &&
+                point.x + proButton.width <= contentItem.width &&
+                point.y + proButton.height <= contentItem.height)
+                bridge.recordCloudCtaSeen()
+        }
+        onOpened: Qt.callLater(observeVisiblePro)
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(820, window.width - 40)
@@ -1537,7 +1546,18 @@ Window {
         ColumnLayout {
             anchors.fill: parent
             spacing: 7
-            Text { text: "Forge settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "Forge settings"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
+                StoneButton {
+                    id: proButton
+                    label: "VODForge PRO"
+                    accessibilityLabel: "VODForge PRO"
+                    Layout.preferredWidth: 150
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.openCloudEarlyAccess()
+                }
+            }
             Text { text: "Every option is available here; the main workspace stays focused."; color: theme.muted; font.pixelSize: 14 }
             ScrollView {
                 id: settingsBody

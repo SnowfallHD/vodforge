@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import asdict, fields, replace
@@ -54,7 +55,15 @@ from yt_downloader.archive_observations import (
 )
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
-from yt_downloader.cloud_funnel import installation_state_path
+from yt_downloader.cloud_funnel import (
+    InstallationIdentityError,
+    cloud_page_url,
+    installation_state_path,
+    load_or_create_installation_state,
+    mark_cloud_seen_confirmed,
+    record_cloud_click,
+    record_cloud_seen,
+)
 from yt_downloader.cookie_inputs import browser_cookie_value
 from yt_downloader.engagement_state import WELCOME_SLIDES, EngagementState
 from yt_downloader.export_inputs import (
@@ -302,6 +311,12 @@ class Bridge(QObject):
         self._engagement = EngagementState(
             installation_state_path(data_dir=self._runtime.history_path.parent)
         )
+        self._installation_path = installation_state_path(
+            data_dir=self._runtime.history_path.parent
+        )
+        self._cloud_work = ArchiveWorkOwner()
+        self._cloud_seen_attempted = False
+        self._cloud_seen_install_id = ""
         self._editorial_kind = ""
         self._editorial_slides: tuple[FeatureHighlight, ...] = ()
         self._activity_log_path = diagnostics_dir() / "activity.log"
@@ -921,6 +936,43 @@ class Bridge(QObject):
         else:
             QTimer.singleShot(6000, self._record_update_telemetry_receipt)
         return saved
+
+    @Slot()
+    def recordCloudCtaSeen(self) -> None:
+        if not self._analytics.allowed or self._cloud_seen_attempted:
+            return
+        try:
+            state = load_or_create_installation_state(self._installation_path)
+        except (InstallationIdentityError, OSError, ValueError):
+            return
+        if state.cloud_seen_confirmed:
+            self._cloud_seen_attempted = True
+            return
+        self._cloud_seen_install_id = state.install_id
+        if (
+            self._cloud_work.submit(
+                "cloud_seen",
+                lambda _cancelled: record_cloud_seen(state, app_version=__version__),
+            )
+            is not None
+        ):
+            self._cloud_seen_attempted = True
+
+    @Slot()
+    def openCloudEarlyAccess(self) -> None:
+        try:
+            state = load_or_create_installation_state(self._installation_path)
+        except (InstallationIdentityError, OSError, ValueError):
+            state = None
+        destination = cloud_page_url(state.install_id if state is not None else None)
+        if state is not None:
+            threading.Thread(
+                target=record_cloud_click,
+                args=(state,),
+                name="vodforge-qt-cloud-click",
+                daemon=True,
+            ).start()
+        QDesktopServices.openUrl(QUrl(destination))
 
     def _record_update_telemetry_receipt(self) -> None:
         telemetry = self._analytics.telemetry
@@ -3080,6 +3132,14 @@ class Bridge(QObject):
     def _pump(self) -> None:
         if self._closed:
             return
+        cloud_result = self._cloud_work.poll()
+        if cloud_result is not None and cloud_result.value is True:
+            try:
+                mark_cloud_seen_confirmed(
+                    self._installation_path, self._cloud_seen_install_id
+                )
+            except (InstallationIdentityError, OSError, ValueError):
+                pass
         if self._metadata.poll():
             record = self._metadata_preview_record
             pending_run_id = self._metadata_pending_run_id
@@ -3379,6 +3439,7 @@ class Bridge(QObject):
                 self._import_operation,
             )
         self._import_work.close()
+        self._cloud_work.close()
         self._relink.close()
         self._storage.close()
         self._artwork.close()

@@ -13,6 +13,7 @@ from yt_downloader.analytics_consent import AnalyticsConsentOwner
 from yt_downloader.models import CookieSource
 from yt_downloader.qt_quick import analytics
 from yt_downloader.qt_quick.main import Bridge
+from yt_downloader.version import __version__
 
 
 class _Recovery:
@@ -163,6 +164,43 @@ def test_qt_first_launch_uses_existing_attribution_owner_once_after_consent(
         assert calls == ["needs", "0.2.3"]
     finally:
         session.close()
+
+
+def test_qt_pro_impression_waits_for_consent_and_uses_existing_cloud_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    class Work:
+        def submit(self, kind: str, callback: Any) -> int:
+            calls.append(kind)
+            assert callback(None) is True
+            return 1
+
+    state = SimpleNamespace(
+        install_id="00000000-0000-4000-8000-000000000001", cloud_seen_confirmed=False
+    )
+    monkeypatch.setattr(
+        "yt_downloader.qt_quick.main.load_or_create_installation_state",
+        lambda _path: state,
+    )
+    monkeypatch.setattr(
+        "yt_downloader.qt_quick.main.record_cloud_seen",
+        lambda _state, *, app_version: calls.append(app_version) or True,
+    )
+    fake = SimpleNamespace(
+        _analytics=SimpleNamespace(allowed=False),
+        _cloud_seen_attempted=False,
+        _cloud_seen_install_id="",
+        _installation_path=tmp_path / "installation.json",
+        _cloud_work=Work(),
+    )
+    Bridge.recordCloudCtaSeen(fake)
+    assert calls == []
+    fake._analytics.allowed = True
+    Bridge.recordCloudCtaSeen(fake)
+    Bridge.recordCloudCtaSeen(fake)
+    assert calls == ["cloud_seen", __version__]
 
 
 def test_qt_permission_write_failure_keeps_delivery_disabled(

@@ -57,6 +57,28 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         # The Run Deck replaced the old idle "Ready" button with status text;
         # Download remains the reachable idle action.
         assert not buttons["Download"].state().disabled
+        buttons["Settings"].actionInterface().doAction(
+            QAccessibleActionInterface.pressAction()
+        )
+        application.processEvents()
+        pro = next(
+            child
+            for child in accessible_descendants(window)
+            if child.role() == QAccessible.Button
+            and child.text(QAccessible.Name) == "VODForge PRO"
+            and not child.state().invisible
+        )
+        assert pro.actionInterface() is not None
+        assert pro.rect().intersects(window.rect())
+        done = next(
+            child
+            for child in accessible_descendants(window)
+            if child.role() == QAccessible.Button
+            and child.text(QAccessible.Name) == "Done"
+            and not child.state().invisible
+        )
+        done.actionInterface().doAction(QAccessibleActionInterface.pressAction())
+        application.processEvents()
         buttons["Library"].actionInterface().doAction(
             QAccessibleActionInterface.pressAction()
         )
