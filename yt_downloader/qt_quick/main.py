@@ -41,6 +41,7 @@ from yt_downloader.app import (
     load_activity_log_tail,
     prepare_activity_log,
 )
+from yt_downloader.archive_browser import PAGE_SIZE, ArchiveBrowserModel
 from yt_downloader.archive_observations import bind_operation, operation
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
@@ -120,6 +121,7 @@ from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
+from yt_downloader.run_identity import metadata_output_profile
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
     SettingsError,
@@ -415,6 +417,8 @@ class Bridge(QObject):
         self._library_type = LIBRARY_ALL_MEDIA
         self._library_category = LIBRARY_ALL_CATEGORIES
         self._library_scene_route = "home"
+        self._folder_browser = ArchiveBrowserModel()
+        self._detail_versions: list[dict[str, str]] = []
         self._library_sort = "recent"
         self._library_group_key = ""
         self._library_group_kind = ""
@@ -860,6 +864,50 @@ class Bridge(QObject):
         )
 
     @Property("QVariantMap", notify=historyChanged)
+    def libraryFolders(self) -> dict[str, Any]:
+        self._reconcile_folder_browser()
+        model = self._folder_browser
+        return {
+            "mode": model.mode,
+            "path": str(model.path) if model.path is not None else "",
+            "locations": [
+                {
+                    "key": component.key,
+                    "title": component.title,
+                    "detail": component.detail,
+                }
+                for component in model.locations
+            ],
+            "components": [
+                {
+                    "key": component.key,
+                    "kind": component.kind,
+                    "title": component.title,
+                    "detail": component.detail,
+                    "count": len(component.indices),
+                }
+                for component in model.page_components
+            ],
+            "highlights": [
+                {
+                    "key": component.key,
+                    "title": component.title,
+                    "detail": component.detail,
+                }
+                for component in model.saved_media[:5]
+            ]
+            if model.mode == "folders" and model.path is None and model.page == 0
+            else [],
+            "page": model.page,
+            "pages": max(1, (len(model.components) + PAGE_SIZE - 1) // PAGE_SIZE),
+            "count": len(model.components),
+        }
+
+    def _reconcile_folder_browser(self) -> None:
+        records = self._projected_library()
+        self._folder_browser.replace(records, range(len(records)))
+
+    @Property("QVariantMap", notify=historyChanged)
     def watchScene(self) -> dict[str, Any]:
         scene = watch_scene(
             self._projected_library(),
@@ -978,6 +1026,11 @@ class Bridge(QObject):
             "artwork": self._artwork.request(row),
             "source": [{"label": label, "value": value} for label, value, _ in source],
             "output": [{"label": label, "value": value} for label, value, _ in output],
+            "versions": list(self._detail_versions),
+            "fromFolders": bool(
+                self._library_detail_origin
+                and self._library_detail_origin[0] == "folders"
+            ),
         }
 
     @Property("QVariantList", notify=historyChanged)
@@ -1422,12 +1475,16 @@ class Bridge(QObject):
             "collections",
             "videos",
             "audio",
+            "folders",
         }:
             return
+        if route == "folders":
+            self._folder_browser.navigate(None, mode="folders")
         self._library_scene_route = route
         self._library_group_key = ""
         self._library_group_kind = ""
         self._library_detail_owner = ""
+        self._detail_versions = []
         self._library_detail_origin = None
         self.historyChanged.emit()
 
@@ -1447,6 +1504,8 @@ class Bridge(QObject):
             self.statusChanged.emit()
             return False
         if self._library_scene_route != "detail":
+            if self._library_scene_route != "folders":
+                self._detail_versions = []
             self._library_detail_origin = (
                 self._library_scene_route,
                 self._library_group_kind,
@@ -1466,8 +1525,90 @@ class Bridge(QObject):
             origin
         )
         self._library_detail_owner = ""
+        self._detail_versions = []
         self._library_detail_origin = None
         self.historyChanged.emit()
+
+    @Slot(str)
+    def navigateLibraryFolders(self, mode: str) -> None:
+        if mode not in {"folders", "all", "activity"}:
+            return
+        self._folder_browser.navigate(None, mode=mode)
+        self._library_scene_route = "folders"
+        self.historyChanged.emit()
+
+    @Slot(str, result=bool)
+    def openLibraryFolderComponent(self, key: str) -> bool:
+        if self._library_scene_route != "folders":
+            return False
+        self._reconcile_folder_browser()
+        component = next(
+            (
+                item
+                for item in (
+                    *self._folder_browser.page_components,
+                    *self._folder_browser.locations,
+                    *self._folder_browser.saved_media,
+                )
+                if item.key == key
+            ),
+            None,
+        )
+        if component is None:
+            return False
+        if component.kind == "folder" and component.path is not None:
+            self._folder_browser.navigate(component.path)
+            self.historyChanged.emit()
+            return True
+        if component.kind != "media":
+            return False
+        rows = self._folder_browser.records
+        versions = [
+            {
+                "owner": history_archive_owner(rows[index]),
+                "label": f"{position + 1}. {metadata_output_profile(dict(rows[index]))}",
+            }
+            for position, index in enumerate(component.indices)
+            if rows[index].get("vodforge_output_dir")
+        ]
+        if not versions:
+            return False
+        self._detail_versions = versions
+        return self.openLibraryDetails(versions[0]["owner"])
+
+    @Slot()
+    def upLibraryFolder(self) -> None:
+        if self._library_scene_route != "folders":
+            return
+        path = self._folder_browser.path
+        self._folder_browser.navigate(
+            path.parent if path is not None and path.parent != path else None
+        )
+        self.historyChanged.emit()
+
+    @Slot(int)
+    def pageLibraryFolder(self, delta: int) -> None:
+        if self._library_scene_route != "folders" or delta not in {-1, 1}:
+            return
+        self._reconcile_folder_browser()
+        model = self._folder_browser
+        model.page = min(
+            max(0, model.page + delta),
+            max(0, (len(model.components) - 1) // PAGE_SIZE),
+        )
+        self.historyChanged.emit()
+
+    @Slot(str, result=bool)
+    def chooseLibraryVersion(self, owner: str) -> bool:
+        if self._library_scene_route != "detail" or owner not in {
+            item["owner"] for item in self._detail_versions
+        }:
+            return False
+        if self._saved_item_for_owner(owner) is None:
+            return False
+        self._library_detail_owner = owner
+        self.historyChanged.emit()
+        return True
 
     @Slot(str)
     def navigateWatch(self, route: str) -> None:

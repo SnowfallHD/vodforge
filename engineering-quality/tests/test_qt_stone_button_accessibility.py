@@ -136,6 +136,14 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
 
         for name in ("Forge", "Library", "Watch", "Activity", "Help", "Settings"):
             assert inside(visible_button(name)), name
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        for _ in range(5):
+            application.processEvents()
+        for name in ("Folders", "All media", "Runs & previews", "Back to Library"):
+            assert inside(visible_button(name)), name
+        bridge.navigateLibrary("home")
+        bridge.select("Forge")
         media = tmp_path / "fixture.mp4"
         media.write_bytes(b"fixture")
         bridge._runtime.history = [

@@ -113,6 +113,48 @@ def test_qt_library_description_uses_current_detail_owner_and_shared_annotations
         bridge.close()
 
 
+def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    video = saved(tmp_path, "Same source", "MP4")
+    audio = saved(tmp_path, "Same source", "MP3")
+    video["webpage_url"] = audio["webpage_url"] = "https://example.com/same"
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._runtime.history = [video, audio]
+        bridge.navigateLibrary("folders")
+        root = bridge.libraryFolders
+        assert root["mode"] == "folders"
+        assert len(root["locations"]) == 1
+        assert len(root["highlights"]) == 1
+        assert bridge.openLibraryFolderComponent(root["locations"][0]["key"])
+        folder = bridge.libraryFolders
+        assert folder["path"]
+        media = next(item for item in folder["components"] if item["kind"] == "media")
+        assert media["count"] == 2
+        assert bridge.openLibraryFolderComponent(media["key"])
+        detail = bridge.libraryDetail
+        assert detail["fromFolders"] is True
+        assert len(detail["versions"]) == 2
+        assert bridge.chooseLibraryVersion(detail["versions"][1]["owner"])
+        assert bridge.libraryDetail["type"] == "MP3"
+        assert not bridge.chooseLibraryVersion("stale-owner")
+        bridge.returnLibraryDetails()
+        assert bridge.libraryScene["route"] == "folders"
+        assert bridge.libraryFolders["path"] == folder["path"]
+        bridge.upLibraryFolder()
+        assert bridge.libraryFolders["path"] != folder["path"]
+        bridge.navigateLibraryFolders("all")
+        assert bridge.libraryFolders["mode"] == "all"
+    finally:
+        bridge.close()
+
+
 def test_qt_bridge_close_stops_polling_and_commits_pending_preferences(
     tmp_path, monkeypatch
 ):

@@ -26,9 +26,15 @@ Item {
         onAnnotationRequested: function(owner) { scene.annotationOwnerRequested(owner) }
     }
 
+    LibraryFolders {
+        anchors.fill: parent
+        visible: scene.route === "folders"
+        appBridge: scene.appBridge
+    }
+
     RowLayout {
         anchors.fill: parent
-        visible: scene.route !== "detail"
+        visible: scene.route !== "detail" && scene.route !== "folders"
         spacing: 20
 
         ColumnLayout {
@@ -60,6 +66,12 @@ Item {
                               (scene.route === "home" && modelData.route === "all")
                     onActivated: scene.appBridge.navigateLibrary(modelData.route)
                 }
+            }
+            StoneButton {
+                label: "Folders"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 45
+                onActivated: scene.appBridge.navigateLibrary("folders")
             }
             Item { Layout.fillHeight: true }
             StoneField {

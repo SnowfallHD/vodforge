@@ -19,7 +19,7 @@ Item {
             width: viewport.availableWidth
             spacing: 16
             StoneButton {
-                label: "Back to Library"
+                label: detail.item.fromFolders ? "Back to folders" : "Back to Library"
                 width: 180
                 height: 40
                 onActivated: detail.appBridge.returnLibraryDetails()
@@ -88,6 +88,26 @@ Item {
                         StoneButton { label: "Play"; emphasized: true; width: 100; height: 40; onActivated: detail.appBridge.openLibraryOwner(detail.item.owner) }
                         StoneButton { label: "Show in Folder"; width: 166; height: 40; onActivated: detail.appBridge.openLibraryFolder(detail.item.owner) }
                         StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 44; height: 40; onActivated: detail.actionsRequested(detail.item.owner) }
+                    }
+                }
+            }
+            Column {
+                visible: (detail.item.versions || []).length > 1
+                width: parent.width
+                spacing: 6
+                Text { text: "Saved version"; color: theme.muted; font.pixelSize: 13 }
+                Flow {
+                    width: parent.width; spacing: 8
+                    Repeater {
+                        model: detail.item.versions || []
+                        StoneButton {
+                            required property var modelData
+                            label: modelData.label
+                            selected: modelData.owner === detail.item.owner
+                            size: "inline"
+                            width: Math.min(380, implicitWidth)
+                            onActivated: detail.appBridge.chooseLibraryVersion(modelData.owner)
+                        }
                     }
                 }
             }
