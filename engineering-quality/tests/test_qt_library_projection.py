@@ -112,6 +112,12 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         assert bridge._runtime.submitted[0][1]["batch_mode"] is True
         assert bridge.batchSummary == "No URL list loaded"
         assert accepted.count() == 1
+        assert bridge.openAnnotation(1)
+        assert bridge.saveAnnotation("Private note", "serendipity, audio", "Saved")
+        assert "vodforge_user_note" not in records[1]
+        bridge.setLibrarySearch("serendipity")
+        bridge.setLibraryCategory("Saved")
+        assert bridge.history[0]["sourceIndex"] == 1
     finally:
         bridge.close()
         application.processEvents()
@@ -120,6 +126,13 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
     assert ledger.for_record(records[1]).position == 2.0
     reopened = qt_main.Bridge(None)
     try:
+        assert "Saved" in reopened.libraryCategories
+        assert reopened.openAnnotation(1)
+        assert reopened.annotationValues == {
+            "note": "Private note",
+            "tags": "serendipity, audio",
+            "category": "Saved",
+        }
         seeks = QSignalSpy(reopened.playbackSeekRequested)
         reopened.openLibraryItem(1)
         reopened.observePlayback(0.0, 6.0, "Playing")
@@ -127,3 +140,43 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         assert seeks.at(0)[0] == 2.0
     finally:
         reopened.close()
+
+
+def test_qt_annotation_editor_preserves_malformed_private_ledger(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    application = QGuiApplication.instance() or QGuiApplication([])
+    ledger = tmp_path / "library-annotations.json"
+    ledger.write_bytes(b"{malformed private data")
+
+    class Runtime:
+        def __init__(self) -> None:
+            self.recovery_notice = None
+            self.history_path = tmp_path / "download-history.json"
+            self.history = [{"title": "Saved item", "vodforge_output_type": "MP4"}]
+            self.activity: list[dict[str, str]] = []
+            self.active_job = None
+
+        def close(self) -> None:
+            pass
+
+    class LocalRuntime:
+        def poll(self) -> list[Any]:
+            return []
+
+        def close(self) -> bool:
+            return True
+
+    monkeypatch.setattr(qt_main, "DownloadRuntime", Runtime)
+    monkeypatch.setattr(qt_main, "LocalConversionRuntime", LocalRuntime)
+    monkeypatch.setattr(
+        qt_main, "settings_file_path", lambda: tmp_path / "settings.json"
+    )
+    bridge = qt_main.Bridge(None)
+    try:
+        assert bridge.openAnnotation(0)
+        assert not bridge.saveAnnotation("new note", "tag", "Group")
+        assert ledger.read_bytes() == b"{malformed private data"
+    finally:
+        bridge.close()
+        application.processEvents()

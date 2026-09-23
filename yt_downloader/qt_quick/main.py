@@ -9,6 +9,7 @@ import sys
 import tempfile
 from dataclasses import asdict, fields, replace
 from pathlib import Path
+from typing import Any
 
 SOURCE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SOURCE))
@@ -41,8 +42,21 @@ from yt_downloader.export_inputs import (
     mp3_export_settings,
 )
 from yt_downloader.export_planning import QUALITY_OPTIONS
-from yt_downloader.history import HistoryError, history_output_path
-from yt_downloader.library_search import LIBRARY_ALL_MEDIA, library_visible_indices
+from yt_downloader.history import (
+    HistoryError,
+    history_annotation_owner,
+    history_output_path,
+)
+from yt_downloader.library_annotations import (
+    LibraryAnnotationsError,
+    LibraryAnnotationsOwner,
+)
+from yt_downloader.library_search import (
+    LIBRARY_ALL_CATEGORIES,
+    LIBRARY_ALL_MEDIA,
+    library_categories,
+    library_visible_indices,
+)
 from yt_downloader.local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoError,
@@ -152,10 +166,20 @@ class Bridge(QObject):
     batchListChanged = Signal()
     sourceAccepted = Signal()
     cookieAccessChanged = Signal()
+    libraryCategoryChanged = Signal()
+    annotationChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._annotations_writable = True
+        self._annotations = LibraryAnnotationsOwner(
+            self._runtime.history_path.parent / "library-annotations.json",
+            diagnostic=lambda _message: setattr(self, "_annotations_writable", False),
+        )
+        self._annotations.load()
+        self._annotation_owner = ""
+        self._annotation_values = {"note": "", "tags": "", "category": ""}
         self._local = LocalConversionRuntime()
         self._playback_progress = PlaybackProgressOwner(
             self._runtime.history_path.parent / "watch-progress.json"
@@ -245,6 +269,7 @@ class Bridge(QObject):
         self._playback_url = QUrl()
         self._library_search = ""
         self._library_type = LIBRARY_ALL_MEDIA
+        self._library_category = LIBRARY_ALL_CATEGORIES
         self._local_audio = ""
         self._local_image = ""
         self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
@@ -301,18 +326,50 @@ class Bridge(QObject):
 
     @Property("QVariantList", notify=historyChanged)
     def history(self) -> list[dict[str, str]]:
+        projected = self._projected_history()
         return [
             {
                 "sourceIndex": index,
                 "title": str(item.get("title") or "Untitled media"),
                 "type": str(item.get("vodforge_output_type") or "MP4"),
                 "path": str(item.get("vodforge_output_path") or ""),
+                "category": str(item.get("vodforge_user_category") or ""),
             }
             for index in library_visible_indices(
-                self._runtime.history, self._library_type, self._library_search
+                projected,
+                self._library_type,
+                self._library_search,
+                self._library_category,
             )
-            for item in [self._runtime.history[index]]
+            for item in [projected[index]]
         ]
+
+    def _projected_history(self) -> list[dict[str, Any]]:
+        projected: list[dict[str, Any]] = []
+        for source in self._runtime.history:
+            row: dict[str, Any] = dict(source)
+            annotation = self._annotations.annotation_for(
+                history_annotation_owner(source)
+            )
+            row["vodforge_user_note"] = annotation.note
+            row["vodforge_user_tags"] = list(annotation.tags)
+            row["vodforge_user_category"] = annotation.category
+            if annotation.description is not None:
+                row["vodforge_user_description"] = annotation.description
+            projected.append(row)
+        return projected
+
+    @Property(str, notify=libraryCategoryChanged)
+    def libraryCategory(self) -> str:
+        return self._library_category
+
+    @Property("QVariantList", notify=historyChanged)
+    def libraryCategories(self) -> list[str]:
+        return [LIBRARY_ALL_CATEGORIES, *library_categories(self._projected_history())]
+
+    @Property("QVariantMap", notify=annotationChanged)
+    def annotationValues(self) -> dict[str, str]:
+        return dict(self._annotation_values)
 
     @Property(str, notify=librarySearchChanged)
     def librarySearch(self) -> str:
@@ -431,6 +488,57 @@ class Bridge(QObject):
         self._library_type = output_type
         self.libraryTypeChanged.emit()
         self.historyChanged.emit()
+
+    @Slot(str)
+    def setLibraryCategory(self, category: str) -> None:
+        if category not in self.libraryCategories:
+            return
+        self._library_category = category
+        self.libraryCategoryChanged.emit()
+        self.historyChanged.emit()
+
+    @Slot(int, result=bool)
+    def openAnnotation(self, index: int) -> bool:
+        if not 0 <= index < len(self._runtime.history):
+            return False
+        self._annotation_owner = history_annotation_owner(self._runtime.history[index])
+        annotation = self._annotations.annotation_for(self._annotation_owner)
+        self._annotation_values = {
+            "note": annotation.note,
+            "tags": ", ".join(annotation.tags),
+            "category": annotation.category,
+        }
+        self.annotationChanged.emit()
+        return True
+
+    @Slot(str, str, str, result=bool)
+    def saveAnnotation(self, note: str, tags: str, category: str) -> bool:
+        if not self._annotation_owner or not self._annotations_writable:
+            self._status = (
+                "Library annotations need attention before changes can be saved."
+            )
+            self.statusChanged.emit()
+            return False
+        previous = self._annotations.annotation_for(self._annotation_owner)
+        annotation = replace(
+            previous,
+            note=note,
+            tags=tuple(item.strip() for item in tags.split(",") if item.strip()),
+            category=category,
+        )
+        try:
+            self._annotations.replace(self._annotation_owner, annotation)
+        except LibraryAnnotationsError as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return False
+        if self._library_category not in self.libraryCategories:
+            self._library_category = LIBRARY_ALL_CATEGORIES
+            self.libraryCategoryChanged.emit()
+        self._status = "Library notes and organization saved."
+        self.statusChanged.emit()
+        self.historyChanged.emit()
+        return True
 
     @Slot(QUrl)
     def setLocalAudioUrl(self, url: QUrl) -> None:

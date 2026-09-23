@@ -439,6 +439,12 @@ Window {
                             onActivated: bridge.setLibraryType(modelData)
                         }
                     }
+                    StoneButton {
+                        label: bridge.libraryCategory + "  ▾"
+                        Layout.preferredWidth: 155
+                        Layout.preferredHeight: 38
+                        onActivated: categoryPopup.open()
+                    }
                 }
                 ListView {
                     Layout.fillWidth: true
@@ -459,6 +465,12 @@ Window {
                                 Layout.fillWidth: true
                                 Text { text: modelData.title; color: theme.text; font.pixelSize: 17; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Text { text: modelData.type; color: theme.muted; font.pixelSize: 13 }
+                            }
+                            StoneButton {
+                                label: "Organize"
+                                Layout.preferredWidth: 95
+                                Layout.preferredHeight: 38
+                                onActivated: { if (bridge.openAnnotation(modelData.sourceIndex)) annotationPopup.open() }
                             }
                             StoneButton {
                                 label: "Play"
@@ -558,6 +570,98 @@ Window {
         }
     }
 
+    Popup {
+        id: categoryPopup
+        objectName: "libraryCategoryPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: 285
+        height: Math.min(370, bridge.libraryCategories.length * 43 + 12)
+        padding: 6
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
+        ListView {
+            anchors.fill: parent
+            clip: true
+            spacing: 3
+            model: bridge.libraryCategories
+            delegate: StoneButton {
+                required property string modelData
+                width: ListView.view.width
+                height: 40
+                label: modelData
+                selected: bridge.libraryCategory === modelData
+                onActivated: { bridge.setLibraryCategory(modelData); categoryPopup.close() }
+            }
+        }
+    }
+    Popup {
+        id: annotationPopup
+        objectName: "libraryAnnotationPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(570, window.width - 40)
+        height: 450
+        padding: 18
+        modal: true
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 9
+            Text { text: "Organize Library item"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text { text: "Your notes, tags, and category are saved privately."; color: theme.muted; font.pixelSize: 14 }
+            Text { text: "Category"; color: theme.muted; font.pixelSize: 13 }
+            StoneField {
+                Layout.fillWidth: true; Layout.preferredHeight: 40
+                TextField {
+                    id: categoryInput
+                    anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14
+                    padding: 0; verticalAlignment: TextInput.AlignVCenter
+                    text: bridge.annotationValues.category
+                    placeholderText: "Optional category"
+                    color: theme.text; placeholderTextColor: theme.muted
+                    font.pixelSize: 15; background: Item {}
+                }
+            }
+            Text { text: "Tags (comma separated)"; color: theme.muted; font.pixelSize: 13 }
+            StoneField {
+                Layout.fillWidth: true; Layout.preferredHeight: 40
+                TextField {
+                    id: tagsInput
+                    anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14
+                    padding: 0; verticalAlignment: TextInput.AlignVCenter
+                    text: bridge.annotationValues.tags
+                    placeholderText: "Optional tags"
+                    color: theme.text; placeholderTextColor: theme.muted
+                    font.pixelSize: 15; background: Item {}
+                }
+            }
+            Text { text: "Private note"; color: theme.muted; font.pixelSize: 13 }
+            StoneField {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                TextArea {
+                    id: noteInput
+                    anchors.fill: parent; anchors.margins: 12
+                    padding: 0; wrapMode: TextEdit.Wrap
+                    text: bridge.annotationValues.note
+                    placeholderText: "Add a note for yourself"
+                    color: theme.text; placeholderTextColor: theme.muted
+                    font.pixelSize: 15; background: Item {}
+                }
+            }
+            Text { text: bridge.status; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Cancel"; Layout.preferredWidth: 82; Layout.preferredHeight: 40; onActivated: annotationPopup.close() }
+                StoneButton {
+                    label: "Save"
+                    emphasized: true
+                    Layout.preferredWidth: 82; Layout.preferredHeight: 40
+                    onActivated: { if (bridge.saveAnnotation(noteInput.text, tagsInput.text, categoryInput.text)) annotationPopup.close() }
+                }
+            }
+        }
+    }
     Popup {
         id: manualOptionsPopup
         objectName: "manualOptionsPopup"

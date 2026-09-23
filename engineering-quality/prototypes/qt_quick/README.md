@@ -27,6 +27,13 @@ the selected source into `DownloadJob`, and applies the existing Windows
 Chromium warning. The file path is not saved in user settings. Browser/file
 access has job-field and validation proof, but account-gated live download
 qualification remains open.
+Qt Library now projects the existing private `LibraryAnnotationsOwner` over
+completed history for search and category filtering. The Organize dialog edits
+notes, tags, and category through shared stone controls, preserving any separate
+description and refusing to overwrite a malformed annotation ledger. A fresh
+Bridge reload proves the saved values survive restart without modifying provider
+history metadata. This is a completed-history slice; active/queued Library rows,
+archive file operations, and other Library actions still need porting.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,
