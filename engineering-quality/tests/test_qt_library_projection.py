@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtTest import QSignalSpy
 
 from yt_downloader.qt_quick import main as qt_main
 
@@ -58,6 +59,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
     )
     bridge = qt_main.Bridge(None)
     try:
+        playback_requests = QSignalSpy(bridge.playbackRequested)
         bridge.setLibrarySearch("research")
         assert [(item["sourceIndex"], item["title"]) for item in bridge.history] == [
             (1, "Research audio")
@@ -69,6 +71,8 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         bridge.openLibraryItem(bridge.history[0]["sourceIndex"])
         assert bridge.playbackUrl.toLocalFile() == str(second)
         assert bridge.selection == "Watch"
+        bridge.openLibraryItem(bridge.history[0]["sourceIndex"])
+        assert playback_requests.count() == 2
     finally:
         bridge.close()
         application.processEvents()

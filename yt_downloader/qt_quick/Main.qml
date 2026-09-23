@@ -29,10 +29,17 @@ Window {
     MediaPlayer {
         id: mediaPlayer
         objectName: "watchMediaPlayer"
-        source: bridge.playbackUrl
         audioOutput: AudioOutput { id: audioOutput; volume: 0.8 }
         videoOutput: videoSurface
-        onSourceChanged: if (source.toString().length) play()
+    }
+    Connections {
+        target: bridge
+        function onPlaybackRequested() {
+            mediaPlayer.stop()
+            mediaPlayer.source = ""
+            mediaPlayer.source = bridge.playbackUrl
+            mediaPlayer.play()
+        }
     }
     FolderDialog {
         id: outputFolderDialog

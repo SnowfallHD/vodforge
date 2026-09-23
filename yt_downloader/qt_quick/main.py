@@ -115,6 +115,7 @@ class Bridge(QObject):
     outputFormatChanged = Signal()
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
+    playbackRequested = Signal()
     librarySearchChanged = Signal()
     libraryTypeChanged = Signal()
     localChanged = Signal()
@@ -409,6 +410,7 @@ class Bridge(QObject):
         self._playback_url = QUrl.fromLocalFile(str(path))
         self.playbackUrlChanged.emit()
         self.select("Watch")
+        self.playbackRequested.emit()
 
     @Slot()
     def cancel(self) -> None:
