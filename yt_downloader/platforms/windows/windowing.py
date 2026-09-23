@@ -3,15 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 
-def flush_pending_window_paint(root: Any) -> bool:
-    """Send already-invalid Windows child paints during the native sizing loop."""
+def flush_pending_window_paint(root: Any, *surfaces: Any) -> bool:
+    """Paint the active view/header without touching dormant view subtrees."""
     import _tkinter
     import ctypes
     from ctypes import wintypes
 
     api = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
-    api.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
-    api.GetAncestor.restype = wintypes.HWND
     api.RedrawWindow.argtypes = [
         wintypes.HWND,
         ctypes.c_void_p,
@@ -19,16 +17,16 @@ def flush_pending_window_paint(root: Any) -> bool:
         wintypes.UINT,
     ]
     api.RedrawWindow.restype = wintypes.BOOL
-    hwnd = api.GetAncestor(root.winfo_id(), 2)
-    if not hwnd:
-        return False
     # Let one pending Tk geometry pass commit the responsive positions. A full
     # update_idletasks() drain can recurse through hundreds of decorative
     # projections and freeze the native sizing loop.
     root.tk.dooneevent(_tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT)
     # Existing invalid regions only. Forcing all children to invalidate on
     # every Configure would turn a paint fix into more resize work.
-    return bool(api.RedrawWindow(hwnd, None, None, 0x0100 | 0x0080))
+    return all(
+        api.RedrawWindow(surface.winfo_id(), None, None, 0x0100 | 0x0080)
+        for surface in surfaces
+    )
 
 
 def request_window_foreground(root: Any) -> bool:

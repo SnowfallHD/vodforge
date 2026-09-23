@@ -10171,7 +10171,13 @@ class DownloaderApp(
                 try:
                     from .platforms.windows.windowing import flush_pending_window_paint
 
-                    flush_pending_window_paint(self)
+                    flush_pending_window_paint(
+                        self,
+                        self.focus_header,
+                        self._focus_views[
+                            self.__dict__.get("_focus_selected_view", "forge")
+                        ],
+                    )
                 finally:
                     self._focus_resize_flushing_paint = False
         except tk.TclError:
