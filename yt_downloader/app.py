@@ -69,6 +69,7 @@ from .export_inputs import (
     MP3_SAMPLE_RATE_OPTIONS,
     manual_export_settings,
     mp3_export_settings,
+    validate_custom_cover_art,
 )
 from .export_planning import (
     DEFAULT_MAX_HEIGHT,
@@ -512,8 +513,6 @@ def _persisted_int_text(
 
 AUTO_UPDATE_BUSY_RETRY_MS = 10 * 60 * 1_000
 THUMBNAIL_CACHE_MAX_ITEMS = 1000
-CUSTOM_COVER_MAX_INPUT_BYTES = 50 * 1024 * 1024
-CUSTOM_COVER_MAX_PIXELS = 50_000_000
 CUSTOM_COVER_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 
 
@@ -4166,31 +4165,6 @@ def save_custom_cached_thumbnail_image(
                 temporary.unlink(missing_ok=True)
             except OSError:
                 pass
-
-
-def validate_custom_cover_art(path: Path) -> Path:
-    """Validate a user-selected local cover image before it enters FFmpeg."""
-    candidate = Path(path).expanduser()
-    if not candidate.is_file():
-        raise ValueError("Choose an existing cover image file.")
-    try:
-        if candidate.stat().st_size > CUSTOM_COVER_MAX_INPUT_BYTES:
-            raise ValueError("Custom cover art must be 50 MB or smaller.")
-    except OSError as exc:
-        raise ValueError(f"VODForge could not read that cover image: {exc}") from exc
-    if Image is None:
-        raise ValueError("Pillow is required to validate custom cover art.")
-    try:
-        with Image.open(candidate) as source:
-            width, height = source.size
-            if width <= 0 or height <= 0 or width * height > CUSTOM_COVER_MAX_PIXELS:
-                raise ValueError("Custom cover art dimensions are too large.")
-            source.verify()
-    except ValueError:
-        raise
-    except Exception as exc:
-        raise ValueError("Choose a valid JPEG, PNG, or WebP cover image.") from exc
-    return candidate.resolve(strict=False)
 
 
 def prepare_custom_cover_art(source_path: Path, staging_dir: Path) -> Path:

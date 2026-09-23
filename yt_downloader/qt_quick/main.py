@@ -31,7 +31,6 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from yt_downloader.app import validate_custom_cover_art
 from yt_downloader.cookie_inputs import browser_cookie_value
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
@@ -40,6 +39,7 @@ from yt_downloader.export_inputs import (
     MP3_SAMPLE_RATE_OPTIONS,
     manual_export_settings,
     mp3_export_settings,
+    validate_custom_cover_art,
 )
 from yt_downloader.export_planning import QUALITY_OPTIONS
 from yt_downloader.history import (

@@ -27,6 +27,10 @@ the selected source into `DownloadJob`, and applies the existing Windows
 Chromium warning. The file path is not saved in user settings. Browser/file
 access has job-field and validation proof, but account-gated live download
 qualification remains open.
+The custom MP3 cover validator now lives with shared `export_inputs.py`; Tk
+re-exports the same function and Qt imports it directly. This removes a
+widget-module dependency from that validation path while retaining the same
+size, pixel, and image-decoding limits.
 Qt Library now projects the existing private `LibraryAnnotationsOwner` over
 completed history for search and category filtering. The Organize dialog edits
 notes, tags, and category through shared stone controls, preserving any separate

@@ -4,10 +4,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from yt_downloader.app import DownloaderApp
 from yt_downloader.cookie_inputs import windows_chromium_cookie_warning
-from yt_downloader.export_inputs import manual_export_settings, mp3_export_settings
+from yt_downloader.export_inputs import (
+    manual_export_settings,
+    mp3_export_settings,
+    validate_custom_cover_art,
+)
 from yt_downloader.models import CookieSource, ExportMode, OutputType
 from yt_downloader.qt_quick.runtime import DownloadRuntime
 from yt_downloader.url_list_inputs import parse_url_list_text, read_url_list_file
@@ -59,6 +64,27 @@ def test_invalid_manual_value_blocks_both_entrypoints():
         manual_export_settings(
             {"manual_audio_codec": "MP3", "manual_audio_bitrate": "133"}
         )
+
+
+def test_cover_validation_is_one_owner_for_tk_and_qt(tmp_path: Path):
+    from yt_downloader.app import validate_custom_cover_art as tk_validator
+
+    assert tk_validator is validate_custom_cover_art
+    image = tmp_path / "cover.png"
+    Image.new("RGB", (32, 32), "#674391").save(image)
+    assert validate_custom_cover_art(image) == image.resolve()
+    assert (
+        mp3_export_settings(
+            {"mp3_cover_art_mode": "Custom art"},
+            custom_cover_path=image,
+            validate_cover=validate_custom_cover_art,
+        ).custom_cover_art_path
+        == image.resolve()
+    )
+    broken = tmp_path / "broken.png"
+    broken.write_bytes(b"not an image")
+    with pytest.raises(ValueError, match="valid JPEG"):
+        tk_validator(broken)
 
 
 def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):

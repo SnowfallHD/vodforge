@@ -44,6 +44,35 @@ MP3_SAMPLE_RATE_OPTIONS = {
 }
 MP3_CHANNEL_OPTIONS = {"Preserve source": None, "Stereo": "2", "Mono": "1"}
 MP3_COVER_ART_OPTIONS = ("No Art", "YouTube art", "Custom art")
+CUSTOM_COVER_MAX_INPUT_BYTES = 50 * 1024 * 1024
+CUSTOM_COVER_MAX_PIXELS = 50_000_000
+
+
+def validate_custom_cover_art(path: Path) -> Path:
+    """Validate a user-selected local cover before it enters FFmpeg."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        raise ValueError("Choose an existing cover image file.")
+    try:
+        if candidate.stat().st_size > CUSTOM_COVER_MAX_INPUT_BYTES:
+            raise ValueError("Custom cover art must be 50 MB or smaller.")
+    except OSError as exc:
+        raise ValueError(f"VODForge could not read that cover image: {exc}") from exc
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError("Pillow is required to validate custom cover art.") from exc
+    try:
+        with Image.open(candidate) as source:
+            width, height = source.size
+            if width <= 0 or height <= 0 or width * height > CUSTOM_COVER_MAX_PIXELS:
+                raise ValueError("Custom cover art dimensions are too large.")
+            source.verify()
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("Choose a valid JPEG, PNG, or WebP cover image.") from exc
+    return candidate.resolve(strict=False)
 
 
 def _choice(values: Mapping[str, Any], key: str, default: str) -> str:
