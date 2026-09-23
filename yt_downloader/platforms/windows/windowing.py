@@ -3,31 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 
-def flush_pending_window_paint(root: Any, *surfaces: Any) -> bool:
-    """Paint the active view/header without touching dormant view subtrees."""
-    import _tkinter
-    import ctypes
-    from ctypes import wintypes
-
-    api = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
-    api.RedrawWindow.argtypes = [
-        wintypes.HWND,
-        ctypes.c_void_p,
-        wintypes.HRGN,
-        wintypes.UINT,
-    ]
-    api.RedrawWindow.restype = wintypes.BOOL
-    # Let one pending Tk geometry pass commit the responsive positions. A full
-    # update_idletasks() drain can recurse through hundreds of decorative
-    # projections and freeze the native sizing loop.
-    root.tk.dooneevent(_tkinter.IDLE_EVENTS | _tkinter.DONT_WAIT)
-    # Existing invalid regions only. Forcing all children to invalidate on
-    # every Configure would turn a paint fix into more resize work.
-    return all(
-        api.RedrawWindow(surface.winfo_id(), None, None, 0x0100) for surface in surfaces
-    )
-
-
 def request_window_foreground(root: Any) -> bool:
     import ctypes
     from ctypes import wintypes

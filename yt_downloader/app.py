@@ -9511,11 +9511,52 @@ class DownloaderApp(
         metrics = window_logical_metrics(self)
         px = metrics.px
         tile_bg = THEME["bg"]
+        record_kind = str(record.get("kind"))
+        left_pad = px(9 if column == 0 else 5)
+        right_pad = px(5 if column < visible_count - 1 else 9)
+        if record_kind == "completed":
+            # A completed tile has one action and no live progress. Keep its
+            # image, label and hit target in the shared button renderer rather
+            # than a frame with three independently painted child windows.
+            source = self._focus_thumbnail_source_for_record(record)
+            thumbnail_size = youtube_thumbnail_size(
+                px(64 if self._focus_layout == "compact" else 80)
+            )
+            thumbnail = self._focus_photo_from_source(
+                source, thumbnail_size, px(6 if self._focus_layout == "compact" else 7)
+            )
+            if thumbnail is not None:
+                self._focus_run_thumbnail_images.append(thumbnail)
+            title = str(record.get("title") or "Untitled run")
+            status = str(record.get("status") or "Ready")
+            button = ProductButton(
+                self.focus_run_deck,
+                text=f"{title}\n{status}",
+                image=thumbnail if thumbnail is not None else "",
+                compound="left",
+                command=partial(self._focus_activate_run_record, record),
+                style="FocusQuiet.TButton",
+                cursor="hand2",
+            )
+            button.grid(
+                row=0,
+                column=column,
+                sticky="nsew",
+                padx=(left_pad, right_pad),
+                pady=px(6 if self._focus_layout == "compact" else 9),
+            )
+            button.bind(
+                "<Button-2>", partial(self._show_focus_run_actions_menu, record)
+            )
+            button.bind(
+                "<Button-3>", partial(self._show_focus_run_actions_menu, record)
+            )
+            ToolTip(button, title)
+            self._focus_run_deck_value_widgets.append((button, None))
+            return
         tile = tk.Frame(
             self.focus_run_deck, bg=tile_bg, bd=0, highlightthickness=0, cursor="hand2"
         )
-        left_pad = px(9 if column == 0 else 5)
-        right_pad = px(5 if column < visible_count - 1 else 9)
         tile.grid(
             row=0,
             column=column,
@@ -9567,7 +9608,6 @@ class DownloaderApp(
 
         title_label.bind("<Configure>", fit_tile_title, add="+")
         ToolTip(title_label, title)
-        record_kind = str(record.get("kind"))
         status_color = (
             THEME["success"]
             if record_kind == "completed"
@@ -9841,7 +9881,13 @@ class DownloaderApp(
                     continue
                 status_label, progress_bar = widgets[index]
                 if before.status != after.status:
-                    status_label.configure(text=after.status)
+                    status_label.configure(
+                        text=(
+                            f"{after.structure[3]}\n{after.status}"
+                            if isinstance(status_label, ProductButton)
+                            else after.status
+                        )
+                    )
                 if progress_bar is not None and before.progress != after.progress:
                     progress_bar.configure(value=after.progress)
             update_summary(next_snapshot)
@@ -9852,7 +9898,7 @@ class DownloaderApp(
                 child.destroy()
             self._focus_run_thumbnail_images: list[Any] = []
             self._focus_run_deck_value_widgets: list[
-                tuple[tk.Label, SleekProgressbar | None]
+                tuple[tk.Label | ProductButton, SleekProgressbar | None]
             ] = []
             for column in range(4):
                 self.focus_run_deck.columnconfigure(column, weight=0, uniform="")
@@ -10157,29 +10203,7 @@ class DownloaderApp(
             if height <= 1:
                 height = max(height, self.winfo_height())
             DownloaderApp._observe_resize_geometry(self, width, height)
-            previous_layout = self.__dict__.get("_focus_layout_signature")
             self._apply_focus_layout(width=width, height=height)
-            # Win32's native sizing loop can defer idle geometry and WM_PAINT
-            # until the next size event. Flush only a real responsive change;
-            # doing this on every Configure would hold up the drag itself.
-            if (
-                sys.platform == "win32"
-                and previous_layout != self.__dict__.get("_focus_layout_signature")
-                and not self.__dict__.get("_focus_resize_flushing_paint", False)
-            ):
-                self._focus_resize_flushing_paint = True
-                try:
-                    from .platforms.windows.windowing import flush_pending_window_paint
-
-                    flush_pending_window_paint(
-                        self,
-                        self.focus_header,
-                        self._focus_views[
-                            self.__dict__.get("_focus_selected_view", "forge")
-                        ],
-                    )
-                finally:
-                    self._focus_resize_flushing_paint = False
         except tk.TclError:
             return
 
