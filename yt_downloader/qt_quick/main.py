@@ -26,7 +26,7 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QFont, QGuiApplication, QImage
+from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -44,6 +44,7 @@ from yt_downloader.export_inputs import (
 from yt_downloader.export_planning import QUALITY_OPTIONS
 from yt_downloader.history import (
     HistoryError,
+    application_data_dir,
     history_archive_owner,
     history_output_path,
 )
@@ -73,6 +74,8 @@ from yt_downloader.models import CookieSource, ExportMode, OutputType
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
+from yt_downloader.product_telemetry import product_output_kind
+from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.run_state import RunStateError
@@ -82,11 +85,14 @@ from yt_downloader.settings_store import (
     save_settings,
     settings_file_path,
 )
+from yt_downloader.telemetry_features import settings_dimensions
+from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import button_metrics
 from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
 from yt_downloader.ui_theme import FONT_UI_FAMILY, THEME, theme_motif
 from yt_downloader.url_list_inputs import read_url_list_file
+from yt_downloader.version import __version__
 from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
 
 
@@ -174,10 +180,19 @@ class Bridge(QObject):
     cookieAccessChanged = Signal()
     libraryCategoryChanged = Signal()
     annotationChanged = Signal()
+    analyticsChanged = Signal()
+    analyticsPromptRequested = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._analytics = QtAnalyticsSession(
+            application_data_dir(), __version__, self._runtime.recovery
+        )
+        self._runtime.product_telemetry = self._analytics.telemetry
+        self._analytics_allowed = self._analytics.allowed
+        self._analytics_snapshot_sent = False
+        self._runtime.resume_queued()
         self._annotations_writable = True
         self._annotations = LibraryAnnotationsOwner(
             self._runtime.history_path.parent / "library-annotations.json",
@@ -188,6 +203,7 @@ class Bridge(QObject):
         self._annotation_owner = ""
         self._annotation_values = {"note": "", "tags": "", "category": ""}
         self._local = LocalConversionRuntime()
+        self._local.product_telemetry = self._analytics.telemetry
         self._playback_progress = PlaybackProgressOwner(
             self._runtime.history_path.parent / "watch-progress.json"
         )
@@ -197,6 +213,8 @@ class Bridge(QObject):
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status = "Ready"
+        self._playback_recorded = False
+        self._playback_output_type = ""
         self._settings_path = settings_file_path()
         try:
             self._settings = load_settings(self._settings_path)
@@ -298,6 +316,39 @@ class Bridge(QObject):
     @Property(str, notify=statusChanged)
     def status(self) -> str:
         return self._status
+
+    @Property(bool, notify=analyticsChanged)
+    def analyticsAvailable(self) -> bool:
+        return self._analytics.owner is not None
+
+    @Property(bool, notify=analyticsChanged)
+    def analyticsAllowed(self) -> bool:
+        return self._analytics.allowed
+
+    @Slot()
+    def startSession(self) -> None:
+        self._analytics.start()
+
+    @Slot(bool, result=bool)
+    def chooseAnalytics(self, enabled: bool) -> bool:
+        saved = self._analytics.choose(enabled)
+        self._analytics_allowed = self._analytics.allowed
+        self.analyticsChanged.emit()
+        if self._analytics_allowed:
+            self._record_settings_snapshot()
+            self._analytics_snapshot_sent = True
+        else:
+            self._analytics_snapshot_sent = False
+        if not saved:
+            self._status = (
+                "Analytics choice could not be saved. Check the app data folder."
+            )
+            self.statusChanged.emit()
+        return saved
+
+    @Slot()
+    def openPrivacy(self) -> None:
+        QDesktopServices.openUrl(QUrl(f"{telemetry_site_origin()}/privacy/"))
 
     @Property(str, notify=outputPathChanged)
     def outputPath(self) -> str:
@@ -776,6 +827,31 @@ class Bridge(QObject):
             self.statusChanged.emit()
             return
         self._settings = updated
+        self._record_settings_snapshot()
+
+    def _record_settings_snapshot(self) -> None:
+        telemetry = self._analytics.telemetry
+        if telemetry is None or not telemetry.permitted():
+            return
+        values = {
+            **self._settings,
+            "output_type": self._output_format,
+            "export_mode": self._export_mode,
+            "quality": self._quality,
+            **self.downloadOptions,
+            **self._manual_values,
+            **self._mp3_values,
+        }
+        dimensions = settings_dimensions(values)
+        dimensions["cookie_access"] = {
+            CookieSource.PUBLIC: "disabled",
+            CookieSource.BROWSER: "browser",
+            CookieSource.FILE: "file",
+        }[self._cookie_source]
+        try:
+            telemetry.record_feature("settings", "snapshot", dimensions=dimensions)
+        except (OSError, ValueError):
+            pass
 
     @Slot(int)
     def openLibraryItem(self, index: int) -> None:
@@ -792,6 +868,10 @@ class Bridge(QObject):
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status = "Ready"
+        self._playback_recorded = False
+        self._playback_output_type = str(
+            self._runtime.history[index].get("vodforge_output_type") or ""
+        )
         self._playback_binding = PlaybackProgressBinding(
             self._playback_progress,
             self._runtime.history[index],
@@ -829,6 +909,17 @@ class Bridge(QObject):
         self._playback_position = position
         self._playback_duration = duration
         self._playback_status = status
+        if status == "Playing" and not self._playback_recorded:
+            self._playback_recorded = True
+            telemetry = self._analytics.telemetry
+            if telemetry is not None:
+                try:
+                    telemetry.record(
+                        "playback_started",
+                        output_type=product_output_kind(self._playback_output_type),
+                    )
+                except (OSError, ValueError):
+                    pass
         self._playback_binding.present(self._playback_snapshot())
 
     @Slot(float)
@@ -846,6 +937,22 @@ class Bridge(QObject):
             self.statusChanged.emit()
 
     def _pump(self) -> None:
+        if not self._analytics.settled:
+            if self._analytics.poll():
+                self.analyticsPromptRequested.emit()
+            if self._analytics.allowed != self._analytics_allowed:
+                self._analytics_allowed = self._analytics.allowed
+                self.analyticsChanged.emit()
+                if self._analytics_allowed:
+                    self._record_settings_snapshot()
+                    self._analytics_snapshot_sent = True
+        if (
+            self._analytics.settled
+            and self._analytics_allowed
+            and not self._analytics_snapshot_sent
+        ):
+            self._record_settings_snapshot()
+            self._analytics_snapshot_sent = True
         try:
             events = self._runtime.poll()
         except (HistoryError, OSError, RunStateError, ValueError):
@@ -877,8 +984,10 @@ class Bridge(QObject):
                 try:
                     self._runtime.record_local_conversion(payload)
                 except (HistoryError, OSError, ValueError):
+                    self._local.observe_history_failed(payload)
                     self._status = "Video saved, but Library history needs attention."
                 else:
+                    self._local.observe_committed(payload)
                     self._status = f"Created {payload.output_path.name}"
                     self.historyChanged.emit()
                     self.select("Library")
@@ -896,6 +1005,8 @@ class Bridge(QObject):
             self._playback_binding = None
         self._local.close()
         self._runtime.close()
+        if self._analytics.telemetry is not None:
+            self._analytics.telemetry.shutdown(timeout_seconds=1.0)
 
     @Slot(str, str)
     def submit(self, value: str, output_format: str) -> None:
@@ -1015,6 +1126,7 @@ def main() -> int:
         if smoke_home is not None:
             smoke_home.cleanup()
         return 2
+    bridge.startSession()
     if args.runtime_smoke:
         application.processEvents()
         engine.deleteLater()

@@ -1,5 +1,24 @@
 # VODForge engineering-quality harness
 
+## Qt consent and lifecycle ownership — 2026-09-23
+
+The Qt presentation binds the existing analytics consent, product telemetry,
+run-recovery, shared download worker, and local conversion owners. It must not
+derive permission from a region timeout, create an outbox in a disabled build,
+record a playback attempt after consent changes, or report a local conversion
+complete before Library history is durable. The Qt adapter's old product
+outbox path call used an unsupported `data_dir` argument; this would fail in
+an enabled packaged build while disabled source smoke stayed green.
+
+`test_qt_analytics_session.py` covers disabled policy, both opt-in and unknown
+prompt modes, grant/revoke, existing consent with recovery reporting, exact
+private state paths, and failed consent writes. The worker-owner and local
+conversion cases cover actual queue/terminal event order, URL-free dimensions,
+and completion only after Library commit. Existing consent/telemetry owner
+tests remain authoritative for outbox delivery and revocation. These are
+representative cross-owner handoffs; source-native tests cannot prove the
+packaged preview-D1 journey, installed platform UI, or production policy.
+
 ## Full-cover shared artwork during resize — 2026-09-22
 
 `MatteBackdrop` owns one display-sized motif image per window and theme. The

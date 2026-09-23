@@ -36,6 +36,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
 
     class Runtime:
         def __init__(self) -> None:
+            self.recovery = object()
             self.recovery_notice = None
             self.history_path = tmp_path / "download-history.json"
             self.history = records
@@ -49,6 +50,9 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
             return self.active_job
 
         def close(self) -> None:
+            pass
+
+        def resume_queued(self) -> None:
             pass
 
     class LocalRuntime:
@@ -153,6 +157,7 @@ def test_qt_annotation_editor_preserves_malformed_private_ledger(
 
     class Runtime:
         def __init__(self) -> None:
+            self.recovery = object()
             self.recovery_notice = None
             self.history_path = tmp_path / "download-history.json"
             self.history = [{"title": "Saved item", "vodforge_output_type": "MP4"}]
@@ -160,6 +165,9 @@ def test_qt_annotation_editor_preserves_malformed_private_ledger(
             self.active_job = None
 
         def close(self) -> None:
+            pass
+
+        def resume_queued(self) -> None:
             pass
 
     class LocalRuntime:
@@ -206,6 +214,7 @@ def test_qt_library_uses_shared_projection_for_active_queued_and_terminal_rows(
 
     class Runtime:
         def __init__(self) -> None:
+            self.recovery = object()
             self.recovery_notice = None
             self.history_path = tmp_path / "history.json"
             self.history = [
@@ -217,6 +226,9 @@ def test_qt_library_uses_shared_projection_for_active_queued_and_terminal_rows(
             self.activity: list[dict[str, str]] = []
 
         def close(self) -> None:
+            pass
+
+        def resume_queued(self) -> None:
             pass
 
     class LocalRuntime:

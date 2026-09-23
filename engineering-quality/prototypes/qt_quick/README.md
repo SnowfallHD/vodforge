@@ -38,9 +38,18 @@ history index only for playable saved media; live and terminal rows can be
 organized without pretending to have a local file. Archive file operations
 and other Library actions still need porting.
 
+Qt now presents analytics permission through the existing consent owner and
+uses the existing product telemetry outbox. Run starts, queueing, terminal
+outcomes, local conversions, first playback, settings snapshots, and worker
+exports are wired through those owners. A disabled source build creates no
+consent/outbox state. Focused cross-owner tests and the full repository suite
+pass; packaged preview-D1, denial/off, and actual production-policy proofs
+remain open. The Qt adapter is still a presentation path, with no second
+consent or outbox authority.
+
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,
-analytics consent and telemetry, updater/repair, signed packaging, installed
+packaged analytics delivery, updater/repair, signed packaging, installed
 journeys, accessibility, and both-platform visual gates remain open.
 
 ## Rendering ownership
@@ -94,6 +103,16 @@ non-widget class; the remaining product owners still need port qualification.
   Newer source changes still require Genesis qualification.
 - Existing Tk/worker/recovery tests passed after extracting the shared worker:
   366 focused, then 3529 full-suite passing with 814 platform skips.
+- Exact `96d256f` Mac ad hoc Qt bundle passed its runtime smoke, deep code-sign
+  check, and 3540 repository tests with 813 skips. Genesis received a
+  SHA256-verified archive of the same commit, built a Qt executable, and its
+  packaged offscreen runtime smoke exited 0. The first Windows build wrapper
+  failed on PyInstaller informational stderr; its failed log is retained and
+  the corrected wrapper built successfully. These packages remain diagnostic
+  and predate the telemetry adapter changes. No installed visual journey or
+  release-signing proof follows from them.
+- After Qt telemetry wiring, 3546 repository tests passed with 813 skips on
+  Mac. This is source proof for the current dirty checkout, not a package.
 - The functional journeys above are source-native checks. Full packaged,
   installed, and visual acceptance for this new port remain open.
 

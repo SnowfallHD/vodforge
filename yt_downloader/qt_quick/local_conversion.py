@@ -9,6 +9,7 @@ from typing import Any
 
 from yt_downloader.app import DownloadWorkerCore
 from yt_downloader.local_audio_video import (
+    LocalAudioVideoCancelled,
     LocalAudioVideoConversionOwner,
     LocalAudioVideoError,
     LocalAudioVideoProgress,
@@ -30,6 +31,25 @@ class LocalConversionRuntime:
         )
         self._owner.recover_interrupted()
         self._thread: threading.Thread | None = None
+        self.product_telemetry: Any | None = None
+
+    def _observe(
+        self, event_name: str, run_id: str, *, dimensions: dict[str, str] | None = None
+    ) -> None:
+        telemetry = self.product_telemetry
+        if telemetry is None:
+            return
+        try:
+            telemetry.record(
+                event_name,
+                dedupe_key=run_id,
+                attempt_key=run_id,
+                dimensions=dimensions,
+                run_kind="local_audio_video",
+                output_type="mp4",
+            )
+        except (OSError, ValueError):
+            pass
 
     @property
     def active(self) -> bool:
@@ -56,9 +76,14 @@ class LocalConversionRuntime:
                         ("progress", progress)
                     ),
                 )
+            except LocalAudioVideoCancelled as exc:
+                self._observe("local_conversion_stopped", request.run_id)
+                self.events.put(("error", str(exc)))
             except LocalAudioVideoError as exc:
+                self._observe("local_conversion_failed", request.run_id)
                 self.events.put(("error", str(exc)))
             except Exception as exc:  # noqa: BLE001 - worker must report its terminal result
+                self._observe("local_conversion_failed", request.run_id)
                 self.events.put(
                     ("error", f"Local conversion failed: {type(exc).__name__}")
                 )
@@ -68,7 +93,22 @@ class LocalConversionRuntime:
         self._thread = threading.Thread(
             target=run, name="vodforge-qt-local-conversion", daemon=False
         )
+        self._observe("local_conversion_started", request.run_id)
         self._thread.start()
+
+    def observe_committed(self, result: LocalAudioVideoResult) -> None:
+        run_id = str(result.history_metadata.get("vodforge_run_id") or "")
+        if run_id:
+            self._observe(
+                "local_conversion_completed",
+                run_id,
+                dimensions=dict(result.telemetry_dimensions),
+            )
+
+    def observe_history_failed(self, result: LocalAudioVideoResult) -> None:
+        run_id = str(result.history_metadata.get("vodforge_run_id") or "")
+        if run_id:
+            self._observe("local_conversion_failed", run_id)
 
     def cancel(self) -> None:
         self._owner.cancel()

@@ -43,6 +43,7 @@ from yt_downloader.models import (
     Mp3ExportSettings,
     OutputType,
 )
+from yt_downloader.product_telemetry import product_output_kind
 from yt_downloader.run_identity import matching_attempt
 from yt_downloader.run_state import (
     RunRecoveryOwner,
@@ -50,6 +51,7 @@ from yt_downloader.run_state import (
     run_state_file_path,
     serialize_download_job,
 )
+from yt_downloader.telemetry_features import export_dimensions
 from yt_downloader.youtube_access import COOKIE_BROWSER_VALUES
 
 
@@ -80,6 +82,7 @@ class DownloadRuntime:
         self._worker_app: DownloadWorkerCore | None = None
         self._closing = False
         self._history_error = False
+        self.product_telemetry: Any | None = None
         self.activity: list[dict[str, str]] = []
         for job in [*self.recovered, *self.queued]:
             self._activity_upsert(
@@ -88,6 +91,9 @@ class DownloadRuntime:
                 job.terminal_message or "Waiting to resume",
             )
         set_active_child_process_observer(self.recovery.child_event)
+
+    def resume_queued(self) -> None:
+        """Resume only after the caller binds consent and operation observers."""
         if self.queued and not self.recovery_notice:
             self._launch_next_queued()
 
@@ -196,6 +202,7 @@ class DownloadRuntime:
             self.recovery.queue_changed(pending)
             self.queued = pending
             self._activity_upsert(job, "Queued", "Waiting for the active download")
+            self._observe_run("run_queued", job)
             return job
         self._launch(job)
         return job
@@ -204,6 +211,7 @@ class DownloadRuntime:
         self.recovery.begin(job, self.queued)
         self._activity_upsert(job, "Running", "Preparing download")
         self._make_worker(job)
+        self._observe_run("run_started", job)
 
     def _launch_next_queued(self) -> None:
         if self.active_job is not None or not self.queued or self.recovery_notice:
@@ -214,6 +222,45 @@ class DownloadRuntime:
         self.queued = remaining
         self._activity_upsert(job, "Running", "Preparing download")
         self._make_worker(job)
+        self._observe_run("run_started", job)
+
+    def _observe_run(
+        self, event_name: str, job: DownloadJob, *, status: str = ""
+    ) -> None:
+        telemetry = self.product_telemetry
+        if telemetry is None:
+            return
+        dimensions = export_dimensions(job)
+        if status:
+            dimensions["outcome"] = {
+                "Completed": "complete",
+                "Partial": "partial",
+                "Failed": "failed",
+                "Stopped": "stopped",
+            }[status]
+        try:
+            telemetry.record(
+                event_name,
+                dedupe_key=job.run_id,
+                attempt_key=job.run_id,
+                retry_key=job.retry_of_run_id,
+                dimensions=dimensions,
+                run_kind="youtube",
+                output_type=product_output_kind(job.output_type.value),
+                failure_reason=(
+                    job.failure_diagnostic.reason
+                    if event_name == "run_failed" and job.failure_diagnostic
+                    else None
+                ),
+                failure_detail=(
+                    job.failure_diagnostic.payload()
+                    if event_name == "run_failed" and job.failure_diagnostic
+                    else None
+                ),
+            )
+        except (OSError, ValueError):
+            # Optional observation cannot change the durable run outcome.
+            pass
 
     def _activity_upsert(self, job: DownloadJob, status: str, detail: str) -> None:
         title = str(
@@ -244,6 +291,7 @@ class DownloadRuntime:
         worker_app.download_history = self.history
         worker_app.run_recovery = self.recovery
         worker_app._provider_network = ProviderNetworkCoordinator()
+        worker_app.product_telemetry = self.product_telemetry
         self._worker_app = worker_app
         self._history_error = False
         self.active_job = job
@@ -371,6 +419,15 @@ class DownloadRuntime:
             "stopped": "Stopped",
             "error": "Failed",
         }[kind]
+        self._observe_run(
+            "run_completed"
+            if status in {"Completed", "Partial"}
+            else "run_stopped"
+            if status == "Stopped"
+            else "run_failed",
+            job,
+            status=status,
+        )
         self._activity_upsert(job, status, message)
         if status in {"Failed", "Stopped"}:
             self.recovery.terminal(status, message, activity_lines=job.activity_lines)

@@ -47,6 +47,7 @@ Window {
     }
     Connections {
         target: bridge
+        function onAnalyticsPromptRequested() { analyticsPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
         function onPlaybackRequested() {
             mediaPlayer.stop()
@@ -56,6 +57,38 @@ Window {
         }
         function onPlaybackSeekRequested(position) {
             mediaPlayer.setPosition(position * 1000)
+        }
+    }
+    Popup {
+        id: analyticsPopup
+        objectName: "analyticsConsentPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(440, window.width - 40)
+        height: 265
+        padding: 20
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Text { text: "Help improve VODForge"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text {
+                text: "Share private, anonymous usage events to help us fix errors and improve the app. You can change this in Settings."
+                color: theme.text
+                font.pixelSize: 15
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            StoneButton { label: "Privacy details"; Layout.preferredWidth: 160; Layout.preferredHeight: 38; onActivated: bridge.openPrivacy() }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(false)) analyticsPopup.close() } }
+                StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(true)) analyticsPopup.close() } }
+            }
         }
     }
     FolderDialog {
@@ -793,7 +826,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(540, window.width - 40)
-        height: 495
+        height: bridge.analyticsAvailable ? 548 : 495
         padding: 18
         modal: true
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
@@ -823,6 +856,19 @@ Window {
                         Layout.preferredHeight: 36
                         onActivated: bridge.setDownloadOption(modelData.key, !bridge.downloadOptions[modelData.key])
                     }
+                }
+            }
+            RowLayout {
+                visible: bridge.analyticsAvailable
+                Layout.fillWidth: true
+                Layout.preferredHeight: visible ? 40 : 0
+                Text { text: "Share anonymous usage analytics"; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                StoneButton {
+                    label: bridge.analyticsAllowed ? "On" : "Off"
+                    selected: bridge.analyticsAllowed
+                    Layout.preferredWidth: 74
+                    Layout.preferredHeight: 36
+                    onActivated: bridge.chooseAnalytics(!bridge.analyticsAllowed)
                 }
             }
             Item { Layout.fillHeight: true }

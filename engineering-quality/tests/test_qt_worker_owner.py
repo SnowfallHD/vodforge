@@ -50,6 +50,14 @@ def test_qt_queue_survives_stopped_attempt_and_starts_next(
 
     monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
     runtime = qt_runtime.DownloadRuntime()
+    observed: list[tuple[str, dict[str, Any]]] = []
+
+    class Telemetry:
+        def record(self, event_name: str, **fields: Any) -> bool:
+            observed.append((event_name, fields))
+            return True
+
+    runtime.product_telemetry = Telemetry()
     try:
         first = runtime.start(
             "https://example.com/first", output_dir, "MP4", "Everyday"
@@ -77,6 +85,16 @@ def test_qt_queue_survives_stopped_attempt_and_starts_next(
         assert [
             job.run_id for job in ActiveRunStore(state_path).load_terminal_jobs()
         ] == [first.run_id]
+        assert [name for name, _fields in observed] == [
+            "run_started",
+            "run_queued",
+            "run_stopped",
+            "run_started",
+            "run_completed",
+        ]
+        assert observed[2][1]["dimensions"]["outcome"] == "stopped"
+        assert observed[4][1]["dimensions"]["outcome"] == "complete"
+        assert "example.com" not in str(observed)
     finally:
         first_may_finish.set()
         runtime.close()
