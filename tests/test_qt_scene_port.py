@@ -797,6 +797,52 @@ def test_qt_output_mode_menu_uses_tk_shared_display_contract(tmp_path, monkeypat
         bridge.close()
 
 
+def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.setOutputFormat("MP4")
+        bridge.setExportMode("Manual Override")
+        popup = window.findChild(QObject, "downloadSettingsPopup")
+        popup.open()
+        app.processEvents()
+        columns = window.findChild(QObject, "settingsColumns")
+        manual = window.findChild(QObject, "settingsManualMp4")
+        assert columns.property("columns") == 2
+        assert manual.property("visible")
+        buttons = {
+            item.property("label"): item
+            for item in manual.findChildren(QObject)
+            if item.property("label") is not None
+        }
+        assert "medium  ▾" in buttons
+        buttons["medium  ▾"].activated.emit()
+        assert bridge.manualValues["manual_preset"] == "slow"
+        bridge.setManualValue("manual_preset", "ultrafast")
+        buttons = {
+            item.property("label"): item
+            for item in manual.findChildren(QObject)
+            if item.property("label") is not None
+        }
+        buttons["ultrafast  ▾"].activated.emit()
+        assert bridge.manualValues["manual_preset"] == "superfast"
+        window.setWidth(820)
+        app.processEvents()
+        assert columns.property("columns") == 1
+        assert manual.property("visible")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_library_multi_select_presets_collection_from_visible_owners(
     tmp_path, monkeypatch
 ):

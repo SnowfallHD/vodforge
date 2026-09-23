@@ -118,8 +118,7 @@ Window {
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
             !collectionPopup.visible && !categoryPopup.visible &&
-            !annotationPopup.visible && !manualOptionsPopup.visible &&
-            !mp3OptionsPopup.visible && !settingsPopup.visible &&
+            !annotationPopup.visible && !mp3OptionsPopup.visible && !settingsPopup.visible &&
             !updatePopup.visible && !accessPopup.visible &&
             !localConversionPopup.visible && !localProfilePopup.visible &&
             !formatMenu.visible && !optionsMenu.visible)
@@ -1426,75 +1425,6 @@ Window {
         }
     }
     Popup {
-        id: manualOptionsPopup
-        objectName: "manualOptionsPopup"
-        x: Math.max(0, (window.width - width) / 2)
-        y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(650, window.width - 40)
-        height: 482
-        padding: 18
-        modal: true
-        background: StoneField {}
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 9
-            Text { text: "Manual MP4 settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
-            Text { text: "Review the codec and rate settings before a Manual Override run."; color: theme.muted; font.pixelSize: 14 }
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                spacing: 16
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 6
-                    Text { text: "Rate control"; color: theme.muted; font.pixelSize: 13 }
-                    StoneButton { label: bridge.manualValues.manual_rate_control; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_rate_control", bridge.manualValues.manual_rate_control === "CBR" ? "Quality" : "CBR") }
-                    Text { text: "Video bitrate (kbps)"; color: theme.muted; font.pixelSize: 13 }
-                    StoneField {
-                        Layout.fillWidth: true; Layout.preferredHeight: 40
-                        TextField { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; padding: 0; verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 15; text: bridge.manualValues.manual_video_bitrate; enabled: bridge.manualValues.manual_rate_control === "CBR"; color: theme.text; background: Item {} onEditingFinished: bridge.setManualValue("manual_video_bitrate", text) }
-                    }
-                    Text { text: "Quality CRF"; color: theme.muted; font.pixelSize: 13 }
-                    StoneField {
-                        Layout.fillWidth: true; Layout.preferredHeight: 40
-                        TextField { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; padding: 0; verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 15; text: bridge.manualValues.manual_crf; enabled: bridge.manualValues.manual_rate_control === "Quality"; color: theme.text; background: Item {} onEditingFinished: bridge.setManualValue("manual_crf", text) }
-                    }
-                    Text { text: "x264 preset"; color: theme.muted; font.pixelSize: 13 }
-                    StoneButton {
-                        label: bridge.manualValues.manual_preset + "  ▾"; Layout.fillWidth: true; Layout.preferredHeight: 39
-                        onActivated: {
-                            var choices = ["ultrafast", "veryfast", "fast", "medium", "slow"]
-                            bridge.setManualValue("manual_preset", choices[(choices.indexOf(bridge.manualValues.manual_preset) + 1) % choices.length])
-                        }
-                    }
-                }
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 6
-                    Text { text: "Audio bitrate (kbps)"; color: theme.muted; font.pixelSize: 13 }
-                    StoneField {
-                        Layout.fillWidth: true; Layout.preferredHeight: 40
-                        TextField { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; padding: 0; verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 15; text: bridge.manualValues.manual_audio_bitrate; color: theme.text; background: Item {} onEditingFinished: bridge.setManualValue("manual_audio_bitrate", text) }
-                    }
-                    Text { text: "Audio codec"; color: theme.muted; font.pixelSize: 13 }
-                    StoneButton { label: bridge.manualValues.manual_audio_codec; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_audio_codec", bridge.manualValues.manual_audio_codec === "AAC" ? "MP3" : "AAC") }
-                    Text { text: "Audio sample rate"; color: theme.muted; font.pixelSize: 13 }
-                    StoneButton { label: bridge.manualValues.manual_sample_rate === "48000" ? "48 kHz" : "44.1 kHz"; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_sample_rate", bridge.manualValues.manual_sample_rate === "48000" ? "44100" : "48000") }
-                    Text { text: "Audio channels"; color: theme.muted; font.pixelSize: 13 }
-                    StoneButton { label: bridge.manualValues.manual_channels; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_channels", bridge.manualValues.manual_channels === "Stereo" ? "Mono" : "Stereo") }
-                }
-            }
-            Text { text: bridge.status; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                StoneButton { label: "Done"; Layout.preferredWidth: 84; Layout.preferredHeight: 40; onActivated: manualOptionsPopup.close() }
-            }
-        }
-    }
-    Popup {
         id: mp3OptionsPopup
         objectName: "mp3OptionsPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -1593,9 +1523,12 @@ Window {
                 ColumnLayout {
                     width: settingsBody.availableWidth
                     spacing: 16
-                    RowLayout {
+                    GridLayout {
+                        objectName: "settingsColumns"
                         Layout.fillWidth: true
-                        spacing: 16
+                        columns: settingsBody.availableWidth >= 760 ? 2 : 1
+                        columnSpacing: 16
+                        rowSpacing: 18
                         ColumnLayout {
                             Layout.fillWidth: true
                             Layout.preferredWidth: 360
@@ -1653,10 +1586,16 @@ Window {
                     RowLayout {
                         visible: window.outputFormat === "MP4"
                         Layout.fillWidth: true
-                        StoneButton { label: "Quality: " + bridge.quality; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
-                        StoneButton { label: "Output mode: " + bridge.exportModeLabel; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
+                        StoneButton { label: "Quality: " + bridge.quality; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: optionsMenu.open() }
+                        StoneButton { label: "Output mode: " + bridge.exportModeLabel; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: optionsMenu.open() }
                     }
-                    StoneButton { visible: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"; label: "Manual MP4 settings"; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); manualOptionsPopup.open() } }
+                    ManualMp4Settings {
+                        objectName: "settingsManualMp4"
+                        visible: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"
+                        Layout.fillWidth: true
+                        backend: bridge
+                        colors: theme
+                    }
                     Text { visible: window.outputFormat === "MP4"; text: "MP4 OUTPUT FILES"; color: theme.muted; font.pixelSize: 13; font.bold: true }
                     Repeater {
                 model: [
@@ -2092,7 +2031,6 @@ Window {
                         onActivated: {
                             bridge.setExportMode(modelData.value)
                             optionsMenu.close()
-                            if (modelData.value === "Manual Override") manualOptionsPopup.open()
                         }
                     }
                 }

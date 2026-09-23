@@ -15,7 +15,7 @@ The source index (`.venv/bin/python engineering-quality/runners/qt-port-source-i
 | `yt_downloader/choice_popover.py` | QML shared popup controls | Selection, keyboard, focus, placement |
 | `yt_downloader/detail_ui.py` | `qt_quick/LibraryDetail.qml` | Output facts and copy actions |
 | `yt_downloader/engagement_ui.py` | `qt_quick/Main.qml`, `qt_quick/EditorialPopup.qml` | Welcome, help, review, foreground order |
-| `yt_downloader/focus_settings.py` | `qt_quick/Main.qml` | Exact settings controls, adaptive layout, PRO |
+| `yt_downloader/focus_settings.py` | `qt_quick/Main.qml`, `qt_quick/ManualMp4Settings.qml` | Exact settings controls, adaptive layout, PRO |
 | `yt_downloader/forge_activity_ui.py` | `qt_quick/Main.qml`, `forge_activity.py` | Friendly and technical log presentation |
 | `yt_downloader/library_annotation_ui.py` | `qt_quick/LibraryDetail.qml`, `qt_quick/Main.qml` | Dialog and inline editing parity |
 | `yt_downloader/library_collection_ui.py` | `qt_quick/Main.qml`, `library_annotations.py` | Edit and remove membership |
