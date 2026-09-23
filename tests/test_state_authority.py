@@ -2078,8 +2078,7 @@ def test_library_padding_scheduler_runs_before_unchanged_layout_short_circuit():
         "self._schedule_focus_library_padding(library_padding)"
     )
     signature_guard = re.search(
-        r"if\s*\(\s*layout_signature == self\.__dict__\.get\("
-        r'"_focus_layout_signature"\)\s*and not force\s*\)',
+        r"if layout_signature == prior_signature and not force:",
         layout_source,
     )
 

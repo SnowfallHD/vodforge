@@ -10389,11 +10389,10 @@ class DownloaderApp(
             focus_run_deck_capacity(max(1, width - metrics.px(52)) // metrics.scale),
             focus_hero_thumbnail_visible(canonical_width),
         )
-        if (
-            layout_signature == self.__dict__.get("_focus_layout_signature")
-            and not force
-        ):
+        prior_signature = self.__dict__.get("_focus_layout_signature")
+        if layout_signature == prior_signature and not force:
             return
+        prior_mode = self.__dict__.get("_focus_layout")
         self._focus_layout_signature = layout_signature
         self._focus_layout = mode
         horizontal_pad = metrics.px(20 if compact else 42 if balanced else 100)
@@ -10435,46 +10434,54 @@ class DownloaderApp(
         active = bool(
             self._focus_active_override or (self.worker and self.worker.is_alive())
         )
-        if compact:
-            self.focus_update_dot.pack_forget()
-            self.update_button.configure(text="Updates")
-            if show_hero_thumbnail:
+        if (
+            force
+            or prior_mode is None
+            or compact != (prior_mode == "compact")
+            or prior_signature is None
+            or prior_signature[4] != show_hero_thumbnail
+        ):
+            if compact:
+                self.focus_update_dot.pack_forget()
+                self.update_button.configure(text="Updates")
+                if show_hero_thumbnail:
+                    self.focus_active_thumb_wrap.grid()
+                else:
+                    self.focus_active_thumb_wrap.grid_remove()
+                self.focus_transfer_label.grid_remove()
+                if active:
+                    self.focus_compact_run_actions_button.grid()
+                else:
+                    self.focus_compact_run_actions_button.grid_remove()
+                self.cancel_button.grid_remove()
+                self.skip_video_button.grid_remove()
+                self.skip_url_button.grid_remove()
+                self.focus_summary_frame.grid_remove()
+                self.focus_live_frame.grid_configure(column=0, columnspan=2)
+                self.focus_details_button.grid(row=0, column=1, sticky="e")
+                if not self.focus_detail_header.winfo_manager():
+                    self.focus_detail_header.grid()
+            else:
+                self.focus_update_dot.pack_forget()
+                self.update_button.configure(text=self._focus_update_full_text)
                 self.focus_active_thumb_wrap.grid()
-            else:
-                self.focus_active_thumb_wrap.grid_remove()
-            self.focus_transfer_label.grid_remove()
-            if active:
-                self.focus_compact_run_actions_button.grid()
-            else:
+                self.focus_transfer_label.grid()
                 self.focus_compact_run_actions_button.grid_remove()
-            self.cancel_button.grid_remove()
-            self.skip_video_button.grid_remove()
-            self.skip_url_button.grid_remove()
-            self.focus_summary_frame.grid_remove()
-            self.focus_live_frame.grid_configure(column=0, columnspan=2)
-            self.focus_details_button.grid(row=0, column=1, sticky="e")
-            if not self.focus_detail_header.winfo_manager():
-                self.focus_detail_header.grid()
-        else:
-            self.focus_update_dot.pack_forget()
-            self.update_button.configure(text=self._focus_update_full_text)
-            self.focus_active_thumb_wrap.grid()
-            self.focus_transfer_label.grid()
-            self.focus_compact_run_actions_button.grid_remove()
-            self._set_focus_run_controls_visible(active)
-            self.focus_live_frame.grid_configure(column=0, columnspan=1)
-            self.focus_summary_frame.grid(row=0, column=1, sticky="nsew")
-            self.focus_details_button.grid_remove()
-            self.focus_detail_header.grid_remove()
+                self._set_focus_run_controls_visible(active)
+                self.focus_live_frame.grid_configure(column=0, columnspan=1)
+                self.focus_summary_frame.grid(row=0, column=1, sticky="nsew")
+                self.focus_details_button.grid_remove()
+                self.focus_detail_header.grid_remove()
 
-        if isinstance(video_tree, ArchiveBrowser):
-            self._apply_archive_layout(width, height)
-        else:
-            self._apply_focus_library_layout(
-                video_tree,
-                library_mode=library_mode,
-                vertical_mode=library_vertical_mode,
-            )
+        if self.__dict__.get("_focus_selected_view") == "library":
+            if isinstance(video_tree, ArchiveBrowser):
+                self._apply_archive_layout(width, height)
+            else:
+                self._apply_focus_library_layout(
+                    video_tree,
+                    library_mode=library_mode,
+                    vertical_mode=library_vertical_mode,
+                )
         self._sync_focus_destination()
         self._refresh_focus_run_deck(geometry_only=not force)
         projection = self.__dict__.get("_focus_run_deck_projection")
