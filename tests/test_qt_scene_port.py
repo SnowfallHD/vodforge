@@ -12,6 +12,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 
 from yt_downloader.export_planning import EXPORT_MODES
+from yt_downloader.history import history_archive_owner
 from yt_downloader.library_artwork_source import ArtworkAsset
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
@@ -793,4 +794,93 @@ def test_qt_output_mode_menu_uses_tk_shared_display_contract(tmp_path, monkeypat
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_library_multi_select_presets_collection_from_visible_owners(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        dict(saved(tmp_path, "First", "MP4"), vodforge_run_id="first-run"),
+        dict(saved(tmp_path, "Second", "MP3"), vodforge_run_id="second-run"),
+    ]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        bridge.navigateLibrary("all")
+        app.processEvents()
+        scene = window.findChild(QObject, "libraryBrowseScene")
+        window.findChild(QObject, "librarySelectButton").activated.emit()
+        assert scene.property("selectionMode") is True
+        owners = [item["owner"] for item in bridge.libraryScene["media"]]
+        for owner in owners:
+            scene.toggleSelection(owner)
+        assert scene.property("selectedOwners").toVariant() == owners
+        window.findChild(QObject, "librarySelectionActionsButton").activated.emit()
+        app.processEvents()
+        popup = window.findChild(QObject, "librarySelectionActionsPopup")
+        assert popup.property("visible") is True
+        options = next(
+            item
+            for item in popup.findChildren(QObject)
+            if item.metaObject().className().startswith("QQuickRepeater")
+        )
+        collection = next(
+            item
+            for item in options.parent().childItems()
+            if item.property("label") == "Add to Collection…"
+        )
+        collection.activated.emit()
+        app.processEvents()
+        editor = window.findChild(QObject, "libraryCollectionPopup")
+        assert editor.property("visible") is True
+        annotation_owners = ["run:first-run", "run:second-run"]
+        assert editor.property("selectedOwners").toVariant() == annotation_owners
+        assert bridge.createCollection("Travel", annotation_owners)
+        assert all(
+            bridge._annotations.annotation_for(owner).category == "Travel"
+            for owner in annotation_owners
+        )
+        bridge.navigateLibrary("videos")
+        assert scene.property("selectedOwners").toVariant() == []
+        assert scene.property("selectionMode") is False
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_multi_file_action_requires_all_current_owners_and_no_active_playback(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    records = [saved(tmp_path, "First", "MP4"), saved(tmp_path, "Second", "MP3")]
+    owners = [history_archive_owner(row) for row in records]
+    bridge._runtime.history = records
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    target = QUrl.fromLocalFile(str(destination))
+    try:
+        assert not bridge.startFileActions("move", [owners[0], "stale-owner"], target)
+        assert bridge._files.phase == "idle"
+        bridge._playback_path = tmp_path / "First.mp4"
+        assert not bridge.startFileActions("move", owners, target)
+        assert bridge._files.phase == "idle"
+        bridge._playback_path = None
+        assert bridge.startFileActions("move", owners, target)
+        assert bridge._files.phase == "checking"
+    finally:
         bridge.close()

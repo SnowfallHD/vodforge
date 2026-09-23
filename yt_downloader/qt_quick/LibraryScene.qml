@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 Item {
     id: scene
+    objectName: "libraryBrowseScene"
     property var appBridge
     signal annotationRequested(int index)
     signal annotationOwnerRequested(string owner)
@@ -11,12 +12,26 @@ Item {
     signal collectionRequested()
     signal categoryRequested()
     signal importRequested()
+    signal selectionActionRequested(string action, var owners)
+
+    property bool selectionMode: false
+    property var selectedOwners: []
+    function toggleSelection(owner) {
+        if (!owner || !scene.media.some(function(item) { return item.owner === owner })) return
+        var next = selectedOwners.slice()
+        var index = next.indexOf(owner)
+        if (index >= 0) next.splice(index, 1)
+        else next.push(owner)
+        selectedOwners = next
+    }
+    function finishSelection() { selectedOwners = []; selectionMode = false }
 
     readonly property var projection: appBridge.libraryScene
     readonly property string route: projection.route || "home"
     readonly property var counts: projection.counts || ({})
     readonly property var groups: projection.groups || []
     readonly property var media: projection.media || []
+    onRouteChanged: finishSelection()
 
     LibraryDetail {
         anchors.fill: parent
@@ -300,11 +315,42 @@ Item {
                         onActivated: scene.categoryRequested()
                     }
                     StoneButton {
+                        objectName: "librarySelectButton"
+                        label: scene.selectionMode ? "Done" : "Select"
+                        width: 88
+                        height: 40
+                        onActivated: {
+                            if (scene.selectionMode) scene.finishSelection()
+                            else scene.selectionMode = true
+                        }
+                    }
+                    StoneButton {
                         label: "Import Media"
                         enabled: !scene.appBridge.importBusy
                         width: 135
                         height: 40
                         onActivated: scene.importRequested()
+                    }
+                }
+                Flow {
+                    visible: scene.selectionMode
+                    width: parent.width
+                    height: visible ? childrenRect.height : 0
+                    spacing: 12
+                    Text {
+                        text: scene.selectedOwners.length ? scene.selectedOwners.length + " selected" : "Select items"
+                        color: theme.muted
+                        font.pixelSize: 14
+                        height: 40
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    StoneButton {
+                        objectName: "librarySelectionActionsButton"
+                        visible: scene.selectedOwners.length > 0
+                        label: "Actions…"
+                        width: 175
+                        height: 40
+                        onActivated: selectionActions.open()
                     }
                 }
                 Flow {
@@ -319,7 +365,10 @@ Item {
                             height: width * 9 / 16 + 170
                             interactive: true
                             accessibilityLabel: "Details for " + modelData.title
-                            onActivated: scene.appBridge.openLibraryDetails(modelData.owner)
+                            onActivated: {
+                                if (scene.selectionMode) scene.toggleSelection(modelData.owner)
+                                else scene.appBridge.openLibraryDetails(modelData.owner)
+                            }
                             Image {
                                 x: 4; y: 4
                                 width: parent.width - 8
@@ -328,6 +377,15 @@ Item {
                                 fillMode: Image.PreserveAspectCrop
                                 visible: source.toString().length > 0
                                 smooth: true
+                            }
+                            StoneButton {
+                                visible: scene.selectionMode
+                                x: 7; y: 7
+                                width: 30; height: 30
+                                label: scene.selectedOwners.indexOf(modelData.owner) >= 0 ? "✓" : ""
+                                accessibilityLabel: "Select " + modelData.title
+                                selected: scene.selectedOwners.indexOf(modelData.owner) >= 0
+                                onActivated: scene.toggleSelection(modelData.owner)
                             }
                             Column {
                                 x: 10; y: parent.width * 9 / 16 + 10
@@ -352,6 +410,37 @@ Item {
                     font.pixelSize: 16
                 }
                 Item { width: 1; height: 20 }
+            }
+            Popup {
+                id: selectionActions
+                objectName: "librarySelectionActionsPopup"
+                x: Math.max(0, (scene.width - width) / 2)
+                y: Math.max(0, (scene.height - height) / 2)
+                width: Math.min(260, scene.width - 24)
+                height: 150
+                padding: 5
+                background: StoneField {}
+                Column {
+                    anchors.fill: parent
+                    spacing: 2
+                    Repeater {
+                        model: [
+                            { label: "Add to Collection…", action: "collection" },
+                            { label: "Move to…", action: "move" },
+                            { label: "Delete…", action: "delete" }
+                        ]
+                        StoneButton {
+                            required property var modelData
+                            width: parent.width; height: 44
+                            label: modelData.label
+                            onActivated: {
+                                var owners = scene.selectedOwners.slice()
+                                selectionActions.close()
+                                scene.selectionActionRequested(modelData.action, owners)
+                            }
+                        }
+                    }
+                }
             }
             Popup {
                 id: sortPopup

@@ -417,7 +417,7 @@ Window {
         id: libraryMoveFolderDialog
         title: "Move saved media to"
         onAccepted: {
-            if (bridge.startFileAction("move", window.selectedSavedOwner, selectedFolder)) {
+            if (bridge.startFileActions("move", window.pendingFileOwners, selectedFolder)) {
                 fileActionPopup.open()
             }
         }
@@ -503,6 +503,7 @@ Window {
     property int rowGap: compactHeight ? 8 : 14
     property string outputFormat: bridge.outputFormat
     property string selectedSavedOwner: ""
+    property var pendingFileOwners: []
 
     ColumnLayout {
         anchors.fill: parent
@@ -917,7 +918,26 @@ Window {
                 window.selectedSavedOwner = owner
                 libraryItemPopup.open()
             }
-            onCollectionRequested: collectionPopup.open()
+            onCollectionRequested: {
+                collectionPopup.selectionPreset = []
+                collectionPopup.open()
+            }
+            onSelectionActionRequested: function(action, owners) {
+                if (!owners.length) return
+                if (action === "collection") {
+                    var annotationOwners = bridge.collectionOwnersForArchiveSelection(owners)
+                    if (annotationOwners.length) {
+                        collectionPopup.selectionPreset = annotationOwners
+                        collectionPopup.open()
+                    }
+                } else if (action === "move") {
+                    window.pendingFileOwners = owners.slice()
+                    libraryMoveFolderDialog.open()
+                } else if (action === "delete") {
+                    if (bridge.startFileActions("delete", owners, Qt.url("")))
+                        fileActionPopup.open()
+                }
+            }
             onCategoryRequested: categoryPopup.open()
             onImportRequested: libraryImportDialog.open()
         }
@@ -1105,7 +1125,11 @@ Window {
                 label: "Move media to…"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 42
-                onActivated: { libraryItemPopup.close(); libraryMoveFolderDialog.open() }
+                onActivated: {
+                    window.pendingFileOwners = [window.selectedSavedOwner]
+                    libraryItemPopup.close()
+                    libraryMoveFolderDialog.open()
+                }
             }
             StoneButton {
                 label: "Move media to Trash"
@@ -1230,9 +1254,10 @@ Window {
     Popup {
         id: collectionPopup
         objectName: "libraryCollectionPopup"
+        property var selectionPreset: []
         property var selectedOwners: []
         onOpened: {
-            selectedOwners = []
+            selectedOwners = selectionPreset.slice()
             collectionName.text = ""
         }
         x: Math.max(0, (window.width - width) / 2)

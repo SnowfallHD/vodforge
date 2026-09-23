@@ -788,6 +788,20 @@ class Bridge(QObject):
 
     @Slot(str, str, QUrl, result=bool)
     def startFileAction(self, action: str, owner: str, destination: QUrl) -> bool:
+        return self.startFileActions(action, [owner], destination)
+
+    @Slot(str, "QVariantList", QUrl, result=bool)
+    def startFileActions(
+        self, action: str, owners: list[str], destination: QUrl
+    ) -> bool:
+        if (
+            not owners
+            or any(not isinstance(owner, str) or not owner for owner in owners)
+            or len(owners) != len(set(owners))
+        ):
+            self._status = "Select saved media again before changing files."
+            self.statusChanged.emit()
+            return False
         if self._relink.active:
             self._status = "Finish the saved-location review first."
             self.statusChanged.emit()
@@ -797,9 +811,9 @@ class Bridge(QObject):
         if pending:
             self.fileActionChanged.emit()
             return True
-        item = self._saved_item_for_owner(owner)
-        if item is None:
-            self._status = "That Library item changed. Select it again."
+        items = [self._saved_item_for_owner(owner) for owner in owners]
+        if any(item is None for item in items):
+            self._status = "Selected Library items changed. Select them again."
         elif (
             self._runtime.active_job is not None
             or self._runtime.busy
@@ -810,15 +824,15 @@ class Bridge(QObject):
             or self._runtime.recovery_notice
         ):
             self._status = "Finish active work before changing saved media."
-        elif (
-            self._playback_path is not None
-            and history_output_path(item) == self._playback_path
+        elif self._playback_path is not None and any(
+            item is not None and history_output_path(item) == self._playback_path
+            for item in items
         ):
             self._status = "Close Watch playback before changing this media."
         else:
             folder = Path(destination.toLocalFile()) if action == "move" else None
             if self._files.begin(
-                action, owner, self._runtime.history, destination=folder
+                action, owners, self._runtime.history, destination=folder
             ):
                 self.fileActionChanged.emit()
                 return True
@@ -2278,6 +2292,22 @@ class Bridge(QObject):
         self._status = f"Collection {name} saved."
         self.statusChanged.emit()
         return True
+
+    @Slot("QVariantList", result="QVariantList")
+    def collectionOwnersForArchiveSelection(self, owners: list[str]) -> list[str]:
+        """Resolve selected file owners to the stable annotation owners."""
+        if not owners or len(owners) != len(set(owners)):
+            return []
+        items = [self._saved_item_for_owner(owner) for owner in owners]
+        if any(item is None for item in items):
+            self._status = "Selected Library items changed. Select them again."
+            self.statusChanged.emit()
+            return []
+        return list(
+            dict.fromkeys(
+                history_annotation_owner(item) for item in items if item is not None
+            )
+        )
 
     @Slot(str, result=bool)
     def openAnnotationOwner(self, owner: str) -> bool:

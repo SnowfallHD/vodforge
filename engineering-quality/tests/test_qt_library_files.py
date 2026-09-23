@@ -62,6 +62,50 @@ def test_qt_move_uses_exact_file_plan_and_durable_history(tmp_path: Path) -> Non
         session.close()
 
 
+def test_qt_multi_selection_moves_all_exact_files_in_one_durable_plan(
+    tmp_path: Path,
+) -> None:
+    session, first, first_media = _fixture(tmp_path)
+    second_folder = tmp_path / "another-item"
+    second_folder.mkdir()
+    second_media = second_folder / "video.mp4"
+    second_media.write_bytes(b"second fixture media")
+    second = dict(
+        first,
+        id="second-id",
+        title="Second",
+        vodforge_output_dir=str(second_folder),
+        vodforge_output_path=str(second_media),
+    )
+    records = [first, second]
+    save_history(session.history_path, records)
+    destination = tmp_path / "moved"
+    destination.mkdir()
+    try:
+        assert session.begin(
+            "move",
+            [history_archive_owner(first), history_archive_owner(second)],
+            records,
+            destination=destination,
+        )
+        _wait(session, "preview")
+        assert session.plan is not None
+        assert session.plan.counts["ready"] == 2
+        assert session.confirm(records)
+        _wait(session, "done")
+        assert not first_media.exists() and not second_media.exists()
+        assert (
+            destination / first_media.parent.name / first_media.name
+        ).read_bytes() == (b"owned fixture media")
+        assert (
+            destination / second_media.parent.name / second_media.name
+        ).read_bytes() == (b"second fixture media")
+        assert len(load_history(session.history_path)) == 2
+        assert session.pending == ()
+    finally:
+        session.close()
+
+
 def test_qt_file_confirmation_refuses_changed_library(tmp_path: Path) -> None:
     session, row, media = _fixture(tmp_path)
     destination = tmp_path / "moved"

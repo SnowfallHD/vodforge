@@ -73,14 +73,18 @@ class QtLibraryFiles:
     def begin(
         self,
         action: str,
-        owner: str,
+        owners: Sequence[str] | str,
         records: Sequence[dict[str, Any]],
         *,
         destination: Path | None = None,
     ) -> bool:
+        selected = tuple(
+            dict.fromkeys((owners,) if isinstance(owners, str) else owners)
+        )
         if (
             action not in {"move", "delete"}
-            or not owner
+            or not selected
+            or any(not owner for owner in selected)
             or self.busy
             or self.phase in {"checking", "working"}
         ):
@@ -106,11 +110,11 @@ class QtLibraryFiles:
                 if action == "move":
                     assert destination is not None
                     plan = plan_move_operation(
-                        self.records, [owner], destination, cancelled=self.cancelled
+                        self.records, selected, destination, cancelled=self.cancelled
                     )
                 else:
                     plan = plan_file_operation(
-                        self.records, [owner], cancelled=self.cancelled
+                        self.records, selected, cancelled=self.cancelled
                     )
                 self.events.put(("plan", plan))
             except Exception:  # noqa: BLE001 - worker reports a bounded UI outcome
