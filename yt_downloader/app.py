@@ -10157,7 +10157,21 @@ class DownloaderApp(
             if height <= 1:
                 height = max(height, self.winfo_height())
             DownloaderApp._observe_resize_geometry(self, width, height)
+            previous_layout = self.__dict__.get("_focus_layout_signature")
             self._apply_focus_layout(width=width, height=height)
+            # Win32's native sizing loop can defer idle geometry and WM_PAINT
+            # until the next size event. Flush only a real responsive change;
+            # doing this on every Configure would hold up the drag itself.
+            if (
+                sys.platform == "win32"
+                and previous_layout != self.__dict__.get("_focus_layout_signature")
+                and not self.__dict__.get("_focus_resize_flushing_paint", False)
+            ):
+                self._focus_resize_flushing_paint = True
+                try:
+                    self.update_idletasks()
+                finally:
+                    self._focus_resize_flushing_paint = False
         except tk.TclError:
             return
 
