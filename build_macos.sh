@@ -86,36 +86,45 @@ fi
 ffmpeg="$(command -v ffmpeg || true)"
 ffprobe="$(command -v ffprobe || true)"
 deno="$(command -v deno || true)"
-vlc_version="3.0.23"
-vlc_root="${VODFORGE_VLC_RUNTIME:-}"
-if [[ -z "$vlc_root" && -f "vendor/vlc/VODFORGE_VLC_VERSION" ]]; then
-  vlc_root="vendor/vlc"
-fi
-vlc_root="${vlc_root:-/Applications/VLC.app/Contents/MacOS}"
-vlc_library="$vlc_root/lib/libvlc.dylib"
-vlc_core="$vlc_root/lib/libvlccore.dylib"
-vlc_plugins="$vlc_root/plugins"
 if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
   echo "FFmpeg, ffprobe, and Deno are required for a self-contained app."
   echo "Run ./install_macos_dependencies.sh first."
   exit 1
 fi
-if [[ ! -f "$vlc_library" || ! -f "$vlc_core" || ! -d "$vlc_plugins" ]]; then
-  echo "A complete libVLC runtime was not found at $vlc_root."
-  echo "Install the VLC cask or set VODFORGE_VLC_RUNTIME."
-  exit 1
-fi
-if [[ -f "$vlc_root/VODFORGE_VLC_VERSION" ]]; then
-  resolved_vlc_version="$(<"$vlc_root/VODFORGE_VLC_VERSION")"
-elif [[ -f "$vlc_root/../Info.plist" ]]; then
-  resolved_vlc_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$vlc_root/../Info.plist")"
-else
-  resolved_vlc_version=""
-fi
-if [[ "$resolved_vlc_version" != "$vlc_version" ]]; then
-  echo "The macOS libVLC runtime must be pinned to $vlc_version; found ${resolved_vlc_version:-unknown}."
-  echo "Run ./install_vlc_macos.sh or set VODFORGE_VLC_RUNTIME to the pinned runtime."
-  exit 1
+vlc_args=()
+if [[ "$ui_mode" == "tk" ]]; then
+  vlc_version="3.0.23"
+  vlc_root="${VODFORGE_VLC_RUNTIME:-}"
+  if [[ -z "$vlc_root" && -f "vendor/vlc/VODFORGE_VLC_VERSION" ]]; then
+    vlc_root="vendor/vlc"
+  fi
+  vlc_root="${vlc_root:-/Applications/VLC.app/Contents/MacOS}"
+  vlc_library="$vlc_root/lib/libvlc.dylib"
+  vlc_core="$vlc_root/lib/libvlccore.dylib"
+  vlc_plugins="$vlc_root/plugins"
+  if [[ ! -f "$vlc_library" || ! -f "$vlc_core" || ! -d "$vlc_plugins" ]]; then
+    echo "A complete libVLC runtime was not found at $vlc_root."
+    echo "Install the VLC cask or set VODFORGE_VLC_RUNTIME."
+    exit 1
+  fi
+  if [[ -f "$vlc_root/VODFORGE_VLC_VERSION" ]]; then
+    resolved_vlc_version="$(<"$vlc_root/VODFORGE_VLC_VERSION")"
+  elif [[ -f "$vlc_root/../Info.plist" ]]; then
+    resolved_vlc_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$vlc_root/../Info.plist")"
+  else
+    resolved_vlc_version=""
+  fi
+  if [[ "$resolved_vlc_version" != "$vlc_version" ]]; then
+    echo "The macOS libVLC runtime must be pinned to $vlc_version; found ${resolved_vlc_version:-unknown}."
+    echo "Run ./install_vlc_macos.sh or set VODFORGE_VLC_RUNTIME to the pinned runtime."
+    exit 1
+  fi
+  vlc_args=(
+    --add-binary "$vlc_library:vlc/lib"
+    --add-binary "$vlc_core:vlc/lib"
+    --add-data "$vlc_plugins:vlc/plugins"
+    --hidden-import vlc
+  )
 fi
 
 "$python_bin" -m PyInstaller \
@@ -141,11 +150,8 @@ fi
   --add-data "THIRD_PARTY_NOTICES.md:." \
   --add-binary "$ffmpeg:." \
   --add-binary "$ffprobe:." \
-  --add-binary "$vlc_library:vlc/lib" \
-  --add-binary "$vlc_core:vlc/lib" \
-  --add-data "$vlc_plugins:vlc/plugins" \
   --add-binary "$deno:." \
-  --hidden-import vlc \
+  "${vlc_args[@]}" \
   "${qt_args[@]}" \
   "$entrypoint"
 

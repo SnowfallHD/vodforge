@@ -116,21 +116,25 @@ if (Test-Path $ffmpeg) {
   throw "vendor\ffmpeg\bin must contain ffmpeg.exe and ffprobe.exe for a self-contained build."
 }
 
-$vlcRoot = Join-Path $PSScriptRoot "vendor\vlc"
-$vlcLibrary = Join-Path $vlcRoot "libvlc.dll"
-$vlcCore = Join-Path $vlcRoot "libvlccore.dll"
-$vlcPlugins = Join-Path $vlcRoot "plugins"
-$vlcVersionMarker = Join-Path $vlcRoot "VODFORGE_VLC_VERSION"
-if (-not (Test-Path $vlcLibrary) -or -not (Test-Path $vlcCore) -or -not (Test-Path $vlcPlugins)) {
-  throw "vendor\vlc must contain libvlc.dll, libvlccore.dll, and plugins. Run install_vlc_windows.ps1."
+$vlcArgs = @()
+if ($uiMode -eq 'tk') {
+  $vlcRoot = Join-Path $PSScriptRoot "vendor\vlc"
+  $vlcLibrary = Join-Path $vlcRoot "libvlc.dll"
+  $vlcCore = Join-Path $vlcRoot "libvlccore.dll"
+  $vlcPlugins = Join-Path $vlcRoot "plugins"
+  $vlcVersionMarker = Join-Path $vlcRoot "VODFORGE_VLC_VERSION"
+  if (-not (Test-Path $vlcLibrary) -or -not (Test-Path $vlcCore) -or -not (Test-Path $vlcPlugins)) {
+    throw "vendor\vlc must contain libvlc.dll, libvlccore.dll, and plugins. Run install_vlc_windows.ps1."
+  }
+  if (-not (Test-Path $vlcVersionMarker) -or (Get-Content $vlcVersionMarker -Raw).Trim() -ne "3.0.23") {
+    throw "The Windows libVLC runtime must be pinned to 3.0.23. Run install_vlc_windows.ps1."
+  }
+  $addBinary += @("--add-binary", "$vlcLibrary;vlc")
+  $addBinary += @("--add-binary", "$vlcCore;vlc")
+  $addData += @("--add-data", "$vlcPlugins;vlc/plugins")
+  $vlcArgs = @('--hidden-import', 'vlc')
+  Write-Host "Bundling the pinned libVLC playback runtime from $vlcRoot"
 }
-if (-not (Test-Path $vlcVersionMarker) -or (Get-Content $vlcVersionMarker -Raw).Trim() -ne "3.0.23") {
-  throw "The Windows libVLC runtime must be pinned to 3.0.23. Run install_vlc_windows.ps1."
-}
-$addBinary += @("--add-binary", "$vlcLibrary;vlc")
-$addBinary += @("--add-binary", "$vlcCore;vlc")
-$addData += @("--add-data", "$vlcPlugins;vlc/plugins")
-Write-Host "Bundling the pinned libVLC playback runtime from $vlcRoot"
 
 $deno = Join-Path $PSScriptRoot "vendor\deno\deno.exe"
 if (Test-Path $deno) {
@@ -151,7 +155,7 @@ python -m PyInstaller `
   @addData `
   @addBinary `
   @qtArgs `
-  --hidden-import vlc `
+  @vlcArgs `
   $entrypoint
 
 $appBinary = Join-Path $PSScriptRoot "dist\VODForge\VODForge.exe"
