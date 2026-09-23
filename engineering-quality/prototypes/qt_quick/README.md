@@ -53,12 +53,23 @@ consent or outbox authority.
 
 The Qt Library now resolves Play, Open folder, and Copy path through the
 current saved-item owner at click time. A stale row cannot redirect Play or
-copy another item's location. Forge exposes the existing worker's Stop, Skip
+copy another item's location. Remove card binds confirmation to an exact saved
+record, rechecks ownership and active/queued execution, then commits through
+the existing history writer before updating the view. The media stays on disk;
+Move/Trash remain separate actions. Forge exposes the existing worker's Stop, Skip
 item, and Skip source requests; each interrupts only this process's owned
 children as in the Tk path. Activity can remove a queued run only after the
 existing recovery owner durably saves the new queue. Focused tests cover stale
 identity, worker signal handoff, durable queue removal, and retained queue
 execution order. Move/Trash and terminal Retry remain to be ported.
+
+An exact `24e3ef1` ad hoc Mac Qt package passed 3551 repository tests with
+813 platform skips, strict code-sign verification, and packaged runtime smoke.
+Its revision marker matches source, no native VLC files are included, and its
+bundle is about 701 MB. This is a diagnostic package, not Developer ID signed,
+notarized, installed, or release qualified. The earlier `30669d8` Genesis
+package passed packaged smoke but its archive build embedded an `unknown`
+revision marker, so it cannot qualify as an immutable release candidate.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,

@@ -31,6 +31,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.cookie_inputs import browser_cookie_value
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
@@ -45,8 +46,11 @@ from yt_downloader.export_planning import QUALITY_OPTIONS
 from yt_downloader.history import (
     HistoryError,
     application_data_dir,
+    history_annotation_owner,
     history_archive_owner,
+    history_identity,
     history_output_path,
+    save_history,
 )
 from yt_downloader.library_annotations import (
     LibraryAnnotationsError,
@@ -63,6 +67,7 @@ from yt_downloader.library_state import (
     PROJECTION_OWNER_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
+    resolve_library_removal_plan,
 )
 from yt_downloader.local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
@@ -201,6 +206,7 @@ class Bridge(QObject):
         self._annotations.load()
         self._library_projection = LibraryProjectionOwner()
         self._annotation_owner = ""
+        self._pending_library_removal: tuple[str, str] | None = None
         self._annotation_values = {"note": "", "tags": "", "category": ""}
         self._local = LocalConversionRuntime()
         self._local.product_telemetry = self._analytics.telemetry
@@ -922,6 +928,83 @@ class Bridge(QObject):
             clipboard.setText(str(path))
             self._status = "Saved media path copied."
             self.statusChanged.emit()
+
+    @Slot(str, result=bool)
+    def prepareLibraryRemoval(self, owner: str) -> bool:
+        """Bind confirmation to one exact saved record, not a changing row index."""
+        self._pending_library_removal = None
+        item = self._saved_item_for_owner(owner)
+        if item is None:
+            self._status = "That Library item changed. Select it again."
+            self.statusChanged.emit()
+            return False
+        plan = resolve_library_removal_plan(
+            item,
+            active_job=self._runtime.active_job,
+            pending_jobs=getattr(self._runtime, "queued", []),
+        )
+        if plan.history_identity is None or plan.execution_run_ids:
+            self._status = "This item has an active or queued run. Finish it before removing its Library card."
+            self.statusChanged.emit()
+            return False
+        self._pending_library_removal = owner, record_fingerprint(item)
+        return True
+
+    @Slot()
+    def cancelLibraryRemoval(self) -> None:
+        self._pending_library_removal = None
+
+    @Slot(result=bool)
+    def confirmLibraryRemoval(self) -> bool:
+        pending = self._pending_library_removal
+        self._pending_library_removal = None
+        if pending is None:
+            return False
+        owner, fingerprint = pending
+        item = self._saved_item_for_owner(owner)
+        if item is None or record_fingerprint(item) != fingerprint:
+            self._status = "That Library item changed. Select it again."
+            self.statusChanged.emit()
+            return False
+        plan = resolve_library_removal_plan(
+            item,
+            active_job=self._runtime.active_job,
+            pending_jobs=getattr(self._runtime, "queued", []),
+        )
+        if plan.history_identity is None or plan.execution_run_ids:
+            self._status = "This item has an active or queued run. Finish it before removing its Library card."
+            self.statusChanged.emit()
+            return False
+        matching = [
+            row
+            for row in self._runtime.history
+            if history_identity(row) == plan.history_identity
+        ]
+        if len(matching) != 1:
+            self._status = "That Library item is ambiguous. Select it again."
+            self.statusChanged.emit()
+            return False
+        updated = [row for row in self._runtime.history if row is not item]
+        try:
+            save_history(self._runtime.history_path, updated)
+        except HistoryError:
+            self._status = "The Library card could not be removed safely."
+            self.statusChanged.emit()
+            return False
+        self._runtime.history = updated
+        try:
+            self._annotations.remove(history_annotation_owner(item))
+        except LibraryAnnotationsError:
+            # The committed history is authoritative; an annotation cleanup
+            # failure must not restore a card whose durable removal succeeded.
+            pass
+        if self._library_category not in self.libraryCategories:
+            self._library_category = LIBRARY_ALL_CATEGORIES
+            self.libraryCategoryChanged.emit()
+        self._status = "Removed the Library card. Media files remain on your computer."
+        self.statusChanged.emit()
+        self.historyChanged.emit()
+        return True
 
     def _playback_snapshot(self) -> PlaybackSnapshot:
         return PlaybackSnapshot(

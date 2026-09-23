@@ -638,7 +638,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: 260
-        height: 155
+        height: 206
         padding: 14
         modal: true
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
@@ -656,6 +656,61 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 42
                 onActivated: { bridge.copyLibraryPath(window.selectedSavedOwner); libraryItemPopup.close() }
+            }
+            StoneButton {
+                label: "Remove Library card"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: {
+                    if (bridge.prepareLibraryRemoval(window.selectedSavedOwner)) {
+                        libraryItemPopup.close()
+                        libraryRemovalPopup.open()
+                    }
+                }
+            }
+        }
+    }
+    Popup {
+        id: libraryRemovalPopup
+        objectName: "libraryRemovalConfirmation"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: 380
+        height: 174
+        padding: 16
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        onClosed: bridge.cancelLibraryRemoval()
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Text {
+                text: "Remove this Library card?"
+                color: theme.text
+                font.pixelSize: 19
+                font.bold: true
+            }
+            Text {
+                text: "The media file and folder stay on your computer."
+                color: theme.muted
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    label: "Cancel"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: libraryRemovalPopup.close()
+                }
+                StoneButton {
+                    label: "Remove card"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 42
+                    onActivated: { bridge.confirmLibraryRemoval(); libraryRemovalPopup.close() }
+                }
             }
         }
     }
