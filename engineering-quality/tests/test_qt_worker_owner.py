@@ -168,6 +168,176 @@ def test_qt_queue_removal_commits_durable_state_before_hiding_item(
         runtime.close()
 
 
+def test_qt_terminal_retry_supersedes_only_after_durable_admission(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    state_path = tmp_path / "run.json"
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(qt_runtime, "run_state_file_path", lambda: state_path)
+    retry_may_finish = threading.Event()
+
+    def worker(self: DownloadWorkerCore, job: Any) -> None:
+        if job.retry_of_run_id:
+            assert retry_may_finish.wait(timeout=5)
+            self.events.put(("done", "Retried"))
+        else:
+            self.events.put(("stopped", "Stopped"))
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        original = runtime.start(
+            "https://example.com/video", output_dir, "MP4", "Everyday"
+        )
+        deadline = time.monotonic() + 5
+        while runtime.active_job is not None and time.monotonic() < deadline:
+            runtime.poll()
+            time.sleep(0.01)
+        assert [job.run_id for job in runtime.recovered] == [original.run_id]
+        retry = runtime.retry_terminal(original.run_id)
+        assert retry.run_id != original.run_id
+        assert retry.retry_of_run_id == original.run_id
+        assert runtime.active_job is retry
+        assert runtime.recovered == []
+        assert ActiveRunStore(state_path).load_terminal_jobs() == []
+    finally:
+        retry_may_finish.set()
+        runtime.close()
+
+
+def test_qt_terminal_retry_keeps_old_attempt_on_durable_failure(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(
+        qt_runtime, "run_state_file_path", lambda: tmp_path / "run.json"
+    )
+
+    def worker(self: DownloadWorkerCore, _job: Any) -> None:
+        self.events.put(("stopped", "Stopped"))
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        original = runtime.start(
+            "https://example.com/video", output_dir, "MP4", "Everyday"
+        )
+        deadline = time.monotonic() + 5
+        while runtime.active_job is not None and time.monotonic() < deadline:
+            runtime.poll()
+            time.sleep(0.01)
+        assert [job.run_id for job in runtime.recovered] == [original.run_id]
+        monkeypatch.setattr(
+            runtime.recovery,
+            "begin",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                qt_runtime.RunStateError("durable admission failed")
+            ),
+        )
+        with pytest.raises(qt_runtime.RunStateError, match="durable admission"):
+            runtime.retry_terminal(original.run_id)
+        assert [job.run_id for job in runtime.recovered] == [original.run_id]
+        assert runtime.active_job is None
+    finally:
+        runtime.close()
+
+
+def test_qt_terminal_retry_queues_behind_active_run(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    state_path = tmp_path / "run.json"
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(qt_runtime, "run_state_file_path", lambda: state_path)
+    active_may_finish = threading.Event()
+
+    def worker(self: DownloadWorkerCore, job: Any) -> None:
+        if job.url.endswith("/first"):
+            self.events.put(("stopped", "Stopped"))
+        else:
+            assert active_may_finish.wait(timeout=5)
+            self.events.put(("done", "Complete"))
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        original = runtime.start(
+            "https://example.com/first", output_dir, "MP4", "Everyday"
+        )
+        deadline = time.monotonic() + 5
+        while runtime.active_job is not None and time.monotonic() < deadline:
+            runtime.poll()
+            time.sleep(0.01)
+        active = runtime.start(
+            "https://example.com/other", output_dir, "MP4", "Everyday"
+        )
+        retry = runtime.retry_terminal(original.run_id)
+        assert runtime.active_job is active
+        assert [job.run_id for job in runtime.queued] == [retry.run_id]
+        assert [
+            job.run_id for job in ActiveRunStore(state_path).load_queued_jobs()
+        ] == [retry.run_id]
+        assert ActiveRunStore(state_path).load_terminal_jobs() == []
+    finally:
+        active_may_finish.set()
+        runtime.close()
+
+
+def test_qt_failed_retry_uses_current_forge_settings(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(
+        qt_runtime, "run_state_file_path", lambda: tmp_path / "run.json"
+    )
+    retry_may_finish = threading.Event()
+
+    def worker(self: DownloadWorkerCore, job: Any) -> None:
+        if job.retry_of_run_id:
+            assert retry_may_finish.wait(timeout=5)
+            self.events.put(("done", "Retried"))
+        else:
+            self.events.put(("error", "Source failed"))
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        original = runtime.start(
+            "https://example.com/video", output_dir, "MP4", "Everyday"
+        )
+        deadline = time.monotonic() + 5
+        while runtime.active_job is not None and time.monotonic() < deadline:
+            runtime.poll()
+            time.sleep(0.01)
+        status, url = runtime.terminal_retry_source(original.run_id)
+        assert status == "Failed"
+        with pytest.raises(ValueError, match="current Forge settings"):
+            runtime.retry_terminal(original.run_id)
+        current = runtime.prepare_job(url, output_dir, "MP3", "Everyday")
+        retry = runtime.retry_terminal(original.run_id, current_job=current)
+        assert retry.output_type.value == "MP3"
+        assert retry.origin_run_id == original.run_id
+        assert retry.retry_of_run_id == original.run_id
+    finally:
+        retry_may_finish.set()
+        runtime.close()
+
+
 def test_qt_batch_children_commit_separate_history_and_reject_stale_child(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

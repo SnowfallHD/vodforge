@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import queue
 import threading
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -16,6 +17,7 @@ from urllib.parse import urlparse
 from yt_downloader.app import (
     DownloadWorkerCore,
     ProviderNetworkCoordinator,
+    retry_url_for_item,
     set_active_child_process_observer,
     single_video_url_requires_video_id_error,
     terminate_all_active_child_processes,
@@ -127,6 +129,55 @@ class DownloadRuntime:
             raise RuntimeError("The previous download is finishing.")
         if self.active_job is None and self.queued:
             self._launch_next_queued()
+        job = self.prepare_job(
+            url,
+            output_dir,
+            output_type,
+            export_mode,
+            quality_label,
+            preferences,
+            manual_settings,
+            mp3_settings,
+            urls=urls,
+            batch_mode=batch_mode,
+            cookie_source=cookie_source,
+            cookie_file=cookie_file,
+            cookie_browser=cookie_browser,
+        )
+        active_and_queued = [
+            *([self.active_job] if self.active_job is not None else []),
+            *self.queued,
+        ]
+        if matching_attempt(job, active_and_queued):
+            raise ValueError("This download is already active or queued.")
+        if self.active_job is not None:
+            pending = [*self.queued, job]
+            self.recovery.queue_changed(pending)
+            self.queued = pending
+            self._activity_upsert(job, "Queued", "Waiting for the active download")
+            self._observe_run("run_queued", job)
+            return job
+        self._launch(job)
+        return job
+
+    def prepare_job(
+        self,
+        url: str,
+        output_dir: Path,
+        output_type: str,
+        export_mode: str,
+        quality_label: str = "1080p Full HD",
+        preferences: DownloadPreferences | None = None,
+        manual_settings: ManualExportSettings | None = None,
+        mp3_settings: Mp3ExportSettings | None = None,
+        *,
+        urls: list[str] | None = None,
+        batch_mode: bool = False,
+        cookie_source: CookieSource = CookieSource.PUBLIC,
+        cookie_file: Path | None = None,
+        cookie_browser: str | None = None,
+    ) -> DownloadJob:
+        """Validate current Forge inputs without admitting a run."""
         preferences = preferences or DownloadPreferences()
         selected_urls = [item.strip() for item in (urls or [url]) if item.strip()]
         if not selected_urls:
@@ -192,20 +243,6 @@ class DownloadRuntime:
             else False,
             tags=[],
         )
-        active_and_queued = [
-            *([self.active_job] if self.active_job is not None else []),
-            *self.queued,
-        ]
-        if matching_attempt(job, active_and_queued):
-            raise ValueError("This download is already active or queued.")
-        if self.active_job is not None:
-            pending = [*self.queued, job]
-            self.recovery.queue_changed(pending)
-            self.queued = pending
-            self._activity_upsert(job, "Queued", "Waiting for the active download")
-            self._observe_run("run_queued", job)
-            return job
-        self._launch(job)
         return job
 
     def _launch(self, job: DownloadJob) -> None:
@@ -213,6 +250,104 @@ class DownloadRuntime:
         self._activity_upsert(job, "Running", "Preparing download")
         self._make_worker(job)
         self._observe_run("run_started", job)
+
+    def terminal_retry_source(self, run_id: str) -> tuple[str, str]:
+        """Resolve a single durable terminal source for the view's settings choice."""
+        matches = [job for job in self.recovered if job.run_id == run_id]
+        if len(matches) != 1 or matches[0].terminal_status not in {
+            "Failed",
+            "Stopped",
+            "Skipped",
+        }:
+            raise ValueError("That saved run is no longer available to retry.")
+        previous = matches[0]
+        url = retry_url_for_item(previous.preview_info or {}, previous.url)
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("This run has no usable source link. Paste it in Forge.")
+        assert previous.terminal_status is not None
+        return previous.terminal_status, url
+
+    def retry_terminal(
+        self, run_id: str, *, current_job: DownloadJob | None = None
+    ) -> DownloadJob:
+        """Admit one saved terminal attempt through the existing durable run owner."""
+        if self._closing or self.recovery_notice:
+            raise RunStateError("Run recovery needs attention before retrying.")
+        if self.active_job is None and self.busy:
+            raise RuntimeError("The previous download is finishing.")
+        status, url = self.terminal_retry_source(run_id)
+        previous = next(job for job in self.recovered if job.run_id == run_id)
+        if status == "Failed":
+            if (
+                current_job is None
+                or current_job.url != url
+                or current_job.urls != [url]
+            ):
+                raise ValueError("Review current Forge settings before retrying.")
+            settings_job = current_job
+        else:
+            settings_job = previous
+            validate_output_directory_access(previous.output_dir)
+        preview = dict(previous.preview_info or {})
+        for key in (
+            "vodforge_active_run_id",
+            "vodforge_queued_run_id",
+            "vodforge_run_status",
+            "vodforge_terminal_status",
+            "vodforge_terminal_message",
+            "vodforge_terminal_run_id",
+        ):
+            preview.pop(key, None)
+        retry = replace(
+            settings_job,
+            url=url,
+            urls=[url],
+            run_id=uuid.uuid4().hex,
+            origin_run_id=previous.run_id,
+            retry_of_run_id=previous.execution_run_id or previous.run_id,
+            execution_run_id=None,
+            preview_source_owner=None,
+            annotation_source_owner=previous.annotation_source_owner,
+            admission_observer=None,
+            preview_info=preview,
+            metadata_keys=set(),
+            history_identities=set(),
+            history_archive_owners=set(),
+            activity_lines=[],
+            terminal_status=None,
+            terminal_message="",
+            failure_diagnostic=None,
+            item_terminal_emitted=False,
+        )
+        if matching_attempt(
+            retry,
+            [
+                *([self.active_job] if self.active_job is not None else []),
+                *self.queued,
+            ],
+        ):
+            raise ValueError("This download is already active or queued.")
+        if self.active_job is None and self.queued:
+            self._launch_next_queued()
+        if self.active_job is not None or self.busy:
+            pending = [*self.queued, retry]
+            self.recovery.queue_changed(pending, superseded_run_id=previous.run_id)
+            self.queued = pending
+            self._activity_upsert(retry, "Queued", "Waiting for the active download")
+            self._observe_run("run_queued", retry)
+        else:
+            self.recovery.begin(retry, self.queued, superseded_run_id=previous.run_id)
+            self._activity_upsert(retry, "Running", "Preparing download")
+            self._make_worker(retry)
+            self._observe_run("run_started", retry)
+        self.recovered = [
+            job for job in self.recovered if job.run_id != previous.run_id
+        ]
+        self.activity = [
+            item for item in self.activity if item["runId"] != previous.run_id
+        ]
+        return retry
 
     def _launch_next_queued(self) -> None:
         if self.active_job is not None or not self.queued or self.recovery_notice:

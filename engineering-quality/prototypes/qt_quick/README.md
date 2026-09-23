@@ -61,7 +61,14 @@ item, and Skip source requests; each interrupts only this process's owned
 children as in the Tk path. Activity can remove a queued run only after the
 existing recovery owner durably saves the new queue. Focused tests cover stale
 identity, worker signal handoff, durable queue removal, and retained queue
-execution order. Move/Trash and terminal Retry remain to be ported.
+execution order. Activity now retries a saved Failed/Stopped/Skipped attempt through
+the same durable run/queue owner, using current Forge settings for Failed and
+prior settings for Stopped/Skipped, and linking the new attempt to its source.
+The old terminal record stays visible
+if admission fails; active work keeps the retry queued behind it. Focused
+tests cover immediate and queued admission, current-settings selection, and
+failed durable admission.
+Move/Trash remain to be ported.
 
 Qt Settings now exposes the existing verified update and Repair owners through
 the shared stone controls. The Qt adapter checks releases and downloads on a

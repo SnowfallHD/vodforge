@@ -77,7 +77,13 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
 )
-from yt_downloader.models import CookieSource, ExportMode, OutputType
+from yt_downloader.models import (
+    CookieSource,
+    ExportMode,
+    ManualExportSettings,
+    Mp3ExportSettings,
+    OutputType,
+)
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
@@ -1242,6 +1248,50 @@ class Bridge(QObject):
             self.historyChanged.emit()
         return removed
 
+    @Slot(str, result=bool)
+    def retryTerminal(self, run_id: str) -> bool:
+        try:
+            status, url = self._runtime.terminal_retry_source(run_id)
+            current_job = None
+            if status == "Failed":
+                if not self._settings_writable:
+                    raise SettingsError(
+                        "Settings need attention before a retry can start."
+                    )
+                selected_type = OutputType(self._output_format)
+                manual, mp3 = self._current_export_inputs(selected_type)
+                current_job = self._runtime.prepare_job(
+                    url,
+                    Path(self._output_path),
+                    selected_type.value,
+                    self._export_mode,
+                    self._quality,
+                    self._download_preferences,
+                    manual,
+                    mp3,
+                    urls=[url],
+                    batch_mode=False,
+                    cookie_source=self._cookie_source,
+                    cookie_file=self._cookie_file,
+                    cookie_browser=self._cookie_browser,
+                )
+            retry = self._runtime.retry_terminal(run_id, current_job=current_job)
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return False
+        self._status = (
+            "Added retry to the queue."
+            if retry is not self._runtime.active_job
+            else "Retry started."
+        )
+        self.statusChanged.emit()
+        self.activityChanged.emit()
+        self.historyChanged.emit()
+        self.runningChanged.emit()
+        self.select("Forge")
+        return True
+
     def _pump(self) -> None:
         if self._updates.poll():
             self.updateChanged.emit()
@@ -1318,6 +1368,26 @@ class Bridge(QObject):
         if self._analytics.telemetry is not None:
             self._analytics.telemetry.shutdown(timeout_seconds=1.0)
 
+    def _current_export_inputs(
+        self, selected_type: OutputType
+    ) -> tuple[ManualExportSettings | None, Mp3ExportSettings | None]:
+        manual = (
+            manual_export_settings(self._manual_values)
+            if selected_type == OutputType.MP4
+            and self._export_mode == ExportMode.MANUAL_OVERRIDE.value
+            else None
+        )
+        mp3 = (
+            mp3_export_settings(
+                self._mp3_values,
+                custom_cover_path=self._mp3_custom_cover,
+                validate_cover=validate_custom_cover_art,
+            )
+            if selected_type == OutputType.MP3
+            else None
+        )
+        return manual, mp3
+
     @Slot(str, str)
     def submit(self, value: str, output_format: str) -> None:
         try:
@@ -1326,21 +1396,7 @@ class Bridge(QObject):
                     "Settings need attention before a download can start."
                 )
             selected_type = OutputType(output_format)
-            manual = (
-                manual_export_settings(self._manual_values)
-                if selected_type == OutputType.MP4
-                and self._export_mode == ExportMode.MANUAL_OVERRIDE.value
-                else None
-            )
-            mp3 = (
-                mp3_export_settings(
-                    self._mp3_values,
-                    custom_cover_path=self._mp3_custom_cover,
-                    validate_cover=validate_custom_cover_art,
-                )
-                if selected_type == OutputType.MP3
-                else None
-            )
+            manual, mp3 = self._current_export_inputs(selected_type)
             job = self._runtime.start(
                 value,
                 Path(self._output_path),

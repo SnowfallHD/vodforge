@@ -674,6 +674,13 @@ Window {
                                 Layout.preferredHeight: 38
                                 onActivated: bridge.removeQueued(modelData.runId)
                             }
+                            StoneButton {
+                                visible: modelData.status === "Failed" || modelData.status === "Stopped" || modelData.status === "Skipped"
+                                label: "Retry"
+                                Layout.preferredWidth: 90
+                                Layout.preferredHeight: 38
+                                onActivated: bridge.retryTerminal(modelData.runId)
+                            }
                         }
                     }
                 }
