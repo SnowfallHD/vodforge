@@ -30,6 +30,10 @@ def test_anchor_resize_only_moves_shared_matte() -> None:
         root.update()
         root.update_idletasks()
         assert owner.canvas.find_withtag("matte-text")
+        first_items = owner.canvas.find_withtag("matte-text")
+        owner.request()
+        root.update()
+        assert owner.canvas.find_withtag("matte-text") == first_items
         assert owner.backdrop.item is not None
         text_calls = 0
         backdrop_calls = 0
@@ -66,5 +70,6 @@ def test_anchor_resize_only_moves_shared_matte() -> None:
         label.configure(text="Updated label")
         root.update()
         assert text_calls >= 1
+        assert owner.canvas.find_withtag("matte-text") != first_items
     finally:
         root.destroy()

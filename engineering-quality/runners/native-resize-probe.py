@@ -82,7 +82,6 @@ parser.add_argument(
 )
 parser.add_argument("--assert-inflight-pixels", action="store_true")
 parser.add_argument("--auto-continue", action="store_true")
-parser.add_argument("--windows-composited", action="store_true")
 args = parser.parse_args()
 if args.timing_details and not args.timing:
     parser.error("--timing-details requires --timing")
@@ -510,12 +509,6 @@ with (
     app.update()
     if sys.platform == "win32":
         hwnd = u.GetAncestor(app.winfo_id(), 2)
-        if args.windows_composited:
-            GWL_EXSTYLE = -20
-            WS_EX_COMPOSITED = 0x02000000
-            style = u.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            if not u.SetWindowLongW(hwnd, GWL_EXSTYLE, style | WS_EX_COMPOSITED):
-                raise RuntimeError("QA descendant double buffering could not be enabled")
         u.SetForegroundWindow(hwnd)
         if u.GetForegroundWindow() != hwnd:
             u.keybd_event(0x12, 0, 0, 0)

@@ -232,6 +232,7 @@ class MatteTextProjection:
         self.trace: tuple[str, str] | None = None
         self.control_photo: Any = None
         self.control_identity: tuple | None = None
+        self.render_identity: tuple | None = None
         self.last_size: tuple[int, int] | None = None
         self.view_callbacks: dict[str, tuple[Any, str]] = {}
         self._configure_original = widget.configure
@@ -399,8 +400,8 @@ class MatteTextProjection:
             return
         self.last_size = (self.widget.winfo_width(), self.widget.winfo_height())
         self.backdrop.draw()
-        self.canvas.delete("matte-text")
         if isinstance(self.widget, tk.Text):
+            self.canvas.delete("matte-text")
             self._document()
         else:
             self._label()
@@ -430,6 +431,20 @@ class MatteTextProjection:
         text = str(widget.getvar(variable)) if variable else str(option("text", ""))
         width, height = widget.winfo_width(), widget.winfo_height()
         anchor = str(option("anchor", "center" if button else "w"))
+        picture = option("image", "")
+        font = option("font", ("TkDefaultFont", 11))
+        foreground = option("foreground", THEME["text"])
+        justify = option("justify", "left")
+        wraplength = int(option("wraplength", 0))
+        identity = (
+            width, height, name, states, variable, text, anchor,
+            str(picture), str(font), str(foreground), str(justify),
+            wraplength, theme_palette_snapshot(),
+        )
+        if identity == self.render_identity and self.canvas.find_withtag("matte-text"):
+            return
+        self.render_identity = identity
+        self.canvas.delete("matte-text")
         x = (
             width / 2
             if anchor in ("center", "n", "s")
@@ -484,7 +499,6 @@ class MatteTextProjection:
             self.canvas.create_image(
                 0, 0, anchor="nw", image=self.control_photo, tags="matte-text"
             )
-        picture = option("image", "")
         if picture:
             # Existing image and alpha remain owned by the original label.
             self.canvas.create_image(
@@ -499,10 +513,10 @@ class MatteTextProjection:
                 y,
                 text=text,
                 anchor=cast(Any, anchor),
-                font=option("font", ("TkDefaultFont", 11)),
-                fill=option("foreground", THEME["text"]),
-                justify=option("justify", "left"),
-                width=int(option("wraplength", 0)),
+                font=font,
+                fill=foreground,
+                justify=justify,
+                width=wraplength,
                 tags="matte-text",
             )
 
