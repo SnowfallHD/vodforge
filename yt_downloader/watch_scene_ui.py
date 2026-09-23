@@ -849,7 +849,6 @@ class WatchSceneMixin:
             else "Back to channels",
             lambda: self._return_from_channel(),
             icon="back",
-            quiet=True,
         )
         record = self._records[channel.videos[0].indices[0]]
         left = 214 if width >= 1000 else 174 if width >= 680 else 32
@@ -1179,7 +1178,6 @@ class WatchSceneMixin:
                     WatchSceneMixin._scene_back_label(self),
                     partial(WatchSceneMixin._scene_back, self),
                     icon="back",
-                    quiet=True,
                 )
                 y = 62
             if route == "home" and videos:

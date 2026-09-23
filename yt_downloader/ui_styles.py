@@ -515,27 +515,6 @@ def apply_product_styles(root: tk.Tk) -> None:
             background=[("selected", THEME["bg"]), ("active", THEME["bg"])],
             foreground=[("selected", THEME["selection"]), ("active", THEME["text"])],
         )
-    style.layout(
-        "FocusNavActive.TButton",
-        [
-            (
-                "Product.nav_selected",
-                {
-                    "sticky": "nsew",
-                    "children": [
-                        (
-                            "Button.padding",
-                            {
-                                "sticky": "nsew",
-                                "children": [("Button.label", {"sticky": "nsew"})],
-                            },
-                        )
-                    ],
-                },
-            )
-        ],
-    )
-
     for role in ("Media.Accent.TButton", "Media.FocusQuiet.TButton"):
         style.configure(role, font=FONT_UI, padding=(5, 0), foreground=THEME["text"])
     style.configure("Media.Accent.TButton", foreground=THEME["action"])

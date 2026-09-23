@@ -618,7 +618,6 @@ class LibrarySceneLayout(LibraryDetailLayout):
             "",
             partial(self._open_item_menu, archive_row_owner(row)),
             icon="more",
-            quiet=True,
             unit_scale=scale,
         )
 
@@ -715,7 +714,6 @@ class LibrarySceneLayout(LibraryDetailLayout):
             partial(self._group_menu, kind, group.key, title, indices),
             icon="more",
             variant="inline",
-            quiet=True,
             unit_scale=scale,
         )
 

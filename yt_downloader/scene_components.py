@@ -617,7 +617,6 @@ class ScenePainter:
         primary: bool = False,
         icon: str = "",
         variant: ButtonSize = "default",
-        quiet: bool = False,
         unit_scale: int = 1,
     ) -> None:
         spec = button_metrics(variant)
@@ -627,28 +626,27 @@ class ScenePainter:
                 raise ValueError("Automatic square width requires an icon-only action")
             width = height
         bounds = (x, y, x + width, y + height)
-        if not quiet:
-            depth = getattr(self.view, "_depth", None)
-            if depth is not None:
-                depth.draw(
-                    bounds,
-                    role="action-primary" if primary else "action-secondary",
-                    unit_scale=unit_scale,
-                )
-            else:
-                image = ImageTk.PhotoImage(
-                    action_button_image(
-                        width, height, accent=primary, unit_scale=unit_scale
-                    ),
-                    master=self.canvas,
-                )
-                self.view._button_images.append(image)
-                item = self.canvas.create_image(
-                    x, y, image=image, anchor="nw", tags="presentation-control"
-                )
-                register_action_material(
-                    self.canvas, item, bounds, primary, image, unit_scale=unit_scale
-                )
+        depth = getattr(self.view, "_depth", None)
+        if depth is not None:
+            depth.draw(
+                bounds,
+                role="action-primary" if primary else "action-secondary",
+                unit_scale=unit_scale,
+            )
+        else:
+            image = ImageTk.PhotoImage(
+                action_button_image(
+                    width, height, accent=primary, unit_scale=unit_scale
+                ),
+                master=self.canvas,
+            )
+            self.view._button_images.append(image)
+            item = self.canvas.create_image(
+                x, y, image=image, anchor="nw", tags="presentation-control"
+            )
+            register_action_material(
+                self.canvas, item, bounds, primary, image, unit_scale=unit_scale
+            )
         if icon:
             self.icon(
                 icon,

@@ -1,5 +1,6 @@
 """Provider capabilities and presentation lifetimes use the live playback owner."""
 
+import sys
 from collections import deque
 from itertools import pairwise
 from types import SimpleNamespace
@@ -10,6 +11,64 @@ import pytest
 from tests.test_libvlc_backend import make_backend
 from yt_downloader.playback_backend import MediaPlayerError
 from yt_downloader.player_presentation_ui import PlayerPresentationMixin
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="AppKit overlay owner")
+def test_player_control_hover_keeps_static_gradient_without_filled_state(monkeypatch):
+    from yt_downloader.platforms.macos import player_overlay as native
+
+    painted = []
+
+    class Gradient:
+        @classmethod
+        def alloc(cls):
+            return cls()
+
+        def initWithStartingColor_endingColor_(self, *_colors):
+            return self
+
+        def drawInRect_angle_(self, *_args):
+            painted.append("static-gradient")
+
+    class Path:
+        @classmethod
+        def bezierPathWithRoundedRect_xRadius_yRadius_(cls, *_args):
+            return cls()
+
+        def setLineWidth_(self, *_args):
+            pass
+
+        def stroke(self):
+            painted.append("focus-stroke")
+
+        def fill(self):
+            painted.append("transient-fill")
+
+    monkeypatch.setattr(native, "NSGradient", Gradient)
+    monkeypatch.setattr(
+        native,
+        "NSColor",
+        SimpleNamespace(colorWithCalibratedWhite_alpha_=lambda *_args: object()),
+    )
+    monkeypatch.setattr(native, "NSBezierPath", Path)
+    monkeypatch.setattr(native, "_role_color", lambda *_args: Mock())
+    view = native.VODForgePlayerOverlayView.alloc().initWithFrame_(((0, 0), (400, 110)))
+    view.owner = SimpleNamespace(
+        _control_highlights=((0, ((0, 0), (36, 36)), "hover", False),)
+    )
+    native.VODForgePlayerOverlayView.drawRect_(view, None)
+    assert painted == ["static-gradient"]
+    view.owner._control_highlights = ((0, ((0, 0), (36, 36)), "pressed", False),)
+    native.VODForgePlayerOverlayView.drawRect_(view, None)
+    assert painted == ["static-gradient", "static-gradient"]
+    view.owner._control_highlights = ((0, ((0, 0), (36, 36)), "hover", True),)
+    native.VODForgePlayerOverlayView.drawRect_(view, None)
+    assert painted == [
+        "static-gradient",
+        "static-gradient",
+        "static-gradient",
+        "focus-stroke",
+    ]
 
 
 @pytest.mark.parametrize(

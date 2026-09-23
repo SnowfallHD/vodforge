@@ -50,22 +50,11 @@ if sys.platform == "darwin":
             owner = self.owner
             if owner is not None:
                 for _index, frame, state, focused in owner._control_highlights:
-                    color = THEME[
-                        "accent_surface" if state == "pressed" else "surface_2"
-                    ]
-                    rgb = tuple(
-                        int(color[position : position + 2], 16) / 255
-                        for position in (1, 3, 5)
-                    )
-                    NSColor.colorWithCalibratedRed_green_blue_alpha_(
-                        *rgb, 0.95
-                    ).setFill()
-                    shape = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                        frame, 7, 7
-                    )
-                    shape.fill()
                     if focused:
                         _role_color("focus").setStroke()
+                        shape = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                            frame, 7, 7
+                        )
                         shape.setLineWidth_(1.5)
                         shape.stroke()
 
@@ -511,6 +500,17 @@ class MacOSPlayerOverlay:
         signature = tuple(highlights)
         if signature != self._control_highlights:
             self._control_highlights = signature
+            states = {index: state for index, _frame, state, _focused in signature}
+            for index, button in enumerate(self.buttons):
+                button.setContentTintColor_(
+                    _role_color(
+                        "accent"
+                        if states.get(index) == "pressed"
+                        else "text"
+                        if index in states
+                        else "icon"
+                    )
+                )
             self.view.setNeedsDisplay_(True)
 
     def _track_hover(self, *, enabled: bool) -> None:

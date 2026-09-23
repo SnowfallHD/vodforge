@@ -423,7 +423,6 @@ def test_library_inline_copy_has_visible_feedback_and_current_render_ownership(
     from tests.test_archive_native import pump, seed
     from yt_downloader.platform_services import capture_own_widget
     from yt_downloader.scene_components import ScenePainter
-    from yt_downloader.ui_theme import THEME
 
     app = application
     seed(app, tmp_path, count=1)
@@ -458,14 +457,16 @@ def test_library_inline_copy_has_visible_feedback_and_current_render_ownership(
     output = Path(os.environ.get("VODFORGE_NATIVE_EVIDENCE_DIR", str(tmp_path)))
     output.mkdir(parents=True, exist_ok=True)
     states = []
+    material = canvas._action_material
+    assert box in material.controls
+    item = material.controls[box][0]
+    assert canvas.type(item) == "image"
 
-    def snapshot(phase, expected_color=None):
+    def snapshot(phase):
         canvas.update_idletasks()
-        items = canvas.find_withtag("pointer-state")
-        if expected_color:
-            assert items and all(
-                canvas.itemcget(item, "outline") == expected_color for item in items
-            )
+        assert not canvas.find_withtag("pointer-state")
+        current_item = material.controls[box][0]
+        assert canvas.type(current_item) == "image"
         image = capture_own_widget(canvas)
         assert image is not None
         image.save(output / f"inline-copy-{retire}-{phase}.png")
@@ -473,16 +474,22 @@ def test_library_inline_copy_has_visible_feedback_and_current_render_ownership(
             {
                 "phase": phase,
                 "copy_count": len(copies),
-                "visible_feedback_items": len(items),
+                "material_image": canvas.itemcget(current_item, "image"),
             }
         )
+        return image
 
-    snapshot("before")
+    before = snapshot("before")
     canvas.event_generate("<Motion>", x=x, y=y)
-    snapshot("hover")
+    hover = snapshot("hover")
     assert not canvas.find_withtag("pointer-state")
     canvas.event_generate("<ButtonPress-1>", x=x, y=y)
-    snapshot("pressed", THEME["accent"])
+    pressed = snapshot("pressed")
+    from PIL import ImageChops
+
+    assert states[-1]["material_image"] != states[0]["material_image"]
+    assert ImageChops.difference(before, hover).getbbox() is not None
+    assert ImageChops.difference(hover, pressed).getbbox() is not None
     assert copies == []
     if retire:
         scene._render()

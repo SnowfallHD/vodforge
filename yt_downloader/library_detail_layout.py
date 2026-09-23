@@ -108,7 +108,6 @@ class LibraryDetailLayout:
                     partial(self._copy_value, value),
                     icon="copy",
                     variant="inline",
-                    quiet=True,
                     unit_scale=scale,
                 )
             yy = row_bottom + px(8)
@@ -175,7 +174,6 @@ class LibraryDetailLayout:
             partial(self._copy_value, ", ".join(values)),
             icon="copy",
             variant="inline",
-            quiet=True,
             unit_scale=scale,
         )
         tx, ty = x + px(20), y + px(62)
@@ -254,7 +252,6 @@ class LibraryDetailLayout:
             partial(self._submit_tag, index),
             icon="plus",
             variant="inline",
-            quiet=True,
             unit_scale=scale,
         )
         p.text(
@@ -303,7 +300,6 @@ class LibraryDetailLayout:
             else "Back to Library",
             self.return_from_detail,
             icon="back",
-            quiet=True,
             unit_scale=scale,
         )
         left = width if compact else min(px(475), width * 43 // 100)
@@ -422,7 +418,6 @@ class LibraryDetailLayout:
                 else partial(self._action, action, index),
                 icon=icon,
                 primary=action == "play",
-                quiet=action == "more",
                 unit_scale=scale,
             )
             bx += bw + px(12)

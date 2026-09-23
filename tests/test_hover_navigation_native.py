@@ -100,7 +100,10 @@ def test_owned_navigation_hover_and_tab_transition(application, tmp_path):
         json.dumps(
             {
                 "owned_window": str(app),
-                "selected_style": app._focus_nav_buttons["forge"].cget("style"),
+                "selected_material_owner": type(
+                    app._focus_nav_buttons["forge"]
+                ).__name__,
+                "selected": app._focus_nav_buttons["forge"].cget("selected"),
                 "expected_selection": THEME["selection"],
                 "transitions": transitions,
                 "scope": "owned native fixture; captures are settled before/after, not display-refresh sampling",

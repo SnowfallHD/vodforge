@@ -105,7 +105,6 @@ class PlayerRelatedView(WatchView):
                     180,
                     "Back to suggestions",
                     partial(self._open_related, ""),
-                    quiet=True,
                     icon="back",
                 )
                 y += 58

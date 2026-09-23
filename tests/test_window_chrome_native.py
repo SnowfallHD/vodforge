@@ -129,10 +129,11 @@ def test_native_header_alignment_retains_navigation_search_minimize_and_fullscre
     def geometry(label):
         buttons = [native_rect(kind) for kind in (0, 1, 2)]
         nav = app._focus_nav_buttons["watch"]
-        center = nav.winfo_rooty() + nav.winfo_height() / 2
         brand = app._focus_brand_labels[0].master
+        alignment_owner = brand if app._focus_header_stacked else nav
+        center = alignment_owner.winfo_rooty() + alignment_owner.winfo_height() / 2
         check(
-            label + " native controls share navigation center",
+            label + " native controls share header row center",
             all(abs(y + h / 2 - center) <= 2 for x, y, w, h in buttons),
         )
         check(
@@ -153,6 +154,9 @@ def test_native_header_alignment_retains_navigation_search_minimize_and_fullscre
             label + " header controls do not overlap",
             all(
                 boxes[i][0] + boxes[i][2] <= boxes[i + 1][0]
+                or boxes[i + 1][0] + boxes[i + 1][2] <= boxes[i][0]
+                or boxes[i][1] + boxes[i][3] <= boxes[i + 1][1]
+                or boxes[i + 1][1] + boxes[i + 1][3] <= boxes[i][1]
                 for i in range(len(boxes) - 1)
             ),
         )
@@ -214,9 +218,20 @@ def test_native_header_alignment_retains_navigation_search_minimize_and_fullscre
                 navigate("watch")
                 capture(f"{width}-{index}")
             click(app._global_search_field.entry)
+            entry = app._global_search_field.entry
+            evidence["search_click"] = {
+                "entry": (
+                    entry.winfo_rootx(),
+                    entry.winfo_rooty(),
+                    entry.winfo_width(),
+                    entry.winfo_height(),
+                ),
+                "focus": str(app.focus_get()),
+                "active": bool(NSApplication.sharedApplication().isActive()),
+            }
             check(
                 "native pointer focuses search",
-                app.focus_get() == app._global_search_field.entry,
+                app.focus_get() == entry,
             )
             x, y, w, h = native_rect(1)
             point(x + w / 2, y + h / 2)

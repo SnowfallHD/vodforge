@@ -271,6 +271,29 @@ def test_rendered_hover_and_navigation_keep_the_idle_face(
     seed(app, tmp_path, count=1)
     app._select_focus_view("forge")
     pump(app, 0.3)
+    composer = capture_own_widget(app.focus_command_box).convert("RGB")
+    composer.save(out / "forge-composer-focused.png")
+    y = composer.height // 2
+    center = composer.getpixel((composer.width // 2, y))
+    assert composer.getpixel((8, y)) == center
+    assert composer.getpixel((composer.width - 9, y)) == center
+    # The shared field remains recessed while focus no longer exposes a
+    # different face color beside its surface-colored child widgets.
+    assert sum(composer.getpixel((composer.width // 2, 2))) < sum(center) - 9
+    from yt_downloader.ui_chrome import field_border_image
+    from yt_downloader.ui_theme import THEME
+
+    shared_focus = field_border_image(
+        composer.width, composer.height, focused=True
+    ).convert("RGB")
+    assert (
+        max(
+            abs(a - b)
+            for a, b in zip(shared_focus.getpixel((8, y)), center, strict=True)
+        )
+        <= 2
+    )
+    assert THEME["focus_surface"] != THEME["surface"]
 
     nav = app._focus_nav_buttons["library"]
     nav_idle = capture_own_widget(nav).convert("RGB")
@@ -279,7 +302,7 @@ def test_rendered_hover_and_navigation_keep_the_idle_face(
     pump(app, 0.08)
     nav_hover = capture_own_widget(nav).convert("RGB")
     save_native_capture(nav, out / "nav-hover-physical.png")
-    quiet = (max(3, nav_idle.width - 8), nav_idle.height // 2)
+    quiet = (0, 0)
     assert (
         max(
             abs(after - before)
@@ -319,38 +342,37 @@ def test_rendered_hover_and_navigation_keep_the_idle_face(
         for x in range(w)
     )
 
-    nav_button.state(["focus"])
+    app.focus_force()
+    nav_button.focus_set()
     pump(app, 0.08)
+    assert nav_button.focus_get() is nav_button
     focused = save_native_capture(nav_button, out / "nav-focused-physical.png")
     assert ImageChops.difference(focused.convert("RGB"), physical_selected).getbbox()
-    nav_button.state(["!focus"])
+    app.focus_set()
     pump(app, 0.08)
 
-    # A real producer fault removes material depth. The independent upper-band
-    # check must reject it even though text, bounds and selection remain valid.
+    # A real producer fault removes material depth. The selected face's lower
+    # inner shadow must reject it even though text and bounds remain valid.
     from yt_downloader import ui_chrome
 
     with monkeypatch.context() as fault:
         fault.setattr(ui_chrome, "_matte_rim", lambda image, *args, **kwargs: image)
-        app._product_chrome_owner._committed = None
-        app._product_chrome_owner.request(__import__("tkinter").ttk.Style(app))
-        nav_button.state(["focus"])
-        pump(app, 0.04)
-        nav_button.state(["!focus"])
+        nav_button._redraw()
         pump(app, 0.08)
         flat = save_native_capture(
             nav_button, out / "nav-flat-fault-physical.png"
         ).convert("RGB")
-        upper = (round(w * 0.2), round(scale), round(w * 0.8), round(5 * scale))
+        upper_point = (w // 2, round(6 * scale))
+        lower_point = (w // 2, h - round(10 * scale))
         assert (
-            sum(ImageStat.Stat(flat.crop(upper)).mean)
-            > sum(ImageStat.Stat(physical_selected.crop(upper)).mean) + 3
+            sum(physical_selected.getpixel(lower_point))
+            - sum(physical_selected.getpixel(upper_point))
+            > 30
         )
-    app._product_chrome_owner._committed = None
-    app._product_chrome_owner.request(__import__("tkinter").ttk.Style(app))
-    nav_button.state(["focus"])
-    pump(app, 0.04)
-    nav_button.state(["!focus"])
+        assert (
+            sum(flat.getpixel(lower_point)) - sum(flat.getpixel(upper_point)) <= 30
+        ), "A flattened producer escaped the rendered depth oracle"
+    nav_button._redraw()
     pump(app, 0.08)
     restored = save_native_capture(
         nav_button, out / "nav-restored-physical.png"
@@ -360,7 +382,7 @@ def test_rendered_hover_and_navigation_keep_the_idle_face(
     sidebar = app.library_scene.sidebar
     bounds, _action = app.library_scene._sidebar_targets[1]
     material = sidebar._action_material
-    photo = material.controls[bounds][-1]()
+    photo = material.controls[bounds][5]()
     assert photo.width() == bounds[2] - bounds[0]
     assert photo.height() == bounds[3] - bounds[1]
     sidebar_idle = capture_own_widget(sidebar).convert("RGB")
@@ -424,7 +446,15 @@ def test_shared_primary_paint_perturbation_reaches_ttk_scene_and_poster(
                 bitmap = capture_own_widget(scene.canvas)
                 assert bitmap is not None
                 scale = bitmap.width / scene.canvas.winfo_width()
-                for bounds, (_item, primary, _image) in material.controls.items():
+                for bounds, (
+                    _item,
+                    _kind,
+                    primary,
+                    _background,
+                    _selected,
+                    _image,
+                    _scale,
+                ) in material.controls.items():
                     x = round(
                         (
                             bounds[0]

@@ -1,5 +1,36 @@
 # VODForge engineering-quality harness
 
+## Header action material ownership — 2026-09-22
+
+Invariant: a visible navigation action must receive one complete shared stone
+face at its final size, with its icon and label on that face. Resting is raised;
+hover and selection are recessed. The Forge composer remains the shared recessed
+field with a continuous face behind its children. The prior header routed a
+nonstretchable full button image through ttk's nine-slice layout, so ttk could
+repeat fragments and produce seams. A later style application could also replace
+the material layout. Style-name and producer-image checks missed the consumer's
+actual image, label, and screen pixels.
+
+The header now uses the existing canvas action adapter and renders
+`action_button_image` at the allocated control size. The shared button metrics
+provide its height and content allowance; its label, icon, and surface are
+owned by that one control. `test_shared_header_action_native.py` is required
+by `native_surface_contract` on Mac and Windows. It checks owner, item count,
+full-size image, icon/label, idle/hover/selected pixels, compact width, theme
+reapplication, and a producer mutation that the selected-depth oracle rejects.
+`test_matte_native.py` also checks the composer and a separate scene navigation
+consumer with a flattened producer. The Library inline-copy test now observes
+the scene owner's actual image replacement on hover and press; its old
+`pointer-state` border oracle described a retired rendering path. These are
+representative cross-owner checks, not proof of every control or Windows packaged rendering. Native source
+passes still require exact packaged visual and interaction qualification.
+
+The Mac player overlay keeps its static lower control gradient and keyboard
+focus stroke. `test_player_control_hover_keeps_static_gradient_without_filled_state`
+exercises the AppKit drawing owner for hover, press, and keyboard focus; a
+transient filled path fails it. Native playback and packaged video compositing
+remain separate acceptance gates.
+
 ## Material states and first-map geometry — v139
 
 Invariant: each enabled hover role must change rendered material, and every

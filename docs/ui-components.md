@@ -93,16 +93,19 @@ sharing pointer and scrolling behavior.
 
 ## Controls and hierarchy
 
-Action buttons have one metric contract in ui_button_contract.py, resolved by two
-rendering adapters: ProductButton/ttk styles/chrome and ScenePainter.button. ProductButton keeps
+Action buttons have one metric contract in ui_button_contract.py, resolved by
+ProductButton/ttk styles/chrome, ScenePainter.button, and the header's
+RoundedIconButton canvas adapter. All three consume the shared material renderer
+at the size assigned by their owner. ProductButton keeps
 native ttk keyboard/rendering behavior and owns per-instance pointer admission:
 release outside, disabled state, callback replacement or another button's press
 cannot activate an action. Scenes retain CanvasActions gesture ownership. Default
 labeled actions use 44-pixel height and 15-pixel type; Compact.TButton uses
 40-pixel height and 14-pixel type. Style aliases do not define extra sizes.
 Accent.TButton and primary=True select primary emphasis; ordinary/FocusQuiet
-actions select secondary emphasis; quiet scene actions suppress the surface.
-Navigation and player transport remain separate component roles under audit.
+actions select secondary emphasis. Scene icon actions also receive the same
+complete material face; the former surface-suppressing `quiet` path is retired.
+Navigation and player transport remain separate input roles under audit.
 
 The [constructor inventory](../engineering-quality/acceptance/UI_COMPONENT_INVENTORY.json)
 records 93 ProductButton constructor sites and 31 ScenePainter button call sites. These are
@@ -492,7 +495,7 @@ removal.
 | Family | Existing owners/adapters | Outstanding qualification |
 | --- | --- | --- |
 | Ordinary labeled actions | ui_button_contract, ttk chrome, ScenePainter | Representative default/spec-change parity passes; all states, platforms and branches incomplete. |
-| Icon/navigation/player actions | RoundedIconButton, shared ttk showcase navigation, PosterPlayButton, PlayerTransportButton, CanvasActions, native player overlay | Independent implementations and activation differences need review; five scene icon metric overrides remain. |
+| Icon/navigation/player actions | RoundedIconButton header adapter, shared scene navigation material, PosterPlayButton, PlayerTransportButton, CanvasActions, native player overlay | Shared material has bounded header/scene proof; platform input and remaining icon/player consumers still need review. |
 | Text/search/editing | ProductEntry, PlaceholderEntry, LibrarySearchField, EditableTextSection, FactsText, ActivityLogText | Search composition and editable/read-only/log roles differ legitimately; shared metrics, placeholder/focus/selection and raw Entry/Text bypasses need qualification. |
 | Choices/segments | ChoiceDropdown, ChoiceMenu, ChoicePopover, SegmentedSelector | Shared choice ownership exists; spec propagation, disabled options, popup retirement and preview reuse remain to audit. |
 | Toggles/radio | ModernCheckbox; radio-like SegmentedSelector choices | Shared checkbox now commits pointer intent on release and retires disabled gestures; frame/box/label native checks pass. Full generated/spec propagation and every consumer remain incomplete. |
@@ -592,8 +595,9 @@ owners, not a widget/dialog count or a new acceptance matrix:
 Active construction is grounded in app.py, library_file_actions_ui.py,
 engagement_ui.py, analytics_startup.py and their current scene builders. Completed
 component slices remain bounded; their native popup admission and full consumer
-interaction still need integration. PixelScrollTable/RoundedIconButton remain
-unused and excluded. No open-ended conversion of dormant surfaces.
+interaction still need integration. PixelScrollTable remains unused;
+RoundedIconButton now owns the top navigation's full-size action face. No
+open-ended conversion of dormant surfaces.
 
 Recommended order: core work items1-6 as coupled existing-owner batches, then
 settings/details/local conversion7-10, support/file/update/welcome11-14, and native
@@ -607,7 +611,11 @@ Coordinate foreground/readiness before Windows temporal/physical work. Mac injec
 proof is not a substitute. Resize remains parked; original85/platform/package
 requirements remain separate and cannot be waived by this queue.
 
-PixelScrollTable and RoundedIconButton have no production constructor calls in the current source (the latter retains a compatibility alias); they were not converted speculatively. This inventory excludes the independent remaining physical-monitor, Windows, accessibility, packaged/install and original acceptance gates.
+PixelScrollTable has no production constructor call. RoundedIconButton is now
+constructed by the top navigation and uses the shared action material. The
+older inventory snapshot predates this header ownership change. Physical-monitor,
+Windows, accessibility, packaged/install and original acceptance gates remain
+independent.
 
 Canonical dimensions convert once at their shared owner. Measured coordinates,
 font measurement results, native window bounds, ratios, character counts and time

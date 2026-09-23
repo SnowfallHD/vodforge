@@ -270,7 +270,7 @@ from .telemetry_features import (
 )
 from .thumbnail_network import ThumbnailUrlPolicy, download_bounded_url_bytes
 from .thumbnail_state import advance_thumbnail_item
-from .ui_button_contract import ProductButton
+from .ui_button_contract import ProductButton, button_metrics
 from .ui_chrome import brand_mark, brand_name
 from .ui_context_menu import ContextMenu
 from .ui_events import (
@@ -5788,7 +5788,9 @@ class DownloaderApp(
         nav_row.columnconfigure(1, weight=1)
         nav = ttk.Frame(nav_row, style="FocusShell.TFrame")
         nav.grid(row=0, column=0, sticky="w")
-        self._focus_nav_buttons: dict[str, ttk.Button] = {}
+        nav_metrics = window_logical_metrics(self)
+        button_spec = button_metrics()
+        self._focus_nav_buttons: dict[str, RoundedIconButton] = {}
         self._focus_nav_icons: dict[str, tuple[Any | None, Any | None]] = {
             "forge": (
                 self._load_focus_icon("download", 20, THEME["icon"]),
@@ -5816,14 +5818,19 @@ class DownloaderApp(
             item = ttk.Frame(nav, style="FocusShell.TFrame")
             item.pack(side="left", padx=(0, 8))
             inactive_icon, _active_icon = self._focus_nav_icons[view_name]
-            button = ProductButton(
+            label_font = tkfont.Font(root=self, font=nav_metrics.font(FONT_UI))
+            button = RoundedIconButton(
                 item,
                 text=label,
                 image=inactive_icon if inactive_icon is not None else "",
-                compound="left",
-                width=0,
-                style="FocusNav.TButton",
-                takefocus=True,
+                width=max(
+                    nav_metrics.px(86),
+                    label_font.measure(label)
+                    + nav_metrics.px(
+                        button_spec.horizontal_padding * 2 + button_spec.icon_pixels + 8
+                    ),
+                ),
+                height=nav_metrics.px(button_spec.height),
                 command=partial(self._navigate_focus_view, view_name),
             )
             button.pack(fill="x")
@@ -7877,7 +7884,7 @@ class DownloaderApp(
             )
             icon = active_icon if active else inactive_icon
             button.configure(
-                style="FocusNavActive.TButton" if active else "FocusNav.TButton",
+                selected=active,
                 image=icon if icon is not None else "",
             )
         self._focus_selected_view = name

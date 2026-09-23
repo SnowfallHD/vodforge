@@ -730,9 +730,8 @@ def test_primary_view_shortcuts_route_through_canonical_view_authority():
 def test_primary_navigation_buttons_remain_keyboard_focusable():
     focus_ui_source = inspect.getsource(DownloaderApp._build_focus_ui)
 
-    assert (
-        'style="FocusNav.TButton",\n                takefocus=True,' in focus_ui_source
-    )
+    assert "button = RoundedIconButton(" in focus_ui_source
+    assert "takefocus=1" in inspect.getsource(RoundedIconButton.__init__)
     assert "self._bind_focus_view_shortcuts()" in focus_ui_source
 
 

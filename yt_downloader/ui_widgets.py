@@ -14,7 +14,6 @@ from .choice_popover import ChoicePopover
 from .models import OutputType
 from .ui_chrome import (
     RoundedFieldBorder,
-    accent_hover_color,
     field_border_image,
     prototype_entry_style,
 )
@@ -2900,7 +2899,7 @@ class PillAction(tk.Canvas):
 
 
 class RoundedIconButton(tk.Canvas):
-    """A Retina-friendly rounded icon control drawn with native canvas shapes."""
+    """Full-size shared action material with canvas-owned label and pointer input."""
 
     def __init__(
         self,
@@ -2912,7 +2911,7 @@ class RoundedIconButton(tk.Canvas):
         primary: bool = False,
         width: int = 40,
         height: int = 40,
-        radius: int = 8,
+        selected: bool = False,
     ) -> None:
         resolved_width = width if image is not None else max(width, 76)
         super().__init__(
@@ -2926,16 +2925,29 @@ class RoundedIconButton(tk.Canvas):
             cursor="hand2",
         )
         self._button_image = image
+        self._metrics = window_logical_metrics(self)
         self._button_text = text
         self._command = command
         self._primary = primary
-        self._radius = radius
+        self._selected = selected
         self._state = "normal"
         self._hovered = False
         self._pressed = False
         self._background_image: Any | None = None
+        self._matte_material_surface = True
         self._background_item = self.create_image(0, 0, anchor="nw")
-        if image is not None:
+        self._icon_item = None
+        if image is not None and text:
+            self._icon_item = self.create_image(0, 0, image=image, anchor="center")
+            self._content_item = self.create_text(
+                0,
+                0,
+                text=text,
+                fill=THEME["text"],
+                font=self._metrics.font(FONT_UI),
+                anchor="center",
+            )
+        elif image is not None:
             self._content_item = self.create_image(
                 resolved_width // 2, height // 2, image=image, anchor="center"
             )
@@ -2949,10 +2961,14 @@ class RoundedIconButton(tk.Canvas):
                 anchor="center",
             )
         self.bind("<Configure>", lambda _event: self._redraw(), add="+")
+        self.bind("<FocusIn>", lambda _event: self._redraw(), add="+")
+        self.bind("<FocusOut>", lambda _event: self._redraw(), add="+")
         self.bind("<Enter>", lambda _event: self._set_hovered(True), add="+")
         self.bind("<Leave>", lambda _event: self._set_hovered(False), add="+")
         self.bind("<ButtonPress-1>", self._press, add="+")
         self.bind("<ButtonRelease-1>", self._release, add="+")
+        self.bind("<Unmap>", self._retire_pointer, add="+")
+        self.bind("<<ViewInputRetired>>", self._retire_pointer, add="+")
         self.bind("<Return>", lambda _event: self._invoke(), add="+")
         self.bind("<space>", lambda _event: self._invoke(), add="+")
         self.after_idle(self._redraw)
@@ -2965,6 +2981,8 @@ class RoundedIconButton(tk.Canvas):
             return ("state", "state", "State", "normal", self._state)
         if option == "text":
             return ("text", "text", "Text", "", self._button_text)
+        if option == "selected":
+            return ("selected", "selected", "Selected", "0", str(self._selected))
         return None
 
     def configure(
@@ -2996,6 +3014,14 @@ class RoundedIconButton(tk.Canvas):
         options = dict(cnf or {})
         options.update(kwargs)
         state = options.pop("state", None)
+        selected = options.pop("selected", None)
+        if selected is not None:
+            self._selected = bool(selected)
+        image = options.pop("image", None)
+        if image is not None:
+            self._button_image = image
+            if self._icon_item is not None:
+                self.itemconfigure(self._icon_item, image=image)
         if state is not None:
             self._state = str(state)
             if self._state == "disabled":
@@ -3005,7 +3031,7 @@ class RoundedIconButton(tk.Canvas):
         text = options.pop("text", None)
         if text is not None:
             self._button_text = str(text)
-            if self._button_image is None:
+            if self._button_image is None or self._icon_item is not None:
                 self.itemconfigure(self._content_item, text=self._button_text)
         result = super().configure(**options) if options else None
         self._redraw()
@@ -3018,14 +3044,47 @@ class RoundedIconButton(tk.Canvas):
             return self._state
         if key == "text":
             return self._button_text
+        if key == "selected":
+            return self._selected
         return super().cget(key)
 
     __getitem__ = cget
+
+    def state(self, statespec=None):
+        if statespec is None:
+            return tuple(
+                value
+                for value, enabled in (
+                    ("active", self._hovered),
+                    ("pressed", self._pressed),
+                    ("disabled", self._state == "disabled"),
+                )
+                if enabled
+            )
+        for value in statespec:
+            enabled = not value.startswith("!")
+            name = value.lstrip("!")
+            if name == "active":
+                self._hovered = enabled
+            elif name == "pressed":
+                self._pressed = enabled
+            elif name == "disabled":
+                self._state = "disabled" if enabled else "normal"
+        self._redraw()
+        return self.state()
+
+    def invoke(self) -> None:
+        self._invoke()
 
     def _set_hovered(self, hovered: bool) -> None:
         self._hovered = hovered and self._state != "disabled"
         if not hovered:
             self._pressed = False
+        self._redraw()
+
+    def _retire_pointer(self, _event: tk.Event[Any]) -> None:
+        self._hovered = False
+        self._pressed = False
         self._redraw()
 
     def _press(self, _event: tk.Event[Any]) -> None:
@@ -3052,62 +3111,47 @@ class RoundedIconButton(tk.Canvas):
     def _redraw(self) -> None:
         try:
             disabled = self._state == "disabled"
-            if self._primary:
-                border = THEME["panel"] if disabled else THEME["accent"]
-                if disabled:
-                    fill = THEME["panel"]
-                elif self._pressed:
-                    fill = THEME["accent_dark"]
-                elif self._hovered:
-                    fill = accent_hover_color()
-                else:
-                    fill = THEME["accent"]
-            else:
-                border = THEME["border"]
-                fill = (
-                    THEME["panel"]
-                    if self._pressed
-                    else THEME["surface_2"]
-                    if self._hovered
-                    else THEME["surface"]
-                )
             width = max(1, self.winfo_width())
             height = max(1, self.winfo_height())
             if width <= 2 or height <= 2:
                 return
-            if Image is not None and ImageDraw is not None and ImageTk is not None:
-                from .ui_chrome import action_button_image
+            from .platform_services import create_surface_image, surface_backing_scale
+            from .ui_chrome import action_button_image
 
-                surface = action_button_image(
-                    width,
-                    height,
-                    accent=self._primary,
-                    state="pressed"
-                    if self._pressed
-                    else "hover"
-                    if self._hovered
-                    else "normal",
-                )
-                if disabled:
-                    surface = field_border_image(width, height)
-                self._background_image = ImageTk.PhotoImage(surface)
-                self.itemconfigure(self._background_item, image=self._background_image)
-                self.coords(self._background_item, 0, 0)
-            else:
-                self.itemconfigure(self._background_item, image="")
-                self.delete("button-fallback")
-                self.create_rectangle(
-                    0,
-                    0,
-                    width - 1,
-                    height - 1,
-                    fill=fill,
-                    outline=border,
-                    tags="button-fallback",
-                )
-                self.tag_lower("button-fallback")
+            density = surface_backing_scale(self)
+            surface = action_button_image(
+                width,
+                height,
+                accent=self._primary,
+                state="disabled"
+                if disabled
+                else "pressed"
+                if self._pressed or self._selected
+                else "hover"
+                if self._hovered
+                else "normal",
+                focused=self.focus_get() is self,
+                density=density,
+                unit_scale=self._metrics.scale,
+            )
+            self._background_image, _ = create_surface_image(
+                self,
+                surface,
+                density,
+                logical_size=(width, height),
+                existing=self._background_image,
+            )
+            self.itemconfigure(self._background_item, image=self._background_image)
+            self.coords(self._background_item, 0, 0)
             self.tag_lower(self._background_item)
-            self.coords(self._content_item, width // 2, height // 2)
+            if self._icon_item is not None:
+                center = width // 2
+                self.coords(self._icon_item, center - self._metrics.px(24), height // 2)
+                self.coords(
+                    self._content_item, center + self._metrics.px(8), height // 2
+                )
+            else:
+                self.coords(self._content_item, width // 2, height // 2)
         except tk.TclError:
             return
 
@@ -3115,7 +3159,9 @@ class RoundedIconButton(tk.Canvas):
         """Patch this control's palette without changing interaction state."""
 
         super().configure(bg=THEME["bg"])
-        if self._button_image is None:
+        if self._icon_item is not None:
+            self.itemconfigure(self._content_item, fill=THEME["text"])
+        elif self._button_image is None:
             self.itemconfigure(
                 self._content_item,
                 fill=THEME["on_accent"] if self._primary else THEME["muted"],

@@ -33,6 +33,7 @@ def test_native_scenario_uses_schema_compatible_evidence(tmp_path, monkeypatch):
     def run(*args, **kwargs):
         assert "tests/test_archive_actual_playback.py" in args[0]
         assert "tests/test_watch_queue_native.py" in args[0]
+        assert "tests/test_shared_header_action_native.py" in args[0]
         assert kwargs["env"]["VODFORGE_ACTUAL_PLAYBACK_TESTS"] == "1"
         (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
         return CommandResult(args[0], 0, 1.0, "1 passed", "")

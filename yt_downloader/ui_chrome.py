@@ -334,11 +334,9 @@ def field_border_image(
         width,
         height=height,
         fill=THEME["surface"],
-        edge=THEME["focus"]
-        if focused
-        else _blend_color(THEME["surface"], THEME["border"], 0.65),
+        edge=_blend_color(THEME["surface"], THEME["border"], 0.65),
         recessed=True,
-        depth=0.72 if hovered else 0.5,
+        depth=0.72 if focused or hovered else 0.5,
         stretch=stretch,
         density=density,
         unit_scale=unit_scale,
