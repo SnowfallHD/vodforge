@@ -85,6 +85,19 @@ $addData += @("--add-data", "assets/watch-welcome-scenic.png;assets")
 $addData += @("--add-data", "assets/preview_thumbnails/alpine-lake.jpg;assets/preview_thumbnails")
 $addData += @("--add-data", "THIRD_PARTY_NOTICES.md;.")
 
+$uiMode = if ($env:VODFORGE_UI) { $env:VODFORGE_UI } else { "tk" }
+$entrypoint = "main.py"
+$qtArgs = @()
+if ($uiMode -eq "qt") {
+  $entrypoint = "qt_main.py"
+  $qtArgs = @("--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtQuickControls2")
+  $addData += @("--add-data", "yt_downloader/qt_quick/Main.qml;yt_downloader/qt_quick")
+  $addData += @("--add-data", "yt_downloader/qt_quick/StoneButton.qml;yt_downloader/qt_quick")
+  $addData += @("--add-data", "yt_downloader/qt_quick/StoneField.qml;yt_downloader/qt_quick")
+} elseif ($uiMode -ne "tk") {
+  throw "VODFORGE_UI must be tk or qt."
+}
+
 # Bundle the transcode tools and the independently pinned libVLC playback runtime.
 $addBinary = @()
 $vendorBin = Join-Path $PSScriptRoot "vendor\ffmpeg\bin"
@@ -137,8 +150,9 @@ python -m PyInstaller `
   @versionFile `
   @addData `
   @addBinary `
+  @qtArgs `
   --hidden-import vlc `
-  main.py
+  $entrypoint
 
 $appBinary = Join-Path $PSScriptRoot "dist\VODForge\VODForge.exe"
 $smokeProcess = Start-Process -FilePath $appBinary -ArgumentList "--runtime-smoke" -Wait -PassThru

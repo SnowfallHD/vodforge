@@ -56,8 +56,19 @@ non-widget class; the remaining product owners still need port qualification.
   Newer source changes still require Genesis qualification.
 - Existing Tk/worker/recovery tests passed after extracting the shared worker:
   366 focused, then 3529 full-suite passing with 814 platform skips.
-- These are source-native checks. Packaged, installed, and full visual
-  acceptance for this new port are still unverified.
+- The functional journeys above are source-native checks. Full packaged,
+  installed, and visual acceptance for this new port remain open.
+
+An opt-in `VODFORGE_UI=qt` package path now builds an ad hoc signed Mac Qt app
+without changing the production Tk entrypoint. The first Mac candidate passed
+the packaged `--runtime-smoke`, deep code-sign verification, and an isolated
+profile launch with a visibly correct physical Forge screen. Its build revision
+was `unknown` because the source had uncommitted package-path changes; it is
+diagnostic evidence only, not an exact-commit release candidate. The
+`--collect-all PySide6` trial failed signing because it included Qt Assistant's
+symlink loop; explicit Qt Multimedia/Controls imports and PyInstaller's Qt QML
+hook resolved that. The ad hoc bundle is about 777 MB, so dependency trimming
+and exact-source candidate packaging remain open. Windows packaged QA is open.
 
 ## Native observations
 

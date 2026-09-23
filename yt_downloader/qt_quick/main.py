@@ -6,14 +6,25 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SOURCE))
 
 from PIL import Image
-from PySide6.QtCore import Property, QObject, QSize, QTimer, QUrl, Signal, Slot
-from PySide6.QtGui import QGuiApplication, QImage
+from PySide6.QtCore import (
+    Property,
+    QCoreApplication,
+    QEvent,
+    QObject,
+    QSize,
+    QTimer,
+    QUrl,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QFont, QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -532,15 +543,41 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event-log", type=Path)
     parser.add_argument("--ready-file", type=Path)
+    parser.add_argument("--runtime-smoke", action="store_true")
     args = parser.parse_args()
+    smoke_home = (
+        tempfile.TemporaryDirectory(prefix="vodforge-qt-smoke-")
+        if args.runtime_smoke
+        else None
+    )
+    if smoke_home is not None:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        os.environ["HOME"] = smoke_home.name
+        os.environ["LOCALAPPDATA"] = smoke_home.name
+        os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
     QQuickStyle.setStyle("Basic")
     application = QGuiApplication(sys.argv[:1])
     application.setApplicationName("VODForge Qt Quick")
+    application.setFont(QFont(FONT_UI_FAMILY))
     bridge = Bridge(args.event_log)
     application.aboutToQuit.connect(bridge.close)
     engine = create_engine(bridge)
     if not engine.rootObjects():
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+        if smoke_home is not None:
+            smoke_home.cleanup()
         return 2
+    if args.runtime_smoke:
+        application.processEvents()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        application.processEvents()
+        bridge.close()
+        assert smoke_home is not None
+        smoke_home.cleanup()
+        return 0
     if args.ready_file:
         window = engine.rootObjects()[0]
 

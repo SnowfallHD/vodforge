@@ -36,8 +36,25 @@ fi
 
 "$python_bin" -m pip install --upgrade pip
 "$python_bin" -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
-"$python_bin" -m compileall -q yt_downloader main.py macos_smoke_test.py
+"$python_bin" -m compileall -q yt_downloader main.py qt_main.py macos_smoke_test.py
 "$python_bin" -m pytest -q
+
+ui_mode="${VODFORGE_UI:-tk}"
+entrypoint="main.py"
+qt_args=()
+if [[ "$ui_mode" == "qt" ]]; then
+  entrypoint="qt_main.py"
+  qt_args=(
+    --hidden-import PySide6.QtMultimedia
+    --hidden-import PySide6.QtQuickControls2
+    --add-data "yt_downloader/qt_quick/Main.qml:yt_downloader/qt_quick"
+    --add-data "yt_downloader/qt_quick/StoneButton.qml:yt_downloader/qt_quick"
+    --add-data "yt_downloader/qt_quick/StoneField.qml:yt_downloader/qt_quick"
+  )
+elif [[ "$ui_mode" != "tk" ]]; then
+  echo "VODFORGE_UI must be tk or qt."
+  exit 1
+fi
 
 build_version="${VODFORGE_BUILD_VERSION:-0.1.0-dev}"
 if [[ ! "$build_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -90,8 +107,8 @@ if [[ ! -f "$vlc_library" || ! -f "$vlc_core" || ! -d "$vlc_plugins" ]]; then
 fi
 if [[ -f "$vlc_root/VODFORGE_VLC_VERSION" ]]; then
   resolved_vlc_version="$(<"$vlc_root/VODFORGE_VLC_VERSION")"
-elif [[ -f "$vlc_root/../../Info.plist" ]]; then
-  resolved_vlc_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$vlc_root/../../Info.plist")"
+elif [[ -f "$vlc_root/../Info.plist" ]]; then
+  resolved_vlc_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$vlc_root/../Info.plist")"
 else
   resolved_vlc_version=""
 fi
@@ -129,7 +146,8 @@ fi
   --add-data "$vlc_plugins:vlc/plugins" \
   --add-binary "$deno:." \
   --hidden-import vlc \
-  main.py
+  "${qt_args[@]}" \
+  "$entrypoint"
 
 app_binary="$app_bundle/Contents/MacOS/VODForge"
 if [[ ! -x "$app_binary" ]]; then
