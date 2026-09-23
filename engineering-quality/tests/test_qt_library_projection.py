@@ -14,6 +14,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QSignalSpy
 
+from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.qt_quick import main as qt_main
 
 
@@ -33,6 +34,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
     class Runtime:
         def __init__(self) -> None:
             self.recovery_notice = None
+            self.history_path = tmp_path / "download-history.json"
             self.history = records
             self.activity: list[dict[str, str]] = []
             self.active_job = None
@@ -73,6 +75,19 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         assert bridge.selection == "Watch"
         bridge.openLibraryItem(bridge.history[0]["sourceIndex"])
         assert playback_requests.count() == 2
+        bridge.observePlayback(2.0, 6.0, "Playing")
     finally:
         bridge.close()
         application.processEvents()
+    ledger = PlaybackProgressOwner(tmp_path / "watch-progress.json")
+    ledger.load()
+    assert ledger.for_record(records[1]).position == 2.0
+    reopened = qt_main.Bridge(None)
+    try:
+        seeks = QSignalSpy(reopened.playbackSeekRequested)
+        reopened.openLibraryItem(1)
+        reopened.observePlayback(0.0, 6.0, "Playing")
+        assert seeks.count() == 1
+        assert seeks.at(0)[0] == 2.0
+    finally:
+        reopened.close()

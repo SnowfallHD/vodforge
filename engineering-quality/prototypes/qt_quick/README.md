@@ -43,6 +43,11 @@ non-widget class; the remaining product owners still need port qualification.
   then completed, and only that valid output entered Library.
 - Mac Qt Multimedia loaded the committed MP4 with a 6037 ms duration and
   reached 2800 ms playback position without a provider error in offscreen QA.
+- Watch now uses the existing `PlaybackProgressOwner` and
+  `PlaybackProgressBinding`. A real Qt Multimedia replay wrote the observed
+  2.166/6.037-second position to the private ledger; a fresh Qt process issued
+  one resume seek and reached 3.233 seconds without a provider error. The
+  filtered Library Play projection and durable resume have focused tests.
 - Mac local conversion: a real 6-second fixture MP3 and still image created a
   validated 720p MP4; a second run through the Qt bridge committed the output
   into durable Library history. The shared-control QML dialog was rendered

@@ -31,6 +31,19 @@ Window {
         objectName: "watchMediaPlayer"
         audioOutput: AudioOutput { id: audioOutput; volume: 0.8 }
         videoOutput: videoSurface
+        function reportProgress() {
+            var status = "Ready"
+            if (error !== MediaPlayer.NoError) status = "Failed"
+            else if (mediaStatus === MediaPlayer.EndOfMedia) status = "Ended"
+            else if (playbackState === MediaPlayer.PlayingState) status = "Playing"
+            else if (playbackState === MediaPlayer.PausedState) status = "Paused"
+            bridge.observePlayback(position / 1000, duration / 1000, status)
+        }
+        onPositionChanged: reportProgress()
+        onDurationChanged: reportProgress()
+        onPlaybackStateChanged: reportProgress()
+        onMediaStatusChanged: reportProgress()
+        onErrorChanged: reportProgress()
     }
     Connections {
         target: bridge
@@ -39,6 +52,9 @@ Window {
             mediaPlayer.source = ""
             mediaPlayer.source = bridge.playbackUrl
             mediaPlayer.play()
+        }
+        function onPlaybackSeekRequested(position) {
+            mediaPlayer.setPosition(position * 1000)
         }
     }
     FolderDialog {
@@ -436,7 +452,10 @@ Window {
                     from: 0
                     to: Math.max(1, mediaPlayer.duration)
                     value: mediaPlayer.position
-                    onMoved: mediaPlayer.setPosition(value)
+                    onMoved: {
+                        bridge.manualPlaybackSeek(value / 1000)
+                        mediaPlayer.setPosition(value)
+                    }
                     background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
                     handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                 }

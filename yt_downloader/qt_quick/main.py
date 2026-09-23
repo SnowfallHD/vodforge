@@ -39,6 +39,9 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoResult,
 )
 from yt_downloader.models import OutputType
+from yt_downloader.playback_backend import PlaybackSnapshot
+from yt_downloader.playback_progress import PlaybackProgressOwner
+from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadRuntime
 from yt_downloader.run_state import RunStateError
@@ -127,6 +130,7 @@ class Bridge(QObject):
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
     playbackRequested = Signal()
+    playbackSeekRequested = Signal(float)
     librarySearchChanged = Signal()
     libraryTypeChanged = Signal()
     localChanged = Signal()
@@ -135,6 +139,15 @@ class Bridge(QObject):
         super().__init__()
         self._runtime = DownloadRuntime()
         self._local = LocalConversionRuntime()
+        self._playback_progress = PlaybackProgressOwner(
+            self._runtime.history_path.parent / "watch-progress.json"
+        )
+        self._playback_progress.load()
+        self._playback_binding: PlaybackProgressBinding | None = None
+        self._playback_path: Path | None = None
+        self._playback_position = 0.0
+        self._playback_duration = 0.0
+        self._playback_status = "Ready"
         self._settings_path = settings_file_path()
         try:
             self._settings = load_settings(self._settings_path)
@@ -418,10 +431,57 @@ class Bridge(QObject):
             self._status = "The saved media file is missing."
             self.statusChanged.emit()
             return
+        if self._playback_binding is not None:
+            self._playback_binding.close()
+        self._playback_path = path
+        self._playback_position = 0.0
+        self._playback_duration = 0.0
+        self._playback_status = "Ready"
+        self._playback_binding = PlaybackProgressBinding(
+            self._playback_progress,
+            self._runtime.history[index],
+            snapshot=self._playback_snapshot(),
+            seek=self._request_playback_seek,
+        )
         self._playback_url = QUrl.fromLocalFile(str(path))
         self.playbackUrlChanged.emit()
         self.select("Watch")
         self.playbackRequested.emit()
+
+    def _playback_snapshot(self) -> PlaybackSnapshot:
+        return PlaybackSnapshot(
+            path=self._playback_path,
+            status=self._playback_status,
+            position=self._playback_position,
+            duration=self._playback_duration,
+            volume=80,
+        )
+
+    def _request_playback_seek(self, position: float) -> PlaybackSnapshot:
+        self.playbackSeekRequested.emit(position)
+        return self._playback_snapshot()
+
+    @Slot(float, float, str)
+    def observePlayback(self, position: float, duration: float, status: str) -> None:
+        if self._playback_binding is None or status not in {
+            "Ready",
+            "Playing",
+            "Paused",
+            "Ended",
+            "Failed",
+        }:
+            return
+        self._playback_position = position
+        self._playback_duration = duration
+        self._playback_status = status
+        self._playback_binding.present(self._playback_snapshot())
+
+    @Slot(float)
+    def manualPlaybackSeek(self, position: float) -> None:
+        if self._playback_binding is None:
+            return
+        self._playback_position = position
+        self._playback_binding.manual_seek(self._playback_snapshot())
 
     @Slot()
     def cancel(self) -> None:
@@ -475,6 +535,9 @@ class Bridge(QObject):
             self.localChanged.emit()
 
     def close(self) -> None:
+        if self._playback_binding is not None:
+            self._playback_binding.close()
+            self._playback_binding = None
         self._local.close()
         self._runtime.close()
 
