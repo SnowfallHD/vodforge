@@ -139,12 +139,17 @@ Item {
                     Layout.preferredWidth: scene.wide ? Math.max(320, scene.width - 334) : scene.width
                     spacing: 10
 
-                    VideoOutput {
-                        id: videoSurface
-                        objectName: "watchVideoSurface"
+                    Item {
+                        id: mediaStage
                         width: parent.width
                         height: Math.max(180, Math.min(390, width * 9 / 16, scene.height - 205))
-                        fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
+                        Rectangle { anchors.fill: parent; color: "#09090d" }
+                        VideoOutput {
+                            id: videoSurface
+                            objectName: "watchVideoSurface"
+                            anchors.fill: parent
+                            fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
+                        }
                     }
                     Text {
                         width: parent.width
@@ -205,20 +210,6 @@ Item {
                             color: theme.muted
                             font.pixelSize: 14
                         }
-                        Item { Layout.fillWidth: true }
-                        Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
-                        Slider {
-                            Accessible.name: "Volume"
-                            Layout.preferredWidth: 150
-                            from: 0; to: 1; value: scene.volume
-                            onMoved: scene.volumeRequested(value)
-                            background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                            handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
-                        }
-                    }
-                    RowLayout {
-                        width: parent.width
-                        spacing: 8
                         StoneButton {
                             label: "Full screen"
                             transientMaterial: false
@@ -241,6 +232,15 @@ Item {
                             }
                         }
                         Item { Layout.fillWidth: true }
+                        Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
+                        Slider {
+                            Accessible.name: "Volume"
+                            Layout.preferredWidth: 150
+                            from: 0; to: 1; value: scene.volume
+                            onMoved: scene.volumeRequested(value)
+                            background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
+                            handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
+                        }
                     }
                 }
 
