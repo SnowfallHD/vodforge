@@ -68,7 +68,15 @@ The old terminal record stays visible
 if admission fails; active work keeps the retry queued behind it. Focused
 tests cover immediate and queued admission, current-settings selection, and
 failed durable admission.
-Move/Trash remain to be ported.
+Qt Library now also previews and confirms one selected item's Move or Trash
+through the existing exact-file transaction and recovery journal. Both the
+visible and durable history snapshots are rechecked before commit; uncertain
+work stays blocked until the user reviews the saved receipt and chooses a
+verified finish or keep-current-file-state path. Qt deliberately offers Trash
+only when the platform has it, without an automatic permanent-delete fallback.
+Isolated real-file tests cover a completed move, Trash, stale in-memory and
+durable history, and an interrupted move finished through the existing recovery
+owner. Packaged native file-action and recovery UI remains to be qualified.
 
 Qt Settings now exposes the existing verified update and Repair owners through
 the shared stone controls. The Qt adapter checks releases and downloads on a

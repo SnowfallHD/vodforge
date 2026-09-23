@@ -89,6 +89,7 @@ from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.product_telemetry import product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
+from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.update_session import QtUpdateSession
@@ -198,6 +199,8 @@ class Bridge(QObject):
     analyticsChanged = Signal()
     analyticsPromptRequested = Signal()
     updateChanged = Signal()
+    fileActionChanged = Signal()
+    fileActionRequested = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -208,8 +211,15 @@ class Bridge(QObject):
         self._runtime.product_telemetry = self._analytics.telemetry
         self._analytics_allowed = self._analytics.allowed
         self._analytics_snapshot_sent = False
-        self._runtime.resume_queued()
         self._updates = QtUpdateSession(__version__)
+        self._files = QtLibraryFiles(self._runtime.history_path)
+        self._files.refresh_recovery()
+        self._file_action_busy = self._files.uncertain
+        if self._files.uncertain and self._runtime.recovery_notice is None:
+            self._runtime.recovery_notice = (
+                "Library file recovery must finish before new downloads."
+            )
+        self._runtime.resume_queued()
         self._window: Any | None = None
         self._annotations_writable = True
         self._annotations = LibraryAnnotationsOwner(
@@ -369,6 +379,89 @@ class Bridge(QObject):
     @Property(bool, notify=updateChanged)
     def updateRecovery(self) -> bool:
         return self._updates.recovery
+
+    @Property(str, notify=fileActionChanged)
+    def fileActionStatus(self) -> str:
+        return self._files.status
+
+    @Property(str, notify=fileActionChanged)
+    def fileActionName(self) -> str:
+        return self._files.action
+
+    @Property(bool, notify=fileActionChanged)
+    def fileActionBusy(self) -> bool:
+        return self._files.phase in {"checking", "working"}
+
+    @Property(bool, notify=fileActionChanged)
+    def fileActionEligible(self) -> bool:
+        return self._files.phase == "preview" and self._files.eligible
+
+    @Property(bool, notify=fileActionChanged)
+    def fileActionRecovery(self) -> bool:
+        return self._files.phase == "recovery"
+
+    @Property(bool, notify=fileActionChanged)
+    def fileActionCanFinish(self) -> bool:
+        return self._files.can_finish
+
+    @Slot(str, str, QUrl, result=bool)
+    def startFileAction(self, action: str, owner: str, destination: QUrl) -> bool:
+        pending = self._files.refresh_recovery()
+        self._file_action_busy = self._files.uncertain
+        if pending:
+            self.fileActionChanged.emit()
+            return True
+        item = self._saved_item_for_owner(owner)
+        if item is None:
+            self._status = "That Library item changed. Select it again."
+        elif (
+            self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._local_running
+            or self._file_action_busy
+            or self._runtime.recovery_notice
+        ):
+            self._status = "Finish active work before changing saved media."
+        elif (
+            self._playback_path is not None
+            and history_output_path(item) == self._playback_path
+        ):
+            self._status = "Close Watch playback before changing this media."
+        else:
+            folder = Path(destination.toLocalFile()) if action == "move" else None
+            if self._files.begin(
+                action, owner, self._runtime.history, destination=folder
+            ):
+                self.fileActionChanged.emit()
+                return True
+            self._status = self._files.status or "This file action could not start."
+        self.statusChanged.emit()
+        return False
+
+    @Slot(result=bool)
+    def confirmFileAction(self) -> bool:
+        if (
+            self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._local_running
+            or self._file_action_busy
+        ):
+            return False
+        started = self._files.confirm(self._runtime.history)
+        if started:
+            self._file_action_busy = True
+        self.fileActionChanged.emit()
+        return started
+
+    @Slot(bool, result=bool)
+    def recoverFileAction(self, finish: bool) -> bool:
+        started = self._files.recover(finish=finish)
+        if started:
+            self._file_action_busy = True
+            self.fileActionChanged.emit()
+        return started
 
     @Slot()
     def checkForUpdates(self) -> None:
@@ -874,6 +967,8 @@ class Bridge(QObject):
     @Slot()
     def startLocalConversion(self) -> None:
         try:
+            if self._file_action_busy:
+                raise RuntimeError("Finish the Library file change before converting.")
             if not self._settings_writable:
                 raise SettingsError(
                     "Settings need attention before a conversion can start."
@@ -884,7 +979,13 @@ class Bridge(QObject):
                 Path(self._output_path),
                 self._local_profile,
             )
-        except (LocalAudioVideoError, OSError, SettingsError, ValueError) as exc:
+        except (
+            LocalAudioVideoError,
+            OSError,
+            RuntimeError,
+            SettingsError,
+            ValueError,
+        ) as exc:
             self._status = str(exc)
             self.statusChanged.emit()
             return
@@ -1070,6 +1171,10 @@ class Bridge(QObject):
     def prepareLibraryRemoval(self, owner: str) -> bool:
         """Bind confirmation to one exact saved record, not a changing row index."""
         self._pending_library_removal = None
+        if self._file_action_busy or self._files.pending:
+            self._status = "Review the Library file change first."
+            self.statusChanged.emit()
+            return False
         item = self._saved_item_for_owner(owner)
         if item is None:
             self._status = "That Library item changed. Select it again."
@@ -1096,6 +1201,10 @@ class Bridge(QObject):
         pending = self._pending_library_removal
         self._pending_library_removal = None
         if pending is None:
+            return False
+        if self._file_action_busy or self._files.pending:
+            self._status = "Review the Library file change first."
+            self.statusChanged.emit()
             return False
         owner, fingerprint = pending
         item = self._saved_item_for_owner(owner)
@@ -1251,6 +1360,8 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def retryTerminal(self, run_id: str) -> bool:
         try:
+            if self._file_action_busy:
+                raise RuntimeError("Finish the Library file change before retrying.")
             status, url = self._runtime.terminal_retry_source(run_id)
             current_job = None
             if status == "Failed":
@@ -1293,6 +1404,30 @@ class Bridge(QObject):
         return True
 
     def _pump(self) -> None:
+        if self._files.poll():
+            self._file_action_busy = self._files.uncertain
+            actual = self._files.latest_history
+            self._files.latest_history = None
+            if actual is not None:
+                previous = self._runtime.history
+                self._runtime.history = actual
+                current_owners = {history_archive_owner(row) for row in actual}
+                for row in previous:
+                    if history_archive_owner(row) not in current_owners:
+                        try:
+                            self._annotations.remove(history_annotation_owner(row))
+                        except LibraryAnnotationsError:
+                            pass
+                if not self._files.pending and self._runtime.recovery_notice == (
+                    "Library file recovery must finish before new downloads."
+                ):
+                    self._runtime.recovery_notice = None
+                if self._library_category not in self.libraryCategories:
+                    self._library_category = LIBRARY_ALL_CATEGORIES
+                    self.libraryCategoryChanged.emit()
+                self.historyChanged.emit()
+                self.activityChanged.emit()
+            self.fileActionChanged.emit()
         if self._updates.poll():
             self.updateChanged.emit()
         for action, dimensions in self._updates.take_observations():
@@ -1360,6 +1495,7 @@ class Bridge(QObject):
             self.localChanged.emit()
 
     def close(self) -> None:
+        self._files.close()
         if self._playback_binding is not None:
             self._playback_binding.close()
             self._playback_binding = None
@@ -1391,6 +1527,8 @@ class Bridge(QObject):
     @Slot(str, str)
     def submit(self, value: str, output_format: str) -> None:
         try:
+            if self._file_action_busy:
+                raise RuntimeError("Finish the Library file change before downloading.")
             if not self._settings_writable:
                 raise SettingsError(
                     "Settings need attention before a download can start."
@@ -1495,6 +1633,8 @@ def main() -> int:
     bridge.startSession()
     bridge._window = engine.rootObjects()[0]
     QTimer.singleShot(6000, bridge._record_update_telemetry_receipt)
+    if bridge._files.pending and not args.runtime_smoke:
+        QTimer.singleShot(0, bridge.fileActionRequested.emit)
     if bool(getattr(sys, "frozen", False)) and not args.runtime_smoke:
         QTimer.singleShot(0, bridge._auto_check_updates)
     if args.runtime_smoke:

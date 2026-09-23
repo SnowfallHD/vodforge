@@ -48,6 +48,7 @@ Window {
     Connections {
         target: bridge
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
+        function onFileActionRequested() { fileActionPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
         function onPlaybackRequested() {
             mediaPlayer.stop()
@@ -95,6 +96,15 @@ Window {
         id: outputFolderDialog
         title: "Choose output folder"
         onAccepted: bridge.chooseOutputUrl(selectedFolder)
+    }
+    FolderDialog {
+        id: libraryMoveFolderDialog
+        title: "Move saved media to"
+        onAccepted: {
+            if (bridge.startFileAction("move", window.selectedSavedOwner, selectedFolder)) {
+                fileActionPopup.open()
+            }
+        }
     }
     FileDialog {
         id: localAudioDialog
@@ -694,7 +704,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: 260
-        height: 206
+        height: 316
         padding: 14
         modal: true
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
@@ -722,6 +732,86 @@ Window {
                         libraryItemPopup.close()
                         libraryRemovalPopup.open()
                     }
+                }
+            }
+            StoneButton {
+                label: "Move media to…"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: { libraryItemPopup.close(); libraryMoveFolderDialog.open() }
+            }
+            StoneButton {
+                label: "Move media to Trash"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: {
+                    libraryItemPopup.close()
+                    if (bridge.startFileAction("delete", window.selectedSavedOwner, Qt.url(""))) {
+                        fileActionPopup.open()
+                    }
+                }
+            }
+        }
+    }
+    Popup {
+        id: fileActionPopup
+        objectName: "libraryFileActionPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(490, window.width - 40)
+        height: 250
+        padding: 18
+        modal: true
+        closePolicy: bridge.fileActionBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Text {
+                text: bridge.fileActionRecovery ? "Review interrupted file change" :
+                    bridge.fileActionName === "move" ? "Move saved media" : "Saved media files"
+                color: theme.text
+                font.pixelSize: 21
+                font.bold: true
+            }
+            Text {
+                text: bridge.fileActionStatus
+                color: theme.muted
+                font.pixelSize: 15
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    visible: bridge.fileActionEligible
+                    label: bridge.fileActionName === "move" ? "Move verified media" : "Move to Trash"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.confirmFileAction()
+                }
+                StoneButton {
+                    visible: bridge.fileActionRecovery && bridge.fileActionCanFinish
+                    label: "Finish move"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.recoverFileAction(true)
+                }
+                StoneButton {
+                    visible: bridge.fileActionRecovery
+                    label: "Keep files as is"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 40
+                    onActivated: bridge.recoverFileAction(false)
+                }
+                Item { Layout.fillWidth: true }
+                StoneButton {
+                    label: "Close"
+                    enabled: !bridge.fileActionBusy
+                    Layout.preferredWidth: 90
+                    Layout.preferredHeight: 40
+                    onActivated: fileActionPopup.close()
                 }
             }
         }
