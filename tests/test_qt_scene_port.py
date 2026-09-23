@@ -1073,3 +1073,61 @@ def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+
+
+def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, f"Item {index:03d}", "MP4") for index in range(200)
+    ]
+    requested = []
+    monkeypatch.setattr(
+        bridge._artwork, "request",
+        lambda record, _size=(320, 180), _role="media":
+            requested.append(record["title"]) or "",
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        bridge.navigateLibrary("all")
+        app.processEvents()
+        flow = window.findChild(QObject, "libraryMediaFlow")
+        repeater = window.findChild(QObject, "libraryMediaRepeater")
+        viewport = window.findChild(QObject, "libraryViewport")
+        assert len(bridge.libraryScene["media"]) == 200
+        assert repeater.property("count") < 40
+        assert len(set(requested)) < 40
+        start_requests = set(requested)
+        flickable = viewport.property("contentItem")
+        assert flickable.setProperty("contentY", 50 * flow.property("rowStride"))
+        app.processEvents()
+        assert flow.property("firstRow") >= 45
+        assert repeater.property("count") < 40
+        assert len(set(requested) - start_requests) < 40
+        assert set(requested) - start_requests
+        scroll_before_detail = flickable.property("contentY")
+        owner = bridge.libraryScene["media"][150]["owner"]
+        assert bridge.openLibraryDetails(owner)
+        app.processEvents()
+        bridge.returnLibraryDetails()
+        app.processEvents()
+        assert abs(flickable.property("contentY") - scroll_before_detail) < 1
+        assert flow.property("firstRow") >= 45
+        assert flickable.setProperty("contentY", 20 * flow.property("rowStride"))
+        bridge.setLibrarySort("title")
+        app.processEvents()
+        assert flickable.property("contentY") == 0
+        bridge.navigateLibrary("channels")
+        app.processEvents()
+        assert flickable.property("contentY") == 0
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()

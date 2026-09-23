@@ -279,6 +279,7 @@ class Bridge(QObject):
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
     playerSceneChanged = Signal()
+    watchSceneChanged = Signal()
     playbackPreviewsChanged = Signal()
     playbackRequested = Signal(int)
     playbackSeekRequested = Signal(float)
@@ -316,6 +317,8 @@ class Bridge(QObject):
         super().__init__()
         self._runtime = DownloadRuntime()
         self.historyChanged.connect(self.playerSceneChanged.emit)
+        self.historyChanged.connect(self.watchSceneChanged.emit)
+        self.selectionChanged.connect(self.watchSceneChanged.emit)
         self.historyChanged.connect(self.runDeckChanged.emit)
         self._support = QtSupportSession(self._runtime.history_path.parent)
         self._latest_failure: FailureContext | None = None
@@ -1212,7 +1215,18 @@ class Bridge(QObject):
             if self._library_category == LIBRARY_ALL_CATEGORIES
             else self._library_category,
             self._library_sort,
+            defer_media_artwork=True,
         )
+
+    @Slot(str, result=str)
+    def libraryArtwork(self, owner: str) -> str:
+        matches = [
+            row for row in self._runtime.history
+            if row.get("vodforge_output_dir") and history_archive_owner(row) == owner
+        ]
+        if len(matches) != 1:
+            return ""
+        return self._artwork.request(matches[0], (320, 180), "media")
 
     @Property("QVariantMap", notify=historyChanged)
     def libraryFolders(self) -> dict[str, Any]:
@@ -1258,12 +1272,14 @@ class Bridge(QObject):
         records = self._projected_library()
         self._folder_browser.replace(records, range(len(records)))
 
-    @Property("QVariantMap", notify=historyChanged)
+    @Property("QVariantMap", notify=watchSceneChanged)
     def watchScene(self) -> dict[str, Any]:
         scene = watch_scene(
             self._projected_library(),
             self._watch_scene_route,
-            self._artwork.request,
+            self._artwork.request
+            if self._selection == "Watch"
+            else lambda _record, _size, _role: "",
             self._watch_group_key,
             self._watch_group_kind,
             self._watch_search,
@@ -1779,7 +1795,10 @@ class Bridge(QObject):
                     "status": self._status,
                     "type": active.output_type.value,
                     "progress": self._progress,
-                    "artwork": self._artwork.request(preview) if preview else "",
+                    "artwork": (
+                        self._artwork.request(preview)
+                        if preview and len(records) < 4 else ""
+                    ),
                 }
             )
         for kind, jobs in (
@@ -1798,7 +1817,10 @@ class Bridge(QObject):
                         "status": job.terminal_status or "Queued",
                         "type": job.output_type.value,
                         "progress": 0,
-                        "artwork": self._artwork.request(preview) if preview else "",
+                        "artwork": (
+                            self._artwork.request(preview)
+                            if preview and len(records) < 4 else ""
+                        ),
                     }
                 )
         projected = self._projected_library()
@@ -1818,7 +1840,7 @@ class Bridge(QObject):
                     "status": str(record["status"]),
                     "type": str(record["output_type"]),
                     "progress": 100,
-                    "artwork": self._artwork.request(item),
+                    "artwork": self._artwork.request(item) if len(records) < 4 else "",
                 }
             )
         counts: dict[str, int] = {}

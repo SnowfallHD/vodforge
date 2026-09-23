@@ -25,13 +25,28 @@ Item {
         selectedOwners = next
     }
     function finishSelection() { selectedOwners = []; selectionMode = false }
+    function resetViewport() {
+        if (viewport && viewport.contentItem) viewport.contentItem.contentY = 0
+    }
 
     readonly property var projection: appBridge.libraryScene
     readonly property string route: projection.route || "home"
     readonly property var counts: projection.counts || ({})
     readonly property var groups: projection.groups || []
     readonly property var media: projection.media || []
-    onRouteChanged: finishSelection()
+    property string previousRoute: "home"
+    onRouteChanged: {
+        const returningFromDetail = previousRoute === "detail"
+        finishSelection()
+        if (route !== "detail" && !returningFromDetail) resetViewport()
+        previousRoute = route
+    }
+    Connections {
+        target: scene.appBridge
+        function onLibrarySearchChanged() { scene.resetViewport() }
+        function onLibrarySortChanged() { scene.resetViewport() }
+        function onLibraryCategoryChanged() { scene.resetViewport() }
+    }
 
     LibraryDetail {
         anchors.fill: parent
@@ -144,6 +159,7 @@ Item {
 
         ScrollView {
             id: viewport
+            objectName: "libraryViewport"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -355,17 +371,35 @@ Item {
                 }
                 Flow {
                     id: mediaFlow
+                    objectName: "libraryMediaFlow"
                     width: parent.width
+                    height: Math.max(0, totalRows * rowStride - spacing)
                     spacing: 14
                     readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + 14) / 200)))
                     readonly property real cardWidth: (width - 14 * (columns - 1)) / columns
+                    readonly property real cardHeight: cardWidth * 9 / 16 + 170
+                    readonly property real rowStride: cardHeight + spacing
+                    readonly property int totalRows: Math.ceil(scene.media.length / columns)
+                    readonly property real scrollTop: viewport.contentItem.contentY - y
+                    readonly property int firstRow: scene.route === "home" ? 0 :
+                        Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
+                    readonly property int lastRow: scene.route === "home" ? totalRows :
+                        Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                    Item {
+                        visible: mediaFlow.firstRow > 0
+                        width: mediaFlow.width
+                        height: Math.max(0, mediaFlow.firstRow * mediaFlow.rowStride - mediaFlow.spacing)
+                    }
                     Repeater {
                         objectName: "libraryMediaRepeater"
-                        model: scene.route === "home" ? scene.media.slice(0, mediaFlow.columns) : scene.media
+                        model: scene.route === "home"
+                            ? scene.media.slice(0, mediaFlow.columns)
+                            : scene.media.slice(mediaFlow.firstRow * mediaFlow.columns,
+                                                mediaFlow.lastRow * mediaFlow.columns)
                         StoneField {
                             required property var modelData
                             width: mediaFlow.cardWidth
-                            height: width * 9 / 16 + 170
+                            height: mediaFlow.cardHeight
                             interactive: true
                             accessibilityLabel: "Details for " + modelData.title
                             onActivated: {
@@ -376,7 +410,7 @@ Item {
                                 x: 4; y: 4
                                 width: parent.width - 8
                                 height: parent.width * 9 / 16
-                                source: modelData.artwork
+                                source: scene.appBridge.libraryArtwork(modelData.owner)
                                 fillMode: Image.PreserveAspectCrop
                                 visible: source.toString().length > 0
                                 smooth: true
@@ -404,6 +438,11 @@ Item {
                                 }
                             }
                         }
+                    }
+                    Item {
+                        visible: mediaFlow.lastRow < mediaFlow.totalRows
+                        width: mediaFlow.width
+                        height: Math.max(0, (mediaFlow.totalRows - mediaFlow.lastRow) * mediaFlow.rowStride - mediaFlow.spacing)
                     }
                 }
                 Text {

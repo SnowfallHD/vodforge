@@ -21,6 +21,10 @@ from yt_downloader.watch_library import (
 Artwork = Callable[[dict[str, Any], tuple[int, int], str], str]
 
 
+def _defer_artwork(_record: dict[str, Any], _size: tuple[int, int], _role: str) -> str:
+    return ""
+
+
 def _media(record: dict[str, Any], index: int, artwork: Artwork) -> dict[str, Any]:
     return {
         "index": index,
@@ -65,6 +69,8 @@ def library_scene(
     query: str = "",
     category: str = "",
     sort: str = "recent",
+    *,
+    defer_media_artwork: bool = False,
 ) -> dict[str, Any]:
     """Use the Tk scene's saved-item, channel, playlist and collection definitions."""
     saved = [
@@ -184,11 +190,12 @@ def library_scene(
         # The home scene is one recent row; avoid acquiring artwork for rows
         # that cannot appear there. QML applies the current column count.
         media = media[:5]
+    media_image = _defer_artwork if defer_media_artwork else artwork
     return {
         "route": route,
         "counts": counts,
         "groups": groups,
-        "media": [_media(record, index, artwork) for index, record in media],
+        "media": [_media(record, index, media_image) for index, record in media],
         "groupTitle": group_title,
     }
 
