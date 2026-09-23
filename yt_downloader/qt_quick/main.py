@@ -39,11 +39,16 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from yt_downloader.app import (
     DownloaderApp,
     append_activity_log,
+    canonical_youtube_url,
     load_activity_log_tail,
     prepare_activity_log,
 )
 from yt_downloader.archive_browser import PAGE_SIZE, ArchiveBrowserModel
-from yt_downloader.archive_observations import bind_operation, operation
+from yt_downloader.archive_observations import (
+    bind_operation,
+    operation,
+    relink_dimensions,
+)
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.cloud_funnel import installation_state_path
@@ -79,6 +84,11 @@ from yt_downloader.library_annotations import (
     LibraryAnnotationsOwner,
 )
 from yt_downloader.library_import import commit_imports, inspect_local_media
+from yt_downloader.library_media_recovery import (
+    LibraryMediaRecoveryOwner,
+    LibraryMediaRecoveryPlan,
+)
+from yt_downloader.library_media_recovery_ui import library_media_recovery_prompt
 from yt_downloader.library_scene_facts import library_detail_facts
 from yt_downloader.library_search import (
     LIBRARY_ALL_CATEGORIES,
@@ -91,6 +101,7 @@ from yt_downloader.library_state import (
     PROJECTION_OWNER_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
+    metadata_output_type,
     persisted_run_deck_records,
     resolve_library_removal_plan,
 )
@@ -100,6 +111,7 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
 )
+from yt_downloader.media_player import resolve_library_media_path
 from yt_downloader.models import (
     CookieSource,
     ExportMode,
@@ -118,6 +130,7 @@ from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.previews import QtPreviewSession
+from yt_downloader.qt_quick.relink import QtRelinkSession
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.qt_quick.support import QtSupportSession
@@ -250,6 +263,10 @@ class Bridge(QObject):
     extraTagsChanged = Signal()
     appearanceChanged = Signal()
     themeRevisionChanged = Signal()
+    missingMediaChanged = Signal()
+    missingMediaRequested = Signal()
+    sourcePrepared = Signal(str)
+    relinkChanged = Signal()
     batchListChanged = Signal()
     sourceAccepted = Signal()
     cookieAccessChanged = Signal()
@@ -299,6 +316,13 @@ class Bridge(QObject):
         self._updates = QtUpdateSession(__version__)
         self._files = QtLibraryFiles(self._runtime.history_path)
         self._import_work = ArchiveWorkOwner()
+        self._relink = QtRelinkSession(self._runtime.history_path)
+        self._relink_operation: Any | None = None
+        self._media_recovery = LibraryMediaRecoveryOwner()
+        self._missing_media: dict[str, str] = {}
+        self._missing_plan: LibraryMediaRecoveryPlan | None = None
+        self._missing_fingerprint = ""
+        self._recovery_source_url = ""
         self._import_pending = False
         self._import_request_count = 0
         self._import_started_at = 0.0
@@ -534,8 +558,200 @@ class Bridge(QObject):
     def fileActionCanFinish(self) -> bool:
         return self._files.can_finish
 
+    @Property("QVariantMap", notify=missingMediaChanged)
+    def missingMedia(self) -> dict[str, str]:
+        return dict(self._missing_media)
+
+    @Property("QVariantMap", notify=relinkChanged)
+    def relinkInfo(self) -> dict[str, str | bool]:
+        return {
+            "phase": self._relink.phase,
+            "status": self._relink.status,
+            "owner": self._relink.owner,
+            "destination": self._relink.destination,
+            "eligible": self._relink.eligible,
+        }
+
+    @Slot(str, QUrl, result=bool)
+    def beginRelink(self, owner: str, url: QUrl) -> bool:
+        if not url.isLocalFile():
+            return False
+        if (
+            self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._local_running
+            or self._import_pending
+            or self._file_action_busy
+            or self._files.busy
+            or self._runtime.recovery_notice
+        ):
+            self._status = "Finish active work before changing saved locations."
+            self.statusChanged.emit()
+            return False
+        started = self._relink.begin(
+            owner, Path(url.toLocalFile()), self._runtime.history
+        )
+        if started:
+            self._relink_operation = bind_operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                operation_key=str(uuid.uuid4()),
+            )
+            operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                "requested",
+                self._relink_operation,
+                {"relink_mode": "file", "item_count": "1"},
+            )
+            self.relinkChanged.emit()
+        return started
+
+    @Slot(result=bool)
+    def acceptRelink(self) -> bool:
+        if (
+            self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._local_running
+            or self._import_pending
+            or self._file_action_busy
+            or self._files.busy
+        ):
+            return False
+        accepted = self._relink.accept(self._runtime.history)
+        if accepted:
+            operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                "commit_requested",
+                self._relink_operation,
+                {"item_count": "1"},
+            )
+        self.relinkChanged.emit()
+        return accepted
+
+    @Slot()
+    def cancelRelink(self) -> None:
+        if self._relink.active and self._relink.phase != "working":
+            operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                "cancelled",
+                self._relink_operation,
+            )
+            self._relink_operation = None
+        self._relink.cancel()
+        self.relinkChanged.emit()
+
+    def _current_missing_record(self) -> dict[str, Any] | None:
+        owner = self._missing_media.get("owner", "")
+        item = self._saved_item_for_owner(owner)
+        return (
+            item
+            if item is not None
+            and record_fingerprint(item) == self._missing_fingerprint
+            else None
+        )
+
+    @Slot(result=bool)
+    @Slot(QUrl, result=bool)
+    def openMissingInForge(self, folder: QUrl | None = None) -> bool:
+        plan = self._missing_plan
+        item = self._current_missing_record()
+        if plan is None or item is None:
+            return False
+        destination = plan.destination
+        if plan.requires_destination_choice:
+            if folder is None or not folder.isLocalFile():
+                return False
+            destination = Path(folder.toLocalFile())
+            if not destination.is_dir():
+                return False
+        source_url = canonical_youtube_url(item)
+        if not source_url:
+            return False
+        self._media_recovery.clear_destination()
+        self._recovery_source_url = source_url
+        if destination is not None:
+            self._media_recovery.prepare_destination(
+                source_url,
+                destination,
+                export_mode=ExportMode.EVERYDAY if plan.preset_migrated else None,
+            )
+        self.setOutputFormat(metadata_output_type(item).value)
+        self.outputPathChanged.emit()
+        self.exportModeChanged.emit()
+        self.select("Forge")
+        self.sourcePrepared.emit(source_url)
+        self._status = (
+            "Review the saved destination and output settings, then Forge again."
+        )
+        self.statusChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    @Slot(QUrl, result=bool)
+    def redownloadMissingTo(self, folder: QUrl | None = None) -> bool:
+        plan = self._missing_plan
+        item = self._current_missing_record()
+        if plan is None or item is None or not plan.can_redownload:
+            return False
+        if self._relink.active or self._file_action_busy or self._import_pending:
+            return False
+        if plan.requires_destination_choice:
+            if folder is None or not folder.isLocalFile():
+                return False
+            try:
+                plan = self._media_recovery.with_destination(
+                    plan, Path(folder.toLocalFile())
+                )
+            except ValueError:
+                return False
+        job = plan.job
+        if job is None:
+            return False
+        job.recovery_reason = "missing_media"
+        job.annotation_source_owner = plan.previous_annotation_owner
+        try:
+            self._runtime.start_job(job)
+        except (OSError, RuntimeError, RunStateError, ValueError) as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return False
+        self._record_update_feature(
+            "missing_media", "accepted", {"input_kind": "single"}
+        )
+        if plan.preset_migrated:
+            self._record_update_feature(
+                "missing_media",
+                "preset_migrated",
+                {"preset": "everyday", "input_kind": "single"},
+            )
+        updated = self._media_recovery.history_after_acceptance(
+            self._runtime.history, plan
+        )
+        try:
+            save_history(self._runtime.history_path, updated)
+        except HistoryError:
+            self._status = "Redownload started. The old Library card needs review."
+        else:
+            self._runtime.history = updated
+            self.historyChanged.emit()
+            self._status = "Redownloading this saved video with its output profile."
+        self.select("Forge")
+        self.runningChanged.emit()
+        self.activityChanged.emit()
+        self.statusChanged.emit()
+        return True
+
     @Slot(str, str, QUrl, result=bool)
     def startFileAction(self, action: str, owner: str, destination: QUrl) -> bool:
+        if self._relink.active:
+            self._status = "Finish the saved-location review first."
+            self.statusChanged.emit()
+            return False
         pending = self._files.refresh_recovery()
         self._file_action_busy = self._files.uncertain
         if pending:
@@ -573,7 +789,8 @@ class Bridge(QObject):
     @Slot(result=bool)
     def confirmFileAction(self) -> bool:
         if (
-            self._runtime.active_job is not None
+            self._relink.active
+            or self._runtime.active_job is not None
             or self._runtime.busy
             or self._runtime.queued
             or self._local_running
@@ -589,6 +806,8 @@ class Bridge(QObject):
 
     @Slot(bool, result=bool)
     def recoverFileAction(self, finish: bool) -> bool:
+        if self._relink.active:
+            return False
         started = self._files.recover(finish=finish)
         if started:
             self._file_action_busy = True
@@ -706,6 +925,10 @@ class Bridge(QObject):
 
     @Property(str, notify=outputPathChanged)
     def outputPath(self) -> str:
+        if self._recovery_source_url:
+            return self._media_recovery.destination_for(
+                self._recovery_source_url, self._output_path
+            )
         return self._output_path
 
     @Property(str, notify=selectionChanged)
@@ -722,6 +945,10 @@ class Bridge(QObject):
 
     @Property(str, notify=exportModeChanged)
     def exportMode(self) -> str:
+        if self._recovery_source_url:
+            mode = self._media_recovery.export_mode_for(self._recovery_source_url)
+            if mode is not None:
+                return mode.value
         return self._export_mode
 
     @Property(str, notify=outputFormatChanged)
@@ -1138,6 +1365,7 @@ class Bridge(QObject):
             self._status = "Choose up to 64 media files."
         elif (
             self._import_pending
+            or self._relink.active
             or self._file_action_busy
             or self._runtime.recovery_notice
             or self._runtime.active_job is not None
@@ -2260,6 +2488,10 @@ class Bridge(QObject):
     @Slot()
     def startLocalConversion(self) -> None:
         try:
+            if self._relink.active:
+                raise RuntimeError(
+                    "Finish the saved-location review before converting."
+                )
             if self._import_pending:
                 raise RuntimeError("Finish importing media before converting.")
             if self._file_action_busy:
@@ -2302,6 +2534,16 @@ class Bridge(QObject):
             self.statusChanged.emit()
             self._record("output", "invalid")
             return
+        if self._recovery_source_url:
+            self._media_recovery.prepare_destination(
+                self._recovery_source_url,
+                path,
+                export_mode=self._media_recovery.export_mode_for(
+                    self._recovery_source_url
+                ),
+            )
+            self.outputPathChanged.emit()
+            return
         self._output_path = str(path)
         self.outputPathChanged.emit()
         self._schedule_preferences_save()
@@ -2315,6 +2557,11 @@ class Bridge(QObject):
     @Slot(str)
     def setExportMode(self, value: str) -> None:
         if value not in {mode.value for mode in ExportMode}:
+            return
+        if self._recovery_source_url and self._media_recovery.update_export_mode(
+            self._recovery_source_url, ExportMode(value)
+        ):
+            self.exportModeChanged.emit()
             return
         self._export_mode = value
         self.exportModeChanged.emit()
@@ -2397,9 +2644,26 @@ class Bridge(QObject):
             self._watch_queue.cancel()
         if not 0 <= index < len(self._runtime.history):
             return False
-        path = history_output_path(self._runtime.history[index])
-        if path is None or not path.is_file():
-            self._status = "The saved media file is missing."
+        record = self._runtime.history[index]
+        path = resolve_library_media_path(record)
+        if path is None:
+            plan = self._media_recovery.plan(record)
+            prompt = library_media_recovery_prompt(plan)
+            self._missing_plan = plan
+            self._missing_fingerprint = record_fingerprint(record)
+            self._missing_media = {
+                "owner": history_archive_owner(record),
+                "heading": prompt.heading,
+                "message": prompt.message,
+                "detail": prompt.detail,
+                "kind": plan.kind,
+                "primaryAction": prompt.primary_action,
+                "primaryLabel": prompt.primary_label,
+                "requiresFolder": "yes" if plan.requires_destination_choice else "no",
+            }
+            self.missingMediaChanged.emit()
+            self.missingMediaRequested.emit()
+            self._status = prompt.heading
             self.statusChanged.emit()
             return False
         if self._playback_binding is not None:
@@ -2497,7 +2761,12 @@ class Bridge(QObject):
     def prepareLibraryRemoval(self, owner: str) -> bool:
         """Bind confirmation to one exact saved record, not a changing row index."""
         self._pending_library_removal = None
-        if self._file_action_busy or self._files.pending or self._import_pending:
+        if (
+            self._relink.active
+            or self._file_action_busy
+            or self._files.pending
+            or self._import_pending
+        ):
             self._status = "Review the Library file change first."
             self.statusChanged.emit()
             return False
@@ -2524,6 +2793,8 @@ class Bridge(QObject):
 
     @Slot(result=bool)
     def confirmLibraryRemoval(self) -> bool:
+        if self._relink.active:
+            return False
         pending = self._pending_library_removal
         self._pending_library_removal = None
         if pending is None:
@@ -2703,6 +2974,8 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def retryTerminal(self, run_id: str) -> bool:
         try:
+            if self._relink.active:
+                raise RuntimeError("Finish the saved-location review before retrying.")
             if self._import_pending:
                 raise RuntimeError("Finish importing media before retrying.")
             if self._file_action_busy:
@@ -2752,6 +3025,54 @@ class Bridge(QObject):
     def _pump(self) -> None:
         if self._closed:
             return
+        if self._relink.poll():
+            phase = self._relink.phase
+            preview = self._relink.preview
+            if phase == "preview" and preview is not None:
+                operation(
+                    self._analytics.telemetry,
+                    "archive_relink_operation",
+                    "verified",
+                    self._relink_operation,
+                    relink_dimensions(preview),
+                )
+            elif phase in {"error", "stale", "timed_out", "cancelled"}:
+                operation(
+                    self._analytics.telemetry,
+                    "archive_relink_operation",
+                    "timed_out"
+                    if phase == "timed_out"
+                    else "cancelled"
+                    if phase == "cancelled"
+                    else "failed",
+                    self._relink_operation,
+                    {
+                        "archive_result": "changed"
+                        if phase == "stale"
+                        else "unavailable"
+                    },
+                )
+                self._relink_operation = None
+            elif phase == "done" and preview is not None:
+                operation(
+                    self._analytics.telemetry,
+                    "archive_relink_operation",
+                    "committed",
+                    self._relink_operation,
+                    {"committed_count": "1", **relink_dimensions(preview)},
+                )
+                self._relink_operation = None
+            actual = self._relink.updated_history
+            if actual is not None:
+                self._relink.updated_history = None
+                previous_owner = self._relink.owner
+                self._runtime.history = actual
+                if 0 <= self._relink.index < len(actual):
+                    next_owner = history_archive_owner(actual[self._relink.index])
+                    if self._library_detail_owner == previous_owner:
+                        self._library_detail_owner = next_owner
+                self.historyChanged.emit()
+            self.relinkChanged.emit()
         if self._previews.poll():
             self.playbackPreviewsChanged.emit()
         if self._support.poll():
@@ -2962,6 +3283,7 @@ class Bridge(QObject):
                 self._import_operation,
             )
         self._import_work.close()
+        self._relink.close()
         self._storage.close()
         self._artwork.close()
         self._files.close()
@@ -2979,7 +3301,7 @@ class Bridge(QObject):
         manual = (
             manual_export_settings(self._manual_values)
             if selected_type == OutputType.MP4
-            and self._export_mode == ExportMode.MANUAL_OVERRIDE.value
+            and self.exportMode == ExportMode.MANUAL_OVERRIDE.value
             else None
         )
         mp3 = (
@@ -2996,6 +3318,17 @@ class Bridge(QObject):
     @Slot(str, str)
     def submit(self, value: str, output_format: str) -> None:
         try:
+            if self._recovery_source_url and (
+                value.strip() != self._recovery_source_url or self._batch_urls
+            ):
+                self._media_recovery.clear_destination()
+                self._recovery_source_url = ""
+                self.outputPathChanged.emit()
+                self.exportModeChanged.emit()
+            if self._relink.active:
+                raise RuntimeError(
+                    "Finish the saved-location review before downloading."
+                )
             if self._import_pending:
                 raise RuntimeError("Finish importing media before starting a download.")
             if self._file_action_busy:
@@ -3008,9 +3341,13 @@ class Bridge(QObject):
             manual, mp3 = self._current_export_inputs(selected_type)
             job = self._runtime.start(
                 value,
-                Path(self._output_path),
+                Path(
+                    self._media_recovery.destination_for(value, self._output_path)
+                    if self._recovery_source_url
+                    else self._output_path
+                ),
                 output_format,
-                self._export_mode,
+                self.exportMode,
                 self._quality,
                 self._download_preferences,
                 manual,
@@ -3026,6 +3363,11 @@ class Bridge(QObject):
             self._status = str(exc)
             outcome = "rejected"
         else:
+            if self._recovery_source_url:
+                self._media_recovery.clear_destination()
+                self._recovery_source_url = ""
+                self.outputPathChanged.emit()
+                self.exportModeChanged.emit()
             self.clearBatchList()
             self.sourceAccepted.emit()
             self.historyChanged.emit()

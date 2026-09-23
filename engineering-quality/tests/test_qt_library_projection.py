@@ -30,8 +30,18 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
     first.write_bytes(b"one")
     second.write_bytes(b"two")
     records = [
-        {"title": "Studio video", "vodforge_output_type": "MP4"},
-        {"title": "Research audio", "vodforge_output_type": "MP3"},
+        {
+            "title": "Studio video",
+            "vodforge_output_type": "MP4",
+            "vodforge_output_dir": str(tmp_path),
+            "vodforge_output_path": str(first),
+        },
+        {
+            "title": "Research audio",
+            "vodforge_output_type": "MP3",
+            "vodforge_output_dir": str(tmp_path),
+            "vodforge_output_path": str(second),
+        },
     ]
 
     class Runtime:
@@ -66,11 +76,6 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
     monkeypatch.setattr(qt_main, "LocalConversionRuntime", LocalRuntime)
     monkeypatch.setattr(
         qt_main, "settings_file_path", lambda: tmp_path / "settings.json"
-    )
-    monkeypatch.setattr(
-        qt_main,
-        "history_output_path",
-        lambda record: first if record is records[0] else second,
     )
     bridge = qt_main.Bridge(None)
     try:

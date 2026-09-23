@@ -16,6 +16,8 @@ Window {
     title: "VODForge"
     color: theme.bg
     property real playerVolume: 0.8
+    property string pendingRelinkOwner: ""
+    property string missingAction: ""
     property var mediaPlayer: playerLoader.item
     readonly property bool playerSurfaceBound: mediaPlayer && mediaPlayer.videoOutput === playerScene.activeVideoSurface
     property int pendingPlaybackGeneration: -1
@@ -80,6 +82,8 @@ Window {
         function onEditorialRequested() { editorialPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
+        function onSourcePrepared(url) { urlInput.text = url }
+        function onMissingMediaRequested() { missingMediaPopup.open() }
         function onPlaybackRequested(generation) {
             // Retire the old provider object before a queued item opens. Any
             // late signal carries the old generation and cannot advance it.
@@ -452,6 +456,28 @@ Window {
         title: "Choose YouTube cookies.txt"
         nameFilters: ["Cookie text files (*.txt)", "All files (*)"]
         onAccepted: bridge.setCookieFileUrl(selectedFile)
+    }
+    FileDialog {
+        id: relinkFileDialog
+        title: "Find this saved media file"
+        nameFilters: ["Video and audio (*.mp4 *.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus *.webm *.mkv *.mov)", "All files (*)"]
+        onAccepted: {
+            if (bridge.beginRelink(window.pendingRelinkOwner, selectedFile)) {
+                missingMediaPopup.close()
+                libraryItemPopup.close()
+                relinkPopup.open()
+            }
+        }
+    }
+    FolderDialog {
+        id: missingFolderDialog
+        title: "Choose a download folder for this saved item"
+        onAccepted: {
+            var accepted = window.missingAction === "redownload"
+                ? bridge.redownloadMissingTo(selectedFolder)
+                : bridge.openMissingInForge(selectedFolder)
+            if (accepted) missingMediaPopup.close()
+        }
     }
     ColorDialog {
         id: accentColorDialog
@@ -911,12 +937,101 @@ Window {
     }
 
     Popup {
+        id: missingMediaPopup
+        objectName: "missingMediaPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(620, window.width - 30)
+        height: 280
+        padding: 18
+        modal: true
+        background: StoneField {}
+        ColumnLayout {
+            anchors.fill: parent; spacing: 12
+            Text { text: bridge.missingMedia.heading || ""; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            Text { text: bridge.missingMedia.message || ""; color: theme.muted; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            Text { text: bridge.missingMedia.detail || ""; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideMiddle }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    label: "Find this file…"; emphasized: true
+                    Layout.preferredWidth: 160; Layout.preferredHeight: 40
+                    onActivated: {
+                        window.pendingRelinkOwner = bridge.missingMedia.owner
+                        relinkFileDialog.open()
+                    }
+                }
+                StoneButton {
+                    visible: bridge.missingMedia.primaryAction === "redownload" || bridge.missingMedia.primaryAction === "open_forge"
+                    label: bridge.missingMedia.primaryLabel || "Review in Forge"
+                    Layout.preferredWidth: Math.min(250, implicitWidth + 12)
+                    Layout.preferredHeight: 40
+                    onActivated: {
+                        window.missingAction = bridge.missingMedia.primaryAction
+                        if (bridge.missingMedia.requiresFolder === "yes") {
+                            missingFolderDialog.open()
+                        } else {
+                            var accepted = window.missingAction === "redownload"
+                                ? bridge.redownloadMissingTo()
+                                : bridge.openMissingInForge()
+                            if (accepted) missingMediaPopup.close()
+                        }
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Done"; Layout.preferredWidth: 84; Layout.preferredHeight: 40; onActivated: missingMediaPopup.close() }
+            }
+        }
+    }
+    Popup {
+        id: relinkPopup
+        objectName: "relinkPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(560, window.width - 30)
+        height: 290
+        padding: 18
+        modal: true
+        closePolicy: bridge.relinkInfo.phase === "working" ? Popup.NoAutoClose : Popup.CloseOnEscape
+        onClosed: {
+            if (bridge.relinkInfo.phase === "checking" || bridge.relinkInfo.phase === "preview") bridge.cancelRelink()
+        }
+        background: StoneField {}
+        ColumnLayout {
+            anchors.fill: parent; spacing: 12
+            Text { text: "Update saved file location"; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true }
+            Text { text: bridge.relinkInfo.destination; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideMiddle }
+            Text { text: bridge.relinkInfo.status; color: theme.text; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    visible: bridge.relinkInfo.eligible
+                    label: "Update location"; emphasized: true
+                    Layout.preferredWidth: 170; Layout.preferredHeight: 40
+                    onActivated: bridge.acceptRelink()
+                }
+                Item { Layout.fillWidth: true }
+                StoneButton {
+                    label: bridge.relinkInfo.phase === "working" ? "Stop pending update" : "Done"
+                    Layout.preferredWidth: bridge.relinkInfo.phase === "working" ? 170 : 84
+                    Layout.preferredHeight: 40
+                    onActivated: {
+                        if (bridge.relinkInfo.phase === "working") bridge.cancelRelink()
+                        else relinkPopup.close()
+                    }
+                }
+            }
+        }
+    }
+    Popup {
         id: libraryItemPopup
         objectName: "librarySavedActionsPopup"
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: 260
-        height: 372
+        height: 418
         padding: 14
         modal: true
         background: StoneField {}
@@ -934,6 +1049,16 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 42
                 onActivated: { bridge.copyLibraryPath(window.selectedSavedOwner); libraryItemPopup.close() }
+            }
+            StoneButton {
+                label: "Find this file…"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: {
+                    window.pendingRelinkOwner = window.selectedSavedOwner
+                    libraryItemPopup.close()
+                    relinkFileDialog.open()
+                }
             }
             StoneButton {
                 label: "Edit notes, tags & category"

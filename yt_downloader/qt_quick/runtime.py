@@ -146,6 +146,19 @@ class DownloadRuntime:
             cookie_browser=cookie_browser,
             tags=tags,
         )
+        return self.start_job(job)
+
+    def start_job(self, job: DownloadJob) -> DownloadJob:
+        """Admit a validated saved-profile recovery through the same queue owner."""
+        if self._closing:
+            raise RuntimeError("VODForge is closing.")
+        if self.recovery_notice:
+            raise RunStateError(self.recovery_notice)
+        if self.active_job is None and self.busy:
+            raise RuntimeError("The previous download is finishing.")
+        if self.active_job is None and self.queued:
+            self._launch_next_queued()
+        validate_output_directory_access(job.output_dir)
         active_and_queued = [
             *([self.active_job] if self.active_job is not None else []),
             *self.queued,
