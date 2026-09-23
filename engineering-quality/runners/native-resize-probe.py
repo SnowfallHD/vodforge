@@ -66,11 +66,17 @@ parser.add_argument(
     action="store_true",
     help="Bounded separate-process own-window pixels during drag; pair with no-capture control",
 )
+parser.add_argument("--assert-inflight-pixels", action="store_true")
+parser.add_argument("--auto-continue", action="store_true")
 args = parser.parse_args()
 if args.timing_details and not args.timing:
     parser.error("--timing-details requires --timing")
 if args.pixel_capture and sys.platform not in {"darwin", "win32"}:
     parser.error("--pixel-capture requires a Mac or Windows own-window recorder")
+if args.assert_inflight_pixels and (
+    sys.platform != "win32" or not args.pixel_capture or args.view != "forge"
+):
+    parser.error("--assert-inflight-pixels requires Windows Forge pixel capture")
 run = args.output.resolve()
 run.mkdir(parents=True, exist_ok=False)
 source = args.source.resolve()
@@ -524,6 +530,25 @@ with (
             app.after(16, beat)
 
     def complete():
+        pixel_assessment = None
+        if args.assert_inflight_pixels:
+            from quality_harness.resize_pixels import assess_static_resize_frames
+
+            report = run / "pixels" / "capture.json"
+            if report.exists():
+                capture = json.loads(report.read_text())
+                pixel_assessment = assess_static_resize_frames(
+                    capture["frames"], run / "pixels"
+                )
+                if capture["errors"]:
+                    failure.extend(capture["errors"])
+            else:
+                pixel_assessment = {"passed": False, "reason": "Pixel report missing"}
+            (run / "pixel-assessment.json").write_text(
+                json.dumps(pixel_assessment, indent=2)
+            )
+            if not pixel_assessment["passed"]:
+                failure.append("In-flight owned-window controls painted in stages")
         if args.profile:
             profile.disable()
             profile.dump_stats(str(run / "resize.prof"))
@@ -552,6 +577,7 @@ with (
             "pid": pid,
             "profiling_enabled": args.profile,
             "pixel_capture_enabled": args.pixel_capture,
+            "pixel_assessment": pixel_assessment,
             "baseline": args.baseline,
             "baseline_chrome": args.baseline_chrome,
             "edge": args.edge,
@@ -642,6 +668,9 @@ with (
         )
         if args.profile:
             profile.enable()
+        if args.auto_continue:
+            own_foreground()
+            (run / "continue").touch()
         if not args.no_observer:
             threading.Thread(target=observe_frame, args=(hwnd,), daemon=True).start()
         threading.Thread(target=drive, args=(hwnd, screen), daemon=True).start()
