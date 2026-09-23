@@ -13,7 +13,30 @@ import json
 import subprocess
 from pathlib import Path
 
-CODE_SUFFIXES = {".py", ".qml", ".sh", ".ps1", ".js", ".ts", ".yaml", ".yml"}
+CODE_SUFFIXES = {
+    ".py",
+    ".qml",
+    ".sh",
+    ".ps1",
+    ".js",
+    ".cjs",
+    ".mjs",
+    ".ts",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".iss",
+}
+CODE_PATHS = {"engineering-quality/run"}
+
+
+def is_code_file(relative: Path) -> bool:
+    return (
+        relative.suffix in CODE_SUFFIXES
+        or relative.as_posix() in CODE_PATHS
+        or relative.name.startswith("requirements")
+        and relative.suffix == ".txt"
+    )
 
 
 def index(root: Path) -> list[dict[str, object]]:
@@ -28,7 +51,7 @@ def index(root: Path) -> list[dict[str, object]]:
         if not raw:
             continue
         relative = Path(raw.decode("utf-8"))
-        if relative.suffix not in CODE_SUFFIXES:
+        if not is_code_file(relative):
             continue
         source = (root / relative).read_bytes()
         entry: dict[str, object] = {
