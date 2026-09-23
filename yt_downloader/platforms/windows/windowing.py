@@ -3,6 +3,29 @@ from __future__ import annotations
 from typing import Any
 
 
+def flush_pending_window_paint(root: Any) -> bool:
+    """Send already-invalid Windows child paints during the native sizing loop."""
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+    api.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    api.GetAncestor.restype = wintypes.HWND
+    api.RedrawWindow.argtypes = [
+        wintypes.HWND,
+        ctypes.c_void_p,
+        wintypes.HRGN,
+        wintypes.UINT,
+    ]
+    api.RedrawWindow.restype = wintypes.BOOL
+    hwnd = api.GetAncestor(root.winfo_id(), 2)
+    if not hwnd:
+        return False
+    # Existing invalid regions only. Forcing all children to invalidate on
+    # every Configure would turn a paint fix into more resize work.
+    return bool(api.RedrawWindow(hwnd, None, None, 0x0100 | 0x0080))
+
+
 def request_window_foreground(root: Any) -> bool:
     import ctypes
     from ctypes import wintypes

@@ -10169,7 +10169,9 @@ class DownloaderApp(
             ):
                 self._focus_resize_flushing_paint = True
                 try:
-                    self.update_idletasks()
+                    from .platforms.windows.windowing import flush_pending_window_paint
+
+                    flush_pending_window_paint(self)
                 finally:
                     self._focus_resize_flushing_paint = False
         except tk.TclError:
