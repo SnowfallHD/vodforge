@@ -24,8 +24,7 @@ def flush_pending_window_paint(root: Any, *surfaces: Any) -> bool:
     # Existing invalid regions only. Forcing all children to invalidate on
     # every Configure would turn a paint fix into more resize work.
     return all(
-        api.RedrawWindow(surface.winfo_id(), None, None, 0x0100 | 0x0080)
-        for surface in surfaces
+        api.RedrawWindow(surface.winfo_id(), None, None, 0x0100) for surface in surfaces
     )
 
 
