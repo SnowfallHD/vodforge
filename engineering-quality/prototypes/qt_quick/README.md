@@ -47,6 +47,15 @@ pass; packaged preview-D1, denial/off, and actual production-policy proofs
 remain open. The Qt adapter is still a presentation path, with no second
 consent or outbox authority.
 
+The Qt Library now resolves Play, Open folder, and Copy path through the
+current saved-item owner at click time. A stale row cannot redirect Play or
+copy another item's location. Forge exposes the existing worker's Stop, Skip
+item, and Skip source requests; each interrupts only this process's owned
+children as in the Tk path. Activity can remove a queued run only after the
+existing recovery owner durably saves the new queue. Focused tests cover stale
+identity, worker signal handoff, durable queue removal, and retained queue
+execution order. Move/Trash and terminal Retry remain to be ported.
+
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,
 packaged analytics delivery, updater/repair, signed packaging, installed

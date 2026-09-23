@@ -395,6 +395,7 @@ class Bridge(QObject):
                 "sourceIndex": history_owners.get(
                     str(item.get(PROJECTION_OWNER_KEY) or ""), -1
                 ),
+                "archiveOwner": str(item.get(PROJECTION_OWNER_KEY) or ""),
                 "title": str(item.get("title") or "Untitled media"),
                 "type": str(item.get("vodforge_output_type") or "MP4"),
                 "category": str(item.get("vodforge_user_category") or ""),
@@ -883,6 +884,45 @@ class Bridge(QObject):
         self.select("Watch")
         self.playbackRequested.emit()
 
+    def _saved_item_for_owner(self, owner: str) -> dict[str, Any] | None:
+        matches = [
+            row for row in self._runtime.history if history_archive_owner(row) == owner
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    @Slot(str)
+    def openLibraryOwner(self, owner: str) -> None:
+        item = self._saved_item_for_owner(owner)
+        if item is None:
+            self._status = "That Library item changed. Select it again."
+            self.statusChanged.emit()
+            return
+        self.openLibraryItem(self._runtime.history.index(item))
+
+    @Slot(str)
+    def openLibraryFolder(self, owner: str) -> None:
+        item = self._saved_item_for_owner(owner)
+        path = history_output_path(item) if item is not None else None
+        if path is None or not path.parent.is_dir():
+            self._status = "The saved media folder is unavailable."
+            self.statusChanged.emit()
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+    @Slot(str)
+    def copyLibraryPath(self, owner: str) -> None:
+        item = self._saved_item_for_owner(owner)
+        path = history_output_path(item) if item is not None else None
+        if path is None or not path.is_file():
+            self._status = "The saved media file is unavailable."
+            self.statusChanged.emit()
+            return
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(str(path))
+            self._status = "Saved media path copied."
+            self.statusChanged.emit()
+
     def _playback_snapshot(self) -> PlaybackSnapshot:
         return PlaybackSnapshot(
             path=self._playback_path,
@@ -935,6 +975,35 @@ class Bridge(QObject):
             self._runtime.cancel()
             self._status = "Stopping download…"
             self.statusChanged.emit()
+
+    @Slot()
+    def skipItem(self) -> None:
+        if self.running:
+            self._runtime.skip_item()
+            self._status = "Skipping this item after the current step stops…"
+            self.statusChanged.emit()
+
+    @Slot()
+    def skipSource(self) -> None:
+        if self.running:
+            self._runtime.skip_source()
+            self._status = "Skipping this source after the current step stops…"
+            self.statusChanged.emit()
+
+    @Slot(str, result=bool)
+    def removeQueued(self, run_id: str) -> bool:
+        try:
+            removed = self._runtime.remove_queued(run_id)
+        except RunStateError:
+            self._status = "The queued run could not be removed safely."
+            self.statusChanged.emit()
+            return False
+        if removed:
+            self._status = "Queued run removed."
+            self.statusChanged.emit()
+            self.activityChanged.emit()
+            self.historyChanged.emit()
+        return removed
 
     def _pump(self) -> None:
         if not self._analytics.settled:

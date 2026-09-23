@@ -140,6 +140,7 @@ Window {
     property int gutter: width < 960 ? 22 : 38
     property int rowGap: 14
     property string outputFormat: bridge.outputFormat
+    property string selectedSavedOwner: ""
 
     ColumnLayout {
         anchors.fill: parent
@@ -396,6 +397,12 @@ Window {
                         color: theme.muted
                         font.pixelSize: 17
                     }
+                    RowLayout {
+                        visible: bridge.running
+                        spacing: 8
+                        StoneButton { label: "Skip item"; Layout.preferredWidth: 105; Layout.preferredHeight: 36; onActivated: bridge.skipItem() }
+                        StoneButton { label: "Skip source"; Layout.preferredWidth: 119; Layout.preferredHeight: 36; onActivated: bridge.skipSource() }
+                    }
                     Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
@@ -510,7 +517,17 @@ Window {
                                 label: "Play"
                                 Layout.preferredWidth: 72
                                 Layout.preferredHeight: 38
-                                onActivated: bridge.openLibraryItem(modelData.sourceIndex)
+                                onActivated: bridge.openLibraryOwner(modelData.archiveOwner)
+                            }
+                            StoneButton {
+                                visible: modelData.sourceIndex >= 0
+                                label: "More"
+                                Layout.preferredWidth: 75
+                                Layout.preferredHeight: 38
+                                onActivated: {
+                                    window.selectedSavedOwner = modelData.archiveOwner
+                                    libraryItemPopup.open()
+                                }
                             }
                         }
                     }
@@ -591,12 +608,23 @@ Window {
                         required property var modelData
                         width: ListView.view.width
                         height: 82
-                        Column {
+                        RowLayout {
                             anchors.fill: parent
                             anchors.margins: 12
-                            spacing: 5
-                            Text { text: modelData.title + "  ·  " + modelData.status; color: theme.text; font.pixelSize: 16; elide: Text.ElideRight; width: parent.width }
-                            Text { text: modelData.detail; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; width: parent.width }
+                            spacing: 10
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 5
+                                Text { text: modelData.title + "  ·  " + modelData.status; color: theme.text; font.pixelSize: 16; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: modelData.detail; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+                            StoneButton {
+                                visible: modelData.status === "Queued"
+                                label: "Remove"
+                                Layout.preferredWidth: 90
+                                Layout.preferredHeight: 38
+                                onActivated: bridge.removeQueued(modelData.runId)
+                            }
                         }
                     }
                 }
@@ -604,6 +632,33 @@ Window {
         }
     }
 
+    Popup {
+        id: libraryItemPopup
+        objectName: "librarySavedActionsPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: 260
+        height: 155
+        padding: 14
+        modal: true
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+            StoneButton {
+                label: "Open folder"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: { bridge.openLibraryFolder(window.selectedSavedOwner); libraryItemPopup.close() }
+            }
+            StoneButton {
+                label: "Copy media path"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: { bridge.copyLibraryPath(window.selectedSavedOwner); libraryItemPopup.close() }
+            }
+        }
+    }
     Popup {
         id: categoryPopup
         objectName: "libraryCategoryPopup"

@@ -19,6 +19,14 @@ tests remain authoritative for outbox delivery and revocation. These are
 representative cross-owner handoffs; source-native tests cannot prove the
 packaged preview-D1 journey, installed platform UI, or production policy.
 
+The Qt Library action test also removes a projected saved row after its owner
+was captured: Play refuses to bind it to another history index, and Copy path
+does not substitute another file. The Qt queue test verifies the removed run
+is absent from durable recovery and never starts after the active run ends.
+The Stop/Skip test checks the actual shared-worker flags and child interruption
+handoff. It does not substitute for packaged mid-download cancellation and
+Skip results on both platforms.
+
 ## Full-cover shared artwork during resize — 2026-09-22
 
 `MatteBackdrop` owns one display-sized motif image per window and theme. The

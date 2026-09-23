@@ -18,6 +18,7 @@ from yt_downloader.app import (
     ProviderNetworkCoordinator,
     set_active_child_process_observer,
     single_video_url_requires_video_id_error,
+    terminate_all_active_child_processes,
     validate_output_directory_access,
 )
 from yt_downloader.cookie_inputs import (
@@ -306,6 +307,41 @@ class DownloadRuntime:
     def cancel(self) -> None:
         if self._worker_app is not None:
             self._worker_app.cancel_requested = True
+            threading.Thread(
+                target=terminate_all_active_child_processes,
+                name="vodforge-qt-stop-children",
+                daemon=True,
+            ).start()
+
+    def skip_item(self) -> None:
+        if self._worker_app is not None:
+            self._worker_app.skip_video_requested = True
+            threading.Thread(
+                target=terminate_all_active_child_processes,
+                name="vodforge-qt-skip-item-children",
+                daemon=True,
+            ).start()
+
+    def skip_source(self) -> None:
+        if self._worker_app is not None:
+            self._worker_app.skip_url_requested = True
+            self._worker_app.skip_video_requested = True
+            threading.Thread(
+                target=terminate_all_active_child_processes,
+                name="vodforge-qt-skip-source-children",
+                daemon=True,
+            ).start()
+
+    def remove_queued(self, run_id: str) -> bool:
+        matches = [job for job in self.queued if job.run_id == run_id]
+        if len(matches) != 1:
+            return False
+        remaining = [job for job in self.queued if job.run_id != run_id]
+        self.recovery.queue_changed(remaining)
+        self.queued = remaining
+        self._observe_run("run_dequeued", matches[0])
+        self._activity_upsert(matches[0], "Removed", "Removed from the queue")
+        return True
 
     def poll(self) -> list[tuple[str, Any]]:
         result: list[tuple[str, Any]] = []

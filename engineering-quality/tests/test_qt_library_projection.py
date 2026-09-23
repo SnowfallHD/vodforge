@@ -144,6 +144,17 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         reopened.observePlayback(0.0, 6.0, "Playing")
         assert seeks.count() == 1
         assert seeks.at(0)[0] == 2.0
+        saved_owner = next(
+            row["archiveOwner"] for row in reopened.history if row["sourceIndex"] == 1
+        )
+        reopened.copyLibraryPath(saved_owner)
+        assert application.clipboard().text() == str(second)
+        records.pop(1)
+        reopened.openLibraryOwner(saved_owner)
+        assert reopened.status == "That Library item changed. Select it again."
+        assert seeks.count() == 1
+        reopened.copyLibraryPath(saved_owner)
+        assert reopened.status == "The saved media file is unavailable."
     finally:
         reopened.close()
 

@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -28,6 +29,33 @@ def test_tk_qt_and_harness_share_the_non_widget_worker() -> None:
         DownloaderApp._download_worker_single
         is DownloadWorkerCore._download_worker_single
     )
+
+
+def test_qt_stop_and_skip_signal_the_shared_worker_and_interrupt_owned_children(
+    monkeypatch: Any,
+) -> None:
+    interrupted = threading.Event()
+    monkeypatch.setattr(
+        qt_runtime, "terminate_all_active_child_processes", interrupted.set
+    )
+    runtime = qt_runtime.DownloadRuntime.__new__(qt_runtime.DownloadRuntime)
+    worker = SimpleNamespace(
+        cancel_requested=False,
+        skip_video_requested=False,
+        skip_url_requested=False,
+    )
+    runtime._worker_app = worker
+    runtime.skip_item()
+    assert worker.skip_video_requested
+    assert interrupted.wait(timeout=1)
+    interrupted.clear()
+    runtime.skip_source()
+    assert worker.skip_url_requested and worker.skip_video_requested
+    assert interrupted.wait(timeout=1)
+    interrupted.clear()
+    runtime.cancel()
+    assert worker.cancel_requested
+    assert interrupted.wait(timeout=1)
 
 
 def test_qt_queue_survives_stopped_attempt_and_starts_next(
@@ -97,6 +125,46 @@ def test_qt_queue_survives_stopped_attempt_and_starts_next(
         assert "example.com" not in str(observed)
     finally:
         first_may_finish.set()
+        runtime.close()
+
+
+def test_qt_queue_removal_commits_durable_state_before_hiding_item(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    state_path = tmp_path / "active-run.json"
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(qt_runtime, "run_state_file_path", lambda: state_path)
+    may_finish = threading.Event()
+    started: list[str] = []
+
+    def worker(self: DownloadWorkerCore, job: Any) -> None:
+        started.append(job.url)
+        assert may_finish.wait(timeout=5)
+        self.events.put(("done", "Complete"))
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        runtime.start("https://example.com/first", output_dir, "MP4", "Everyday")
+        queued = runtime.start(
+            "https://example.com/second", output_dir, "MP4", "Everyday"
+        )
+        assert runtime.remove_queued(queued.run_id)
+        assert ActiveRunStore(state_path).load_queued_jobs() == []
+        assert runtime.queued == []
+        assert not runtime.remove_queued(queued.run_id)
+        may_finish.set()
+        deadline = time.monotonic() + 5
+        while runtime.active_job is not None and time.monotonic() < deadline:
+            runtime.poll()
+            time.sleep(0.01)
+        assert started == ["https://example.com/first"]
+    finally:
+        may_finish.set()
         runtime.close()
 
 
