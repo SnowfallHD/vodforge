@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 
-def _windows_capture(number: int, owner_pid: int, *, screen_crop: bool = False):
+def _windows_capture(number: int, owner_pid: int):
     import ctypes as C
     from ctypes import wintypes as W
 
@@ -35,41 +35,7 @@ def _windows_capture(number: int, owner_pid: int, *, screen_crop: bool = False):
     bounds = W.RECT()
     if not user32.GetWindowRect(W.HWND(number), C.byref(bounds)):
         raise RuntimeError("Owned Windows bounds unavailable")
-    if screen_crop:
-        user32.GetForegroundWindow.restype = W.HWND
-        user32.GetTopWindow.restype = W.HWND
-        user32.GetWindow.argtypes = [W.HWND, W.UINT]
-        user32.GetWindow.restype = W.HWND
-
-        def unobscured() -> bool:
-            foreground = user32.GetForegroundWindow()
-            foreground_pid = W.DWORD()
-            user32.GetWindowThreadProcessId(foreground, C.byref(foreground_pid))
-            if foreground_pid.value != owner_pid:
-                return False
-            upper = user32.GetTopWindow(None)
-            while upper and upper != number:
-                if user32.IsWindowVisible(upper):
-                    other = W.RECT()
-                    if user32.GetWindowRect(upper, C.byref(other)) and (
-                        other.left < bounds.right
-                        and other.right > bounds.left
-                        and other.top < bounds.bottom
-                        and other.bottom > bounds.top
-                    ):
-                        return False
-                upper = user32.GetWindow(upper, 2)
-            return bool(upper)
-
-        if not unobscured():
-            raise RuntimeError("Owned Windows window is obscured during screen crop")
-        bitmap = ImageGrab.grab(
-            bbox=(bounds.left, bounds.top, bounds.right, bounds.bottom)
-        )
-        if not unobscured():
-            raise RuntimeError("Owned Windows window was obscured during screen crop")
-    else:
-        bitmap = ImageGrab.grab(window=number)
+    bitmap = ImageGrab.grab(window=number)
     if bitmap.width <= 0 or bitmap.height <= 0:
         raise RuntimeError("Owned Windows pixels unavailable")
     return bitmap.convert("RGB"), [bounds.left, bounds.top, bounds.right, bounds.bottom]
@@ -86,12 +52,9 @@ def main() -> int:
     parser.add_argument("directory", type=Path)
     parser.add_argument("--interval", type=float, default=0.020)
     parser.add_argument("--owner-pid", type=int)
-    parser.add_argument("--screen-crop", action="store_true")
     args = parser.parse_args()
     if sys.platform == "win32" and (args.owner_pid is None or args.owner_pid <= 0):
         parser.error("Windows own-window capture requires --owner-pid")
-    if args.screen_crop and sys.platform != "win32":
-        parser.error("--screen-crop requires Windows")
     if sys.platform not in {"darwin", "win32"}:
         parser.error("Own-window pixel capture is supported on Mac and Windows")
     if not 0.020 <= args.interval <= 1:
@@ -103,9 +66,7 @@ def main() -> int:
         while not (directory / "capture.stop").exists() and time.monotonic() < deadline:
             begin = time.monotonic() - origin
             if sys.platform == "win32":
-                bitmap, bounds = _windows_capture(
-                    number, args.owner_pid, screen_crop=args.screen_crop
-                )
+                bitmap, bounds = _windows_capture(number, args.owner_pid)
             else:
                 raw = Quartz.CGWindowListCreateImage(
                     Quartz.CGRectNull,
@@ -160,11 +121,7 @@ def main() -> int:
                 "frames": frames,
                 "errors": errors,
                 "requested_interval_seconds": args.interval,
-                "observer": (
-                    "separate process; foreground unobscured owned window crop"
-                    if args.screen_crop
-                    else "separate process; exact owned window; no application GIL"
-                ),
+                "observer": "separate process; exact owned window; no application GIL",
             },
             indent=2,
         )

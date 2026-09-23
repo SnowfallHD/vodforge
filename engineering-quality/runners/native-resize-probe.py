@@ -66,25 +66,11 @@ parser.add_argument(
     action="store_true",
     help="Bounded separate-process own-window pixels during drag; pair with no-capture control",
 )
-parser.add_argument(
-    "--windows-composited",
-    action="store_true",
-    help="Diagnostic Win32 descendant double-buffering experiment",
-)
-parser.add_argument(
-    "--pixel-screen-crop",
-    action="store_true",
-    help="Diagnostic unobscured foreground screen pixels within owned Windows HWND",
-)
 args = parser.parse_args()
 if args.timing_details and not args.timing:
     parser.error("--timing-details requires --timing")
 if args.pixel_capture and sys.platform not in {"darwin", "win32"}:
     parser.error("--pixel-capture requires a Mac or Windows own-window recorder")
-if args.windows_composited and sys.platform != "win32":
-    parser.error("--windows-composited requires Windows")
-if args.pixel_screen_crop and (sys.platform != "win32" or not args.pixel_capture):
-    parser.error("--pixel-screen-crop requires Windows --pixel-capture")
 run = args.output.resolve()
 run.mkdir(parents=True, exist_ok=False)
 source = args.source.resolve()
@@ -111,6 +97,7 @@ if sys.platform == "win32":
     u.GetAncestor.restype = W.HWND
     u.GetForegroundWindow.restype = W.HWND
     u.GetWindowRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
+    u.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
     u.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
     u.SetForegroundWindow.argtypes = [W.HWND]
     u.GetDpiForWindow.argtypes = [W.HWND]
@@ -310,7 +297,6 @@ def drive(hwnd, screen):
                     "--interval",
                     ".05" if sys.platform == "win32" else ".1",
                     *(["--owner-pid", str(pid)] if sys.platform == "win32" else []),
-                    *(["--screen-crop"] if args.pixel_screen_crop else []),
                 ],
                 stdout=capture_log,
                 stderr=subprocess.STDOUT,
@@ -494,17 +480,6 @@ with (
     app.update()
     if sys.platform == "win32":
         hwnd = u.GetAncestor(app.winfo_id(), 2)
-        if args.windows_composited:
-            u.GetWindowLongW.argtypes = [W.HWND, C.c_int]
-            u.SetWindowLongW.argtypes = [W.HWND, C.c_int, C.c_long]
-            u.SetWindowPos.argtypes = [W.HWND, W.HWND, C.c_int, C.c_int, C.c_int, C.c_int, W.UINT]
-            current = u.GetWindowLongW(hwnd, -20)
-            C.set_last_error(0)
-            previous = u.SetWindowLongW(hwnd, -20, current | 0x02000000)
-            if not previous and C.get_last_error():
-                raise RuntimeError("Windows composited style could not be applied")
-            if not u.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0027):
-                raise RuntimeError("Windows composited frame refresh failed")
         u.SetForegroundWindow(hwnd)
         if u.GetForegroundWindow() != hwnd:
             u.keybd_event(0x12, 0, 0, 0)
@@ -577,8 +552,6 @@ with (
             "pid": pid,
             "profiling_enabled": args.profile,
             "pixel_capture_enabled": args.pixel_capture,
-            "pixel_screen_crop": args.pixel_screen_crop,
-            "windows_composited": args.windows_composited,
             "baseline": args.baseline,
             "baseline_chrome": args.baseline_chrome,
             "edge": args.edge,
