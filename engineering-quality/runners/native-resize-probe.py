@@ -71,6 +71,11 @@ parser.add_argument(
     action="store_true",
     help="Diagnostic Win32 descendant double-buffering experiment",
 )
+parser.add_argument(
+    "--pixel-screen-crop",
+    action="store_true",
+    help="Diagnostic unobscured foreground screen pixels within owned Windows HWND",
+)
 args = parser.parse_args()
 if args.timing_details and not args.timing:
     parser.error("--timing-details requires --timing")
@@ -78,6 +83,8 @@ if args.pixel_capture and sys.platform not in {"darwin", "win32"}:
     parser.error("--pixel-capture requires a Mac or Windows own-window recorder")
 if args.windows_composited and sys.platform != "win32":
     parser.error("--windows-composited requires Windows")
+if args.pixel_screen_crop and (sys.platform != "win32" or not args.pixel_capture):
+    parser.error("--pixel-screen-crop requires Windows --pixel-capture")
 run = args.output.resolve()
 run.mkdir(parents=True, exist_ok=False)
 source = args.source.resolve()
@@ -303,6 +310,7 @@ def drive(hwnd, screen):
                     "--interval",
                     ".05" if sys.platform == "win32" else ".1",
                     *(["--owner-pid", str(pid)] if sys.platform == "win32" else []),
+                    *(["--screen-crop"] if args.pixel_screen_crop else []),
                 ],
                 stdout=capture_log,
                 stderr=subprocess.STDOUT,
@@ -569,6 +577,7 @@ with (
             "pid": pid,
             "profiling_enabled": args.profile,
             "pixel_capture_enabled": args.pixel_capture,
+            "pixel_screen_crop": args.pixel_screen_crop,
             "windows_composited": args.windows_composited,
             "baseline": args.baseline,
             "baseline_chrome": args.baseline_chrome,
