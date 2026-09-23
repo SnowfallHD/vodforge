@@ -47,6 +47,7 @@ Window {
     }
     Connections {
         target: bridge
+        function onSourceAccepted() { urlInput.text = "" }
         function onPlaybackRequested() {
             mediaPlayer.stop()
             mediaPlayer.source = ""
@@ -370,8 +371,18 @@ Window {
                         Layout.fillWidth: true
                     }
                     Text { text: "Format             " + window.outputFormat; color: theme.muted; font.pixelSize: 14 }
-                    Text { text: "Video               H.264"; color: theme.muted; font.pixelSize: 14 }
-                    Text { text: "Audio               AAC"; color: theme.muted; font.pixelSize: 14 }
+                    Text {
+                        text: "Video               " + (window.outputFormat === "MP4" ? "H.264" : "None")
+                        color: theme.muted
+                        font.pixelSize: 14
+                    }
+                    Text {
+                        text: "Audio               " + (window.outputFormat === "MP3" ? "MP3" :
+                              window.outputFormat === "Original audio" ? "Source" :
+                              bridge.exportMode === "Manual Override" ? bridge.manualValues.manual_audio_codec : "AAC")
+                        color: theme.muted
+                        font.pixelSize: 14
+                    }
                     Text { text: "Output mode     " + bridge.exportMode; color: theme.muted; font.pixelSize: 14 }
                     Item { Layout.fillHeight: true }
                 }

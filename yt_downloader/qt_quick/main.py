@@ -148,6 +148,7 @@ class Bridge(QObject):
     downloadOptionsChanged = Signal()
     exportSettingsChanged = Signal()
     batchListChanged = Signal()
+    sourceAccepted = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -755,6 +756,8 @@ class Bridge(QObject):
             self._status = str(exc)
             outcome = "rejected"
         else:
+            self.clearBatchList()
+            self.sourceAccepted.emit()
             self._progress = 0.0
             self.progressChanged.emit()
             self.runningChanged.emit()

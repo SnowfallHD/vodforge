@@ -11,6 +11,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
+from PySide6.QtCore import QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QSignalSpy
 
@@ -96,9 +97,21 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         assert bridge.exportMode == "Strict Compliance"
         bridge.setExportMode("Manual Override")
         bridge._settings_writable = True
+        source_list = tmp_path / "sources.txt"
+        source_list.write_text("https://example.com/one\nhttps://example.com/two\n")
+        bridge.loadBatchUrl(QUrl.fromLocalFile(str(source_list)))
+        assert "2 URL(s)" in bridge.batchSummary
+        accepted = QSignalSpy(bridge.sourceAccepted)
         bridge.submit("https://example.com/watch?v=example", "MP4")
         assert bridge.status == "Preparing download…"
         assert bridge._runtime.submitted[0][0][6].video_bitrate_kbps == 10000
+        assert bridge._runtime.submitted[0][1]["urls"] == [
+            "https://example.com/one",
+            "https://example.com/two",
+        ]
+        assert bridge._runtime.submitted[0][1]["batch_mode"] is True
+        assert bridge.batchSummary == "No URL list loaded"
+        assert accepted.count() == 1
     finally:
         bridge.close()
         application.processEvents()
