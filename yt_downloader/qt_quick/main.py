@@ -38,6 +38,7 @@ from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.app import (
+    DIAGNOSTICS_LOG_PATH,
     DownloaderApp,
     ProviderNetworkCoordinator,
     append_activity_log,
@@ -150,6 +151,10 @@ from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
+from yt_downloader.quality_e2e import (
+    QualityE2EAttestationError,
+    write_quality_e2e_startup_attestation,
+)
 from yt_downloader.run_identity import annotate_job_metadata, metadata_output_profile
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
@@ -3692,6 +3697,33 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     return engine
 
 
+class QtQualityE2EApp:
+    """Expose Qt's real launch identity to the existing isolation attestor."""
+
+    def __init__(self, bridge: Bridge, window: Any) -> None:
+        self.history_path = bridge._runtime.history_path
+        self.output_var = self
+        self._bridge = bridge
+        self._window = window
+
+    def get(self) -> str:
+        return self._bridge._output_path
+
+    def title(self, value: str | None = None) -> str:
+        if value is not None:
+            self._window.setTitle(value)
+        return str(self._window.title())
+
+
+def attest_qt_launch(bridge: Bridge, window: Any) -> Path | None:
+    return write_quality_e2e_startup_attestation(
+        QtQualityE2EApp(bridge, window),
+        app_version=__version__,
+        application_data_path=application_data_dir(),
+        diagnostics_path=DIAGNOSTICS_LOG_PATH,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event-log", type=Path)
@@ -3722,8 +3754,17 @@ def main() -> int:
         if smoke_home is not None:
             smoke_home.cleanup()
         return 2
-    bridge.startSession()
     bridge._window = engine.rootObjects()[0]
+    try:
+        attest_qt_launch(bridge, bridge._window)
+    except QualityE2EAttestationError as exc:
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+        if smoke_home is not None:
+            smoke_home.cleanup()
+        raise SystemExit(f"VODForge Qt quality-E2E startup rejected: {exc}") from exc
+    bridge.startSession()
     QTimer.singleShot(6000, bridge._record_update_telemetry_receipt)
     if bridge._files.pending and not args.runtime_smoke:
         QTimer.singleShot(0, bridge.fileActionRequested.emit)
