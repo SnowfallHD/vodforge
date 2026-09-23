@@ -150,13 +150,52 @@ Item {
                 }
                 StoneField {
                     width: detail.compact ? annotationRow.width : annotationRow.width - Math.round(annotationRow.width * 0.62) - 16
-                    height: 150
+                    height: Math.max(150, tagColumn.childrenRect.height + 32)
                     Column {
+                        id: tagColumn
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 9
                         Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20 }
-                        Text { text: (detail.item.tags || []).join(", ") || "Add your own tags"; width: parent.width; color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight }
+                        Flow {
+                            width: parent.width
+                            spacing: 6
+                            Repeater {
+                                model: detail.item.tags || []
+                                StoneButton {
+                                    required property string modelData
+                                    label: modelData + " ×"
+                                    accessibilityLabel: "Remove tag " + modelData
+                                    size: "inline"
+                                    width: Math.min(tagColumn.width, implicitWidth)
+                                    onActivated: detail.appBridge.editLibraryTag(detail.item.owner, modelData, true)
+                                }
+                            }
+                        }
+                        Row {
+                            width: parent.width; spacing: 8
+                            StoneField {
+                                width: Math.max(80, parent.width - 66); height: 34
+                                TextField {
+                                    id: detailTagInput
+                                    anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10
+                                    padding: 0; verticalAlignment: TextInput.AlignVCenter
+                                    placeholderText: "Add a tag…"
+                                    color: theme.text; placeholderTextColor: theme.muted
+                                    font.pixelSize: 13; background: Item {}
+                                    onAccepted: {
+                                        if (detail.appBridge.editLibraryTag(detail.item.owner, text, false)) text = ""
+                                    }
+                                }
+                            }
+                            StoneButton {
+                                label: "+"; accessibilityLabel: "Add tag"
+                                size: "inline"; width: 50; height: 34
+                                onActivated: {
+                                    if (detail.appBridge.editLibraryTag(detail.item.owner, detailTagInput.text, false)) detailTagInput.text = ""
+                                }
+                            }
+                        }
                         Text { text: detail.item.note || ""; width: parent.width; color: theme.muted; font.pixelSize: 13; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight }
                         StoneButton { label: "Edit organization"; size: "inline"; width: 155; onActivated: detail.annotationRequested(detail.item.owner) }
                     }

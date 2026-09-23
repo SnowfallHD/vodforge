@@ -71,6 +71,8 @@ from yt_downloader.history import (
 )
 from yt_downloader.library_annotations import (
     MAX_NOTE_CHARS,
+    MAX_TAG_CHARS,
+    MAX_TAGS,
     LibraryAnnotationsError,
     LibraryAnnotationsOwner,
 )
@@ -1774,16 +1776,9 @@ class Bridge(QObject):
         self.historyChanged.emit()
         return True
 
-    @Slot(str, str, result=bool)
-    def saveLibraryDescription(self, owner: str, value: str) -> bool:
+    def _detail_annotation_owner(self, owner: str) -> str:
         if owner != self._library_detail_owner or not self._annotations_writable:
-            return False
-        if len(value) > MAX_NOTE_CHARS:
-            self._status = (
-                f"Use up to {MAX_NOTE_CHARS:,} characters for your description."
-            )
-            self.statusChanged.emit()
-            return False
+            return ""
         row = next(
             (
                 item
@@ -1793,9 +1788,19 @@ class Bridge(QObject):
             None,
         )
         if row is None or not row.get("vodforge_output_dir"):
-            return False
-        annotation_owner = str(row.get(ANNOTATION_OWNER_KEY) or "")
+            return ""
+        return str(row.get(ANNOTATION_OWNER_KEY) or "")
+
+    @Slot(str, str, result=bool)
+    def saveLibraryDescription(self, owner: str, value: str) -> bool:
+        annotation_owner = self._detail_annotation_owner(owner)
         if not annotation_owner:
+            return False
+        if len(value) > MAX_NOTE_CHARS:
+            self._status = (
+                f"Use up to {MAX_NOTE_CHARS:,} characters for your description."
+            )
+            self.statusChanged.emit()
             return False
         try:
             self._annotations.replace(
@@ -1816,6 +1821,46 @@ class Bridge(QObject):
             except (OSError, ValueError):
                 pass
         self._status = "Library description saved."
+        self.statusChanged.emit()
+        self.historyChanged.emit()
+        return True
+
+    @Slot(str, str, bool, result=bool)
+    def editLibraryTag(self, owner: str, value: str, remove: bool) -> bool:
+        annotation_owner = self._detail_annotation_owner(owner)
+        if not annotation_owner:
+            return False
+        tag = value.strip()
+        if not tag or len(tag) > MAX_TAG_CHARS:
+            self._status = f"Use a tag of up to {MAX_TAG_CHARS} characters."
+            self.statusChanged.emit()
+            return False
+        previous = self._annotations.annotation_for(annotation_owner)
+        existing = {item.casefold() for item in previous.tags}
+        if not remove and tag.casefold() in existing:
+            return True
+        if not remove and len(previous.tags) >= MAX_TAGS:
+            self._status = "This item already has the maximum number of tags."
+            self.statusChanged.emit()
+            return False
+        tags = (
+            tuple(item for item in previous.tags if item.casefold() != tag.casefold())
+            if remove
+            else (*previous.tags, tag)
+        )
+        try:
+            self._annotations.replace(annotation_owner, replace(previous, tags=tags))
+        except LibraryAnnotationsError as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return False
+        telemetry = self._analytics.telemetry
+        if telemetry is not None:
+            try:
+                telemetry.record_feature("organization", "tags_saved")
+            except (OSError, ValueError):
+                pass
+        self._status = "Library tags saved."
         self.statusChanged.emit()
         self.historyChanged.emit()
         return True

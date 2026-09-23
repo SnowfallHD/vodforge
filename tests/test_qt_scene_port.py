@@ -85,8 +85,16 @@ def test_qt_library_description_uses_current_detail_owner_and_shared_annotations
         assert bridge.libraryDetail["description"] == "A private description"
         assert bridge.libraryDetail["userDescription"] is True
         assert not bridge.saveLibraryDescription(owners[0], "x" * 10_001)
+        assert bridge.editLibraryTag(owners[0], " Travel ", False)
+        assert bridge.editLibraryTag(owners[0], "travel", False)
+        assert bridge.libraryDetail["tags"] == ["Travel"]
+        assert not bridge.editLibraryTag(owners[1], "Wrong subject", False)
+        assert not bridge.editLibraryTag(owners[0], "x" * 81, False)
+        assert bridge.editLibraryTag(owners[0], "TRAVEL", True)
+        assert bridge.libraryDetail["tags"] == []
         bridge.returnLibraryDetails()
         assert not bridge.saveLibraryDescription(owners[0], "Closed detail")
+        assert not bridge.editLibraryTag(owners[0], "Closed detail", False)
     finally:
         bridge.close()
 
