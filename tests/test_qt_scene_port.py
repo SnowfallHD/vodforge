@@ -10,6 +10,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 
 from yt_downloader.library_artwork_source import ArtworkAsset
+from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
@@ -94,6 +95,35 @@ def test_qt_watch_uses_shared_variant_identity_and_playback_preference(tmp_path)
     assert scene["hero"]["type"] == "MP4"
 
 
+def test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork(tmp_path):
+    records = [saved(tmp_path, "First", "MP4"), saved(tmp_path, "Second", "MP4")]
+    artwork_calls = []
+
+    def artwork(record, size, role):
+        artwork_calls.append((record["title"], size, role))
+        return f"{record['title']}-{role}"
+
+    scene = watch_scene(
+        records,
+        "home",
+        artwork=artwork,
+        progress_for=lambda record: (
+            WatchedProgress(3, 10, 1) if record["title"] == "Second" else None
+        ),
+    )
+    assert scene["hero"]["title"] == "Second"
+    assert scene["hero"]["resume"] is True
+    assert scene["hero"]["progress"] == 0.3
+    assert scene["hero"]["backdrop"] == "Second-media"
+    assert ("Second", (1100, 400), "media") in artwork_calls
+    assert ("First", (160, 160), "avatar") in artwork_calls
+    group = watch_scene(
+        records, "group", artwork, scene["channels"][0]["key"], "channel"
+    )
+    assert group["groupAvatar"] == "First-avatar"
+    assert group["groupBanner"] == "First-banner"
+
+
 def test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset(
     tmp_path, monkeypatch
 ):
@@ -119,6 +149,12 @@ def test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset
         assert owner.request(record).startswith("file:")
         assert calls == [("Media", (320, 180), "media", False)]
         assert owner.request(record) == owner.request(record)
+        assert owner.request(record, (160, 160), "avatar") == ""
+        deadline = time.monotonic() + 2
+        while not owner.poll() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        assert owner.request(record, (160, 160), "avatar").startswith("file:")
+        assert calls[-1] == ("Media", (160, 160), "avatar", False)
     finally:
         owner.close()
 
@@ -266,6 +302,46 @@ def test_qt_watch_queue_advances_only_from_current_playback_generation(
         app.processEvents()
         assert bridge._watch_queue.token is None
     finally:
+        bridge.close()
+
+
+def test_qt_watch_navigation_telemetry_uses_only_closed_dimensions(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+
+    class Observer:
+        def __init__(self):
+            self.events = []
+
+        def record_feature(self, feature, action, *, dimensions=None):
+            self.events.append((feature, action, dimensions))
+
+    observer = Observer()
+    bridge._analytics.telemetry = observer
+    try:
+        bridge._runtime.history = [saved(tmp_path, "Private title", "MP4")]
+        bridge.select("Watch")
+        scene = bridge.watchScene
+        group = scene["channels"][0]
+        bridge.navigateWatchGroup("channel", group["key"])
+        bridge.setWatchSearch("Private title")
+        assert ("watch", "opened", None) in observer.events
+        assert ("watch", "hero_shown", {"watch_mode": "playlists"}) in observer.events
+        assert (
+            "watch",
+            "channel_opened",
+            {"watch_mode": "channels"},
+        ) in observer.events
+        assert ("watch", "searched", None) in observer.events
+        assert "Private title" not in repr(observer.events)
+    finally:
+        bridge._analytics.telemetry = None
         bridge.close()
 
 

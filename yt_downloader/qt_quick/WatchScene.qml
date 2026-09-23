@@ -8,6 +8,38 @@ Item {
     readonly property var projection: appBridge.watchScene
     readonly property string route: projection.route || "home"
     readonly property var videos: projection.videos || []
+    property string moreOwner: ""
+    function showLibraryDetails(owner) {
+        scene.appBridge.openWatchDetails(owner)
+    }
+    function openMore(owner) {
+        moreOwner = owner
+        morePopup.open()
+    }
+
+    Popup {
+        id: morePopup
+        x: Math.max(0, scene.width - width - 16)
+        y: Math.min(scene.height - height, 290)
+        width: 270
+        height: 104
+        padding: 3
+        background: StoneField {}
+        Column {
+            anchors.fill: parent
+            spacing: 3
+            StoneButton {
+                width: parent.width; height: 46
+                label: "View in Library"
+                onActivated: { morePopup.close(); scene.showLibraryDetails(scene.moreOwner) }
+            }
+            StoneButton {
+                width: parent.width; height: 46
+                label: "Browse personal categories"
+                onActivated: { morePopup.close(); scene.appBridge.navigateWatch("collections") }
+            }
+        }
+    }
 
     RowLayout {
         id: browseHeader
@@ -75,7 +107,7 @@ Item {
                 onActivated: scene.appBridge.backWatch()
             }
             RowLayout {
-                visible: scene.route !== "home"
+                visible: scene.route !== "home" && scene.route !== "group"
                 width: parent.width
                 height: 49
                 Text {
@@ -88,40 +120,165 @@ Item {
                     elide: Text.ElideRight
                 }
             }
-            Row {
+            Item {
+                id: groupHeader
                 visible: scene.route === "group" && scene.videos.length > 0
                 width: parent.width
-                height: visible ? 44 : 0
-                spacing: 12
-                StoneButton {
-                    label: "Play " + (scene.projection.queueKind === "channel" ? "channel" : "playlist")
-                    width: 150
-                    height: 40
-                    onActivated: scene.appBridge.startWatchQueue(scene.projection.queueKeys, scene.projection.queueKind, false)
+                readonly property bool channel: scene.projection.groupKind === "channel"
+                readonly property int textLeft: channel ? width >= 1000 ? 214 : width >= 680 ? 174 : 32 : 0
+                height: Math.max(channel ? 298 : 190, groupActions.y + groupActions.childrenRect.height + 25)
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    visible: groupHeader.channel && source.toString().length > 0
+                    source: scene.projection.groupBanner || ""
+                    fillMode: Image.PreserveAspectCrop
+                    smooth: true
+                    opacity: 0.24
                 }
-                StoneButton {
-                    label: "Shuffle"
-                    width: 120
-                    height: 40
-                    enabled: scene.videos.length > 1
-                    onActivated: scene.appBridge.startWatchQueue(scene.projection.queueKeys, scene.projection.queueKind, true)
+                Image {
+                    x: 32
+                    y: 42
+                    width: groupHeader.width >= 1000 ? 150 : 112
+                    height: width
+                    visible: groupHeader.channel && source.toString().length > 0
+                    source: scene.projection.groupAvatar || ""
+                    fillMode: Image.PreserveAspectCrop
+                    smooth: true
+                }
+                Text {
+                    id: groupTitle
+                    x: groupHeader.textLeft
+                    y: groupHeader.channel ? 38 : 6
+                    width: parent.width - x - 32
+                    text: scene.projection.groupTitle || ""
+                    color: theme.text
+                    font.pixelSize: groupHeader.channel ? 32 : 40
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+                Text {
+                    id: groupDescription
+                    x: groupHeader.textLeft
+                    y: groupTitle.y + groupTitle.implicitHeight + 14
+                    width: Math.min(760, parent.width - x - 32)
+                    text: groupHeader.channel ? (scene.projection.groupDescription || "Your saved media and playlists from " + scene.projection.groupTitle + ".") :
+                          scene.projection.groupCount + " saved " + (scene.projection.groupCount === 1 ? "item" : "items")
+                    color: theme.muted
+                    font.pixelSize: 16
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+                Text {
+                    id: groupCount
+                    visible: groupHeader.channel
+                    x: groupHeader.textLeft
+                    y: groupDescription.y + groupDescription.implicitHeight + 18
+                    text: scene.projection.groupCount + " saved media  ·  " + scene.projection.groupPlaylistCount + " playlists"
+                    color: theme.muted
+                    font.pixelSize: 15
+                }
+                Flow {
+                    id: groupActions
+                    x: groupHeader.textLeft
+                    y: groupHeader.channel ? groupCount.y + groupCount.implicitHeight + 20 : groupDescription.y + groupDescription.implicitHeight + 26
+                    width: parent.width - x - 16
+                    spacing: 14
+                    StoneButton {
+                        visible: groupHeader.channel || scene.videos.length > 1
+                        label: groupHeader.channel ? "Play Channel" : "Play playlist"
+                        emphasized: true
+                        width: groupHeader.channel ? 155 : 154
+                        height: 40
+                        onActivated: scene.appBridge.startWatchQueue(scene.projection.queueKeys, scene.projection.queueKind, false)
+                    }
+                    StoneButton {
+                        visible: scene.videos.length > 1
+                        label: "Shuffle"
+                        width: 125
+                        height: 40
+                        onActivated: scene.appBridge.startWatchQueue(scene.projection.queueKeys, scene.projection.queueKind, true)
+                    }
+                    StoneButton {
+                        visible: groupHeader.channel
+                        label: "View in Library"
+                        width: 180
+                        height: 40
+                        onActivated: scene.showLibraryDetails(scene.projection.groupFirstOwner)
+                    }
                 }
             }
             Item {
                 visible: scene.route === "home" && !!scene.projection.hero.owner
                 width: parent.width
-                height: visible ? 250 : 0
-                Text { x: 18; y: 12; text: "READY TO WATCH"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                Text { x: 18; y: 45; width: parent.width - 36; text: scene.projection.hero.title || ""; color: theme.text; font.pixelSize: 38; font.bold: true; elide: Text.ElideRight }
-                Row {
-                    x: 18; y: 104; spacing: 12
-                    Text { text: scene.projection.hero.creator || ""; color: theme.text; font.pixelSize: 14 }
-                    Text { text: scene.projection.hero.type || ""; color: theme.muted; font.pixelSize: 14 }
+                height: visible ? Math.max(350, heroActions.y + heroActions.height + 36) : 0
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    source: scene.projection.hero.backdrop || ""
+                    visible: source.toString().length > 0
+                    fillMode: Image.PreserveAspectCrop
+                    smooth: true
+                    opacity: 0.2
+                }
+                Text {
+                    x: 36; y: 44
+                    text: scene.projection.hero.resume ?
+                          (scene.projection.hero.kind === "audio" ? "CONTINUE LISTENING" : "CONTINUE WATCHING") :
+                          (scene.projection.hero.kind === "video" ? "READY TO WATCH" : "READY TO PLAY")
+                    color: theme.muted; font.pixelSize: 12; font.bold: true
+                }
+                Text {
+                    id: heroTitle
+                    x: 36; y: 72
+                    width: Math.min(parent.width - 72, Math.max(268, Math.min(620, parent.width * 0.55)))
+                    text: scene.projection.hero.title || ""
+                    color: theme.text; font.pixelSize: parent.width >= 1000 ? 40 : 32; font.bold: true
+                    wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
                 }
                 Row {
-                    x: 18; y: 182; spacing: 13
-                    StoneButton { label: "Play"; icon: "image://vodforge/icon/play.png"; width: 136; height: 42; onActivated: scene.appBridge.openLibraryOwner(scene.projection.hero.owner) }
-                    StoneButton { label: "View in Library"; icon: "image://vodforge/icon/folder-20.png"; width: 178; height: 42; onActivated: { scene.appBridge.select("Library"); scene.appBridge.navigateLibrary("all") } }
+                    id: heroChips
+                    x: 36; y: heroTitle.y + heroTitle.implicitHeight + 14; spacing: 12
+                    Text { text: scene.projection.hero.creator || ""; color: theme.text; font.pixelSize: 14 }
+                    Text { text: scene.projection.hero.playlist || ""; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: scene.projection.hero.type || ""; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: scene.projection.hero.duration || ""; color: theme.muted; font.pixelSize: 14 }
+                }
+                Text {
+                    id: heroDescription
+                    x: 36; y: heroChips.y + 46
+                    width: heroTitle.width
+                    text: scene.projection.hero.description || "Your saved media, ready to watch."
+                    color: theme.muted; font.pixelSize: 16
+                    wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight
+                }
+                Rectangle {
+                    id: heroProgressTrack
+                    visible: !!scene.projection.hero.resume
+                    x: 40; y: Math.max(242, heroDescription.y + heroDescription.implicitHeight + 28)
+                    width: Math.min(400, heroTitle.width - 130)
+                    height: 8; radius: 4; color: theme.border
+                    Rectangle { width: parent.width * (scene.projection.hero.progress || 0); height: parent.height; radius: 4; color: theme.progress }
+                }
+                Text {
+                    visible: heroProgressTrack.visible
+                    x: heroProgressTrack.x + heroProgressTrack.width + 16
+                    y: heroProgressTrack.y - 8
+                    text: scene.projection.hero.progressLabel || ""
+                    color: theme.text; font.pixelSize: 15
+                }
+                Row {
+                    id: heroActions
+                    x: 36
+                    y: scene.projection.hero.resume ? heroProgressTrack.y + 30 : Math.max(272, heroDescription.y + heroDescription.implicitHeight + 32)
+                    spacing: 16
+                    height: 42
+                    StoneButton { label: scene.projection.hero.resume ? "Resume" : "Play"; icon: "image://vodforge/icon/play.png"; width: 150; height: 42; onActivated: scene.appBridge.playWatchHero(scene.projection.hero.owner) }
+                    StoneButton { label: "View in Library"; icon: "image://vodforge/icon/folder-20.png"; width: 181; height: 42; onActivated: scene.showLibraryDetails(scene.projection.hero.owner) }
+                    StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 54; height: 42; onActivated: scene.openMore(scene.projection.hero.owner) }
                 }
             }
 
@@ -159,19 +316,42 @@ Item {
                             StoneButton {
                                 required property var modelData
                                 width: scene.route === "home" ? parent.width : Math.max(164, (parent.width - 36) / 4)
-                                height: scene.route === "home" ? 136 : 158
+                                height: scene.route === "home" ? 136 : modelData.kind === "channel" ? 80 : 136
                                 label: ""
                                 accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
                                 onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
+                                Item {
+                                    id: artworkFrame
+                                    x: modelData.kind === "channel" ? 16 : 4
+                                    y: modelData.kind === "channel" ? (parent.height - height) / 2 : 4
+                                    width: modelData.kind === "channel" ? Math.min(96, parent.height - 20) : parent.width - 8
+                                    height: modelData.kind === "channel" ? width : 101
+                                    clip: true
                                 Image {
-                                    x: 4; y: 4; width: parent.width - 8; height: 101
+                                    anchors.fill: parent
                                     source: modelData.artwork
                                     visible: source.toString().length > 0
                                     fillMode: Image.PreserveAspectCrop
                                     smooth: true
                                 }
-                                Text { x: 12; y: 111; width: parent.width - 24; text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight }
-                                Text { x: 12; y: 133; text: modelData.count + " saved"; color: theme.muted; font.pixelSize: 12 }
+                                }
+                                Text {
+                                    x: modelData.kind === "channel" ? artworkFrame.x + artworkFrame.width + 18 : 12
+                                    y: modelData.kind === "channel" ? parent.height / 2 - 19 : 111
+                                    width: parent.width - x - 12
+                                    text: modelData.title
+                                    color: theme.text
+                                    font.pixelSize: 15
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    x: modelData.kind === "channel" ? artworkFrame.x + artworkFrame.width + 18 : 12
+                                    y: modelData.kind === "channel" ? parent.height / 2 + 6 : 133
+                                    text: modelData.count + " saved"
+                                    color: theme.muted
+                                    font.pixelSize: 12
+                                }
                             }
                         }
                     }

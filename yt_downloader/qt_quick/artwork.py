@@ -36,42 +36,46 @@ class QtArtwork:
         self._ready: dict[str, str] = {}
         self._unavailable: set[str] = set()
 
-    def request(self, record: dict[str, Any]) -> str:
+    def request(
+        self,
+        record: dict[str, Any],
+        size: tuple[int, int] = (320, 180),
+        role: str = "media",
+    ) -> str:
         owner = history_archive_owner(record)
         if not owner:
             return ""
-        if owner in self._ready:
-            return self._ready[owner]
-        if (
-            owner in self._unavailable
-            or owner in self._pending
-            or len(self._pending) >= 16
-        ):
+        key = f"{owner}\0{role}\0{size[0]}x{size[1]}"
+        if key in self._ready:
+            return self._ready[key]
+        if key in self._unavailable or key in self._pending or len(self._pending) >= 16:
             return ""
-        self._pending[owner] = self._executor.submit(self._resolve, dict(record))
+        self._pending[key] = self._executor.submit(
+            self._resolve, dict(record), size, role
+        )
         return ""
 
-    def _resolve(self, record: dict[str, Any]) -> str:
-        asset = self._source.resolve_asset(record, (320, 180), "media", self._cancelled)
+    def _resolve(self, record: dict[str, Any], size: tuple[int, int], role: str) -> str:
+        asset = self._source.resolve_asset(record, size, role, self._cancelled)
         return (
             QUrl.fromLocalFile(str(asset.path)).toString() if asset is not None else ""
         )
 
     def poll(self) -> bool:
         changed = False
-        for owner, future in tuple(self._pending.items()):
+        for key, future in tuple(self._pending.items()):
             if not future.done():
                 continue
-            del self._pending[owner]
+            del self._pending[key]
             try:
                 url = future.result()
             except (OSError, RuntimeError, ValueError):
                 url = ""
             if url:
-                self._ready[owner] = url
+                self._ready[key] = url
                 changed = True
             else:
-                self._unavailable.add(owner)
+                self._unavailable.add(key)
         return changed
 
     def close(self) -> None:

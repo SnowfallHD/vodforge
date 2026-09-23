@@ -384,6 +384,7 @@ class Bridge(QObject):
         self._watch_group_kind = ""
         self._watch_search = ""
         self._watch_history: list[tuple[str, str, str, str]] = []
+        self._watch_hero_seen_key = ""
         self._local_audio = ""
         self._local_image = ""
         self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
@@ -732,6 +733,7 @@ class Bridge(QObject):
             self._watch_group_key,
             self._watch_group_kind,
             self._watch_search,
+            self._playback_progress.for_record,
         )
         prior_route = self._watch_history[-1][0] if self._watch_history else "home"
         scene["backLabel"] = (
@@ -740,6 +742,17 @@ class Bridge(QObject):
             else "Back to " + ("Watch" if prior_route == "home" else prior_route)
         )
         scene["canGoBack"] = bool(self._watch_history)
+        hero_owner = str(scene["hero"].get("owner") or "")
+        if (
+            self._selection == "Watch"
+            and scene["route"] == "home"
+            and hero_owner
+            and hero_owner != self._watch_hero_seen_key
+        ):
+            self._watch_hero_seen_key = hero_owner
+            self._record_update_feature(
+                "watch", "hero_shown", {"watch_mode": self._watch_mode()}
+            )
         return scene
 
     @Property("QVariantMap", notify=historyChanged)
@@ -1112,6 +1125,8 @@ class Bridge(QObject):
     def select(self, name: str) -> None:
         if name not in {"Forge", "Library", "Watch", "Activity"}:
             return
+        if name == "Watch" and self._selection != "Watch":
+            self._record_update_feature("watch", "opened")
         self._selection = name
         self.selectionChanged.emit()
         self._record("select", name)
@@ -1119,6 +1134,17 @@ class Bridge(QObject):
     def _set_status(self, value: str) -> None:
         self._status = value
         self.statusChanged.emit()
+
+    def _watch_mode(self) -> str:
+        return (
+            "channels"
+            if self._watch_group_kind == "channel"
+            or self._watch_scene_route == "channels"
+            else "collections"
+            if self._watch_group_kind == "collection"
+            or self._watch_scene_route == "collections"
+            else "playlists"
+        )
 
     def _record_watch_queue_operation(
         self,
@@ -1261,6 +1287,8 @@ class Bridge(QObject):
         self._watch_group_kind = ""
         self._watch_search = ""
         self.historyChanged.emit()
+        if route in {"channels", "playlists", "collections"}:
+            self._record_update_feature("watch", route)
 
     @Slot(str, str)
     def navigateWatchGroup(self, kind: str, key: str) -> None:
@@ -1280,6 +1308,10 @@ class Bridge(QObject):
         self._watch_group_key = key
         self._watch_search = ""
         self.historyChanged.emit()
+        if kind == "channel":
+            self._record_update_feature(
+                "watch", "channel_opened", {"watch_mode": "channels"}
+            )
 
     @Slot(str)
     def setWatchSearch(self, value: str) -> None:
@@ -1288,6 +1320,8 @@ class Bridge(QObject):
             return
         self._watch_search = value
         self.historyChanged.emit()
+        if value.strip():
+            self._record_update_feature("watch", "searched")
 
     @Slot()
     def backWatch(self) -> None:
@@ -1302,6 +1336,23 @@ class Bridge(QObject):
             self._watch_scene_route = "home"
             self._watch_group_kind = self._watch_group_key = self._watch_search = ""
         self.historyChanged.emit()
+
+    @Slot(str)
+    def playWatchHero(self, owner: str) -> None:
+        if owner != str(self.watchScene["hero"].get("owner") or ""):
+            return
+        self._record_update_feature(
+            "watch", "hero_played", {"watch_mode": self._watch_mode()}
+        )
+        self.openLibraryOwner(owner)
+
+    @Slot(str, result=bool)
+    def openWatchDetails(self, owner: str) -> bool:
+        if not self.openLibraryDetails(owner):
+            return False
+        self._record_update_feature("watch", "details")
+        self.select("Library")
+        return True
 
     @Slot(str, "QVariantList", result=bool)
     def createCollection(self, name: str, owners: list[str]) -> bool:
@@ -1746,6 +1797,7 @@ class Bridge(QObject):
         self._playback_path = None
         self._playback_url = QUrl()
         self.playbackUrlChanged.emit()
+        self.historyChanged.emit()
 
     @Slot(str)
     def openLibraryFolder(self, owner: str) -> None:

@@ -10,9 +10,15 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from yt_downloader.history import history_archive_owner
-from yt_downloader.watch_library import unique_watch_videos, watch_channels, watch_rails
+from yt_downloader.library_state import format_duration
+from yt_downloader.watch_library import (
+    unique_watch_videos,
+    watch_channels,
+    watch_media_kind,
+    watch_rails,
+)
 
-Artwork = Callable[[dict[str, Any]], str]
+Artwork = Callable[[dict[str, Any], tuple[int, int], str], str]
 
 
 def _media(record: dict[str, Any], index: int, artwork: Artwork) -> dict[str, Any]:
@@ -24,7 +30,7 @@ def _media(record: dict[str, Any], index: int, artwork: Artwork) -> dict[str, An
             record.get("channel") or record.get("uploader") or "Local media"
         ),
         "type": str(record.get("vodforge_output_type") or "MP4"),
-        "artwork": artwork(record),
+        "artwork": artwork(record, (320, 180), "media"),
         "category": str(record.get("vodforge_user_category") or ""),
     }
 
@@ -42,7 +48,11 @@ def _group(
         "title": title,
         "count": count,
         "kind": kind,
-        "artwork": artwork(record),
+        "artwork": artwork(
+            record,
+            (160, 160) if kind == "channel" else (480, 200),
+            "avatar" if kind == "channel" else "playlist",
+        ),
     }
 
 
@@ -51,7 +61,7 @@ def library_scene(
     route: str,
     group_key: str = "",
     group_kind: str = "",
-    artwork: Artwork = lambda _record: "",
+    artwork: Artwork = lambda _record, _size, _role: "",
     query: str = "",
     category: str = "",
     sort: str = "recent",
@@ -182,10 +192,11 @@ def library_scene(
 def watch_scene(
     records: Sequence[dict[str, Any]],
     route: str,
-    artwork: Artwork = lambda _record: "",
+    artwork: Artwork = lambda _record, _size, _role: "",
     group_key: str = "",
     group_kind: str = "",
     query: str = "",
+    progress_for: Callable[[dict[str, Any]], Any] | None = None,
 ) -> dict[str, Any]:
     query = query.strip()
     effective_route = "videos" if query else route
@@ -218,13 +229,85 @@ def watch_scene(
         for video in videos
         if video.indices
     ]
+    featured = next(
+        (
+            video
+            for video in videos
+            if progress_for is not None
+            and (progress := progress_for(records[video.indices[0]])) is not None
+            and not progress.completed
+            and progress.position >= 1
+        ),
+        videos[0] if videos else None,
+    )
+    hero_record = records[featured.indices[0]] if featured is not None else None
+    hero_progress = (
+        progress_for(hero_record)
+        if hero_record is not None and progress_for is not None
+        else None
+    )
+    hero_resume = bool(
+        hero_progress is not None
+        and not hero_progress.completed
+        and hero_progress.position >= 1
+    )
+    hero = (
+        {
+            **_media(hero_record, featured.indices[0], artwork),
+            "description": str(hero_record.get("description") or ""),
+            "duration": format_duration(hero_record.get("duration")),
+            "kind": watch_media_kind(hero_record),
+            "playlist": next(
+                (rail.title for rail in playlists if featured in rail.videos), ""
+            ),
+            "resume": hero_resume,
+            "progress": hero_progress.fraction if hero_resume else 0.0,
+            "progressLabel": (
+                format_duration(hero_progress.position)
+                + " / "
+                + format_duration(hero_progress.duration)
+                if hero_resume
+                else ""
+            ),
+            "backdrop": artwork(hero_record, (1100, 400), "media"),
+        }
+        if hero_record is not None and featured is not None
+        else {}
+    )
+    group_record = (
+        records[selected.videos[0].indices[0]]
+        if selected is not None and selected.videos
+        else None
+    )
+    group_playlist_count = (
+        len(watch_rails(records, channel=selected.key))
+        if selected is not None and group_kind == "channel"
+        else 0
+    )
     return {
         "route": effective_route,
         "query": query,
+        "groupKind": group_kind,
         "groupTitle": (selected.name if group_kind == "channel" else selected.title)
         if selected is not None
         else "",
-        "hero": media[0] if media else {},
+        "groupDescription": (
+            str(group_record.get("channel_description") or "")
+            if group_record is not None and group_kind == "channel"
+            else ""
+        ),
+        "groupCount": len(videos),
+        "groupPlaylistCount": group_playlist_count,
+        "groupAvatar": artwork(group_record, (150, 150), "avatar")
+        if group_record is not None and group_kind == "channel"
+        else "",
+        "groupBanner": artwork(group_record, (1100, 350), "banner")
+        if group_record is not None and group_kind == "channel"
+        else "",
+        "groupFirstOwner": history_archive_owner(group_record)
+        if group_record is not None
+        else "",
+        "hero": hero,
         "channels": [
             _group(
                 records[channel.videos[0].indices[0]],
