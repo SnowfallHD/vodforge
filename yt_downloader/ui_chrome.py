@@ -815,7 +815,10 @@ class CanvasFieldMaterial:
             # The field face belongs directly above the shared matte and below
             # the entry window. Lowering it to the absolute bottom hides the
             # recessed material when the matte owner skips unchanged work.
-            self.canvas.tag_raise(self.item, "matte-decoration")
+            matte_item = self.canvas._matte_backdrop.item
+            order = self.canvas.find_all()
+            if order.index(self.item) < order.index(matte_item):
+                self.canvas.tag_raise(self.item, matte_item)
         else:
             self.canvas.tag_lower(self.item)
         self.snapshot = snapshot
