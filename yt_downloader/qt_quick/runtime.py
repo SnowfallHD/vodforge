@@ -120,6 +120,7 @@ class DownloadRuntime:
         cookie_source: CookieSource = CookieSource.PUBLIC,
         cookie_file: Path | None = None,
         cookie_browser: str | None = None,
+        tags: list[str] | None = None,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -143,6 +144,7 @@ class DownloadRuntime:
             cookie_source=cookie_source,
             cookie_file=cookie_file,
             cookie_browser=cookie_browser,
+            tags=tags,
         )
         active_and_queued = [
             *([self.active_job] if self.active_job is not None else []),
@@ -176,6 +178,7 @@ class DownloadRuntime:
         cookie_source: CookieSource = CookieSource.PUBLIC,
         cookie_file: Path | None = None,
         cookie_browser: str | None = None,
+        tags: list[str] | None = None,
     ) -> DownloadJob:
         """Validate current Forge inputs without admitting a run."""
         preferences = preferences or DownloadPreferences()
@@ -241,7 +244,7 @@ class DownloadRuntime:
             write_info_json=preferences.write_info_json
             if selected_type == OutputType.MP4
             else False,
-            tags=[],
+            tags=list(tags or []),
         )
         return job
 

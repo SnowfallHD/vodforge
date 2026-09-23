@@ -453,12 +453,18 @@ Window {
         nameFilters: ["Cookie text files (*.txt)", "All files (*)"]
         onAccepted: bridge.setCookieFileUrl(selectedFile)
     }
+    ColorDialog {
+        id: accentColorDialog
+        title: "Choose VODForge accent color"
+        selectedColor: bridge.customAccent
+        onAccepted: bridge.setAppearance("Custom accent", selectedColor.toString())
+    }
 
     Image {
         id: artwork
         objectName: "fullCoverArtwork"
         anchors.fill: parent
-        source: "image://vodforge/backdrop"
+        source: "image://vodforge/backdrop/r" + bridge.themeRevision
         fillMode: Image.PreserveAspectCrop
         smooth: true
         cache: true
@@ -518,7 +524,7 @@ Window {
                         icon: "image://vodforge/icon/" + (
                             modelData === "Forge" ? "download-20.png" :
                             modelData === "Library" ? "folder-20.png" :
-                            modelData === "Watch" ? "play.png" : "activity-20.png")
+                            modelData === "Watch" ? "play.png" : "activity-20.png") + "/r" + bridge.themeRevision
                         width: focusHeader.navButtonWidth
                         height: 40
                         onActivated: bridge.select(modelData)
@@ -660,7 +666,7 @@ Window {
                         anchors.rightMargin: 12
                         spacing: 8
                         Image {
-                            source: "image://vodforge/icon/folder-20.png"
+                            source: "image://vodforge/icon/folder-20.png/r" + bridge.themeRevision
                             Layout.preferredWidth: 18
                             Layout.preferredHeight: 18
                             fillMode: Image.PreserveAspectFit
@@ -1379,19 +1385,92 @@ Window {
         objectName: "downloadSettingsPopup"
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(540, window.width - 40)
-        height: bridge.analyticsAvailable ? 588 : 535
+        width: Math.min(820, window.width - 40)
+        height: Math.min(752, window.height - 24)
         padding: 18
         modal: true
         background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 7
-            Text { text: "Download settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
-            Text { text: "These choices apply to new Forge runs."; color: theme.muted; font.pixelSize: 14 }
-            Repeater {
+            Text { text: "Forge settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text { text: "Every option is available here; the main workspace stays focused."; color: theme.muted; font.pixelSize: 14 }
+            ScrollView {
+                id: settingsBody
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ColumnLayout {
+                    width: settingsBody.availableWidth
+                    spacing: 16
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 16
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 360
+                            spacing: 12
+                    Text { text: "SAVE LOCATION"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        StoneField {
+                            Layout.fillWidth: true; Layout.preferredHeight: 42
+                            Text { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; verticalAlignment: Text.AlignVCenter; text: bridge.outputPath; color: theme.text; elide: Text.ElideMiddle; font.pixelSize: 14 }
+                        }
+                        StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; onActivated: outputFolderDialog.open() }
+                    }
+                    Text { text: "BATCH AND PLAYLISTS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        StoneButton { label: "Load URL list"; Layout.preferredWidth: 154; Layout.preferredHeight: 40; onActivated: urlListDialog.open() }
+                        Text { text: bridge.batchSummary; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; Layout.preferredHeight: 39
+                        Text { text: "Ignore playlists"; color: theme.text; font.pixelSize: 14; Layout.fillWidth: true }
+                        StoneButton {
+                            label: bridge.downloadOptions.single_video_only ? "On" : "Off"
+                            selected: bridge.downloadOptions.single_video_only
+                            Layout.preferredWidth: 74; Layout.preferredHeight: 36
+                            onActivated: bridge.setDownloadOption("single_video_only", !bridge.downloadOptions.single_video_only)
+                        }
+                    }
+                    Text { text: "YOUTUBE ACCESS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    StoneButton { label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); accessPopup.open() } }
+                    Text { text: "METADATA"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "Extra tags (comma-separated)"; color: theme.muted; font.pixelSize: 13 }
+                    StoneField {
+                        Layout.fillWidth: true; Layout.preferredHeight: 42
+                        TextField {
+                            id: extraTagsInput
+                            objectName: "extraTagsInput"
+                            anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14
+                            padding: 0; verticalAlignment: TextInput.AlignVCenter
+                            color: theme.text; font.pixelSize: 14; background: Item {}
+                            text: bridge.extraTags
+                            onEditingFinished: {
+                                if (!bridge.setExtraTags(text)) text = bridge.extraTags
+                            }
+                        }
+                    }
+                    Text { text: "Tags are added to embedded metadata and the compact metadata file when enabled."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 360
+                            spacing: 12
+                    Text { visible: window.outputFormat === "MP4"; text: "MP4 VIDEO"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    RowLayout {
+                        visible: window.outputFormat === "MP4"
+                        Layout.fillWidth: true
+                        StoneButton { label: "Quality: " + bridge.quality; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
+                        StoneButton { label: "Output mode: " + bridge.exportMode; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
+                    }
+                    StoneButton { visible: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"; label: "Manual MP4 settings"; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); manualOptionsPopup.open() } }
+                    Text { visible: window.outputFormat === "MP4"; text: "MP4 OUTPUT FILES"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Repeater {
                 model: [
-                    { key: "single_video_only", label: "Single video only" },
                     { key: "use_nvenc", label: "Use NVIDIA encoder for MP4" },
                     { key: "embed_thumbnail", label: "Embed thumbnail in MP4" },
                     { key: "write_thumbnail", label: "Save thumbnail beside MP4" },
@@ -1400,6 +1479,7 @@ Window {
                 ]
                 RowLayout {
                     required property var modelData
+                    visible: window.outputFormat === "MP4"
                     Layout.fillWidth: true
                     Layout.preferredHeight: 45
                     Text { text: modelData.label; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
@@ -1411,8 +1491,89 @@ Window {
                         onActivated: bridge.setDownloadOption(modelData.key, !bridge.downloadOptions[modelData.key])
                     }
                 }
-            }
-            RowLayout {
+                    }
+                    Text { visible: window.outputFormat === "MP3"; text: "MP3 AUDIO"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Repeater {
+                        model: [
+                            { key: "mp3_quality", title: "Encoding quality", choices: bridge.mp3QualityOptions },
+                            { key: "mp3_sample_rate", title: "Sample rate", choices: bridge.mp3SampleRateOptions },
+                            { key: "mp3_channels", title: "Channels", choices: bridge.mp3ChannelOptions },
+                            { key: "mp3_cover_art_mode", title: "Cover art", choices: bridge.mp3CoverOptions }
+                        ]
+                        RowLayout {
+                            required property var modelData
+                            visible: window.outputFormat === "MP3"
+                            Layout.fillWidth: true; Layout.preferredHeight: 43
+                            Text { text: modelData.title; color: theme.muted; font.pixelSize: 13; Layout.preferredWidth: 118 }
+                            StoneButton {
+                                label: bridge.mp3Values[modelData.key] + "  ▾"
+                                Layout.fillWidth: true; Layout.preferredHeight: 38
+                                onActivated: {
+                                    var choices = modelData.choices
+                                    bridge.setMp3Value(modelData.key, choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length])
+                                }
+                            }
+                        }
+                    }
+                    RowLayout {
+                        visible: window.outputFormat === "MP3"
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        Text { text: "Embed title, artist, and tags"; color: theme.text; font.pixelSize: 13; Layout.fillWidth: true }
+                        StoneButton { label: bridge.mp3Values.mp3_embed_metadata ? "On" : "Off"; selected: bridge.mp3Values.mp3_embed_metadata; Layout.preferredWidth: 74; Layout.preferredHeight: 36; onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata) }
+                    }
+                    RowLayout {
+                        visible: window.outputFormat === "MP3" && bridge.mp3Values.mp3_cover_art_mode === "Custom art"
+                        Layout.fillWidth: true
+                        Text { text: bridge.mp3CoverName; color: theme.muted; font.pixelSize: 13; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                        StoneButton { label: "Replace image"; Layout.preferredWidth: 130; Layout.preferredHeight: 38; onActivated: mp3CoverDialog.open() }
+                    }
+                    Text {
+                        visible: window.outputFormat === "Original audio"
+                        text: "ORIGINAL AUDIO"
+                        color: theme.muted; font.pixelSize: 13; font.bold: true
+                    }
+                    Text {
+                        visible: window.outputFormat === "Original audio"
+                        text: "Keep the source. Skip the extra compression. Saves the best available Opus or AAC stream without re-encoding."
+                        color: theme.text; font.pixelSize: 15
+                        wrapMode: Text.WordWrap; Layout.fillWidth: true
+                    }
+                    Text {
+                        visible: window.outputFormat === "Original audio"
+                        text: "Opus saves as .opus. AAC saves as .m4a. No bitrate or conversion settings needed."
+                        color: theme.muted; font.pixelSize: 13
+                        wrapMode: Text.WordWrap; Layout.fillWidth: true
+                    }
+                        }
+                    }
+                    Text { text: "APPEARANCE"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: "Theme"; color: theme.muted; font.pixelSize: 13 }
+                        StoneButton {
+                            label: bridge.appearanceTheme + "  ▾"
+                            Layout.fillWidth: true; Layout.preferredHeight: 40
+                            onActivated: appearanceThemeMenu.open()
+                        }
+                        Text { text: "Custom accent"; color: theme.muted; font.pixelSize: 13 }
+                        StoneField {
+                            Layout.preferredWidth: 146; Layout.preferredHeight: 40
+                            TextField {
+                                id: accentInput
+                                anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
+                                padding: 0; verticalAlignment: TextInput.AlignVCenter
+                                color: theme.text; font.pixelSize: 14; background: Item {}
+                                text: bridge.customAccent
+                                onEditingFinished: {
+                                    if (!bridge.setAppearance(bridge.appearanceTheme, text)) text = bridge.customAccent
+                                }
+                            }
+                        }
+                        StoneButton { label: "Choose"; Layout.preferredWidth: 90; Layout.preferredHeight: 40; onActivated: accentColorDialog.open() }
+                    }
+                    Text { text: "Choose Custom accent to use a #RRGGBB color. Appearance updates immediately."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    Text { text: "PRIVACY"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    RowLayout {
                 visible: bridge.analyticsAvailable
                 Layout.fillWidth: true
                 Layout.preferredHeight: visible ? 40 : 0
@@ -1424,28 +1585,44 @@ Window {
                     Layout.preferredHeight: 36
                     onActivated: bridge.chooseAnalytics(!bridge.analyticsAllowed)
                 }
-            }
-            Item { Layout.fillHeight: true }
-            StoneButton {
-                label: "YouTube access: " + bridge.cookieSource
-                Layout.fillWidth: true
-                Layout.preferredHeight: 39
-                onActivated: { settingsPopup.close(); accessPopup.open() }
-            }
-            StoneButton {
-                label: "Check for updates"
-                Layout.fillWidth: true
-                Layout.preferredHeight: 39
-                onActivated: {
-                    settingsPopup.close()
-                    updatePopup.open()
-                    bridge.checkForUpdates()
+                    }
                 }
             }
             RowLayout {
                 Layout.fillWidth: true
+                StoneButton { label: "Help & feedback"; Layout.preferredWidth: 160; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); bridge.openSupport("feedback") } }
+                StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.open(); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
-                StoneButton { label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40; onActivated: settingsPopup.close() }
+                StoneButton {
+                    label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40
+                    onActivated: { if (bridge.setExtraTags(extraTagsInput.text)) settingsPopup.close() }
+                }
+            }
+        }
+    }
+    Popup {
+        id: appearanceThemeMenu
+        x: Math.max(0, settingsPopup.x + 130)
+        y: Math.max(0, settingsPopup.y + settingsPopup.height - 270)
+        width: 230
+        height: 260
+        padding: 4
+        background: StoneField {}
+        Column {
+            anchors.fill: parent
+            spacing: 2
+            Repeater {
+                model: bridge.appearanceThemes
+                StoneButton {
+                    required property string modelData
+                    width: 222; height: 40
+                    label: modelData
+                    selected: bridge.appearanceTheme === modelData
+                    onActivated: {
+                        bridge.setAppearance(modelData, bridge.customAccent)
+                        appearanceThemeMenu.close()
+                    }
+                }
             }
         }
     }

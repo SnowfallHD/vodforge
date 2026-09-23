@@ -30,7 +30,7 @@ Item {
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
                 + (!control.transientMaterial ? "normal" : mouse.pressed ? "pressed" : (mouse.containsMouse || control.selected ? "hover" : "normal"))
-                + "/" + (control.emphasized ? "1" : "0")
+                + "/" + (control.emphasized ? "1" : "0") + "/r" + bridge.themeRevision
         fillMode: Image.Stretch
         cache: true
         smooth: true

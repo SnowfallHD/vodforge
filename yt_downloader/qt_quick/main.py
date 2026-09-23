@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -135,7 +136,17 @@ from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import button_metrics
 from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
-from yt_downloader.ui_theme import FONT_MONO_FAMILY, FONT_UI_FAMILY, THEME, theme_motif
+from yt_downloader.ui_theme import (
+    CUSTOM_THEME_NAME,
+    DEFAULT_THEME_NAME,
+    FONT_MONO_FAMILY,
+    FONT_UI_FAMILY,
+    THEME,
+    THEME_NAMES,
+    ThemeRenderOwner,
+    apply_theme_selection,
+    theme_motif,
+)
 from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
 from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
@@ -172,6 +183,8 @@ class Materials(QQuickImageProvider):
         image = self.images.get(image_id)
         if image is None:
             parts = image_id.split("/")
+            if len(parts) > 1 and re.fullmatch(r"r\d+", parts[-1]):
+                parts.pop()
             if parts[0] == "backdrop" and len(parts) == 1:
                 source = backdrop_pixels(
                     theme_motif(), THEME["bg"], THEME["accent"], (1920, 1200)
@@ -234,6 +247,9 @@ class Bridge(QObject):
     localChanged = Signal()
     downloadOptionsChanged = Signal()
     exportSettingsChanged = Signal()
+    extraTagsChanged = Signal()
+    appearanceChanged = Signal()
+    themeRevisionChanged = Signal()
     batchListChanged = Signal()
     sourceAccepted = Signal()
     cookieAccessChanged = Signal()
@@ -343,6 +359,16 @@ class Bridge(QObject):
         except SettingsError:
             self._settings = {}
             self._settings_writable = False
+        selection = apply_theme_selection(
+            self._settings.get("appearance_theme", DEFAULT_THEME_NAME),
+            self._settings.get("custom_accent", "#7170ff"),
+        )
+        self._appearance_theme = selection.name
+        self._custom_accent = selection.custom_accent
+        self._theme_revision = 0
+        self._theme_engine: QQmlApplicationEngine | None = None
+        self._theme_materials: Materials | None = None
+        self._theme_owner = ThemeRenderOwner(self._render_theme)
         defaults = DownloadPreferences()
         self._download_preferences = DownloadPreferences(
             **{
@@ -435,6 +461,7 @@ class Bridge(QObject):
         self._local_running = False
         self._batch_urls: list[str] = []
         self._batch_name = ""
+        self._extra_tags = ""
         self._cookie_source = CookieSource.PUBLIC
         self._cookie_browser = ""
         self._cookie_file: Path | None = None
@@ -1235,6 +1262,72 @@ class Bridge(QObject):
     @Property(str, notify=exportSettingsChanged)
     def mp3CoverName(self) -> str:
         return self._mp3_custom_cover.name if self._mp3_custom_cover else "Choose image"
+
+    @Property(str, notify=extraTagsChanged)
+    def extraTags(self) -> str:
+        return self._extra_tags
+
+    @Property(str, notify=appearanceChanged)
+    def appearanceTheme(self) -> str:
+        return self._appearance_theme
+
+    @Property(str, notify=appearanceChanged)
+    def customAccent(self) -> str:
+        return self._custom_accent
+
+    @Property("QVariantList", constant=True)
+    def appearanceThemes(self) -> list[str]:
+        return list(THEME_NAMES)
+
+    @Property(int, notify=themeRevisionChanged)
+    def themeRevision(self) -> int:
+        return self._theme_revision
+
+    def _render_theme(self, _previous: object, _incoming: object) -> None:
+        if self._theme_materials is not None:
+            self._theme_materials.images.clear()
+        if self._theme_engine is not None:
+            self._theme_engine.rootContext().setContextProperty("theme", dict(THEME))
+        self._theme_revision += 1
+        self.themeRevisionChanged.emit()
+        telemetry = self._analytics.telemetry
+        if telemetry is not None and telemetry.permitted():
+            telemetry.record_feature(
+                "appearance",
+                "changed",
+                dimensions={
+                    "theme": "custom"
+                    if self._appearance_theme == CUSTOM_THEME_NAME
+                    else self._appearance_theme.lower()
+                },
+            )
+
+    @Slot(str, str, result=bool)
+    def setAppearance(self, name: str, accent: str) -> bool:
+        if name not in THEME_NAMES or not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+            self._status = "Choose a theme and use a #RRGGBB custom accent."
+            self.statusChanged.emit()
+            return False
+        if (name, accent.lower()) == (self._appearance_theme, self._custom_accent):
+            return True
+        self._appearance_theme = name
+        self._custom_accent = accent.lower()
+        self._theme_owner.request(name, accent)
+        self.appearanceChanged.emit()
+        self._schedule_preferences_save()
+        return True
+
+    @Slot(str, result=bool)
+    def setExtraTags(self, value: str) -> bool:
+        tags = [item.strip() for item in value.split(",") if item.strip()]
+        if len(value) > 10_000 or len(tags) > 64 or any(len(tag) > 80 for tag in tags):
+            self._status = "Use up to 64 tags of 80 characters each."
+            self.statusChanged.emit()
+            return False
+        if value != self._extra_tags:
+            self._extra_tags = value
+            self.extraTagsChanged.emit()
+        return True
 
     @Property(str, notify=batchListChanged)
     def batchSummary(self) -> str:
@@ -2254,6 +2347,8 @@ class Bridge(QObject):
             "output_type": self._output_format,
             "quality": self._quality,
             "export_mode": self._export_mode,
+            "appearance_theme": self._appearance_theme,
+            "custom_accent": self._custom_accent,
             **self.downloadOptions,
             **self._manual_values,
             **self._mp3_values,
@@ -2635,6 +2730,7 @@ class Bridge(QObject):
                     cookie_source=self._cookie_source,
                     cookie_file=self._cookie_file,
                     cookie_browser=self._cookie_browser,
+                    tags=self._current_extra_tags(),
                 )
             retry = self._runtime.retry_terminal(run_id, current_job=current_job)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -2924,6 +3020,7 @@ class Bridge(QObject):
                 cookie_source=self._cookie_source,
                 cookie_file=self._cookie_file,
                 cookie_browser=self._cookie_browser,
+                tags=self._current_extra_tags(),
             )
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)
@@ -2944,10 +3041,16 @@ class Bridge(QObject):
         self.statusChanged.emit()
         self._record("submit", outcome)
 
+    def _current_extra_tags(self) -> list[str]:
+        return [item.strip() for item in self._extra_tags.split(",") if item.strip()]
+
 
 def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine = QQmlApplicationEngine()
-    engine.addImageProvider("vodforge", Materials())
+    materials = Materials()
+    engine.addImageProvider("vodforge", materials)
+    bridge._theme_engine = engine
+    bridge._theme_materials = materials
     engine.addImageProvider("vodforge-previews", bridge._previews.images)
     engine.rootContext().setContextProperty("bridge", bridge)
     engine.rootContext().setContextProperty("theme", dict(THEME))

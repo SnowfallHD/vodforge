@@ -34,6 +34,77 @@ def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     }
 
 
+def test_qt_settings_extra_tags_reach_existing_download_job(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        assert bridge.setExtraTags("  one, two ,, three ")
+        assert bridge.extraTags == "  one, two ,, three "
+        assert not bridge.setExtraTags("x" * 81)
+        assert bridge.extraTags == "  one, two ,, three "
+        observed = []
+
+        def intercept_start(*args, **kwargs):
+            observed.append(kwargs)
+            raise ValueError("intercepted before network work")
+
+        monkeypatch.setattr(bridge._runtime, "start", intercept_start)
+        bridge.submit("https://example.com/watch?v=abcdefghijk", "MP4")
+        assert observed[0]["tags"] == ["one", "two", "three"]
+        job = bridge._runtime.prepare_job(
+            "https://example.com/watch?v=abcdefghijk",
+            tmp_path,
+            "MP4",
+            "Everyday",
+            tags=observed[0]["tags"],
+        )
+        assert job.tags == ["one", "two", "three"]
+    finally:
+        bridge.close()
+
+
+def test_qt_appearance_refreshes_shared_material_and_saved_palette(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        original = window.property("color")
+        before = bridge._theme_materials.requestImage(
+            "button/120/40/normal/0/r0", QSize(), QSize()
+        )
+        assert bridge.setAppearance("Cobalt", bridge.customAccent)
+        for _ in range(5):
+            app.processEvents()
+        assert bridge.themeRevision == 1
+        assert window.property("color") != original
+        after = bridge._theme_materials.requestImage(
+            "button/120/40/normal/0/r1", QSize(), QSize()
+        )
+        assert before != after
+        assert not bridge.setAppearance("Custom accent", "unsafe")
+        assert bridge.appearanceTheme == "Cobalt"
+        bridge._save_preferences()
+    finally:
+        bridge.close()
+        del engine
+    reopened = qt_main.Bridge(None)
+    try:
+        assert reopened.appearanceTheme == "Cobalt"
+    finally:
+        reopened.close()
+
+
 def test_qt_player_related_uses_saved_variant_owner_and_replaces_selected_media(
     tmp_path, monkeypatch
 ):
