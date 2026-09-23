@@ -40,8 +40,10 @@ same-size epochs. These thresholds were not changed.
 | Genesis ordinary right-edge resize, r9 | Passed; 4/4 px p95, 4/4 px plateau. Sampled pixel epochs passed with no >2% lagging interior. |
 | Genesis rapid bottom-right corner, r10 | Passed; horizontal p95 16/9 px, vertical p95 11/6 px, fixed opposite edges. |
 | Genesis exact `688eb56` corner repeat | **Failed** the unchanged gate: horizontal p95 16/16 px, but one stationary-edge plateau reached 30 px. Opposite edges stayed fixed. |
+| Genesis exact `5c4368a` corner and on-screen capture | **Failed** again on a 30 px horizontal plateau; the settled on-screen view and full-cover artwork were intact. |
 | Genesis plain Qt window, same rapid path | Passed; horizontal p95 15/14 px and plateau 8/15 px. |
 | Mac rapid bottom-right corner, r1/r2 | **Failed** the unchanged 24 px tracking gate. First horizontal plateau 29/37 px; second run first horizontal p95 36 px. Opposite edges remained fixed and settled UI stayed together. |
+| Mac exact `5c4368a` corner | **Failed** again on a 30 px first-drag horizontal p95; opposite edges stayed fixed. |
 | Mac plain Qt window, same rapid corner path | **Failed** the same gate; horizontal p95 30/23 px and plateau 29/30 px. This isolates a native window/trajectory floor of similar magnitude in one baseline run. |
 
 The corner stress moves 220 px horizontally and 150 px vertically inward and
@@ -58,9 +60,11 @@ source-native, not signed, packaged, or installed-app evidence.
 
 The Windows window-only capture after the exact corner repeat contained a
 black lower/right region; a plain Qt window's window-only capture showed the
-same region. That capture method cannot establish whether the visible desktop
-had a black region. The probe now also records the actual on-screen window
-region after corner drags, to resolve this before any visual claim.
+same region. The `5c4368a` rerun recorded an independent on-screen region:
+the VODForge view and full-cover artwork were intact after the rapid drag.
+The black region belongs to the window-only capture path, so that image must
+not be used as the visual oracle. The failed 30 px pointer plateau lasted
+31 ms in three sound samples; the left and top edges stayed fixed.
 
 Local evidence is under ignored `build/qt-quick-native-*` and
 `build/qt-quick-genesis-*`. The Genesis QA scope is `E:\VODForgeQA` only.
