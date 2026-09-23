@@ -251,6 +251,58 @@ Item {
             }
 
             Column {
+                objectName: "watchMoments"
+                visible: scene.appBridge.playbackPreviews.length > 0
+                width: parent.width
+                spacing: 8
+                Text { text: "MOMENTS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                Text {
+                    text: "Select a moment to jump there."
+                    color: theme.muted
+                    font.pixelSize: 13
+                }
+                Flow {
+                    width: parent.width
+                    spacing: 10
+                    Repeater {
+                        model: scene.appBridge.playbackPreviews
+                        StoneField {
+                            required property var modelData
+                            width: Math.min(192, Math.max(140, (scene.width - 40) / 5))
+                            height: 145
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 7
+                                spacing: 5
+                                Image {
+                                    width: parent.width
+                                    height: 90
+                                    source: modelData.image || ""
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: !modelData.image
+                                        text: modelData.status || ""
+                                        color: theme.muted
+                                        font.pixelSize: 12
+                                    }
+                                }
+                                StoneButton {
+                                    width: parent.width
+                                    height: 32
+                                    size: "inline"
+                                    label: Math.floor(modelData.position / 60) + ":" +
+                                        ("0" + Math.floor(modelData.position % 60)).slice(-2)
+                                    onActivated: scene.appBridge.manualPlaybackSeek(modelData.position)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Column {
                 visible: (scene.projection.recent || []).length > 1
                 width: parent.width
                 spacing: 8

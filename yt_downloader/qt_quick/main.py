@@ -36,6 +36,7 @@ from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.app import (
+    DownloaderApp,
     append_activity_log,
     load_activity_log_tail,
     prepare_activity_log,
@@ -111,6 +112,7 @@ from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
+from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.qt_quick.support import QtSupportSession
@@ -133,6 +135,7 @@ from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipt
 from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
 from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
+from yt_downloader.watch_library import watch_media_kind
 from yt_downloader.watch_queue import QueueToken, WatchQueueOwner, queue_media_key
 from yt_downloader.whats_new import (
     DID_YOU_KNOW_HIGHLIGHTS,
@@ -218,6 +221,7 @@ class Bridge(QObject):
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
     playerSceneChanged = Signal()
+    playbackPreviewsChanged = Signal()
     playbackRequested = Signal(int)
     playbackSeekRequested = Signal(float)
     librarySearchChanged = Signal()
@@ -310,6 +314,7 @@ class Bridge(QObject):
         self._playback_binding: PlaybackProgressBinding | None = None
         self._playback_path: Path | None = None
         self._playback_record: dict[str, Any] | None = None
+        self._previews = QtPreviewSession(DownloaderApp._find_ffmpeg())
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status = "Ready"
@@ -704,6 +709,10 @@ class Bridge(QObject):
     @Property("QVariantList", notify=playbackUrlChanged)
     def playbackHeatmap(self) -> list[dict[str, float]]:
         return list(self._playback_heatmap)
+
+    @Property("QVariantList", notify=playbackPreviewsChanged)
+    def playbackPreviews(self) -> list[dict[str, Any]]:
+        return self._previews.records
 
     @Property("QVariantMap", notify=playerSceneChanged)
     def playerScene(self) -> dict[str, Any]:
@@ -2029,6 +2038,10 @@ class Bridge(QObject):
             self._playback_binding.close()
         self._playback_path = path
         self._playback_record = dict(self._runtime.history[index])
+        self._previews.load(
+            path if watch_media_kind(self._runtime.history[index]) == "video" else None
+        )
+        self.playbackPreviewsChanged.emit()
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status = "Ready"
@@ -2081,6 +2094,8 @@ class Bridge(QObject):
             self._playback_binding = None
         self._playback_path = None
         self._playback_record = None
+        self._previews.load(None)
+        self.playbackPreviewsChanged.emit()
         self._playback_url = QUrl()
         self.playbackUrlChanged.emit()
         self.playerSceneChanged.emit()
@@ -2238,6 +2253,8 @@ class Bridge(QObject):
                 except (OSError, ValueError):
                     pass
         self._playback_binding.present(self._playback_snapshot())
+        if self._previews.request(duration):
+            self.playbackPreviewsChanged.emit()
         self._watch_queue.present(self, status)
 
     @Slot(float)
@@ -2357,6 +2374,8 @@ class Bridge(QObject):
     def _pump(self) -> None:
         if self._closed:
             return
+        if self._previews.poll():
+            self.playbackPreviewsChanged.emit()
         if self._support.poll():
             self.supportChanged.emit()
         storage_snapshot = self._storage.poll()
@@ -2556,6 +2575,7 @@ class Bridge(QObject):
             self._save_timer.stop()
             self._save_preferences()
         self._watch_queue.cancel()
+        self._previews.close()
         if self._import_pending:
             operation(
                 self._analytics.telemetry,
@@ -2646,6 +2666,7 @@ class Bridge(QObject):
 def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine = QQmlApplicationEngine()
     engine.addImageProvider("vodforge", Materials())
+    engine.addImageProvider("vodforge-previews", bridge._previews.images)
     engine.rootContext().setContextProperty("bridge", bridge)
     engine.rootContext().setContextProperty("theme", dict(THEME))
     engine.rootContext().setContextProperty("buttonFontFamily", FONT_UI_FAMILY)
