@@ -8,20 +8,51 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 import time
 from pathlib import Path
 
 
+def _windows_capture(number: int, owner_pid: int):
+    import ctypes as C
+    from ctypes import wintypes as W
+
+    from PIL import ImageGrab
+
+    user32 = C.windll.user32
+    if not user32.IsWindow(W.HWND(number)) or not user32.IsWindowVisible(
+        W.HWND(number)
+    ):
+        raise RuntimeError("Owned Windows window is no longer visible")
+    actual_pid = W.DWORD()
+    user32.GetWindowThreadProcessId(W.HWND(number), C.byref(actual_pid))
+    if actual_pid.value != owner_pid:
+        raise RuntimeError("Windows capture target changed owner")
+    bounds = W.RECT()
+    if not user32.GetWindowRect(W.HWND(number), C.byref(bounds)):
+        raise RuntimeError("Owned Windows bounds unavailable")
+    bitmap = ImageGrab.grab(window=number)
+    if bitmap.width <= 0 or bitmap.height <= 0:
+        raise RuntimeError("Owned Windows pixels unavailable")
+    return bitmap.convert("RGB"), [bounds.left, bounds.top, bounds.right, bounds.bottom]
+
+
 def main() -> int:
-    import Quartz
-    from PIL import Image
+    if sys.platform == "darwin":
+        import Quartz
+        from PIL import Image
 
     parser = argparse.ArgumentParser()
     parser.add_argument("number", type=int)
     parser.add_argument("origin", type=float)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--interval", type=float, default=0.020)
+    parser.add_argument("--owner-pid", type=int)
     args = parser.parse_args()
+    if sys.platform == "win32" and (args.owner_pid is None or args.owner_pid <= 0):
+        parser.error("Windows own-window capture requires --owner-pid")
+    if sys.platform not in {"darwin", "win32"}:
+        parser.error("Own-window pixel capture is supported on Mac and Windows")
     if not 0.020 <= args.interval <= 1:
         parser.error("capture interval must be between .020 and 1 second")
     number, origin, directory = args.number, args.origin, args.directory
@@ -30,28 +61,37 @@ def main() -> int:
     try:
         while not (directory / "capture.stop").exists() and time.monotonic() < deadline:
             begin = time.monotonic() - origin
-            raw = Quartz.CGWindowListCreateImage(
-                Quartz.CGRectNull,
-                Quartz.kCGWindowListOptionIncludingWindow,
-                number,
-                Quartz.kCGWindowImageBoundsIgnoreFraming
-                | Quartz.kCGWindowImageNominalResolution,
-            )
-            if raw is None:
-                raise RuntimeError("Own-window capture unavailable")
-            data = bytes(
-                Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(raw))
-            )
-            bitmap = Image.frombytes(
-                "RGB",
-                (Quartz.CGImageGetWidth(raw), Quartz.CGImageGetHeight(raw)),
-                data,
-                "raw",
-                "BGRX",
-                Quartz.CGImageGetBytesPerRow(raw),
-            )
+            if sys.platform == "win32":
+                bitmap, bounds = _windows_capture(number, args.owner_pid)
+            else:
+                raw = Quartz.CGWindowListCreateImage(
+                    Quartz.CGRectNull,
+                    Quartz.kCGWindowListOptionIncludingWindow,
+                    number,
+                    Quartz.kCGWindowImageBoundsIgnoreFraming
+                    | Quartz.kCGWindowImageNominalResolution,
+                )
+                if raw is None:
+                    raise RuntimeError("Own-window capture unavailable")
+                data = bytes(
+                    Quartz.CGDataProviderCopyData(Quartz.CGImageGetDataProvider(raw))
+                )
+                bitmap = Image.frombytes(
+                    "RGB",
+                    (Quartz.CGImageGetWidth(raw), Quartz.CGImageGetHeight(raw)),
+                    data,
+                    "raw",
+                    "BGRX",
+                    Quartz.CGImageGetBytesPerRow(raw),
+                )
+                bounds = None
             frames.append(
-                {"begin": begin, "end": time.monotonic() - origin, "bitmap": bitmap}
+                {
+                    "begin": begin,
+                    "end": time.monotonic() - origin,
+                    "bitmap": bitmap,
+                    "bounds": bounds,
+                }
             )
             if len(frames) == 1:
                 (directory / "capture.ready").touch()
@@ -77,7 +117,7 @@ def main() -> int:
                 "frames": frames,
                 "errors": errors,
                 "requested_interval_seconds": args.interval,
-                "observer": "separate process; shared window server; no application GIL",
+                "observer": "separate process; exact owned window; no application GIL",
             },
             indent=2,
         )

@@ -64,13 +64,13 @@ parser.add_argument(
 parser.add_argument(
     "--pixel-capture",
     action="store_true",
-    help="Bounded separate-process Mac window-server pixels at 10Hz; pair with no-capture control",
+    help="Bounded separate-process own-window pixels during drag; pair with no-capture control",
 )
 args = parser.parse_args()
 if args.timing_details and not args.timing:
     parser.error("--timing-details requires --timing")
-if args.pixel_capture and sys.platform != "darwin":
-    parser.error("--pixel-capture requires the existing Mac own-window recorder")
+if args.pixel_capture and sys.platform not in {"darwin", "win32"}:
+    parser.error("--pixel-capture requires a Mac or Windows own-window recorder")
 run = args.output.resolve()
 run.mkdir(parents=True, exist_ok=False)
 source = args.source.resolve()
@@ -284,7 +284,8 @@ def drive(hwnd, screen):
                     str(origin),
                     str(capture_dir),
                     "--interval",
-                    ".1",
+                    ".05" if sys.platform == "win32" else ".1",
+                    *(["--owner-pid", str(pid)] if sys.platform == "win32" else []),
                 ],
                 stdout=capture_log,
                 stderr=subprocess.STDOUT,
@@ -578,7 +579,11 @@ with (
                 if args.timing or args.profile
                 else "quiet native drag"
             )
-            + ", no screen capture during measured intervals",
+            + (
+                ", independent own-window frame capture during measured intervals"
+                if args.pixel_capture
+                else ", no screen capture during measured intervals"
+            ),
             "gaps_over_50ms": sum(x > 50 for x in active),
             "gaps_over_100ms": sum(x > 100 for x in active),
             "errors": failure,

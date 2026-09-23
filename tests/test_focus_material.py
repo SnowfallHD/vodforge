@@ -45,7 +45,15 @@ def test_focus_uses_distinct_material_without_accent_perimeter(
             for x in range(focused.width)
         )
     ), "Legacy focus perimeter returned"
-    assert focused.getpixel((70, 19))[:3] == ImageColor.getrgb(THEME["focus_surface"])
+    if family == "field":
+        # The field's child editor paints the shared surface. Focus strengthens
+        # the inset contour without exposing a second face beside that child.
+        assert focused.getpixel((70, 19))[:3] == ImageColor.getrgb(THEME["surface"])
+        assert sum(focused.getpixel((70, 2))[:3]) < sum(idle.getpixel((70, 2))[:3]) - 8
+    else:
+        assert focused.getpixel((70, 19))[:3] == ImageColor.getrgb(
+            THEME["focus_surface"]
+        )
     assert render(False).tobytes() == idle.tobytes()
 
 
