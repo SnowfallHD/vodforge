@@ -97,14 +97,55 @@ Item {
                 height: childrenRect.height
                 spacing: 16
                 StoneField {
+                    id: descriptionPanel
+                    property bool editing: false
                     width: detail.compact ? annotationRow.width : Math.round(annotationRow.width * 0.62)
-                    height: 150
+                    height: editing ? 220 : 150
                     Column {
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 8
-                        Text { text: "Description"; color: theme.text; font.pixelSize: 20 }
-                        Text { text: detail.item.description || ""; width: parent.width; color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight }
+                        Text {
+                            text: detail.item.userDescription ? "Your description" : "Source description"
+                            color: theme.text; font.pixelSize: 20
+                        }
+                        Text {
+                            visible: !descriptionPanel.editing
+                            text: detail.item.description || ""
+                            width: parent.width; color: theme.muted; font.pixelSize: 14
+                            wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight
+                        }
+                        StoneField {
+                            visible: descriptionPanel.editing
+                            width: parent.width; height: 116
+                            TextArea {
+                                id: descriptionEditor
+                                anchors.fill: parent; anchors.margins: 10
+                                padding: 0; wrapMode: TextEdit.Wrap
+                                color: theme.text; font.pixelSize: 14; background: Item {}
+                            }
+                        }
+                        Row {
+                            spacing: 8
+                            StoneButton {
+                                label: descriptionPanel.editing ? "Save" : "Edit description"
+                                size: "inline"
+                                width: descriptionPanel.editing ? 70 : 150
+                                onActivated: {
+                                    if (!descriptionPanel.editing) {
+                                        descriptionEditor.text = detail.item.descriptionInput || ""
+                                        descriptionPanel.editing = true
+                                    } else if (detail.appBridge.saveLibraryDescription(detail.item.owner, descriptionEditor.text)) {
+                                        descriptionPanel.editing = false
+                                    }
+                                }
+                            }
+                            StoneButton {
+                                visible: descriptionPanel.editing
+                                label: "Cancel"; size: "inline"; width: 75
+                                onActivated: descriptionPanel.editing = false
+                            }
+                        }
                     }
                 }
                 StoneField {

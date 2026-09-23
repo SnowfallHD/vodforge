@@ -64,6 +64,33 @@ def test_qt_player_related_uses_saved_variant_owner_and_replaces_selected_media(
         bridge.close()
 
 
+def test_qt_library_description_uses_current_detail_owner_and_shared_annotations(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    first = saved(tmp_path, "First", "MP4")
+    second = saved(tmp_path, "Second", "MP4")
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._runtime.history = [first, second]
+        owners = [item["owner"] for item in bridge.collectionCandidates]
+        assert bridge.openLibraryDetails(owners[0])
+        assert bridge.libraryDetail["userDescription"] is False
+        assert not bridge.saveLibraryDescription(owners[1], "Wrong subject")
+        assert bridge.saveLibraryDescription(owners[0], "A private description")
+        assert bridge.libraryDetail["description"] == "A private description"
+        assert bridge.libraryDetail["userDescription"] is True
+        assert not bridge.saveLibraryDescription(owners[0], "x" * 10_001)
+        bridge.returnLibraryDetails()
+        assert not bridge.saveLibraryDescription(owners[0], "Closed detail")
+    finally:
+        bridge.close()
+
+
 def test_qt_bridge_close_stops_polling_and_commits_pending_preferences(
     tmp_path, monkeypatch
 ):
