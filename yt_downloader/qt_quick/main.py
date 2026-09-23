@@ -767,6 +767,7 @@ class Bridge(QObject):
                 current.get("channel") or current.get("uploader") or "Unknown creator"
             ),
             "category": str(current.get("vodforge_user_category") or ""),
+            "kind": watch_media_kind(current),
             "description": str(
                 current.get("vodforge_user_description", current.get("description"))
                 or ""
@@ -2558,6 +2559,15 @@ class Bridge(QObject):
                 telemetry.record_feature("player", action)
             except (OSError, ValueError):
                 pass
+
+    @Slot(str)
+    def recordPresentation(self, action: str) -> None:
+        if (
+            action in {"fit", "fill", "fullscreen", "floating", "returned"}
+            and self._playback_record is not None
+            and watch_media_kind(self._playback_record) == "video"
+        ):
+            self._record_player_feature(action)
 
     @Slot()
     def cancel(self) -> None:

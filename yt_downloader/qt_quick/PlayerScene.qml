@@ -9,11 +9,76 @@ Item {
     property var player
     property real volume: 0.8
     property alias videoSurface: videoSurface
+    property string presentationMode: "embedded"
+    property bool videoFill: false
+    readonly property var activeVideoSurface: presentationMode === "embedded" ? videoSurface : presentationVideo
+    readonly property string activeSurfaceName: activeVideoSurface.objectName
     readonly property var projection: appBridge.playerScene
     readonly property bool wide: width >= 1080
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
+
+    function setPresentation(mode) {
+        if (["embedded", "fullscreen", "floating"].indexOf(mode) < 0 ||
+                (mode !== "embedded" && projection.kind !== "video"))
+            return
+        if (mode === presentationMode) return
+        presentationMode = mode
+        appBridge.recordPresentation(mode === "embedded" ? "returned" : mode)
+    }
+    onPresentationModeChanged: {
+        if (presentationMode === "embedded") presentationWindow.hide()
+        else if (presentationMode === "fullscreen") presentationWindow.showFullScreen()
+        else presentationWindow.showNormal()
+    }
+    onProjectionChanged: {
+        if (projection.kind !== "video" && presentationMode !== "embedded")
+            presentationMode = "embedded"
+    }
+
+    Window {
+        id: presentationWindow
+        objectName: "watchPresentationWindow"
+        visible: false
+        width: 780
+        height: 480
+        color: "black"
+        title: scene.projection.title || "VODForge Player"
+        flags: scene.presentationMode === "floating" ? Qt.Window | Qt.WindowStaysOnTopHint : Qt.Window
+        onClosing: function(close) {
+            close.accepted = false
+            scene.setPresentation("embedded")
+        }
+        VideoOutput {
+            id: presentationVideo
+            objectName: "watchPresentationVideoSurface"
+            anchors.fill: parent
+            fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
+        }
+        Row {
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.margins: 18
+            spacing: 8
+            StoneButton {
+                label: "Return to Watch"
+                transientMaterial: false
+                width: 150; height: 40
+                onActivated: scene.setPresentation("embedded")
+            }
+            StoneButton {
+                label: scene.player && scene.player.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
+                transientMaterial: false
+                width: 82; height: 40
+                onActivated: {
+                    if (!scene.player) return
+                    if (scene.player.playbackState === MediaPlayer.PlayingState) scene.player.pause()
+                    else scene.player.play()
+                }
+            }
+        }
+    }
 
     ScrollView {
         id: viewport
@@ -79,7 +144,7 @@ Item {
                         objectName: "watchVideoSurface"
                         width: parent.width
                         height: Math.max(180, Math.min(390, width * 9 / 16, scene.height - 205))
-                        fillMode: VideoOutput.PreserveAspectFit
+                        fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
                     }
                     Text {
                         width: parent.width
@@ -150,6 +215,32 @@ Item {
                             background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
                             handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                         }
+                    }
+                    RowLayout {
+                        width: parent.width
+                        spacing: 8
+                        StoneButton {
+                            label: "Full screen"
+                            transientMaterial: false
+                            Layout.preferredWidth: 118
+                            onActivated: scene.setPresentation("fullscreen")
+                        }
+                        StoneButton {
+                            label: "Floating"
+                            transientMaterial: false
+                            Layout.preferredWidth: 100
+                            onActivated: scene.setPresentation("floating")
+                        }
+                        StoneButton {
+                            label: scene.videoFill ? "Fit" : "Fill"
+                            transientMaterial: false
+                            Layout.preferredWidth: 68
+                            onActivated: {
+                                scene.videoFill = !scene.videoFill
+                                scene.appBridge.recordPresentation(scene.videoFill ? "fill" : "fit")
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
                     }
                 }
 

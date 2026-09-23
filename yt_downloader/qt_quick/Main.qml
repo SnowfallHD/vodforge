@@ -17,6 +17,7 @@ Window {
     color: theme.bg
     property real playerVolume: 0.8
     property var mediaPlayer: playerLoader.item
+    readonly property bool playerSurfaceBound: mediaPlayer && mediaPlayer.videoOutput === playerScene.activeVideoSurface
     property int pendingPlaybackGeneration: -1
     onClosing: function(close) {
         if (bridge.running) {
@@ -35,7 +36,7 @@ Window {
             objectName: "watchMediaPlayer"
             property int generation: 0
             audioOutput: AudioOutput { volume: window.playerVolume }
-            videoOutput: playerScene.videoSurface
+            videoOutput: playerScene.activeVideoSurface
             function reportProgress() {
                 var status = "Ready"
                 if (error !== MediaPlayer.NoError) status = "Failed"
@@ -886,6 +887,7 @@ Window {
             player: window.mediaPlayer
             volume: window.playerVolume
             onCloseRequested: {
+                playerScene.presentationMode = "embedded"
                 if (window.mediaPlayer) window.mediaPlayer.stop()
                 bridge.closePlayback()
             }

@@ -8,7 +8,7 @@ import wave
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import QCoreApplication, QEvent, QSize, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 
 from yt_downloader.library_artwork_source import ArtworkAsset
@@ -152,6 +152,44 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
         bridge.navigateLibraryFolders("all")
         assert bridge.libraryFolders["mode"] == "all"
     finally:
+        bridge.close()
+
+
+def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        scene = window.findChild(QObject, "watchPlayerScene")
+        assert window.findChild(QObject, "watchMediaPlayer") is not None
+        assert scene.property("activeSurfaceName") == "watchVideoSurface"
+        assert window.property("playerSurfaceBound")
+        assert scene.setProperty("presentationMode", "floating")
+        for _ in range(5):
+            app.processEvents()
+        assert scene.property("activeSurfaceName") == "watchPresentationVideoSurface"
+        assert window.property("playerSurfaceBound")
+        assert scene.setProperty("presentationMode", "fullscreen")
+        for _ in range(5):
+            app.processEvents()
+        assert scene.property("activeSurfaceName") == "watchPresentationVideoSurface"
+        assert window.property("playerSurfaceBound")
+        assert scene.setProperty("presentationMode", "embedded")
+        for _ in range(5):
+            app.processEvents()
+        assert scene.property("activeSurfaceName") == "watchVideoSurface"
+        assert window.property("playerSurfaceBound")
+    finally:
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
         bridge.close()
 
 
