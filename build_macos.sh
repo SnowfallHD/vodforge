@@ -91,7 +91,7 @@ if [[ -z "$ffmpeg" || -z "$ffprobe" || -z "$deno" ]]; then
   echo "Run ./install_macos_dependencies.sh first."
   exit 1
 fi
-vlc_args=()
+vlc_args=(--exclude-module vlc)
 if [[ "$ui_mode" == "tk" ]]; then
   vlc_version="3.0.23"
   vlc_root="${VODFORGE_VLC_RUNTIME:-}"

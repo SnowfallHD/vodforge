@@ -90,7 +90,7 @@ $entrypoint = "main.py"
 $qtArgs = @()
 if ($uiMode -eq "qt") {
   $entrypoint = "qt_main.py"
-  $qtArgs = @("--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtQuickControls2")
+  $qtArgs = @("--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtQuickControls2", "--exclude-module", "vlc")
   $addData += @("--add-data", "yt_downloader/qt_quick/Main.qml;yt_downloader/qt_quick")
   $addData += @("--add-data", "yt_downloader/qt_quick/StoneButton.qml;yt_downloader/qt_quick")
   $addData += @("--add-data", "yt_downloader/qt_quick/StoneField.qml;yt_downloader/qt_quick")
