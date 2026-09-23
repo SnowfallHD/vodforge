@@ -2307,6 +2307,15 @@ def test_run_deck_identical_resize_refresh_does_not_rebuild_widgets():
     assert probe.rendered == 1
     assert probe.configured_statuses == ["Failed  •  MP4"]
 
+    # Wide/balanced move the surrounding Forge layout, but use identical Run
+    # Deck tile rendering. Compact changes tile dimensions and must rebuild.
+    probe._focus_layout = "balanced"
+    DownloaderApp._refresh_focus_run_deck(probe, geometry_only=True)
+    assert probe.rendered == 1
+    probe._focus_layout = "compact"
+    DownloaderApp._refresh_focus_run_deck(probe, geometry_only=True)
+    assert probe.rendered == 2
+
 
 def test_run_deck_active_live_status_change_does_not_rebuild_widgets():
     class Deck:
