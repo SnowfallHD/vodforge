@@ -7013,9 +7013,17 @@ class DownloaderApp(
         self.focus_deck_header = deck_header
 
         deck_border = tk.Frame(
-            deck_area, bg=THEME["border"], bd=0, highlightthickness=0
+            deck_area,
+            bg=THEME["border"],
+            bd=0,
+            highlightthickness=0,
+            height=px(80),
         )
         deck_border.grid(row=1, column=0, sticky="ew")
+        # Run tiles may change their requested width when a title is fitted.
+        # Keep those child requests inside the deck during a native resize;
+        # the outer Forge geometry is owned by its responsive layout.
+        deck_border.pack_propagate(False)
         deck = ttk.Frame(deck_border, style="FocusShell.TFrame")
         deck.pack(fill="both", expand=True, padx=px(1), pady=px(1))
         self.focus_run_deck = deck
