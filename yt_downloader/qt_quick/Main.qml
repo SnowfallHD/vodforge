@@ -54,6 +54,7 @@ Window {
             onPlaybackStateChanged: reportProgress()
             onMediaStatusChanged: reportProgress()
             onErrorChanged: reportProgress()
+            onActiveSubtitleTrackChanged: playerScene.captionTrackChanged()
         }
     }
     Loader {

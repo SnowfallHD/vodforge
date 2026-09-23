@@ -26,7 +26,7 @@ The source index (`.venv/bin/python engineering-quality/runners/qt-port-source-i
 | `yt_downloader/library_scene_ui.py` | `qt_quick/LibraryScene.qml`, `qt_quick/scene_projection.py` | Selection, paging, routes and scroll restoration |
 | `yt_downloader/library_search_ui.py` | `qt_quick/LibraryScene.qml` | Search focus, filters, responsive wrapping |
 | `yt_downloader/local_audio_video_ui.py` | `qt_quick/Main.qml`, `qt_quick/local_conversion.py` | Input and progress/error dialog journey |
-| `yt_downloader/media_player_ui.py` | `qt_quick/PlayerScene.qml`, `qt_quick/Main.qml` | Playback, captions, seek, volume and native decode |
+| `yt_downloader/media_player_ui.py` | `qt_quick/PlayerScene.qml`, `qt_quick/CaptionTracks.qml`, `qt_quick/Main.qml` | Playback, captions, seek, volume and native decode |
 | `yt_downloader/modal_backdrop.py` | `qt_quick/StoneField.qml`, QML Popup | Material and dismiss behavior |
 | `yt_downloader/platform_services.py` | Qt native dialogs, shared path helpers | Every platform UI branch |
 | `yt_downloader/platforms/macos/surfaces.py` | Qt native video surface | Packaged macOS presentation |
@@ -34,7 +34,7 @@ The source index (`.venv/bin/python engineering-quality/runners/qt-port-source-i
 | `yt_downloader/playback_probe.py` | Qt native playback harness | Installed player proof |
 | `yt_downloader/playback_surface.py` | Qt `VideoOutput` | Surface replacement and close |
 | `yt_downloader/player_presentation_ui.py` | `qt_quick/PlayerScene.qml`, `qt_quick/Main.qml` | Fullscreen/floating return and queue |
-| `yt_downloader/player_scene_ui.py` | `qt_quick/PlayerScene.qml`, `player_related.py` | Chapters, previews, related/captions |
+| `yt_downloader/player_scene_ui.py` | `qt_quick/PlayerScene.qml`, `qt_quick/CaptionTracks.qml`, `player_related.py` | Chapters, previews, related/captions |
 | `yt_downloader/presentation_diagnostics.py` | Qt telemetry and native harness | Presentation transition evidence |
 | `yt_downloader/run_hover_menu.py` | `qt_quick/RunDeck.qml` | Every active/queued/terminal/preview action |
 | `yt_downloader/scene_components.py` | QML scenes, `StoneButton.qml`, `StoneField.qml` | Control positions and card rendering |

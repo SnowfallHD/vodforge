@@ -3095,7 +3095,11 @@ class Bridge(QObject):
     @Slot(str)
     def recordPresentation(self, action: str) -> None:
         if (
-            action in {"fit", "fill", "fullscreen", "floating", "returned"}
+            action in {
+                "fit", "fill", "fullscreen", "floating", "returned",
+                "captions_selected", "caption_fit_applied",
+                "caption_fill_restored", "caption_fill_unavailable",
+            }
             and self._playback_record is not None
             and watch_media_kind(self._playback_record) == "video"
         ):

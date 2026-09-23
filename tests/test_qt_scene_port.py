@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import time
 import wave
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtMultimedia import QMediaPlayer
 
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
@@ -263,6 +267,109 @@ def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
+        bridge.close()
+
+
+def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(tmp_path, monkeypatch):
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        pytest.skip("FFmpeg is needed for an actual subtitle track")
+    subtitles = tmp_path / "captions.srt"
+    subtitles.write_text("1\n00:00:00,000 --> 00:00:02,000\nCaption proof\n")
+    media = tmp_path / "captions.mp4"
+    subprocess.run(
+        [
+            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=10:d=3",
+            "-i", str(subtitles), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:s", "mov_text", "-shortest", str(media),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        player = window.findChild(QMediaPlayer, "watchMediaPlayer")
+        scene = window.findChild(QObject, "watchPlayerScene")
+        player.setSource(QUrl.fromLocalFile(str(media)))
+        deadline = time.monotonic() + 5
+        while len(player.subtitleTracks()) < 1 and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.02)
+        assert len(player.subtitleTracks()) == 1
+        scene.setProperty("videoFill", True)
+        window.findChild(QObject, "playerCaptionsButton").activated.emit()
+        app.processEvents()
+        popup = window.findChild(QObject, "playerCaptionsMenu")
+        assert popup.property("visible")
+        repeaters = [
+            item for item in popup.findChildren(QObject)
+            if item.metaObject().className().startswith("QQuickRepeater")
+        ]
+        assert len(repeaters) == 1
+        controls = {
+            item.property("label"): item
+            for item in [*popup.findChildren(QObject), *repeaters[0].parent().childItems()]
+            if item.property("label") is not None
+        }
+        track_label = next(label for label in controls if str(label).endswith("Track 1") or label == "Caption track 1")
+        controls[track_label].activated.emit()
+        app.processEvents()
+        assert player.activeSubtitleTrack() == 0
+        assert not scene.property("videoFill")
+        player.play()
+        caption = window.findChild(QObject, "embeddedCaptionText")
+        deadline = time.monotonic() + 4
+        while caption.property("text") != "Caption proof" and time.monotonic() < deadline:
+            app.processEvents()
+            time.sleep(0.02)
+        assert caption.property("text") == "Caption proof"
+        player.pause()
+        window.findChild(QObject, "playerFillButton").activated.emit()
+        assert not scene.property("videoFill")
+        controls["Captions off"].activated.emit()
+        app.processEvents()
+        assert player.activeSubtitleTrack() == -1
+        assert scene.property("videoFill")
+        scene.setProperty("presentationMode", "floating")
+        app.processEvents()
+        window.findChild(QObject, "presentationCaptionsButton").activated.emit()
+        app.processEvents()
+        presentation_menu = window.findChild(QObject, "presentationCaptionsMenu")
+        assert presentation_menu.property("visible")
+        repeater = next(
+            item for item in presentation_menu.findChildren(QObject)
+            if item.metaObject().className().startswith("QQuickRepeater")
+        )
+        track = next(
+            item for item in repeater.parent().childItems()
+            if str(item.property("label")).endswith("Track 1")
+            or item.property("label") == "Caption track 1"
+        )
+        track.activated.emit()
+        player.setPosition(0)
+        player.play()
+        presentation_caption = window.findChild(QObject, "presentationCaptionText")
+        deadline = time.monotonic() + 4
+        while (
+            presentation_caption.property("text") != "Caption proof"
+            and time.monotonic() < deadline
+        ):
+            app.processEvents()
+            time.sleep(0.02)
+        assert presentation_caption.property("text") == "Caption proof"
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
 
 

@@ -11,6 +11,8 @@ Item {
     property alias videoSurface: videoSurface
     property string presentationMode: "embedded"
     property bool videoFill: false
+    property bool restoreFillAfterCaptions: false
+    property int requestedCaptionTrack: -2
     readonly property var activeVideoSurface: presentationMode === "embedded" ? videoSurface : presentationVideo
     readonly property string activeSurfaceName: activeVideoSurface.objectName
     readonly property var projection: appBridge.playerScene
@@ -26,6 +28,46 @@ Item {
         if (mode === presentationMode) return
         presentationMode = mode
         appBridge.recordPresentation(mode === "embedded" ? "returned" : mode)
+    }
+    function captionTrackChanged() {
+        if (!player) return
+        const active = player.activeSubtitleTrack
+        if (active >= 0 && videoFill) {
+            videoFill = false
+            restoreFillAfterCaptions = true
+            appBridge.recordPresentation("caption_fit_applied")
+        } else if (active < 0 && requestedCaptionTrack === -1 && restoreFillAfterCaptions) {
+            videoFill = true
+            restoreFillAfterCaptions = false
+            appBridge.recordPresentation("caption_fill_restored")
+        }
+        if (active === requestedCaptionTrack) requestedCaptionTrack = -2
+    }
+    function selectCaption(index) {
+        if (!player || index < -1 || index >= player.subtitleTracks.length) return
+        requestedCaptionTrack = index
+        if (index >= 0 && videoFill) {
+            videoFill = false
+            restoreFillAfterCaptions = true
+            appBridge.recordPresentation("caption_fit_applied")
+        }
+        player.activeSubtitleTrack = index
+        captionTrackChanged()
+        if (player.activeSubtitleTrack === index)
+            appBridge.recordPresentation("captions_selected")
+    }
+    function toggleFill() {
+        if (!videoFill && player && player.activeSubtitleTrack >= 0) {
+            appBridge.recordPresentation("caption_fill_unavailable")
+            return
+        }
+        videoFill = !videoFill
+        if (!videoFill) restoreFillAfterCaptions = false
+        appBridge.recordPresentation(videoFill ? "fill" : "fit")
+    }
+    onPlayerChanged: {
+        requestedCaptionTrack = -2
+        restoreFillAfterCaptions = false
     }
     onPresentationModeChanged: {
         if (presentationMode === "embedded") presentationWindow.hide()
@@ -56,6 +98,21 @@ Item {
             anchors.fill: parent
             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
         }
+        Text {
+            objectName: "presentationCaptionText"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 68
+            width: parent.width - 36
+            text: presentationVideo.videoSink ? presentationVideo.videoSink.subtitleText : ""
+            visible: text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
+            color: "white"
+            style: Text.Outline
+            styleColor: "#09090d"
+            font.pixelSize: 18
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+        }
         Row {
             anchors.left: parent.left
             anchors.bottom: parent.bottom
@@ -77,6 +134,27 @@ Item {
                     else scene.player.play()
                 }
             }
+            StoneButton {
+                label: scene.videoFill ? "Fit" : "Fill"
+                transientMaterial: false
+                width: 68; height: 40
+                onActivated: scene.toggleFill()
+            }
+            StoneButton {
+                objectName: "presentationCaptionsButton"
+                label: "CC"
+                accessibilityLabel: "Captions"
+                transientMaterial: false
+                width: 44; height: 40
+                onActivated: presentationCaptionMenu.open()
+            }
+        }
+        CaptionTracks {
+            id: presentationCaptionMenu
+            objectName: "presentationCaptionsMenu"
+            parent: presentationWindow.contentItem
+            player: scene.player
+            onTrackRequested: function(index) { scene.selectCaption(index) }
         }
     }
 
@@ -149,6 +227,21 @@ Item {
                             objectName: "watchVideoSurface"
                             anchors.fill: parent
                             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
+                        }
+                        Text {
+                            objectName: "embeddedCaptionText"
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 14
+                            width: parent.width - 28
+                            text: videoSurface.videoSink ? videoSurface.videoSink.subtitleText : ""
+                            visible: text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
+                            color: "white"
+                            style: Text.Outline
+                            styleColor: "#09090d"
+                            font.pixelSize: 18
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
                         }
                     }
                     Text {
@@ -223,13 +316,20 @@ Item {
                             onActivated: scene.setPresentation("floating")
                         }
                         StoneButton {
+                            objectName: "playerFillButton"
                             label: scene.videoFill ? "Fit" : "Fill"
                             transientMaterial: false
                             Layout.preferredWidth: 68
-                            onActivated: {
-                                scene.videoFill = !scene.videoFill
-                                scene.appBridge.recordPresentation(scene.videoFill ? "fill" : "fit")
-                            }
+                            onActivated: scene.toggleFill()
+                        }
+                        StoneButton {
+                            objectName: "playerCaptionsButton"
+                            label: "CC"
+                            accessibilityLabel: "Captions"
+                            transientMaterial: false
+                            Layout.preferredWidth: 44
+                            Layout.preferredHeight: 40
+                            onActivated: captionsMenu.open()
                         }
                         Item { Layout.fillWidth: true }
                         Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
@@ -470,5 +570,11 @@ Item {
             }
             Item { width: 1; height: 14 }
         }
+    }
+    CaptionTracks {
+        id: captionsMenu
+        objectName: "playerCaptionsMenu"
+        player: scene.player
+        onTrackRequested: function(index) { scene.selectCaption(index) }
     }
 }
