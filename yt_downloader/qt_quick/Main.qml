@@ -555,6 +555,28 @@ Window {
                     color: theme.muted
                     font.pixelSize: 15
                 }
+                Item {
+                    id: heatmapTrack
+                    objectName: "watchHeatmap"
+                    visible: bridge.playbackHeatmap.length > 0 && mediaPlayer.duration > 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? 18 : 0
+                    clip: true
+                    Repeater {
+                        model: bridge.playbackHeatmap
+                        Rectangle {
+                            required property var modelData
+                            x: Math.max(0, Math.min(heatmapTrack.width,
+                                modelData.start_time * heatmapTrack.width * 1000 / mediaPlayer.duration))
+                            width: Math.max(1, (modelData.end_time - modelData.start_time) *
+                                heatmapTrack.width * 1000 / mediaPlayer.duration)
+                            height: Math.max(2, 16 * modelData.value)
+                            y: heatmapTrack.height - height
+                            color: theme.accent
+                            opacity: 0.72
+                        }
+                    }
+                }
                 Slider {
                     Layout.fillWidth: true
                     from: 0
@@ -562,7 +584,6 @@ Window {
                     value: mediaPlayer.position
                     onMoved: {
                         bridge.manualPlaybackSeek(value / 1000)
-                        mediaPlayer.setPosition(value)
                     }
                     background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
                     handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
@@ -585,6 +606,31 @@ Window {
                         onMoved: audioOutput.volume = value
                         background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
                         handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
+                    }
+                }
+                ScrollView {
+                    objectName: "watchChapters"
+                    visible: bridge.playbackChapters.length > 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? Math.min(145, 36 * bridge.playbackChapters.length) : 0
+                    clip: true
+                    Column {
+                        width: parent.width
+                        spacing: 3
+                        Repeater {
+                            model: bridge.playbackChapters
+                            StoneButton {
+                                required property var modelData
+                                required property int index
+                                width: parent.width
+                                height: 33
+                                label: Math.floor(modelData.start_time / 60) + ":" +
+                                    ("0" + Math.floor(modelData.start_time % 60)).slice(-2) +
+                                    "  " + (modelData.title || "Untitled chapter")
+                                transientMaterial: false
+                                onActivated: bridge.seekPlaybackChapter(index)
+                            }
+                        }
                     }
                 }
             }

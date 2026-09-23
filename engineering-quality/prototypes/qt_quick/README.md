@@ -110,6 +110,11 @@ non-widget class; the remaining product owners still need port qualification.
   2.166/6.037-second position to the private ledger; a fresh Qt process issued
   one resume seek and reached 3.233 seconds without a provider error. The
   filtered Library Play projection and durable resume have focused tests.
+- Watch reads bounded chapter and heatmap metadata through the shared history
+  sanitizer. Chapter actions and manual timeline seeks use the same playback
+  binding and Qt seek signal; invalid chapter indices and malformed metadata
+  are rejected in focused tests. The chapter buttons use the shared static
+  stone control. A physical packaged chapter/heatmap journey is still needed.
 - Mac local conversion: a real 6-second fixture MP3 and still image created a
   validated 720p MP4; a second run through the Qt bridge committed the output
   into durable Library history. The shared-control QML dialog was rendered

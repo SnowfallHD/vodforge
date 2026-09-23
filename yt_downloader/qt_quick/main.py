@@ -50,6 +50,8 @@ from yt_downloader.history import (
     history_archive_owner,
     history_identity,
     history_output_path,
+    sanitize_chapters,
+    sanitize_heatmap,
     save_history,
 )
 from yt_downloader.library_annotations import (
@@ -221,6 +223,8 @@ class Bridge(QObject):
         self._playback_status = "Ready"
         self._playback_recorded = False
         self._playback_output_type = ""
+        self._playback_chapters: list[dict[str, Any]] = []
+        self._playback_heatmap: list[dict[str, float]] = []
         self._settings_path = settings_file_path()
         try:
             self._settings = load_settings(self._settings_path)
@@ -387,6 +391,14 @@ class Bridge(QObject):
     @Property(QUrl, notify=playbackUrlChanged)
     def playbackUrl(self) -> QUrl:
         return self._playback_url
+
+    @Property("QVariantList", notify=playbackUrlChanged)
+    def playbackChapters(self) -> list[dict[str, Any]]:
+        return list(self._playback_chapters)
+
+    @Property("QVariantList", notify=playbackUrlChanged)
+    def playbackHeatmap(self) -> list[dict[str, float]]:
+        return list(self._playback_heatmap)
 
     @Property("QVariantList", notify=historyChanged)
     def history(self) -> list[dict[str, Any]]:
@@ -879,6 +891,12 @@ class Bridge(QObject):
         self._playback_output_type = str(
             self._runtime.history[index].get("vodforge_output_type") or ""
         )
+        self._playback_chapters = sanitize_chapters(
+            self._runtime.history[index].get("chapters")
+        )
+        self._playback_heatmap = sanitize_heatmap(
+            self._runtime.history[index].get("heatmap")
+        )
         self._playback_binding = PlaybackProgressBinding(
             self._playback_progress,
             self._runtime.history[index],
@@ -1051,6 +1069,29 @@ class Bridge(QObject):
             return
         self._playback_position = position
         self._playback_binding.manual_seek(self._playback_snapshot())
+        self.playbackSeekRequested.emit(position)
+        self._record_player_feature("seek")
+
+    @Slot(int, result=bool)
+    def seekPlaybackChapter(self, index: int) -> bool:
+        if self._playback_binding is None or not 0 <= index < len(
+            self._playback_chapters
+        ):
+            return False
+        position = float(self._playback_chapters[index]["start_time"])
+        self._playback_position = position
+        self._playback_binding.manual_seek(self._playback_snapshot())
+        self.playbackSeekRequested.emit(position)
+        self._record_player_feature("chapter")
+        return True
+
+    def _record_player_feature(self, action: str) -> None:
+        telemetry = self._analytics.telemetry
+        if telemetry is not None:
+            try:
+                telemetry.record_feature("player", action)
+            except (OSError, ValueError):
+                pass
 
     @Slot()
     def cancel(self) -> None:

@@ -12,6 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtTest import QSignalSpy
 
 from yt_downloader.history import HistoryError, history_archive_owner, load_history
 from yt_downloader.qt_quick import main as qt_main
@@ -28,6 +29,14 @@ def bridge(tmp_path: Path, monkeypatch: Any) -> qt_main.Bridge:
         "vodforge_output_type": "MP4",
         "vodforge_output_dir": str(tmp_path),
         "vodforge_output_path": str(media),
+        "chapters": [
+            {"start_time": 3, "end_time": 6, "title": "Opening"},
+            {"start_time": -1, "end_time": 4, "title": "Invalid"},
+        ],
+        "heatmap": [
+            {"start_time": 0, "end_time": 3, "value": 0.5},
+            {"start_time": 3, "end_time": 6, "value": float("nan")},
+        ],
     }
 
     class Runtime:
@@ -104,3 +113,23 @@ def test_removal_refuses_new_queued_owner_after_confirmation(
     bridge._runtime.queued = [type("Job", (), {"run_id": "run-one"})()]
     assert not bridge.confirmLibraryRemoval()
     assert len(bridge._runtime.history) == 1
+
+
+def test_watch_uses_bounded_saved_chapters_and_shared_seek(
+    bridge: qt_main.Bridge,
+) -> None:
+    requested = QSignalSpy(bridge.playbackSeekRequested)
+    bridge.openLibraryItem(0)
+    assert bridge.playbackChapters == [
+        {"start_time": 3.0, "end_time": 6.0, "title": "Opening"}
+    ]
+    assert bridge.playbackHeatmap == [
+        {"start_time": 0.0, "end_time": 3.0, "value": 0.5}
+    ]
+    assert not bridge.seekPlaybackChapter(1)
+    assert bridge.seekPlaybackChapter(0)
+    assert requested.count() == 1
+    assert requested.at(0)[0] == 3.0
+    bridge.manualPlaybackSeek(2.0)
+    assert requested.count() == 2
+    assert requested.at(1)[0] == 2.0
