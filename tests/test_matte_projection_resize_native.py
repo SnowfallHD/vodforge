@@ -55,5 +55,12 @@ def test_anchor_resize_only_moves_shared_matte() -> None:
         label.event_generate("<Configure>", width=140, height=30)
         root.update()
         assert text_calls >= 1
+        text_calls = 0
+        label.event_generate(
+            "<Configure>", width=label.winfo_width(), height=label.winfo_height(), x=45
+        )
+        label.event_generate("<Expose>")
+        root.update()
+        assert text_calls == 0
     finally:
         root.destroy()

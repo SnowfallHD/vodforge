@@ -225,6 +225,7 @@ class MatteTextProjection:
         self.trace: tuple[str, str] | None = None
         self.control_photo: Any = None
         self.control_identity: tuple | None = None
+        self.last_size: tuple[int, int] | None = None
         self.view_callbacks: dict[str, tuple[Any, str]] = {}
         self._configure_original = widget.configure
         if isinstance(widget, tk.Text):
@@ -237,8 +238,6 @@ class MatteTextProjection:
         cast(Any, widget).config = self._configure
         self.bindings = []
         for target, event in (
-            (widget, "<Configure>"),
-            (widget, "<Expose>"),
             (widget, "<Map>"),
             (widget, "<KeyRelease>"),
             (widget, "<<Selection>>"),
@@ -248,6 +247,13 @@ class MatteTextProjection:
             self.bindings.append(
                 (target, event, target.bind(event, self.request, add="+"))
             )
+        self.bindings.append(
+            (
+                widget,
+                "<Configure>",
+                widget.bind("<Configure>", self._widget_configured, add="+"),
+            )
+        )
         # Moving the common scene changes only the projected matte origin.
         # Rebuilding every label/button canvas on each ancestor Configure made
         # Windows live resize repaint those controls one at a time.
@@ -365,10 +371,19 @@ class MatteTextProjection:
         if not self.retired and self.pending is None:
             self.pending = self.canvas.after_idle(self.draw)
 
+    def _widget_configured(self, event: tk.Event) -> None:
+        # A position-only move carries the existing child Canvas and its text.
+        # Only the shared scene origin changes; Canvas owns its own Expose paint.
+        if (event.width, event.height) == self.last_size:
+            self.backdrop.request()
+        else:
+            self.request()
+
     def draw(self) -> None:
         self.pending = None
         if self.retired or not self.widget.winfo_viewable():
             return
+        self.last_size = (self.widget.winfo_width(), self.widget.winfo_height())
         self.backdrop.draw()
         self.canvas.delete("matte-text")
         if isinstance(self.widget, tk.Text):
