@@ -10160,7 +10160,21 @@ class DownloaderApp(
             if height <= 1:
                 height = max(height, self.winfo_height())
             DownloaderApp._observe_resize_geometry(self, width, height)
+            prior_mode = self.__dict__.get("_focus_layout")
             self._apply_focus_layout(width=width, height=height)
+            if (
+                sys.platform == "win32"
+                and prior_mode != self.__dict__.get("_focus_layout")
+                and not self.__dict__.get("_focus_resize_committing_mode", False)
+            ):
+                # Tk can defer the grid/pack paint created by a breakpoint
+                # until a later native sizing event. Commit this one discrete
+                # mode change now; equivalent Run Deck cards are retained.
+                self._focus_resize_committing_mode = True
+                try:
+                    self.update_idletasks()
+                finally:
+                    self._focus_resize_committing_mode = False
         except tk.TclError:
             return
 

@@ -2049,6 +2049,33 @@ def test_native_resize_applies_live_dimensions_without_waiting_for_pointer_relea
     assert probe.calls == [{"width": 918, "height": 701}]
 
 
+def test_windows_resize_commits_only_a_real_layout_mode_transition(monkeypatch):
+    monkeypatch.setattr(app_module, "sys", SimpleNamespace(platform="win32"))
+
+    class LayoutProbe:
+        _focus_layout = "balanced"
+
+        def __init__(self):
+            self.commits = 0
+
+        def _apply_focus_layout(self, **_kwargs):
+            self._focus_layout = "wide"
+
+        def update_idletasks(self):
+            self.commits += 1
+            # Configure can be delivered while Tk drains geometry work.
+            DownloaderApp._schedule_focus_layout(
+                self, SimpleNamespace(widget=self, width=1200, height=800)
+            )
+
+    probe = LayoutProbe()
+    event = SimpleNamespace(widget=probe, width=1200, height=800)
+    DownloaderApp._schedule_focus_layout(probe, event)
+    DownloaderApp._schedule_focus_layout(probe, event)
+    assert probe.commits == 1
+    assert probe._focus_resize_committing_mode is False
+
+
 def test_native_resize_callbacks_never_rewrite_the_window_anchor_or_opposite_edge():
     schedule_source = inspect.getsource(DownloaderApp._schedule_focus_layout)
     layout_source = inspect.getsource(DownloaderApp._apply_focus_layout)
