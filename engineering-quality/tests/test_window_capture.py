@@ -78,7 +78,7 @@ def test_windows_capture_requires_same_live_window_owner(monkeypatch, actual_pid
     [
         (False, False, False, None),
         (True, False, False, "Foreign window covers"),
-        (False, True, False, "left the owned window"),
+        (False, True, False, "discard"),
         (False, False, True, "Foreign window covers"),
     ],
 )
@@ -150,7 +150,10 @@ def test_screen_interior_rejects_foreign_or_outside_pixels(
     capture = lambda: _windows_capture(
         75, 422, method="screen-interior", box=(30, 40, 170, 140)
     )
-    if error:
+    if error == "discard":
+        assert capture() == (None, None)
+        assert calls == []
+    elif error:
         with pytest.raises(RuntimeError, match=error):
             capture()
         assert calls == ([{"bbox": (30, 40, 170, 140)}] if covered_after else [])
@@ -161,7 +164,10 @@ def test_screen_interior_rejects_foreign_or_outside_pixels(
         assert calls == [{"bbox": (30, 40, 170, 140)}]
 
 
-def test_screen_interior_discards_a_grab_that_crossed_native_geometry(monkeypatch):
+@pytest.mark.parametrize("after_right", [185, 250])
+def test_screen_interior_discards_a_grab_that_crossed_native_geometry(
+    monkeypatch, after_right
+):
     calls = []
 
     class NativeFunction:
@@ -185,7 +191,7 @@ def test_screen_interior_discards_a_grab_that_crossed_native_geometry(monkeypatc
             return 1
 
         def GetWindowRect(self, _hwnd, pointer):
-            right = 210 if not calls else 250
+            right = 210 if not calls else after_right
             pointer._obj.left, pointer._obj.top = 10, 20
             pointer._obj.right, pointer._obj.bottom = right, 170
             return 1
@@ -195,8 +201,11 @@ def test_screen_interior_discards_a_grab_that_crossed_native_geometry(monkeypatc
 
     user32 = User32()
     for name in (
-        "IsWindow", "IsWindowVisible", "GetWindowThreadProcessId",
-        "GetWindowRect", "GetWindow",
+        "IsWindow",
+        "IsWindowVisible",
+        "GetWindowThreadProcessId",
+        "GetWindowRect",
+        "GetWindow",
     ):
         setattr(user32, name, NativeFunction(getattr(user32, name)))
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32), raising=False)

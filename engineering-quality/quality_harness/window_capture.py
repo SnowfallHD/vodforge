@@ -47,7 +47,10 @@ def _windows_capture(
             bounds.left + 20 <= left < right <= bounds.right - 20
             and bounds.top + 20 <= top < bottom <= bounds.bottom - 20
         ):
-            raise RuntimeError("Interior capture left the owned window")
+            # Geometry can cross a fixed crop during a drag. A frame outside
+            # the owner is unusable; later frames may still be valid.
+            return None, None
+
         def reject_foreign_overlap() -> None:
             # A different top-level window could cover the crop during the
             # grab, so inspect z-order on both sides of that operation.
@@ -65,7 +68,9 @@ def _windows_capture(
                             and other.top < bottom
                             and other.bottom > top
                         ):
-                            raise RuntimeError("Foreign window covers interior QA capture")
+                            raise RuntimeError(
+                                "Foreign window covers interior QA capture"
+                            )
                 above = user32.GetWindow(above, 3)
 
         reject_foreign_overlap()
@@ -74,9 +79,7 @@ def _windows_capture(
         if (
             not user32.IsWindow(W.HWND(number))
             or not user32.IsWindowVisible(W.HWND(number))
-            or not user32.GetWindowThreadProcessId(
-                W.HWND(number), C.byref(owner_after)
-            )
+            or not user32.GetWindowThreadProcessId(W.HWND(number), C.byref(owner_after))
             or owner_after.value != owner_pid
         ):
             raise RuntimeError("Windows capture target changed owner during grab")
@@ -85,11 +88,16 @@ def _windows_capture(
             after.left + 20 <= left < right <= after.right - 20
             and after.top + 20 <= top < bottom <= after.bottom - 20
         ):
-            raise RuntimeError("Interior capture crossed a moving window edge")
+            # A native drag can cross the fixed crop while ImageGrab runs.
+            # Discard that invalid frame and keep recording later epochs.
+            return None, None
         reject_foreign_overlap()
-        if (
-            bounds.left, bounds.top, bounds.right, bounds.bottom
-        ) != (after.left, after.top, after.right, after.bottom):
+        if (bounds.left, bounds.top, bounds.right, bounds.bottom) != (
+            after.left,
+            after.top,
+            after.right,
+            after.bottom,
+        ):
             # The screenshot spans two geometry epochs. Treating it as a
             # same-size sample invents delayed paint at responsive breakpoints.
             return None, None
@@ -111,6 +119,8 @@ def main() -> int:
     parser.add_argument("directory", type=Path)
     parser.add_argument("--interval", type=float, default=0.020)
     parser.add_argument("--owner-pid", type=int)
+    parser.add_argument("--interior-width", type=int, default=1080)
+    parser.add_argument("--interior-inset", type=int, default=20)
     parser.add_argument(
         "--method", choices=("printwindow", "screen-interior"), default="printwindow"
     )
@@ -121,6 +131,10 @@ def main() -> int:
         parser.error("Own-window pixel capture is supported on Mac and Windows")
     if not 0.020 <= args.interval <= 1:
         parser.error("capture interval must be between .020 and 1 second")
+    if not 80 <= args.interior_width <= 4096:
+        parser.error("interior width must be between 80 and 4096 pixels")
+    if not 20 <= args.interior_inset <= 200:
+        parser.error("interior inset must be between 20 and 200 pixels")
     number, origin, directory = args.number, args.origin, args.directory
     box = None
     if sys.platform == "win32" and args.method == "screen-interior":
@@ -131,12 +145,16 @@ def main() -> int:
         if not C.windll.user32.GetWindowRect(W.HWND(number), C.byref(initial)):
             parser.error("Windows capture target has no initial rectangle")
         box = (
-            initial.left + 20,
-            initial.top + 20,
-            initial.left + min(1080, initial.right - initial.left - 20),
-            initial.top + min(720, initial.bottom - initial.top - 20),
+            initial.left + args.interior_inset,
+            initial.top + args.interior_inset,
+            initial.left
+            + min(
+                args.interior_width, initial.right - initial.left - args.interior_inset
+            ),
+            initial.top + min(720, initial.bottom - initial.top - args.interior_inset),
         )
     frames, errors = [], []
+    discarded = 0
     deadline = time.monotonic() + 20
     try:
         while not (directory / "capture.stop").exists() and time.monotonic() < deadline:
@@ -168,6 +186,7 @@ def main() -> int:
                 )
                 bounds = None
             if bitmap is None:
+                discarded += 1
                 time.sleep(max(0, args.interval - (time.monotonic() - origin - begin)))
                 continue
             frames.append(
@@ -201,6 +220,7 @@ def main() -> int:
             {
                 "frames": frames,
                 "errors": errors,
+                "discarded_geometry_frames": discarded,
                 "requested_interval_seconds": args.interval,
                 "observer": (
                     "separate process; fixed verified on-screen HWND interior; no WM_PRINT"
