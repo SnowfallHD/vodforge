@@ -6,7 +6,7 @@ Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected
 
 | Feature in Tk | Tk owner | Qt state |
 | --- | --- | --- |
-| Four views, brand, global search, navigation, responsive background cover | `app.py` focus chrome and view selection | Present; Forge shell alignment still being compared. |
+| Four views, brand, global search, navigation, responsive background cover | `app.py` focus chrome and view selection | Qt measured header now stacks one shared navigation row at narrow widths; 820×560 AX bounds pass, while full geometry comparison remains open. Full-cover artwork remains PreserveAspectCrop. |
 | URL entry, format choice, presets, output destination, settings, download and queue | `app.py` Forge composer and submission | Core actions present; composer layout now being translated from current Tk. |
 | Batch URL list and single/playlist control | `app.py`, `url_list_inputs.py` | Present at core level; verify visual and validation states. |
 | Local audio and image to video conversion | `local_audio_video_ui.py` | Core action and Qt dialog present; visual and packaged journey pending. |
@@ -26,7 +26,7 @@ Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected
 | Open saved location; remove card; move to folder/Trash; relink/recovery | `library_file_actions_ui.py`, `library_media_recovery_ui.py`, `app.py` | Basic open/remove/move/Trash and recovery core exist; compare complete dialogs and relink states. |
 | Watch home hero, playlists/channels/collections rails and routes | `watch_scene_ui.py`, `watch_library.py`, `watch_ui.py`, `library_artwork_source.py` | Qt browse scene now projects the shared hero metadata and saved progress, source-role artwork for media/playlist/avatar/banner, and channel header counts/description. Full-cover Qt hero and channel source captures exist. Exact cards, related content, scroll restoration and responsive geometry remain open. |
 | Watch queue, shuffle, back/search context and related media | `watch_scene_ui.py`, `player_scene_ui.py`, `watch_queue.py` | Group queue and shuffle now reach the shared queue owner. A source Qt run with two real local audio files advanced through both items and completed. Search filters through the shared Watch rail owner; a bounded route stack restores results on Back. Scroll/selection restoration and related media remain open. |
-| Playback controls, volume, chapters, heatmap, preview moments, details, window modes | `media_player_ui.py`, `player_scene_ui.py`, `player_presentation_ui.py` | Qt has play/pause/seek/volume/chapters/heatmap; keep their newer control treatment. Each media open now replaces the Qt provider and tags its events with a generation. Preview moments, details/related and window modes remain to port. |
+| Playback controls, volume, chapters, heatmap, preview moments, details, window modes | `media_player_ui.py`, `player_scene_ui.py`, `player_presentation_ui.py`, `player_related.py` | `PlayerScene.qml` now keeps the current control material and per-open provider generation, and reads the shared Up Next/recent plan, identity, annotations and source/output facts. It exposes Edit your details and related Play/Details actions. Correctly resized wide/narrow source captures and 820×560 AX bounds passed; native video rendering and scrolled information sections need package proof. Preview moments, window modes and complete telemetry parity remain open. |
 
 ## Activity, help and release surfaces
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+import wave
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QEvent, QSize, QUrl
@@ -30,6 +31,57 @@ def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
         "vodforge_output_type": kind,
         "vodforge_user_category": category,
     }
+
+
+def test_qt_player_related_uses_saved_variant_owner_and_replaces_selected_media(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    first = saved(tmp_path, "First", "MP4")
+    second = saved(tmp_path, "Second", "MP4")
+    (tmp_path / "First.mp4").write_bytes(b"fixture one")
+    (tmp_path / "Second.mp4").write_bytes(b"fixture two")
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._runtime.history = [first, second]
+        assert bridge.openLibraryItem(0)
+        scene = bridge.playerScene
+        assert scene["title"] == "First"
+        assert [item["title"] for item in scene["upNext"]] == ["Second"]
+        assert scene["source"] and scene["output"]
+        bridge._runtime.history = [second, first]
+        bridge.historyChanged.emit()
+        assert bridge.playerScene["title"] == "First"
+        assert bridge.playPlayerRelated(scene["upNext"][0]["owner"])
+        assert bridge.playerScene["title"] == "Second"
+        assert bridge.playbackUrl.toLocalFile() == str(tmp_path / "Second.mp4")
+        assert not bridge.playPlayerRelated("unknown-saved-owner")
+    finally:
+        bridge.close()
+
+
+def test_qt_bridge_close_stops_polling_and_commits_pending_preferences(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge.setQuality("720p HD")
+    assert bridge._timer.isActive() and bridge._save_timer.isActive()
+    bridge.close()
+    assert not bridge._timer.isActive() and not bridge._save_timer.isActive()
+    assert qt_main.load_settings(bridge._settings_path)["quality"] == "720p HD"
+    monkeypatch.setattr(bridge._runtime, "poll", lambda: 1 / 0)
+    app.processEvents()
+    bridge._pump()
+    bridge.close()
 
 
 def test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership(tmp_path):
@@ -360,8 +412,14 @@ def test_qt_player_replaces_provider_and_tags_each_open(tmp_path, monkeypatch):
         assert window.property("mediaPlayer") is not None
         players = []
         for index in range(2):
-            record = saved(tmp_path, f"Item {index}", "MP4")
-            Path(record["vodforge_output_path"]).write_bytes(b"invalid media fixture")
+            record = saved(tmp_path, f"Item {index}", "MP3")
+            media_path = tmp_path / f"Item {index}.wav"
+            record["vodforge_output_path"] = str(media_path)
+            with wave.open(str(media_path), "wb") as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(8000)
+                audio.writeframes(b"\0\0" * 16_000)
             bridge._runtime.history.append(record)
             assert bridge.openLibraryItem(index)
             app.processEvents()

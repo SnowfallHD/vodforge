@@ -17,6 +17,15 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from yt_downloader.qt_quick.main import Bridge, create_engine
 
 
+def accessible_descendants(root):
+    for index in range(root.childCount()):
+        child = root.child(index)
+        if child is None:
+            continue
+        yield child
+        yield from accessible_descendants(child)
+
+
 def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -44,7 +53,7 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
             actions = buttons[label].actionInterface()
             assert actions is not None
             assert QAccessibleActionInterface.pressAction() in actions.actionNames()
-        assert buttons["Play"].state().invisible
+        assert "Play" not in buttons or buttons["Play"].state().invisible
         # The Run Deck replaced the old idle "Ready" button with status text;
         # Download remains the reachable idle action.
         assert not buttons["Download"].state().disabled
@@ -62,20 +71,92 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         )
         application.processEvents()
         assert bridge.selection == "Watch"
-        assert buttons["Play"].state().invisible
+        assert "Play" not in buttons or buttons["Play"].state().invisible
         # Browsing precedes playback in the port. Expose transport sliders only
         # when a media source has opened, while retaining their AX names.
         bridge._playback_url = QUrl.fromLocalFile(str(tmp_path / "fixture.mp4"))
         bridge.playbackUrlChanged.emit()
         application.processEvents()
+        transport = [
+            child
+            for child in accessible_descendants(window)
+            if child.role() == QAccessible.Button
+            and child.text(QAccessible.Name) == "Play"
+        ]
+        assert any(not child.state().invisible for child in transport)
         sliders = {
             child.text(QAccessible.Name)
-            for index in range(window.childCount())
-            if (child := window.child(index)) is not None
-            and child.role() == QAccessible.Slider
-            and not child.state().invisible
+            for child in accessible_descendants(window)
+            if child.role() == QAccessible.Slider and not child.state().invisible
         }
         assert {"Playback position", "Volume"} <= sliders
+    finally:
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        application.processEvents()
+        bridge.close()
+
+
+def test_compact_header_and_player_transport_stay_inside_minimum_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    application = QGuiApplication.instance() or QGuiApplication([])
+    QQuickStyle.setStyle("Basic")
+    bridge = Bridge(None)
+    engine = create_engine(bridge)
+    try:
+        window_object = engine.rootObjects()[0]
+        window_object.resize(820, 560)
+        for _ in range(5):
+            application.processEvents()
+        window = QAccessible.queryAccessibleInterface(window_object)
+        assert window is not None
+
+        def visible_button(name: str):
+            return next(
+                child
+                for child in accessible_descendants(window)
+                if child.role() == QAccessible.Button
+                and child.text(QAccessible.Name) == name
+                and not child.state().invisible
+            )
+
+        def inside(button) -> bool:
+            bounds = button.rect()
+            frame = window.rect()
+            return (
+                bounds.left() >= frame.left()
+                and bounds.top() >= frame.top()
+                and bounds.right() <= frame.right()
+                and bounds.bottom() <= frame.bottom()
+            )
+
+        for name in ("Forge", "Library", "Watch", "Activity", "Help", "Settings"):
+            assert inside(visible_button(name)), name
+        media = tmp_path / "fixture.mp4"
+        media.write_bytes(b"fixture")
+        bridge._runtime.history = [
+            {
+                "id": "fixture",
+                "title": "Fixture",
+                "channel": "Channel",
+                "vodforge_output_dir": str(tmp_path),
+                "vodforge_output_path": str(media),
+                "vodforge_output_type": "MP4",
+            }
+        ]
+        bridge.historyChanged.emit()
+        for _ in range(5):
+            application.processEvents()
+        assert inside(visible_button("All 1 runs"))
+        assert bridge.openLibraryItem(0)
+        for _ in range(5):
+            application.processEvents()
+        assert inside(visible_button("Back to Watch"))
+        assert inside(visible_button("Play"))
     finally:
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)

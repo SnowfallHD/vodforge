@@ -35,7 +35,7 @@ Window {
             objectName: "watchMediaPlayer"
             property int generation: 0
             audioOutput: AudioOutput { volume: window.playerVolume }
-            videoOutput: videoSurface
+            videoOutput: playerScene.videoSurface
             function reportProgress() {
                 var status = "Ready"
                 if (error !== MediaPlayer.NoError) status = "Failed"
@@ -464,7 +464,8 @@ Window {
     }
 
     property int gutter: width < 960 ? 22 : 38
-    property int rowGap: 14
+    property bool compactHeight: height < 640
+    property int rowGap: compactHeight ? 8 : 14
     property string outputFormat: bridge.outputFormat
     property string selectedSavedOwner: ""
 
@@ -473,75 +474,91 @@ Window {
         anchors.margins: window.gutter
         spacing: window.rowGap
 
-        RowLayout {
+        Item {
+            id: focusHeader
             Layout.fillWidth: true
-            Layout.preferredHeight: 52
-            spacing: 10
-            RowLayout {
-                Layout.preferredWidth: window.width < 960 ? 150 : 196
-                spacing: 7
+            Layout.preferredHeight: stacked ? 100 : 52
+            readonly property bool compact: window.width < 960
+            readonly property int brandWidth: compact ? 150 : 196
+            readonly property int navButtonWidth: compact ? 93 : 108
+            readonly property int searchWidth: compact ? 150 : 220
+            readonly property int navWidth: navButtonWidth * 4 + 30
+            readonly property int utilityWidth: searchWidth + 64 + 46 + 20
+            readonly property bool stacked: brandWidth + navWidth + utilityWidth + 20 > width
+
+            Row {
+                id: brandRow
+                x: 0; y: 8; spacing: 7
                 Image {
                     source: assetUrl + "brand/vf-mark.png"
-                    Layout.preferredWidth: 32
-                    Layout.preferredHeight: 32
+                    width: 32; height: 32
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
                 Image {
                     source: assetUrl + "brand/vf-name.png"
-                    Layout.preferredWidth: window.width < 960 ? 107 : 145
-                    Layout.preferredHeight: 27
+                    width: focusHeader.compact ? 107 : 145
+                    height: 27
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
             }
-            Repeater {
-                model: ["Forge", "Library", "Watch", "Activity"]
+            Row {
+                id: navigationRow
+                x: focusHeader.stacked ? 0 : focusHeader.brandWidth + 10
+                y: focusHeader.stacked ? 56 : 6
+                spacing: 10
+                Repeater {
+                    model: ["Forge", "Library", "Watch", "Activity"]
+                    StoneButton {
+                        required property string modelData
+                        label: modelData
+                        selected: bridge.selection === modelData
+                        icon: "image://vodforge/icon/" + (
+                            modelData === "Forge" ? "download-20.png" :
+                            modelData === "Library" ? "folder-20.png" :
+                            modelData === "Watch" ? "play.png" : "activity-20.png")
+                        width: focusHeader.navButtonWidth
+                        height: 40
+                        onActivated: bridge.select(modelData)
+                    }
+                }
+            }
+            Row {
+                id: utilitiesRow
+                anchors.right: parent.right
+                y: 6
+                spacing: 10
+                StoneField {
+                    width: focusHeader.searchWidth
+                    height: 40
+                    focused: searchInput.activeFocus
+                    TextField {
+                        id: searchInput
+                        anchors.fill: parent
+                        anchors.leftMargin: 15
+                        anchors.rightMargin: 12
+                        placeholderText: "Search your library…"
+                        color: theme.text
+                        placeholderTextColor: theme.muted
+                        background: Item {}
+                        font.pixelSize: 15
+                        onTextChanged: bridge.setLibrarySearch(text)
+                        onAccepted: bridge.select("Library")
+                    }
+                }
                 StoneButton {
-                    required property string modelData
-                    label: modelData
-                    selected: bridge.selection === modelData
-                    icon: "image://vodforge/icon/" + (
-                        modelData === "Forge" ? "download-20.png" :
-                        modelData === "Library" ? "folder-20.png" :
-                        modelData === "Watch" ? "play.png" : "activity-20.png")
-                    Layout.preferredWidth: window.width < 960 ? 93 : 108
-                    Layout.preferredHeight: 40
-                    onActivated: bridge.select(modelData)
+                    label: "Help"
+                    accessibilityLabel: "Help"
+                    width: 64; height: 40
+                    onActivated: helpMenu.open()
                 }
-            }
-            Item { Layout.fillWidth: true }
-            StoneField {
-                Layout.preferredWidth: window.width < 960 ? 150 : 220
-                Layout.preferredHeight: 40
-                focused: searchInput.activeFocus
-                TextField {
-                    id: searchInput
-                    anchors.fill: parent
-                    anchors.leftMargin: 15
-                    anchors.rightMargin: 12
-                    placeholderText: "Search your library…"
-                    color: theme.text
-                    placeholderTextColor: theme.muted
-                    background: Item {}
-                    font.pixelSize: 15
-                    onTextChanged: bridge.setLibrarySearch(text)
-                    onAccepted: bridge.select("Library")
+                StoneButton {
+                    label: "⚙"
+                    accessibilityLabel: "Settings"
+                    width: 46; height: 40
+                    onActivated: settingsPopup.open()
                 }
-            }
-            StoneButton {
-                label: "Help"
-                accessibilityLabel: "Help"
-                Layout.preferredWidth: 64
-                Layout.preferredHeight: 40
-                onActivated: helpMenu.open()
-            }
-            StoneButton {
-                label: "⚙"
-                accessibilityLabel: "Settings"
-                Layout.preferredWidth: 46
-                Layout.preferredHeight: 40
-                onActivated: settingsPopup.open()
             }
         }
 
@@ -616,7 +633,7 @@ Window {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 48
+                Layout.preferredHeight: window.compactHeight ? 42 : 48
                 spacing: 12
                 StoneButton {
                     label: bridge.batchSummary === "No URL list loaded" ? "Load URL list" : "List loaded"
@@ -668,40 +685,40 @@ Window {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 128
-                Layout.topMargin: 16
-                spacing: 28
+                Layout.preferredHeight: window.compactHeight ? 70 : 128
+                Layout.topMargin: window.compactHeight ? 4 : 16
+                spacing: window.compactHeight ? 16 : 28
                 Image {
                     source: assetUrl + "brand/icon-180.png"
-                    Layout.preferredWidth: 68
-                    Layout.preferredHeight: 68
+                    Layout.preferredWidth: window.compactHeight ? 48 : 68
+                    Layout.preferredHeight: window.compactHeight ? 48 : 68
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
                 ColumnLayout {
-                    spacing: 7
+                    spacing: window.compactHeight ? 3 : 7
                     Text {
                         text: bridge.running ? "Download in progress" : "Ready for a new run"
                         color: theme.text
-                        font.pixelSize: 24
+                        font.pixelSize: window.compactHeight ? 21 : 24
                         font.bold: true
                     }
                     Text {
                         text: "Paste a video URL above, then press Return to begin."
                         color: theme.muted
-                        font.pixelSize: 15
+                        font.pixelSize: window.compactHeight ? 13 : 15
                     }
                     Text {
                         text: bridge.quality + "  ·  " + bridge.exportMode
                         color: theme.muted
-                        font.pixelSize: 15
+                        font.pixelSize: window.compactHeight ? 13 : 15
                     }
                 }
                 Item { Layout.fillWidth: true }
                 Text {
                     text: Math.round(bridge.progress) + "%"
                     color: theme.selection
-                    font.pixelSize: 34
+                    font.pixelSize: window.compactHeight ? 28 : 34
                 }
             }
 
@@ -713,8 +730,8 @@ Window {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 185
-                spacing: 24
+                Layout.preferredHeight: window.compactHeight ? 70 : 185
+                spacing: window.compactHeight ? 8 : 24
                 ColumnLayout {
                     id: forgeLivePane
                     Layout.fillWidth: true
@@ -766,11 +783,18 @@ Window {
                         }
                     }
                     RowLayout {
-                        visible: bridge.running
+                        visible: bridge.running && !window.compactHeight
                         spacing: 8
                         StoneButton { label: "Cancel"; Layout.preferredWidth: 82; Layout.preferredHeight: 36; onActivated: bridge.cancel() }
                         StoneButton { label: "Skip item"; Layout.preferredWidth: 105; Layout.preferredHeight: 36; onActivated: bridge.skipItem() }
                         StoneButton { label: "Skip source"; Layout.preferredWidth: 119; Layout.preferredHeight: 36; onActivated: bridge.skipSource() }
+                    }
+                    StoneButton {
+                        visible: bridge.running && window.compactHeight
+                        label: "Run actions"
+                        size: "inline"
+                        Layout.preferredWidth: 110
+                        onActivated: forgeRunDeck.openActiveActions()
                     }
                     StoneButton {
                         visible: bridge.batchSummary !== "No URL list loaded"
@@ -781,6 +805,7 @@ Window {
                     }
                 }
                 ColumnLayout {
+                    visible: !window.compactHeight
                     Layout.preferredWidth: Math.min(315, window.width * 0.28)
                     Layout.fillHeight: true
                     spacing: 11
@@ -812,10 +837,12 @@ Window {
             Item { Layout.fillHeight: true }
 
             RunDeck {
+                id: forgeRunDeck
                 objectName: "forgeRunDeck"
                 appBridge: bridge
+                compact: window.compactHeight
                 Layout.fillWidth: true
-                Layout.preferredHeight: 139
+                Layout.preferredHeight: window.compactHeight ? 115 : 139
                 onOpenSaved: function(owner) {
                     bridge.select("Library")
                     bridge.navigateLibrary("all")
@@ -849,128 +876,22 @@ Window {
             Layout.fillHeight: true
             appBridge: bridge
         }
-        Item {
+        PlayerScene {
+            id: playerScene
+            objectName: "watchPlayerScene"
             visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length > 0
             Layout.fillWidth: true
             Layout.fillHeight: true
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 12
-                RowLayout {
-                    Layout.fillWidth: true
-                    StoneButton {
-                        label: "Back to Watch"
-                        size: "inline"
-                        Layout.preferredWidth: 145
-                        onActivated: {
-                            if (window.mediaPlayer) window.mediaPlayer.stop()
-                            bridge.closePlayback()
-                        }
-                    }
-                    Text { text: "Watch"; color: theme.text; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true }
-                }
-                VideoOutput {
-                    id: videoSurface
-                    objectName: "watchVideoSurface"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    fillMode: VideoOutput.PreserveAspectFit
-                }
-                Text {
-                    text: window.mediaPlayer && window.mediaPlayer.errorString.length ? window.mediaPlayer.errorString :
-                          bridge.playbackUrl.toString().length ? "" : "Choose an item in Library to play."
-                    color: theme.muted
-                    font.pixelSize: 15
-                }
-                Item {
-                    id: heatmapTrack
-                    objectName: "watchHeatmap"
-                    visible: bridge.playbackHeatmap.length > 0 && window.mediaPlayer && window.mediaPlayer.duration > 0
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: visible ? 18 : 0
-                    clip: true
-                    Repeater {
-                        model: bridge.playbackHeatmap
-                        Rectangle {
-                            required property var modelData
-                            x: Math.max(0, Math.min(heatmapTrack.width,
-                                modelData.start_time * heatmapTrack.width * 1000 / Math.max(1, window.mediaPlayer ? window.mediaPlayer.duration : 0)))
-                            width: Math.max(1, (modelData.end_time - modelData.start_time) *
-                                heatmapTrack.width * 1000 / Math.max(1, window.mediaPlayer ? window.mediaPlayer.duration : 0))
-                            height: Math.max(2, 16 * modelData.value)
-                            y: heatmapTrack.height - height
-                            color: theme.accent
-                            opacity: 0.72
-                        }
-                    }
-                }
-                Slider {
-                    Accessible.name: "Playback position"
-                    Layout.fillWidth: true
-                    from: 0
-                    to: Math.max(1, window.mediaPlayer ? window.mediaPlayer.duration : 0)
-                    value: window.mediaPlayer ? window.mediaPlayer.position : 0
-                    onMoved: {
-                        bridge.manualPlaybackSeek(value / 1000)
-                    }
-                    background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                    handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    StoneButton {
-                        label: window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
-                        transientMaterial: false
-                        Layout.preferredWidth: 95
-                        Layout.preferredHeight: 40
-                        onActivated: {
-                            if (!window.mediaPlayer) return
-                            if (window.mediaPlayer.playbackState === MediaPlayer.PlayingState) window.mediaPlayer.pause()
-                            else window.mediaPlayer.play()
-                        }
-                    }
-                    Text {
-                        text: Math.floor((window.mediaPlayer ? window.mediaPlayer.position : 0) / 1000) + "s / " +
-                              Math.floor((window.mediaPlayer ? window.mediaPlayer.duration : 0) / 1000) + "s"
-                        color: theme.muted
-                        font.pixelSize: 14
-                    }
-                    Item { Layout.fillWidth: true }
-                    Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
-                    Slider {
-                        Accessible.name: "Volume"
-                        Layout.preferredWidth: 160
-                        from: 0; to: 1; value: window.playerVolume
-                        onMoved: window.playerVolume = value
-                        background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                        handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
-                    }
-                }
-                ScrollView {
-                    objectName: "watchChapters"
-                    visible: bridge.playbackChapters.length > 0
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: visible ? Math.min(145, 36 * bridge.playbackChapters.length) : 0
-                    clip: true
-                    Column {
-                        width: parent.width
-                        spacing: 3
-                        Repeater {
-                            model: bridge.playbackChapters
-                            StoneButton {
-                                required property var modelData
-                                required property int index
-                                width: parent.width
-                                height: 33
-                                label: Math.floor(modelData.start_time / 60) + ":" +
-                                    ("0" + Math.floor(modelData.start_time % 60)).slice(-2) +
-                                    "  " + (modelData.title || "Untitled chapter")
-                                transientMaterial: false
-                                onActivated: bridge.seekPlaybackChapter(index)
-                            }
-                        }
-                    }
-                }
+            appBridge: bridge
+            player: window.mediaPlayer
+            volume: window.playerVolume
+            onCloseRequested: {
+                if (window.mediaPlayer) window.mediaPlayer.stop()
+                bridge.closePlayback()
+            }
+            onVolumeRequested: function(value) { window.playerVolume = value }
+            onEditDetailsRequested: function(owner) {
+                if (bridge.openAnnotationOwner(owner)) annotationPopup.open()
             }
         }
         ActivityScene {

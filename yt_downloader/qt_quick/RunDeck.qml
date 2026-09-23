@@ -5,9 +5,19 @@ import QtQuick.Layouts
 Item {
     id: deck
     property var appBridge
+    property bool compact: false
     readonly property var projection: appBridge.runDeck
     readonly property var visibleRecords: projection.visible || []
     signal openSaved(string owner)
+    function openActiveActions() {
+        for (let record of projection.records || []) {
+            if (record.kind === "active") {
+                selectedRecord = record
+                actionsPopup.open()
+                return
+            }
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -25,7 +35,7 @@ Item {
         }
         StoneField {
             Layout.fillWidth: true
-            Layout.preferredHeight: 88
+            Layout.preferredHeight: deck.compact ? 64 : 88
             RowLayout {
                 anchors.fill: parent
                 anchors.margins: 9
@@ -42,7 +52,7 @@ Item {
                     StoneField {
                         required property var modelData
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 68
+                        Layout.preferredHeight: deck.compact ? 50 : 68
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 6
@@ -50,8 +60,8 @@ Item {
                             Image {
                                 source: modelData.artwork
                                 visible: source.toString().length > 0
-                                Layout.preferredWidth: visible ? 61 : 0
-                                Layout.preferredHeight: 48
+                                Layout.preferredWidth: visible ? (deck.compact ? 48 : 61) : 0
+                                Layout.preferredHeight: deck.compact ? 36 : 48
                                 fillMode: Image.PreserveAspectCrop
                                 smooth: true
                             }

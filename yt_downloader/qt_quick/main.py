@@ -105,6 +105,7 @@ from yt_downloader.platform_services import diagnostics_dir
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
+from yt_downloader.player_related import player_related_plan
 from yt_downloader.product_telemetry import product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork
@@ -132,7 +133,7 @@ from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipt
 from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
 from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
-from yt_downloader.watch_queue import QueueToken, WatchQueueOwner
+from yt_downloader.watch_queue import QueueToken, WatchQueueOwner, queue_media_key
 from yt_downloader.whats_new import (
     DID_YOU_KNOW_HIGHLIGHTS,
     HIGHLIGHTS,
@@ -216,6 +217,7 @@ class Bridge(QObject):
     outputFormatChanged = Signal()
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
+    playerSceneChanged = Signal()
     playbackRequested = Signal(int)
     playbackSeekRequested = Signal(float)
     librarySearchChanged = Signal()
@@ -244,6 +246,8 @@ class Bridge(QObject):
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self.historyChanged.connect(self.playerSceneChanged.emit)
+        self.historyChanged.connect(self.runDeckChanged.emit)
         self._support = QtSupportSession(self._runtime.history_path.parent)
         self._latest_failure: FailureContext | None = None
         self._engagement = EngagementState(
@@ -305,6 +309,7 @@ class Bridge(QObject):
         self._playback_progress.load()
         self._playback_binding: PlaybackProgressBinding | None = None
         self._playback_path: Path | None = None
+        self._playback_record: dict[str, Any] | None = None
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status = "Ready"
@@ -422,6 +427,7 @@ class Bridge(QObject):
         self._cookie_browser = ""
         self._cookie_file: Path | None = None
         self._event_log = event_log
+        self._closed = False
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pump)
         self._timer.start(50)
@@ -698,6 +704,97 @@ class Bridge(QObject):
     @Property("QVariantList", notify=playbackUrlChanged)
     def playbackHeatmap(self) -> list[dict[str, float]]:
         return list(self._playback_heatmap)
+
+    @Property("QVariantMap", notify=playerSceneChanged)
+    def playerScene(self) -> dict[str, Any]:
+        snapshot = self._playback_record
+        if snapshot is None:
+            return {}
+        records = self._projected_library()
+        owner = history_archive_owner(snapshot)
+        current = next(
+            (
+                row
+                for row in records
+                if str(row.get(PROJECTION_OWNER_KEY) or history_archive_owner(row))
+                == owner
+            ),
+            snapshot,
+        )
+        plan = player_related_plan(records, current, self._watch_queue.remaining_keys)
+
+        def cards(videos: tuple[Any, ...]) -> list[dict[str, Any]]:
+            return [
+                {
+                    "title": video.title,
+                    "owner": history_archive_owner(records[video.indices[0]]),
+                    "creator": str(
+                        records[video.indices[0]].get("channel")
+                        or records[video.indices[0]].get("uploader")
+                        or "Saved media"
+                    ),
+                    "type": str(
+                        records[video.indices[0]].get("vodforge_output_type") or ""
+                    ),
+                    "artwork": self._artwork.request(
+                        records[video.indices[0]], (244, 138), "media"
+                    ),
+                }
+                for video in videos
+            ]
+
+        source, output = library_detail_facts(current)
+        return {
+            "owner": history_archive_owner(current),
+            "title": str(current.get("title") or "Saved media"),
+            "creator": str(
+                current.get("channel") or current.get("uploader") or "Unknown creator"
+            ),
+            "category": str(current.get("vodforge_user_category") or ""),
+            "description": str(
+                current.get("vodforge_user_description", current.get("description"))
+                or ""
+            ),
+            "note": str(current.get("vodforge_user_note") or ""),
+            "tags": [str(tag) for tag in current.get("vodforge_user_tags") or ()],
+            "source": [{"label": label, "value": value} for label, value, _ in source],
+            "output": [{"label": label, "value": value} for label, value, _ in output],
+            "upNext": cards(plan.up_next),
+            "recent": cards(plan.recent),
+            "queued": self._watch_queue.remaining_keys is not None,
+        }
+
+    @Slot(str, result=bool)
+    def playPlayerRelated(self, owner: str) -> bool:
+        scene = self.playerScene
+        if owner == scene.get("owner") or owner not in {
+            row["owner"] for row in [*scene.get("upNext", []), *scene.get("recent", [])]
+        }:
+            return False
+        item = self._saved_item_for_owner(owner)
+        if item is None:
+            return False
+        key = queue_media_key(item)
+        opened = (
+            self._watch_queue.jump(key)
+            if key in (self._watch_queue.remaining_keys or ())
+            else self.openLibraryItem(self._runtime.history.index(item))
+        )
+        if opened:
+            self._record_update_feature("player", "related_selected")
+        return opened
+
+    @Slot(str, result=bool)
+    def detailsPlayerRelated(self, owner: str) -> bool:
+        scene = self.playerScene
+        if owner not in {
+            row["owner"] for row in [*scene.get("upNext", []), *scene.get("recent", [])]
+        }:
+            return False
+        opened = self.openWatchDetails(owner)
+        if opened:
+            self._record_update_feature("player", "related_details")
+        return opened
 
     @Property("QVariantList", notify=historyChanged)
     def history(self) -> list[dict[str, Any]]:
@@ -1931,6 +2028,7 @@ class Bridge(QObject):
         if self._playback_binding is not None:
             self._playback_binding.close()
         self._playback_path = path
+        self._playback_record = dict(self._runtime.history[index])
         self._playback_position = 0.0
         self._playback_duration = 0.0
         self._playback_status = "Ready"
@@ -1955,6 +2053,7 @@ class Bridge(QObject):
         if queue_token is not None:
             self._watch_queue.attach(self, self._runtime.history[index], queue_token)
         self.playbackUrlChanged.emit()
+        self.playerSceneChanged.emit()
         self.select("Watch")
         self.playbackRequested.emit(self._playback_generation)
         return True
@@ -1981,8 +2080,10 @@ class Bridge(QObject):
             self._playback_binding.close()
             self._playback_binding = None
         self._playback_path = None
+        self._playback_record = None
         self._playback_url = QUrl()
         self.playbackUrlChanged.emit()
+        self.playerSceneChanged.emit()
         self.historyChanged.emit()
 
     @Slot(str)
@@ -2254,6 +2355,8 @@ class Bridge(QObject):
         return True
 
     def _pump(self) -> None:
+        if self._closed:
+            return
         if self._support.poll():
             self.supportChanged.emit()
         storage_snapshot = self._storage.poll()
@@ -2445,6 +2548,13 @@ class Bridge(QObject):
             self.localChanged.emit()
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._timer.stop()
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self._save_preferences()
         self._watch_queue.cancel()
         if self._import_pending:
             operation(
