@@ -356,12 +356,15 @@ Item {
                 Flow {
                     id: mediaFlow
                     width: parent.width
-                    spacing: 12
+                    spacing: 14
+                    readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + 14) / 200)))
+                    readonly property real cardWidth: (width - 14 * (columns - 1)) / columns
                     Repeater {
-                        model: scene.media
+                        objectName: "libraryMediaRepeater"
+                        model: scene.route === "home" ? scene.media.slice(0, mediaFlow.columns) : scene.media
                         StoneField {
                             required property var modelData
-                            width: Math.max(155, (mediaFlow.width - 36) / 4)
+                            width: mediaFlow.cardWidth
                             height: width * 9 / 16 + 170
                             interactive: true
                             accessibilityLabel: "Details for " + modelData.title

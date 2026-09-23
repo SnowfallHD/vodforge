@@ -884,3 +884,39 @@ def test_qt_multi_file_action_requires_all_current_owners_and_no_active_playback
         assert bridge._files.phase == "checking"
     finally:
         bridge.close()
+
+
+def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, f"Item {index}", "MP4") for index in range(9)
+    ]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        app.processEvents()
+        repeater = window.findChild(QObject, "libraryMediaRepeater")
+        assert repeater.property("count") == 3
+        window.setWidth(820)
+        app.processEvents()
+        assert repeater.property("count") == 2
+        window.setWidth(1400)
+        app.processEvents()
+        assert repeater.property("count") == 5
+        assert len(bridge.libraryScene["media"]) == 5
+        bridge.navigateLibrary("all")
+        app.processEvents()
+        assert repeater.property("count") == 9
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()

@@ -180,6 +180,10 @@ def library_scene(
         ]
     if sort == "title":
         media.sort(key=lambda pair: str(pair[1].get("title") or "").casefold())
+    if route == "home":
+        # The home scene is one recent row; avoid acquiring artwork for rows
+        # that cannot appear there. QML applies the current column count.
+        media = media[:5]
     return {
         "route": route,
         "counts": counts,
