@@ -14,6 +14,8 @@ from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
+from yt_downloader.support_diagnostics import FailureContext
+from yt_downloader.whats_new import NativePreview
 
 
 def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
@@ -373,4 +375,69 @@ def test_qt_player_replaces_provider_and_tags_each_open(tmp_path, monkeypatch):
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_help_form_exposes_only_explicit_recent_failure_context(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._latest_failure = FailureContext(
+            "Bounded recent failure", "https://www.youtube.com/watch?v=8mv2Gonsdog"
+        )
+        assert bridge.openSupport("feedback")
+        assert bridge.supportContext["diagnostics"] == "Bounded recent failure"
+        assert bridge.supportContext["videoUrl"].startswith("https://")
+        assert not bridge.submitSupport({"reason": "Other", "message": ""})
+        assert bridge.supportStatus == "Please enter a message."
+        assert bridge.closeSupport()
+        assert bridge.openSupport("review")
+        assert bridge.supportContext == {"diagnostics": "", "videoUrl": ""}
+    finally:
+        bridge.close()
+
+
+def test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    source = Path(qt_main.__file__).with_name("FeaturePreview.qml").read_text()
+    assert all(f'"{preview.value}"' in source for preview in NativePreview)
+    bridge = qt_main.Bridge(None)
+    try:
+        assert bridge.openWelcomeTour()
+        assert bridge.editorialHeading == "Welcome to VODForge"
+        assert bridge.editorialFinishLabel == "Start using VODForge"
+        assert len(bridge.editorialSlides) == 6
+        assert bridge.editorialSlides[0]["preview"] == NativePreview.ACTIVITY.value
+        bridge.dismissEditorial(False)
+        assert bridge.editorialSlides == []
+
+        class Settled:
+            welcome_pending = False
+            rating_pending = False
+
+        bridge._engagement = Settled()
+        bridge._settings["whats_new_seen"] = ""
+        monkeypatch.setattr(qt_main, "SHOWCASE_MODE", "did-you-know")
+        bridge.checkEditorial(True)
+        assert bridge.editorialHeading == "Did you know?"
+        assert bridge.editorialFinishLabel == "Try it"
+        assert (
+            bridge.editorialSlides[0]["preview"]
+            == NativePreview.YOUTUBE_ACCESS_EXPANDED.value
+        )
+        bridge.dismissEditorial(True)
+        assert bridge._settings["whats_new_seen"] == qt_main.SHOWCASE_ID
+    finally:
         bridge.close()

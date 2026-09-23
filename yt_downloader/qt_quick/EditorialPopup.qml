@@ -1,0 +1,97 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Popup {
+    id: editorial
+    objectName: "editorialPopup"
+    property var slides: []
+    property string heading: "What’s new"
+    property string finishLabel: "Done"
+    property int index: 0
+    property bool completed: false
+    readonly property var current: slides.length ? slides[Math.max(0, Math.min(index, slides.length - 1))] : ({})
+    signal acknowledged(bool tryIt)
+    function finish(tryIt) {
+        editorial.completed = true
+        editorial.acknowledged(tryIt)
+        editorial.close()
+    }
+    onOpened: { index = 0; completed = false }
+    onClosed: { if (!completed) editorial.acknowledged(false) }
+    width: Math.min(590, parent.width - 40)
+    height: Math.min(560, parent.height - 40)
+    x: Math.max(0, (parent.width - width) / 2)
+    y: Math.max(0, (parent.height - height) / 2)
+    padding: 20
+    modal: true
+    closePolicy: Popup.CloseOnEscape
+    background: StoneField {}
+
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 11
+        RowLayout {
+            Layout.fillWidth: true
+            Text { text: editorial.heading; color: theme.accent; font.pixelSize: 15; font.bold: true; Layout.fillWidth: true }
+            StoneButton {
+                label: "×"; accessibilityLabel: "Close tour"
+                size: "inline"; Layout.preferredWidth: 34
+                onActivated: editorial.finish(false)
+            }
+        }
+        Text {
+            text: editorial.current.title || ""
+            color: theme.text; font.pixelSize: 24; font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+        }
+        Text {
+            text: editorial.current.description || ""
+            color: theme.muted; font.pixelSize: 15
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+        }
+        FeaturePreview {
+            previewKey: editorial.current.preview || ""
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.maximumWidth: 470
+            Layout.alignment: Qt.AlignHCenter
+        }
+        Text {
+            visible: editorial.slides.length > 1
+            text: (editorial.index + 1) + " of " + editorial.slides.length
+            color: theme.muted; font.pixelSize: 13
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            StoneButton {
+                visible: editorial.slides.length > 1 && editorial.index > 0
+                label: "Previous"; Layout.preferredWidth: 105
+                onActivated: editorial.index--
+            }
+            Item { Layout.fillWidth: true }
+            StoneButton {
+                visible: editorial.slides.length > 1 && editorial.index < editorial.slides.length - 1
+                label: "Next"; Layout.preferredWidth: 100
+                onActivated: editorial.index++
+            }
+            StoneButton {
+                visible: editorial.index === editorial.slides.length - 1
+                label: editorial.finishLabel
+                emphasized: true
+                Layout.preferredWidth: Math.max(110, implicitWidth)
+                onActivated: editorial.finish(editorial.finishLabel === "Try it")
+            }
+            Item { Layout.fillWidth: true }
+            StoneButton {
+                visible: editorial.finishLabel === "Start using VODForge" && editorial.index < editorial.slides.length - 1
+                label: "Skip tour"; size: "inline"; Layout.preferredWidth: 95
+                onActivated: editorial.finish(false)
+            }
+        }
+    }
+}

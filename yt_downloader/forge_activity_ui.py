@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import re
 import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
 from .activity_ui import ActivityLogText
-from .library_state import library_phase_from_status
+from .forge_activity import ForgeActivityProjection, friendly_phase
 from .ui_layout import window_logical_metrics
 from .ui_theme import THEME
 from .ui_widgets import ToolTip, bind_smooth_vertical_wheel
+
+__all__ = ["ActivityModeSlider", "ForgeActivityPanel", "friendly_phase"]
 
 
 class ActivityModeSlider(tk.Canvas):
@@ -107,35 +108,6 @@ class ActivityModeSlider(tk.Canvas):
         self.scale("all", 0, 0, self._metrics.scale, self._metrics.scale)
 
 
-def friendly_phase(status: str) -> str | None:
-    """Use the existing worker-status contract, never parse arbitrary log prose."""
-    terminal = {
-        "Completed": "[success] Download complete",
-        "Failed": "ERROR: Download failed. Open Technical details for the cause.",
-        "Partial": "WARNING: Some items could not finish. See Technical details.",
-        "Stopped": "Download stopped",
-        "Skipped": "Download skipped",
-    }
-    if status in terminal:
-        return terminal[status]
-    # yt-dlp emits this after EACH audio/video stream, before conversion.
-    # It is not the application's finalizing stage.
-    if status == "Download finished; finalizing output…":
-        return None
-    phase = library_phase_from_status(status)
-    label = {
-        "Preparing": "Getting video information",
-        "Downloading": "Downloading media",
-        "Transcoding": "Converting media",
-        "Validating": "Checking the output",
-        "Finalizing": "Finishing the download",
-    }.get(phase or "")
-    if label is None:
-        return None
-    item = re.match(r"(?:Video|Batch URL) \d+ of (\d+)", status)
-    return f"{item[0]} · {label}" if item and int(item[1]) > 1 else label
-
-
 class ForgeActivityPanel(ttk.Frame):
     """Switch one full-height viewport between friendly and technical activity."""
 
@@ -143,7 +115,7 @@ class ForgeActivityPanel(ttk.Frame):
         super().__init__(parent, style="FocusShell.TFrame")
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
-        self._runs: dict[str, list[str]] = {}
+        self._projection = ForgeActivityProjection()
         self._selected = ""
         self._raw = ""
         self.expanded = False
@@ -194,38 +166,17 @@ class ForgeActivityPanel(ttk.Frame):
         self.toggle.apply_theme()
 
     def observe(self, run_id: str, status: str, message: str = "") -> None:
-        label = friendly_phase(status)
-        if not run_id or label is None:
-            return
-        if status in {"Failed", "Partial"} and message:
-            label = ("ERROR: " if status == "Failed" else "WARNING: ") + message
-        rows = self._runs.setdefault(run_id, [])
-        if label not in rows and not (rows and rows[-1].endswith(" · " + label)):
-            rows.append(label)
-            del rows[:-64]
-        # This is a bounded session projection, not a second run-history store.
-        if len(self._runs) > 128:
-            del self._runs[next(iter(self._runs))]
-        if self._selected == run_id:
+        changed = self._projection.observe(run_id, status, message)
+        if changed and self._selected == run_id:
             self.show(run_id, self._raw)
 
     def show(self, run_id: str, raw: str) -> None:
         self._selected, self._raw = run_id, raw
-        rows = list(self._runs.get(run_id, ()))
-        if not rows:
-            rows = [
-                "Open Technical details for this run’s saved activity."
-                if run_id
-                else "Your next run’s progress will appear here."
-            ]
-        if re.search(r"(?im)^(?:\d{2}:\d{2}:\d{2}\s+)?(?:WARNING:|\[warning\])", raw):
-            rows.append("WARNING: A warning was reported. See Technical details.")
-        if re.search(r"(?im)^(?:\d{2}:\d{2}:\d{2}\s+)?(?:ERROR:|\[error\])", raw):
-            rows.append("ERROR: An error was reported. See Technical details.")
+        text = self._projection.friendly(run_id, raw)
         first, last = self.friendly.yview()
         locked = getattr(self.friendly, "_vodforge_user_scroll_locked", False)
-        self.friendly.configure(height=min(8, max(2, len(rows))))
-        if self.friendly.request("\n".join(rows)):
+        self.friendly.configure(height=min(8, max(2, len(text.splitlines()))))
+        if self.friendly.request(text):
             if locked or last < 0.995:
                 self.friendly.yview_moveto(first)
             else:

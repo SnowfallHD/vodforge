@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import platform
 import queue
 import threading
 import tkinter as tk
@@ -15,6 +14,7 @@ from typing import Any
 
 from .modal_backdrop import ModalBackdrop
 from .support_diagnostics import FailureContext
+from .support_payload import REASONS, feedback_payload, review_payload
 from .support_transport import SubmissionError, SupportTransport, VerificationRequired
 from .ui_button_contract import ProductButton
 from .ui_chrome import RoundedFieldBorder
@@ -27,15 +27,6 @@ from .ui_widgets import (
     ProductEntry,
     SleekScrollbar,
     bind_smooth_vertical_wheel,
-)
-from .version import __version__
-
-REASONS = (
-    "Download problem",
-    "Playback problem",
-    "Interface problem",
-    "Suggestion",
-    "Other",
 )
 
 
@@ -331,44 +322,20 @@ class SupportPanel:
         popup.grab_set()
 
     def payload(self) -> dict[str, Any]:
-        common = {"app_version": __version__, "platform": platform.system()}
         message = self.message.get("1.0", "end-1c").strip()
         if self.kind == "feedback":
-            if self.reason.get() not in REASONS:
-                raise ValueError("Please select a reason.")
-            email = self.email.get().strip() if self.reply.get() else ""
-            if not message:
-                raise ValueError("Please enter a message.")
-            if len(email) > 254 or (
-                email and ("@" not in email or any(c.isspace() for c in email))
-            ):
-                raise ValueError("Please check your reply email.")
-            return {
-                **common,
-                "reason": self.reason.get(),
-                "message": message,
-                "reply_email": email,
-                "include_diagnostics": self.diagnostics.get(),
-                "diagnostics": self.context.diagnostics
-                if self.context and self.diagnostics.get()
-                else "",
-                "include_video_url": self.video_url.get(),
-                "video_url": self.context.video_url
-                if self.context and self.video_url.get()
-                else "",
-            }
-        if not 1 <= self.stars.get() <= 5:
-            raise ValueError("Choose a rating from 1 to 5 stars.")
-        if len(self.name.get()) > 80:
-            raise ValueError("Please keep your display name to 80 characters.")
-        return {
-            **common,
-            "stars": self.stars.get(),
-            "comment": message,
-            "display_name": self.name.get().strip() or "Anonymous",
-            # Delivery occurs only after the explicitly labelled public-review action.
-            "publication_consent": True,
-        }
+            return feedback_payload(
+                reason=self.reason.get(),
+                message=message,
+                reply=self.reply.get(),
+                email=self.email.get(),
+                include_diagnostics=self.diagnostics.get(),
+                include_video_url=self.video_url.get(),
+                context=self.context,
+            )
+        return review_payload(
+            stars=self.stars.get(), comment=message, display_name=self.name.get()
+        )
 
     def _submit(self) -> None:
         if self.busy or self.sent:

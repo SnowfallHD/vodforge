@@ -65,6 +65,18 @@ Window {
     Connections {
         target: bridge
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
+        function onSupportRequested() {
+            supportPopup.reason = "Select one…"
+            supportPopup.stars = 0
+            supportPopup.reply = false
+            supportPopup.includeDiagnostics = false
+            supportPopup.includeVideoUrl = false
+            supportMessage.text = ""
+            supportEmail.text = ""
+            supportName.text = ""
+            supportPopup.open()
+        }
+        function onEditorialRequested() { editorialPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
         function onPlaybackRequested(generation) {
@@ -76,6 +88,285 @@ Window {
         }
         function onPlaybackSeekRequested(position) {
             if (window.mediaPlayer) mediaPlayer.setPosition(position * 1000)
+        }
+    }
+    EditorialPopup {
+        id: editorialPopup
+        parent: window.contentItem
+        slides: bridge.editorialSlides
+        heading: bridge.editorialHeading
+        finishLabel: bridge.editorialFinishLabel
+        onAcknowledged: function(tryIt) {
+            bridge.dismissEditorial(tryIt)
+            if (tryIt) settingsPopup.open()
+        }
+    }
+    Timer {
+        interval: 700
+        running: true
+        repeat: true
+        onTriggered: bridge.checkEditorial(
+            window.active && !analyticsPopup.visible && !editorialPopup.visible &&
+            !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
+            !supportDiagnostics.visible && !libraryItemPopup.visible &&
+            !fileActionPopup.visible && !libraryRemovalPopup.visible &&
+            !collectionPopup.visible && !categoryPopup.visible &&
+            !annotationPopup.visible && !manualOptionsPopup.visible &&
+            !mp3OptionsPopup.visible && !settingsPopup.visible &&
+            !updatePopup.visible && !accessPopup.visible &&
+            !localConversionPopup.visible && !localProfilePopup.visible &&
+            !formatMenu.visible && !optionsMenu.visible)
+    }
+    Popup {
+        id: helpMenu
+        objectName: "helpMenu"
+        x: Math.max(0, window.width - width - window.gutter)
+        y: window.gutter + 55
+        width: 235
+        height: 152
+        padding: 3
+        background: StoneField {}
+        Column {
+            anchors.fill: parent
+            spacing: 3
+            StoneButton {
+                width: parent.width; height: 46
+                label: "Help & feedback"
+                onActivated: { helpMenu.close(); bridge.openSupport("feedback") }
+            }
+            StoneButton {
+                width: parent.width; height: 46
+                label: "Write a review"
+                onActivated: { helpMenu.close(); bridge.openSupport("review") }
+            }
+            StoneButton {
+                width: parent.width; height: 46
+                label: "Welcome tour"
+                onActivated: { helpMenu.close(); bridge.openWelcomeTour() }
+            }
+        }
+    }
+    Popup {
+        id: supportPopup
+        objectName: "supportPopup"
+        property string reason: "Select one…"
+        property int stars: 0
+        property bool reply: false
+        property bool includeDiagnostics: false
+        property bool includeVideoUrl: false
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(580, window.width - 18)
+        height: Math.min(bridge.supportKind === "feedback" && reply ? 580 : bridge.supportKind === "feedback" ? 510 : 480, window.height - 18)
+        padding: 18
+        modal: true
+        closePolicy: bridge.supportBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        background: StoneField {}
+        onClosed: bridge.closeSupport()
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 9
+            Text {
+                text: bridge.supportKind === "feedback" ? "Help & feedback" : "How’s VODForge working for you?"
+                color: theme.text; font.pixelSize: 24; font.bold: true
+                Layout.fillWidth: true; wrapMode: Text.WordWrap
+            }
+            Text {
+                text: bridge.supportKind === "feedback" ?
+                      "Send a focused report directly to VODForge. This does not enable analytics." :
+                      "Your honest rating helps us improve VODForge."
+                color: theme.muted; font.pixelSize: 14
+                Layout.fillWidth: true; wrapMode: Text.WordWrap
+            }
+            ScrollView {
+                id: supportBody
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ColumnLayout {
+                    width: supportBody.availableWidth
+                    spacing: 8
+                    StoneButton {
+                        visible: bridge.supportKind === "feedback"
+                        label: supportPopup.reason + "  ▾"
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        onActivated: supportReasonMenu.open()
+                    }
+                    RowLayout {
+                        visible: bridge.supportKind === "review"
+                        Layout.fillWidth: true
+                        Repeater {
+                            model: 5
+                            StoneButton {
+                                required property int index
+                                label: index < supportPopup.stars ? "★" : "☆"
+                                accessibilityLabel: (index + 1) + " stars"
+                                selected: index < supportPopup.stars
+                                Layout.preferredWidth: 48; Layout.preferredHeight: 42
+                                enabled: !bridge.supportBusy && !bridge.supportSent
+                                onActivated: supportPopup.stars = index + 1
+                            }
+                        }
+                    }
+                    Text {
+                        text: bridge.supportKind === "feedback" ? "Message" : "Comment (optional)"
+                        color: theme.text; font.pixelSize: 14
+                    }
+                    TextArea {
+                        id: supportMessage
+                        objectName: "supportMessage"
+                        Layout.fillWidth: true; Layout.preferredHeight: 112
+                        color: theme.text; font.pixelSize: 15
+                        wrapMode: TextEdit.Wrap
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        background: StoneField {}
+                    }
+                    Text {
+                        text: supportMessage.text.length + " / " + (bridge.supportKind === "feedback" ? 2000 : 1000)
+                        color: theme.muted; font.pixelSize: 12
+                        Layout.alignment: Qt.AlignRight
+                    }
+                    StoneButton {
+                        visible: bridge.supportKind === "feedback"
+                        label: "I’d like a reply"
+                        selected: supportPopup.reply
+                        Layout.preferredWidth: 170; Layout.preferredHeight: 38
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        onActivated: supportPopup.reply = !supportPopup.reply
+                    }
+                    TextField {
+                        id: supportEmail
+                        visible: bridge.supportKind === "feedback" && supportPopup.reply
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        placeholderText: "Reply email (optional)"
+                        placeholderTextColor: theme.muted; color: theme.text
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        background: StoneField {}
+                    }
+                    Text {
+                        visible: bridge.supportKind === "review"
+                        text: "Display name (optional; otherwise Anonymous)"
+                        color: theme.muted; font.pixelSize: 13
+                    }
+                    TextField {
+                        id: supportName
+                        visible: bridge.supportKind === "review"
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        placeholderText: "Display name"
+                        placeholderTextColor: theme.muted; color: theme.text
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        background: StoneField {}
+                    }
+                    Text {
+                        visible: bridge.supportKind === "review"
+                        text: "Your rating, comment, and display name may appear publicly on the VODForge website. Leave your name blank to appear as Anonymous."
+                        color: theme.muted; font.pixelSize: 13
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    }
+                    StoneButton {
+                        visible: bridge.supportKind === "feedback" && !!bridge.supportContext.diagnostics
+                        label: "Include recent diagnostics"
+                        selected: supportPopup.includeDiagnostics
+                        Layout.preferredWidth: 225; Layout.preferredHeight: 38
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        onActivated: supportPopup.includeDiagnostics = !supportPopup.includeDiagnostics
+                    }
+                    StoneButton {
+                        visible: bridge.supportKind === "feedback" && !!bridge.supportContext.diagnostics
+                        label: "Review diagnostics"
+                        size: "inline"
+                        Layout.preferredWidth: 165
+                        onActivated: supportDiagnostics.open()
+                    }
+                    StoneButton {
+                        visible: bridge.supportKind === "feedback" && !!bridge.supportContext.videoUrl
+                        label: "Include the public video URL"
+                        selected: supportPopup.includeVideoUrl
+                        Layout.preferredWidth: 245; Layout.preferredHeight: 38
+                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        onActivated: supportPopup.includeVideoUrl = !supportPopup.includeVideoUrl
+                    }
+                }
+            }
+            Text {
+                text: bridge.supportStatus
+                color: theme.muted; font.pixelSize: 13
+                Layout.fillWidth: true; wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                StoneButton {
+                    label: bridge.supportSent ? "Done" : bridge.supportKind === "feedback" ? "Cancel" : "No thanks"
+                    Layout.preferredWidth: 98; Layout.preferredHeight: 40
+                    enabled: !bridge.supportBusy
+                    onActivated: supportPopup.close()
+                }
+                Item { Layout.fillWidth: true }
+                StoneButton {
+                    visible: !bridge.supportSent
+                    label: bridge.supportKind === "feedback" ? "Send feedback" : "Submit public review"
+                    emphasized: true
+                    Layout.preferredWidth: bridge.supportKind === "feedback" ? 150 : 195
+                    Layout.preferredHeight: 40
+                    enabled: !bridge.supportBusy
+                    onActivated: bridge.submitSupport({
+                        reason: supportPopup.reason,
+                        stars: supportPopup.stars,
+                        message: supportMessage.text,
+                        reply: supportPopup.reply,
+                        email: supportEmail.text,
+                        diagnostics: supportPopup.includeDiagnostics,
+                        videoUrl: supportPopup.includeVideoUrl,
+                        name: supportName.text
+                    })
+                }
+            }
+        }
+    }
+    Popup {
+        id: supportReasonMenu
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: 290; height: 238; padding: 3
+        modal: true
+        background: StoneField {}
+        Column {
+            anchors.fill: parent; spacing: 2
+            Repeater {
+                model: ["Download problem", "Playback problem", "Interface problem", "Suggestion", "Other"]
+                StoneButton {
+                    required property string modelData
+                    width: parent.width; height: 44
+                    label: modelData
+                    selected: modelData === supportPopup.reason
+                    onActivated: { supportPopup.reason = modelData; supportReasonMenu.close() }
+                }
+            }
+        }
+    }
+    Popup {
+        id: supportDiagnostics
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(580, window.width - 24)
+        height: Math.min(430, window.height - 24)
+        padding: 16; modal: true
+        background: StoneField {}
+        ColumnLayout {
+            anchors.fill: parent
+            Text { text: "Review diagnostics"; color: theme.text; font.pixelSize: 22; font.bold: true }
+            ScrollView {
+                id: diagnosticsBody
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                Text {
+                    text: bridge.supportContext.diagnostics + (bridge.supportContext.videoUrl ? "\n\nOptional video URL: " + bridge.supportContext.videoUrl : "")
+                    color: theme.text; font.pixelSize: 14
+                    width: diagnosticsBody.availableWidth; wrapMode: Text.WrapAnywhere
+                }
+            }
+            StoneButton { label: "Done"; Layout.alignment: Qt.AlignRight; Layout.preferredWidth: 82; onActivated: supportDiagnostics.close() }
         }
     }
     Popup {
@@ -237,6 +528,13 @@ Window {
                     onTextChanged: bridge.setLibrarySearch(text)
                     onAccepted: bridge.select("Library")
                 }
+            }
+            StoneButton {
+                label: "Help"
+                accessibilityLabel: "Help"
+                Layout.preferredWidth: 64
+                Layout.preferredHeight: 40
+                onActivated: helpMenu.open()
             }
             StoneButton {
                 label: "⚙"
@@ -418,10 +716,25 @@ Window {
                 Layout.preferredHeight: 185
                 spacing: 24
                 ColumnLayout {
+                    id: forgeLivePane
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: 18
-                    Text { text: bridge.status; color: theme.muted; font.pixelSize: 15 }
+                    spacing: 7
+                    property bool technical: false
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text { text: "LIVE ACTIVITY"; color: theme.muted; font.pixelSize: 12; font.bold: true; Layout.fillWidth: true }
+                        StoneButton {
+                            label: forgeLivePane.technical ? "Friendly" : "Technical details"
+                            accessibilityLabel: forgeLivePane.technical ? "Show friendly progress" : "Show technical details"
+                            size: "inline"
+                            Layout.preferredWidth: forgeLivePane.technical ? 90 : 136
+                            onActivated: {
+                                forgeLivePane.technical = !forgeLivePane.technical
+                                if (forgeLivePane.technical) bridge.openTechnicalDetails()
+                            }
+                        }
+                    }
                     Text {
                         visible: bridge.batchSummary !== "No URL list loaded"
                         text: bridge.batchSummary
@@ -430,10 +743,27 @@ Window {
                         elide: Text.ElideMiddle
                         Layout.fillWidth: true
                     }
-                    Text {
-                        text: bridge.running ? "◌   Processing your media…" : "◌   Your next run’s progress will appear here."
-                        color: theme.muted
-                        font.pixelSize: 17
+                    ScrollView {
+                        id: forgeActivityViewport
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                        TextArea {
+                            objectName: "forgeActivityText"
+                            readOnly: true
+                            selectByMouse: true
+                            text: forgeLivePane.technical ? bridge.forgeActivity.technical : bridge.forgeActivity.friendly
+                            color: theme.muted
+                            font.pixelSize: 14
+                            font.family: forgeLivePane.technical ? monoFontFamily : buttonFontFamily
+                            wrapMode: TextArea.Wrap
+                            background: Item {}
+                            leftPadding: 0
+                            rightPadding: 8
+                            topPadding: 0
+                            bottomPadding: 0
+                        }
                     }
                     RowLayout {
                         visible: bridge.running
@@ -449,7 +779,6 @@ Window {
                         Layout.preferredHeight: 34
                         onActivated: bridge.clearBatchList()
                     }
-                    Item { Layout.fillHeight: true }
                 }
                 ColumnLayout {
                     Layout.preferredWidth: Math.min(315, window.width * 0.28)

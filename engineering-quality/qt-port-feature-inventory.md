@@ -10,7 +10,7 @@ Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected
 | URL entry, format choice, presets, output destination, settings, download and queue | `app.py` Forge composer and submission | Core actions present; composer layout now being translated from current Tk. |
 | Batch URL list and single/playlist control | `app.py`, `url_list_inputs.py` | Present at core level; verify visual and validation states. |
 | Local audio and image to video conversion | `local_audio_video_ui.py` | Core action and Qt dialog present; visual and packaged journey pending. |
-| Live title/artwork/progress, friendly/technical activity, source/output details | `app.py`, `forge_activity_ui.py`, `detail_ui.py` | Qt has a simplified live area; detail modes/dialogs incomplete. |
+| Live title/artwork/progress, friendly/technical activity, source/output details | `app.py`, `forge_activity_ui.py`, `detail_ui.py` | Qt now reads the same run-owned friendly projection and current-run technical lines, with a rendered source toggle; title/artwork, complete output facts and detail dialogs remain open. |
 | Run Deck: active, queued, terminal and completed cards; overflow, actions, retry/skip/cancel | `app.py` `_focus_run_records`, `run_hover_menu.py`, `run_deck_renderer.py`, `library_state.py` | Runtime actions exist; Qt visual deck and completed-history projection missing. |
 
 ## Library and Watch
@@ -35,8 +35,8 @@ Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected
 | Activity timeline/log and run history | `activity_ui.py`, `forge_activity_ui.py`, `app.py` | Qt now uses the shared private log owner and current-run event binding; token typography, selected-run detail and package journey remain open. |
 | Settings including output, format, network, cookies and analytics | `focus_settings.py`, `app.py` bindings | Core preferences and several Qt panels present; section/detail parity needs state review. |
 | Consent and privacy | `analytics_consent_ui.py`, `analytics_startup.py` | Qt consent core and popup present; visual/first-run journey pending. |
-| Welcome tour, What's New, Did You Know (editorial mode currently `none`) | `engagement_ui.py`, `engagement_state.py`, `whats_new.py`, `whats_new_ui.py` | Not ported. Preserve editorial eligibility and `none` default; capture optional modes for feature parity. |
-| Help menu, feedback, review and support diagnostics | `engagement_ui.py`, `support_ui.py` | Not ported. |
+| Welcome tour, What's New, Did You Know (editorial mode currently `none`) | `engagement_ui.py`, `engagement_state.py`, `whats_new.py`, `whats_new_ui.py`, `whats_new_feature_preview.py` | Qt now uses `EngagementState` for first-run/rating eligibility and the shared highlight data/preview enum for a native QML carousel. Every declared preview key has a QML renderer using shared controls. The welcome popup was rendered and inspected; optional showcase mode is still `none`. All slide variants, automatic foreground sequencing and exact feature preview controls need rendered/package checks. |
+| Help menu, feedback, review and support diagnostics | `engagement_ui.py`, `support_ui.py`, `support_payload.py`, `support_transport.py` | Qt Help button, shared-control feedback/review forms, reason/rating/message/reply and explicit diagnostics/video-URL consent now use one shared payload validator and the existing transport. Recent failed-run context is projected read-only into feedback. Wide/narrow source forms rendered; live delivery, verification handoff and full Help menu actions remain open. |
 | Update check/download/install/repair and recovery | `app.py`, `updates.py`, `qt_quick/update_session.py` | Core Qt updater and popup present; exact packaged update/repair proof pending. |
 
 ## Capture coverage

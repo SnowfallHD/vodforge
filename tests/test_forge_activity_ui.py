@@ -210,7 +210,7 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
         panel.observe("one", "Video 1 of 1 — analyzing source formats")
         panel.observe("one", "Video 1 of 1 — downloading")
         panel.observe("one", "Downloading file.mp4 — 100/s")
-        assert len(panel._runs["one"]) == 2
+        assert len(panel._projection._runs["one"]) == 2
         panel.observe("two", "Video 1 of 1 — transcoding")
         assert "Converting" not in panel.friendly.get("1.0", "end")
         raw = "\n".join(f"Real technical line {i}" for i in range(40))

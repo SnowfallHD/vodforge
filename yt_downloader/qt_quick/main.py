@@ -43,7 +43,9 @@ from yt_downloader.app import (
 from yt_downloader.archive_observations import bind_operation, operation
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
+from yt_downloader.cloud_funnel import installation_state_path
 from yt_downloader.cookie_inputs import browser_cookie_value
+from yt_downloader.engagement_state import WELCOME_SLIDES, EngagementState
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
     MP3_COVER_ART_OPTIONS,
@@ -54,6 +56,7 @@ from yt_downloader.export_inputs import (
     validate_custom_cover_art,
 )
 from yt_downloader.export_planning import QUALITY_OPTIONS
+from yt_downloader.forge_activity import ForgeActivityProjection
 from yt_downloader.history import (
     HistoryError,
     application_data_dir,
@@ -109,6 +112,7 @@ from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
+from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
@@ -117,6 +121,7 @@ from yt_downloader.settings_store import (
     save_settings,
     settings_file_path,
 )
+from yt_downloader.support_diagnostics import FailureContext, failure_context
 from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import button_metrics
@@ -128,6 +133,13 @@ from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
 from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
 from yt_downloader.watch_queue import QueueToken, WatchQueueOwner
+from yt_downloader.whats_new import (
+    DID_YOU_KNOW_HIGHLIGHTS,
+    HIGHLIGHTS,
+    SHOWCASE_ID,
+    SHOWCASE_MODE,
+    FeatureHighlight,
+)
 from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
 
 
@@ -224,13 +236,27 @@ class Bridge(QObject):
     updateChanged = Signal()
     fileActionChanged = Signal()
     fileActionRequested = Signal()
+    supportChanged = Signal()
+    supportRequested = Signal()
+    editorialChanged = Signal()
+    editorialRequested = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._support = QtSupportSession(self._runtime.history_path.parent)
+        self._latest_failure: FailureContext | None = None
+        self._engagement = EngagementState(
+            installation_state_path(data_dir=self._runtime.history_path.parent)
+        )
+        self._editorial_kind = ""
+        self._editorial_slides: tuple[FeatureHighlight, ...] = ()
         self._activity_log_path = diagnostics_dir() / "activity.log"
         prepare_activity_log(self._activity_log_path)
         self._activity_log_text = load_activity_log_tail(self._activity_log_path)
+        self._forge_activity = ForgeActivityProjection()
+        self._forge_run_id = ""
+        self._forge_technical = ""
         self._append_activity_line(
             "Session started "
             + datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -755,6 +781,61 @@ class Bridge(QObject):
             )
         return scene
 
+    @Property(str, notify=supportChanged)
+    def supportKind(self) -> str:
+        return self._support.kind
+
+    @Property(str, notify=supportChanged)
+    def supportStatus(self) -> str:
+        return self._support.status
+
+    @Property(bool, notify=supportChanged)
+    def supportBusy(self) -> bool:
+        return self._support.busy
+
+    @Property(bool, notify=supportChanged)
+    def supportSent(self) -> bool:
+        return self._support.sent
+
+    @Property("QVariantMap", notify=supportChanged)
+    def supportContext(self) -> dict[str, str]:
+        context = self._support.context
+        return {
+            "diagnostics": context.diagnostics if context is not None else "",
+            "videoUrl": context.video_url if context is not None else "",
+        }
+
+    @Property(str, notify=editorialChanged)
+    def editorialHeading(self) -> str:
+        return {
+            "welcome": "Welcome to VODForge",
+            "whats-new": "What’s new",
+            "did-you-know": "Did you know?",
+        }.get(self._editorial_kind, "")
+
+    @Property(str, notify=editorialChanged)
+    def editorialFinishLabel(self) -> str:
+        if self._editorial_kind == "welcome":
+            return "Start using VODForge"
+        if self._editorial_kind == "did-you-know" or (
+            len(self._editorial_slides) == 1
+            and self._editorial_slides[0].key == "output-settings"
+        ):
+            return "Try it"
+        return "Done"
+
+    @Property("QVariantList", notify=editorialChanged)
+    def editorialSlides(self) -> list[dict[str, str]]:
+        return [
+            {
+                "key": slide.key,
+                "title": slide.title,
+                "description": slide.description,
+                "preview": slide.preview.value,
+            }
+            for slide in self._editorial_slides
+        ]
+
     @Property("QVariantMap", notify=historyChanged)
     def libraryDetail(self) -> dict[str, Any]:
         row = next(
@@ -1017,6 +1098,20 @@ class Bridge(QObject):
     @Property(str, notify=activityChanged)
     def activityLog(self) -> str:
         return self._activity_log_text
+
+    @Property("QVariantMap", notify=activityChanged)
+    def forgeActivity(self) -> dict[str, str]:
+        return {
+            "friendly": self._forge_activity.friendly(
+                self._forge_run_id, self._forge_technical
+            ),
+            "technical": self._forge_technical
+            or "No technical activity for this run yet.",
+        }
+
+    @Slot()
+    def openTechnicalDetails(self) -> None:
+        self._record_update_feature("guidance", "technical_opened")
 
     def _append_activity_line(self, line: str) -> None:
         append_activity_log(line, self._activity_log_path)
@@ -1336,6 +1431,97 @@ class Bridge(QObject):
             self._watch_scene_route = "home"
             self._watch_group_kind = self._watch_group_key = self._watch_search = ""
         self.historyChanged.emit()
+
+    @Slot(str, result=bool)
+    def openSupport(self, kind: str) -> bool:
+        if not self._support.open(
+            kind, self._latest_failure if kind == "feedback" else None
+        ):
+            return False
+        self.supportChanged.emit()
+        self.supportRequested.emit()
+        return True
+
+    @Slot("QVariantMap", result=bool)
+    def submitSupport(self, values: dict[str, Any]) -> bool:
+        accepted = self._support.submit(values)
+        self.supportChanged.emit()
+        return accepted
+
+    @Slot(result=bool)
+    def closeSupport(self) -> bool:
+        if not self._support.close():
+            return False
+        self.supportChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    def openWelcomeTour(self) -> bool:
+        if self._editorial_kind or self._support.kind:
+            return False
+        self._editorial_kind = "welcome"
+        self._editorial_slides = WELCOME_SLIDES
+        try:
+            self._engagement.presented_welcome()
+        except (OSError, ValueError):
+            pass
+        self._settings["whats_new_seen"] = SHOWCASE_ID
+        self._schedule_preferences_save()
+        self.editorialChanged.emit()
+        self.editorialRequested.emit()
+        return True
+
+    @Slot(bool)
+    def checkEditorial(self, ui_ready: bool) -> None:
+        if (
+            not ui_ready
+            or not self._analytics.settled
+            or self._editorial_kind
+            or self._support.kind
+            or self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._playback_binding is not None
+        ):
+            return
+        try:
+            if self._engagement.welcome_pending:
+                self.openWelcomeTour()
+                return
+            if self._engagement.rating_pending:
+                if self.openSupport("review"):
+                    self._engagement.presented_rating()
+                return
+        except (OSError, ValueError):
+            return
+        if (
+            SHOWCASE_MODE in {"whats-new", "did-you-know"}
+            and self._settings.get("whats_new_seen") != SHOWCASE_ID
+        ):
+            slides = (
+                DID_YOU_KNOW_HIGHLIGHTS
+                if SHOWCASE_MODE == "did-you-know"
+                else HIGHLIGHTS
+            )
+            if slides:
+                self._editorial_kind = SHOWCASE_MODE
+                self._editorial_slides = slides
+                self.editorialChanged.emit()
+                self.editorialRequested.emit()
+                self._record_update_feature("announcement", "shown")
+
+    @Slot(bool)
+    def dismissEditorial(self, try_it: bool) -> None:
+        if not self._editorial_kind:
+            return
+        if self._editorial_kind in {"whats-new", "did-you-know"}:
+            self._settings["whats_new_seen"] = SHOWCASE_ID
+            self._schedule_preferences_save()
+            if try_it:
+                self._record_update_feature("announcement", "try_it")
+        self._editorial_kind = ""
+        self._editorial_slides = ()
+        self.editorialChanged.emit()
 
     @Slot(str)
     def playWatchHero(self, owner: str) -> None:
@@ -2068,6 +2254,8 @@ class Bridge(QObject):
         return True
 
     def _pump(self) -> None:
+        if self._support.poll():
+            self.supportChanged.emit()
         storage_snapshot = self._storage.poll()
         if storage_snapshot != self._storage_snapshot:
             self._storage_snapshot = storage_snapshot
@@ -2170,6 +2358,16 @@ class Bridge(QObject):
             self._record_settings_snapshot()
             self._analytics_snapshot_sent = True
         try:
+            active_job_before = self._runtime.active_job
+            if (
+                active_job_before is not None
+                and active_job_before.run_id != self._forge_run_id
+            ):
+                self._forge_run_id = active_job_before.run_id
+                self._forge_technical = "\n".join(active_job_before.activity_lines)[
+                    -50_000:
+                ]
+                self.activityChanged.emit()
             events = self._runtime.poll()
         except (HistoryError, OSError, RunStateError, ValueError):
             self._status = "Download state needs attention. See Technical details."
@@ -2182,13 +2380,41 @@ class Bridge(QObject):
                 self.progressChanged.emit()
             elif kind == "status":
                 self._status = str(payload)
+                self._forge_activity.observe(self._forge_run_id, self._status)
                 self.statusChanged.emit()
             elif kind == "log":
                 self._append_activity_line(str(payload))
+                self._forge_technical = (
+                    self._forge_technical
+                    + ("\n" if self._forge_technical else "")
+                    + str(payload)
+                )[-50_000:]
             elif kind in {"history_record", "job_metadata"}:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
+                if kind in {"partial", "error"} and active_job_before is not None:
+                    try:
+                        self._latest_failure = failure_context(
+                            active_job_before, str(payload)
+                        )
+                    except (OSError, ValueError):
+                        self._latest_failure = None
+                if kind == "done" and active_job_before is not None:
+                    try:
+                        self._engagement.completed_download(active_job_before.run_id)
+                    except (OSError, ValueError):
+                        pass
                 self._status = str(payload)
+                self._forge_activity.observe(
+                    self._forge_run_id,
+                    {
+                        "done": "Completed",
+                        "partial": "Partial",
+                        "stopped": "Stopped",
+                        "error": "Failed",
+                    }[kind],
+                    str(payload) if kind in {"partial", "error"} else "",
+                )
                 self.statusChanged.emit()
                 self.runningChanged.emit()
                 self.historyChanged.emit()
