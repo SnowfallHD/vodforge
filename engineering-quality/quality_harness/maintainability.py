@@ -99,7 +99,7 @@ def change_surface_probe(
         (
             item
             for item in definitions
-            if item["name"].endswith("DownloaderApp._download_worker_single")
+            if item["name"].endswith("DownloadWorkerCore._download_worker_single")
         ),
         None,
     )

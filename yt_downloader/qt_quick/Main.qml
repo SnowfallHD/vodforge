@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
+import QtMultimedia
 
 Window {
     id: window
@@ -11,8 +13,28 @@ Window {
     y: 30
     minimumWidth: 820
     minimumHeight: 560
-    title: "VODForge — Qt Quick prototype"
+    title: "VODForge"
     color: theme.bg
+    onClosing: function(close) {
+        if (bridge.running) {
+            bridge.cancel()
+            close.accepted = false
+        }
+    }
+
+    MediaPlayer {
+        id: mediaPlayer
+        objectName: "watchMediaPlayer"
+        source: bridge.playbackUrl
+        audioOutput: AudioOutput { id: audioOutput; volume: 0.8 }
+        videoOutput: videoSurface
+        onSourceChanged: if (source.toString().length) play()
+    }
+    FolderDialog {
+        id: outputFolderDialog
+        title: "Choose output folder"
+        onAccepted: bridge.chooseOutputUrl(selectedFolder)
+    }
 
     Image {
         id: artwork
@@ -26,7 +48,7 @@ Window {
 
     property int gutter: width < 960 ? 22 : 38
     property int rowGap: 14
-    property string outputFormat: "MP4"
+    property string outputFormat: bridge.outputFormat
 
     ColumnLayout {
         anchors.fill: parent
@@ -147,7 +169,7 @@ Window {
                     onActivated: optionsMenu.open()
                 }
                 StoneButton {
-                    label: "Download"
+                    label: bridge.running ? "Queue" : "Download"
                     emphasized: true
                     Layout.preferredWidth: 134
                     Layout.preferredHeight: 44
@@ -160,10 +182,11 @@ Window {
                 Layout.preferredHeight: 48
                 spacing: 10
                 StoneButton {
-                    label: "Load URL list"
+                    label: bridge.running ? "Stop" : "Ready"
                     Layout.preferredWidth: 128
                     Layout.preferredHeight: 42
-                    onActivated: bridge.select("Forge")
+                    enabled: bridge.running
+                    onActivated: bridge.cancel()
                 }
                 Text {
                     text: "Save to"
@@ -187,6 +210,12 @@ Window {
                         onAccepted: bridge.setOutputPath(text)
                     }
                 }
+                StoneButton {
+                    label: "Browse"
+                    Layout.preferredWidth: 86
+                    Layout.preferredHeight: 42
+                    onActivated: outputFolderDialog.open()
+                }
                 Text {
                     text: "Have local audio?"
                     color: theme.muted
@@ -196,6 +225,7 @@ Window {
                     label: "Create video"
                     Layout.preferredWidth: 132
                     Layout.preferredHeight: 42
+                    enabled: false
                     onActivated: bridge.select("Forge")
                 }
             }
@@ -215,7 +245,7 @@ Window {
                 ColumnLayout {
                     spacing: 7
                     Text {
-                        text: "Ready for a new run"
+                        text: bridge.running ? "Download in progress" : "Ready for a new run"
                         color: theme.text
                         font.pixelSize: 24
                         font.bold: true
@@ -226,14 +256,14 @@ Window {
                         font.pixelSize: 15
                     }
                     Text {
-                        text: "1080p Full HD  ·  Everyday"
+                        text: bridge.quality + "  ·  " + bridge.exportMode
                         color: theme.muted
                         font.pixelSize: 15
                     }
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: "0%"
+                    text: Math.round(bridge.progress) + "%"
                     color: theme.selection
                     font.pixelSize: 34
                 }
@@ -255,7 +285,7 @@ Window {
                     spacing: 18
                     Text { text: bridge.status; color: theme.muted; font.pixelSize: 15 }
                     Text {
-                        text: "◌   Your next run’s progress will appear here."
+                        text: bridge.running ? "◌   Processing your media…" : "◌   Your next run’s progress will appear here."
                         color: theme.muted
                         font.pixelSize: 17
                     }
@@ -266,7 +296,7 @@ Window {
                     Layout.fillHeight: true
                     spacing: 11
                     Text {
-                        text: "VOD-ready " + window.outputFormat + " / H.264 video / AAC audio"
+                        text: "Output: " + window.outputFormat + " · " + bridge.exportMode
                         color: theme.muted
                         font.pixelSize: 14
                         wrapMode: Text.WordWrap
@@ -275,7 +305,7 @@ Window {
                     Text { text: "Format             " + window.outputFormat; color: theme.muted; font.pixelSize: 14 }
                     Text { text: "Video               H.264"; color: theme.muted; font.pixelSize: 14 }
                     Text { text: "Audio               AAC"; color: theme.muted; font.pixelSize: 14 }
-                    Text { text: "Output mode     Everyday"; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: "Output mode     " + bridge.exportMode; color: theme.muted; font.pixelSize: 14 }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -289,28 +319,138 @@ Window {
                     anchors.fill: parent
                     anchors.margins: 17
                     spacing: 8
-                    Text { text: "Your runs will collect here"; color: theme.text; font.pixelSize: 16; font.bold: true }
-                    Text { text: "Start with a URL above. Completed downloads stay available in Library."; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: "Recent downloads"; color: theme.text; font.pixelSize: 16; font.bold: true }
+                    Text { text: bridge.history.length + " saved item(s) in Library"; color: theme.muted; font.pixelSize: 14 }
                 }
             }
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 23
-                Text { text: "No runs yet"; color: theme.muted; font.pixelSize: 14 }
+                Text { text: bridge.running ? "Run active" : "No active run"; color: theme.muted; font.pixelSize: 14 }
                 Item { Layout.fillWidth: true }
                 Text { text: "Runs process one at a time"; color: theme.muted; font.pixelSize: 14 }
             }
         }
 
         Item {
-            visible: bridge.selection !== "Forge"
+            visible: bridge.selection === "Library"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Text {
-                anchors.centerIn: parent
-                text: bridge.selection + " is outside this Forge vertical slice."
-                color: theme.muted
-                font.pixelSize: 20
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 16
+                Text { text: "Library"; color: theme.text; font.pixelSize: 26; font.bold: true }
+                Text { text: bridge.history.length + " saved item(s)"; color: theme.muted; font.pixelSize: 15 }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    model: bridge.history
+                    spacing: 9
+                    clip: true
+                    delegate: StoneField {
+                        required property var modelData
+                        required property int index
+                        width: ListView.view.width
+                        height: 67
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 13
+                            spacing: 10
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Text { text: modelData.title; color: theme.text; font.pixelSize: 17; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: modelData.type; color: theme.muted; font.pixelSize: 13 }
+                            }
+                            StoneButton {
+                                label: "Play"
+                                Layout.preferredWidth: 72
+                                Layout.preferredHeight: 38
+                                onActivated: bridge.openLibraryItem(index)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Item {
+            visible: bridge.selection === "Watch"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 12
+                Text { text: "Watch"; color: theme.text; font.pixelSize: 26; font.bold: true }
+                VideoOutput {
+                    id: videoSurface
+                    objectName: "watchVideoSurface"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    fillMode: VideoOutput.PreserveAspectFit
+                }
+                Text {
+                    text: mediaPlayer.errorString.length ? mediaPlayer.errorString :
+                          bridge.playbackUrl.toString().length ? "" : "Choose an item in Library to play."
+                    color: theme.muted
+                    font.pixelSize: 15
+                }
+                Slider {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: Math.max(1, mediaPlayer.duration)
+                    value: mediaPlayer.position
+                    onMoved: mediaPlayer.setPosition(value)
+                    background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
+                    handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: "" }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    StoneButton {
+                        label: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
+                        Layout.preferredWidth: 95
+                        Layout.preferredHeight: 40
+                        onActivated: mediaPlayer.playbackState === MediaPlayer.PlayingState ? mediaPlayer.pause() : mediaPlayer.play()
+                    }
+                    Text { text: Math.floor(mediaPlayer.position / 1000) + "s / " + Math.floor(mediaPlayer.duration / 1000) + "s"; color: theme.muted; font.pixelSize: 14 }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
+                    Slider {
+                        Layout.preferredWidth: 160
+                        from: 0; to: 1; value: audioOutput.volume
+                        onMoved: audioOutput.volume = value
+                        background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
+                        handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: "" }
+                    }
+                }
+            }
+        }
+        Item {
+            visible: bridge.selection === "Activity"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 16
+                Text { text: "Activity"; color: theme.text; font.pixelSize: 26; font.bold: true }
+                Text { text: bridge.activity.length + " recent run(s)"; color: theme.muted; font.pixelSize: 15 }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    model: bridge.activity
+                    spacing: 9
+                    clip: true
+                    delegate: StoneField {
+                        required property var modelData
+                        width: ListView.view.width
+                        height: 82
+                        Column {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 5
+                            Text { text: modelData.title + "  ·  " + modelData.status; color: theme.text; font.pixelSize: 16; elide: Text.ElideRight; width: parent.width }
+                            Text { text: modelData.detail; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; width: parent.width }
+                        }
+                    }
+                }
             }
         }
     }
@@ -319,7 +459,7 @@ Window {
         id: formatMenu
         x: Math.max(0, window.width - window.gutter - 375)
         y: window.gutter + 112
-        width: 112
+        width: 170
         height: 150
         padding: 3
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
@@ -327,31 +467,51 @@ Window {
             anchors.fill: parent
             spacing: 3
             Repeater {
-                model: ["MP4", "MP3", "M4A"]
+                model: ["MP4", "MP3", "Original audio"]
                 StoneButton {
                     required property string modelData
-                    width: 106
+                    width: 164
                     height: 44
                     label: modelData
                     selected: window.outputFormat === modelData
-                    onActivated: { window.outputFormat = modelData; formatMenu.close() }
+                    onActivated: { bridge.setOutputFormat(modelData); formatMenu.close() }
                 }
             }
         }
     }
     Popup {
         id: optionsMenu
-        x: Math.max(0, window.width - window.gutter - 265)
+        x: Math.max(0, window.width - window.gutter - 350)
         y: window.gutter + 112
-        width: 190
-        height: 95
+        width: 260
+        height: 490
         padding: 3
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
         Column {
             anchors.fill: parent
-            spacing: 3
-            StoneButton { width: 184; height: 42; label: "Everyday"; selected: true; onActivated: optionsMenu.close() }
-            StoneButton { width: 184; height: 42; label: "Custom"; onActivated: optionsMenu.close() }
+            spacing: 2
+            Text { text: "Output mode"; color: theme.muted; font.pixelSize: 13; height: 22 }
+            Repeater {
+                model: ["Everyday", "Streaming", "Editing", "Sharing"]
+                StoneButton {
+                    required property string modelData
+                    width: 254; height: 36
+                    label: modelData
+                    selected: bridge.exportMode === modelData
+                    onActivated: { bridge.setExportMode(modelData); optionsMenu.close() }
+                }
+            }
+            Text { text: "Quality"; color: theme.muted; font.pixelSize: 13; height: 22 }
+            Repeater {
+                model: qualityOptions
+                StoneButton {
+                    required property string modelData
+                    width: 254; height: 36
+                    label: modelData
+                    selected: bridge.quality === modelData
+                    onActivated: { bridge.setQuality(modelData); optionsMenu.close() }
+                }
+            }
         }
     }
 }

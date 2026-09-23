@@ -249,7 +249,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qt-python", type=Path, required=True)
     parser.add_argument(
-        "--app-script", type=Path, default=Path(__file__).with_name("main.py")
+        "--app-script",
+        type=Path,
+        default=SOURCE / "yt_downloader" / "qt_quick" / "main.py",
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pixel-capture", action="store_true")

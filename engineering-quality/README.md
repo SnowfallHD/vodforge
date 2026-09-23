@@ -553,7 +553,7 @@ This directory is an isolated adversarial test system for answering a bounded qu
 
 > Is VODForge actually well engineered, performant, reliable, secure, and maintainable under the scenarios we executed?
 
-The harness is intentionally not another downloader. Its high-volume integration layer constructs a real production `DownloadJob` and calls the existing `DownloaderApp._download_worker_single` seam without constructing Tk. From that point onward VODForge performs its own yt-dlp preflight/download, export planning, `.vfstage` ownership, FFmpeg post-processing/transcode, ffprobe validation, atomic final commit, metadata/thumbnail sidecars, and worker events.
+The harness is intentionally not another downloader. Its high-volume integration layer constructs a real production `DownloadJob` and calls the shared `DownloadWorkerCore._download_worker_single` owner without constructing Tk. From that point onward VODForge performs its own yt-dlp preflight/download, export planning, `.vfstage` ownership, FFmpeg post-processing/transcode, ffprobe validation, atomic final commit, metadata/thumbnail sidecars, and worker events. Tk and Qt consume this same worker owner.
 
 ## Evidence tiers
 

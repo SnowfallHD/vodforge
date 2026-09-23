@@ -4983,8 +4983,2147 @@ def _resolve_run_finish_decision(
     )
 
 
+class DownloadWorkerCore:
+    """UI-independent serialized provider, staging, and export owner."""
+
+    def _provider_network_coordinator(self) -> ProviderNetworkCoordinator:
+        coordinator = self.__dict__.get("_provider_network")
+        if coordinator is None:
+            coordinator = ProviderNetworkCoordinator()
+            self._provider_network = coordinator
+        return coordinator
+
+    def _coordinate_download_batch(
+        self,
+        job: DownloadJob,
+        urls: list[str],
+    ) -> _DownloadBatchResult:
+        """Run child sources without acquiring the batch terminal event."""
+        outcome = DownloadOutcome()
+        failures: list[tuple[str, str]] = []
+        for index, url in enumerate(urls, start=1):
+            if self.cancel_requested:
+                return _DownloadBatchResult(
+                    outcome=outcome,
+                    failures=tuple(failures),
+                    control_kind=_DownloadControlKind.CANCEL_RUN,
+                )
+            item_url, forced_single_video = prepare_batch_item_url(url)
+            item_single_video_only = job.single_video_only or forced_single_video
+            self.events.put(("status", f"Batch URL {index} of {len(urls)} — starting"))
+            self._emit_job_log(job, f"Batch URL {index} of {len(urls)}: {item_url}")
+            write_diagnostic(
+                f"batch URL {index} of {len(urls)} start: {item_url} single_video_only={item_single_video_only}"
+            )
+            try:
+                item_outcome = self._download_worker_single(
+                    replace(
+                        job,
+                        url=item_url,
+                        urls=[item_url],
+                        single_video_only=item_single_video_only,
+                    ),
+                    emit_done=False,
+                    re_raise=True,
+                )
+                outcome = outcome.combined_with(item_outcome)
+            except _DownloadControlRequestError as control_request:
+                if control_request.result is not None:
+                    outcome = outcome.combined_with(
+                        _committed_download_outcome(control_request.result)
+                    )
+                if control_request.kind is _DownloadControlKind.CANCEL_RUN:
+                    return _DownloadBatchResult(
+                        outcome=outcome,
+                        failures=tuple(failures),
+                        control_kind=control_request.kind,
+                    )
+                self.skip_video_requested = False
+                if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
+                    self.skip_url_requested = False
+                write_diagnostic(f"batch URL {index} skipped by user: {item_url}")
+                self._emit_job_log(
+                    job, f"Batch URL {index} skipped by user; continuing."
+                )
+                outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
+            except Exception as exc:  # noqa: BLE001 - each provider child failure is isolated in the batch result
+                provider_error = exc
+                if isinstance(exc, _DownloadItemExecutionError):
+                    outcome = outcome.combined_with(
+                        _committed_download_outcome(exc.result)
+                    )
+                    provider_error = exc.error
+                issue = format_ytdlp_user_error(provider_error)
+                if job.failure_diagnostic is None:
+                    job.failure_diagnostic = capture_failure(
+                        provider_error, stage="batch"
+                    )
+                failures.append((item_url, issue))
+                outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
+                append_batch_failure_report(
+                    BATCH_FAILURE_REPORT_PATH, item_url, provider_error
+                )
+                write_diagnostic(
+                    f"batch URL {index} of {len(urls)} failed but batch will continue: "
+                    f"{type(provider_error).__name__}: {provider_error}"
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}",
+                )
+        return _DownloadBatchResult(outcome=outcome, failures=tuple(failures))
+
+    def _download_worker(self, job: DownloadJob) -> None:
+        urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
+        if len(urls) <= 1:
+            single_url = urls[0] if urls else job.url
+            single_video_only = job.single_video_only
+            if job.batch_mode:
+                single_url, forced_single_video = prepare_batch_item_url(single_url)
+                single_video_only = single_video_only or forced_single_video
+            # Keep the active authority object itself through the worker. A
+            # dataclass copy would strand terminal flags and resolved metadata
+            # on a private worker object that Forge never observes.
+            job.url = single_url
+            job.urls = [single_url]
+            job.single_video_only = single_video_only
+            self._download_worker_single(job)
+            return
+        try:
+            reset_batch_failure_report()
+            batch_result = self._coordinate_download_batch(job, urls)
+            if batch_result.control_kind is not None:
+                self._active_progress_context = None
+                write_diagnostic(
+                    "batch download worker control request: "
+                    f"{batch_result.control_kind.value}"
+                )
+            self.events.put(_download_batch_terminal_event(batch_result, len(urls)))
+        except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
+            job.failure_diagnostic = capture_failure(exc, stage="batch")
+            self._active_progress_context = None
+            write_diagnostic(
+                f"batch download worker error: {type(exc).__name__}: {exc}"
+            )
+            self._emit_job_log(job, technical_download_error(exc))
+            self.events.put(("error", format_ytdlp_user_error(exc)))
+
+    def _try_reuse_existing_output(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        plan: ExportPlan | AudioExportPlan,
+        *,
+        label: str,
+        all_output_dirs: list[Path],
+        control_check: Callable[[], None],
+    ) -> _ExistingOutputReuse | None:
+        ffprobe = self._find_ffprobe()
+        if not ffprobe:
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="reuse",
+                dimensions={
+                    "reuse_result": "unavailable",
+                    "reuse_rejection": "probe_unavailable",
+                },
+            )
+            return None
+        history = self.__dict__.get("download_history", ())
+        legacy_paths = owned_output_paths(
+            job, info, history if isinstance(history, (list, tuple)) else ()
+        )
+        rejection: tuple[str, FailureDiagnostic | None] = (
+            "no_eligible_candidate",
+            None,
+        )
+
+        def rejected(reason: str, detail: FailureDiagnostic | None) -> None:
+            nonlocal rejection
+            # Keep only the last rejection; candidate count can be large.
+            rejection = (reason, detail)
+
+        existing_output = find_valid_existing_output(
+            job.output_dir,
+            info,
+            job.output_type,
+            ffprobe,
+            plan=plan,
+            embed_metadata=(
+                job.mp3_settings.embed_metadata
+                if job.output_type == OutputType.MP3
+                else job.embed_metadata
+            ),
+            embed_cover_art=(
+                job.mp3_settings.embed_cover_art
+                if job.output_type == OutputType.MP3
+                else job.embed_thumbnail
+            ),
+            custom_cover_art=(
+                job.output_type == OutputType.MP3
+                and job.mp3_settings.custom_cover_art_path is not None
+            ),
+            expected_tags=job.tags,
+            expected_duration_seconds=_float_or_none(info.get("duration")),
+            control_check=control_check,
+            owned_legacy_paths=legacy_paths,
+            on_rejection=rejected,
+        )
+        if existing_output is None:
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "stage"
+                if rejection[0] == "no_eligible_candidate"
+                else "candidate_rejected",
+                stage="reuse",
+                dimensions={"reuse_result": "miss", "reuse_rejection": rejection[0]},
+                failure_detail=rejection[1],
+            )
+            return None
+
+        existing_path, existing_probe = existing_output
+        namespace = "unknown"
+        if metadata_output_variant(info):
+            try:
+                variant_dir, _ = resolved_video_output_target(
+                    job.output_dir, info, existing_path.suffix
+                )
+                if existing_path.parent == variant_dir:
+                    namespace = "variant"
+            except ValueError:
+                pass  # A legacy lookup can succeed when a new path is too long.
+        if namespace == "unknown" and existing_path in legacy_paths:
+            namespace = "owned_legacy"
+        DownloadWorkerCore._observe_download_operation(
+            self,
+            job,
+            "reused",
+            stage="reuse",
+            dimensions={
+                "reused_count": "1",
+                "committed_count": "0",
+                "storage_namespace": namespace,
+            },
+            output_path=existing_path,
+            output_probe=existing_probe,
+            output_info=info,
+        )
+        remember_video_output_dir(info, existing_path.parent)
+        reused_info = build_encoding_summary_metadata(
+            info,
+            plan,
+            output_path=existing_path,
+            ffprobe_data=existing_probe,
+            validation_status="Validated existing output",
+        )
+        self.events.put(job_info_event("job_metadata", job, reused_info))
+        self.events.put(
+            history_record_event(
+                job,
+                reused_info,
+                str(existing_path.parent),
+            )
+        )
+        all_output_dirs.append(existing_path.parent)
+        self.events.put(("download_folders", sorted(set(all_output_dirs))))
+        reuse_outcome = DownloadOutcome(success_count=1)
+        self._emit_job_log(
+            job,
+            f"{label}: Already downloaded and valid — reused existing file. "
+            f"Path: {existing_path}",
+        )
+        try:
+            cached_thumbnail = save_cached_thumbnail_image(
+                reused_info,
+                source_url=job.url,
+                on_result=DownloadWorkerCore._download_sidecar_observer(
+                    self, job, "library_artwork", reused=True
+                ),
+            )
+            if cached_thumbnail is not None:
+                self._emit_job_log(
+                    job, f"{label}: refreshed private Library artwork cache"
+                )
+        except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
+            DownloadWorkerCore._observe_download_sidecar_failure(
+                self, job, exc, kind="library_artwork", reused=True
+            )
+            self._emit_job_log(job, technical_download_error(exc))
+            reuse_outcome = reuse_outcome.combined_with(
+                DownloadOutcome(sidecar_failure_count=1)
+            )
+            self._emit_job_log(
+                job,
+                f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed: {exc}",
+            )
+        if job.write_info_json:
+            try:
+                write_compact_video_metadata(
+                    existing_path.parent,
+                    reused_info,
+                    job.tags,
+                    output_root=job.output_dir,
+                    on_result=DownloadWorkerCore._download_sidecar_observer(
+                        self, job, "metadata", reused=True
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
+                DownloadWorkerCore._observe_download_sidecar_failure(
+                    self, job, exc, kind="metadata", reused=True
+                )
+                self._emit_job_log(job, technical_download_error(exc))
+                reuse_outcome = reuse_outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed: {exc}",
+                )
+        else:
+            observer = DownloadWorkerCore._download_sidecar_observer(
+                self, job, "metadata", reused=True
+            )
+            if observer is not None:
+                observer("not_requested")
+        if job.write_thumbnail:
+            try:
+                save_thumbnail_image(
+                    existing_path.parent,
+                    reused_info,
+                    source_url=job.url,
+                    output_root=job.output_dir,
+                    on_result=DownloadWorkerCore._download_sidecar_observer(
+                        self, job, "thumbnail", reused=True
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
+                DownloadWorkerCore._observe_download_sidecar_failure(
+                    self, job, exc, kind="thumbnail", reused=True
+                )
+                self._emit_job_log(job, technical_download_error(exc))
+                reuse_outcome = reuse_outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed: {exc}",
+                )
+        else:
+            observer = DownloadWorkerCore._download_sidecar_observer(
+                self, job, "thumbnail", reused=True
+            )
+            if observer is not None:
+                observer("not_requested")
+        return _ExistingOutputReuse(
+            metadata=reused_info,
+            outcome=reuse_outcome,
+        )
+
+    def _transcode_and_validate_staged_media(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        plan: ExportPlan | AudioExportPlan,
+        staged_media: list[tuple[dict[str, Any], Path]],
+        ffmpeg: str,
+        *,
+        label: str,
+        progress_callback: Callable[[float], None],
+        control_check: Callable[[], None],
+    ) -> list[tuple[dict[str, Any], Path, dict[str, Any]]]:
+        ffprobe = self._find_ffprobe() or _ffprobe_for_ffmpeg(ffmpeg)
+        if not ffprobe:
+            raise RuntimeError(
+                f"{label}: FFprobe is required to validate the final output."
+            )
+
+        if isinstance(plan, ExportPlan):
+            total_mp4 = len(staged_media)
+            for encode_index, (staged_info, staged_mp4) in enumerate(
+                staged_media,
+                start=1,
+            ):
+                control_check()
+                self.events.put(("status", f"{label} — transcoding"))
+                encoder_label = (
+                    "NVIDIA NVENC GPU"
+                    if job.use_nvenc
+                    and (plan.video_crf is None or plan.nvenc_cq is not None)
+                    else "CPU libx264"
+                )
+                self._emit_job_log(
+                    job,
+                    f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}",
+                )
+                write_diagnostic(
+                    f"{label} ffmpeg command: "
+                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata, video_crf=plan.video_crf, nvenc_cq=plan.nvenc_cq, keyframe_seconds=plan.keyframe_seconds, fps=plan.fps, constant_frame_rate=plan.constant_frame_rate, video_maxrate_kbps=plan.video_maxrate_kbps)}"
+                )
+                progress_callback((encode_index - 1) / total_mp4)
+                transcode_started = time.monotonic()
+                transcode_to_vod_streaming_settings(
+                    staged_mp4,
+                    ffmpeg,
+                    plan=plan,
+                    duration_seconds=_float_or_none(
+                        staged_info.get("duration") or info.get("duration")
+                    ),
+                    progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: (
+                        progress_callback(((encode_index - 1) + fraction) / total_mp4)
+                    ),
+                    use_nvenc=job.use_nvenc,
+                    preserve_attached_picture=job.embed_thumbnail,
+                    preserve_metadata=job.embed_metadata,
+                    control_check=control_check,
+                )
+                write_diagnostic(
+                    f"{label} transcode elapsed_seconds={time.monotonic() - transcode_started:.3f}"
+                )
+                self._emit_job_log(job, f"{label}: transcoded staged VODForge output")
+        else:
+            self.events.put(("status", f"{label} — MP3 encoded"))
+
+        DownloadWorkerCore._observe_download_operation(
+            self, job, "stage", stage="validation"
+        )
+        self.events.put(("status", f"{label} — validating output"))
+        validation_started = time.monotonic()
+        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
+        embed_metadata = (
+            plan.embed_metadata
+            if isinstance(plan, AudioExportPlan)
+            else job.embed_metadata
+        )
+        embed_cover_art = (
+            plan.embed_cover_art
+            if isinstance(plan, AudioExportPlan)
+            else job.embed_thumbnail
+        )
+        for staged_info, staged_path in staged_media:
+            control_check()
+            probe_data = validate_output_artifact(
+                staged_path,
+                job.output_type,
+                ffprobe,
+                expected_duration_seconds=_float_or_none(
+                    staged_info.get("duration") or info.get("duration")
+                ),
+                require_audio=True,
+                plan=plan,
+                embed_metadata=embed_metadata,
+                embed_cover_art=embed_cover_art,
+                expected_tags=job.tags if embed_metadata else None,
+                control_check=control_check,
+            )
+            validated_staged.append((staged_info, staged_path, probe_data))
+        control_check()
+        write_diagnostic(
+            f"{label} artifact validation elapsed_seconds={time.monotonic() - validation_started:.3f}"
+        )
+        return validated_staged
+
+    def _commit_validated_staged_media(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        plan: ExportPlan | AudioExportPlan,
+        staging_dir: Path,
+        expected_extension: str,
+        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]],
+        *,
+        label: str,
+        all_output_dirs: list[Path],
+        progress_callback: Callable[[float], None],
+        control_check: Callable[[], None],
+    ) -> _CommittedMedia:
+        commit_started = time.monotonic()
+        packaged_paths = package_downloaded_media_from_staging(
+            staging_dir,
+            job.output_dir,
+            info,
+            expected_extension=expected_extension,
+            staged_media=[
+                (staged_info, staged_path)
+                for staged_info, staged_path, _probe in validated_staged
+            ],
+            control_check=control_check,
+        )
+        output_paths = [
+            path for path in packaged_paths if path.suffix.lower() == expected_extension
+        ]
+        primary_output = output_paths[0] if output_paths else None
+        if primary_output is None:
+            raise RuntimeError(
+                f"{label}: validated output could not be committed to the destination."
+            )
+        DownloadWorkerCore._observe_download_operation(
+            self,
+            job,
+            "committed",
+            stage="commit",
+            dimensions={
+                "committed_count": str(min(len(output_paths), 10000)),
+                "storage_namespace": "variant",
+            },
+            output_path=primary_output,
+            output_probe=validated_staged[0][2] if len(validated_staged) == 1 else None,
+            output_info=info,
+            artifact_count=len(output_paths),
+        )
+        write_diagnostic(
+            f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}"
+        )
+        output_dirs = sorted({path.parent for path in packaged_paths})
+        all_output_dirs.extend(output_dirs)
+        self.events.put(("download_folders", sorted(set(all_output_dirs))))
+        for packaged_path in packaged_paths:
+            self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
+        ffprobe_data = validated_staged[0][2]
+        if isinstance(plan, AudioExportPlan):
+            self._emit_job_log(
+                job,
+                f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}",
+            )
+        progress_callback(1.0)
+        self._emit_job_log(
+            job,
+            f"{label}: validated {primary_output.name} before atomic commit",
+        )
+        committed_info = build_encoding_summary_metadata(
+            info,
+            plan,
+            output_path=primary_output,
+            ffprobe_data=ffprobe_data,
+            validation_status="Validated",
+        )
+        telemetry = self.__dict__.get("product_telemetry")
+        if telemetry is not None:
+            telemetry.record(
+                "media_exported",
+                dedupe_key=job.run_id + ":" + str(primary_output),
+                attempt_key=job.run_id,
+                retry_key=job.retry_of_run_id,
+                run_kind="youtube",
+                output_type=product_output_kind(job.output_type.value),
+                dimensions=committed_export_dimensions(
+                    job,
+                    plan,
+                    ffprobe_data,
+                    source_height=_float_or_none(info.get("height")),
+                ),
+            )
+        self.events.put(job_info_event("job_metadata", job, committed_info))
+        return _CommittedMedia(
+            metadata=committed_info,
+            primary_output=primary_output,
+            success_count=len(output_paths),
+        )
+
+    def _record_committed_media_and_write_sidecars(
+        self,
+        job: DownloadJob,
+        info: dict[str, Any],
+        primary_output: Path,
+        *,
+        label: str,
+        custom_cover_for_cache: Path | None,
+    ) -> DownloadOutcome:
+        outcome = DownloadOutcome()
+        try:
+            cached_thumbnail = (
+                save_custom_cached_thumbnail_image(
+                    info,
+                    custom_cover_for_cache,
+                    on_result=DownloadWorkerCore._download_sidecar_observer(
+                        self, job, "library_artwork", reused=False
+                    ),
+                )
+                if job.output_type == OutputType.MP3
+                and custom_cover_for_cache is not None
+                else save_cached_thumbnail_image(
+                    info,
+                    source_url=job.url,
+                    on_result=DownloadWorkerCore._download_sidecar_observer(
+                        self, job, "library_artwork", reused=False
+                    ),
+                )
+            )
+            if cached_thumbnail is not None:
+                artwork_source = (
+                    "custom cover"
+                    if custom_cover_for_cache is not None
+                    else "YouTube thumbnail"
+                )
+                self._emit_job_log(
+                    job,
+                    f"{label}: cached {artwork_source} privately for Forge and Library",
+                )
+        except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
+            DownloadWorkerCore._observe_download_sidecar_failure(
+                self, job, exc, kind="library_artwork", reused=False
+            )
+            self._emit_job_log(job, technical_download_error(exc))
+            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
+            write_diagnostic(
+                f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}"
+            )
+            self._emit_job_log(
+                job,
+                f"WARNING: {label}: the media is complete, but its Library artwork could not be cached.",
+            )
+        self.events.put(
+            history_record_event(
+                job,
+                info,
+                str(primary_output.parent),
+            )
+        )
+        if job.write_info_json:
+            try:
+                metadata_path = write_compact_video_metadata(
+                    resolved_video_output_dir(job.output_dir, info),
+                    info,
+                    job.tags,
+                    output_root=job.output_dir,
+                    on_result=DownloadWorkerCore._download_sidecar_observer(
+                        self, job, "metadata", reused=False
+                    ),
+                )
+                self._emit_job_log(
+                    job,
+                    f"{label}: saved compact video metadata {metadata_path}",
+                )
+            except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
+                DownloadWorkerCore._observe_download_sidecar_failure(
+                    self, job, exc, kind="metadata", reused=False
+                )
+                self._emit_job_log(job, technical_download_error(exc))
+                outcome = outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                write_diagnostic(
+                    f"{label} compact metadata write failed: {type(exc).__name__}: {exc}"
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}",
+                )
+        else:
+            observer = DownloadWorkerCore._download_sidecar_observer(
+                self, job, "metadata", reused=False
+            )
+            if observer is not None:
+                observer("not_requested")
+        if job.write_thumbnail:
+            try:
+                thumb_path = save_thumbnail_image(
+                    resolved_video_output_dir(job.output_dir, info),
+                    info,
+                    source_url=job.url,
+                    output_root=job.output_dir,
+                    on_result=DownloadWorkerCore._download_sidecar_observer(
+                        self, job, "thumbnail", reused=False
+                    ),
+                )
+                if thumb_path:
+                    self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
+            except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
+                DownloadWorkerCore._observe_download_sidecar_failure(
+                    self, job, exc, kind="thumbnail", reused=False
+                )
+                self._emit_job_log(job, technical_download_error(exc))
+                outcome = outcome.combined_with(
+                    DownloadOutcome(sidecar_failure_count=1)
+                )
+                write_diagnostic(
+                    f"{label} thumbnail write failed: {type(exc).__name__}: {exc}"
+                )
+                self._emit_job_log(
+                    job,
+                    f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}",
+                )
+        else:
+            observer = DownloadWorkerCore._download_sidecar_observer(
+                self, job, "thumbnail", reused=False
+            )
+            if observer is not None:
+                observer("not_requested")
+        return outcome
+
+    def _put_download_stage_progress(
+        self,
+        item: _DownloadItemContext,
+        stage_start: float,
+        stage_weight: float,
+        stage_fraction: float = 0.0,
+    ) -> None:
+        self.events.put(
+            (
+                "progress",
+                _global_download_progress(
+                    item.index,
+                    item.total,
+                    stage_start,
+                    stage_weight,
+                    stage_fraction,
+                ),
+            )
+        )
+
+    def _raise_for_download_control_requests(self) -> None:
+        if self.cancel_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
+        if self.skip_url_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
+        if self.skip_video_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_ITEM)
+
+    def _playlist_blocking_step_cancelled(self) -> bool:
+        if self.cancel_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
+        if self.skip_url_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
+        return False
+
+    def _video_blocking_step_cancelled(self) -> bool:
+        if self.cancel_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
+        if self.skip_url_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
+        if self.skip_video_requested:
+            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_ITEM)
+        return False
+
+    def _emit_download_item_terminal(
+        self,
+        job: DownloadJob,
+        status: str,
+        message: str,
+        info: dict[str, Any] | None,
+        plan: ExportPlan | AudioExportPlan | None,
+        video_url: str,
+        *,
+        playlist_continues: bool = False,
+        failure_details: str = "",
+    ) -> None:
+        if not isinstance(info, dict):
+            return
+        terminal_run_id = uuid.uuid4().hex
+        terminal_info = build_terminal_item_metadata(
+            info,
+            plan,
+            status,
+            message,
+            terminal_run_id,
+        )
+        retry_url = retry_url_for_item(terminal_info, video_url)
+        job.item_terminal_emitted = True
+        terminal_job = replace(
+            job,
+            url=retry_url,
+            urls=[retry_url],
+            single_video_only=True,
+            batch_mode=False,
+            preview_info=terminal_info,
+            run_id=terminal_run_id,
+            origin_run_id=job.run_id,
+            execution_run_id=job.run_id,
+            retry_of_run_id=None,
+            metadata_keys=(
+                {key} if (key := metadata_run_key(terminal_info)) is not None else set()
+            ),
+            history_identities=set(),
+            activity_lines=([failure_details] if failure_details else []) + [message],
+            terminal_status=status,
+            terminal_message=message,
+            item_terminal_emitted=True,
+        )
+        terminal_info = annotate_job_metadata(terminal_job, terminal_info)
+        terminal_job.preview_info = terminal_info
+        event = job_info_event("item_terminal", terminal_job, terminal_info)
+        event[1]["playlist_continues"] = playlist_continues
+        self.events.put(event)
+
+    def _finish_download_run_outcome(
+        self,
+        job: DownloadJob,
+        outcome: DownloadOutcome,
+        *,
+        emit_done: bool,
+    ) -> DownloadOutcome:
+        if outcome.success_count == 0:
+            if outcome.failure_count:
+                raise RuntimeError(
+                    f"No valid {job.output_type.value} output was produced; "
+                    f"{outcome.failure_count} item(s) failed. Failure report: "
+                    f"{BATCH_FAILURE_REPORT_PATH}"
+                )
+            if emit_done:
+                self.events.put(
+                    (
+                        "stopped",
+                        f"{job.output_type.value} run stopped without producing an output.",
+                    )
+                )
+            return outcome
+        if emit_done:
+            if (
+                outcome.failure_count
+                or outcome.skipped_count
+                or outcome.sidecar_failure_count
+            ):
+                self.events.put(
+                    (
+                        "partial",
+                        (
+                            f"{job.output_type.value} completed with issues — "
+                            f"{outcome.success_count} valid output(s), "
+                            f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
+                            f"{outcome.sidecar_failure_count} optional sidecar failure(s). "
+                            "Keep the valid files. Review Technical details for each issue and its next step."
+                        ),
+                    )
+                )
+            else:
+                self.events.put(
+                    (
+                        "done",
+                        (
+                            f"{job.output_type.value} download complete — "
+                            f"{outcome.success_count} valid output(s)."
+                        ),
+                    )
+                )
+        return outcome
+
+    def _expand_download_source(
+        self,
+        job: DownloadJob,
+        ytdlp_module: Any,
+        provider_network: ProviderNetworkCoordinator,
+        *,
+        control_check: Callable[[], None],
+        blocking_step_cancelled: Callable[[], bool],
+    ) -> _ExpandedDownloadSource:
+        """Resolve one submitted source into ordered item inputs and playlist identity."""
+        saved = job.preview_info or {}
+        if (
+            job.recovery_reason == "missing_media"
+            and job.single_video_only
+            and not job.batch_mode
+            and (job.urls or [job.url]) == [job.url]
+            and youtube_url_video_id(job.url)
+            and youtube_url_video_id(job.url) == str(saved.get("id") or "")
+            and (youtube_url_playlist_id(job.url) or "")
+            == str(saved.get("playlist_id") or "")
+        ):
+            # The recovery owner validated this saved item. Its captured playlist
+            # is organization only; item preflight still reads current formats.
+            control_check()
+            playlist_info: dict[str, Any] = {
+                key: saved[key]
+                for key in ("playlist_id", "playlist_title")
+                if saved.get(key)
+            }
+            playlist_info["webpage_url"] = job.url
+            entry = {"webpage_url": job.url}
+            if saved.get("playlist_index") is not None:
+                entry["playlist_index"] = saved["playlist_index"]
+            write_diagnostic("playlist detection skipped: selected Library recovery")
+            return _ExpandedDownloadSource(playlist_info=playlist_info, entries=[entry])
+
+        single_playlist_context = bool(
+            job.single_video_only
+            and youtube_url_video_id(job.url)
+            and youtube_url_playlist_id(job.url)
+        )
+        if job.single_video_only and not single_playlist_context:
+            # The source URL was already normalized and playlist expansion is
+            # disabled. Avoid a full extractor pass whose only result would be
+            # confirming the single item that preflight analyzes next.
+            playlist_info = {"webpage_url": job.url}
+            entries = [{"webpage_url": job.url}]
+            write_diagnostic("playlist detection skipped: Ignore playlists is active")
+            if youtube_url_video_id(job.url):
+                self._emit_job_log(
+                    job,
+                    "No playlist context was included in this URL. To preserve a YouTube playlist folder, "
+                    "copy the full browser address containing list= instead of the shortened Share link.",
+                )
+            return _ExpandedDownloadSource(playlist_info=playlist_info, entries=entries)
+
+        self.events.put(("status", "Reading playlist…"))
+        write_diagnostic("playlist detection start")
+        playlist_started = time.monotonic()
+        playlist_opts = _build_playlist_detection_options(
+            job,
+            deno_path=self._find_deno(),
+        )
+        log_options("playlist detection", playlist_opts)
+
+        detect_playlist = partial(
+            _extract_playlist_source_step,
+            ytdlp_module,
+            dict(playlist_opts),
+            job.url,
+            control_check=control_check,
+            emit_log=partial(self._emit_job_log, job),
+        )
+
+        def report_playlist_wait(elapsed: float) -> None:
+            write_diagnostic(f"playlist detection still running after {elapsed:.0f}s")
+            self.events.put(
+                (
+                    "status",
+                    f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available.",
+                )
+            )
+
+        provider_network.begin_primary(control_check)
+        try:
+            playlist_result = run_cancellable_blocking_step(
+                lambda: provider_network.run_primary(detect_playlist),
+                blocking_step_cancelled,
+                timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+                poll_seconds=ANALYSIS_POLL_SECONDS,
+                label="Playlist detection",
+                on_wait=report_playlist_wait,
+            )
+        finally:
+            provider_network.end_primary()
+
+        extracted_info, session_cookies = playlist_result
+        write_diagnostic(
+            f"playlist detection elapsed_seconds={time.monotonic() - playlist_started:.3f}"
+        )
+        playlist_info, entries = _normalize_download_source_result(
+            extracted_info,
+            job.url,
+            single_video_only=job.single_video_only,
+        )
+        if job.single_video_only:
+            requested_video_id = youtube_url_video_id(job.url)
+            write_diagnostic(
+                "playlist identity retained for single item: "
+                f"playlist_id={playlist_info.get('id') or playlist_info.get('playlist_id')} "
+                f"video_id={requested_video_id}"
+            )
+        return _ExpandedDownloadSource(
+            playlist_info=playlist_info,
+            entries=entries,
+            session_cookies=session_cookies,
+            cookie_source_loaded=job.use_cookies,
+        )
+
+    def _analyze_download_item(
+        self,
+        job: DownloadJob,
+        ytdlp_module: Any,
+        provider_network: ProviderNetworkCoordinator,
+        item: _DownloadItemContext,
+        playlist_info: dict[str, Any],
+        max_height: int,
+        session_cookies: tuple[Any, ...],
+        cookie_source_loaded: bool,
+        *,
+        control_check: Callable[[], None],
+        blocking_step_cancelled: Callable[[], bool],
+        progress_callback: Callable[[float], None],
+    ) -> _AnalyzedDownloadItem:
+        """Analyze and plan one item while the caller owns the provider lease."""
+        self.events.put(("status", f"{item.label} — analyzing source formats"))
+        self._emit_job_log(job, f"{item.label}: URL {item.video_url}")
+        progress_callback(0.0)
+
+        ffmpeg = self._find_ffmpeg()
+        deno = self._find_deno()
+        options = _build_item_preflight_options(
+            job,
+            cookie_source_loaded=cookie_source_loaded,
+            ffmpeg=ffmpeg,
+            deno_path=deno,
+        )
+        write_diagnostic(f"{item.label} preflight runtime path: ffmpeg={ffmpeg}")
+        write_diagnostic(f"{item.label} preflight runtime path: deno={deno}")
+        write_diagnostic(
+            f"{item.label} preflight Deno/bundled-EJS enabled"
+            if deno
+            else f"{item.label} preflight Deno/EJS disabled: no deno runtime found"
+        )
+        log_options(f"{item.label} preflight", options)
+
+        analysis_step = partial(
+            _analyze_source_formats_step,
+            ytdlp_module,
+            dict(options),
+            tuple(session_cookies),
+            item.video_url,
+            item.label,
+            control_check=control_check,
+            emit_log=partial(self._emit_job_log, job),
+        )
+
+        def report_analysis_wait(elapsed: float) -> None:
+            write_diagnostic(
+                f"{item.label} analysis still running after {elapsed:.0f}s"
+            )
+            self.events.put(
+                (
+                    "status",
+                    f"{item.label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available.",
+                )
+            )
+
+        preflight_info, updated_session_cookies = run_cancellable_blocking_step(
+            partial(provider_network.run_primary, analysis_step),
+            blocking_step_cancelled,
+            timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+            poll_seconds=ANALYSIS_POLL_SECONDS,
+            label=f"{item.label} source analysis",
+            on_wait=report_analysis_wait,
+        )
+        if not isinstance(preflight_info, dict):
+            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
+                f"{item.label}: YouTube source analysis did not return metadata"
+            )
+        preflight_info = mark_metadata_output_type(
+            apply_playlist_context(
+                preflight_info,
+                item.entry,
+                playlist_info,
+                job.url,
+                item.index,
+            ),
+            job.output_type,
+        )
+        plan = _build_download_item_plan(
+            job,
+            preflight_info,
+            max_height=max_height,
+        )
+        preflight_info = annotate_job_metadata(job, preflight_info)
+        display_info = build_encoding_summary_metadata(preflight_info, plan)
+        self.events.put(job_info_event("job_metadata", job, display_info))
+        for line in _download_item_plan_log_lines(job, item.label, plan):
+            self._emit_job_log(job, line)
+        progress_callback(1.0)
+        return _AnalyzedDownloadItem(
+            preflight_info=preflight_info,
+            display_info=display_info,
+            plan=plan,
+            session_cookies=updated_session_cookies,
+            cookie_source_loaded=job.use_cookies,
+        )
+
+    def _download_item_to_staging(
+        self,
+        job: DownloadJob,
+        ytdlp_module: Any,
+        provider_network: ProviderNetworkCoordinator,
+        item: _DownloadItemContext,
+        playlist_info: dict[str, Any],
+        analyzed_item: _AnalyzedDownloadItem,
+        staging_dir: Path,
+        *,
+        control_check: Callable[[], None],
+        progress_callback: Callable[[float], None],
+    ) -> _DownloadedStagingItem:
+        """Transfer one analyzed item while the caller owns the provider lease."""
+        plan = analyzed_item.plan
+        ffmpeg = self._find_ffmpeg()
+        if not ffmpeg:
+            required_output = (
+                "original audio"
+                if job.output_type == OutputType.ORIGINAL
+                else "MP3 audio"
+                if isinstance(plan, AudioExportPlan)
+                else f"H.264 / {plan.output_audio_codec.value} MP4 video"
+            )
+            raise RuntimeError(
+                f"FFmpeg is required to create the {required_output} output."
+            )
+        if job_embeds_provider_thumbnail(job):
+            validate_embedded_thumbnail_sources(
+                analyzed_item.preflight_info,
+                source_url=item.video_url,
+            )
+        options = self._build_ydl_options(
+            job,
+            staging_dir=staging_dir,
+            format_selector=plan.format_selector,
+        )
+        options["noplaylist"] = True
+        # Preflight already loaded the selected cookie source. Reuse its
+        # in-memory session jar instead of reopening a browser profile or file.
+        options.pop("cookiefile", None)
+        options.pop("cookiesfrombrowser", None)
+        log_options(f"{item.label} download", options)
+        self._active_progress_context = (item.index, item.total, 0.10, 0.40)
+        self.events.put(("status", f"{item.label} — downloading"))
+        self._emit_job_log(job, f"{item.label}: downloading")
+        download_started = time.monotonic()
+        download_step = partial(
+            _download_preflight_result_step,
+            ytdlp_module,
+            options,
+            analyzed_item.preflight_info,
+            tuple(analyzed_item.session_cookies),
+            control_check=control_check,
+        )
+        info, session_cookies = provider_network.run_primary(download_step)
+        write_diagnostic(
+            f"{item.label} download and yt-dlp post-processing "
+            f"elapsed_seconds={time.monotonic() - download_started:.3f}"
+        )
+        self._active_progress_context = None
+        control_check()
+        if not isinstance(info, dict):
+            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
+                f"{item.label}: download did not return metadata"
+            )
+        info = mark_metadata_output_type(
+            apply_playlist_context(
+                info,
+                item.entry,
+                playlist_info,
+                job.url,
+                item.index,
+            ),
+            job.output_type,
+        )
+        info = annotate_job_metadata(job, info)
+        encoding_summary = analyzed_item.display_info.get("vodforge_encoding_summary")
+        if encoding_summary:
+            info["vodforge_encoding_summary"] = encoding_summary
+        self.events.put(job_info_event("job_metadata", job, info))
+        progress_callback(1.0)
+        return _DownloadedStagingItem(
+            metadata=info,
+            session_cookies=session_cookies,
+            ffmpeg=ffmpeg,
+        )
+
+    def _prepare_staged_download_item(
+        self,
+        job: DownloadJob,
+        item: _DownloadItemContext,
+        downloaded_item: _DownloadedStagingItem,
+        staging_dir: Path,
+        *,
+        control_check: Callable[[], None],
+    ) -> _PreparedStagingItem:
+        """Bind expected staged media and optional cover art before validation."""
+        expected_extension = (
+            original_audio_extension(str(downloaded_item.metadata.get("acodec") or ""))
+            if job.output_type == OutputType.ORIGINAL
+            else ".mp3"
+            if job.output_type == OutputType.MP3
+            else ".mp4"
+        )
+        staged_media = collect_staged_media_files(
+            staging_dir,
+            downloaded_item.metadata,
+            expected_extension=expected_extension,
+        )
+        if not staged_media:
+            raise RuntimeError(
+                f"{item.label}: yt-dlp completed without producing the expected "
+                f"{expected_extension} file."
+            )
+
+        custom_cover_for_cache: Path | None = None
+        custom_cover_path = job.mp3_settings.custom_cover_art_path
+        if job.output_type == OutputType.MP3 and custom_cover_path is not None:
+            control_check()
+            prepared_cover = prepare_custom_cover_art(custom_cover_path, staging_dir)
+            for _staged_info, staged_mp3 in staged_media:
+                embed_custom_mp3_cover_art(
+                    staged_mp3,
+                    prepared_cover,
+                    downloaded_item.ffmpeg,
+                    control_check=control_check,
+                )
+            control_check()
+            custom_cover_for_cache = prepared_cover
+            self._emit_job_log(
+                job,
+                f"{item.label}: embedded custom cover art ({custom_cover_path.name})",
+            )
+        return _PreparedStagingItem(
+            metadata=downloaded_item.metadata,
+            staged_media=staged_media,
+            expected_extension=expected_extension,
+            ffmpeg=downloaded_item.ffmpeg,
+            custom_cover_for_cache=custom_cover_for_cache,
+        )
+
+    def _emit_failed_download_item_metadata(
+        self,
+        job: DownloadJob,
+        result: _DownloadItemResult,
+        issue: str,
+    ) -> None:
+        if result.metadata is None:
+            return
+        self.events.put(
+            job_info_event(
+                "job_metadata",
+                job,
+                build_failed_encoding_summary_metadata(
+                    result.metadata,
+                    result.plan,
+                    issue,
+                ),
+            )
+        )
+
+    def _resolve_download_item_failure(
+        self,
+        job: DownloadJob,
+        item: _DownloadItemContext,
+        result: _DownloadItemResult,
+        error: Exception,
+    ) -> _DownloadItemResult:
+        """Classify one item failure from typed user authority and item scope."""
+        self._active_progress_context = None
+        control_request = (
+            error if isinstance(error, _DownloadControlRequestError) else None
+        )
+        if control_request is None:
+            try:
+                self._raise_for_download_control_requests()
+            except _DownloadControlRequestError as pending_request:
+                control_request = pending_request
+
+        if control_request is not None:
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "cancelled",
+                dimensions={
+                    "outcome": "stopped"
+                    if control_request.kind is _DownloadControlKind.CANCEL_RUN
+                    else "skipped"
+                },
+            )
+            if control_request.kind is _DownloadControlKind.CANCEL_RUN:
+                self._emit_failed_download_item_metadata(
+                    job, result, str(control_request)
+                )
+                raise _DownloadControlRequestError(
+                    control_request.kind,
+                    result=result,
+                ) from error
+
+            telemetry = self.__dict__.get("product_telemetry")
+            if telemetry is not None:
+                telemetry.record(
+                    "run_skipped",
+                    dedupe_key=job.run_id + ":" + str(item.index),
+                    attempt_key=job.run_id,
+                    run_kind="youtube",
+                    output_type=product_output_kind(job.output_type.value),
+                )
+            skipped_outcome = result.outcome.combined_with(
+                DownloadOutcome(skipped_count=1)
+            )
+            if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
+                self.skip_url_requested = False
+                self.skip_video_requested = False
+                self._emit_download_item_terminal(
+                    job,
+                    "Skipped",
+                    "URL skipped by user",
+                    result.metadata,
+                    result.plan,
+                    item.video_url,
+                )
+                self._emit_job_log(job, f"{item.label}: skipped URL by user.")
+                return replace(
+                    result,
+                    outcome=skipped_outcome,
+                    stop_source=True,
+                )
+
+            issue = str(control_request)
+            self._emit_failed_download_item_metadata(job, result, issue)
+            self._emit_download_item_terminal(
+                job,
+                "Skipped",
+                "Video skipped by user",
+                result.metadata,
+                result.plan,
+                item.video_url,
+                playlist_continues=item.index < item.total,
+            )
+            self._emit_job_log(
+                job,
+                f"{item.label}: skipped by user; continuing to next video.",
+            )
+            self.skip_video_requested = False
+            return replace(result, outcome=skipped_outcome)
+
+        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
+        DownloadWorkerCore._observe_download_operation(
+            self,
+            job,
+            "failed",
+            failure_detail=job.failure_diagnostic,
+            dimensions={"failed_count": "1"},
+        )
+        issue = format_ytdlp_user_error(error)
+        if item.total <= 1:
+            raise _DownloadItemExecutionError(error, result) from error
+        self._emit_job_log(job, technical_download_error(error))
+        self._emit_failed_download_item_metadata(job, result, issue)
+        write_diagnostic(
+            f"{item.label} failed but playlist will continue: "
+            f"{type(error).__name__}: {error}"
+        )
+        failed_outcome = result.outcome.combined_with(DownloadOutcome(failure_count=1))
+        self._emit_download_item_terminal(
+            job,
+            "Failed",
+            issue,
+            result.metadata,
+            result.plan,
+            item.video_url,
+            failure_details=technical_download_error(error),
+        )
+        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, error)
+        self._emit_job_log(
+            job,
+            f"WARNING: {item.label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
+        )
+        self.skip_video_requested = False
+        return replace(result, outcome=failed_outcome)
+
+    def _complete_staged_download_item(
+        self,
+        job: DownloadJob,
+        source: _DownloadSourceContext,
+        item: _DownloadItemContext,
+        result: _DownloadItemResult,
+    ) -> _DownloadItemResult:
+        """Own one staging transaction after analysis and a reuse miss."""
+        analyzed_item = result.analysis
+        current_info = result.metadata
+        current_plan = result.plan
+        if analyzed_item is None or current_info is None or current_plan is None:
+            raise RuntimeError("download item analysis contract is incomplete")
+
+        all_output_dirs = list(result.output_dirs)
+        staging_dir: Path | None = None
+        primary_intent_active = True
+        failure: Exception | None = None
+        try:
+            staging_dir = create_staging_dir(job.output_dir)
+            recovery_owner = self.__dict__.get("run_recovery")
+            if recovery_owner is not None:
+                recovery_owner.staging_started(job, staging_dir)
+            DownloadWorkerCore._observe_download_operation(
+                self, job, "stage", stage="download"
+            )
+            downloaded_item = self._download_item_to_staging(
+                job,
+                source.ytdlp_module,
+                source.provider_network,
+                item,
+                source.playlist_info,
+                analyzed_item,
+                staging_dir,
+                control_check=self._raise_for_download_control_requests,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.10,
+                    0.40,
+                ),
+            )
+            result = replace(
+                result,
+                session_cookies=downloaded_item.session_cookies,
+            )
+            source.provider_network.end_primary()
+            primary_intent_active = False
+            prepared_item = self._prepare_staged_download_item(
+                job,
+                item,
+                downloaded_item,
+                staging_dir,
+                control_check=self._raise_for_download_control_requests,
+            )
+            current_info = prepared_item.metadata
+            result = replace(result, metadata=current_info)
+
+            DownloadWorkerCore._observe_download_operation(
+                self, job, "stage", stage="transcode"
+            )
+            validated_staged = self._transcode_and_validate_staged_media(
+                job,
+                current_info,
+                current_plan,
+                prepared_item.staged_media,
+                prepared_item.ffmpeg,
+                label=item.label,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.50,
+                    0.40,
+                ),
+                control_check=self._raise_for_download_control_requests,
+            )
+            DownloadWorkerCore._observe_download_operation(
+                self, job, "stage", stage="commit"
+            )
+            committed_media = self._commit_validated_staged_media(
+                job,
+                current_info,
+                current_plan,
+                staging_dir,
+                prepared_item.expected_extension,
+                validated_staged,
+                label=item.label,
+                all_output_dirs=all_output_dirs,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.50,
+                    0.40,
+                ),
+                control_check=self._raise_for_download_control_requests,
+            )
+            before_sidecars = result.outcome.sidecar_failure_count
+            DownloadWorkerCore._observe_download_operation(
+                self, job, "stage", stage="sidecars"
+            )
+            current_info = committed_media.metadata
+            result = replace(
+                result,
+                outcome=result.outcome.combined_with(
+                    DownloadOutcome(success_count=committed_media.success_count)
+                ),
+                output_dirs=tuple(all_output_dirs),
+                metadata=current_info,
+            )
+            result = replace(
+                result,
+                outcome=result.outcome.combined_with(
+                    self._record_committed_media_and_write_sidecars(
+                        job,
+                        current_info,
+                        committed_media.primary_output,
+                        label=item.label,
+                        custom_cover_for_cache=prepared_item.custom_cover_for_cache,
+                    )
+                ),
+            )
+            sidecar_failures = result.outcome.sidecar_failure_count - before_sidecars
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "completed",
+                dimensions={
+                    "committed_count": str(min(committed_media.success_count, 10000)),
+                    "reused_count": "0",
+                    "sidecar_failure_count": str(min(sidecar_failures, 10000)),
+                    "outcome": "partial" if sidecar_failures else "complete",
+                },
+            )
+            self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
+            result_label = (
+                "Original audio"
+                if job.output_type == OutputType.ORIGINAL
+                else "MP3 audio"
+                if job.output_type == OutputType.MP3
+                else "MP4 video"
+            )
+            self.events.put(("status", f"{item.label} complete — {result_label}"))
+            self._emit_job_log(job, f"{item.label} complete — {result_label}")
+        except Exception as exc:  # noqa: BLE001 - item failure policy classifies provider and control errors
+            failure = exc
+        finally:
+            self._active_progress_context = None
+            if staging_dir is not None:
+                cleanup_private_staging_directory(staging_dir)
+            if primary_intent_active:
+                source.provider_network.end_primary()
+        if failure is not None:
+            result = replace(result, output_dirs=tuple(all_output_dirs))
+            return self._resolve_download_item_failure(job, item, result, failure)
+        return result
+
+    def _observed_output_dimensions(
+        self,
+        output_path: Path,
+        probe: Any,
+        *,
+        info: dict[str, Any] | None = None,
+        artifact_count: int = 1,
+    ) -> dict[str, str]:
+        # No extra filesystem observations without current collection consent.
+        telemetry = self.__dict__.get("product_telemetry")
+        try:
+            permitted = getattr(telemetry, "permitted", None)
+            if not callable(permitted) or not permitted():
+                return {}
+        except Exception:  # noqa: BLE001 - unavailable consent is not permission
+            return {}
+        facts = {"output_observation": "unavailable", "observed_audio_state": "unknown"}
+        try:
+            facts.update(
+                observed_audio_characteristics(probe, artifact_count=artifact_count)
+            )
+        except Exception:  # noqa: BLE001, S110  # nosec B110 - malformed probe observations cannot break media
+            pass
+        if artifact_count != 1:
+            facts.update(
+                namespace_scan_state="not_applicable",
+                peer_namespace_state="not_applicable",
+            )
+            return facts
+        try:
+            facts.update(
+                observed_output_namespace(
+                    output_path, info, self.__dict__.get("download_history")
+                )
+            )
+        except Exception:  # noqa: BLE001 - optional observation cannot control the commit
+            facts.update(namespace_scan_state="unknown", peer_namespace_state="unknown")
+        return facts
+
+    def _observe_download_operation(
+        self,
+        job: DownloadJob,
+        action: str,
+        *,
+        stage: str | None = None,
+        dimensions: dict[str, str] | None = None,
+        failure_detail: FailureDiagnostic | None = None,
+        output_path: Path | None = None,
+        output_probe: Any = None,
+        output_info: dict[str, Any] | None = None,
+        artifact_count: int = 1,
+    ) -> None:
+        if stage is not None:
+            job.failure_stage = stage
+        telemetry = self.__dict__.get("product_telemetry")
+        operation = getattr(job, "telemetry_operation_id", None)
+        if telemetry is not None and operation:
+            facts = {"stage": job.failure_stage, **dict(dimensions or {})}
+            if output_path is not None:
+                facts.update(
+                    DownloadWorkerCore._observed_output_dimensions(
+                        self,
+                        output_path,
+                        output_probe,
+                        info=output_info,
+                        artifact_count=artifact_count,
+                    )
+                )
+            try:
+                telemetry.record_operation(
+                    "download_operation",
+                    action,
+                    operation_key=operation,
+                    attempt_key=job.run_id,
+                    retry_key=job.retry_of_run_id,
+                    dimensions=facts,
+                    failure_detail=failure_detail,
+                )
+            except Exception:  # noqa: BLE001, S110  # nosec B110 - telemetry cannot own export success
+                pass
+
+    def _observe_download_sidecar_failure(
+        self, job: DownloadJob, error: Exception, *, kind: str, reused: bool = False
+    ) -> None:
+        DownloadWorkerCore._observe_download_operation(
+            self,
+            job,
+            "failed",
+            stage="sidecars",
+            dimensions={
+                "sidecar_failure_count": "1",
+                "failed_count": "0",
+                "sidecar_kind": kind,
+                "sidecar_outcome": "failed",
+                "sidecar_context": "reused_media" if reused else "committed_media",
+            },
+            failure_detail=capture_failure(error, stage="sidecars"),
+        )
+
+    def _download_sidecar_observer(
+        self, job: DownloadJob, kind: str, *, reused: bool = False
+    ) -> Callable[[str], None] | None:
+        telemetry = self.__dict__.get("product_telemetry")
+        try:
+            if telemetry is None or not telemetry.permitted():
+                return None
+        except Exception:  # noqa: BLE001 - unavailable consent fails closed
+            return None
+
+        def observed(result: str) -> None:
+            # Repaired here means a missing requested companion was restored
+            # beside reused media, not that a prior deletion was reconstructed.
+            outcome = "repaired" if reused and result == "created" else result
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="sidecars",
+                dimensions={
+                    "sidecar_kind": kind,
+                    "sidecar_outcome": outcome,
+                    "sidecar_context": "reused_media" if reused else "committed_media",
+                },
+            )
+
+        return observed
+
+    def _observed_intent_relation(self, job: DownloadJob, info: dict[str, Any]) -> str:
+        # An observational comparison must never create media-work failure.
+        # Invalid/absent evidence is unknown, not a claim of first use.
+        history = self.__dict__.get("download_history")
+        if not isinstance(history, (list, tuple)) or not isinstance(
+            info.get("id"), str
+        ):
+            return "unknown"
+        if any(
+            not isinstance(record, dict)
+            or not isinstance(record.get("id"), str)
+            or any(
+                record.get(key) is not None and not isinstance(record[key], str)
+                for key in (
+                    "webpage_url",
+                    "vodforge_attempt_signature",
+                    "vodforge_output_variant",
+                    "vodforge_output_variant_compact",
+                )
+            )
+            for record in history
+        ):
+            return "unknown"
+        previous = [
+            record
+            for record in history
+            if info.get("id") and record.get("id") == info["id"]
+        ]
+        if not previous:
+            return "first_observed"
+        source_url = sanitize_durable_url(
+            str(info.get("webpage_url") or ""), preserve_youtube_context=True
+        )
+        if not source_url:
+            return "unknown"
+        same_source = [
+            record
+            for record in previous
+            if sanitize_durable_url(
+                str(record.get("webpage_url") or ""), preserve_youtube_context=True
+            )
+            == source_url
+        ]
+        if not same_source:
+            # Equal provider IDs alone do not establish equal sources.
+            return "unknown"
+        previous = same_source
+        signature = job_attempt_signature(job)
+        if any(metadata_attempt_signature(record) == signature for record in previous):
+            return "same_intent"
+        variant = metadata_output_variant(info)
+        known = [
+            metadata_output_variant(record)
+            for record in previous
+            if metadata_output_variant(record)
+        ]
+        if not variant or not known:
+            return "unknown"
+        return (
+            "different_destination_or_organization"
+            if variant in known
+            else "different_settings"
+        )
+
+    def _coordinate_download_item(
+        self,
+        job: DownloadJob,
+        source: _DownloadSourceContext,
+        item: _DownloadItemContext,
+        previous: _DownloadItemResult,
+    ) -> _DownloadItemResult:
+        """Acquire, analyze, and choose reuse or a staging transaction."""
+        result = replace(
+            previous,
+            analysis=None,
+            metadata=None,
+            plan=None,
+            stop_source=False,
+        )
+        primary_intent_active = False
+        job.telemetry_operation_id = str(uuid.uuid4())
+        DownloadWorkerCore._observe_download_operation(
+            self,
+            job,
+            "started",
+            stage="analysis",
+            dimensions={
+                **job_intent_dimensions(job),
+                "item_count": str(min(item.total, 10000)),
+            },
+        )
+        try:
+            self._raise_for_download_control_requests()
+            source.provider_network.begin_primary(
+                self._raise_for_download_control_requests
+            )
+            primary_intent_active = True
+            analyzed_item = self._analyze_download_item(
+                job,
+                source.ytdlp_module,
+                source.provider_network,
+                item,
+                source.playlist_info,
+                source.max_height,
+                result.session_cookies,
+                result.cookie_source_loaded,
+                control_check=self._raise_for_download_control_requests,
+                blocking_step_cancelled=self._video_blocking_step_cancelled,
+                progress_callback=partial(
+                    self._put_download_stage_progress,
+                    item,
+                    0.0,
+                    0.10,
+                ),
+            )
+            result = replace(
+                result,
+                session_cookies=analyzed_item.session_cookies,
+                cookie_source_loaded=analyzed_item.cookie_source_loaded,
+                analysis=analyzed_item,
+                metadata=analyzed_item.display_info,
+                plan=analyzed_item.plan,
+            )
+            recovery_owner = self.__dict__.get("run_recovery")
+            if recovery_owner is not None:
+                recovery_owner.metadata_observed(job, analyzed_item.display_info)
+            all_output_dirs = list(result.output_dirs)
+            job.failure_stage = "reuse"
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "stage",
+                stage="reuse",
+                dimensions={
+                    "intent_relation": DownloadWorkerCore._observed_intent_relation(
+                        self, job, analyzed_item.display_info
+                    )
+                },
+            )
+            existing_reuse = self._try_reuse_existing_output(
+                job,
+                analyzed_item.display_info,
+                analyzed_item.plan,
+                label=item.label,
+                all_output_dirs=all_output_dirs,
+                control_check=self._raise_for_download_control_requests,
+            )
+            if existing_reuse is not None:
+                DownloadWorkerCore._observe_download_operation(
+                    self,
+                    job,
+                    "completed",
+                    dimensions={
+                        "reuse_result": "hit",
+                        "reused_count": "1",
+                        "committed_count": "0",
+                        "sidecar_failure_count": str(
+                            min(existing_reuse.outcome.sidecar_failure_count, 10000)
+                        ),
+                        "outcome": "partial"
+                        if existing_reuse.outcome.sidecar_failure_count
+                        else "complete",
+                    },
+                )
+                self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
+                self.events.put(
+                    (
+                        "status",
+                        (
+                            f"{item.label} complete — Already downloaded and valid — "
+                            "reused existing file."
+                        ),
+                    )
+                )
+                return replace(
+                    result,
+                    outcome=result.outcome.combined_with(existing_reuse.outcome),
+                    output_dirs=tuple(all_output_dirs),
+                    metadata=existing_reuse.metadata,
+                )
+            DownloadWorkerCore._observe_download_operation(
+                self, job, "stage", stage="staging", dimensions={"reuse_result": "miss"}
+            )
+            primary_intent_active = False
+        except Exception as exc:  # noqa: BLE001 - item failure resolver separates user control from provider text
+            return self._resolve_download_item_failure(job, item, result, exc)
+        finally:
+            if primary_intent_active:
+                source.provider_network.end_primary()
+
+        return self._complete_staged_download_item(job, source, item, result)
+
+    def _log_expanded_download_source(
+        self,
+        job: DownloadJob,
+        total_videos: int,
+    ) -> None:
+        if total_videos > 1:
+            self._emit_job_log(job, f"Playlist detected: {total_videos} videos.")
+            write_diagnostic(f"playlist detected: video_count={total_videos}")
+            return
+        self._emit_job_log(job, "Single video detected.")
+        write_diagnostic("single video detected")
+
+    def _finish_download_source_failure(
+        self,
+        job: DownloadJob,
+        result: _DownloadItemResult,
+        error: Exception,
+        *,
+        re_raise: bool,
+    ) -> DownloadOutcome:
+        self._active_progress_context = None
+        user_error = format_ytdlp_user_error(error)
+        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
+        self._emit_job_log(job, technical_download_error(error))
+        self._emit_failed_download_item_metadata(job, result, user_error)
+        write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
+        if re_raise:
+            raise _DownloadItemExecutionError(error, result) from error
+        self.events.put(("error", user_error))
+        return result.outcome
+
+    def _download_worker_single(
+        self,
+        job: DownloadJob,
+        *,
+        emit_done: bool = True,
+        re_raise: bool = False,
+    ) -> DownloadOutcome:
+        result = _DownloadItemResult(outcome=DownloadOutcome())
+        provider_network = self._provider_network_coordinator()
+
+        try:
+            ytdlp_module = load_yt_dlp()
+            if ytdlp_module is None:
+                raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
+            max_height = _quality_max_height(job.quality_label)
+            self._emit_job_log(job, f"Normalized URL: {job.url}")
+            self.events.put(("progress", 0))
+            expanded_source = self._expand_download_source(
+                job,
+                ytdlp_module,
+                provider_network,
+                control_check=self._raise_for_download_control_requests,
+                blocking_step_cancelled=self._playlist_blocking_step_cancelled,
+            )
+            result = replace(
+                result,
+                session_cookies=expanded_source.session_cookies,
+                cookie_source_loaded=expanded_source.cookie_source_loaded,
+            )
+            entries = expanded_source.entries
+            total_videos = len(entries)
+            self._log_expanded_download_source(job, total_videos)
+
+            self.video_output_dirs_by_id = {}
+            source = _DownloadSourceContext(
+                ytdlp_module=ytdlp_module,
+                provider_network=provider_network,
+                playlist_info=expanded_source.playlist_info,
+                max_height=max_height,
+            )
+            for video_index, entry in enumerate(entries, start=1):
+                if total_videos > 1:
+                    self.events.put(
+                        ("status", f"Video {video_index} of {total_videos} — preparing")
+                    )
+                    self.events.put(("progress", 0))
+                    self.events.put(
+                        job_info_event(
+                            "job_metadata",
+                            job,
+                            {
+                                **entry,
+                                "title": entry.get("title")
+                                or f"Preparing video {video_index} of {total_videos}",
+                                "webpage_url": _download_entry_url(entry, job.url),
+                                "vodforge_output_type": job.output_type.value,
+                            },
+                        )
+                    )
+                item = _DownloadItemContext(
+                    entry=entry,
+                    index=video_index,
+                    total=total_videos,
+                    video_url=_download_entry_url(entry, job.url),
+                    label=f"Video {video_index} of {total_videos}",
+                )
+                result = self._coordinate_download_item(job, source, item, result)
+                if result.stop_source:
+                    break
+
+            return self._finish_download_run_outcome(
+                job,
+                result.outcome,
+                emit_done=emit_done,
+            )
+        except _DownloadControlRequestError as control_request:
+            self._active_progress_context = None
+            if control_request.result is not None:
+                result = control_request.result
+            write_diagnostic(
+                f"download worker control request: {control_request.kind.value}"
+            )
+            if re_raise:
+                raise
+            if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
+                self.skip_url_requested = False
+                self.skip_video_requested = False
+            elif control_request.kind is _DownloadControlKind.SKIP_ITEM:
+                self.skip_video_requested = False
+            self.events.put(
+                _download_source_control_terminal_event(
+                    job,
+                    result,
+                    control_request.kind,
+                )
+            )
+            return result.outcome
+        except Exception as exc:  # noqa: BLE001 - source parent converts provider failures into one terminal outcome
+            result, source_error = _download_source_failure_context(exc, result)
+            return self._finish_download_source_failure(
+                job,
+                result,
+                source_error,
+                re_raise=re_raise,
+            )
+
+    def _build_ydl_options(
+        self, job: DownloadJob, staging_dir: Path, format_selector: str | None = None
+    ) -> dict[str, Any]:
+        if job.output_type == OutputType.MP3:
+            use_youtube_cover = job_embeds_provider_thumbnail(job)
+            postprocessors: list[dict[str, Any]] = [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": str(job.mp3_settings.bitrate_kbps),
+                },
+            ]
+            if job.mp3_settings.embed_metadata:
+                postprocessors.append(
+                    {
+                        "key": "FFmpegMetadata",
+                        "add_chapters": True,
+                        "add_metadata": True,
+                    }
+                )
+            if use_youtube_cover:
+                postprocessors.append(
+                    {"key": "EmbedThumbnail", "already_have_thumbnail": False}
+                )
+            selected_format = format_selector or "bestaudio/best"
+            write_thumbnail = use_youtube_cover
+            postprocessor_args = (
+                self._metadata_args(job.tags) if job.mp3_settings.embed_metadata else {}
+            )
+            audio_args: list[str] = []
+            if job.mp3_settings.sample_rate:
+                audio_args.extend(("-ar", job.mp3_settings.sample_rate))
+            if job.mp3_settings.channels:
+                audio_args.extend(("-ac", job.mp3_settings.channels))
+            if audio_args:
+                postprocessor_args["extractaudio+ffmpeg_o"] = audio_args
+        else:
+            postprocessors = [
+                {"key": "FFmpegVideoConvertor", "preferedformat": "mp4"},
+            ]
+            if job.embed_metadata:
+                postprocessors.append(
+                    {
+                        "key": "FFmpegMetadata",
+                        "add_chapters": True,
+                        "add_metadata": True,
+                    }
+                )
+            if job.embed_thumbnail:
+                postprocessors.append(
+                    {"key": "EmbedThumbnail", "already_have_thumbnail": False}
+                )
+            selected_format = (
+                format_selector or QUALITY_OPTIONS[job.quality_label]
+            ) + "/best"
+            # A separate thumbnail is fetched through VODForge's bounded,
+            # redirect-aware authority policy after the media commit. yt-dlp
+            # needs thumbnail network authority only when it must embed one.
+            write_thumbnail = job_embeds_provider_thumbnail(job)
+            postprocessor_args = self._metadata_args(job.tags)
+
+        outtmpl = staging_output_template()
+        opts: dict[str, Any] = {
+            "format": selected_format,
+            "outtmpl": outtmpl,
+            # yt-dlp probes formats with NamedTemporaryFile before downloading.
+            # An absolute per-run temp path is required because packaged macOS
+            # applications may start with `/` as their working directory.
+            "paths": {"home": str(staging_dir), "temp": str(staging_dir)},
+            "windowsfilenames": True,
+            "restrictfilenames": False,
+            "noplaylist": False,
+            "writethumbnail": write_thumbnail,
+            "writeinfojson": False,
+            "postprocessors": postprocessors,
+            # VODForge owns progress through the hook below. Suppressing yt-dlp's
+            # terminal printer avoids caching its logger wrapper, which otherwise
+            # retains the per-job event queue after the download completes.
+            "noprogress": True,
+            "progress_hooks": [self._progress_hook],
+            "logger": QueueLogger(self.events),
+            "embed_infojson": False,
+            "postprocessor_args": postprocessor_args,
+            "concurrent_fragment_downloads": 1,
+            "ignore_no_formats_error": True,
+        }
+        if job.output_type == OutputType.ORIGINAL:
+            opts.update(original_audio_options(format_selector))
+        apply_ytdlp_network_retry_policy(opts, source_analysis=False)
+        if job.output_type == OutputType.MP4:
+            opts["merge_output_format"] = "mp4"
+        ffmpeg = self._find_ffmpeg()
+        if ffmpeg:
+            opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
+        deno = self._find_deno()
+        apply_youtube_runtime_options(opts, deno_path=deno)
+        apply_ytdlp_cookie_options(
+            opts,
+            use_cookies=job.use_cookies,
+            cookie_file=job.cookie_file,
+            cookie_browser=job.cookie_browser,
+        )
+        return opts
+
+    @staticmethod
+    def _find_ffmpeg() -> str | None:
+        runtime_ffmpeg = find_runtime_executable("ffmpeg")
+        if runtime_ffmpeg:
+            return runtime_ffmpeg
+        try:
+            import imageio_ffmpeg
+
+            bundled = imageio_ffmpeg.get_ffmpeg_exe()
+            if bundled and Path(bundled).exists():
+                return str(bundled)
+        except Exception as exc:  # noqa: BLE001 - optional runtime discovery remains nonfatal
+            write_diagnostic(
+                f"optional imageio FFmpeg fallback unavailable: {type(exc).__name__}"
+            )
+        return None
+
+    @staticmethod
+    def _find_ffprobe() -> str | None:
+        return find_runtime_executable("ffprobe")
+
+    @staticmethod
+    def _find_deno() -> str | None:
+        return find_runtime_executable("deno")
+
+    def _metadata_args(self, tags: list[str]) -> dict[str, list[str]]:
+        if not tags:
+            return {}
+        # Apply extra keywords specifically to FFmpegMetadata's output command.
+        # yt-dlp normalizes postprocessor argument keys to lowercase.
+        return {"metadata+ffmpeg_o": ["-metadata", f"keywords={','.join(tags)}"]}
+
+    def _progress_hook(self, data: dict[str, Any]) -> None:
+        self._raise_for_download_control_requests()
+        status = data.get("status")
+        if status == "downloading":
+            now = time.monotonic()
+            last_event_at = getattr(self, "_last_progress_event_at", 0.0)
+            downloaded = _first_finite_float(data.get("downloaded_bytes"))
+            total = _first_finite_float(
+                data.get("total_bytes"),
+                data.get("total_bytes_estimate"),
+            )
+            if now - last_event_at < PROGRESS_EVENT_INTERVAL_SECONDS and not (
+                total and downloaded >= total
+            ):
+                return
+            self._last_progress_event_at = now
+            self.events.put(("progress_determinate", None))
+            if total:
+                pct = downloaded / total * 100
+                context = self._active_progress_context
+                if context:
+                    video_index, total_videos, stage_start, stage_weight = context
+                    global_pct = (
+                        (video_index - 1) / max(total_videos, 1)
+                        + (stage_start + stage_weight * (pct / 100.0))
+                        / max(total_videos, 1)
+                    ) * 100.0
+                    self.events.put(("progress", global_pct))
+                else:
+                    self.events.put(("progress", pct))
+            speed = data.get("speed")
+            eta = data.get("eta")
+            filename = Path(str(data.get("filename") or "")).name
+            self.events.put(
+                (
+                    "status",
+                    f"Downloading {filename} — {self._fmt_bytes(speed)}/s ETA {eta or '?'}s",
+                )
+            )
+        elif status == "finished":
+            context = self._active_progress_context
+            if context:
+                video_index, total_videos, stage_start, stage_weight = context
+                global_pct = (
+                    (video_index - 1) / max(total_videos, 1)
+                    + (stage_start + stage_weight) / max(total_videos, 1)
+                ) * 100.0
+                self.events.put(("progress", global_pct))
+            else:
+                self.events.put(("progress", 100))
+            self.events.put(("status", "Download finished; finalizing output…"))
+
+    def _emit_job_log(self, job: DownloadJob, line: str) -> None:
+        self.events.put(job_log_event(job, line))
+
+    @staticmethod
+    def _fmt_bytes(value: Any) -> str:
+        if not value:
+            return "?"
+        size = _finite_float(value)
+        if size is None:
+            return "?"
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size < 1024:
+                return f"{size:.1f}{unit}"
+            size /= 1024
+        return f"{size:.1f}TB"
+
+
 class DownloaderApp(
-    LibraryFileActionsMixin, ArchiveLibraryMixin, UiEventHandlersMixin, tk.Tk
+    DownloadWorkerCore,
+    LibraryFileActionsMixin,
+    ArchiveLibraryMixin,
+    UiEventHandlersMixin,
+    tk.Tk,
 ):
     _focus_brand_source_image: _PILImage.Image | None
     _focus_thumbnail_source_image: _PILImage.Image | None
@@ -11420,13 +13559,6 @@ class DownloaderApp(
         ).start()
         return True
 
-    def _provider_network_coordinator(self) -> ProviderNetworkCoordinator:
-        coordinator = self.__dict__.get("_provider_network")
-        if coordinator is None:
-            coordinator = ProviderNetworkCoordinator()
-            self._provider_network = coordinator
-        return coordinator
-
     def _metadata_worker(
         self, url: str, output_type: OutputType, ignore_playlists: bool = False
     ) -> None:
@@ -14896,2114 +17028,6 @@ class DownloaderApp(
             target=terminate_all_active_child_processes, daemon=True
         ).start()
 
-    def _coordinate_download_batch(
-        self,
-        job: DownloadJob,
-        urls: list[str],
-    ) -> _DownloadBatchResult:
-        """Run child sources without acquiring the batch terminal event."""
-        outcome = DownloadOutcome()
-        failures: list[tuple[str, str]] = []
-        for index, url in enumerate(urls, start=1):
-            if self.cancel_requested:
-                return _DownloadBatchResult(
-                    outcome=outcome,
-                    failures=tuple(failures),
-                    control_kind=_DownloadControlKind.CANCEL_RUN,
-                )
-            item_url, forced_single_video = prepare_batch_item_url(url)
-            item_single_video_only = job.single_video_only or forced_single_video
-            self.events.put(("status", f"Batch URL {index} of {len(urls)} — starting"))
-            self._emit_job_log(job, f"Batch URL {index} of {len(urls)}: {item_url}")
-            write_diagnostic(
-                f"batch URL {index} of {len(urls)} start: {item_url} single_video_only={item_single_video_only}"
-            )
-            try:
-                item_outcome = self._download_worker_single(
-                    replace(
-                        job,
-                        url=item_url,
-                        urls=[item_url],
-                        single_video_only=item_single_video_only,
-                    ),
-                    emit_done=False,
-                    re_raise=True,
-                )
-                outcome = outcome.combined_with(item_outcome)
-            except _DownloadControlRequestError as control_request:
-                if control_request.result is not None:
-                    outcome = outcome.combined_with(
-                        _committed_download_outcome(control_request.result)
-                    )
-                if control_request.kind is _DownloadControlKind.CANCEL_RUN:
-                    return _DownloadBatchResult(
-                        outcome=outcome,
-                        failures=tuple(failures),
-                        control_kind=control_request.kind,
-                    )
-                self.skip_video_requested = False
-                if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
-                    self.skip_url_requested = False
-                write_diagnostic(f"batch URL {index} skipped by user: {item_url}")
-                self._emit_job_log(
-                    job, f"Batch URL {index} skipped by user; continuing."
-                )
-                outcome = outcome.combined_with(DownloadOutcome(skipped_count=1))
-            except Exception as exc:  # noqa: BLE001 - each provider child failure is isolated in the batch result
-                provider_error = exc
-                if isinstance(exc, _DownloadItemExecutionError):
-                    outcome = outcome.combined_with(
-                        _committed_download_outcome(exc.result)
-                    )
-                    provider_error = exc.error
-                issue = format_ytdlp_user_error(provider_error)
-                if job.failure_diagnostic is None:
-                    job.failure_diagnostic = capture_failure(
-                        provider_error, stage="batch"
-                    )
-                failures.append((item_url, issue))
-                outcome = outcome.combined_with(DownloadOutcome(failure_count=1))
-                append_batch_failure_report(
-                    BATCH_FAILURE_REPORT_PATH, item_url, provider_error
-                )
-                write_diagnostic(
-                    f"batch URL {index} of {len(urls)} failed but batch will continue: "
-                    f"{type(provider_error).__name__}: {provider_error}"
-                )
-                self._emit_job_log(
-                    job,
-                    f"WARNING: Batch URL {index} failed; continuing. Failure report: {BATCH_FAILURE_REPORT_PATH}",
-                )
-        return _DownloadBatchResult(outcome=outcome, failures=tuple(failures))
-
-    def _download_worker(self, job: DownloadJob) -> None:
-        urls = [url.strip() for url in (job.urls or [job.url]) if url.strip()]
-        if len(urls) <= 1:
-            single_url = urls[0] if urls else job.url
-            single_video_only = job.single_video_only
-            if job.batch_mode:
-                single_url, forced_single_video = prepare_batch_item_url(single_url)
-                single_video_only = single_video_only or forced_single_video
-            # Keep the active authority object itself through the worker. A
-            # dataclass copy would strand terminal flags and resolved metadata
-            # on a private worker object that Forge never observes.
-            job.url = single_url
-            job.urls = [single_url]
-            job.single_video_only = single_video_only
-            self._download_worker_single(job)
-            return
-        try:
-            reset_batch_failure_report()
-            batch_result = self._coordinate_download_batch(job, urls)
-            if batch_result.control_kind is not None:
-                self._active_progress_context = None
-                write_diagnostic(
-                    "batch download worker control request: "
-                    f"{batch_result.control_kind.value}"
-                )
-            self.events.put(_download_batch_terminal_event(batch_result, len(urls)))
-        except Exception as exc:  # noqa: BLE001 - worker converts terminal failures into UI outcomes
-            job.failure_diagnostic = capture_failure(exc, stage="batch")
-            self._active_progress_context = None
-            write_diagnostic(
-                f"batch download worker error: {type(exc).__name__}: {exc}"
-            )
-            self._emit_job_log(job, technical_download_error(exc))
-            self.events.put(("error", format_ytdlp_user_error(exc)))
-
-    def _try_reuse_existing_output(
-        self,
-        job: DownloadJob,
-        info: dict[str, Any],
-        plan: ExportPlan | AudioExportPlan,
-        *,
-        label: str,
-        all_output_dirs: list[Path],
-        control_check: Callable[[], None],
-    ) -> _ExistingOutputReuse | None:
-        ffprobe = self._find_ffprobe()
-        if not ffprobe:
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "stage",
-                stage="reuse",
-                dimensions={
-                    "reuse_result": "unavailable",
-                    "reuse_rejection": "probe_unavailable",
-                },
-            )
-            return None
-        history = self.__dict__.get("download_history", ())
-        legacy_paths = owned_output_paths(
-            job, info, history if isinstance(history, (list, tuple)) else ()
-        )
-        rejection: tuple[str, FailureDiagnostic | None] = (
-            "no_eligible_candidate",
-            None,
-        )
-
-        def rejected(reason: str, detail: FailureDiagnostic | None) -> None:
-            nonlocal rejection
-            # Keep only the last rejection; candidate count can be large.
-            rejection = (reason, detail)
-
-        existing_output = find_valid_existing_output(
-            job.output_dir,
-            info,
-            job.output_type,
-            ffprobe,
-            plan=plan,
-            embed_metadata=(
-                job.mp3_settings.embed_metadata
-                if job.output_type == OutputType.MP3
-                else job.embed_metadata
-            ),
-            embed_cover_art=(
-                job.mp3_settings.embed_cover_art
-                if job.output_type == OutputType.MP3
-                else job.embed_thumbnail
-            ),
-            custom_cover_art=(
-                job.output_type == OutputType.MP3
-                and job.mp3_settings.custom_cover_art_path is not None
-            ),
-            expected_tags=job.tags,
-            expected_duration_seconds=_float_or_none(info.get("duration")),
-            control_check=control_check,
-            owned_legacy_paths=legacy_paths,
-            on_rejection=rejected,
-        )
-        if existing_output is None:
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "stage"
-                if rejection[0] == "no_eligible_candidate"
-                else "candidate_rejected",
-                stage="reuse",
-                dimensions={"reuse_result": "miss", "reuse_rejection": rejection[0]},
-                failure_detail=rejection[1],
-            )
-            return None
-
-        existing_path, existing_probe = existing_output
-        namespace = "unknown"
-        if metadata_output_variant(info):
-            try:
-                variant_dir, _ = resolved_video_output_target(
-                    job.output_dir, info, existing_path.suffix
-                )
-                if existing_path.parent == variant_dir:
-                    namespace = "variant"
-            except ValueError:
-                pass  # A legacy lookup can succeed when a new path is too long.
-        if namespace == "unknown" and existing_path in legacy_paths:
-            namespace = "owned_legacy"
-        DownloaderApp._observe_download_operation(
-            self,
-            job,
-            "reused",
-            stage="reuse",
-            dimensions={
-                "reused_count": "1",
-                "committed_count": "0",
-                "storage_namespace": namespace,
-            },
-            output_path=existing_path,
-            output_probe=existing_probe,
-            output_info=info,
-        )
-        remember_video_output_dir(info, existing_path.parent)
-        reused_info = build_encoding_summary_metadata(
-            info,
-            plan,
-            output_path=existing_path,
-            ffprobe_data=existing_probe,
-            validation_status="Validated existing output",
-        )
-        self.events.put(job_info_event("job_metadata", job, reused_info))
-        self.events.put(
-            history_record_event(
-                job,
-                reused_info,
-                str(existing_path.parent),
-            )
-        )
-        all_output_dirs.append(existing_path.parent)
-        self.events.put(("download_folders", sorted(set(all_output_dirs))))
-        reuse_outcome = DownloadOutcome(success_count=1)
-        self._emit_job_log(
-            job,
-            f"{label}: Already downloaded and valid — reused existing file. "
-            f"Path: {existing_path}",
-        )
-        try:
-            cached_thumbnail = save_cached_thumbnail_image(
-                reused_info,
-                source_url=job.url,
-                on_result=DownloaderApp._download_sidecar_observer(
-                    self, job, "library_artwork", reused=True
-                ),
-            )
-            if cached_thumbnail is not None:
-                self._emit_job_log(
-                    job, f"{label}: refreshed private Library artwork cache"
-                )
-        except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
-            DownloaderApp._observe_download_sidecar_failure(
-                self, job, exc, kind="library_artwork", reused=True
-            )
-            self._emit_job_log(job, technical_download_error(exc))
-            reuse_outcome = reuse_outcome.combined_with(
-                DownloadOutcome(sidecar_failure_count=1)
-            )
-            self._emit_job_log(
-                job,
-                f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed: {exc}",
-            )
-        if job.write_info_json:
-            try:
-                write_compact_video_metadata(
-                    existing_path.parent,
-                    reused_info,
-                    job.tags,
-                    output_root=job.output_dir,
-                    on_result=DownloaderApp._download_sidecar_observer(
-                        self, job, "metadata", reused=True
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(
-                    self, job, exc, kind="metadata", reused=True
-                )
-                self._emit_job_log(job, technical_download_error(exc))
-                reuse_outcome = reuse_outcome.combined_with(
-                    DownloadOutcome(sidecar_failure_count=1)
-                )
-                self._emit_job_log(
-                    job,
-                    f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed: {exc}",
-                )
-        else:
-            observer = DownloaderApp._download_sidecar_observer(
-                self, job, "metadata", reused=True
-            )
-            if observer is not None:
-                observer("not_requested")
-        if job.write_thumbnail:
-            try:
-                save_thumbnail_image(
-                    existing_path.parent,
-                    reused_info,
-                    source_url=job.url,
-                    output_root=job.output_dir,
-                    on_result=DownloaderApp._download_sidecar_observer(
-                        self, job, "thumbnail", reused=True
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(
-                    self, job, exc, kind="thumbnail", reused=True
-                )
-                self._emit_job_log(job, technical_download_error(exc))
-                reuse_outcome = reuse_outcome.combined_with(
-                    DownloadOutcome(sidecar_failure_count=1)
-                )
-                self._emit_job_log(
-                    job,
-                    f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed: {exc}",
-                )
-        else:
-            observer = DownloaderApp._download_sidecar_observer(
-                self, job, "thumbnail", reused=True
-            )
-            if observer is not None:
-                observer("not_requested")
-        return _ExistingOutputReuse(
-            metadata=reused_info,
-            outcome=reuse_outcome,
-        )
-
-    def _transcode_and_validate_staged_media(
-        self,
-        job: DownloadJob,
-        info: dict[str, Any],
-        plan: ExportPlan | AudioExportPlan,
-        staged_media: list[tuple[dict[str, Any], Path]],
-        ffmpeg: str,
-        *,
-        label: str,
-        progress_callback: Callable[[float], None],
-        control_check: Callable[[], None],
-    ) -> list[tuple[dict[str, Any], Path, dict[str, Any]]]:
-        ffprobe = self._find_ffprobe() or _ffprobe_for_ffmpeg(ffmpeg)
-        if not ffprobe:
-            raise RuntimeError(
-                f"{label}: FFprobe is required to validate the final output."
-            )
-
-        if isinstance(plan, ExportPlan):
-            total_mp4 = len(staged_media)
-            for encode_index, (staged_info, staged_mp4) in enumerate(
-                staged_media,
-                start=1,
-            ):
-                control_check()
-                self.events.put(("status", f"{label} — transcoding"))
-                encoder_label = (
-                    "NVIDIA NVENC GPU"
-                    if job.use_nvenc
-                    and (plan.video_crf is None or plan.nvenc_cq is not None)
-                    else "CPU libx264"
-                )
-                self._emit_job_log(
-                    job,
-                    f"{label}: FFmpeg command started ({encode_index}/{total_mp4}) using {encoder_label}",
-                )
-                write_diagnostic(
-                    f"{label} ffmpeg command: "
-                    f"{build_vod_ffmpeg_command(ffmpeg, staged_mp4, transcode_temp_paths(staged_mp4)[0], video_bitrate_kbps=plan.video_bitrate_kbps, audio_bitrate_kbps=plan.audio_bitrate_kbps, audio_sample_rate=plan.audio_sample_rate, audio_channels=plan.audio_channels, audio_codec=plan.output_audio_codec, x264_preset=plan.x264_preset, use_nvenc=job.use_nvenc, preserve_attached_picture=job.embed_thumbnail, preserve_metadata=job.embed_metadata, video_crf=plan.video_crf, nvenc_cq=plan.nvenc_cq, keyframe_seconds=plan.keyframe_seconds, fps=plan.fps, constant_frame_rate=plan.constant_frame_rate, video_maxrate_kbps=plan.video_maxrate_kbps)}"
-                )
-                progress_callback((encode_index - 1) / total_mp4)
-                transcode_started = time.monotonic()
-                transcode_to_vod_streaming_settings(
-                    staged_mp4,
-                    ffmpeg,
-                    plan=plan,
-                    duration_seconds=_float_or_none(
-                        staged_info.get("duration") or info.get("duration")
-                    ),
-                    progress_callback=lambda fraction, encode_index=encode_index, total_mp4=total_mp4: (
-                        progress_callback(((encode_index - 1) + fraction) / total_mp4)
-                    ),
-                    use_nvenc=job.use_nvenc,
-                    preserve_attached_picture=job.embed_thumbnail,
-                    preserve_metadata=job.embed_metadata,
-                    control_check=control_check,
-                )
-                write_diagnostic(
-                    f"{label} transcode elapsed_seconds={time.monotonic() - transcode_started:.3f}"
-                )
-                self._emit_job_log(job, f"{label}: transcoded staged VODForge output")
-        else:
-            self.events.put(("status", f"{label} — MP3 encoded"))
-
-        DownloaderApp._observe_download_operation(
-            self, job, "stage", stage="validation"
-        )
-        self.events.put(("status", f"{label} — validating output"))
-        validation_started = time.monotonic()
-        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]] = []
-        embed_metadata = (
-            plan.embed_metadata
-            if isinstance(plan, AudioExportPlan)
-            else job.embed_metadata
-        )
-        embed_cover_art = (
-            plan.embed_cover_art
-            if isinstance(plan, AudioExportPlan)
-            else job.embed_thumbnail
-        )
-        for staged_info, staged_path in staged_media:
-            control_check()
-            probe_data = validate_output_artifact(
-                staged_path,
-                job.output_type,
-                ffprobe,
-                expected_duration_seconds=_float_or_none(
-                    staged_info.get("duration") or info.get("duration")
-                ),
-                require_audio=True,
-                plan=plan,
-                embed_metadata=embed_metadata,
-                embed_cover_art=embed_cover_art,
-                expected_tags=job.tags if embed_metadata else None,
-                control_check=control_check,
-            )
-            validated_staged.append((staged_info, staged_path, probe_data))
-        control_check()
-        write_diagnostic(
-            f"{label} artifact validation elapsed_seconds={time.monotonic() - validation_started:.3f}"
-        )
-        return validated_staged
-
-    def _commit_validated_staged_media(
-        self,
-        job: DownloadJob,
-        info: dict[str, Any],
-        plan: ExportPlan | AudioExportPlan,
-        staging_dir: Path,
-        expected_extension: str,
-        validated_staged: list[tuple[dict[str, Any], Path, dict[str, Any]]],
-        *,
-        label: str,
-        all_output_dirs: list[Path],
-        progress_callback: Callable[[float], None],
-        control_check: Callable[[], None],
-    ) -> _CommittedMedia:
-        commit_started = time.monotonic()
-        packaged_paths = package_downloaded_media_from_staging(
-            staging_dir,
-            job.output_dir,
-            info,
-            expected_extension=expected_extension,
-            staged_media=[
-                (staged_info, staged_path)
-                for staged_info, staged_path, _probe in validated_staged
-            ],
-            control_check=control_check,
-        )
-        output_paths = [
-            path for path in packaged_paths if path.suffix.lower() == expected_extension
-        ]
-        primary_output = output_paths[0] if output_paths else None
-        if primary_output is None:
-            raise RuntimeError(
-                f"{label}: validated output could not be committed to the destination."
-            )
-        DownloaderApp._observe_download_operation(
-            self,
-            job,
-            "committed",
-            stage="commit",
-            dimensions={
-                "committed_count": str(min(len(output_paths), 10000)),
-                "storage_namespace": "variant",
-            },
-            output_path=primary_output,
-            output_probe=validated_staged[0][2] if len(validated_staged) == 1 else None,
-            output_info=info,
-            artifact_count=len(output_paths),
-        )
-        write_diagnostic(
-            f"{label} atomic output commit elapsed_seconds={time.monotonic() - commit_started:.3f}"
-        )
-        output_dirs = sorted({path.parent for path in packaged_paths})
-        all_output_dirs.extend(output_dirs)
-        self.events.put(("download_folders", sorted(set(all_output_dirs))))
-        for packaged_path in packaged_paths:
-            self._emit_job_log(job, f"{label}: packaged media file {packaged_path}")
-        ffprobe_data = validated_staged[0][2]
-        if isinstance(plan, AudioExportPlan):
-            self._emit_job_log(
-                job,
-                f"{label}: created {plan.audio_bitrate_kbps} kbps MP3 output {primary_output.name}",
-            )
-        progress_callback(1.0)
-        self._emit_job_log(
-            job,
-            f"{label}: validated {primary_output.name} before atomic commit",
-        )
-        committed_info = build_encoding_summary_metadata(
-            info,
-            plan,
-            output_path=primary_output,
-            ffprobe_data=ffprobe_data,
-            validation_status="Validated",
-        )
-        telemetry = self.__dict__.get("product_telemetry")
-        if telemetry is not None:
-            telemetry.record(
-                "media_exported",
-                dedupe_key=job.run_id + ":" + str(primary_output),
-                attempt_key=job.run_id,
-                retry_key=job.retry_of_run_id,
-                run_kind="youtube",
-                output_type=product_output_kind(job.output_type.value),
-                dimensions=committed_export_dimensions(
-                    job,
-                    plan,
-                    ffprobe_data,
-                    source_height=_float_or_none(info.get("height")),
-                ),
-            )
-        self.events.put(job_info_event("job_metadata", job, committed_info))
-        return _CommittedMedia(
-            metadata=committed_info,
-            primary_output=primary_output,
-            success_count=len(output_paths),
-        )
-
-    def _record_committed_media_and_write_sidecars(
-        self,
-        job: DownloadJob,
-        info: dict[str, Any],
-        primary_output: Path,
-        *,
-        label: str,
-        custom_cover_for_cache: Path | None,
-    ) -> DownloadOutcome:
-        outcome = DownloadOutcome()
-        try:
-            cached_thumbnail = (
-                save_custom_cached_thumbnail_image(
-                    info,
-                    custom_cover_for_cache,
-                    on_result=DownloaderApp._download_sidecar_observer(
-                        self, job, "library_artwork", reused=False
-                    ),
-                )
-                if job.output_type == OutputType.MP3
-                and custom_cover_for_cache is not None
-                else save_cached_thumbnail_image(
-                    info,
-                    source_url=job.url,
-                    on_result=DownloaderApp._download_sidecar_observer(
-                        self, job, "library_artwork", reused=False
-                    ),
-                )
-            )
-            if cached_thumbnail is not None:
-                artwork_source = (
-                    "custom cover"
-                    if custom_cover_for_cache is not None
-                    else "YouTube thumbnail"
-                )
-                self._emit_job_log(
-                    job,
-                    f"{label}: cached {artwork_source} privately for Forge and Library",
-                )
-        except Exception as exc:  # noqa: BLE001 - optional Library artwork cannot invalidate media
-            DownloaderApp._observe_download_sidecar_failure(
-                self, job, exc, kind="library_artwork", reused=False
-            )
-            self._emit_job_log(job, technical_download_error(exc))
-            outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
-            write_diagnostic(
-                f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}"
-            )
-            self._emit_job_log(
-                job,
-                f"WARNING: {label}: the media is complete, but its Library artwork could not be cached.",
-            )
-        self.events.put(
-            history_record_event(
-                job,
-                info,
-                str(primary_output.parent),
-            )
-        )
-        if job.write_info_json:
-            try:
-                metadata_path = write_compact_video_metadata(
-                    resolved_video_output_dir(job.output_dir, info),
-                    info,
-                    job.tags,
-                    output_root=job.output_dir,
-                    on_result=DownloaderApp._download_sidecar_observer(
-                        self, job, "metadata", reused=False
-                    ),
-                )
-                self._emit_job_log(
-                    job,
-                    f"{label}: saved compact video metadata {metadata_path}",
-                )
-            except Exception as exc:  # noqa: BLE001 - optional metadata cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(
-                    self, job, exc, kind="metadata", reused=False
-                )
-                self._emit_job_log(job, technical_download_error(exc))
-                outcome = outcome.combined_with(
-                    DownloadOutcome(sidecar_failure_count=1)
-                )
-                write_diagnostic(
-                    f"{label} compact metadata write failed: {type(exc).__name__}: {exc}"
-                )
-                self._emit_job_log(
-                    job,
-                    f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}",
-                )
-        else:
-            observer = DownloaderApp._download_sidecar_observer(
-                self, job, "metadata", reused=False
-            )
-            if observer is not None:
-                observer("not_requested")
-        if job.write_thumbnail:
-            try:
-                thumb_path = save_thumbnail_image(
-                    resolved_video_output_dir(job.output_dir, info),
-                    info,
-                    source_url=job.url,
-                    output_root=job.output_dir,
-                    on_result=DownloaderApp._download_sidecar_observer(
-                        self, job, "thumbnail", reused=False
-                    ),
-                )
-                if thumb_path:
-                    self._emit_job_log(job, f"{label}: saved thumbnail {thumb_path}")
-            except Exception as exc:  # noqa: BLE001 - optional thumbnail cannot invalidate media
-                DownloaderApp._observe_download_sidecar_failure(
-                    self, job, exc, kind="thumbnail", reused=False
-                )
-                self._emit_job_log(job, technical_download_error(exc))
-                outcome = outcome.combined_with(
-                    DownloadOutcome(sidecar_failure_count=1)
-                )
-                write_diagnostic(
-                    f"{label} thumbnail write failed: {type(exc).__name__}: {exc}"
-                )
-                self._emit_job_log(
-                    job,
-                    f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}",
-                )
-        else:
-            observer = DownloaderApp._download_sidecar_observer(
-                self, job, "thumbnail", reused=False
-            )
-            if observer is not None:
-                observer("not_requested")
-        return outcome
-
-    def _put_download_stage_progress(
-        self,
-        item: _DownloadItemContext,
-        stage_start: float,
-        stage_weight: float,
-        stage_fraction: float = 0.0,
-    ) -> None:
-        self.events.put(
-            (
-                "progress",
-                _global_download_progress(
-                    item.index,
-                    item.total,
-                    stage_start,
-                    stage_weight,
-                    stage_fraction,
-                ),
-            )
-        )
-
-    def _raise_for_download_control_requests(self) -> None:
-        if self.cancel_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
-        if self.skip_url_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
-        if self.skip_video_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_ITEM)
-
-    def _playlist_blocking_step_cancelled(self) -> bool:
-        if self.cancel_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
-        if self.skip_url_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
-        return False
-
-    def _video_blocking_step_cancelled(self) -> bool:
-        if self.cancel_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.CANCEL_RUN)
-        if self.skip_url_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_SOURCE)
-        if self.skip_video_requested:
-            raise _DownloadControlRequestError(_DownloadControlKind.SKIP_ITEM)
-        return False
-
-    def _emit_download_item_terminal(
-        self,
-        job: DownloadJob,
-        status: str,
-        message: str,
-        info: dict[str, Any] | None,
-        plan: ExportPlan | AudioExportPlan | None,
-        video_url: str,
-        *,
-        playlist_continues: bool = False,
-        failure_details: str = "",
-    ) -> None:
-        if not isinstance(info, dict):
-            return
-        terminal_run_id = uuid.uuid4().hex
-        terminal_info = build_terminal_item_metadata(
-            info,
-            plan,
-            status,
-            message,
-            terminal_run_id,
-        )
-        retry_url = retry_url_for_item(terminal_info, video_url)
-        job.item_terminal_emitted = True
-        terminal_job = replace(
-            job,
-            url=retry_url,
-            urls=[retry_url],
-            single_video_only=True,
-            batch_mode=False,
-            preview_info=terminal_info,
-            run_id=terminal_run_id,
-            origin_run_id=job.run_id,
-            execution_run_id=job.run_id,
-            retry_of_run_id=None,
-            metadata_keys=(
-                {key} if (key := metadata_run_key(terminal_info)) is not None else set()
-            ),
-            history_identities=set(),
-            activity_lines=([failure_details] if failure_details else []) + [message],
-            terminal_status=status,
-            terminal_message=message,
-            item_terminal_emitted=True,
-        )
-        terminal_info = annotate_job_metadata(terminal_job, terminal_info)
-        terminal_job.preview_info = terminal_info
-        event = job_info_event("item_terminal", terminal_job, terminal_info)
-        event[1]["playlist_continues"] = playlist_continues
-        self.events.put(event)
-
-    def _finish_download_run_outcome(
-        self,
-        job: DownloadJob,
-        outcome: DownloadOutcome,
-        *,
-        emit_done: bool,
-    ) -> DownloadOutcome:
-        if outcome.success_count == 0:
-            if outcome.failure_count:
-                raise RuntimeError(
-                    f"No valid {job.output_type.value} output was produced; "
-                    f"{outcome.failure_count} item(s) failed. Failure report: "
-                    f"{BATCH_FAILURE_REPORT_PATH}"
-                )
-            if emit_done:
-                self.events.put(
-                    (
-                        "stopped",
-                        f"{job.output_type.value} run stopped without producing an output.",
-                    )
-                )
-            return outcome
-        if emit_done:
-            if (
-                outcome.failure_count
-                or outcome.skipped_count
-                or outcome.sidecar_failure_count
-            ):
-                self.events.put(
-                    (
-                        "partial",
-                        (
-                            f"{job.output_type.value} completed with issues — "
-                            f"{outcome.success_count} valid output(s), "
-                            f"{outcome.failure_count} failed, {outcome.skipped_count} skipped, "
-                            f"{outcome.sidecar_failure_count} optional sidecar failure(s). "
-                            "Keep the valid files. Review Technical details for each issue and its next step."
-                        ),
-                    )
-                )
-            else:
-                self.events.put(
-                    (
-                        "done",
-                        (
-                            f"{job.output_type.value} download complete — "
-                            f"{outcome.success_count} valid output(s)."
-                        ),
-                    )
-                )
-        return outcome
-
-    def _expand_download_source(
-        self,
-        job: DownloadJob,
-        ytdlp_module: Any,
-        provider_network: ProviderNetworkCoordinator,
-        *,
-        control_check: Callable[[], None],
-        blocking_step_cancelled: Callable[[], bool],
-    ) -> _ExpandedDownloadSource:
-        """Resolve one submitted source into ordered item inputs and playlist identity."""
-        saved = job.preview_info or {}
-        if (
-            job.recovery_reason == "missing_media"
-            and job.single_video_only
-            and not job.batch_mode
-            and (job.urls or [job.url]) == [job.url]
-            and youtube_url_video_id(job.url)
-            and youtube_url_video_id(job.url) == str(saved.get("id") or "")
-            and (youtube_url_playlist_id(job.url) or "")
-            == str(saved.get("playlist_id") or "")
-        ):
-            # The recovery owner validated this saved item. Its captured playlist
-            # is organization only; item preflight still reads current formats.
-            control_check()
-            playlist_info: dict[str, Any] = {
-                key: saved[key]
-                for key in ("playlist_id", "playlist_title")
-                if saved.get(key)
-            }
-            playlist_info["webpage_url"] = job.url
-            entry = {"webpage_url": job.url}
-            if saved.get("playlist_index") is not None:
-                entry["playlist_index"] = saved["playlist_index"]
-            write_diagnostic("playlist detection skipped: selected Library recovery")
-            return _ExpandedDownloadSource(playlist_info=playlist_info, entries=[entry])
-
-        single_playlist_context = bool(
-            job.single_video_only
-            and youtube_url_video_id(job.url)
-            and youtube_url_playlist_id(job.url)
-        )
-        if job.single_video_only and not single_playlist_context:
-            # The source URL was already normalized and playlist expansion is
-            # disabled. Avoid a full extractor pass whose only result would be
-            # confirming the single item that preflight analyzes next.
-            playlist_info = {"webpage_url": job.url}
-            entries = [{"webpage_url": job.url}]
-            write_diagnostic("playlist detection skipped: Ignore playlists is active")
-            if youtube_url_video_id(job.url):
-                self._emit_job_log(
-                    job,
-                    "No playlist context was included in this URL. To preserve a YouTube playlist folder, "
-                    "copy the full browser address containing list= instead of the shortened Share link.",
-                )
-            return _ExpandedDownloadSource(playlist_info=playlist_info, entries=entries)
-
-        self.events.put(("status", "Reading playlist…"))
-        write_diagnostic("playlist detection start")
-        playlist_started = time.monotonic()
-        playlist_opts = _build_playlist_detection_options(
-            job,
-            deno_path=self._find_deno(),
-        )
-        log_options("playlist detection", playlist_opts)
-
-        detect_playlist = partial(
-            _extract_playlist_source_step,
-            ytdlp_module,
-            dict(playlist_opts),
-            job.url,
-            control_check=control_check,
-            emit_log=partial(self._emit_job_log, job),
-        )
-
-        def report_playlist_wait(elapsed: float) -> None:
-            write_diagnostic(f"playlist detection still running after {elapsed:.0f}s")
-            self.events.put(
-                (
-                    "status",
-                    f"Reading playlist… {elapsed:.0f}s elapsed; Cancel is available.",
-                )
-            )
-
-        provider_network.begin_primary(control_check)
-        try:
-            playlist_result = run_cancellable_blocking_step(
-                lambda: provider_network.run_primary(detect_playlist),
-                blocking_step_cancelled,
-                timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
-                poll_seconds=ANALYSIS_POLL_SECONDS,
-                label="Playlist detection",
-                on_wait=report_playlist_wait,
-            )
-        finally:
-            provider_network.end_primary()
-
-        extracted_info, session_cookies = playlist_result
-        write_diagnostic(
-            f"playlist detection elapsed_seconds={time.monotonic() - playlist_started:.3f}"
-        )
-        playlist_info, entries = _normalize_download_source_result(
-            extracted_info,
-            job.url,
-            single_video_only=job.single_video_only,
-        )
-        if job.single_video_only:
-            requested_video_id = youtube_url_video_id(job.url)
-            write_diagnostic(
-                "playlist identity retained for single item: "
-                f"playlist_id={playlist_info.get('id') or playlist_info.get('playlist_id')} "
-                f"video_id={requested_video_id}"
-            )
-        return _ExpandedDownloadSource(
-            playlist_info=playlist_info,
-            entries=entries,
-            session_cookies=session_cookies,
-            cookie_source_loaded=job.use_cookies,
-        )
-
-    def _analyze_download_item(
-        self,
-        job: DownloadJob,
-        ytdlp_module: Any,
-        provider_network: ProviderNetworkCoordinator,
-        item: _DownloadItemContext,
-        playlist_info: dict[str, Any],
-        max_height: int,
-        session_cookies: tuple[Any, ...],
-        cookie_source_loaded: bool,
-        *,
-        control_check: Callable[[], None],
-        blocking_step_cancelled: Callable[[], bool],
-        progress_callback: Callable[[float], None],
-    ) -> _AnalyzedDownloadItem:
-        """Analyze and plan one item while the caller owns the provider lease."""
-        self.events.put(("status", f"{item.label} — analyzing source formats"))
-        self._emit_job_log(job, f"{item.label}: URL {item.video_url}")
-        progress_callback(0.0)
-
-        ffmpeg = self._find_ffmpeg()
-        deno = self._find_deno()
-        options = _build_item_preflight_options(
-            job,
-            cookie_source_loaded=cookie_source_loaded,
-            ffmpeg=ffmpeg,
-            deno_path=deno,
-        )
-        write_diagnostic(f"{item.label} preflight runtime path: ffmpeg={ffmpeg}")
-        write_diagnostic(f"{item.label} preflight runtime path: deno={deno}")
-        write_diagnostic(
-            f"{item.label} preflight Deno/bundled-EJS enabled"
-            if deno
-            else f"{item.label} preflight Deno/EJS disabled: no deno runtime found"
-        )
-        log_options(f"{item.label} preflight", options)
-
-        analysis_step = partial(
-            _analyze_source_formats_step,
-            ytdlp_module,
-            dict(options),
-            tuple(session_cookies),
-            item.video_url,
-            item.label,
-            control_check=control_check,
-            emit_log=partial(self._emit_job_log, job),
-        )
-
-        def report_analysis_wait(elapsed: float) -> None:
-            write_diagnostic(
-                f"{item.label} analysis still running after {elapsed:.0f}s"
-            )
-            self.events.put(
-                (
-                    "status",
-                    f"{item.label} — analyzing source formats ({elapsed:.0f}s elapsed); Cancel is available.",
-                )
-            )
-
-        preflight_info, updated_session_cookies = run_cancellable_blocking_step(
-            partial(provider_network.run_primary, analysis_step),
-            blocking_step_cancelled,
-            timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
-            poll_seconds=ANALYSIS_POLL_SECONDS,
-            label=f"{item.label} source analysis",
-            on_wait=report_analysis_wait,
-        )
-        if not isinstance(preflight_info, dict):
-            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
-                f"{item.label}: YouTube source analysis did not return metadata"
-            )
-        preflight_info = mark_metadata_output_type(
-            apply_playlist_context(
-                preflight_info,
-                item.entry,
-                playlist_info,
-                job.url,
-                item.index,
-            ),
-            job.output_type,
-        )
-        plan = _build_download_item_plan(
-            job,
-            preflight_info,
-            max_height=max_height,
-        )
-        preflight_info = annotate_job_metadata(job, preflight_info)
-        display_info = build_encoding_summary_metadata(preflight_info, plan)
-        self.events.put(job_info_event("job_metadata", job, display_info))
-        for line in _download_item_plan_log_lines(job, item.label, plan):
-            self._emit_job_log(job, line)
-        progress_callback(1.0)
-        return _AnalyzedDownloadItem(
-            preflight_info=preflight_info,
-            display_info=display_info,
-            plan=plan,
-            session_cookies=updated_session_cookies,
-            cookie_source_loaded=job.use_cookies,
-        )
-
-    def _download_item_to_staging(
-        self,
-        job: DownloadJob,
-        ytdlp_module: Any,
-        provider_network: ProviderNetworkCoordinator,
-        item: _DownloadItemContext,
-        playlist_info: dict[str, Any],
-        analyzed_item: _AnalyzedDownloadItem,
-        staging_dir: Path,
-        *,
-        control_check: Callable[[], None],
-        progress_callback: Callable[[float], None],
-    ) -> _DownloadedStagingItem:
-        """Transfer one analyzed item while the caller owns the provider lease."""
-        plan = analyzed_item.plan
-        ffmpeg = self._find_ffmpeg()
-        if not ffmpeg:
-            required_output = (
-                "original audio"
-                if job.output_type == OutputType.ORIGINAL
-                else "MP3 audio"
-                if isinstance(plan, AudioExportPlan)
-                else f"H.264 / {plan.output_audio_codec.value} MP4 video"
-            )
-            raise RuntimeError(
-                f"FFmpeg is required to create the {required_output} output."
-            )
-        if job_embeds_provider_thumbnail(job):
-            validate_embedded_thumbnail_sources(
-                analyzed_item.preflight_info,
-                source_url=item.video_url,
-            )
-        options = self._build_ydl_options(
-            job,
-            staging_dir=staging_dir,
-            format_selector=plan.format_selector,
-        )
-        options["noplaylist"] = True
-        # Preflight already loaded the selected cookie source. Reuse its
-        # in-memory session jar instead of reopening a browser profile or file.
-        options.pop("cookiefile", None)
-        options.pop("cookiesfrombrowser", None)
-        log_options(f"{item.label} download", options)
-        self._active_progress_context = (item.index, item.total, 0.10, 0.40)
-        self.events.put(("status", f"{item.label} — downloading"))
-        self._emit_job_log(job, f"{item.label}: downloading")
-        download_started = time.monotonic()
-        download_step = partial(
-            _download_preflight_result_step,
-            ytdlp_module,
-            options,
-            analyzed_item.preflight_info,
-            tuple(analyzed_item.session_cookies),
-            control_check=control_check,
-        )
-        info, session_cookies = provider_network.run_primary(download_step)
-        write_diagnostic(
-            f"{item.label} download and yt-dlp post-processing "
-            f"elapsed_seconds={time.monotonic() - download_started:.3f}"
-        )
-        self._active_progress_context = None
-        control_check()
-        if not isinstance(info, dict):
-            raise RuntimeError(  # noqa: TRY004 - provider protocol failures use RuntimeError
-                f"{item.label}: download did not return metadata"
-            )
-        info = mark_metadata_output_type(
-            apply_playlist_context(
-                info,
-                item.entry,
-                playlist_info,
-                job.url,
-                item.index,
-            ),
-            job.output_type,
-        )
-        info = annotate_job_metadata(job, info)
-        encoding_summary = analyzed_item.display_info.get("vodforge_encoding_summary")
-        if encoding_summary:
-            info["vodforge_encoding_summary"] = encoding_summary
-        self.events.put(job_info_event("job_metadata", job, info))
-        progress_callback(1.0)
-        return _DownloadedStagingItem(
-            metadata=info,
-            session_cookies=session_cookies,
-            ffmpeg=ffmpeg,
-        )
-
-    def _prepare_staged_download_item(
-        self,
-        job: DownloadJob,
-        item: _DownloadItemContext,
-        downloaded_item: _DownloadedStagingItem,
-        staging_dir: Path,
-        *,
-        control_check: Callable[[], None],
-    ) -> _PreparedStagingItem:
-        """Bind expected staged media and optional cover art before validation."""
-        expected_extension = (
-            original_audio_extension(str(downloaded_item.metadata.get("acodec") or ""))
-            if job.output_type == OutputType.ORIGINAL
-            else ".mp3"
-            if job.output_type == OutputType.MP3
-            else ".mp4"
-        )
-        staged_media = collect_staged_media_files(
-            staging_dir,
-            downloaded_item.metadata,
-            expected_extension=expected_extension,
-        )
-        if not staged_media:
-            raise RuntimeError(
-                f"{item.label}: yt-dlp completed without producing the expected "
-                f"{expected_extension} file."
-            )
-
-        custom_cover_for_cache: Path | None = None
-        custom_cover_path = job.mp3_settings.custom_cover_art_path
-        if job.output_type == OutputType.MP3 and custom_cover_path is not None:
-            control_check()
-            prepared_cover = prepare_custom_cover_art(custom_cover_path, staging_dir)
-            for _staged_info, staged_mp3 in staged_media:
-                embed_custom_mp3_cover_art(
-                    staged_mp3,
-                    prepared_cover,
-                    downloaded_item.ffmpeg,
-                    control_check=control_check,
-                )
-            control_check()
-            custom_cover_for_cache = prepared_cover
-            self._emit_job_log(
-                job,
-                f"{item.label}: embedded custom cover art ({custom_cover_path.name})",
-            )
-        return _PreparedStagingItem(
-            metadata=downloaded_item.metadata,
-            staged_media=staged_media,
-            expected_extension=expected_extension,
-            ffmpeg=downloaded_item.ffmpeg,
-            custom_cover_for_cache=custom_cover_for_cache,
-        )
-
-    def _emit_failed_download_item_metadata(
-        self,
-        job: DownloadJob,
-        result: _DownloadItemResult,
-        issue: str,
-    ) -> None:
-        if result.metadata is None:
-            return
-        self.events.put(
-            job_info_event(
-                "job_metadata",
-                job,
-                build_failed_encoding_summary_metadata(
-                    result.metadata,
-                    result.plan,
-                    issue,
-                ),
-            )
-        )
-
-    def _resolve_download_item_failure(
-        self,
-        job: DownloadJob,
-        item: _DownloadItemContext,
-        result: _DownloadItemResult,
-        error: Exception,
-    ) -> _DownloadItemResult:
-        """Classify one item failure from typed user authority and item scope."""
-        self._active_progress_context = None
-        control_request = (
-            error if isinstance(error, _DownloadControlRequestError) else None
-        )
-        if control_request is None:
-            try:
-                self._raise_for_download_control_requests()
-            except _DownloadControlRequestError as pending_request:
-                control_request = pending_request
-
-        if control_request is not None:
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "cancelled",
-                dimensions={
-                    "outcome": "stopped"
-                    if control_request.kind is _DownloadControlKind.CANCEL_RUN
-                    else "skipped"
-                },
-            )
-            if control_request.kind is _DownloadControlKind.CANCEL_RUN:
-                self._emit_failed_download_item_metadata(
-                    job, result, str(control_request)
-                )
-                raise _DownloadControlRequestError(
-                    control_request.kind,
-                    result=result,
-                ) from error
-
-            telemetry = self.__dict__.get("product_telemetry")
-            if telemetry is not None:
-                telemetry.record(
-                    "run_skipped",
-                    dedupe_key=job.run_id + ":" + str(item.index),
-                    attempt_key=job.run_id,
-                    run_kind="youtube",
-                    output_type=product_output_kind(job.output_type.value),
-                )
-            skipped_outcome = result.outcome.combined_with(
-                DownloadOutcome(skipped_count=1)
-            )
-            if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
-                self.skip_url_requested = False
-                self.skip_video_requested = False
-                self._emit_download_item_terminal(
-                    job,
-                    "Skipped",
-                    "URL skipped by user",
-                    result.metadata,
-                    result.plan,
-                    item.video_url,
-                )
-                self._emit_job_log(job, f"{item.label}: skipped URL by user.")
-                return replace(
-                    result,
-                    outcome=skipped_outcome,
-                    stop_source=True,
-                )
-
-            issue = str(control_request)
-            self._emit_failed_download_item_metadata(job, result, issue)
-            self._emit_download_item_terminal(
-                job,
-                "Skipped",
-                "Video skipped by user",
-                result.metadata,
-                result.plan,
-                item.video_url,
-                playlist_continues=item.index < item.total,
-            )
-            self._emit_job_log(
-                job,
-                f"{item.label}: skipped by user; continuing to next video.",
-            )
-            self.skip_video_requested = False
-            return replace(result, outcome=skipped_outcome)
-
-        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
-        DownloaderApp._observe_download_operation(
-            self,
-            job,
-            "failed",
-            failure_detail=job.failure_diagnostic,
-            dimensions={"failed_count": "1"},
-        )
-        issue = format_ytdlp_user_error(error)
-        if item.total <= 1:
-            raise _DownloadItemExecutionError(error, result) from error
-        self._emit_job_log(job, technical_download_error(error))
-        self._emit_failed_download_item_metadata(job, result, issue)
-        write_diagnostic(
-            f"{item.label} failed but playlist will continue: "
-            f"{type(error).__name__}: {error}"
-        )
-        failed_outcome = result.outcome.combined_with(DownloadOutcome(failure_count=1))
-        self._emit_download_item_terminal(
-            job,
-            "Failed",
-            issue,
-            result.metadata,
-            result.plan,
-            item.video_url,
-            failure_details=technical_download_error(error),
-        )
-        append_batch_failure_report(BATCH_FAILURE_REPORT_PATH, item.video_url, error)
-        self._emit_job_log(
-            job,
-            f"WARNING: {item.label} failed; continuing to next video. Failure report: {BATCH_FAILURE_REPORT_PATH}",
-        )
-        self.skip_video_requested = False
-        return replace(result, outcome=failed_outcome)
-
-    def _complete_staged_download_item(
-        self,
-        job: DownloadJob,
-        source: _DownloadSourceContext,
-        item: _DownloadItemContext,
-        result: _DownloadItemResult,
-    ) -> _DownloadItemResult:
-        """Own one staging transaction after analysis and a reuse miss."""
-        analyzed_item = result.analysis
-        current_info = result.metadata
-        current_plan = result.plan
-        if analyzed_item is None or current_info is None or current_plan is None:
-            raise RuntimeError("download item analysis contract is incomplete")
-
-        all_output_dirs = list(result.output_dirs)
-        staging_dir: Path | None = None
-        primary_intent_active = True
-        failure: Exception | None = None
-        try:
-            staging_dir = create_staging_dir(job.output_dir)
-            recovery_owner = self.__dict__.get("run_recovery")
-            if recovery_owner is not None:
-                recovery_owner.staging_started(job, staging_dir)
-            DownloaderApp._observe_download_operation(
-                self, job, "stage", stage="download"
-            )
-            downloaded_item = self._download_item_to_staging(
-                job,
-                source.ytdlp_module,
-                source.provider_network,
-                item,
-                source.playlist_info,
-                analyzed_item,
-                staging_dir,
-                control_check=self._raise_for_download_control_requests,
-                progress_callback=partial(
-                    self._put_download_stage_progress,
-                    item,
-                    0.10,
-                    0.40,
-                ),
-            )
-            result = replace(
-                result,
-                session_cookies=downloaded_item.session_cookies,
-            )
-            source.provider_network.end_primary()
-            primary_intent_active = False
-            prepared_item = self._prepare_staged_download_item(
-                job,
-                item,
-                downloaded_item,
-                staging_dir,
-                control_check=self._raise_for_download_control_requests,
-            )
-            current_info = prepared_item.metadata
-            result = replace(result, metadata=current_info)
-
-            DownloaderApp._observe_download_operation(
-                self, job, "stage", stage="transcode"
-            )
-            validated_staged = self._transcode_and_validate_staged_media(
-                job,
-                current_info,
-                current_plan,
-                prepared_item.staged_media,
-                prepared_item.ffmpeg,
-                label=item.label,
-                progress_callback=partial(
-                    self._put_download_stage_progress,
-                    item,
-                    0.50,
-                    0.40,
-                ),
-                control_check=self._raise_for_download_control_requests,
-            )
-            DownloaderApp._observe_download_operation(
-                self, job, "stage", stage="commit"
-            )
-            committed_media = self._commit_validated_staged_media(
-                job,
-                current_info,
-                current_plan,
-                staging_dir,
-                prepared_item.expected_extension,
-                validated_staged,
-                label=item.label,
-                all_output_dirs=all_output_dirs,
-                progress_callback=partial(
-                    self._put_download_stage_progress,
-                    item,
-                    0.50,
-                    0.40,
-                ),
-                control_check=self._raise_for_download_control_requests,
-            )
-            before_sidecars = result.outcome.sidecar_failure_count
-            DownloaderApp._observe_download_operation(
-                self, job, "stage", stage="sidecars"
-            )
-            current_info = committed_media.metadata
-            result = replace(
-                result,
-                outcome=result.outcome.combined_with(
-                    DownloadOutcome(success_count=committed_media.success_count)
-                ),
-                output_dirs=tuple(all_output_dirs),
-                metadata=current_info,
-            )
-            result = replace(
-                result,
-                outcome=result.outcome.combined_with(
-                    self._record_committed_media_and_write_sidecars(
-                        job,
-                        current_info,
-                        committed_media.primary_output,
-                        label=item.label,
-                        custom_cover_for_cache=prepared_item.custom_cover_for_cache,
-                    )
-                ),
-            )
-            sidecar_failures = result.outcome.sidecar_failure_count - before_sidecars
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "completed",
-                dimensions={
-                    "committed_count": str(min(committed_media.success_count, 10000)),
-                    "reused_count": "0",
-                    "sidecar_failure_count": str(min(sidecar_failures, 10000)),
-                    "outcome": "partial" if sidecar_failures else "complete",
-                },
-            )
-            self._put_download_stage_progress(item, 0.90, 0.10, 1.0)
-            result_label = (
-                "Original audio"
-                if job.output_type == OutputType.ORIGINAL
-                else "MP3 audio"
-                if job.output_type == OutputType.MP3
-                else "MP4 video"
-            )
-            self.events.put(("status", f"{item.label} complete — {result_label}"))
-            self._emit_job_log(job, f"{item.label} complete — {result_label}")
-        except Exception as exc:  # noqa: BLE001 - item failure policy classifies provider and control errors
-            failure = exc
-        finally:
-            self._active_progress_context = None
-            if staging_dir is not None:
-                cleanup_private_staging_directory(staging_dir)
-            if primary_intent_active:
-                source.provider_network.end_primary()
-        if failure is not None:
-            result = replace(result, output_dirs=tuple(all_output_dirs))
-            return self._resolve_download_item_failure(job, item, result, failure)
-        return result
-
-    def _observed_output_dimensions(
-        self,
-        output_path: Path,
-        probe: Any,
-        *,
-        info: dict[str, Any] | None = None,
-        artifact_count: int = 1,
-    ) -> dict[str, str]:
-        # No extra filesystem observations without current collection consent.
-        telemetry = self.__dict__.get("product_telemetry")
-        try:
-            permitted = getattr(telemetry, "permitted", None)
-            if not callable(permitted) or not permitted():
-                return {}
-        except Exception:  # noqa: BLE001 - unavailable consent is not permission
-            return {}
-        facts = {"output_observation": "unavailable", "observed_audio_state": "unknown"}
-        try:
-            facts.update(
-                observed_audio_characteristics(probe, artifact_count=artifact_count)
-            )
-        except Exception:  # noqa: BLE001, S110  # nosec B110 - malformed probe observations cannot break media
-            pass
-        if artifact_count != 1:
-            facts.update(
-                namespace_scan_state="not_applicable",
-                peer_namespace_state="not_applicable",
-            )
-            return facts
-        try:
-            facts.update(
-                observed_output_namespace(
-                    output_path, info, self.__dict__.get("download_history")
-                )
-            )
-        except Exception:  # noqa: BLE001 - optional observation cannot control the commit
-            facts.update(namespace_scan_state="unknown", peer_namespace_state="unknown")
-        return facts
-
-    def _observe_download_operation(
-        self,
-        job: DownloadJob,
-        action: str,
-        *,
-        stage: str | None = None,
-        dimensions: dict[str, str] | None = None,
-        failure_detail: FailureDiagnostic | None = None,
-        output_path: Path | None = None,
-        output_probe: Any = None,
-        output_info: dict[str, Any] | None = None,
-        artifact_count: int = 1,
-    ) -> None:
-        if stage is not None:
-            job.failure_stage = stage
-        telemetry = self.__dict__.get("product_telemetry")
-        operation = getattr(job, "telemetry_operation_id", None)
-        if telemetry is not None and operation:
-            facts = {"stage": job.failure_stage, **dict(dimensions or {})}
-            if output_path is not None:
-                facts.update(
-                    DownloaderApp._observed_output_dimensions(
-                        self,
-                        output_path,
-                        output_probe,
-                        info=output_info,
-                        artifact_count=artifact_count,
-                    )
-                )
-            try:
-                telemetry.record_operation(
-                    "download_operation",
-                    action,
-                    operation_key=operation,
-                    attempt_key=job.run_id,
-                    retry_key=job.retry_of_run_id,
-                    dimensions=facts,
-                    failure_detail=failure_detail,
-                )
-            except Exception:  # noqa: BLE001, S110  # nosec B110 - telemetry cannot own export success
-                pass
-
-    def _observe_download_sidecar_failure(
-        self, job: DownloadJob, error: Exception, *, kind: str, reused: bool = False
-    ) -> None:
-        DownloaderApp._observe_download_operation(
-            self,
-            job,
-            "failed",
-            stage="sidecars",
-            dimensions={
-                "sidecar_failure_count": "1",
-                "failed_count": "0",
-                "sidecar_kind": kind,
-                "sidecar_outcome": "failed",
-                "sidecar_context": "reused_media" if reused else "committed_media",
-            },
-            failure_detail=capture_failure(error, stage="sidecars"),
-        )
-
-    def _download_sidecar_observer(
-        self, job: DownloadJob, kind: str, *, reused: bool = False
-    ) -> Callable[[str], None] | None:
-        telemetry = self.__dict__.get("product_telemetry")
-        try:
-            if telemetry is None or not telemetry.permitted():
-                return None
-        except Exception:  # noqa: BLE001 - unavailable consent fails closed
-            return None
-
-        def observed(result: str) -> None:
-            # Repaired here means a missing requested companion was restored
-            # beside reused media, not that a prior deletion was reconstructed.
-            outcome = "repaired" if reused and result == "created" else result
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "stage",
-                stage="sidecars",
-                dimensions={
-                    "sidecar_kind": kind,
-                    "sidecar_outcome": outcome,
-                    "sidecar_context": "reused_media" if reused else "committed_media",
-                },
-            )
-
-        return observed
-
-    def _observed_intent_relation(self, job: DownloadJob, info: dict[str, Any]) -> str:
-        # An observational comparison must never create media-work failure.
-        # Invalid/absent evidence is unknown, not a claim of first use.
-        history = self.__dict__.get("download_history")
-        if not isinstance(history, (list, tuple)) or not isinstance(
-            info.get("id"), str
-        ):
-            return "unknown"
-        if any(
-            not isinstance(record, dict)
-            or not isinstance(record.get("id"), str)
-            or any(
-                record.get(key) is not None and not isinstance(record[key], str)
-                for key in (
-                    "webpage_url",
-                    "vodforge_attempt_signature",
-                    "vodforge_output_variant",
-                    "vodforge_output_variant_compact",
-                )
-            )
-            for record in history
-        ):
-            return "unknown"
-        previous = [
-            record
-            for record in history
-            if info.get("id") and record.get("id") == info["id"]
-        ]
-        if not previous:
-            return "first_observed"
-        source_url = sanitize_durable_url(
-            str(info.get("webpage_url") or ""), preserve_youtube_context=True
-        )
-        if not source_url:
-            return "unknown"
-        same_source = [
-            record
-            for record in previous
-            if sanitize_durable_url(
-                str(record.get("webpage_url") or ""), preserve_youtube_context=True
-            )
-            == source_url
-        ]
-        if not same_source:
-            # Equal provider IDs alone do not establish equal sources.
-            return "unknown"
-        previous = same_source
-        signature = job_attempt_signature(job)
-        if any(metadata_attempt_signature(record) == signature for record in previous):
-            return "same_intent"
-        variant = metadata_output_variant(info)
-        known = [
-            metadata_output_variant(record)
-            for record in previous
-            if metadata_output_variant(record)
-        ]
-        if not variant or not known:
-            return "unknown"
-        return (
-            "different_destination_or_organization"
-            if variant in known
-            else "different_settings"
-        )
-
-    def _coordinate_download_item(
-        self,
-        job: DownloadJob,
-        source: _DownloadSourceContext,
-        item: _DownloadItemContext,
-        previous: _DownloadItemResult,
-    ) -> _DownloadItemResult:
-        """Acquire, analyze, and choose reuse or a staging transaction."""
-        result = replace(
-            previous,
-            analysis=None,
-            metadata=None,
-            plan=None,
-            stop_source=False,
-        )
-        primary_intent_active = False
-        job.telemetry_operation_id = str(uuid.uuid4())
-        DownloaderApp._observe_download_operation(
-            self,
-            job,
-            "started",
-            stage="analysis",
-            dimensions={
-                **job_intent_dimensions(job),
-                "item_count": str(min(item.total, 10000)),
-            },
-        )
-        try:
-            self._raise_for_download_control_requests()
-            source.provider_network.begin_primary(
-                self._raise_for_download_control_requests
-            )
-            primary_intent_active = True
-            analyzed_item = self._analyze_download_item(
-                job,
-                source.ytdlp_module,
-                source.provider_network,
-                item,
-                source.playlist_info,
-                source.max_height,
-                result.session_cookies,
-                result.cookie_source_loaded,
-                control_check=self._raise_for_download_control_requests,
-                blocking_step_cancelled=self._video_blocking_step_cancelled,
-                progress_callback=partial(
-                    self._put_download_stage_progress,
-                    item,
-                    0.0,
-                    0.10,
-                ),
-            )
-            result = replace(
-                result,
-                session_cookies=analyzed_item.session_cookies,
-                cookie_source_loaded=analyzed_item.cookie_source_loaded,
-                analysis=analyzed_item,
-                metadata=analyzed_item.display_info,
-                plan=analyzed_item.plan,
-            )
-            recovery_owner = self.__dict__.get("run_recovery")
-            if recovery_owner is not None:
-                recovery_owner.metadata_observed(job, analyzed_item.display_info)
-            all_output_dirs = list(result.output_dirs)
-            job.failure_stage = "reuse"
-            DownloaderApp._observe_download_operation(
-                self,
-                job,
-                "stage",
-                stage="reuse",
-                dimensions={
-                    "intent_relation": DownloaderApp._observed_intent_relation(
-                        self, job, analyzed_item.display_info
-                    )
-                },
-            )
-            existing_reuse = self._try_reuse_existing_output(
-                job,
-                analyzed_item.display_info,
-                analyzed_item.plan,
-                label=item.label,
-                all_output_dirs=all_output_dirs,
-                control_check=self._raise_for_download_control_requests,
-            )
-            if existing_reuse is not None:
-                DownloaderApp._observe_download_operation(
-                    self,
-                    job,
-                    "completed",
-                    dimensions={
-                        "reuse_result": "hit",
-                        "reused_count": "1",
-                        "committed_count": "0",
-                        "sidecar_failure_count": str(
-                            min(existing_reuse.outcome.sidecar_failure_count, 10000)
-                        ),
-                        "outcome": "partial"
-                        if existing_reuse.outcome.sidecar_failure_count
-                        else "complete",
-                    },
-                )
-                self._put_download_stage_progress(item, 0.10, 0.90, 1.0)
-                self.events.put(
-                    (
-                        "status",
-                        (
-                            f"{item.label} complete — Already downloaded and valid — "
-                            "reused existing file."
-                        ),
-                    )
-                )
-                return replace(
-                    result,
-                    outcome=result.outcome.combined_with(existing_reuse.outcome),
-                    output_dirs=tuple(all_output_dirs),
-                    metadata=existing_reuse.metadata,
-                )
-            DownloaderApp._observe_download_operation(
-                self, job, "stage", stage="staging", dimensions={"reuse_result": "miss"}
-            )
-            primary_intent_active = False
-        except Exception as exc:  # noqa: BLE001 - item failure resolver separates user control from provider text
-            return self._resolve_download_item_failure(job, item, result, exc)
-        finally:
-            if primary_intent_active:
-                source.provider_network.end_primary()
-
-        return self._complete_staged_download_item(job, source, item, result)
-
-    def _log_expanded_download_source(
-        self,
-        job: DownloadJob,
-        total_videos: int,
-    ) -> None:
-        if total_videos > 1:
-            self._emit_job_log(job, f"Playlist detected: {total_videos} videos.")
-            write_diagnostic(f"playlist detected: video_count={total_videos}")
-            return
-        self._emit_job_log(job, "Single video detected.")
-        write_diagnostic("single video detected")
-
-    def _finish_download_source_failure(
-        self,
-        job: DownloadJob,
-        result: _DownloadItemResult,
-        error: Exception,
-        *,
-        re_raise: bool,
-    ) -> DownloadOutcome:
-        self._active_progress_context = None
-        user_error = format_ytdlp_user_error(error)
-        job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
-        self._emit_job_log(job, technical_download_error(error))
-        self._emit_failed_download_item_metadata(job, result, user_error)
-        write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
-        if re_raise:
-            raise _DownloadItemExecutionError(error, result) from error
-        self.events.put(("error", user_error))
-        return result.outcome
-
-    def _download_worker_single(
-        self,
-        job: DownloadJob,
-        *,
-        emit_done: bool = True,
-        re_raise: bool = False,
-    ) -> DownloadOutcome:
-        result = _DownloadItemResult(outcome=DownloadOutcome())
-        provider_network = self._provider_network_coordinator()
-
-        try:
-            ytdlp_module = load_yt_dlp()
-            if ytdlp_module is None:
-                raise RuntimeError(f"yt-dlp import failed: {YTDLP_IMPORT_ERROR}")
-            max_height = _quality_max_height(job.quality_label)
-            self._emit_job_log(job, f"Normalized URL: {job.url}")
-            self.events.put(("progress", 0))
-            expanded_source = self._expand_download_source(
-                job,
-                ytdlp_module,
-                provider_network,
-                control_check=self._raise_for_download_control_requests,
-                blocking_step_cancelled=self._playlist_blocking_step_cancelled,
-            )
-            result = replace(
-                result,
-                session_cookies=expanded_source.session_cookies,
-                cookie_source_loaded=expanded_source.cookie_source_loaded,
-            )
-            entries = expanded_source.entries
-            total_videos = len(entries)
-            self._log_expanded_download_source(job, total_videos)
-
-            self.video_output_dirs_by_id = {}
-            source = _DownloadSourceContext(
-                ytdlp_module=ytdlp_module,
-                provider_network=provider_network,
-                playlist_info=expanded_source.playlist_info,
-                max_height=max_height,
-            )
-            for video_index, entry in enumerate(entries, start=1):
-                if total_videos > 1:
-                    self.events.put(
-                        ("status", f"Video {video_index} of {total_videos} — preparing")
-                    )
-                    self.events.put(("progress", 0))
-                    self.events.put(
-                        job_info_event(
-                            "job_metadata",
-                            job,
-                            {
-                                **entry,
-                                "title": entry.get("title")
-                                or f"Preparing video {video_index} of {total_videos}",
-                                "webpage_url": _download_entry_url(entry, job.url),
-                                "vodforge_output_type": job.output_type.value,
-                            },
-                        )
-                    )
-                item = _DownloadItemContext(
-                    entry=entry,
-                    index=video_index,
-                    total=total_videos,
-                    video_url=_download_entry_url(entry, job.url),
-                    label=f"Video {video_index} of {total_videos}",
-                )
-                result = self._coordinate_download_item(job, source, item, result)
-                if result.stop_source:
-                    break
-
-            return self._finish_download_run_outcome(
-                job,
-                result.outcome,
-                emit_done=emit_done,
-            )
-        except _DownloadControlRequestError as control_request:
-            self._active_progress_context = None
-            if control_request.result is not None:
-                result = control_request.result
-            write_diagnostic(
-                f"download worker control request: {control_request.kind.value}"
-            )
-            if re_raise:
-                raise
-            if control_request.kind is _DownloadControlKind.SKIP_SOURCE:
-                self.skip_url_requested = False
-                self.skip_video_requested = False
-            elif control_request.kind is _DownloadControlKind.SKIP_ITEM:
-                self.skip_video_requested = False
-            self.events.put(
-                _download_source_control_terminal_event(
-                    job,
-                    result,
-                    control_request.kind,
-                )
-            )
-            return result.outcome
-        except Exception as exc:  # noqa: BLE001 - source parent converts provider failures into one terminal outcome
-            result, source_error = _download_source_failure_context(exc, result)
-            return self._finish_download_source_failure(
-                job,
-                result,
-                source_error,
-                re_raise=re_raise,
-            )
-
-    def _build_ydl_options(
-        self, job: DownloadJob, staging_dir: Path, format_selector: str | None = None
-    ) -> dict[str, Any]:
-        if job.output_type == OutputType.MP3:
-            use_youtube_cover = job_embeds_provider_thumbnail(job)
-            postprocessors: list[dict[str, Any]] = [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": str(job.mp3_settings.bitrate_kbps),
-                },
-            ]
-            if job.mp3_settings.embed_metadata:
-                postprocessors.append(
-                    {
-                        "key": "FFmpegMetadata",
-                        "add_chapters": True,
-                        "add_metadata": True,
-                    }
-                )
-            if use_youtube_cover:
-                postprocessors.append(
-                    {"key": "EmbedThumbnail", "already_have_thumbnail": False}
-                )
-            selected_format = format_selector or "bestaudio/best"
-            write_thumbnail = use_youtube_cover
-            postprocessor_args = (
-                self._metadata_args(job.tags) if job.mp3_settings.embed_metadata else {}
-            )
-            audio_args: list[str] = []
-            if job.mp3_settings.sample_rate:
-                audio_args.extend(("-ar", job.mp3_settings.sample_rate))
-            if job.mp3_settings.channels:
-                audio_args.extend(("-ac", job.mp3_settings.channels))
-            if audio_args:
-                postprocessor_args["extractaudio+ffmpeg_o"] = audio_args
-        else:
-            postprocessors = [
-                {"key": "FFmpegVideoConvertor", "preferedformat": "mp4"},
-            ]
-            if job.embed_metadata:
-                postprocessors.append(
-                    {
-                        "key": "FFmpegMetadata",
-                        "add_chapters": True,
-                        "add_metadata": True,
-                    }
-                )
-            if job.embed_thumbnail:
-                postprocessors.append(
-                    {"key": "EmbedThumbnail", "already_have_thumbnail": False}
-                )
-            selected_format = (
-                format_selector or QUALITY_OPTIONS[job.quality_label]
-            ) + "/best"
-            # A separate thumbnail is fetched through VODForge's bounded,
-            # redirect-aware authority policy after the media commit. yt-dlp
-            # needs thumbnail network authority only when it must embed one.
-            write_thumbnail = job_embeds_provider_thumbnail(job)
-            postprocessor_args = self._metadata_args(job.tags)
-
-        outtmpl = staging_output_template()
-        opts: dict[str, Any] = {
-            "format": selected_format,
-            "outtmpl": outtmpl,
-            # yt-dlp probes formats with NamedTemporaryFile before downloading.
-            # An absolute per-run temp path is required because packaged macOS
-            # applications may start with `/` as their working directory.
-            "paths": {"home": str(staging_dir), "temp": str(staging_dir)},
-            "windowsfilenames": True,
-            "restrictfilenames": False,
-            "noplaylist": False,
-            "writethumbnail": write_thumbnail,
-            "writeinfojson": False,
-            "postprocessors": postprocessors,
-            # VODForge owns progress through the hook below. Suppressing yt-dlp's
-            # terminal printer avoids caching its logger wrapper, which otherwise
-            # retains the per-job event queue after the download completes.
-            "noprogress": True,
-            "progress_hooks": [self._progress_hook],
-            "logger": QueueLogger(self.events),
-            "embed_infojson": False,
-            "postprocessor_args": postprocessor_args,
-            "concurrent_fragment_downloads": 1,
-            "ignore_no_formats_error": True,
-        }
-        if job.output_type == OutputType.ORIGINAL:
-            opts.update(original_audio_options(format_selector))
-        apply_ytdlp_network_retry_policy(opts, source_analysis=False)
-        if job.output_type == OutputType.MP4:
-            opts["merge_output_format"] = "mp4"
-        ffmpeg = self._find_ffmpeg()
-        if ffmpeg:
-            opts["ffmpeg_location"] = ytdlp_ffmpeg_location(ffmpeg)
-        deno = self._find_deno()
-        apply_youtube_runtime_options(opts, deno_path=deno)
-        apply_ytdlp_cookie_options(
-            opts,
-            use_cookies=job.use_cookies,
-            cookie_file=job.cookie_file,
-            cookie_browser=job.cookie_browser,
-        )
-        return opts
-
-    @staticmethod
-    def _find_ffmpeg() -> str | None:
-        runtime_ffmpeg = find_runtime_executable("ffmpeg")
-        if runtime_ffmpeg:
-            return runtime_ffmpeg
-        try:
-            import imageio_ffmpeg
-
-            bundled = imageio_ffmpeg.get_ffmpeg_exe()
-            if bundled and Path(bundled).exists():
-                return str(bundled)
-        except Exception as exc:  # noqa: BLE001 - optional runtime discovery remains nonfatal
-            write_diagnostic(
-                f"optional imageio FFmpeg fallback unavailable: {type(exc).__name__}"
-            )
-        return None
-
-    @staticmethod
-    def _find_ffprobe() -> str | None:
-        return find_runtime_executable("ffprobe")
-
-    @staticmethod
-    def _find_deno() -> str | None:
-        return find_runtime_executable("deno")
-
-    def _metadata_args(self, tags: list[str]) -> dict[str, list[str]]:
-        if not tags:
-            return {}
-        # Apply extra keywords specifically to FFmpegMetadata's output command.
-        # yt-dlp normalizes postprocessor argument keys to lowercase.
-        return {"metadata+ffmpeg_o": ["-metadata", f"keywords={','.join(tags)}"]}
-
-    def _progress_hook(self, data: dict[str, Any]) -> None:
-        self._raise_for_download_control_requests()
-        status = data.get("status")
-        if status == "downloading":
-            now = time.monotonic()
-            last_event_at = getattr(self, "_last_progress_event_at", 0.0)
-            downloaded = _first_finite_float(data.get("downloaded_bytes"))
-            total = _first_finite_float(
-                data.get("total_bytes"),
-                data.get("total_bytes_estimate"),
-            )
-            if now - last_event_at < PROGRESS_EVENT_INTERVAL_SECONDS and not (
-                total and downloaded >= total
-            ):
-                return
-            self._last_progress_event_at = now
-            self.events.put(("progress_determinate", None))
-            if total:
-                pct = downloaded / total * 100
-                context = self._active_progress_context
-                if context:
-                    video_index, total_videos, stage_start, stage_weight = context
-                    global_pct = (
-                        (video_index - 1) / max(total_videos, 1)
-                        + (stage_start + stage_weight * (pct / 100.0))
-                        / max(total_videos, 1)
-                    ) * 100.0
-                    self.events.put(("progress", global_pct))
-                else:
-                    self.events.put(("progress", pct))
-            speed = data.get("speed")
-            eta = data.get("eta")
-            filename = Path(str(data.get("filename") or "")).name
-            self.events.put(
-                (
-                    "status",
-                    f"Downloading {filename} — {self._fmt_bytes(speed)}/s ETA {eta or '?'}s",
-                )
-            )
-        elif status == "finished":
-            context = self._active_progress_context
-            if context:
-                video_index, total_videos, stage_start, stage_weight = context
-                global_pct = (
-                    (video_index - 1) / max(total_videos, 1)
-                    + (stage_start + stage_weight) / max(total_videos, 1)
-                ) * 100.0
-                self.events.put(("progress", global_pct))
-            else:
-                self.events.put(("progress", 100))
-            self.events.put(("status", "Download finished; finalizing output…"))
-
     def _retire_event_pump(self) -> None:
         self._event_pump_closed = True
         token = self.__dict__.pop("_event_pump_after_id", None)
@@ -17205,9 +17229,6 @@ class DownloaderApp(
             output_type=product_output_kind(metadata_output_type(info).value),
         )
 
-    def _emit_job_log(self, job: DownloadJob, line: str) -> None:
-        self.events.put(job_log_event(job, line))
-
     def _append_job_log(self, event_job: DownloadJob, line: str) -> None:
         self._append_log(line)
         active_job = self._active_run_for_metadata_event(event_job)
@@ -17246,19 +17267,6 @@ class DownloaderApp(
         if follow_tail:
             widget.see("end")
         widget.config(state="disabled")
-
-    @staticmethod
-    def _fmt_bytes(value: Any) -> str:
-        if not value:
-            return "?"
-        size = _finite_float(value)
-        if size is None:
-            return "?"
-        for unit in ["B", "KB", "MB", "GB"]:
-            if size < 1024:
-                return f"{size:.1f}{unit}"
-            size /= 1024
-        return f"{size:.1f}TB"
 
 
 def debug_preflight(url: str) -> int:

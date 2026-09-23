@@ -1,14 +1,20 @@
-# Qt Quick Forge vertical slice
+# Qt Quick port in progress
 
-This source-native experiment tests whether Qt Quick can keep a VODForge view
-together during native resize. It is not a replacement application or release
-candidate. Download, Library, Watch, Activity, settings, telemetry, update,
-packaging, and installed-app journeys are not connected here. The Download
-action validates a URL and reports that the engine is disconnected.
+The resize experiment has become an isolated application port under
+`yt_downloader/qt_quick`. The release entrypoint remains Tk while this port is
+qualified. Qt now uses the shared `DownloadWorkerCore` for real downloads,
+durable queue/recovery, and history writes; Library reads that history; Watch
+uses Qt Multimedia; Activity shows in-session and recovered run status. Basic
+output, quality, and mode preferences use the existing settings store.
+
+This is not a replacement application or release candidate. Forge's remaining
+options, Library management, complete Watch behavior, local conversion,
+analytics consent and telemetry, updater/repair, signed packaging, installed
+journeys, accessibility, and both-platform visual gates remain open.
 
 ## Rendering ownership
 
-- `main.py` exposes the existing `ui_chrome.action_button_image`,
+- `yt_downloader/qt_quick/main.py` exposes the existing `ui_chrome.action_button_image`,
   `field_border_image`, `ui_materials.backdrop_pixels`, theme, and
   `ui_button_contract.button_metrics` through one Qt adapter.
 - `StoneButton.qml` owns all button labels, icons, sizes, focus, pointer input,
@@ -21,9 +27,22 @@ action validates a URL and reports that the engine is disconnected.
 
 This is a simpler **view rendering path** than the current Tk combination of
 material generation, PhotoImage, ttk element/layout, labels, canvas projection,
-and per-view geometry reconciliation. The prototype does not demonstrate a
-simpler complete product: controller, input, accessibility, DPI, player,
-packaging, updater, and all other views still need a port and qualification.
+and per-view geometry reconciliation. The shared worker has a separate
+non-widget class; the remaining product owners still need port qualification.
+
+## Current source-native proof
+
+- Mac local legal fixture: MP4 and MP3 completed through Qt's runtime adapter;
+  MP4 decoded with ffprobe, history reloaded after restart, and no `.vfstage`
+  remained.
+- Mac slow fixture: Stop retained a durable Stopped attempt, the queued MP3
+  then completed, and only that valid output entered Library.
+- Mac Qt Multimedia loaded the committed MP4 with a 6037 ms duration and
+  reached 2800 ms playback position without a provider error in offscreen QA.
+- Existing Tk/worker/recovery tests passed after extracting the shared worker:
+  366 focused, then 3528 full-suite passing with 813 platform skips.
+- These are source-native checks. Windows, packaged, installed, and full visual
+  acceptance for this new port are still unverified.
 
 ## Native observations
 
@@ -75,7 +94,7 @@ Install PySide6, Pillow, and psutil into an isolated Python environment and
 run from the repository root:
 
 ```sh
-.venv/bin/python engineering-quality/prototypes/qt_quick/resize_probe.py \
+build/qt-quick-prototype-venv/bin/python engineering-quality/prototypes/qt_quick/resize_probe.py \
   --qt-python build/qt-quick-prototype-venv/bin/python \
   --output build/qt-quick-example
 ```
@@ -85,10 +104,9 @@ ordinary run uses `--pixel-capture` in an interactive, unlocked session.
 
 ## Decision boundary
 
-The ordinary resize and Windows pixel results support Qt Quick as a promising
-renderer for VODForge's responsive view. The added Mac extreme-corner test
-fails even on a plain Qt window, and the Windows Forge result is intermittent;
-the threshold was not weakened. A product port is justified
-only after the real functional, accessibility, signed-package, installed-app,
-and release journeys pass on both platforms. No current release claim follows
-from this slice.
+The ordinary resize and Windows pixel results supported starting the Qt Quick
+port. The added Mac extreme-corner test fails even on a plain Qt window, and
+the Windows Forge result is intermittent; the threshold was not weakened.
+Promotion of the Qt entrypoint remains conditional on functional, accessibility,
+signed-package, installed-app, and release journeys on both platforms. No
+current release claim follows from this work.

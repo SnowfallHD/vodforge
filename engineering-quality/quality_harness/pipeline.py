@@ -74,9 +74,9 @@ def configure_production_sandbox(run_root: Path) -> dict[str, str]:
 
 def make_headless_app(events: TracingQueue) -> Any:
     """Construct only the state required by the real production worker seam."""
-    from yt_downloader.app import DownloaderApp, ProviderNetworkCoordinator
+    from yt_downloader.app import DownloadWorkerCore, ProviderNetworkCoordinator
 
-    app = DownloaderApp.__new__(DownloaderApp)
+    app = DownloadWorkerCore()
     app.events = events
     app.cancel_requested = False
     app.skip_video_requested = False
@@ -528,7 +528,7 @@ class HeadlessPipelineRunner:
         )
         result = {
             "case_id": case_id,
-            "pipeline_entrypoint": "yt_downloader.app.DownloaderApp._download_worker_single",
+            "pipeline_entrypoint": "yt_downloader.app.DownloadWorkerCore._download_worker_single",
             "job": {
                 "run_id": job.run_id,
                 "url": url,
