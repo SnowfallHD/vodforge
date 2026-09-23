@@ -195,6 +195,7 @@ Window {
             }
             StoneButton {
                 label: "⚙"
+                accessibilityLabel: "Settings"
                 Layout.preferredWidth: 46
                 Layout.preferredHeight: 40
                 onActivated: settingsPopup.open()
@@ -578,6 +579,7 @@ Window {
                     }
                 }
                 Slider {
+                    Accessible.name: "Playback position"
                     Layout.fillWidth: true
                     from: 0
                     to: Math.max(1, mediaPlayer.duration)
@@ -601,6 +603,7 @@ Window {
                     Item { Layout.fillWidth: true }
                     Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
                     Slider {
+                        Accessible.name: "Volume"
                         Layout.preferredWidth: 160
                         from: 0; to: 1; value: audioOutput.volume
                         onMoved: audioOutput.volume = value

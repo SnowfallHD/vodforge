@@ -147,14 +147,19 @@ non-widget class; the remaining product owners still need port qualification.
 
 The exact `13315ed` Mac diagnostic package rendered Forge, Library, Watch,
 chapter and heatmap views through its isolated profile. Its saved 6-second
-fixture played with sound/video timing and a chapter click moved the observed
+fixture rendered video with a moving timeline and a chapter click moved the observed
 timeline to 2 seconds. The package still lacks Developer ID signing and
 installed acceptance. Native macOS AX inspection exposed a separate defect:
 the visually rendered shared stone buttons were absent from the accessibility
 tree. `StoneButton` now owns Qt's button role, label, focus state, and press
-action; an offscreen Qt accessibility test invokes Library through that action
-and verifies hidden-view controls remain invisible. This newer control change
-still needs an exact packaged AX readback on both platforms.
+action. The `6093039` ad hoc Mac package exposed the actual Forge, Library,
+Watch, and popup actions to macOS AX; native AX activation opened Library and
+its More menu with the shared stone materials visible. An offscreen Qt test
+also invokes Library through that action and verifies hidden-view controls
+remain invisible. A later source refinement gives the Settings glyph and both
+Watch sliders descriptive names and excludes empty decorative handles; that
+refinement still needs a new packaged AX readback. Windows packaged AX remains
+open while the test desktop is not foreground interactive.
 
 An opt-in `VODFORGE_UI=qt` package path now builds an ad hoc signed Mac Qt app
 without changing the production Tk entrypoint. The first Mac candidate passed

@@ -38,19 +38,32 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
             if (child := window.child(index)) is not None
             and child.role() == QAccessible.Button
         }
-        for label in ("Forge", "Library", "Watch", "Activity", "Download"):
+        for label in ("Forge", "Library", "Watch", "Activity", "Settings", "Download"):
             assert label in buttons
             assert not buttons[label].state().invisible
             actions = buttons[label].actionInterface()
             assert actions is not None
             assert QAccessibleActionInterface.pressAction() in actions.actionNames()
         assert buttons["Play"].state().invisible
+        assert buttons["Ready"].state().disabled
         buttons["Library"].actionInterface().doAction(
             QAccessibleActionInterface.pressAction()
         )
         assert bridge.selection == "Library"
         application.processEvents()
         assert not buttons["All media"].state().invisible
+        buttons["Watch"].actionInterface().doAction(
+            QAccessibleActionInterface.pressAction()
+        )
+        application.processEvents()
+        sliders = {
+            child.text(QAccessible.Name)
+            for index in range(window.childCount())
+            if (child := window.child(index)) is not None
+            and child.role() == QAccessible.Slider
+            and not child.state().invisible
+        }
+        assert {"Playback position", "Volume"} <= sliders
     finally:
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)

@@ -3,6 +3,7 @@ import QtQuick
 Item {
     id: control
     property string label: ""
+    property string accessibilityLabel: label
     property string icon: ""
     property bool selected: false
     property bool emphasized: false
@@ -13,11 +14,13 @@ Item {
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
                             + (icon.length ? buttonMetrics[size].iconPixels + 8 : 0), 44)
     implicitHeight: buttonMetrics[size].height
-    activeFocusOnTab: true
-    Accessible.role: Accessible.Button
-    Accessible.name: control.label
+    activeFocusOnTab: control.interactive && control.enabled
+    Accessible.role: control.interactive ? Accessible.Button : Accessible.StaticText
+    Accessible.name: control.accessibilityLabel
+    Accessible.ignored: !control.interactive && control.accessibilityLabel.length === 0
     Accessible.focusable: control.interactive && control.enabled
     Accessible.focused: control.activeFocus
+    Accessible.selected: control.selected
     Accessible.onPressAction: {
         if (control.interactive && control.enabled) control.activated()
     }
