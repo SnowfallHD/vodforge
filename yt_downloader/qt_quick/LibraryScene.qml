@@ -1,0 +1,372 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Item {
+    id: scene
+    property var appBridge
+    signal annotationRequested(int index)
+    signal actionsRequested(string owner)
+    signal collectionRequested()
+    signal categoryRequested()
+    signal importRequested()
+
+    readonly property var projection: appBridge.libraryScene
+    readonly property string route: projection.route || "home"
+    readonly property var counts: projection.counts || ({})
+    readonly property var groups: projection.groups || []
+    readonly property var media: projection.media || []
+
+    RowLayout {
+        anchors.fill: parent
+        spacing: 20
+
+        ColumnLayout {
+            Layout.preferredWidth: 226
+            Layout.fillHeight: true
+            spacing: 4
+            Text {
+                text: "ARCHIVE"
+                color: theme.muted
+                font.pixelSize: 12
+                font.bold: true
+                Layout.leftMargin: 7
+                Layout.bottomMargin: 8
+            }
+            Repeater {
+                model: [
+                    { route: "all", label: "All Media", count: scene.counts.all || 0 },
+                    { route: "channels", label: "Channels", count: scene.counts.channels || 0 },
+                    { route: "playlists", label: "Playlists", count: scene.counts.playlists || 0 },
+                    { route: "videos", label: "Videos", count: scene.counts.videos || 0 },
+                    { route: "audio", label: "Audio", count: scene.counts.audio || 0 }
+                ]
+                StoneButton {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 45
+                    label: modelData.label + "  " + modelData.count
+                    selected: scene.route === modelData.route ||
+                              (scene.route === "home" && modelData.route === "all")
+                    onActivated: scene.appBridge.navigateLibrary(modelData.route)
+                }
+            }
+            Item { Layout.fillHeight: true }
+            StoneField {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 124
+                interactive: true
+                accessibilityLabel: "Storage for " + scene.appBridge.storageSummary.label
+                onActivated: storagePopup.open()
+                Text {
+                    x: 15; y: 16
+                    width: parent.width - 30
+                    text: scene.appBridge.storageSummary.label
+                    color: theme.text
+                    font.pixelSize: 13
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+                Rectangle {
+                    x: 15; y: 55
+                    width: parent.width - 30
+                    height: 8
+                    radius: 4
+                    color: theme.border
+                    Rectangle {
+                        width: parent.width * scene.appBridge.storageSummary.fraction
+                        height: parent.height
+                        radius: parent.radius
+                        color: theme.accent
+                    }
+                }
+                Text {
+                    x: 15; y: 76
+                    width: parent.width - 30
+                    text: scene.appBridge.storageSummary.detail
+                    color: theme.muted
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+                Text {
+                    x: 15; y: 99
+                    width: parent.width - 30
+                    text: scene.appBridge.storageSummary.free || ""
+                    color: theme.muted
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillHeight: true
+            Layout.preferredWidth: 1
+            color: theme.border
+        }
+
+        ScrollView {
+            id: viewport
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            Column {
+                id: content
+                width: viewport.availableWidth
+                spacing: 13
+                Text {
+                    text: "Library"
+                    color: theme.text
+                    font.pixelSize: 37
+                    font.bold: true
+                }
+                Text {
+                    text: "Your downloaded videos, audio, and collections."
+                    color: theme.muted
+                    font.pixelSize: 15
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                }
+                Item { width: 1; height: 12 }
+
+                Flow {
+                    id: categoryFlow
+                    width: parent.width
+                    spacing: 12
+                    Repeater {
+                        model: [
+                            { route: "channels", label: "Channels", count: scene.counts.channels || 0 },
+                            { route: "playlists", label: "Playlists", count: scene.counts.playlists || 0 },
+                            { route: "videos", label: "Videos", count: scene.counts.videos || 0 },
+                            { route: "audio", label: "Audio", count: scene.counts.audio || 0 }
+                        ]
+                        StoneButton {
+                            required property var modelData
+                            width: Math.max(145, (categoryFlow.width - 36) / 4)
+                            height: 106
+                            label: ""
+                            accessibilityLabel: modelData.label + ", " + modelData.count
+                            onActivated: scene.appBridge.navigateLibrary(modelData.route)
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: 15
+                                spacing: 8
+                                Text { text: modelData.label; color: theme.text; font.pixelSize: 16; font.bold: true }
+                                Text { text: modelData.count; color: theme.muted; font.pixelSize: 23 }
+                            }
+                        }
+                    }
+                }
+                Item { width: 1; height: 8 }
+
+                Row {
+                    visible: scene.route === "home"
+                    width: parent.width
+                    height: visible ? 38 : 0
+                    Text { text: "Collections"; color: theme.text; font.pixelSize: 23; font.bold: true }
+                    Item { width: Math.max(0, parent.width - 200); height: 1 }
+                    StoneButton {
+                        label: "See All"
+                        size: "inline"
+                        width: 80
+                        onActivated: scene.appBridge.navigateLibrary("collections")
+                    }
+                }
+                Text {
+                    visible: scene.route === "home"
+                    text: "Your playlists and personal collections."
+                    color: theme.muted
+                    font.pixelSize: 14
+                }
+                Flow {
+                    id: groupFlow
+                    visible: scene.route === "home" || scene.route === "channels" ||
+                             scene.route === "playlists" || scene.route === "collections"
+                    width: parent.width
+                    spacing: 12
+                    Repeater {
+                        model: scene.groups
+                        StoneButton {
+                            required property var modelData
+                            width: Math.max(155, (groupFlow.width - 36) / 4)
+                            height: 192
+                            label: ""
+                            accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
+                            onActivated: scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
+                            Image {
+                                x: 4; y: 4
+                                width: parent.width - 8
+                                height: 108
+                                source: modelData.artwork
+                                fillMode: Image.PreserveAspectCrop
+                                visible: source.toString().length > 0
+                                smooth: true
+                            }
+                            Column {
+                                x: 12; y: 119
+                                width: parent.width - 24
+                                spacing: 3
+                                Text { text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; width: parent.width; elide: Text.ElideRight }
+                                Text { text: modelData.count + " item(s)"; color: theme.muted; font.pixelSize: 12 }
+                            }
+                        }
+                    }
+                    StoneButton {
+                        visible: scene.route === "home"
+                        width: Math.max(155, (groupFlow.width - 36) / 4)
+                        height: 192
+                        label: "+\nAdd Collection"
+                        accessibilityLabel: "Add Collection"
+                        onActivated: scene.collectionRequested()
+                    }
+                }
+
+                RowLayout {
+                    width: parent.width
+                    height: 44
+                    Text {
+                        text: scene.route === "home" ? "Recent Downloads" :
+                              scene.route === "group" ? scene.projection.groupTitle :
+                              scene.route === "all" ? "All Media" :
+                              scene.route.charAt(0).toUpperCase() + scene.route.slice(1)
+                        color: theme.text
+                        font.pixelSize: 23
+                        font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    StoneButton {
+                        visible: scene.route !== "home"
+                        label: "Back"
+                        size: "inline"
+                        Layout.preferredWidth: 72
+                        onActivated: scene.appBridge.navigateLibrary("home")
+                    }
+                }
+                Flow {
+                    width: parent.width
+                    height: childrenRect.height
+                    spacing: 12
+                    StoneField {
+                        width: Math.min(200, Math.max(130, parent.width * 0.28))
+                        height: 40
+                        focused: localSearch.activeFocus
+                        TextField {
+                            id: localSearch
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            text: scene.appBridge.librarySearch
+                            placeholderText: "Search media…"
+                            color: theme.text
+                            placeholderTextColor: theme.muted
+                            background: Item {}
+                            onTextEdited: scene.appBridge.setLibrarySearch(text)
+                        }
+                    }
+                    StoneButton {
+                        label: scene.appBridge.librarySort === "recent" ? "Newest first" : "Title A–Z"
+                        width: 172
+                        height: 40
+                        onActivated: sortPopup.open()
+                    }
+                    StoneButton {
+                        label: "Filter"
+                        width: 96
+                        height: 40
+                        onActivated: scene.categoryRequested()
+                    }
+                    StoneButton {
+                        label: "Import Media"
+                        enabled: !scene.appBridge.importBusy
+                        width: 135
+                        height: 40
+                        onActivated: scene.importRequested()
+                    }
+                }
+                Flow {
+                    id: mediaFlow
+                    width: parent.width
+                    spacing: 12
+                    Repeater {
+                        model: scene.media
+                        StoneField {
+                            required property var modelData
+                            width: Math.max(155, (mediaFlow.width - 36) / 4)
+                            height: width * 9 / 16 + 170
+                            Image {
+                                x: 4; y: 4
+                                width: parent.width - 8
+                                height: parent.width * 9 / 16
+                                source: modelData.artwork
+                                fillMode: Image.PreserveAspectCrop
+                                visible: source.toString().length > 0
+                                smooth: true
+                            }
+                            Column {
+                                x: 10; y: parent.width * 9 / 16 + 10
+                                width: parent.width - 20
+                                spacing: 3
+                                Text { text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; width: parent.width; elide: Text.ElideRight }
+                                Text { text: modelData.creator; color: theme.muted; font.pixelSize: 12; width: parent.width; elide: Text.ElideRight }
+                                Text { text: modelData.type; color: theme.muted; font.pixelSize: 12 }
+                                Row {
+                                    spacing: 5
+                                    StoneButton { label: "Play"; size: "inline"; width: 78; onActivated: scene.appBridge.openLibraryOwner(modelData.owner) }
+                                    StoneButton { label: "More"; size: "inline"; width: 72; onActivated: scene.actionsRequested(modelData.owner) }
+                                }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    visible: scene.groups.length === 0 && scene.media.length === 0
+                    text: "No items yet"
+                    color: theme.muted
+                    font.pixelSize: 16
+                }
+                Item { width: 1; height: 20 }
+            }
+            Popup {
+                id: sortPopup
+                x: Math.max(0, scene.width - width - 180)
+                y: 180
+                width: 190
+                padding: 8
+                modal: true
+                background: StoneField {}
+                Column {
+                    width: parent.width
+                    spacing: 5
+                    StoneButton { label: "Recently Added"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("recent"); sortPopup.close() } }
+                    StoneButton { label: "Title"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("title"); sortPopup.close() } }
+                }
+            }
+            Popup {
+                id: storagePopup
+                x: 0
+                y: Math.max(0, scene.height - height - 140)
+                width: 226
+                padding: 8
+                modal: true
+                background: StoneField {}
+                Column {
+                    width: parent.width
+                    spacing: 5
+                    Repeater {
+                        model: scene.appBridge.storageChoices
+                        StoneButton {
+                            required property var modelData
+                            label: modelData.label
+                            width: parent.width
+                            height: 38
+                            onActivated: { scene.appBridge.selectStorageVolume(modelData.path); storagePopup.close() }
+                        }
+                    }
+                    StoneButton { label: "Refresh storage"; width: parent.width; height: 38; onActivated: { scene.appBridge.refreshStorage(); storagePopup.close() } }
+                }
+            }
+        }
+    }
+}

@@ -22,6 +22,16 @@ from .platform_services import hidden_window_subprocess_kwargs
 _windows_ctypes: Any = ctypes
 
 
+def format_storage_bytes(value: int) -> str:
+    """Use one capacity label formatter in both native renderers."""
+    size = float(value)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1000 or unit == "TB":
+            return f"{size:.0f} {unit}" if size >= 100 else f"{size:.1f} {unit}"
+        size /= 1000
+    return str(value)
+
+
 @dataclass(frozen=True, slots=True)
 class StorageVolume:
     path: str

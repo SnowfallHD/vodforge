@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QUrl
 from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QGuiApplication
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -45,16 +45,28 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
             assert actions is not None
             assert QAccessibleActionInterface.pressAction() in actions.actionNames()
         assert buttons["Play"].state().invisible
-        assert buttons["Ready"].state().disabled
+        # The Run Deck replaced the old idle "Ready" button with status text;
+        # Download remains the reachable idle action.
+        assert not buttons["Download"].state().disabled
         buttons["Library"].actionInterface().doAction(
             QAccessibleActionInterface.pressAction()
         )
         assert bridge.selection == "Library"
         application.processEvents()
-        assert not buttons["All media"].state().invisible
+        library_nav = next(
+            child for name, child in buttons.items() if name.startswith("All Media  ")
+        )
+        assert not library_nav.state().invisible
         buttons["Watch"].actionInterface().doAction(
             QAccessibleActionInterface.pressAction()
         )
+        application.processEvents()
+        assert bridge.selection == "Watch"
+        assert buttons["Play"].state().invisible
+        # Browsing precedes playback in the port. Expose transport sliders only
+        # when a media source has opened, while retaining their AX names.
+        bridge._playback_url = QUrl.fromLocalFile(str(tmp_path / "fixture.mp4"))
+        bridge.playbackUrlChanged.emit()
         application.processEvents()
         sliders = {
             child.text(QAccessible.Name)

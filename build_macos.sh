@@ -47,10 +47,10 @@ if [[ "$ui_mode" == "qt" ]]; then
   qt_args=(
     --hidden-import PySide6.QtMultimedia
     --hidden-import PySide6.QtQuickControls2
-    --add-data "yt_downloader/qt_quick/Main.qml:yt_downloader/qt_quick"
-    --add-data "yt_downloader/qt_quick/StoneButton.qml:yt_downloader/qt_quick"
-    --add-data "yt_downloader/qt_quick/StoneField.qml:yt_downloader/qt_quick"
   )
+  for qml_file in yt_downloader/qt_quick/*.qml; do
+    qt_args+=(--add-data "$qml_file:yt_downloader/qt_quick")
+  done
 elif [[ "$ui_mode" != "tk" ]]; then
   echo "VODFORGE_UI must be tk or qt."
   exit 1

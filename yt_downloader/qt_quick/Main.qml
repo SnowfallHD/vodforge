@@ -70,7 +70,7 @@ Window {
         padding: 20
         modal: true
         closePolicy: Popup.NoAutoClose
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -131,6 +131,13 @@ Window {
         onAccepted: bridge.loadBatchUrl(selectedFile)
     }
     FileDialog {
+        id: libraryImportDialog
+        title: "Add media to Library"
+        fileMode: FileDialog.OpenFiles
+        nameFilters: ["Video and audio (*.mp4 *.mp3 *.m4a *.aac *.wav *.flac *.ogg *.opus)"]
+        onAccepted: bridge.importMedia(selectedFiles)
+    }
+    FileDialog {
         id: cookieFileDialog
         title: "Choose YouTube cookies.txt"
         nameFilters: ["Cookie text files (*.txt)", "All files (*)"]
@@ -161,13 +168,23 @@ Window {
             Layout.fillWidth: true
             Layout.preferredHeight: 52
             spacing: 10
-            Text {
-                text: "VF  VODForge"
-                color: theme.text
-                font.family: "Arial"
-                font.pixelSize: 22
-                font.bold: true
-                Layout.preferredWidth: window.width < 960 ? 158 : 198
+            RowLayout {
+                Layout.preferredWidth: window.width < 960 ? 150 : 196
+                spacing: 7
+                Image {
+                    source: assetUrl + "brand/vf-mark.png"
+                    Layout.preferredWidth: 32
+                    Layout.preferredHeight: 32
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
+                Image {
+                    source: assetUrl + "brand/vf-name.png"
+                    Layout.preferredWidth: window.width < 960 ? 107 : 145
+                    Layout.preferredHeight: 27
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
             }
             Repeater {
                 model: ["Forge", "Library", "Watch", "Activity"]
@@ -284,55 +301,47 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 48
-                spacing: 10
+                spacing: 12
                 StoneButton {
-                    label: bridge.running ? "Stop" : "Ready"
-                    Layout.preferredWidth: 128
+                    label: bridge.batchSummary === "No URL list loaded" ? "Load URL list" : "List loaded"
+                    Layout.preferredWidth: 116
                     Layout.preferredHeight: 42
-                    enabled: bridge.running
-                    onActivated: bridge.cancel()
+                    onActivated: urlListDialog.open()
                 }
                 Text {
                     text: "Save to"
                     color: theme.muted
                     font.pixelSize: 15
-                    Layout.leftMargin: 10
+                    Layout.leftMargin: 7
                 }
                 StoneField {
-                    Layout.fillWidth: true
+                    Layout.preferredWidth: Math.min(250, Math.max(150, window.width * 0.23))
                     Layout.preferredHeight: 42
-                    focused: pathInput.activeFocus
-                    TextField {
-                        id: pathInput
+                    interactive: true
+                    accessibilityLabel: "Choose output folder"
+                    onActivated: outputFolderDialog.open()
+                    RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 14
-                        anchors.rightMargin: 10
-                        text: bridge.outputPath
-                        color: theme.text
-                        background: Item {}
-                        font.pixelSize: 15
-                        onAccepted: bridge.setOutputPath(text)
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 8
+                        Image {
+                            source: "image://vodforge/icon/folder-20.png"
+                            Layout.preferredWidth: 18
+                            Layout.preferredHeight: 18
+                            fillMode: Image.PreserveAspectFit
+                        }
+                        Text {
+                            text: bridge.outputPath
+                            color: theme.text
+                            font.pixelSize: 15
+                            elide: Text.ElideLeft
+                            Layout.fillWidth: true
+                        }
                     }
                 }
-                StoneButton {
-                    label: "Browse"
-                    Layout.preferredWidth: 86
-                    Layout.preferredHeight: 42
-                    onActivated: outputFolderDialog.open()
-                }
-                StoneButton {
-                    label: bridge.batchSummary === "No URL list loaded" ? "Load URL list" : "List loaded"
-                    Layout.preferredWidth: 111
-                    Layout.preferredHeight: 42
-                    onActivated: urlListDialog.open()
-                }
-                StoneButton {
-                    visible: bridge.batchSummary !== "No URL list loaded"
-                    label: "Clear"
-                    Layout.preferredWidth: 57
-                    Layout.preferredHeight: 42
-                    onActivated: bridge.clearBatchList()
-                }
+                Item { Layout.fillWidth: true }
+                Text { text: "Have local audio?"; color: theme.muted; font.pixelSize: 15 }
                 StoneButton {
                     label: "Create video"
                     Layout.preferredWidth: 132
@@ -411,8 +420,16 @@ Window {
                     RowLayout {
                         visible: bridge.running
                         spacing: 8
+                        StoneButton { label: "Cancel"; Layout.preferredWidth: 82; Layout.preferredHeight: 36; onActivated: bridge.cancel() }
                         StoneButton { label: "Skip item"; Layout.preferredWidth: 105; Layout.preferredHeight: 36; onActivated: bridge.skipItem() }
                         StoneButton { label: "Skip source"; Layout.preferredWidth: 119; Layout.preferredHeight: 36; onActivated: bridge.skipSource() }
+                    }
+                    StoneButton {
+                        visible: bridge.batchSummary !== "No URL list loaded"
+                        label: "Clear URL list"
+                        Layout.preferredWidth: 116
+                        Layout.preferredHeight: 34
+                        onActivated: bridge.clearBatchList()
                     }
                     Item { Layout.fillHeight: true }
                 }
@@ -447,112 +464,58 @@ Window {
 
             Item { Layout.fillHeight: true }
 
-            StoneField {
+            RunDeck {
+                objectName: "forgeRunDeck"
+                appBridge: bridge
                 Layout.fillWidth: true
-                Layout.preferredHeight: 74
-                Column {
-                    anchors.fill: parent
-                    anchors.margins: 17
-                    spacing: 8
-                    Text { text: "Recent downloads"; color: theme.text; font.pixelSize: 16; font.bold: true }
-                    Text { text: bridge.savedCount + " saved item(s) in Library"; color: theme.muted; font.pixelSize: 14 }
+                Layout.preferredHeight: 139
+                onOpenSaved: function(owner) {
+                    bridge.select("Library")
+                    bridge.navigateLibrary("all")
                 }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 23
-                Text { text: bridge.running ? "Run active" : "No active run"; color: theme.muted; font.pixelSize: 14 }
-                Item { Layout.fillWidth: true }
-                Text { text: "Runs process one at a time"; color: theme.muted; font.pixelSize: 14 }
             }
         }
 
-        Item {
+        LibraryScene {
             visible: bridge.selection === "Library"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 16
-                Text { text: "Library"; color: theme.text; font.pixelSize: 26; font.bold: true }
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text { text: bridge.history.length + " matching item(s)"; color: theme.muted; font.pixelSize: 15 }
-                    Item { Layout.fillWidth: true }
-                    Repeater {
-                        model: ["All", "MP4", "MP3", "Original audio"]
-                        StoneButton {
-                            required property string modelData
-                            label: modelData === "All" ? "All media" : modelData
-                            selected: bridge.libraryType === modelData
-                            Layout.preferredWidth: modelData === "Original audio" ? 130 : 96
-                            Layout.preferredHeight: 38
-                            onActivated: bridge.setLibraryType(modelData)
-                        }
-                    }
-                    StoneButton {
-                        label: bridge.libraryCategory + "  ▾"
-                        Layout.preferredWidth: 155
-                        Layout.preferredHeight: 38
-                        onActivated: categoryPopup.open()
-                    }
-                }
-                ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    model: bridge.history
-                    spacing: 9
-                    clip: true
-                    delegate: StoneField {
-                        required property var modelData
-                        required property int index
-                        width: ListView.view.width
-                        height: 67
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 13
-                            spacing: 10
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Text { text: modelData.title; color: theme.text; font.pixelSize: 17; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: modelData.type + (modelData.status ? " · " + modelData.status : ""); color: theme.muted; font.pixelSize: 13 }
-                            }
-                            StoneButton {
-                                label: "Organize"
-                                Layout.preferredWidth: 95
-                                Layout.preferredHeight: 38
-                                onActivated: { if (bridge.openAnnotation(modelData.projectionIndex)) annotationPopup.open() }
-                            }
-                            StoneButton {
-                                visible: modelData.sourceIndex >= 0
-                                label: "Play"
-                                Layout.preferredWidth: 72
-                                Layout.preferredHeight: 38
-                                onActivated: bridge.openLibraryOwner(modelData.archiveOwner)
-                            }
-                            StoneButton {
-                                visible: modelData.sourceIndex >= 0
-                                label: "More"
-                                Layout.preferredWidth: 75
-                                Layout.preferredHeight: 38
-                                onActivated: {
-                                    window.selectedSavedOwner = modelData.archiveOwner
-                                    libraryItemPopup.open()
-                                }
-                            }
-                        }
-                    }
-                }
+            appBridge: bridge
+            onAnnotationRequested: function(index) {
+                if (bridge.openAnnotation(index)) annotationPopup.open()
             }
+            onActionsRequested: function(owner) {
+                window.selectedSavedOwner = owner
+                libraryItemPopup.open()
+            }
+            onCollectionRequested: collectionPopup.open()
+            onCategoryRequested: categoryPopup.open()
+            onImportRequested: libraryImportDialog.open()
+        }
+        WatchScene {
+            objectName: "watchBrowseScene"
+            visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length === 0
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            appBridge: bridge
         }
         Item {
-            visible: bridge.selection === "Watch"
+            visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length > 0
             Layout.fillWidth: true
             Layout.fillHeight: true
             ColumnLayout {
                 anchors.fill: parent
                 spacing: 12
-                Text { text: "Watch"; color: theme.text; font.pixelSize: 26; font.bold: true }
+                RowLayout {
+                    Layout.fillWidth: true
+                    StoneButton {
+                        label: "Back to Watch"
+                        size: "inline"
+                        Layout.preferredWidth: 145
+                        onActivated: { mediaPlayer.stop(); bridge.closePlayback() }
+                    }
+                    Text { text: "Watch"; color: theme.text; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true }
+                }
                 VideoOutput {
                     id: videoSurface
                     objectName: "watchVideoSurface"
@@ -704,10 +667,10 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: 260
-        height: 316
+        height: 372
         padding: 14
         modal: true
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
@@ -722,6 +685,17 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 42
                 onActivated: { bridge.copyLibraryPath(window.selectedSavedOwner); libraryItemPopup.close() }
+            }
+            StoneButton {
+                label: "Edit notes, tags & category"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: {
+                    if (bridge.openAnnotationOwner(window.selectedSavedOwner)) {
+                        libraryItemPopup.close()
+                        annotationPopup.open()
+                    }
+                }
             }
             StoneButton {
                 label: "Remove Library card"
@@ -763,7 +737,7 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.fileActionBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -827,7 +801,7 @@ Window {
         modal: true
         closePolicy: Popup.CloseOnEscape
         onClosed: bridge.cancelLibraryRemoval()
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -861,6 +835,87 @@ Window {
         }
     }
     Popup {
+        id: collectionPopup
+        objectName: "libraryCollectionPopup"
+        property var selectedOwners: []
+        onOpened: {
+            selectedOwners = []
+            collectionName.text = ""
+        }
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(540, window.width - 40)
+        height: Math.min(480, window.height - 40)
+        padding: 20
+        modal: true
+        background: StoneField {}
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 12
+            Text { text: "Create a collection"; color: theme.text; font.pixelSize: 23; font.bold: true }
+            Text {
+                text: "Choose a name, then click the media you want to include."
+                color: theme.muted
+                font.pixelSize: 14
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            StoneField {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                TextField {
+                    id: collectionName
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    placeholderText: "Type your collection name"
+                    color: theme.text
+                    background: Item {}
+                }
+            }
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                Column {
+                    width: parent.width
+                    spacing: 5
+                    Repeater {
+                        model: bridge.collectionCandidates
+                        StoneButton {
+                            required property var modelData
+                            width: parent.width
+                            height: 36
+                            label: modelData.title
+                            selected: collectionPopup.selectedOwners.indexOf(modelData.owner) >= 0
+                            onActivated: {
+                                var next = collectionPopup.selectedOwners.slice()
+                                var index = next.indexOf(modelData.owner)
+                                if (index >= 0) next.splice(index, 1)
+                                else next.push(modelData.owner)
+                                collectionPopup.selectedOwners = next
+                            }
+                        }
+                    }
+                }
+            }
+            Text { text: bridge.status; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideRight }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Cancel"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; onActivated: collectionPopup.close() }
+                StoneButton {
+                    label: "Save"
+                    Layout.preferredWidth: 95
+                    Layout.preferredHeight: 40
+                    onActivated: {
+                        if (bridge.createCollection(collectionName.text, collectionPopup.selectedOwners))
+                            collectionPopup.close()
+                    }
+                }
+            }
+        }
+    }
+    Popup {
         id: categoryPopup
         objectName: "libraryCategoryPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -868,7 +923,7 @@ Window {
         width: 285
         height: Math.min(370, bridge.libraryCategories.length * 43 + 12)
         padding: 6
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
+        background: StoneField {}
         ListView {
             anchors.fill: parent
             clip: true
@@ -893,7 +948,7 @@ Window {
         height: 450
         padding: 18
         modal: true
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 9
@@ -961,7 +1016,7 @@ Window {
         height: 482
         padding: 18
         modal: true
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 9
@@ -1030,7 +1085,7 @@ Window {
         height: 420
         padding: 18
         modal: true
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 9
@@ -1085,7 +1140,7 @@ Window {
         height: bridge.analyticsAvailable ? 588 : 535
         padding: 18
         modal: true
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 7
@@ -1161,7 +1216,7 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.updateBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -1237,7 +1292,7 @@ Window {
         height: 410
         padding: 18
         modal: true
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
@@ -1305,7 +1360,7 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.localRunning ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
@@ -1350,7 +1405,7 @@ Window {
         width: 320
         height: 184
         padding: 3
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
+        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 2
@@ -1373,7 +1428,7 @@ Window {
         width: 170
         height: 150
         padding: 3
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
+        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 3
@@ -1402,7 +1457,7 @@ Window {
         width: Math.min(550, window.width - 40)
         height: 350
         padding: 8
-        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
+        background: StoneField {}
         Row {
             anchors.fill: parent
             spacing: 8

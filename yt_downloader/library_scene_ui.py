@@ -29,15 +29,6 @@ from .volume_storage import StorageCapacityOwner, StorageSnapshot, StorageVolume
 from .watch_library import watch_channels, watch_media_kind, watch_rails
 
 
-def _bytes(value: int) -> str:
-    size = float(value)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size < 1000 or unit == "TB":
-            return f"{size:.0f} {unit}" if size >= 100 else f"{size:.1f} {unit}"
-        size /= 1000
-    return str(value)
-
-
 def _projection(owner: Any, key: tuple[Any, ...], build: Callable[[], Any]) -> Any:
     """Bound derived query variants to the current authoritative snapshot."""
     if owner.__dict__.get("_projection_snapshot") is not owner._records:

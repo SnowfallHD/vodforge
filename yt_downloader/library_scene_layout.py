@@ -18,6 +18,7 @@ from .ui_chrome import layered_surface_image
 from .ui_layout import window_logical_metrics
 from .ui_materials import draw_matte_backdrop
 from .ui_theme import THEME, _mix_hex
+from .volume_storage import format_storage_bytes
 from .watch_library import watch_rails
 
 
@@ -291,8 +292,6 @@ class LibrarySceneLayout(LibraryDetailLayout):
     def _draw_sidebar(self: Any) -> None:
         if self._closed or not self.sidebar.winfo_exists():
             return
-        from .library_scene_ui import _bytes
-
         metrics = window_logical_metrics(self)
         px, scale = metrics.px, metrics.scale
         c = self.sidebar
@@ -427,7 +426,7 @@ class LibrarySceneLayout(LibraryDetailLayout):
             p.text(
                 px(25),
                 y + px(79),
-                f"{_bytes(capacity.used)} of {_bytes(capacity.total)} used",
+                f"{format_storage_bytes(capacity.used)} of {format_storage_bytes(capacity.total)} used",
                 size=12,
                 font_scale=scale,
                 color=THEME["muted"],
@@ -444,7 +443,7 @@ class LibrarySceneLayout(LibraryDetailLayout):
             c.create_text(
                 width - px(29),
                 y + px(101),
-                text=f"{_bytes(capacity.free)} free",
+                text=f"{format_storage_bytes(capacity.free)} free",
                 anchor="ne",
                 font=scene_font(12, font_scale=scale),
                 fill=THEME["muted"],

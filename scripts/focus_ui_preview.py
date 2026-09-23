@@ -357,7 +357,7 @@ def main() -> None:
         description="Launch a no-download VODForge visual QA state."
     )
     parser.add_argument(
-        "--view", choices=("forge", "library", "activity"), default="forge"
+        "--view", choices=("forge", "library", "watch", "activity"), default="forge"
     )
     parser.add_argument("--size", default="1180x780")
     parser.add_argument(
@@ -381,6 +381,8 @@ def main() -> None:
     parser.add_argument("--preset", choices=EXPORT_MODES, default="Everyday")
     parser.add_argument("--consent", action="store_true")
     parser.add_argument("--whats-new", action="store_true")
+    parser.add_argument("--did-you-know", action="store_true")
+    parser.add_argument("--welcome", action="store_true")
     parser.add_argument("--whats-new-slide", type=int, default=1)
     parser.add_argument(
         "--capture", type=Path, help="Save an owned macOS review window and exit"
@@ -404,12 +406,17 @@ def main() -> None:
         help="Show an explicit completed activity fixture",
     )
     parser.add_argument("--annotation", action="store_true")
+    parser.add_argument("--collection", action="store_true")
     parser.add_argument("--local-conversion", action="store_true")
     parser.add_argument("--player", choices=("MP4", "MP3"))
     parser.add_argument("--notice", choices=("warning", "error"))
     args = parser.parse_args()
 
     app = DownloaderApp()
+    # An unrelated first-run tour must not cover the requested review surface.
+    # The tour itself is captured explicitly with --welcome.
+    app.engagement.close()
+    app.whats_new.close()
     app.export_mode_choice_var.set(args.preset)
     app.title("VODForge — UI Review")
     app.geometry(args.size)
@@ -715,16 +722,35 @@ def main() -> None:
     app.after(450, apply_preview_state)
     if args.consent:
         app.after(600, app.analytics_startup._prompt)
-    if args.whats_new:
-        app.after(600, app.whats_new.show)
-        app.after(
-            800,
-            lambda: (
-                app.whats_new.panel.render(args.whats_new_slide - 1)
-                if app.whats_new.panel is not None
-                else None
-            ),
+    if args.whats_new or args.did_you_know or args.welcome:
+        from yt_downloader.engagement_state import WELCOME_SLIDES
+        from yt_downloader.whats_new import DID_YOU_KNOW_HIGHLIGHTS, HIGHLIGHTS
+        from yt_downloader.whats_new_ui import WhatsNewPanel
+
+        highlights = (
+            WELCOME_SLIDES
+            if args.welcome
+            else DID_YOU_KNOW_HIGHLIGHTS
+            if args.did_you_know
+            else HIGHLIGHTS
         )
+        heading = (
+            "Welcome to VODForge"
+            if args.welcome
+            else "Did you know?"
+            if args.did_you_know
+            else "What’s new"
+        )
+
+        def show_announcement() -> None:
+            app._visual_announcement = WhatsNewPanel(
+                app, highlights, lambda: None, heading=heading
+            )
+            app._visual_announcement.render(
+                min(len(highlights) - 1, max(0, args.whats_new_slide - 1))
+            )
+
+        app.after(600, show_announcement)
     if args.settings:
         app.after(300, app._show_focus_settings)
     if args.settings and args.tooltip:
@@ -751,7 +777,7 @@ def main() -> None:
     if args.all_runs:
         app.after(600, app.lift)
         app.after(620, app.focus_force)
-        app.after(780, app._show_focus_run_menu)
+        app.after(780, app.focus_run_hover_menu.show)
     if args.selected_details:
         app.after(700, app._show_selected_metadata_details)
     if args.output_details:
@@ -776,6 +802,8 @@ def main() -> None:
                 ),
             )
         app.after(700, app._show_library_annotation_editor)
+    if args.collection:
+        app.after(700, app._show_library_collection_editor)
     if args.local_conversion:
 
         def show_conversion() -> None:
@@ -883,8 +911,7 @@ def main() -> None:
                 centered_toplevel_geometry(app, width=1100, height=800),
             )
             window._poll()
-            if not audio_only:
-                window._generate_previews()
+            # The player schedules previews through its own current lifecycle.
 
         app.after(650, show_player)
     if args.notice:

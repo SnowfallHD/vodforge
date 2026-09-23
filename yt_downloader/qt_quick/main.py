@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import tempfile
+import time
+import uuid
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import Any
@@ -31,7 +34,9 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from yt_downloader.archive_observations import bind_operation, operation
 from yt_downloader.archive_relink import record_fingerprint
+from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.cookie_inputs import browser_cookie_value
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
@@ -58,6 +63,7 @@ from yt_downloader.library_annotations import (
     LibraryAnnotationsError,
     LibraryAnnotationsOwner,
 )
+from yt_downloader.library_import import commit_imports, inspect_local_media
 from yt_downloader.library_search import (
     LIBRARY_ALL_CATEGORIES,
     LIBRARY_ALL_MEDIA,
@@ -69,6 +75,7 @@ from yt_downloader.library_state import (
     PROJECTION_OWNER_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
+    persisted_run_deck_records,
     resolve_library_removal_plan,
 )
 from yt_downloader.local_audio_video import (
@@ -89,9 +96,11 @@ from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.product_telemetry import product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
+from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
+from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.qt_quick.update_session import QtUpdateSession
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
@@ -100,7 +109,7 @@ from yt_downloader.settings_store import (
     save_settings,
     settings_file_path,
 )
-from yt_downloader.telemetry_features import settings_dimensions
+from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import button_metrics
 from yt_downloader.ui_chrome import action_button_image, field_border_image
@@ -109,6 +118,7 @@ from yt_downloader.ui_theme import FONT_UI_FAMILY, THEME, theme_motif
 from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
 from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
+from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
 from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
 
 
@@ -145,7 +155,7 @@ class Materials(QQuickImageProvider):
                 )
             elif parts[0] == "field" and len(parts) == 4:
                 width, height = int(parts[1]), int(parts[2])
-                if not (1 <= width <= 4096 and 1 <= height <= 512):
+                if not (1 <= width <= 4096 and 1 <= height <= 2048):
                     raise ValueError("field image dimensions out of bounds")
                 source = field_border_image(width, height, focused=parts[3] == "focus")
             elif parts[0] == "icon" and len(parts) == 2:
@@ -180,6 +190,7 @@ class Bridge(QObject):
     runningChanged = Signal()
     historyChanged = Signal()
     activityChanged = Signal()
+    runDeckChanged = Signal()
     exportModeChanged = Signal()
     outputFormatChanged = Signal()
     qualityChanged = Signal()
@@ -195,6 +206,9 @@ class Bridge(QObject):
     sourceAccepted = Signal()
     cookieAccessChanged = Signal()
     libraryCategoryChanged = Signal()
+    librarySortChanged = Signal()
+    importBusyChanged = Signal()
+    storageChanged = Signal()
     annotationChanged = Signal()
     analyticsChanged = Signal()
     analyticsPromptRequested = Signal()
@@ -213,6 +227,14 @@ class Bridge(QObject):
         self._analytics_snapshot_sent = False
         self._updates = QtUpdateSession(__version__)
         self._files = QtLibraryFiles(self._runtime.history_path)
+        self._import_work = ArchiveWorkOwner()
+        self._import_pending = False
+        self._import_request_count = 0
+        self._import_started_at = 0.0
+        self._import_operation: Any | None = None
+        self._storage = StorageCapacityOwner()
+        self._storage_snapshot = self._storage.snapshot
+        self._artwork = QtArtwork(self._runtime.history_path.parent / "artwork")
         self._files.refresh_recovery()
         self._file_action_busy = self._files.uncertain
         if self._files.uncertain and self._runtime.recovery_notice is None:
@@ -326,6 +348,13 @@ class Bridge(QObject):
         self._library_search = ""
         self._library_type = LIBRARY_ALL_MEDIA
         self._library_category = LIBRARY_ALL_CATEGORIES
+        self._library_scene_route = "home"
+        self._library_sort = "recent"
+        self._library_group_key = ""
+        self._library_group_kind = ""
+        self._watch_scene_route = "home"
+        self._watch_group_key = ""
+        self._watch_group_kind = ""
         self._local_audio = ""
         self._local_image = ""
         self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
@@ -419,6 +448,7 @@ class Bridge(QObject):
             or self._runtime.busy
             or self._runtime.queued
             or self._local_running
+            or self._import_pending
             or self._file_action_busy
             or self._runtime.recovery_notice
         ):
@@ -446,6 +476,7 @@ class Bridge(QObject):
             or self._runtime.busy
             or self._runtime.queued
             or self._local_running
+            or self._import_pending
             or self._file_action_busy
         ):
             return False
@@ -648,6 +679,42 @@ class Bridge(QObject):
     def savedCount(self) -> int:
         return len(self._runtime.history)
 
+    @Property("QVariantMap", notify=historyChanged)
+    def libraryScene(self) -> dict[str, Any]:
+        return library_scene(
+            self._projected_library(),
+            self._library_scene_route,
+            self._library_group_key,
+            self._library_group_kind,
+            self._artwork.request,
+            self._library_search,
+            ""
+            if self._library_category == LIBRARY_ALL_CATEGORIES
+            else self._library_category,
+            self._library_sort,
+        )
+
+    @Property("QVariantMap", notify=historyChanged)
+    def watchScene(self) -> dict[str, Any]:
+        return watch_scene(
+            self._projected_library(),
+            self._watch_scene_route,
+            self._artwork.request,
+            self._watch_group_key,
+            self._watch_group_kind,
+        )
+
+    @Property("QVariantList", notify=historyChanged)
+    def collectionCandidates(self) -> list[dict[str, str]]:
+        return [
+            {
+                "owner": history_annotation_owner(row),
+                "title": str(row.get("title") or "Saved media"),
+            }
+            for row in self._runtime.history
+            if row.get("vodforge_output_dir")
+        ]
+
     def _projected_library(self) -> list[dict[str, Any]]:
         projection = self._library_projection.reconcile(
             history_items=self._runtime.history,
@@ -661,6 +728,115 @@ class Bridge(QObject):
     @Property(str, notify=libraryCategoryChanged)
     def libraryCategory(self) -> str:
         return self._library_category
+
+    @Property(str, notify=librarySortChanged)
+    def librarySort(self) -> str:
+        return self._library_sort
+
+    @Property(bool, notify=importBusyChanged)
+    def importBusy(self) -> bool:
+        return self._import_pending
+
+    @Property("QVariantMap", notify=storageChanged)
+    def storageSummary(self) -> dict[str, Any]:
+        snapshot = self._storage_snapshot
+        capacity = snapshot.capacity
+        if capacity is None:
+            return {
+                "label": "Local Library",
+                "detail": "Checking drive…"
+                if snapshot.status == "loading"
+                else "Drive unavailable",
+                "fraction": 0.0,
+            }
+        return {
+            "label": capacity.volume.label,
+            "detail": f"{format_storage_bytes(capacity.used)} of {format_storage_bytes(capacity.total)} used",
+            "free": f"{format_storage_bytes(capacity.free)} free",
+            "fraction": capacity.fraction_used,
+        }
+
+    @Property("QVariantList", notify=storageChanged)
+    def storageChoices(self) -> list[dict[str, str]]:
+        return [
+            {"path": volume.path, "label": volume.label}
+            for volume in self._storage_snapshot.choices
+        ]
+
+    @Slot(str)
+    def selectStorageVolume(self, path: str) -> None:
+        if path not in {volume.path for volume in self._storage_snapshot.choices}:
+            return
+        self._storage.select(path)
+        self._storage_snapshot = self._storage.snapshot
+        self.storageChanged.emit()
+
+    @Slot()
+    def refreshStorage(self) -> None:
+        self._storage.refresh()
+
+    @Slot("QVariantList", result=bool)
+    def importMedia(self, urls: list[QUrl]) -> bool:
+        if not urls or len(urls) > 64:
+            self._status = "Choose up to 64 media files."
+        elif (
+            self._import_pending
+            or self._file_action_busy
+            or self._runtime.recovery_notice
+            or self._runtime.active_job is not None
+            or self._runtime.busy
+            or self._runtime.queued
+            or self._local_running
+        ):
+            self._status = (
+                "Finish the current Library or download work before importing."
+            )
+        else:
+            paths = [Path(url.toLocalFile()) for url in urls if url.isLocalFile()]
+            if len(paths) != len(urls):
+                self._status = "Choose media files from this computer."
+            else:
+
+                def inspect(cancelled: Any) -> tuple[list[dict[str, Any]], int]:
+                    completed: list[dict[str, Any]] = []
+                    failed = 0
+                    for path in paths:
+                        if cancelled.is_set():
+                            break
+                        try:
+                            completed.append(inspect_local_media(path, cancelled))
+                        except (
+                            OSError,
+                            ValueError,
+                            RuntimeError,
+                            subprocess.SubprocessError,
+                        ):
+                            failed += 1
+                    return completed, failed
+
+                if self._import_work.submit("library_import", inspect) is not None:
+                    self._import_pending = True
+                    self._import_request_count = len(paths)
+                    self._import_started_at = time.monotonic()
+                    self._import_operation = bind_operation(
+                        self._analytics.telemetry,
+                        "library_import_operation",
+                        operation_key=str(uuid.uuid4()),
+                    )
+                    operation(
+                        self._analytics.telemetry,
+                        "library_import_operation",
+                        "requested",
+                        self._import_operation,
+                        {"item_count": str(len(paths))},
+                    )
+                    self.importBusyChanged.emit()
+                    self._status = "Checking selected media…"
+                    self.statusChanged.emit()
+                    return True
+                self._status = "Media could not be checked. Please try again."
+        self.statusChanged.emit()
+        return False
 
     @Property("QVariantList", notify=historyChanged)
     def libraryCategories(self) -> list[str]:
@@ -756,6 +932,82 @@ class Bridge(QObject):
     def activity(self) -> list[dict[str, str]]:
         return self._runtime.activity
 
+    @Property("QVariantMap", notify=runDeckChanged)
+    def runDeck(self) -> dict[str, Any]:
+        records: list[dict[str, Any]] = []
+        active = self._runtime.active_job
+        if active is not None:
+            preview = active.preview_info or {}
+            records.append(
+                {
+                    "runId": active.run_id,
+                    "kind": "active",
+                    "title": str(
+                        preview.get("title") or f"{active.output_type.value} download"
+                    ),
+                    "status": self._status,
+                    "type": active.output_type.value,
+                    "progress": self._progress,
+                    "artwork": self._artwork.request(preview) if preview else "",
+                }
+            )
+        for kind, jobs in (
+            ("queued", self._runtime.queued),
+            ("terminal", self._runtime.recovered),
+        ):
+            for job in jobs:
+                preview = job.preview_info or {}
+                records.append(
+                    {
+                        "runId": job.run_id,
+                        "kind": kind,
+                        "title": str(
+                            preview.get("title") or f"{job.output_type.value} download"
+                        ),
+                        "status": job.terminal_status or "Queued",
+                        "type": job.output_type.value,
+                        "progress": 0,
+                        "artwork": self._artwork.request(preview) if preview else "",
+                    }
+                )
+        for record in persisted_run_deck_records(
+            self._runtime.history, completed_jobs=()
+        ):
+            index = record.get("metadata_index")
+            if not isinstance(index, int):
+                continue
+            item = self._runtime.history[index]
+            records.append(
+                {
+                    "runId": str(record["run_id"]),
+                    "owner": history_archive_owner(item),
+                    "kind": str(record["kind"]),
+                    "title": str(record["title"]),
+                    "status": str(record["status"]),
+                    "type": str(record["output_type"]),
+                    "progress": 100,
+                    "artwork": self._artwork.request(item),
+                }
+            )
+        counts: dict[str, int] = {}
+        for record in records:
+            kind = record["kind"]
+            counts[kind] = counts.get(kind, 0) + 1
+        summary = (
+            "No runs yet"
+            if not records
+            else f"{len(records)} run{'s' if len(records) != 1 else ''}"
+        )
+        for kind in ("active", "queued", "completed", "terminal"):
+            if count := counts.get(kind, 0):
+                summary += f"  •  {count} {kind}"
+        return {
+            "records": records,
+            "visible": records[:4],
+            "count": len(records),
+            "summary": summary,
+        }
+
     def _record(self, action: str, outcome: str) -> None:
         if self._event_log is not None:
             with self._event_log.open("a", encoding="utf-8") as file:
@@ -770,11 +1022,97 @@ class Bridge(QObject):
         self._record("select", name)
 
     @Slot(str)
+    def navigateLibrary(self, route: str) -> None:
+        if route not in {
+            "home",
+            "all",
+            "channels",
+            "playlists",
+            "collections",
+            "videos",
+            "audio",
+        }:
+            return
+        self._library_scene_route = route
+        self._library_group_key = ""
+        self._library_group_kind = ""
+        self.historyChanged.emit()
+
+    @Slot(str, str)
+    def navigateLibraryGroup(self, kind: str, key: str) -> None:
+        if kind not in {"channel", "playlist", "collection"} or not key:
+            return
+        self._library_scene_route = "group"
+        self._library_group_kind = kind
+        self._library_group_key = key
+        self.historyChanged.emit()
+
+    @Slot(str)
+    def navigateWatch(self, route: str) -> None:
+        if route not in {"home", "channels", "playlists", "collections", "videos"}:
+            return
+        self._watch_scene_route = route
+        self._watch_group_key = ""
+        self._watch_group_kind = ""
+        self.historyChanged.emit()
+
+    @Slot(str, str)
+    def navigateWatchGroup(self, kind: str, key: str) -> None:
+        if kind not in {"channel", "playlist", "collection"} or not key:
+            return
+        self._watch_scene_route = "group"
+        self._watch_group_kind = kind
+        self._watch_group_key = key
+        self.historyChanged.emit()
+
+    @Slot(str, "QVariantList", result=bool)
+    def createCollection(self, name: str, owners: list[str]) -> bool:
+        name = name.strip()
+        available = {item["owner"] for item in self.collectionCandidates}
+        chosen = set(owners)
+        if not name or not chosen or not chosen <= available:
+            self._status = "Name a collection and choose saved media."
+            self.statusChanged.emit()
+            return False
+        try:
+            self._annotations.replace_many(
+                {
+                    owner: replace(
+                        self._annotations.annotation_for(owner), category=name
+                    )
+                    for owner in chosen
+                }
+            )
+        except (LibraryAnnotationsError, OSError, ValueError) as error:
+            self._status = str(error)
+            self.statusChanged.emit()
+            return False
+        self.historyChanged.emit()
+        self._status = f"Collection {name} saved."
+        self.statusChanged.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def openAnnotationOwner(self, owner: str) -> bool:
+        rows = self._projected_library()
+        index = next(
+            (
+                index
+                for index, row in enumerate(rows)
+                if str(row.get(PROJECTION_OWNER_KEY) or "") == owner
+            ),
+            None,
+        )
+        return self.openAnnotation(index) if index is not None else False
+
+    @Slot(str)
     def setLibrarySearch(self, query: str) -> None:
         query = query[:500]
         if query == self._library_search:
             return
         self._library_search = query
+        if query and self._library_scene_route == "home":
+            self._library_scene_route = "all"
         self.librarySearchChanged.emit()
         self.historyChanged.emit()
 
@@ -794,6 +1132,14 @@ class Bridge(QObject):
             return
         self._library_category = category
         self.libraryCategoryChanged.emit()
+        self.historyChanged.emit()
+
+    @Slot(str)
+    def setLibrarySort(self, value: str) -> None:
+        if value not in {"recent", "title"} or value == self._library_sort:
+            return
+        self._library_sort = value
+        self.librarySortChanged.emit()
         self.historyChanged.emit()
 
     @Slot(int, result=bool)
@@ -967,6 +1313,8 @@ class Bridge(QObject):
     @Slot()
     def startLocalConversion(self) -> None:
         try:
+            if self._import_pending:
+                raise RuntimeError("Finish importing media before converting.")
             if self._file_action_busy:
                 raise RuntimeError("Finish the Library file change before converting.")
             if not self._settings_writable:
@@ -1143,6 +1491,15 @@ class Bridge(QObject):
             return
         self.openLibraryItem(self._runtime.history.index(item))
 
+    @Slot()
+    def closePlayback(self) -> None:
+        if self._playback_binding is not None:
+            self._playback_binding.close()
+            self._playback_binding = None
+        self._playback_path = None
+        self._playback_url = QUrl()
+        self.playbackUrlChanged.emit()
+
     @Slot(str)
     def openLibraryFolder(self, owner: str) -> None:
         item = self._saved_item_for_owner(owner)
@@ -1171,7 +1528,7 @@ class Bridge(QObject):
     def prepareLibraryRemoval(self, owner: str) -> bool:
         """Bind confirmation to one exact saved record, not a changing row index."""
         self._pending_library_removal = None
-        if self._file_action_busy or self._files.pending:
+        if self._file_action_busy or self._files.pending or self._import_pending:
             self._status = "Review the Library file change first."
             self.statusChanged.emit()
             return False
@@ -1360,6 +1717,8 @@ class Bridge(QObject):
     @Slot(str, result=bool)
     def retryTerminal(self, run_id: str) -> bool:
         try:
+            if self._import_pending:
+                raise RuntimeError("Finish importing media before retrying.")
             if self._file_action_busy:
                 raise RuntimeError("Finish the Library file change before retrying.")
             status, url = self._runtime.terminal_retry_source(run_id)
@@ -1404,6 +1763,63 @@ class Bridge(QObject):
         return True
 
     def _pump(self) -> None:
+        storage_snapshot = self._storage.poll()
+        if storage_snapshot != self._storage_snapshot:
+            self._storage_snapshot = storage_snapshot
+            self.storageChanged.emit()
+        import_result = self._import_work.poll()
+        if import_result is not None:
+            self._import_pending = False
+            self.importBusyChanged.emit()
+            completed, _failed = (
+                import_result.value
+                if not import_result.error and import_result.value is not None
+                else ([], self._import_request_count)
+            )
+            saved = 0
+            if (
+                completed
+                and not self._files.uncertain
+                and not self._runtime.recovery_notice
+            ):
+                try:
+                    prospective = commit_imports(
+                        self._runtime.history,
+                        completed,
+                        self._runtime.history_path,
+                    )
+                except (HistoryError, OSError, ValueError):
+                    pass
+                else:
+                    self._runtime.history = prospective
+                    saved = len(completed)
+                    self._library_scene_route = "home"
+                    self.historyChanged.emit()
+                    self.select("Library")
+            self._status = (
+                f"Added {saved} media {'file' if saved == 1 else 'files'} to Library."
+                if saved == self._import_request_count
+                else f"Added {saved} files. {self._import_request_count - saved} could not be added."
+            )
+            operation(
+                self._analytics.telemetry,
+                "library_import_operation",
+                "completed" if saved == self._import_request_count else "failed",
+                self._import_operation,
+                {
+                    "item_count": str(self._import_request_count),
+                    "committed_count": str(saved),
+                    "failed_count": str(self._import_request_count - saved),
+                    "processing_bucket": time_bucket(
+                        time.monotonic() - self._import_started_at
+                    ),
+                },
+            )
+            self._import_operation = None
+            self.statusChanged.emit()
+        if self._artwork.poll():
+            self.historyChanged.emit()
+            self.runDeckChanged.emit()
         if self._files.poll():
             self._file_action_busy = self._files.uncertain
             actual = self._files.latest_history
@@ -1472,6 +1888,7 @@ class Bridge(QObject):
         if events:
             self.activityChanged.emit()
             self.runningChanged.emit()
+            self.runDeckChanged.emit()
         for kind, payload in self._local.poll():
             if kind == "progress" and isinstance(payload, LocalAudioVideoProgress):
                 self._local_progress = payload.label
@@ -1495,6 +1912,16 @@ class Bridge(QObject):
             self.localChanged.emit()
 
     def close(self) -> None:
+        if self._import_pending:
+            operation(
+                self._analytics.telemetry,
+                "library_import_operation",
+                "cancelled",
+                self._import_operation,
+            )
+        self._import_work.close()
+        self._storage.close()
+        self._artwork.close()
         self._files.close()
         if self._playback_binding is not None:
             self._playback_binding.close()
@@ -1527,6 +1954,8 @@ class Bridge(QObject):
     @Slot(str, str)
     def submit(self, value: str, output_format: str) -> None:
         try:
+            if self._import_pending:
+                raise RuntimeError("Finish importing media before starting a download.")
             if self._file_action_busy:
                 raise RuntimeError("Finish the Library file change before downloading.")
             if not self._settings_writable:

@@ -91,9 +91,9 @@ $qtArgs = @()
 if ($uiMode -eq "qt") {
   $entrypoint = "qt_main.py"
   $qtArgs = @("--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtQuickControls2", "--exclude-module", "vlc")
-  $addData += @("--add-data", "yt_downloader/qt_quick/Main.qml;yt_downloader/qt_quick")
-  $addData += @("--add-data", "yt_downloader/qt_quick/StoneButton.qml;yt_downloader/qt_quick")
-  $addData += @("--add-data", "yt_downloader/qt_quick/StoneField.qml;yt_downloader/qt_quick")
+  foreach ($qmlFile in (Get-ChildItem "yt_downloader/qt_quick" -File -Filter "*.qml")) {
+    $addData += @("--add-data", "$($qmlFile.FullName);yt_downloader/qt_quick")
+  }
 } elseif ($uiMode -ne "tk") {
   throw "VODFORGE_UI must be tk or qt."
 }
