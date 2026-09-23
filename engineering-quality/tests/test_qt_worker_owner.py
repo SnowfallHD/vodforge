@@ -58,6 +58,42 @@ def test_qt_stop_and_skip_signal_the_shared_worker_and_interrupt_owned_children(
     assert interrupted.wait(timeout=1)
 
 
+def test_qt_worker_log_keeps_current_attempt_activity_and_rejects_stale_copy(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(
+        qt_runtime, "run_state_file_path", lambda: tmp_path / "run.json"
+    )
+    release_worker = threading.Event()
+
+    def worker(self: DownloadWorkerCore, _job: Any) -> None:
+        assert release_worker.wait(timeout=5)
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        output = tmp_path / "output"
+        output.mkdir()
+        active = runtime.start("https://example.com/video", output, "MP4", "Everyday")
+        runtime.events.put(
+            ("job_log", {"job": replace(active), "line": "Active event"})
+        )
+        runtime.events.put(
+            (
+                "job_log",
+                {"job": replace(active, run_id="stale-run"), "line": "Stale event"},
+            )
+        )
+        assert ("log", "Active event") in runtime.poll()
+        assert active.activity_lines == ["Active event"]
+    finally:
+        release_worker.set()
+        runtime.close()
+
+
 def test_qt_queue_survives_stopped_attempt_and_starts_next(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

@@ -1,0 +1,163 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Item {
+    id: detail
+    property var appBridge
+    signal actionsRequested(string owner)
+    signal annotationRequested(string owner)
+    readonly property var item: appBridge.libraryDetail
+    readonly property bool compact: width < 1020
+
+    ScrollView {
+        id: viewport
+        anchors.fill: parent
+        clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        Column {
+            width: viewport.availableWidth
+            spacing: 16
+            StoneButton {
+                label: "Back to Library"
+                width: 180
+                height: 40
+                onActivated: detail.appBridge.returnLibraryDetails()
+            }
+            Flow {
+                id: hero
+                width: parent.width
+                height: childrenRect.height
+                spacing: 27
+                StoneField {
+                    width: detail.compact ? hero.width : Math.min(475, hero.width * 0.43)
+                    height: detail.compact ? Math.min(360, width * 9 / 16) : 246
+                    interactive: true
+                    accessibilityLabel: "Play " + (detail.item.title || "saved media")
+                    onActivated: detail.appBridge.openLibraryOwner(detail.item.owner)
+                    Image {
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        source: detail.item.artwork || ""
+                        visible: source.toString().length > 0
+                        fillMode: Image.PreserveAspectCrop
+                        smooth: true
+                    }
+                    StoneButton {
+                        anchors.centerIn: parent
+                        width: 64
+                        height: 64
+                        label: "▶"
+                        accessibilityLabel: "Play " + (detail.item.title || "saved media")
+                        onActivated: detail.appBridge.openLibraryOwner(detail.item.owner)
+                    }
+                }
+                Column {
+                    width: detail.compact ? hero.width : hero.width - Math.min(475, hero.width * 0.43) - 27
+                    spacing: 12
+                    Text {
+                        text: detail.item.title || "Saved media"
+                        width: parent.width
+                        color: theme.text
+                        font.pixelSize: 32
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        text: [detail.item.category, detail.item.type, detail.item.creator].filter(Boolean).join("  ·  ")
+                        width: parent.width
+                        color: theme.muted
+                        font.pixelSize: 15
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        text: detail.item.description || "Saved in your Library."
+                        width: parent.width
+                        color: theme.muted
+                        font.pixelSize: 17
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 3
+                        elide: Text.ElideRight
+                    }
+                    Flow {
+                        width: parent.width
+                        height: childrenRect.height
+                        spacing: 12
+                        StoneButton { label: "Play"; emphasized: true; width: 100; height: 40; onActivated: detail.appBridge.openLibraryOwner(detail.item.owner) }
+                        StoneButton { label: "Show in Folder"; width: 166; height: 40; onActivated: detail.appBridge.openLibraryFolder(detail.item.owner) }
+                        StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 44; height: 40; onActivated: detail.actionsRequested(detail.item.owner) }
+                    }
+                }
+            }
+            Flow {
+                id: annotationRow
+                width: parent.width
+                height: childrenRect.height
+                spacing: 16
+                StoneField {
+                    width: detail.compact ? annotationRow.width : Math.round(annotationRow.width * 0.62)
+                    height: 150
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 8
+                        Text { text: "Description"; color: theme.text; font.pixelSize: 20 }
+                        Text { text: detail.item.description || ""; width: parent.width; color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight }
+                    }
+                }
+                StoneField {
+                    width: detail.compact ? annotationRow.width : annotationRow.width - Math.round(annotationRow.width * 0.62) - 16
+                    height: 150
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 9
+                        Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20 }
+                        Text { text: (detail.item.tags || []).join(", ") || "Add your own tags"; width: parent.width; color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight }
+                        Text { text: detail.item.note || ""; width: parent.width; color: theme.muted; font.pixelSize: 13; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight }
+                        StoneButton { label: "Edit organization"; size: "inline"; width: 155; onActivated: detail.annotationRequested(detail.item.owner) }
+                    }
+                }
+            }
+            Flow {
+                id: factsRow
+                width: parent.width
+                height: childrenRect.height
+                spacing: 16
+                Repeater {
+                    model: [
+                        { title: "Source Details", fields: detail.item.source || [] },
+                        { title: "Output Details", fields: detail.item.output || [] }
+                    ]
+                    StoneField {
+                        required property var modelData
+                        width: detail.compact ? factsRow.width : (factsRow.width - 16) / 2
+                        height: factsColumn.childrenRect.height + 34
+                        Column {
+                            id: factsColumn
+                            x: 17
+                            y: 17
+                            width: parent.width - 34
+                            spacing: 11
+                            Text { text: modelData.title; color: theme.text; font.pixelSize: 20 }
+                            Rectangle { width: parent.width; height: 1; color: theme.border }
+                            Repeater {
+                                model: modelData.fields
+                                Row {
+                                    required property var modelData
+                                    width: factsColumn.width
+                                    spacing: 12
+                                    Text { text: modelData.label; width: Math.min(138, parent.width * 0.29); color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap }
+                                    Text { text: modelData.value; width: parent.width - Math.min(138, parent.width * 0.29) - 12; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Item { width: 1; height: 20 }
+        }
+    }
+}

@@ -6,6 +6,7 @@ Item {
     id: scene
     property var appBridge
     signal annotationRequested(int index)
+    signal annotationOwnerRequested(string owner)
     signal actionsRequested(string owner)
     signal collectionRequested()
     signal categoryRequested()
@@ -17,8 +18,17 @@ Item {
     readonly property var groups: projection.groups || []
     readonly property var media: projection.media || []
 
+    LibraryDetail {
+        anchors.fill: parent
+        visible: scene.route === "detail"
+        appBridge: scene.appBridge
+        onActionsRequested: function(owner) { scene.actionsRequested(owner) }
+        onAnnotationRequested: function(owner) { scene.annotationOwnerRequested(owner) }
+    }
+
     RowLayout {
         anchors.fill: parent
+        visible: scene.route !== "detail"
         spacing: 20
 
         ColumnLayout {
@@ -295,6 +305,9 @@ Item {
                             required property var modelData
                             width: Math.max(155, (mediaFlow.width - 36) / 4)
                             height: width * 9 / 16 + 170
+                            interactive: true
+                            accessibilityLabel: "Details for " + modelData.title
+                            onActivated: scene.appBridge.openLibraryDetails(modelData.owner)
                             Image {
                                 x: 4; y: 4
                                 width: parent.width - 8

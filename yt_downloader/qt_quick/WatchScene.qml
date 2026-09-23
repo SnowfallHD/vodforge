@@ -9,9 +9,57 @@ Item {
     readonly property string route: projection.route || "home"
     readonly property var videos: projection.videos || []
 
+    RowLayout {
+        id: browseHeader
+        width: parent.width
+        height: 46
+        spacing: 8
+        StoneButton {
+            label: "Playlists"
+            size: "inline"
+            Layout.preferredWidth: 118
+            onActivated: scene.appBridge.navigateWatch("playlists")
+        }
+        StoneButton {
+            label: "Categories"
+            size: "inline"
+            Layout.preferredWidth: 126
+            onActivated: scene.appBridge.navigateWatch("collections")
+        }
+        StoneButton {
+            label: "Channels"
+            size: "inline"
+            Layout.preferredWidth: 112
+            onActivated: scene.appBridge.navigateWatch("channels")
+        }
+        Item { Layout.fillWidth: true }
+        TextField {
+            id: searchField
+            objectName: "watchSavedSearch"
+            Accessible.name: "Search saved videos"
+            Layout.preferredWidth: Math.min(240, Math.max(160, scene.width - 460))
+            Layout.preferredHeight: 40
+            placeholderText: "Search saved videos"
+            placeholderTextColor: theme.muted
+            color: theme.text
+            font.pixelSize: 15
+            background: StoneField {}
+            onTextEdited: scene.appBridge.setWatchSearch(text)
+        }
+    }
+    Connections {
+        target: scene.appBridge
+        function onHistoryChanged() {
+            if (searchField.text !== scene.projection.query)
+                searchField.text = scene.projection.query
+        }
+    }
+
     ScrollView {
         id: viewport
-        anchors.fill: parent
+        y: browseHeader.height + 12
+        width: parent.width
+        height: parent.height - y
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
@@ -21,23 +69,42 @@ Item {
 
             StoneButton {
                 visible: scene.route !== "home"
-                label: "Back to Watch"
+                label: scene.projection.backLabel || "Back to Watch"
                 width: 160
                 height: 40
-                onActivated: scene.appBridge.navigateWatch("home")
+                onActivated: scene.appBridge.backWatch()
             }
             RowLayout {
                 visible: scene.route !== "home"
                 width: parent.width
                 height: 49
                 Text {
-                    text: scene.route === "group" ? scene.projection.groupTitle :
+                    text: scene.projection.query ? "Search results" : scene.route === "group" ? scene.projection.groupTitle :
                           scene.route.charAt(0).toUpperCase() + scene.route.slice(1)
                     color: theme.text
                     font.pixelSize: 34
                     font.bold: true
                     Layout.fillWidth: true
                     elide: Text.ElideRight
+                }
+            }
+            Row {
+                visible: scene.route === "group" && scene.videos.length > 0
+                width: parent.width
+                height: visible ? 44 : 0
+                spacing: 12
+                StoneButton {
+                    label: "Play " + (scene.projection.queueKind === "channel" ? "channel" : "playlist")
+                    width: 150
+                    height: 40
+                    onActivated: scene.appBridge.startWatchQueue(scene.projection.queueKeys, scene.projection.queueKind, false)
+                }
+                StoneButton {
+                    label: "Shuffle"
+                    width: 120
+                    height: 40
+                    enabled: scene.videos.length > 1
+                    onActivated: scene.appBridge.startWatchQueue(scene.projection.queueKeys, scene.projection.queueKind, true)
                 }
             }
             Item {

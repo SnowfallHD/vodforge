@@ -185,12 +185,15 @@ def watch_scene(
     artwork: Artwork = lambda _record: "",
     group_key: str = "",
     group_kind: str = "",
+    query: str = "",
 ) -> dict[str, Any]:
-    channels = watch_channels(records)
-    playlists = watch_rails(records)
-    collections = watch_rails(records, collection_mode=True)
+    query = query.strip()
+    effective_route = "videos" if query else route
+    channels = watch_channels(records, query=query)
+    playlists = watch_rails(records, query=query)
+    collections = watch_rails(records, collection_mode=True, query=query)
     selected = None
-    if route == "group":
+    if effective_route == "group":
         candidates = (
             channels
             if group_kind == "channel"
@@ -203,17 +206,21 @@ def watch_scene(
         selected.videos
         if selected is not None
         else ()
-        if route == "group"
+        if effective_route == "group"
         else tuple(video for rail in playlists for video in rail.videos)
     )
     videos = unique_watch_videos(records, source_videos)
     media = [
-        _media(records[video.indices[0]], video.indices[0], artwork)
+        {
+            **_media(records[video.indices[0]], video.indices[0], artwork),
+            "queueKey": video.key,
+        }
         for video in videos
         if video.indices
     ]
     return {
-        "route": route,
+        "route": effective_route,
+        "query": query,
         "groupTitle": (selected.name if group_kind == "channel" else selected.title)
         if selected is not None
         else "",
@@ -255,4 +262,6 @@ def watch_scene(
             if rail.videos
         ],
         "videos": media,
+        "queueKeys": [video.key for video in videos],
+        "queueKind": "channel" if group_kind == "channel" else "playlist",
     }

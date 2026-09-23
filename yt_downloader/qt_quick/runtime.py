@@ -500,6 +500,18 @@ class DownloadRuntime:
                 if job is self.active_job and isinstance(info, dict):
                     job.preview_info = info
                     self._activity_upsert(job, "Running", "Processing media")
+            elif kind == "job_log" and isinstance(payload, dict):
+                job = payload.get("job")
+                active = self.active_job
+                if (
+                    isinstance(job, DownloadJob)
+                    and active is not None
+                    and job.run_id == active.run_id
+                ):
+                    line = str(payload.get("line") or "").rstrip()
+                    active.activity_lines.append(line)
+                    result.append(("log", line))
+                continue
             elif kind in {"done", "partial", "stopped", "error"}:
                 if self._history_error and kind in {"done", "partial"}:
                     kind, payload = (

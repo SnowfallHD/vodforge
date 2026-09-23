@@ -11,6 +11,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import asdict, fields, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,11 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from yt_downloader.app import (
+    append_activity_log,
+    load_activity_log_tail,
+    prepare_activity_log,
+)
 from yt_downloader.archive_observations import bind_operation, operation
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
@@ -64,6 +70,7 @@ from yt_downloader.library_annotations import (
     LibraryAnnotationsOwner,
 )
 from yt_downloader.library_import import commit_imports, inspect_local_media
+from yt_downloader.library_scene_facts import library_detail_facts
 from yt_downloader.library_search import (
     LIBRARY_ALL_CATEGORIES,
     LIBRARY_ALL_MEDIA,
@@ -91,6 +98,7 @@ from yt_downloader.models import (
     Mp3ExportSettings,
     OutputType,
 )
+from yt_downloader.platform_services import diagnostics_dir
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
@@ -114,11 +122,12 @@ from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import button_metrics
 from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
-from yt_downloader.ui_theme import FONT_UI_FAMILY, THEME, theme_motif
+from yt_downloader.ui_theme import FONT_MONO_FAMILY, FONT_UI_FAMILY, THEME, theme_motif
 from yt_downloader.updates import RELEASES_PAGE, record_update_telemetry_receipts
 from yt_downloader.url_list_inputs import read_url_list_file
 from yt_downloader.version import __version__
 from yt_downloader.volume_storage import StorageCapacityOwner, format_storage_bytes
+from yt_downloader.watch_queue import QueueToken, WatchQueueOwner
 from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
 
 
@@ -195,7 +204,7 @@ class Bridge(QObject):
     outputFormatChanged = Signal()
     qualityChanged = Signal()
     playbackUrlChanged = Signal()
-    playbackRequested = Signal()
+    playbackRequested = Signal(int)
     playbackSeekRequested = Signal(float)
     librarySearchChanged = Signal()
     libraryTypeChanged = Signal()
@@ -219,6 +228,13 @@ class Bridge(QObject):
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._activity_log_path = diagnostics_dir() / "activity.log"
+        prepare_activity_log(self._activity_log_path)
+        self._activity_log_text = load_activity_log_tail(self._activity_log_path)
+        self._append_activity_line(
+            "Session started "
+            + datetime.now(timezone.utc).isoformat(timespec="seconds")
+        )
         self._analytics = QtAnalyticsSession(
             application_data_dir(), __version__, self._runtime.recovery
         )
@@ -251,6 +267,8 @@ class Bridge(QObject):
         self._annotations.load()
         self._library_projection = LibraryProjectionOwner()
         self._annotation_owner = ""
+        self._library_detail_owner = ""
+        self._library_detail_origin: tuple[str, str, str] | None = None
         self._pending_library_removal: tuple[str, str] | None = None
         self._annotation_values = {"note": "", "tags": "", "category": ""}
         self._local = LocalConversionRuntime()
@@ -268,6 +286,15 @@ class Bridge(QObject):
         self._playback_output_type = ""
         self._playback_chapters: list[dict[str, Any]] = []
         self._playback_heatmap: list[dict[str, float]] = []
+        self._playback_generation = 0
+        self._watch_queue_observations: dict[str, Any] = {}
+        self._watch_queue = WatchQueueOwner(
+            records=lambda: self._runtime.history,
+            open_record=self._open_queued_watch_record,
+            schedule=lambda callback: QTimer.singleShot(0, callback),
+            observe=self._record_watch_queue_operation,
+            unavailable=lambda: self._set_status("Queued media is unavailable."),
+        )
         self._settings_path = settings_file_path()
         try:
             self._settings = load_settings(self._settings_path)
@@ -355,6 +382,8 @@ class Bridge(QObject):
         self._watch_scene_route = "home"
         self._watch_group_key = ""
         self._watch_group_kind = ""
+        self._watch_search = ""
+        self._watch_history: list[tuple[str, str, str, str]] = []
         self._local_audio = ""
         self._local_image = ""
         self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
@@ -696,13 +725,53 @@ class Bridge(QObject):
 
     @Property("QVariantMap", notify=historyChanged)
     def watchScene(self) -> dict[str, Any]:
-        return watch_scene(
+        scene = watch_scene(
             self._projected_library(),
             self._watch_scene_route,
             self._artwork.request,
             self._watch_group_key,
             self._watch_group_kind,
+            self._watch_search,
         )
+        prior_route = self._watch_history[-1][0] if self._watch_history else "home"
+        scene["backLabel"] = (
+            "Back to results"
+            if self._watch_history and self._watch_history[-1][3]
+            else "Back to " + ("Watch" if prior_route == "home" else prior_route)
+        )
+        scene["canGoBack"] = bool(self._watch_history)
+        return scene
+
+    @Property("QVariantMap", notify=historyChanged)
+    def libraryDetail(self) -> dict[str, Any]:
+        row = next(
+            (
+                row
+                for row in self._projected_library()
+                if history_archive_owner(row) == self._library_detail_owner
+                and row.get("vodforge_output_dir")
+            ),
+            None,
+        )
+        if row is None:
+            return {}
+        source, output = library_detail_facts(row)
+        return {
+            "owner": self._library_detail_owner,
+            "title": str(row.get("title") or "Saved media"),
+            "creator": str(row.get("channel") or row.get("uploader") or "Local media"),
+            "type": str(row.get("vodforge_output_type") or ""),
+            "category": str(row.get("vodforge_user_category") or ""),
+            "description": str(
+                row.get("vodforge_user_description", row.get("description"))
+                or "Saved in your Library."
+            ),
+            "note": str(row.get("vodforge_user_note") or ""),
+            "tags": [str(tag) for tag in row.get("vodforge_user_tags") or ()],
+            "artwork": self._artwork.request(row),
+            "source": [{"label": label, "value": value} for label, value, _ in source],
+            "output": [{"label": label, "value": value} for label, value, _ in output],
+        }
 
     @Property("QVariantList", notify=historyChanged)
     def collectionCandidates(self) -> list[dict[str, str]]:
@@ -932,6 +1001,32 @@ class Bridge(QObject):
     def activity(self) -> list[dict[str, str]]:
         return self._runtime.activity
 
+    @Property(str, notify=activityChanged)
+    def activityLog(self) -> str:
+        return self._activity_log_text
+
+    def _append_activity_line(self, line: str) -> None:
+        append_activity_log(line, self._activity_log_path)
+        combined = (
+            self._activity_log_text + ("\n" if self._activity_log_text else "") + line
+        )
+        if len(combined) > 500_000:
+            combined = combined[-500_000:]
+            newline = combined.find("\n")
+            if newline >= 0:
+                combined = combined[newline + 1 :]
+        self._activity_log_text = combined
+        self.activityChanged.emit()
+
+    @Slot()
+    def openActivityLogFolder(self) -> None:
+        folder = self._activity_log_path.parent
+        if folder.is_dir():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+        else:
+            self._status = "The Activity log folder is unavailable."
+            self.statusChanged.emit()
+
     @Property("QVariantMap", notify=runDeckChanged)
     def runDeck(self) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
@@ -1021,6 +1116,68 @@ class Bridge(QObject):
         self.selectionChanged.emit()
         self._record("select", name)
 
+    def _set_status(self, value: str) -> None:
+        self._status = value
+        self.statusChanged.emit()
+
+    def _record_watch_queue_operation(
+        self,
+        action: str,
+        operation_key: str,
+        dimensions: dict[str, str],
+        *,
+        failure_detail: Any = None,
+    ) -> None:
+        telemetry = self._analytics.telemetry
+        if action == "requested":
+            self._watch_queue_observations[operation_key] = (
+                telemetry.bind_operation(
+                    "watch_queue_operation", operation_key=operation_key
+                )
+                if telemetry is not None
+                else None
+            )
+        observation = self._watch_queue_observations.get(operation_key)
+        try:
+            if observation is not None:
+                observation.record(action, dimensions, failure_detail=failure_detail)
+        finally:
+            if action in {"completed", "cancelled", "failed"}:
+                self._watch_queue_observations.pop(operation_key, None)
+
+    def _open_queued_watch_record(
+        self, record: dict[str, Any], token: QueueToken
+    ) -> None:
+        owner = history_archive_owner(record)
+        index = next(
+            (
+                index
+                for index, candidate in enumerate(self._runtime.history)
+                if history_archive_owner(candidate) == owner
+            ),
+            None,
+        )
+        if index is None or not self.openLibraryItem(index, token):
+            self._watch_queue.cancel(
+                "failed",
+                failure_boundary="media",
+                failure_reason="saved_output_missing",
+            )
+            self._set_status("Queued media is unavailable.")
+
+    @Slot("QVariantList", str, bool, result=bool)
+    def startWatchQueue(self, keys: list[str], kind: str, shuffled: bool) -> bool:
+        scene = self.watchScene
+        if (
+            self._watch_scene_route != "group"
+            or kind != scene["queueKind"]
+            or list(keys) != scene["queueKeys"]
+            or not keys
+        ):
+            return False
+        self._watch_queue.start(keys, kind=kind, shuffled=shuffled)
+        return self._watch_queue.token is not None
+
     @Slot(str)
     def navigateLibrary(self, route: str) -> None:
         if route not in {
@@ -1036,6 +1193,8 @@ class Bridge(QObject):
         self._library_scene_route = route
         self._library_group_key = ""
         self._library_group_kind = ""
+        self._library_detail_owner = ""
+        self._library_detail_origin = None
         self.historyChanged.emit()
 
     @Slot(str, str)
@@ -1047,22 +1206,101 @@ class Bridge(QObject):
         self._library_group_key = key
         self.historyChanged.emit()
 
+    @Slot(str, result=bool)
+    def openLibraryDetails(self, owner: str) -> bool:
+        if self._saved_item_for_owner(owner) is None:
+            self._status = "That Library item changed. Select it again."
+            self.statusChanged.emit()
+            return False
+        if self._library_scene_route != "detail":
+            self._library_detail_origin = (
+                self._library_scene_route,
+                self._library_group_kind,
+                self._library_group_key,
+            )
+        self._library_detail_owner = owner
+        self._library_scene_route = "detail"
+        self.historyChanged.emit()
+        return True
+
+    @Slot()
+    def returnLibraryDetails(self) -> None:
+        if self._library_scene_route != "detail":
+            return
+        origin = self._library_detail_origin or ("home", "", "")
+        self._library_scene_route, self._library_group_kind, self._library_group_key = (
+            origin
+        )
+        self._library_detail_owner = ""
+        self._library_detail_origin = None
+        self.historyChanged.emit()
+
     @Slot(str)
     def navigateWatch(self, route: str) -> None:
         if route not in {"home", "channels", "playlists", "collections", "videos"}:
             return
+        if route == "home":
+            self._watch_history.clear()
+        elif (route, "", "", "") != (
+            self._watch_scene_route,
+            self._watch_group_kind,
+            self._watch_group_key,
+            self._watch_search,
+        ):
+            self._watch_history.append(
+                (
+                    self._watch_scene_route,
+                    self._watch_group_kind,
+                    self._watch_group_key,
+                    self._watch_search,
+                )
+            )
+            del self._watch_history[:-32]
         self._watch_scene_route = route
         self._watch_group_key = ""
         self._watch_group_kind = ""
+        self._watch_search = ""
         self.historyChanged.emit()
 
     @Slot(str, str)
     def navigateWatchGroup(self, kind: str, key: str) -> None:
         if kind not in {"channel", "playlist", "collection"} or not key:
             return
+        self._watch_history.append(
+            (
+                self._watch_scene_route,
+                self._watch_group_kind,
+                self._watch_group_key,
+                self._watch_search,
+            )
+        )
+        del self._watch_history[:-32]
         self._watch_scene_route = "group"
         self._watch_group_kind = kind
         self._watch_group_key = key
+        self._watch_search = ""
+        self.historyChanged.emit()
+
+    @Slot(str)
+    def setWatchSearch(self, value: str) -> None:
+        value = value[:200]
+        if value == self._watch_search:
+            return
+        self._watch_search = value
+        self.historyChanged.emit()
+
+    @Slot()
+    def backWatch(self) -> None:
+        if self._watch_history:
+            (
+                self._watch_scene_route,
+                self._watch_group_kind,
+                self._watch_group_key,
+                self._watch_search,
+            ) = self._watch_history.pop()
+        else:
+            self._watch_scene_route = "home"
+            self._watch_group_kind = self._watch_group_key = self._watch_search = ""
         self.historyChanged.emit()
 
     @Slot(str, "QVariantList", result=bool)
@@ -1440,15 +1678,19 @@ class Bridge(QObject):
         except (OSError, ValueError):
             pass
 
-    @Slot(int)
-    def openLibraryItem(self, index: int) -> None:
+    @Slot(int, result=bool)
+    def openLibraryItem(
+        self, index: int, queue_token: QueueToken | None = None
+    ) -> bool:
+        if queue_token is None:
+            self._watch_queue.cancel()
         if not 0 <= index < len(self._runtime.history):
-            return
+            return False
         path = history_output_path(self._runtime.history[index])
         if path is None or not path.is_file():
             self._status = "The saved media file is missing."
             self.statusChanged.emit()
-            return
+            return False
         if self._playback_binding is not None:
             self._playback_binding.close()
         self._playback_path = path
@@ -1472,9 +1714,13 @@ class Bridge(QObject):
             seek=self._request_playback_seek,
         )
         self._playback_url = QUrl.fromLocalFile(str(path))
+        self._playback_generation += 1
+        if queue_token is not None:
+            self._watch_queue.attach(self, self._runtime.history[index], queue_token)
         self.playbackUrlChanged.emit()
         self.select("Watch")
-        self.playbackRequested.emit()
+        self.playbackRequested.emit(self._playback_generation)
+        return True
 
     def _saved_item_for_owner(self, owner: str) -> dict[str, Any] | None:
         matches = [
@@ -1493,6 +1739,7 @@ class Bridge(QObject):
 
     @Slot()
     def closePlayback(self) -> None:
+        self._watch_queue.cancel()
         if self._playback_binding is not None:
             self._playback_binding.close()
             self._playback_binding = None
@@ -1623,7 +1870,12 @@ class Bridge(QObject):
         return self._playback_snapshot()
 
     @Slot(float, float, str)
-    def observePlayback(self, position: float, duration: float, status: str) -> None:
+    @Slot(float, float, str, int)
+    def observePlayback(
+        self, position: float, duration: float, status: str, generation: int = -1
+    ) -> None:
+        if generation >= 0 and generation != self._playback_generation:
+            return
         if self._playback_binding is None or status not in {
             "Ready",
             "Playing",
@@ -1647,6 +1899,7 @@ class Bridge(QObject):
                 except (OSError, ValueError):
                     pass
         self._playback_binding.present(self._playback_snapshot())
+        self._watch_queue.present(self, status)
 
     @Slot(float)
     def manualPlaybackSeek(self, position: float) -> None:
@@ -1878,6 +2131,8 @@ class Bridge(QObject):
             elif kind == "status":
                 self._status = str(payload)
                 self.statusChanged.emit()
+            elif kind == "log":
+                self._append_activity_line(str(payload))
             elif kind in {"history_record", "job_metadata"}:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
@@ -1912,6 +2167,7 @@ class Bridge(QObject):
             self.localChanged.emit()
 
     def close(self) -> None:
+        self._watch_queue.cancel()
         if self._import_pending:
             operation(
                 self._analytics.telemetry,
@@ -2005,6 +2261,7 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
     engine.rootContext().setContextProperty("bridge", bridge)
     engine.rootContext().setContextProperty("theme", dict(THEME))
     engine.rootContext().setContextProperty("buttonFontFamily", FONT_UI_FAMILY)
+    engine.rootContext().setContextProperty("monoFontFamily", FONT_MONO_FAMILY)
     engine.rootContext().setContextProperty("qualityOptions", list(QUALITY_OPTIONS))
     engine.rootContext().setContextProperty(
         "localVideoProfiles", list(LOCAL_VIDEO_PROFILE_OPTIONS)

@@ -6,7 +6,7 @@ import re
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 
 from yt_downloader.library_artwork_source import ArtworkAsset
@@ -80,6 +80,9 @@ def test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership(tmp_
     assert group["groupTitle"] == "Travel"
     assert [row["title"] for row in group["videos"]] == ["Video A"]
     assert watch_scene(records, "group", group_key="missing")["videos"] == []
+    results = watch_scene(records, "home", query="video a")
+    assert results["route"] == "videos"
+    assert [row["title"] for row in results["videos"]] == ["Video A"]
 
 
 def test_qt_watch_uses_shared_variant_identity_and_playback_preference(tmp_path):
@@ -180,6 +183,14 @@ def test_qt_saved_collection_is_visible_through_shared_projection(
         assert bridge.libraryScene["media"][0]["category"] == "Travel"
         bridge.setLibrarySearch("Saved")
         assert bridge.libraryScene["route"] == "all"
+        assert bridge.openLibraryDetails(owner)
+        assert bridge.libraryScene["route"] == "detail"
+        assert bridge.libraryDetail["title"] == "Saved video"
+        assert bridge.libraryDetail["category"] == "Travel"
+        assert bridge.libraryDetail["source"][0]["label"] == "Channel"
+        assert bridge.libraryDetail["output"][0]["label"] == "Saved Filename"
+        bridge.returnLibraryDetails()
+        assert bridge.libraryScene["route"] == "all"
     finally:
         bridge.close()
 
@@ -195,3 +206,95 @@ def test_qt_popup_and_navigation_materials_use_shared_renderer():
     )
     image = qt_main.Materials().requestImage("field/600/600/normal", QSize(), QSize())
     assert (image.width(), image.height()) == (600, 600)
+
+
+def test_qt_activity_log_uses_existing_private_persistence(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._append_activity_line("Current run changed")
+        assert "Current run changed" in bridge.activityLog
+        assert "Current run changed" in bridge._activity_log_path.read_text()
+        assert bridge._activity_log_path.is_relative_to(tmp_path)
+    finally:
+        bridge.close()
+
+
+def test_qt_watch_queue_advances_only_from_current_playback_generation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        records = [saved(tmp_path, "First", "MP4"), saved(tmp_path, "Second", "MP4")]
+        for record in records:
+            Path(record["vodforge_output_path"]).write_bytes(b"media fixture")
+        bridge._runtime.history = records
+        bridge.setWatchSearch("First")
+        assert bridge.watchScene["route"] == "videos"
+        assert [row["title"] for row in bridge.watchScene["videos"]] == ["First"]
+        bridge.navigateWatch("playlists")
+        assert bridge.watchScene["query"] == ""
+        bridge.backWatch()
+        assert bridge.watchScene["query"] == "First"
+        bridge.navigateWatch("home")
+        group = bridge.watchScene["playlists"][0]
+        bridge.navigateWatchGroup("playlist", group["key"])
+        keys = bridge.watchScene["queueKeys"]
+        assert len(keys) == 2
+        assert bridge.startWatchQueue(keys, "playlist", False)
+        first_generation = bridge._playback_generation
+        assert bridge.playbackUrl.toLocalFile().endswith("First.mp4")
+        bridge.observePlayback(1, 5, "Playing", first_generation)
+        bridge.observePlayback(5, 5, "Ended", first_generation)
+        app.processEvents()
+        assert bridge.playbackUrl.toLocalFile().endswith("Second.mp4")
+        assert bridge._watch_queue.token is not None
+        bridge.observePlayback(5, 5, "Ended", first_generation)
+        assert bridge._watch_queue.token is not None
+        second_generation = bridge._playback_generation
+        bridge.observePlayback(1, 5, "Playing", second_generation)
+        bridge.observePlayback(5, 5, "Ended", second_generation)
+        app.processEvents()
+        assert bridge._watch_queue.token is None
+    finally:
+        bridge.close()
+
+
+def test_qt_player_replaces_provider_and_tags_each_open(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        assert window.property("mediaPlayer") is not None
+        players = []
+        for index in range(2):
+            record = saved(tmp_path, f"Item {index}", "MP4")
+            Path(record["vodforge_output_path"]).write_bytes(b"invalid media fixture")
+            bridge._runtime.history.append(record)
+            assert bridge.openLibraryItem(index)
+            app.processEvents()
+            player = window.property("mediaPlayer")
+            assert player.property("generation") == bridge._playback_generation
+            players.append(player)
+        assert players[0] is not players[1]
+        bridge.observePlayback(5, 5, "Ended", players[0].property("generation"))
+        assert bridge._playback_generation == players[1].property("generation")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()

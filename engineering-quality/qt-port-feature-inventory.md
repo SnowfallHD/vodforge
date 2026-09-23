@@ -20,19 +20,19 @@ Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected
 | Library sidebar and counts: All Media, Channels, Playlists, Videos, Audio | `library_scene_layout.py`, `library_scene_ui.py`, `watch_library.py` | Qt sidebar and routes rendered; responsive bounds and details remain open. |
 | Library home category cards, collections, recent media, artwork and storage tile | `library_scene_layout.py`, `library_scene_ui.py` | Qt scene, artwork, collection cards and shared capacity owner wired; visual/interaction parity remains open. |
 | Search, sort, type/category filters, selection and paging/scroll position | `library_scene_ui.py`, `library_scene_layout.py` | Search and sort route wired, including group query; category filter core exists. Selection, paging and scroll restoration remain open. |
-| Library item details, output details, source variants, notes/tags/category | `library_detail_layout.py`, `detail_ui.py`, `library_annotation_ui.py` | Annotation editor exists; full detail scene and variants missing. |
+| Library item details, output details, source variants, notes/tags/category | `library_detail_layout.py`, `library_scene_facts.py`, `library_annotation_ui.py` | Qt detail scene now reads shared source/output facts and saved annotations; version selector, direct editing and complete detail actions remain open. |
 | Create collection and assign media to it | `library_collection_ui.py`, `app.py` `_show_library_collection_editor` | Qt editor persists membership through shared annotations and both scenes now read that projection; editing/removing membership and dialog parity remain open. |
 | Import local media | `app.py` `_import_library_media`, `library_import.py` | Qt native picker, shared inspection and durable commit wired; package/native journey remains open. |
 | Open saved location; remove card; move to folder/Trash; relink/recovery | `library_file_actions_ui.py`, `library_media_recovery_ui.py`, `app.py` | Basic open/remove/move/Trash and recovery core exist; compare complete dialogs and relink states. |
 | Watch home hero, playlists/channels/collections rails and routes | `watch_scene_ui.py`, `watch_library.py`, `watch_ui.py` | Qt browse scene and group routes rendered; hero detail, exact cards and responsive layout remain open. |
-| Watch queue, shuffle, back/search context and related media | `watch_scene_ui.py`, `player_scene_ui.py` | Missing Qt scene interactions. |
-| Playback controls, volume, chapters, heatmap, preview moments, details, window modes | `media_player_ui.py`, `player_scene_ui.py`, `player_presentation_ui.py` | Qt has play/pause/seek/volume/chapters/heatmap; keep their newer control treatment. Separate player, preview moments, details/related and window modes remain to port. |
+| Watch queue, shuffle, back/search context and related media | `watch_scene_ui.py`, `player_scene_ui.py`, `watch_queue.py` | Group queue and shuffle now reach the shared queue owner. A source Qt run with two real local audio files advanced through both items and completed. Search filters through the shared Watch rail owner; a bounded route stack restores results on Back. Scroll/selection restoration and related media remain open. |
+| Playback controls, volume, chapters, heatmap, preview moments, details, window modes | `media_player_ui.py`, `player_scene_ui.py`, `player_presentation_ui.py` | Qt has play/pause/seek/volume/chapters/heatmap; keep their newer control treatment. Each media open now replaces the Qt provider and tags its events with a generation. Preview moments, details/related and window modes remain to port. |
 
 ## Activity, help and release surfaces
 
 | Feature in Tk | Tk owner | Qt state |
 | --- | --- | --- |
-| Activity timeline/log and run history | `activity_ui.py`, `forge_activity_ui.py`, `app.py` | Qt shows recent runtime rows; durable/full activity view incomplete. |
+| Activity timeline/log and run history | `activity_ui.py`, `forge_activity_ui.py`, `app.py` | Qt now uses the shared private log owner and current-run event binding; token typography, selected-run detail and package journey remain open. |
 | Settings including output, format, network, cookies and analytics | `focus_settings.py`, `app.py` bindings | Core preferences and several Qt panels present; section/detail parity needs state review. |
 | Consent and privacy | `analytics_consent_ui.py`, `analytics_startup.py` | Qt consent core and popup present; visual/first-run journey pending. |
 | Welcome tour, What's New, Did You Know (editorial mode currently `none`) | `engagement_ui.py`, `engagement_state.py`, `whats_new.py`, `whats_new_ui.py` | Not ported. Preserve editorial eligibility and `none` default; capture optional modes for feature parity. |

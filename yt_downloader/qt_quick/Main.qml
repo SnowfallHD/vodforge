@@ -15,6 +15,9 @@ Window {
     minimumHeight: 560
     title: "VODForge"
     color: theme.bg
+    property real playerVolume: 0.8
+    property var mediaPlayer: playerLoader.item
+    property int pendingPlaybackGeneration: -1
     onClosing: function(close) {
         if (bridge.running) {
             bridge.cancel()
@@ -26,38 +29,53 @@ Window {
         }
     }
 
-    MediaPlayer {
-        id: mediaPlayer
-        objectName: "watchMediaPlayer"
-        audioOutput: AudioOutput { id: audioOutput; volume: 0.8 }
-        videoOutput: videoSurface
-        function reportProgress() {
-            var status = "Ready"
-            if (error !== MediaPlayer.NoError) status = "Failed"
-            else if (mediaStatus === MediaPlayer.EndOfMedia) status = "Ended"
-            else if (playbackState === MediaPlayer.PlayingState) status = "Playing"
-            else if (playbackState === MediaPlayer.PausedState) status = "Paused"
-            bridge.observePlayback(position / 1000, duration / 1000, status)
+    Component {
+        id: mediaPlayerComponent
+        MediaPlayer {
+            objectName: "watchMediaPlayer"
+            property int generation: 0
+            audioOutput: AudioOutput { volume: window.playerVolume }
+            videoOutput: videoSurface
+            function reportProgress() {
+                var status = "Ready"
+                if (error !== MediaPlayer.NoError) status = "Failed"
+                else if (mediaStatus === MediaPlayer.EndOfMedia) status = "Ended"
+                else if (playbackState === MediaPlayer.PlayingState) status = "Playing"
+                else if (playbackState === MediaPlayer.PausedState) status = "Paused"
+                bridge.observePlayback(position / 1000, duration / 1000, status, generation)
+            }
+            onPositionChanged: reportProgress()
+            onDurationChanged: reportProgress()
+            onPlaybackStateChanged: reportProgress()
+            onMediaStatusChanged: reportProgress()
+            onErrorChanged: reportProgress()
         }
-        onPositionChanged: reportProgress()
-        onDurationChanged: reportProgress()
-        onPlaybackStateChanged: reportProgress()
-        onMediaStatusChanged: reportProgress()
-        onErrorChanged: reportProgress()
+    }
+    Loader {
+        id: playerLoader
+        sourceComponent: mediaPlayerComponent
+        onLoaded: {
+            if (window.pendingPlaybackGeneration < 0) return
+            item.generation = window.pendingPlaybackGeneration
+            window.pendingPlaybackGeneration = -1
+            item.source = bridge.playbackUrl
+            item.play()
+        }
     }
     Connections {
         target: bridge
         function onAnalyticsPromptRequested() { analyticsPopup.open() }
         function onFileActionRequested() { fileActionPopup.open() }
         function onSourceAccepted() { urlInput.text = "" }
-        function onPlaybackRequested() {
-            mediaPlayer.stop()
-            mediaPlayer.source = ""
-            mediaPlayer.source = bridge.playbackUrl
-            mediaPlayer.play()
+        function onPlaybackRequested(generation) {
+            // Retire the old provider object before a queued item opens. Any
+            // late signal carries the old generation and cannot advance it.
+            window.pendingPlaybackGeneration = generation
+            playerLoader.sourceComponent = null
+            playerLoader.sourceComponent = mediaPlayerComponent
         }
         function onPlaybackSeekRequested(position) {
-            mediaPlayer.setPosition(position * 1000)
+            if (window.mediaPlayer) mediaPlayer.setPosition(position * 1000)
         }
     }
     Popup {
@@ -484,6 +502,9 @@ Window {
             onAnnotationRequested: function(index) {
                 if (bridge.openAnnotation(index)) annotationPopup.open()
             }
+            onAnnotationOwnerRequested: function(owner) {
+                if (bridge.openAnnotationOwner(owner)) annotationPopup.open()
+            }
             onActionsRequested: function(owner) {
                 window.selectedSavedOwner = owner
                 libraryItemPopup.open()
@@ -512,7 +533,10 @@ Window {
                         label: "Back to Watch"
                         size: "inline"
                         Layout.preferredWidth: 145
-                        onActivated: { mediaPlayer.stop(); bridge.closePlayback() }
+                        onActivated: {
+                            if (window.mediaPlayer) window.mediaPlayer.stop()
+                            bridge.closePlayback()
+                        }
                     }
                     Text { text: "Watch"; color: theme.text; font.pixelSize: 26; font.bold: true; Layout.fillWidth: true }
                 }
@@ -524,7 +548,7 @@ Window {
                     fillMode: VideoOutput.PreserveAspectFit
                 }
                 Text {
-                    text: mediaPlayer.errorString.length ? mediaPlayer.errorString :
+                    text: window.mediaPlayer && window.mediaPlayer.errorString.length ? window.mediaPlayer.errorString :
                           bridge.playbackUrl.toString().length ? "" : "Choose an item in Library to play."
                     color: theme.muted
                     font.pixelSize: 15
@@ -532,7 +556,7 @@ Window {
                 Item {
                     id: heatmapTrack
                     objectName: "watchHeatmap"
-                    visible: bridge.playbackHeatmap.length > 0 && mediaPlayer.duration > 0
+                    visible: bridge.playbackHeatmap.length > 0 && window.mediaPlayer && window.mediaPlayer.duration > 0
                     Layout.fillWidth: true
                     Layout.preferredHeight: visible ? 18 : 0
                     clip: true
@@ -541,9 +565,9 @@ Window {
                         Rectangle {
                             required property var modelData
                             x: Math.max(0, Math.min(heatmapTrack.width,
-                                modelData.start_time * heatmapTrack.width * 1000 / mediaPlayer.duration))
+                                modelData.start_time * heatmapTrack.width * 1000 / Math.max(1, window.mediaPlayer ? window.mediaPlayer.duration : 0)))
                             width: Math.max(1, (modelData.end_time - modelData.start_time) *
-                                heatmapTrack.width * 1000 / mediaPlayer.duration)
+                                heatmapTrack.width * 1000 / Math.max(1, window.mediaPlayer ? window.mediaPlayer.duration : 0))
                             height: Math.max(2, 16 * modelData.value)
                             y: heatmapTrack.height - height
                             color: theme.accent
@@ -555,8 +579,8 @@ Window {
                     Accessible.name: "Playback position"
                     Layout.fillWidth: true
                     from: 0
-                    to: Math.max(1, mediaPlayer.duration)
-                    value: mediaPlayer.position
+                    to: Math.max(1, window.mediaPlayer ? window.mediaPlayer.duration : 0)
+                    value: window.mediaPlayer ? window.mediaPlayer.position : 0
                     onMoved: {
                         bridge.manualPlaybackSeek(value / 1000)
                     }
@@ -566,20 +590,29 @@ Window {
                 RowLayout {
                     Layout.fillWidth: true
                     StoneButton {
-                        label: mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
+                        label: window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
                         transientMaterial: false
                         Layout.preferredWidth: 95
                         Layout.preferredHeight: 40
-                        onActivated: mediaPlayer.playbackState === MediaPlayer.PlayingState ? mediaPlayer.pause() : mediaPlayer.play()
+                        onActivated: {
+                            if (!window.mediaPlayer) return
+                            if (window.mediaPlayer.playbackState === MediaPlayer.PlayingState) window.mediaPlayer.pause()
+                            else window.mediaPlayer.play()
+                        }
                     }
-                    Text { text: Math.floor(mediaPlayer.position / 1000) + "s / " + Math.floor(mediaPlayer.duration / 1000) + "s"; color: theme.muted; font.pixelSize: 14 }
+                    Text {
+                        text: Math.floor((window.mediaPlayer ? window.mediaPlayer.position : 0) / 1000) + "s / " +
+                              Math.floor((window.mediaPlayer ? window.mediaPlayer.duration : 0) / 1000) + "s"
+                        color: theme.muted
+                        font.pixelSize: 14
+                    }
                     Item { Layout.fillWidth: true }
                     Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
                     Slider {
                         Accessible.name: "Volume"
                         Layout.preferredWidth: 160
-                        from: 0; to: 1; value: audioOutput.volume
-                        onMoved: audioOutput.volume = value
+                        from: 0; to: 1; value: window.playerVolume
+                        onMoved: window.playerVolume = value
                         background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
                         handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                     }
@@ -611,53 +644,11 @@ Window {
                 }
             }
         }
-        Item {
+        ActivityScene {
             visible: bridge.selection === "Activity"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 16
-                Text { text: "Activity"; color: theme.text; font.pixelSize: 26; font.bold: true }
-                Text { text: bridge.activity.length + " recent run(s)"; color: theme.muted; font.pixelSize: 15 }
-                ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    model: bridge.activity
-                    spacing: 9
-                    clip: true
-                    delegate: StoneField {
-                        required property var modelData
-                        width: ListView.view.width
-                        height: 82
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 12
-                            spacing: 10
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 5
-                                Text { text: modelData.title + "  ·  " + modelData.status; color: theme.text; font.pixelSize: 16; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: modelData.detail; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
-                            }
-                            StoneButton {
-                                visible: modelData.status === "Queued"
-                                label: "Remove"
-                                Layout.preferredWidth: 90
-                                Layout.preferredHeight: 38
-                                onActivated: bridge.removeQueued(modelData.runId)
-                            }
-                            StoneButton {
-                                visible: modelData.status === "Failed" || modelData.status === "Stopped" || modelData.status === "Skipped"
-                                label: "Retry"
-                                Layout.preferredWidth: 90
-                                Layout.preferredHeight: 38
-                                onActivated: bridge.retryTerminal(modelData.runId)
-                            }
-                        }
-                    }
-                }
-            }
+            appBridge: bridge
         }
     }
 
