@@ -240,7 +240,6 @@ class MatteTextProjection:
             (widget, "<Configure>"),
             (widget, "<Expose>"),
             (widget, "<Map>"),
-            (anchor, "<Configure>"),
             (widget, "<KeyRelease>"),
             (widget, "<<Selection>>"),
             (widget, "<FocusIn>"),
@@ -249,6 +248,16 @@ class MatteTextProjection:
             self.bindings.append(
                 (target, event, target.bind(event, self.request, add="+"))
             )
+        # Moving the common scene changes only the projected matte origin.
+        # Rebuilding every label/button canvas on each ancestor Configure made
+        # Windows live resize repaint those controls one at a time.
+        self.bindings.append(
+            (
+                anchor,
+                "<Configure>",
+                anchor.bind("<Configure>", self.backdrop.request, add="+"),
+            )
+        )
         if isinstance(widget, tk.Text):
             self.bindings.append(
                 (

@@ -52,6 +52,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal"):
                 "tests/test_widget_reveal_native.py",
                 "tests/test_button_parity_native.py",
                 "tests/test_shared_header_action_native.py",
+                "tests/test_matte_projection_resize_native.py",
                 "tests/test_inline_description_native.py",
                 "tests/test_player_layout_native.py",
                 "tests/test_startup_update_native.py",
