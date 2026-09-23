@@ -7,7 +7,9 @@
 session, injects two OS window-edge drags, and records its exact owned HWND from
 a separate process every 50 ms. The static fixture fails when an interior frame
 is still more than 2% different from the end of the same-size interval after
-200 ms. Empty or missing transition evidence fails. The pure oracle test has a
+200 ms. Both drags must change native window width by at least 80 px, and at
+least four distinct window sizes must be captured. Empty or missing transition
+evidence fails. The pure oracle test has a
 synthetic delayed-control negative control; a normal static sequence passes.
 
 This gate was added because the earlier Windows probe recorded geometry and

@@ -34,6 +34,9 @@ parser.add_argument(
 )
 parser.add_argument("--view", choices=("library", "forge"), default="library")
 parser.add_argument(
+    "--no-deck-thumbnails", action="store_true", help="Attribution only: omit Run Deck artwork"
+)
+parser.add_argument(
     "--baseline",
     action="store_true",
     help="Representative Tk controls without app layout work",
@@ -417,6 +420,8 @@ with (
         app._request_application_close = app.destroy
     else:
         app = DownloaderApp()
+        if args.no_deck_thumbnails:
+            app._focus_thumbnail_source_for_record = lambda _record: None
     app.title("VODForge Resize QA")
     app.geometry("1100x740+30+30")
     base = approved_metadata()
@@ -538,7 +543,7 @@ with (
             if report.exists():
                 capture = json.loads(report.read_text())
                 pixel_assessment = assess_static_resize_frames(
-                    capture["frames"], run / "pixels"
+                    capture["frames"], run / "pixels", drag_events=events
                 )
                 if capture["errors"]:
                     failure.extend(capture["errors"])

@@ -26,7 +26,10 @@ def _changed_fraction(candidate: Path, reference: Image.Image) -> float:
 
 
 def assess_static_resize_frames(
-    frames: list[dict[str, Any]], directory: Path
+    frames: list[dict[str, Any]],
+    directory: Path,
+    *,
+    drag_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Fail delayed multi-control repaint while native bounds are unchanged.
 
@@ -37,6 +40,22 @@ def assess_static_resize_frames(
     """
     if not frames:
         return {"passed": False, "reason": "No in-flight window pixels captured"}
+    drag_changes = []
+    if drag_events is not None:
+        starts = [row for row in drag_events if row["event"] == "drag_start"]
+        ends = [row for row in drag_events if row["event"] == "drag_end"]
+        drag_changes = [
+            abs(end["rect"][2] - start["rect"][2])
+            for start, end in zip(starts, ends, strict=False)
+        ]
+        if len(drag_changes) < 2 or any(change < 80 for change in drag_changes):
+            return {
+                "passed": False,
+                "reason": "Native drag did not move the owned window enough",
+                "drag_width_changes": drag_changes,
+            }
+    if len({tuple(row["bounds"]) for row in frames}) < 4:
+        return {"passed": False, "reason": "Too few distinct in-flight window sizes"}
     examined = []
     for bounds, rows_iter in groupby(frames, key=lambda row: tuple(row["bounds"])):
         rows = list(rows_iter)
@@ -65,5 +84,6 @@ def assess_static_resize_frames(
     return {
         "passed": not any(row["lagging"] for row in examined),
         "epochs": examined,
+        "drag_width_changes": drag_changes,
         "scope": "sampled own-window server pixels; static Forge fixture",
     }
