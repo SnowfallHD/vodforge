@@ -13,7 +13,9 @@ import time
 from pathlib import Path
 
 
-def _windows_capture(number: int, owner_pid: int):
+def _windows_capture(
+    number: int, owner_pid: int, *, method: str, box: tuple[int, int, int, int] | None
+):
     import ctypes as C
     from ctypes import wintypes as W
 
@@ -24,6 +26,8 @@ def _windows_capture(number: int, owner_pid: int):
     user32.IsWindowVisible.argtypes = [W.HWND]
     user32.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
     user32.GetWindowRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
+    user32.GetWindow.argtypes = [W.HWND, W.UINT]
+    user32.GetWindow.restype = W.HWND
     if not user32.IsWindow(W.HWND(number)) or not user32.IsWindowVisible(
         W.HWND(number)
     ):
@@ -35,7 +39,43 @@ def _windows_capture(number: int, owner_pid: int):
     bounds = W.RECT()
     if not user32.GetWindowRect(W.HWND(number), C.byref(bounds)):
         raise RuntimeError("Owned Windows bounds unavailable")
-    bitmap = ImageGrab.grab(window=number)
+    if method == "screen-interior":
+        if box is None:
+            raise RuntimeError("Interior capture box missing")
+        left, top, right, bottom = box
+        if not (
+            bounds.left + 20 <= left < right <= bounds.right - 20
+            and bounds.top + 20 <= top < bottom <= bounds.bottom - 20
+        ):
+            raise RuntimeError("Interior capture left the owned window")
+        # Reject every visible foreign top-level window above the QA window
+        # whose bounds touch the capture region. The desktop itself is never
+        # saved; only this fixed, always-inside rectangle is read.
+        above = user32.GetWindow(W.HWND(number), 3)  # GW_HWNDPREV
+        while above:
+            if user32.IsWindowVisible(above):
+                other = W.RECT()
+                if user32.GetWindowRect(above, C.byref(other)):
+                    foreign_pid = W.DWORD()
+                    user32.GetWindowThreadProcessId(above, C.byref(foreign_pid))
+                    if (
+                        foreign_pid.value != owner_pid
+                        and other.left < right
+                        and other.right > left
+                        and other.top < bottom
+                        and other.bottom > top
+                    ):
+                        raise RuntimeError("Foreign window covers interior QA capture")
+            above = user32.GetWindow(above, 3)
+        bitmap = ImageGrab.grab(bbox=box)
+        after = W.RECT()
+        if not user32.GetWindowRect(W.HWND(number), C.byref(after)) or not (
+            after.left + 20 <= left < right <= after.right - 20
+            and after.top + 20 <= top < bottom <= after.bottom - 20
+        ):
+            raise RuntimeError("Interior capture crossed a moving window edge")
+    else:
+        bitmap = ImageGrab.grab(window=number)
     if bitmap.width <= 0 or bitmap.height <= 0:
         raise RuntimeError("Owned Windows pixels unavailable")
     return bitmap.convert("RGB"), [bounds.left, bounds.top, bounds.right, bounds.bottom]
@@ -52,6 +92,9 @@ def main() -> int:
     parser.add_argument("directory", type=Path)
     parser.add_argument("--interval", type=float, default=0.020)
     parser.add_argument("--owner-pid", type=int)
+    parser.add_argument(
+        "--method", choices=("printwindow", "screen-interior"), default="printwindow"
+    )
     args = parser.parse_args()
     if sys.platform == "win32" and (args.owner_pid is None or args.owner_pid <= 0):
         parser.error("Windows own-window capture requires --owner-pid")
@@ -60,13 +103,29 @@ def main() -> int:
     if not 0.020 <= args.interval <= 1:
         parser.error("capture interval must be between .020 and 1 second")
     number, origin, directory = args.number, args.origin, args.directory
+    box = None
+    if sys.platform == "win32" and args.method == "screen-interior":
+        import ctypes as C
+        from ctypes import wintypes as W
+
+        initial = W.RECT()
+        if not C.windll.user32.GetWindowRect(W.HWND(number), C.byref(initial)):
+            parser.error("Windows capture target has no initial rectangle")
+        box = (
+            initial.left + 20,
+            initial.top + 20,
+            initial.left + min(1080, initial.right - initial.left - 20),
+            initial.top + min(720, initial.bottom - initial.top - 20),
+        )
     frames, errors = [], []
     deadline = time.monotonic() + 20
     try:
         while not (directory / "capture.stop").exists() and time.monotonic() < deadline:
             begin = time.monotonic() - origin
             if sys.platform == "win32":
-                bitmap, bounds = _windows_capture(number, args.owner_pid)
+                bitmap, bounds = _windows_capture(
+                    number, args.owner_pid, method=args.method, box=box
+                )
             else:
                 raw = Quartz.CGWindowListCreateImage(
                     Quartz.CGRectNull,
@@ -121,7 +180,11 @@ def main() -> int:
                 "frames": frames,
                 "errors": errors,
                 "requested_interval_seconds": args.interval,
-                "observer": "separate process; exact owned window; no application GIL",
+                "observer": (
+                    "separate process; fixed verified on-screen HWND interior; no WM_PRINT"
+                    if args.method == "screen-interior"
+                    else "separate process; exact owned window; synchronous WM_PRINT"
+                ),
             },
             indent=2,
         )

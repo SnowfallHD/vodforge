@@ -34,7 +34,9 @@ parser.add_argument(
 )
 parser.add_argument("--view", choices=("library", "forge"), default="library")
 parser.add_argument(
-    "--no-deck-thumbnails", action="store_true", help="Attribution only: omit Run Deck artwork"
+    "--no-deck-thumbnails",
+    action="store_true",
+    help="Attribution only: omit Run Deck artwork",
 )
 parser.add_argument(
     "--no-run-deck", action="store_true", help="Attribution only: omit Run Deck records"
@@ -71,6 +73,12 @@ parser.add_argument(
     "--pixel-capture",
     action="store_true",
     help="Bounded separate-process own-window pixels during drag; pair with no-capture control",
+)
+parser.add_argument(
+    "--windows-capture-method",
+    choices=("screen-interior", "printwindow"),
+    default="screen-interior",
+    help="Windows transition pixels; PrintWindow is an invasive diagnostic control",
 )
 parser.add_argument("--assert-inflight-pixels", action="store_true")
 parser.add_argument("--auto-continue", action="store_true")
@@ -309,6 +317,11 @@ def drive(hwnd, screen):
                     "--interval",
                     ".05" if sys.platform == "win32" else ".1",
                     *(["--owner-pid", str(pid)] if sys.platform == "win32" else []),
+                    *(
+                        ["--method", args.windows_capture_method]
+                        if sys.platform == "win32"
+                        else []
+                    ),
                 ],
                 stdout=capture_log,
                 stderr=subprocess.STDOUT,
@@ -426,7 +439,7 @@ with (
         if args.no_deck_thumbnails:
             app._focus_thumbnail_source_for_record = lambda _record: None
         if args.no_run_deck:
-            app._focus_run_records = lambda: []
+            app._focus_run_records = list
     app.title("VODForge Resize QA")
     app.geometry("1100x740+30+30")
     base = approved_metadata()
