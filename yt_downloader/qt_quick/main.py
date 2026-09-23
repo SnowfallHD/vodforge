@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[2]
@@ -38,12 +39,12 @@ from yt_downloader.local_audio_video import (
     LocalAudioVideoProgress,
     LocalAudioVideoResult,
 )
-from yt_downloader.models import OutputType
+from yt_downloader.models import ExportMode, OutputType
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
-from yt_downloader.qt_quick.runtime import DownloadRuntime
+from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.run_state import RunStateError
 from yt_downloader.settings_store import (
     SettingsError,
@@ -134,6 +135,7 @@ class Bridge(QObject):
     librarySearchChanged = Signal()
     libraryTypeChanged = Signal()
     localChanged = Signal()
+    downloadOptionsChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -155,6 +157,15 @@ class Bridge(QObject):
         except SettingsError:
             self._settings = {}
             self._settings_writable = False
+        defaults = DownloadPreferences()
+        self._download_preferences = DownloadPreferences(
+            **{
+                field.name: value
+                if isinstance((value := self._settings.get(field.name)), bool)
+                else getattr(defaults, field.name)
+                for field in fields(DownloadPreferences)
+            }
+        )
         self._status = self._runtime.recovery_notice or (
             "Settings need attention before changes can be saved."
             if not self._settings_writable
@@ -171,7 +182,7 @@ class Bridge(QObject):
         saved_mode = str(self._settings.get("export_mode") or "Everyday")
         self._export_mode = (
             saved_mode
-            if saved_mode in {"Everyday", "Streaming", "Editing", "Sharing"}
+            if saved_mode in {mode.value for mode in ExportMode}
             else "Everyday"
         )
         saved_format = str(self._settings.get("output_type") or "MP4")
@@ -279,6 +290,10 @@ class Bridge(QObject):
     def localRunning(self) -> bool:
         return self._local_running
 
+    @Property("QVariantMap", notify=downloadOptionsChanged)
+    def downloadOptions(self) -> dict[str, bool]:
+        return asdict(self._download_preferences)
+
     @Property("QVariantList", notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
         return self._runtime.activity
@@ -333,6 +348,16 @@ class Bridge(QObject):
             self._local_profile = profile
             self.localChanged.emit()
 
+    @Slot(str, bool)
+    def setDownloadOption(self, key: str, enabled: bool) -> None:
+        if key not in self.downloadOptions:
+            return
+        self._download_preferences = replace(
+            self._download_preferences, **{key: enabled}
+        )
+        self.downloadOptionsChanged.emit()
+        self._schedule_preferences_save()
+
     @Slot()
     def startLocalConversion(self) -> None:
         try:
@@ -380,7 +405,7 @@ class Bridge(QObject):
 
     @Slot(str)
     def setExportMode(self, value: str) -> None:
-        if value not in {"Everyday", "Streaming", "Editing", "Sharing"}:
+        if value not in {mode.value for mode in ExportMode}:
             return
         self._export_mode = value
         self.exportModeChanged.emit()
@@ -413,6 +438,7 @@ class Bridge(QObject):
             "output_type": self._output_format,
             "quality": self._quality,
             "export_mode": self._export_mode,
+            **self.downloadOptions,
         }
         try:
             save_settings(self._settings_path, updated)
@@ -548,12 +574,17 @@ class Bridge(QObject):
                 raise SettingsError(
                     "Settings need attention before a download can start."
                 )
+            if self._export_mode == ExportMode.MANUAL_OVERRIDE.value:
+                raise ValueError(
+                    "Manual Override settings need the full Qt editor before this run."
+                )
             job = self._runtime.start(
                 value,
                 Path(self._output_path),
                 output_format,
                 self._export_mode,
                 self._quality,
+                self._download_preferences,
             )
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)

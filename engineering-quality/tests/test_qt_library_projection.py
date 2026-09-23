@@ -16,6 +16,7 @@ from PySide6.QtTest import QSignalSpy
 
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.qt_quick import main as qt_main
+from yt_downloader.settings_store import load_settings
 
 
 def test_search_and_type_filter_keep_play_bound_to_original_history(
@@ -61,6 +62,13 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
     )
     bridge = qt_main.Bridge(None)
     try:
+        assert bridge.downloadOptions["write_thumbnail"] is True
+        assert bridge.downloadOptions["write_info_json"] is True
+        assert bridge.downloadOptions["embed_metadata"] is False
+        bridge.setDownloadOption("single_video_only", False)
+        assert bridge.downloadOptions["single_video_only"] is False
+        bridge._save_preferences()
+        assert load_settings(tmp_path / "settings.json")["single_video_only"] is False
         playback_requests = QSignalSpy(bridge.playbackRequested)
         bridge.setLibrarySearch("research")
         assert [(item["sourceIndex"], item["title"]) for item in bridge.history] == [
@@ -76,6 +84,14 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         bridge.openLibraryItem(bridge.history[0]["sourceIndex"])
         assert playback_requests.count() == 2
         bridge.observePlayback(2.0, 6.0, "Playing")
+        bridge.setExportMode("Auto CBR")
+        assert bridge.exportMode == "Auto CBR"
+        bridge.setExportMode("Strict Compliance")
+        assert bridge.exportMode == "Strict Compliance"
+        bridge.setExportMode("Manual Override")
+        bridge._settings_writable = True
+        bridge.submit("https://example.com/watch?v=example", "MP4")
+        assert "full Qt editor" in bridge.status
     finally:
         bridge.close()
         application.processEvents()

@@ -8,6 +8,10 @@ the existing search/type projection; Watch
 uses Qt Multimedia; Activity shows in-session and recovered run status. Basic
 output, quality, and mode preferences use the existing settings store. The
 existing local MP3 plus still-image transaction owner also feeds Qt and Library.
+The first six MP4 output presets and the persisted MP4 sidecar/encoder/playlist
+choices now enter the same durable `DownloadJob` fields as Tk. Manual Override
+is retained from saved settings but blocked at submission until its editor is
+ported, preventing an incorrect default manual export.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,

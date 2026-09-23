@@ -114,3 +114,47 @@ def test_qt_local_conversion_commits_into_the_durable_library(
         assert load_history(history_path)[0]["vodforge_run_id"] == "local-run-1"
     finally:
         runtime.close()
+
+
+def test_qt_submission_carries_saved_mp4_options_into_the_shared_job(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(
+        qt_runtime, "run_state_file_path", lambda: tmp_path / "run.json"
+    )
+
+    def worker(self: DownloadWorkerCore, _job: Any) -> None:
+        self.events.put(("done", "Complete"))
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        preferences = qt_runtime.DownloadPreferences(
+            single_video_only=False,
+            use_nvenc=True,
+            embed_thumbnail=True,
+            write_thumbnail=False,
+            embed_metadata=True,
+            write_info_json=False,
+        )
+        job = runtime.start(
+            "https://www.youtube.com/playlist?list=PLexample",
+            output_dir,
+            "MP4",
+            "Auto CBR",
+            preferences=preferences,
+        )
+        assert job.single_video_only is False
+        assert job.export_mode.value == "Auto CBR"
+        assert job.use_nvenc is True
+        assert job.embed_thumbnail is True
+        assert job.write_thumbnail is False
+        assert job.embed_metadata is True
+        assert job.write_info_json is False
+    finally:
+        runtime.close()

@@ -144,7 +144,7 @@ Window {
                 label: "⚙"
                 Layout.preferredWidth: 46
                 Layout.preferredHeight: 40
-                onActivated: bridge.select("Forge")
+                onActivated: settingsPopup.open()
             }
         }
 
@@ -514,6 +514,52 @@ Window {
     }
 
     Popup {
+        id: settingsPopup
+        objectName: "downloadSettingsPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(540, window.width - 40)
+        height: 445
+        padding: 18
+        modal: true
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 7
+            Text { text: "Download settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text { text: "These choices apply to new Forge runs."; color: theme.muted; font.pixelSize: 14 }
+            Repeater {
+                model: [
+                    { key: "single_video_only", label: "Single video only" },
+                    { key: "use_nvenc", label: "Use NVIDIA encoder for MP4" },
+                    { key: "embed_thumbnail", label: "Embed thumbnail in MP4" },
+                    { key: "write_thumbnail", label: "Save thumbnail beside MP4" },
+                    { key: "embed_metadata", label: "Embed metadata in MP4" },
+                    { key: "write_info_json", label: "Save info JSON beside MP4" }
+                ]
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 45
+                    Text { text: modelData.label; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                    StoneButton {
+                        label: bridge.downloadOptions[modelData.key] ? "On" : "Off"
+                        selected: bridge.downloadOptions[modelData.key]
+                        Layout.preferredWidth: 74
+                        Layout.preferredHeight: 36
+                        onActivated: bridge.setDownloadOption(modelData.key, !bridge.downloadOptions[modelData.key])
+                    }
+                }
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40; onActivated: settingsPopup.close() }
+            }
+        }
+    }
+    Popup {
         id: localConversionPopup
         objectName: "localConversionPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -610,35 +656,44 @@ Window {
     }
     Popup {
         id: optionsMenu
-        x: Math.max(0, window.width - window.gutter - 350)
-        y: window.gutter + 112
-        width: 260
-        height: 490
-        padding: 3
+        objectName: "optionsMenu"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(550, window.width - 40)
+        height: 350
+        padding: 8
         background: Rectangle { color: theme.bg; border.color: theme.border; radius: 8 }
-        Column {
+        Row {
             anchors.fill: parent
-            spacing: 2
-            Text { text: "Output mode"; color: theme.muted; font.pixelSize: 13; height: 22 }
-            Repeater {
-                model: ["Everyday", "Streaming", "Editing", "Sharing"]
-                StoneButton {
-                    required property string modelData
-                    width: 254; height: 36
-                    label: modelData
-                    selected: bridge.exportMode === modelData
-                    onActivated: { bridge.setExportMode(modelData); optionsMenu.close() }
+            spacing: 8
+            Column {
+                width: (parent.width - 8) / 2
+                spacing: 3
+                Text { text: "Output mode"; color: theme.muted; font.pixelSize: 13; height: 25 }
+                Repeater {
+                    model: ["Everyday", "Streaming", "Editing", "Sharing", "Auto CBR", "Strict Compliance"]
+                    StoneButton {
+                        required property string modelData
+                        width: parent.width; height: 40
+                        label: modelData
+                        selected: bridge.exportMode === modelData
+                        onActivated: { bridge.setExportMode(modelData); optionsMenu.close() }
+                    }
                 }
             }
-            Text { text: "Quality"; color: theme.muted; font.pixelSize: 13; height: 22 }
-            Repeater {
-                model: qualityOptions
-                StoneButton {
-                    required property string modelData
-                    width: 254; height: 36
-                    label: modelData
-                    selected: bridge.quality === modelData
-                    onActivated: { bridge.setQuality(modelData); optionsMenu.close() }
+            Column {
+                width: (parent.width - 8) / 2
+                spacing: 3
+                Text { text: "Quality"; color: theme.muted; font.pixelSize: 13; height: 25 }
+                Repeater {
+                    model: qualityOptions
+                    StoneButton {
+                        required property string modelData
+                        width: parent.width; height: 40
+                        label: modelData
+                        selected: bridge.quality === modelData
+                        onActivated: { bridge.setQuality(modelData); optionsMenu.close() }
+                    }
                 }
             }
         }

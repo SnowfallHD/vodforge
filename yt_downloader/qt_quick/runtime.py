@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -44,6 +45,16 @@ from yt_downloader.run_state import (
     run_state_file_path,
     serialize_download_job,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadPreferences:
+    single_video_only: bool = True
+    use_nvenc: bool = False
+    embed_thumbnail: bool = False
+    write_thumbnail: bool = True
+    embed_metadata: bool = False
+    write_info_json: bool = True
 
 
 class DownloadRuntime:
@@ -85,6 +96,7 @@ class DownloadRuntime:
         output_type: str,
         export_mode: str,
         quality_label: str = "1080p Full HD",
+        preferences: DownloadPreferences | None = None,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -94,13 +106,15 @@ class DownloadRuntime:
             raise RuntimeError("The previous download is finishing.")
         if self.active_job is None and self.queued:
             self._launch_next_queued()
+        preferences = preferences or DownloadPreferences()
         url = url.strip()
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Enter a complete video URL.")
-        source_error = single_video_url_requires_video_id_error(url)
-        if source_error:
-            raise ValueError(source_error)
+        if preferences.single_video_only:
+            source_error = single_video_url_requires_video_id_error(url)
+            if source_error:
+                raise ValueError(source_error)
         selected_type = OutputType(output_type)
         selected_mode = ExportMode(export_mode)
         validate_output_directory_access(output_dir)
@@ -113,12 +127,22 @@ class DownloadRuntime:
             export_mode=selected_mode,
             manual_settings=ManualExportSettings(),
             mp3_settings=Mp3ExportSettings(),
-            single_video_only=True,
-            use_nvenc=False,
-            embed_thumbnail=False,
-            write_thumbnail=False,
-            embed_metadata=True,
-            write_info_json=False,
+            single_video_only=preferences.single_video_only,
+            use_nvenc=preferences.use_nvenc
+            if selected_type == OutputType.MP4
+            else False,
+            embed_thumbnail=preferences.embed_thumbnail
+            if selected_type == OutputType.MP4
+            else False,
+            write_thumbnail=preferences.write_thumbnail
+            if selected_type == OutputType.MP4
+            else False,
+            embed_metadata=preferences.embed_metadata
+            if selected_type == OutputType.MP4
+            else False,
+            write_info_json=preferences.write_info_json
+            if selected_type == OutputType.MP4
+            else False,
             tags=[],
         )
         active_and_queued = [
