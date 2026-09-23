@@ -22,7 +22,9 @@ def test_anchor_resize_only_moves_shared_matte() -> None:
         root.geometry("500x250+40+40")
         anchor = ttk.Frame(root)
         anchor.pack(fill="both", expand=True)
-        label = tk.Label(anchor, text="Static label", bg=THEME["bg"], fg=THEME["text"])
+        label = tk.Label(
+            anchor, text="Static label", anchor="w", bg=THEME["bg"], fg=THEME["text"]
+        )
         label.place(x=35, y=30, width=130, height=30)
         owner = MatteTextProjection(label, anchor)
         root.update()
@@ -54,13 +56,15 @@ def test_anchor_resize_only_moves_shared_matte() -> None:
 
         label.event_generate("<Configure>", width=140, height=30)
         root.update()
-        assert text_calls >= 1
-        text_calls = 0
+        assert text_calls == 0
         label.event_generate(
             "<Configure>", width=label.winfo_width(), height=label.winfo_height(), x=45
         )
         label.event_generate("<Expose>")
         root.update()
         assert text_calls == 0
+        label.configure(text="Updated label")
+        root.update()
+        assert text_calls >= 1
     finally:
         root.destroy()

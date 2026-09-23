@@ -1,5 +1,34 @@
 # VODForge engineering-quality harness
 
+## Windows live-resize paint gate — 2026-09-22
+
+`test_windows_resize_inflight_native.py` is required by the Windows
+`native_surface_contract`. It runs the real Forge window in an interactive
+session, injects two OS window-edge drags, and records its exact owned HWND from
+a separate process every 50 ms. The static fixture fails when an interior frame
+is still more than 2% different from the end of the same-size interval after
+200 ms. Empty or missing transition evidence fails. The pure oracle test has a
+synthetic delayed-control negative control; a normal static sequence passes.
+
+This gate was added because the earlier Windows probe recorded geometry and
+callback gaps, but no rendered frames. On `desktop-genesis`, the pre-change
+Forge held one window size for up to 1.9 seconds while the composer, labels,
+buttons and Run Deck repainted in stages. A plain Tk baseline followed the
+same drag without the long holds. Restricting the existing shared matte
+projection to redraw text on actual widget/content changes improved callback
+gaps and geometry cadence, but the exact Windows native gate still fails.
+This is a **release blocker**; the sampled HWND frames are server-side window
+pixels, not physical display refresh or packaged-app proof. Do not claim the
+resize is fixed from a settled screenshot, an empty capture, or the improved
+timing alone.
+
+The diagnostic recorder captures only the attested VODForge HWND. A trial
+desktop crop could include pixels outside the window during a live drag; that
+capture path and its cropped frames were removed. Win32 descendant compositing
+also corrupted the own-window settled capture and was discarded. Neither
+experiment is a runtime fix. Keep physical display and packaged validation
+separate after the source-native gate passes.
+
 ## Header action material ownership — 2026-09-22
 
 Invariant: a visible navigation action must receive one complete shared stone

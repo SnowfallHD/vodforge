@@ -374,7 +374,14 @@ class MatteTextProjection:
     def _widget_configured(self, event: tk.Event) -> None:
         # A position-only move carries the existing child Canvas and its text.
         # Only the shared scene origin changes; Canvas owns its own Expose paint.
-        if (event.width, event.height) == self.last_size:
+        width_only_label = (
+            self.last_size is not None
+            and event.height == self.last_size[1]
+            and isinstance(self.widget, (tk.Label, ttk.Label))
+            and str(self.widget.cget("anchor")) in {"w", "nw", "sw"}
+            and not str(self.widget.cget("image"))
+        )
+        if (event.width, event.height) == self.last_size or width_only_label:
             self.backdrop.request()
         else:
             self.request()
