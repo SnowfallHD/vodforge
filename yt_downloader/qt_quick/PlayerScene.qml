@@ -213,12 +213,14 @@ Item {
                 spacing: 24
                 Column {
                     id: stageColumn
+                    objectName: "playerStageColumn"
                     Layout.fillWidth: true
                     Layout.preferredWidth: scene.wide ? Math.max(320, scene.width - 334) : scene.width
                     spacing: 10
 
                     Item {
                         id: mediaStage
+                        objectName: "playerMediaStage"
                         width: parent.width
                         height: Math.max(180, Math.min(390, width * 9 / 16, scene.height - 205))
                         Rectangle { anchors.fill: parent; color: "#09090d" }
@@ -243,14 +245,6 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.WordWrap
                         }
-                    }
-                    Text {
-                        width: parent.width
-                        text: scene.player && scene.player.errorString.length ? scene.player.errorString : ""
-                        color: theme.muted
-                        font.pixelSize: 14
-                        visible: text.length > 0
-                        wrapMode: Text.WordWrap
                     }
                     Item {
                         id: heatmapTrack
@@ -285,6 +279,7 @@ Item {
                         handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                     }
                     RowLayout {
+                        objectName: "playerTransportRow"
                         width: parent.width
                         StoneButton {
                             label: scene.player && scene.player.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
@@ -341,6 +336,14 @@ Item {
                             background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
                             handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
                         }
+                    }
+                    Text {
+                        width: parent.width
+                        text: scene.player && scene.player.errorString.length ? scene.player.errorString : ""
+                        color: theme.muted
+                        font.pixelSize: 14
+                        visible: text.length > 0
+                        wrapMode: Text.WordWrap
                     }
                 }
 

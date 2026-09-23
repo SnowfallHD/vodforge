@@ -1131,3 +1131,58 @@ def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkey
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+
+
+def test_qt_watch_media_windows_cards_and_restores_back_scroll(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, f"Video {index:03d}", "MP4") for index in range(200)
+    ]
+    requested = []
+    monkeypatch.setattr(
+        bridge._artwork, "request",
+        lambda record, _size=(320, 180), _role="media":
+            requested.append((record["title"], _size, _role)) or "",
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Watch")
+        bridge.navigateWatch("videos")
+        app.processEvents()
+        scene = window.findChild(QObject, "watchBrowseScene")
+        flow = window.findChild(QObject, "watchMediaFlow")
+        repeater = window.findChild(QObject, "watchMediaRepeater")
+        viewport = window.findChild(QObject, "watchViewport")
+        assert len(bridge.watchScene["videos"]) == 200
+        assert repeater.property("count") < 40
+        media_requests = {title for title, size, role in requested if size == (320, 180) and role == "media"}
+        assert len(media_requests) < 40
+        flickable = viewport.property("contentItem")
+        assert flickable.setProperty("contentY", 40 * flow.property("rowStride"))
+        app.processEvents()
+        assert flow.property("firstRow") >= 35
+        assert repeater.property("count") < 40
+        before = flickable.property("contentY")
+        group = bridge.watchScene["playlists"][0]
+        bridge.navigateWatchGroup("playlist", group["key"])
+        app.processEvents()
+        scene.back()
+        for _ in range(3):
+            app.processEvents()
+        assert abs(flickable.property("contentY") - before) < 1
+        bridge.navigateWatch("home")
+        for _ in range(3):
+            app.processEvents()
+        assert flickable.property("contentY") == 0
+        assert repeater.property("count") <= flow.property("columns")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()

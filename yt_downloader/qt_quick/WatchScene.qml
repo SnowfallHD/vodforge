@@ -8,7 +8,30 @@ Item {
     readonly property var projection: appBridge.watchScene
     readonly property string route: projection.route || "home"
     readonly property var videos: projection.videos || []
+    readonly property string viewKey: route + "|" + (projection.query || "") + "|" +
+        (projection.groupKind || "") + "|" + (projection.groupTitle || "")
+    property string previousViewKey: ""
+    property var scrollPositions: ({})
+    property bool restoreOnNextRoute: false
     property string moreOwner: ""
+    Component.onCompleted: previousViewKey = viewKey
+    function back() {
+        restoreOnNextRoute = true
+        appBridge.backWatch()
+    }
+    onViewKeyChanged: {
+        if (!viewport || !viewport.contentItem) return
+        if (previousViewKey)
+            scrollPositions[previousViewKey] = viewport.contentItem.contentY
+        const destination = restoreOnNextRoute ? (scrollPositions[viewKey] || 0) : 0
+        const targetKey = viewKey
+        previousViewKey = viewKey
+        restoreOnNextRoute = false
+        Qt.callLater(function() {
+            if (scene.viewKey === targetKey && viewport.contentItem)
+                viewport.contentItem.contentY = destination
+        })
+    }
     function showLibraryDetails(owner) {
         scene.appBridge.openWatchDetails(owner)
     }
@@ -89,6 +112,7 @@ Item {
 
     ScrollView {
         id: viewport
+        objectName: "watchViewport"
         y: browseHeader.height + 12
         width: parent.width
         height: parent.height - y
@@ -104,7 +128,7 @@ Item {
                 label: scene.projection.backLabel || "Back to Watch"
                 width: 160
                 height: 40
-                onActivated: scene.appBridge.backWatch()
+                onActivated: scene.back()
             }
             RowLayout {
                 visible: scene.route !== "home" && scene.route !== "group"
@@ -404,21 +428,40 @@ Item {
             }
             Flow {
                 id: mediaFlow
+                objectName: "watchMediaFlow"
                 visible: scene.route === "home" || scene.route === "videos" || scene.route === "group"
                 width: parent.width
+                height: Math.max(0, totalRows * rowStride - spacing)
                 spacing: 12
+                readonly property int columns: Math.max(1, Math.min(4, Math.floor((width + spacing) / 200)))
+                readonly property real cardWidth: Math.max(164, (width - spacing * (columns - 1)) / columns)
+                readonly property real rowStride: 190
+                readonly property int displayCount: scene.route === "home" ? Math.min(scene.videos.length, columns) : scene.videos.length
+                readonly property int totalRows: Math.ceil(displayCount / columns)
+                readonly property real scrollTop: viewport.contentItem.contentY - y
+                readonly property int firstRow: scene.route === "home" ? 0 :
+                    Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
+                readonly property int lastRow: scene.route === "home" ? totalRows :
+                    Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                Item {
+                    visible: mediaFlow.firstRow > 0
+                    width: mediaFlow.width
+                    height: Math.max(0, mediaFlow.firstRow * mediaFlow.rowStride - mediaFlow.spacing)
+                }
                 Repeater {
-                    model: scene.videos
+                    objectName: "watchMediaRepeater"
+                    model: scene.videos.slice(mediaFlow.firstRow * mediaFlow.columns,
+                                              Math.min(mediaFlow.displayCount, mediaFlow.lastRow * mediaFlow.columns))
                     StoneButton {
                         required property var modelData
-                        width: Math.max(164, (mediaFlow.width - 36) / 4)
+                        width: mediaFlow.cardWidth
                         height: 178
                         label: ""
                         accessibilityLabel: "Play " + modelData.title
                         onActivated: scene.appBridge.openLibraryOwner(modelData.owner)
                         Image {
                             x: 4; y: 4; width: parent.width - 8; height: 105
-                            source: modelData.artwork
+                            source: scene.appBridge.mediaArtwork(modelData.owner)
                             visible: source.toString().length > 0
                             fillMode: Image.PreserveAspectCrop
                             smooth: true
@@ -426,6 +469,11 @@ Item {
                         Text { x: 11; y: 115; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }
                         Text { x: 11; y: 139; width: parent.width - 22; text: modelData.creator; color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight }
                     }
+                }
+                Item {
+                    visible: mediaFlow.lastRow < mediaFlow.totalRows
+                    width: mediaFlow.width
+                    height: Math.max(0, (mediaFlow.totalRows - mediaFlow.lastRow) * mediaFlow.rowStride - mediaFlow.spacing)
                 }
             }
             Text {

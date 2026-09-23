@@ -410,7 +410,7 @@ Item {
                                 x: 4; y: 4
                                 width: parent.width - 8
                                 height: parent.width * 9 / 16
-                                source: scene.appBridge.libraryArtwork(modelData.owner)
+                                source: scene.appBridge.mediaArtwork(modelData.owner)
                                 fillMode: Image.PreserveAspectCrop
                                 visible: source.toString().length > 0
                                 smooth: true

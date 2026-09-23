@@ -1219,7 +1219,7 @@ class Bridge(QObject):
         )
 
     @Slot(str, result=str)
-    def libraryArtwork(self, owner: str) -> str:
+    def mediaArtwork(self, owner: str) -> str:
         matches = [
             row for row in self._runtime.history
             if row.get("vodforge_output_dir") and history_archive_owner(row) == owner
@@ -1284,6 +1284,7 @@ class Bridge(QObject):
             self._watch_group_kind,
             self._watch_search,
             self._playback_progress.for_record,
+            defer_media_artwork=True,
         )
         prior_route = self._watch_history[-1][0] if self._watch_history else "home"
         scene["backLabel"] = (

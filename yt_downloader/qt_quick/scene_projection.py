@@ -208,6 +208,8 @@ def watch_scene(
     group_kind: str = "",
     query: str = "",
     progress_for: Callable[[dict[str, Any]], Any] | None = None,
+    *,
+    defer_media_artwork: bool = False,
 ) -> dict[str, Any]:
     query = query.strip()
     effective_route = "videos" if query else route
@@ -232,9 +234,10 @@ def watch_scene(
         else tuple(video for rail in playlists for video in rail.videos)
     )
     videos = unique_watch_videos(records, source_videos)
+    media_image = _defer_artwork if defer_media_artwork else artwork
     media = [
         {
-            **_media(records[video.indices[0]], video.indices[0], artwork),
+            **_media(records[video.indices[0]], video.indices[0], media_image),
             "queueKey": video.key,
         }
         for video in videos

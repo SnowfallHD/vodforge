@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtCore import QCoreApplication, QEvent, QUrl
 from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QGuiApplication
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.qt_quick.main import Bridge, create_engine
@@ -183,6 +185,14 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
             application.processEvents()
         assert inside(visible_button("All 1 runs"))
         assert bridge.openLibraryItem(0)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            application.processEvents()
+            player = window_object.property("mediaPlayer")
+            if player and player.mediaStatus() == QMediaPlayer.InvalidMedia:
+                break
+            time.sleep(0.01)
+        assert player.mediaStatus() == QMediaPlayer.InvalidMedia
         for _ in range(5):
             application.processEvents()
         assert inside(visible_button("Back to Watch"))
