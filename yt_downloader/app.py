@@ -9554,14 +9554,16 @@ class DownloaderApp(
         title_font = tkfont.Font(root=tile, font=metrics.font(FONT_UI_SMALL_MEDIUM))
 
         def fit_tile_title(event: tk.Event[Any]) -> None:
-            title_label.configure(
-                text=ellipsize_wrapped_text(
-                    title,
-                    maximum_width=max(1, event.width - px(4)),
-                    maximum_lines=1,
-                    measure_width=title_font.measure,
-                )
+            fitted = ellipsize_wrapped_text(
+                title,
+                maximum_width=max(1, event.width - px(4)),
+                maximum_lines=1,
+                measure_width=title_font.measure,
             )
+            # Reapplying identical text asks Tk to relayout every card during
+            # native resize, which then feeds another Configure into this path.
+            if title_label.cget("text") != fitted:
+                title_label.configure(text=fitted)
 
         title_label.bind("<Configure>", fit_tile_title, add="+")
         ToolTip(title_label, title)
