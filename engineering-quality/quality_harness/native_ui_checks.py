@@ -69,6 +69,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal"):
                         "tests/test_matte_native.py",
                         "tests/test_matte_projection_native.py",
                         "tests/test_scene_inflight_native.py",
+                        "tests/test_macos_resize_pointer_native.py",
                         "tests/test_scroll_inflight_native.py",
                         "tests/test_scroll_idle_native.py",
                         "tests/test_surface_raster_native.py",

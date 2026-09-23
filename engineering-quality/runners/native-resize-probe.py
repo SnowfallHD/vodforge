@@ -81,6 +81,7 @@ parser.add_argument(
     help="Windows transition pixels; PrintWindow is an invasive diagnostic control",
 )
 parser.add_argument("--assert-inflight-pixels", action="store_true")
+parser.add_argument("--assert-pointer-tracking", action="store_true")
 parser.add_argument("--auto-continue", action="store_true")
 args = parser.parse_args()
 if args.timing_details and not args.timing:
@@ -91,6 +92,8 @@ if args.assert_inflight_pixels and (
     sys.platform != "win32" or not args.pixel_capture or args.view != "forge"
 ):
     parser.error("--assert-inflight-pixels requires Windows Forge pixel capture")
+if args.assert_pointer_tracking and args.no_observer:
+    parser.error("--assert-pointer-tracking requires native pointer/edge observations")
 run = args.output.resolve()
 run.mkdir(parents=True, exist_ok=False)
 source = args.source.resolve()
@@ -561,6 +564,16 @@ with (
         overlapping = overlapping_heartbeat_gaps(
             heartbeats, [(a["t"], b["t"]) for a, b in intervals]
         )
+        pointer_assessment = None
+        if args.assert_pointer_tracking:
+            from quality_harness.resize_observations import assess_pointer_tracking
+
+            pointer_assessment = assess_pointer_tracking(native_rects, events)
+            (run / "pointer-assessment.json").write_text(
+                json.dumps(pointer_assessment, indent=2)
+            )
+            if not pointer_assessment["passed"]:
+                failure.append("Native window edge lagged behind held pointer")
         pixel_assessment = None
         if args.assert_inflight_pixels:
             from quality_harness.resize_pixels import (
@@ -609,6 +622,7 @@ with (
             "profiling_enabled": args.profile,
             "pixel_capture_enabled": args.pixel_capture,
             "pixel_assessment": pixel_assessment,
+            "pointer_assessment": pointer_assessment,
             "baseline": args.baseline,
             "baseline_chrome": args.baseline_chrome,
             "edge": args.edge,

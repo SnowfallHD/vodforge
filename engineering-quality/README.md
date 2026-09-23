@@ -24,8 +24,11 @@ gaps and geometry cadence, but the exact Windows native gate still fails. The
 `4427088` source-native Genesis run had two admitted native drags (315 and
 327 px), a maximum overlapping timer gap of 98.8 ms, and a same-bounds
 Forge epoch still 5.4% different after 403 ms. Root Configure was delivered
-before that epoch, but the old breakpoint layout remained visible.
-This is a **release blocker**; the sampled HWND frames are server-side window
+before that epoch, but the old breakpoint layout remained visible. Narrowing
+the existing layout owner to visible-view and changed-placement work made the
+pixel gate pass twice at `d0e1412`, with 111.4 ms maximum UI timer gap on the
+first run. The separate pointer/edge gate below still fails.
+The resize remains a **release blocker**; sampled HWND frames are server-side window
 pixels, not physical display refresh or packaged-app proof. Do not claim the
 resize is fixed from a settled screenshot, an empty capture, or the improved
 timing alone.
@@ -38,6 +41,28 @@ bounds read before a 60–70 ms grab, even if the window resized during it.
 compositing was tested in an isolated QA candidate; it failed both pixel and
 timer gates and was removed. Keep physical display and packaged validation
 separate after the source-native gate passes.
+
+### Held pointer must track the native edge
+
+The paint gate cannot detect a window that moves in large jumps while its
+controls remain together. `assess_pointer_tracking` now pairs independent
+held-pointer and native-frame observations during two real OS drags. Each drag
+needs at least 30 sound samples and 80 px of both pointer and edge travel; its
+95th-percentile edge lag and largest pointer travel while the edge is stationary
+must each stay within 24 px. Samples whose pointer/frame query spans more than
+20 ms are excluded. Synthetic smooth and jump cases and actual plain-Tk
+baselines establish the oracle: Genesis baseline p95 4 px and Mac baseline
+p95 3 px. A failed or unobserved drag cannot pass.
+
+The exact `d0e1412` Forge source still fails: Genesis p95 lag was 67/66 px,
+with 78/70 px stationary-edge pointer travel; Mac right-edge p95 lag was
+90/87 px with 47/49 px stationary-edge travel. Mac Library without records
+also lagged 40/43 px. `test_windows_resize_inflight_native.py` now requires
+both pixels and pointer tracking; `test_macos_resize_pointer_native.py` is in
+the Mac `native_surface_contract`. No packaging or release promotion can use
+the paint-only pass to clear this live-drag defect. The next fix must reduce
+the frame motion lag without bypassing either shared rendering or native edge
+authority.
 
 ## Header action material ownership — 2026-09-22
 

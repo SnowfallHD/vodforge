@@ -2,9 +2,55 @@
 
 import pytest
 from quality_harness.resize_observations import (
+    assess_pointer_tracking,
     overlapping_heartbeat_gaps,
     released_geometry_samples,
 )
+
+
+def _pointer_drag_rows(*, jump: bool):
+    events, samples = [], []
+    for drag in range(2):
+        begin = 1.0 + drag * 4.0
+        events.extend(
+            (
+                {"event": "drag_start", "t": begin},
+                {"event": "drag_end", "t": begin + 2.0},
+            )
+        )
+        for index in range(40):
+            pointer = 100 + index * 4
+            edge = 102 + (index // 12 * 12 * 4 if jump else index * 4)
+            samples.append(
+                {
+                    "sample_start": begin + index * 0.04,
+                    "t": begin + index * 0.04 + 0.002,
+                    "pointer": [pointer, 100],
+                    "rect": [0, 0, edge, 200],
+                    "pressed": True,
+                    "query_ms": 2,
+                }
+            )
+    return samples, events
+
+
+def test_native_pointer_edge_tracks_smooth_drag():
+    samples, events = _pointer_drag_rows(jump=False)
+    result = assess_pointer_tracking(samples, events)
+    assert result["passed"]
+    assert all(row["p95_edge_lag_px"] == 0 for row in result["drags"])
+
+
+def test_native_pointer_edge_rejects_jumping_drag_even_with_correct_endpoint():
+    samples, events = _pointer_drag_rows(jump=True)
+    result = assess_pointer_tracking(samples, events)
+    assert not result["passed"]
+    assert all(row["max_plateau_pointer_travel_px"] > 24 for row in result["drags"])
+
+
+def test_native_pointer_edge_requires_two_usable_drags():
+    samples, events = _pointer_drag_rows(jump=False)
+    assert not assess_pointer_tracking(samples[:20], events)["passed"]
 
 
 def test_first_released_geometry_is_not_discarded():
