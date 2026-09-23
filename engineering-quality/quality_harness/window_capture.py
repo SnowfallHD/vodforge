@@ -20,6 +20,10 @@ def _windows_capture(number: int, owner_pid: int):
     from PIL import ImageGrab
 
     user32 = C.windll.user32
+    user32.IsWindow.argtypes = [W.HWND]
+    user32.IsWindowVisible.argtypes = [W.HWND]
+    user32.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
+    user32.GetWindowRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
     if not user32.IsWindow(W.HWND(number)) or not user32.IsWindowVisible(
         W.HWND(number)
     ):

@@ -91,10 +91,13 @@ from yt_downloader.engagement_ui import EngagementUI
 
 if sys.platform == "win32":
     u = C.windll.user32
+    u.IsWindow.argtypes = [W.HWND]
+    u.IsWindowVisible.argtypes = [W.HWND]
     u.GetAncestor.argtypes = [W.HWND, W.UINT]
     u.GetAncestor.restype = W.HWND
     u.GetForegroundWindow.restype = W.HWND
     u.GetWindowRect.argtypes = [W.HWND, C.POINTER(W.RECT)]
+    u.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
     u.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
     u.SetForegroundWindow.argtypes = [W.HWND]
     u.GetDpiForWindow.argtypes = [W.HWND]
@@ -197,7 +200,15 @@ def window_dpi(hwnd):
 
 def shot(name):
     if sys.platform == "win32":
-        ImageGrab.grab().save(run / name)
+        # Keep even setup and settled evidence inside the attested HWND. A
+        # desktop grab can capture unrelated users' windows beside VODForge.
+        if not u.IsWindow(hwnd) or not u.IsWindowVisible(hwnd):
+            raise RuntimeError("Owned QA window unavailable for capture")
+        owner = W.DWORD()
+        u.GetWindowThreadProcessId(hwnd, C.byref(owner))
+        if owner.value != pid:
+            raise RuntimeError("QA window changed owner before capture")
+        ImageGrab.grab(window=hwnd).save(run / name)
     else:
         x, y, right, bottom = rect(hwnd)
         rectangle = ",".join(str(round(v)) for v in (x, y, right - x, bottom - y))

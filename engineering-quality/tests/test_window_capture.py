@@ -34,9 +34,23 @@ def test_windows_capture_requires_same_live_window_owner(monkeypatch, actual_pid
             pointer._obj.right, pointer._obj.bottom = 110, 70
             return 1
 
-    monkeypatch.setattr(
-        ctypes, "windll", SimpleNamespace(user32=User32()), raising=False
-    )
+    class NativeFunction:
+        def __init__(self, callback):
+            self.callback = callback
+            self.argtypes = None
+
+        def __call__(self, *args):
+            return self.callback(*args)
+
+    user32 = User32()
+    for name in (
+        "IsWindow",
+        "IsWindowVisible",
+        "GetWindowThreadProcessId",
+        "GetWindowRect",
+    ):
+        setattr(user32, name, NativeFunction(getattr(user32, name)))
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32), raising=False)
     monkeypatch.setattr(
         ImageGrab,
         "grab",
