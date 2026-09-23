@@ -39,6 +39,8 @@ same-size epochs. These thresholds were not changed.
 | Mac ordinary right-edge resize, r3 | Passed; 3/3 px p95, 3/3 px plateau. |
 | Genesis ordinary right-edge resize, r9 | Passed; 4/4 px p95, 4/4 px plateau. Sampled pixel epochs passed with no >2% lagging interior. |
 | Genesis rapid bottom-right corner, r10 | Passed; horizontal p95 16/9 px, vertical p95 11/6 px, fixed opposite edges. |
+| Genesis exact `688eb56` corner repeat | **Failed** the unchanged gate: horizontal p95 16/16 px, but one stationary-edge plateau reached 30 px. Opposite edges stayed fixed. |
+| Genesis plain Qt window, same rapid path | Passed; horizontal p95 15/14 px and plateau 8/15 px. |
 | Mac rapid bottom-right corner, r1/r2 | **Failed** the unchanged 24 px tracking gate. First horizontal plateau 29/37 px; second run first horizontal p95 36 px. Opposite edges remained fixed and settled UI stayed together. |
 | Mac plain Qt window, same rapid corner path | **Failed** the same gate; horizontal p95 30/23 px and plateau 29/30 px. This isolates a native window/trajectory floor of similar magnitude in one baseline run. |
 
@@ -53,6 +55,12 @@ otherwise normal native drags so the separate screen recorder can capture
 same-size epochs; this does not measure 120 moves/s corner pixels. Captures
 are owned-window server pixels, not physical display refresh. All results are
 source-native, not signed, packaged, or installed-app evidence.
+
+The Windows window-only capture after the exact corner repeat contained a
+black lower/right region; a plain Qt window's window-only capture showed the
+same region. That capture method cannot establish whether the visible desktop
+had a black region. The probe now also records the actual on-screen window
+region after corner drags, to resolve this before any visual claim.
 
 Local evidence is under ignored `build/qt-quick-native-*` and
 `build/qt-quick-genesis-*`. The Genesis QA scope is `E:\VODForgeQA` only.
@@ -75,8 +83,8 @@ ordinary run uses `--pixel-capture` in an interactive, unlocked session.
 
 The ordinary resize and Windows pixel results support Qt Quick as a promising
 renderer for VODForge's responsive view. The added Mac extreme-corner test
-fails even on a plain Qt window and needs a separate acceptance decision for
-that trajectory; its threshold was not weakened. A product port is justified
+fails even on a plain Qt window, and the Windows Forge result is intermittent;
+the threshold was not weakened. A product port is justified
 only after the real functional, accessibility, signed-package, installed-app,
 and release journeys pass on both platforms. No current release claim follows
 from this slice.

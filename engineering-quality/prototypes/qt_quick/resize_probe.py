@@ -231,6 +231,20 @@ def capture(hwnd: int, pid: int, path: Path) -> None:
         )
 
 
+def capture_screen_region(hwnd: int, pid: int, path: Path) -> None:
+    """Supplement window-only output with actual on-screen Windows pixels."""
+    if sys.platform != "win32":
+        return
+    foreground(hwnd, pid)
+    box = [round(value) for value in rect(hwnd, pid)]
+    if not (
+        0 <= box[0] < box[2] <= user32.GetSystemMetrics(0)
+        and 0 <= box[1] < box[3] <= user32.GetSystemMetrics(1)
+    ):
+        raise RuntimeError("Corner window is outside the visible desktop")
+    ImageGrab.grab(bbox=tuple(box)).save(path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qt-python", type=Path, required=True)
@@ -459,8 +473,16 @@ def main() -> int:
             )
             time.sleep(0.65)
             capture(hwnd, app_pid, run / f"settled-{index}.png")
+            if args.corner_stress:
+                capture_screen_region(
+                    hwnd, app_pid, run / f"settled-screen-{index}.png"
+                )
         stop.set()
         observer.join(timeout=2)
+        if args.corner_stress:
+            (run / "trace.json").write_text(
+                json.dumps({"events": events, "samples": samples})
+            )
         pointer_result = assess_pointer_tracking(samples, events)
         if args.corner_stress:
             vertical = [
