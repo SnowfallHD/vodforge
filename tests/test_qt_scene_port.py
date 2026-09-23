@@ -6,6 +6,7 @@ import re
 import time
 import wave
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtCore import QCoreApplication, QEvent, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
@@ -74,11 +75,24 @@ def test_qt_library_description_uses_current_detail_owner_and_shared_annotations
     QGuiApplication.instance() or QGuiApplication([])
     first = saved(tmp_path, "First", "MP4")
     second = saved(tmp_path, "Second", "MP4")
+    first["webpage_url"] = "https://example.com/media/first"
     bridge = qt_main.Bridge(None)
     try:
         bridge._runtime.history = [first, second]
         owners = [item["owner"] for item in bridge.collectionCandidates]
         assert bridge.openLibraryDetails(owners[0])
+        assert bridge.copyLibraryFact(owners[0], "source", "Channel")
+        assert QGuiApplication.clipboard().text() == "One channel"
+        assert not bridge.copyLibraryFact(owners[1], "source", "Channel")
+        assert not bridge.copyLibraryFact(owners[0], "source", "Unknown")
+        opened = []
+        monkeypatch.setattr(
+            qt_main,
+            "QDesktopServices",
+            SimpleNamespace(openUrl=lambda url: opened.append(url.toString()) or True),
+        )
+        assert bridge.openLibrarySource(owners[0])
+        assert opened == ["https://example.com/media/first"]
         assert bridge.libraryDetail["userDescription"] is False
         assert not bridge.saveLibraryDescription(owners[1], "Wrong subject")
         assert bridge.saveLibraryDescription(owners[0], "A private description")

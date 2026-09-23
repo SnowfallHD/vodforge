@@ -1791,6 +1791,41 @@ class Bridge(QObject):
             return ""
         return str(row.get(ANNOTATION_OWNER_KEY) or "")
 
+    def _detail_fact(self, owner: str, section: str, label: str) -> str | None:
+        if owner != self._library_detail_owner or self._library_scene_route != "detail":
+            return None
+        row = self._saved_item_for_owner(owner)
+        if row is None:
+            return None
+        source, output = library_detail_facts(row)
+        fields = {"source": source, "output": output}.get(section)
+        if fields is None:
+            return None
+        return next((value for name, value, _icon in fields if name == label), None)
+
+    @Slot(str, str, str, result=bool)
+    def copyLibraryFact(self, owner: str, section: str, label: str) -> bool:
+        value = self._detail_fact(owner, section, label)
+        if value is None:
+            return False
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            return False
+        clipboard.setText(value)
+        self._status = "Copied Library detail."
+        self.statusChanged.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def openLibrarySource(self, owner: str) -> bool:
+        value = self._detail_fact(owner, "source", "Source URL")
+        if value is None or not value.startswith(("https://", "http://")):
+            return False
+        url = QUrl(value)
+        if not url.isValid() or not url.host():
+            return False
+        return QDesktopServices.openUrl(url)
+
     @Slot(str, str, result=bool)
     def saveLibraryDescription(self, owner: str, value: str) -> bool:
         annotation_owner = self._detail_annotation_owner(owner)

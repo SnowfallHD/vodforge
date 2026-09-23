@@ -212,7 +212,9 @@ Item {
                         { title: "Output Details", fields: detail.item.output || [] }
                     ]
                     StoneField {
+                        id: factsPanel
                         required property var modelData
+                        readonly property string section: modelData.title === "Source Details" ? "source" : "output"
                         width: detail.compact ? factsRow.width : (factsRow.width - 16) / 2
                         height: factsColumn.childrenRect.height + 34
                         Column {
@@ -230,7 +232,32 @@ Item {
                                     width: factsColumn.width
                                     spacing: 12
                                     Text { text: modelData.label; width: Math.min(138, parent.width * 0.29); color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap }
-                                    Text { text: modelData.value; width: parent.width - Math.min(138, parent.width * 0.29) - 12; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere }
+                                    Text {
+                                        text: modelData.value
+                                        width: parent.width - Math.min(138, parent.width * 0.29) - 12 - (modelData.label === "Saved Location" ? 46 : 0)
+                                        color: modelData.label === "Source URL" ? theme.accent : theme.text
+                                        font.pixelSize: 14; wrapMode: Text.WrapAnywhere
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (modelData.label === "Source URL") detail.appBridge.openLibrarySource(detail.item.owner)
+                                                else detail.appBridge.copyLibraryFact(
+                                                    detail.item.owner,
+                                                    factsPanel.section,
+                                                    modelData.label)
+                                            }
+                                        }
+                                    }
+                                    StoneButton {
+                                        visible: modelData.label === "Saved Location"
+                                        label: "⧉"
+                                        accessibilityLabel: "Copy saved location"
+                                        size: "inline"
+                                        width: visible ? 34 : 0
+                                        height: 30
+                                        onActivated: detail.appBridge.copyLibraryFact(detail.item.owner, "output", "Saved Location")
+                                    }
                                 }
                             }
                         }
