@@ -9,6 +9,7 @@ from yt_downloader.app import DownloaderApp
 from yt_downloader.export_inputs import manual_export_settings, mp3_export_settings
 from yt_downloader.models import ExportMode, OutputType
 from yt_downloader.qt_quick.runtime import DownloadRuntime
+from yt_downloader.url_list_inputs import parse_url_list_text, read_url_list_file
 
 
 class _Value:
@@ -85,6 +86,33 @@ def test_mp3_choices_match_tk_adapter_and_qt_job(tmp_path: Path):
     assert job.mp3_settings == expected
     with pytest.raises(ValueError, match="custom cover image"):
         mp3_export_settings({"mp3_cover_art_mode": "Custom art"})
+
+
+def test_url_list_parser_and_qt_batch_job_use_the_same_source_order(tmp_path: Path):
+    lines = "# skip\nhttps://example.com/one title\n<https://example.com/two|Label>\n"
+    path = tmp_path / "sources.txt"
+    path.write_text(lines, encoding="utf-8")
+    urls = parse_url_list_text(lines)
+    assert (
+        read_url_list_file(path)
+        == urls
+        == [
+            "https://example.com/one",
+            "https://example.com/two",
+        ]
+    )
+    runtime = _idle_runtime()
+    job = runtime.start(
+        "",
+        tmp_path,
+        OutputType.MP4.value,
+        ExportMode.EVERYDAY.value,
+        urls=urls,
+        batch_mode=True,
+    )
+    assert job.url == urls[0]
+    assert job.urls == urls
+    assert job.batch_mode is True
 
 
 def _idle_runtime() -> DownloadRuntime:

@@ -99,6 +99,9 @@ class DownloadRuntime:
         preferences: DownloadPreferences | None = None,
         manual_settings: ManualExportSettings | None = None,
         mp3_settings: Mp3ExportSettings | None = None,
+        *,
+        urls: list[str] | None = None,
+        batch_mode: bool = False,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -109,20 +112,24 @@ class DownloadRuntime:
         if self.active_job is None and self.queued:
             self._launch_next_queued()
         preferences = preferences or DownloadPreferences()
-        url = url.strip()
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("Enter a complete video URL.")
-        if preferences.single_video_only:
-            source_error = single_video_url_requires_video_id_error(url)
-            if source_error:
-                raise ValueError(source_error)
+        selected_urls = [item.strip() for item in (urls or [url]) if item.strip()]
+        if not selected_urls:
+            raise ValueError("Enter a complete video URL or load a URL list.")
+        for item in selected_urls:
+            parsed = urlparse(item)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("Every URL must be a complete video URL.")
+            if preferences.single_video_only:
+                source_error = single_video_url_requires_video_id_error(item)
+                if source_error:
+                    raise ValueError(source_error)
+        url = selected_urls[0]
         selected_type = OutputType(output_type)
         selected_mode = ExportMode(export_mode)
         validate_output_directory_access(output_dir)
         job = DownloadJob(
             url=url,
-            urls=[url],
+            urls=selected_urls,
             output_dir=output_dir,
             output_type=selected_type,
             quality_label=quality_label,
@@ -135,6 +142,7 @@ class DownloadRuntime:
             if selected_type == OutputType.MP3
             else Mp3ExportSettings(),
             single_video_only=preferences.single_video_only,
+            batch_mode=batch_mode,
             use_nvenc=preferences.use_nvenc
             if selected_type == OutputType.MP4
             else False,
@@ -270,7 +278,22 @@ class DownloadRuntime:
         job = payload.get("job")
         info = payload.get("info")
         output_dir = payload.get("output_dir")
-        if job is not self.active_job or not isinstance(info, dict) or not output_dir:
+        active = self.active_job
+        same_batch_child = (
+            isinstance(job, DownloadJob)
+            and active is not None
+            and active.batch_mode
+            and job.run_id == active.run_id
+            and job.url in active.urls
+            and job.urls == [job.url]
+            and job.output_dir == active.output_dir
+            and job.output_type == active.output_type
+        )
+        if (
+            not (job is active or same_batch_child)
+            or not isinstance(info, dict)
+            or not output_dir
+        ):
             raise HistoryError("Stale or invalid download history event.")
         record_info = dict(info)
         record_info.pop("vodforge_preview_complete", None)

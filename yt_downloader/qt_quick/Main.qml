@@ -80,6 +80,12 @@ Window {
         nameFilters: ["Images (*.jpg *.jpeg *.png *.webp)"]
         onAccepted: bridge.setMp3CoverUrl(selectedFile)
     }
+    FileDialog {
+        id: urlListDialog
+        title: "Choose VODForge URL list"
+        nameFilters: ["Text files (*.txt)", "All files (*)"]
+        onAccepted: bridge.loadBatchUrl(selectedFile)
+    }
 
     Image {
         id: artwork
@@ -262,10 +268,18 @@ Window {
                     Layout.preferredHeight: 42
                     onActivated: outputFolderDialog.open()
                 }
-                Text {
-                    text: "Have local audio?"
-                    color: theme.muted
-                    font.pixelSize: 14
+                StoneButton {
+                    label: bridge.batchSummary === "No URL list loaded" ? "Load URL list" : "List loaded"
+                    Layout.preferredWidth: 111
+                    Layout.preferredHeight: 42
+                    onActivated: urlListDialog.open()
+                }
+                StoneButton {
+                    visible: bridge.batchSummary !== "No URL list loaded"
+                    label: "Clear"
+                    Layout.preferredWidth: 57
+                    Layout.preferredHeight: 42
+                    onActivated: bridge.clearBatchList()
                 }
                 StoneButton {
                     label: "Create video"
@@ -329,6 +343,14 @@ Window {
                     Layout.fillHeight: true
                     spacing: 18
                     Text { text: bridge.status; color: theme.muted; font.pixelSize: 15 }
+                    Text {
+                        visible: bridge.batchSummary !== "No URL list loaded"
+                        text: bridge.batchSummary
+                        color: theme.muted
+                        font.pixelSize: 14
+                        elide: Text.ElideMiddle
+                        Layout.fillWidth: true
+                    }
                     Text {
                         text: bridge.running ? "◌   Processing your media…" : "◌   Your next run’s progress will appear here."
                         color: theme.muted

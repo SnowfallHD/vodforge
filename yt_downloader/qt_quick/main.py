@@ -65,6 +65,7 @@ from yt_downloader.ui_button_contract import button_metrics
 from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
 from yt_downloader.ui_theme import FONT_UI_FAMILY, THEME, theme_motif
+from yt_downloader.url_list_inputs import read_url_list_file
 
 
 def qt_image(source: Image.Image) -> QImage:
@@ -146,6 +147,7 @@ class Bridge(QObject):
     localChanged = Signal()
     downloadOptionsChanged = Signal()
     exportSettingsChanged = Signal()
+    batchListChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -244,6 +246,8 @@ class Bridge(QObject):
         self._local_profile = LOCAL_VIDEO_PROFILE_OPTIONS[0]
         self._local_progress = ""
         self._local_running = False
+        self._batch_urls: list[str] = []
+        self._batch_name = ""
         self._event_log = event_log
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pump)
@@ -363,6 +367,12 @@ class Bridge(QObject):
     def mp3CoverName(self) -> str:
         return self._mp3_custom_cover.name if self._mp3_custom_cover else "Choose image"
 
+    @Property(str, notify=batchListChanged)
+    def batchSummary(self) -> str:
+        if not self._batch_urls:
+            return "No URL list loaded"
+        return f"{self._batch_name} · {len(self._batch_urls)} URL(s) loaded"
+
     @Property("QVariantList", notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
         return self._runtime.activity
@@ -466,6 +476,31 @@ class Bridge(QObject):
         self._mp3_custom_cover = Path(url.toLocalFile())
         self._mp3_values["mp3_cover_art_mode"] = "Custom art"
         self.exportSettingsChanged.emit()
+
+    @Slot(QUrl)
+    def loadBatchUrl(self, url: QUrl) -> None:
+        if not url.isLocalFile():
+            return
+        path = Path(url.toLocalFile())
+        try:
+            urls = read_url_list_file(path)
+            if not urls:
+                raise ValueError("That text file contains no http or https URLs.")
+        except (OSError, UnicodeError, ValueError) as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return
+        self._batch_urls = urls
+        self._batch_name = path.name
+        self._status = f"Loaded {len(urls)} URL(s). They will run one at a time."
+        self.batchListChanged.emit()
+        self.statusChanged.emit()
+
+    @Slot()
+    def clearBatchList(self) -> None:
+        self._batch_urls = []
+        self._batch_name = ""
+        self.batchListChanged.emit()
 
     @Slot()
     def startLocalConversion(self) -> None:
@@ -713,6 +748,8 @@ class Bridge(QObject):
                 self._download_preferences,
                 manual,
                 mp3,
+                urls=self._batch_urls if self._batch_urls else None,
+                batch_mode=bool(self._batch_urls),
             )
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)

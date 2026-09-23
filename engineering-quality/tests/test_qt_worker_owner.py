@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from yt_downloader.app import DownloaderApp, DownloadWorkerCore
 from yt_downloader.history import load_history
@@ -76,6 +79,50 @@ def test_qt_queue_survives_stopped_attempt_and_starts_next(
         ] == [first.run_id]
     finally:
         first_may_finish.set()
+        runtime.close()
+
+
+def test_qt_batch_children_commit_separate_history_and_reject_stale_child(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    history_path = tmp_path / "download-history.json"
+    monkeypatch.setattr(qt_runtime, "history_file_path", lambda: history_path)
+    monkeypatch.setattr(
+        qt_runtime, "run_state_file_path", lambda: tmp_path / "run.json"
+    )
+    output = tmp_path / "output"
+    output.mkdir()
+    urls = ["https://example.com/one", "https://example.com/two"]
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        monkeypatch.setattr(runtime, "_launch", lambda _job: None)
+        parent = runtime.start(
+            "", output, "MP4", "Everyday", urls=urls, batch_mode=True
+        )
+        runtime.active_job = parent
+        for index, url in enumerate(urls):
+            path = output / f"media-{index}.mp4"
+            path.write_bytes(b"media")
+            runtime._record_history(
+                {
+                    "job": replace(parent, url=url, urls=[url]),
+                    "info": {
+                        "id": f"item-{index}",
+                        "title": f"Item {index}",
+                        "vodforge_output_type": "MP4",
+                        "vodforge_output_path": str(path),
+                    },
+                    "output_dir": str(output),
+                }
+            )
+        assert len(load_history(history_path)) == 2
+        stale = replace(parent, run_id="unrelated", url=urls[0], urls=[urls[0]])
+        with pytest.raises(qt_runtime.HistoryError, match="Stale"):
+            runtime._record_history(
+                {"job": stale, "info": {"id": "stale"}, "output_dir": str(output)}
+            )
+        assert len(load_history(history_path)) == 2
+    finally:
         runtime.close()
 
 

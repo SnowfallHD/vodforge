@@ -39,10 +39,10 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
             self.history = records
             self.activity: list[dict[str, str]] = []
             self.active_job = None
-            self.submitted: list[tuple[Any, ...]] = []
+            self.submitted: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
-        def start(self, *arguments: Any) -> object:
-            self.submitted.append(arguments)
+        def start(self, *arguments: Any, **options: Any) -> object:
+            self.submitted.append((arguments, options))
             self.active_job = object()
             return self.active_job
 
@@ -98,7 +98,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         bridge._settings_writable = True
         bridge.submit("https://example.com/watch?v=example", "MP4")
         assert bridge.status == "Preparing download…"
-        assert bridge._runtime.submitted[0][6].video_bitrate_kbps == 10000
+        assert bridge._runtime.submitted[0][0][6].video_bitrate_kbps == 10000
     finally:
         bridge.close()
         application.processEvents()

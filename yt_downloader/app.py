@@ -362,6 +362,10 @@ from .updates import (
     update_ssl_context,
     verify_windows_authenticode,
 )
+from .url_list_inputs import (
+    parse_url_list_text,  # noqa: F401 - compatibility re-export
+    read_url_list_file,
+)
 from .version import __version__
 from .watch_queue import QueueContinuity, QueueToken, WatchQueueOwner
 from .watch_ui import WatchView
@@ -2550,27 +2554,6 @@ def output_artifact_matches_plan(
         # contract and let the reuse path regenerate the requested sidecar.
         require_sidecar=isinstance(sidecar_summary, dict),
     )
-
-
-def parse_url_list_text(text: str) -> list[str]:
-    urls: list[str] = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("<") and line.endswith(">") and "|" in line:
-            line = line[1:-1].split("|", 1)[0].strip()
-        else:
-            parts = line.split(maxsplit=1)
-            if parts:
-                line = parts[0].strip()
-        if line.startswith(("http://", "https://")):
-            urls.append(line)
-    return urls
-
-
-def read_url_list_file(path: Path) -> list[str]:
-    return parse_url_list_text(path.read_text(encoding="utf-8-sig"))
 
 
 def create_staging_dir(output_dir: Path) -> Path:

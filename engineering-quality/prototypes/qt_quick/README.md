@@ -13,6 +13,14 @@ choices now enter the same durable `DownloadJob` fields as Tk. Manual Override
 and MP3 output settings use shared Tk/Qt validation in `export_inputs.py` and
 enter the existing durable job fields. Their editors use `StoneButton` and
 `StoneField`; invalid inputs block submission.
+URL-list parsing now lives in one UI-independent owner used by Tk and Qt. Qt's
+Forge list selector passes the ordered URLs and batch flag to the existing
+serialized worker; a completed two-URL legal fixture created two distinct
+durable Library records. The initial trial exposed that the Qt history adapter
+accepted only the parent job object while the existing batch worker emits
+copied child jobs. The adapter now accepts only a child with the active run ID,
+listed source URL, output type and directory; a stale child regression rejects
+unrelated run IDs.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,
