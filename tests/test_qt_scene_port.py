@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 
+from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.library_artwork_source import ArtworkAsset
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
@@ -698,4 +699,98 @@ def test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges(
         bridge.dismissEditorial(True)
         assert bridge._settings["whats_new_seen"] == qt_main.SHOWCASE_ID
     finally:
+        bridge.close()
+
+
+def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        assert bridge.openWelcomeTour()
+        popup = window.findChild(QObject, "editorialPopup")
+        popup.open()
+        popup.setProperty("index", 1)
+        app.processEvents()
+        preview = window.findChild(QObject, "featurePreview")
+        assert preview.property("previewKey") == "original-audio"
+        options = next(
+            item
+            for item in preview.findChildren(QObject)
+            if item.metaObject().className().startswith("QQuickRepeater")
+            and item.property("model") == ["MP4", "MP3", "Original audio"]
+        )
+        choices = {item.objectName(): item for item in options.parent().childItems()}
+        assert all(
+            f"featurePreviewFormatOption_{name}" in choices
+            for name in ("MP4", "MP3", "Original_audio")
+        )
+        choices["featurePreviewFormatOption_MP3"].activated.emit()
+        app.processEvents()
+        assert preview.property("demoFormat") == "MP3"
+        assert (
+            window.findChild(QObject, "featurePreviewFormatField").property("label")
+            == "MP3  ▾"
+        )
+        popup.setProperty("index", 2)
+        preview.setProperty("activityStep", 6)
+        preview.setProperty("technical", True)
+        app.processEvents()
+        assert preview.property("previewKey") == "welcome-activity"
+        assert "selected format 270+251" in preview.findChild(
+            QObject, "featurePreviewActivityText"
+        ).property("text")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_output_mode_menu_uses_tk_shared_display_contract(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        popup = window.findChild(QObject, "optionsMenu")
+        popup.open()
+        app.processEvents()
+        labels = [option["label"] for option in bridge.exportModeOptions]
+        assert labels == EXPORT_MODES
+        assert "Strict Compliance" not in labels
+        options = next(
+            item
+            for item in popup.findChildren(QObject)
+            if item.metaObject().className().startswith("QQuickRepeater")
+            and item.property("model") == bridge.exportModeOptions
+        )
+        controls = {
+            item.property("label"): item
+            for item in options.parent().childItems()
+            if item.property("label") is not None
+        }
+        assert list(controls) == labels
+        controls["CTV"].activated.emit()
+        app.processEvents()
+        assert bridge.exportMode == "Auto CBR"
+        assert bridge.exportModeLabel == "CTV"
+        bridge.setExportMode("Manual Override")
+        assert bridge.exportModeLabel == "Custom"
+        assert bridge.describeExportMode("Custom")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()

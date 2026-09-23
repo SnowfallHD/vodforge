@@ -76,7 +76,13 @@ from yt_downloader.export_inputs import (
     mp3_export_settings,
     validate_custom_cover_art,
 )
-from yt_downloader.export_planning import QUALITY_OPTIONS
+from yt_downloader.export_planning import (
+    EXPORT_MODES,
+    QUALITY_OPTIONS,
+    export_mode_description,
+    export_mode_display_name,
+    export_mode_from_display_name,
+)
 from yt_downloader.forge_activity import ForgeActivityProjection
 from yt_downloader.history import (
     HistoryError,
@@ -1023,6 +1029,10 @@ class Bridge(QObject):
                 return mode.value
         return self._export_mode
 
+    @Property(str, notify=exportModeChanged)
+    def exportModeLabel(self) -> str:
+        return export_mode_display_name(self.exportMode)
+
     @Property(str, notify=outputFormatChanged)
     def outputFormat(self) -> str:
         return self._output_format
@@ -1546,6 +1556,20 @@ class Bridge(QObject):
     @Property("QVariantList", constant=True)
     def mp3QualityOptions(self) -> list[str]:
         return list(MP3_QUALITY_OPTIONS)
+
+    @Property("QVariantList", constant=True)
+    def exportModeOptions(self) -> list[dict[str, str]]:
+        return [
+            {"label": label, "value": export_mode_from_display_name(label).value}
+            for label in EXPORT_MODES
+        ]
+
+    @Slot(str, result=str)
+    def describeExportMode(self, value: str) -> str:
+        try:
+            return export_mode_description(value)
+        except ValueError:
+            return ""
 
     @Property("QVariantList", constant=True)
     def mp3SampleRateOptions(self) -> list[str]:

@@ -10,7 +10,22 @@ StoneField {
     property bool ignorePlaylists: false
     property string mode: "Everyday"
     property string cookieMode: "Browser"
+    property string demoFormat: "Original audio"
+    property int activityStep: 0
     interactive: false
+
+    Timer {
+        interval: preview.previewKey === "welcome-activity" ? 200 : 500
+        repeat: true
+        running: ["activity-mode", "welcome-activity"].indexOf(preview.previewKey) >= 0
+        onTriggered: {
+            preview.activityStep = (preview.activityStep + 1) % 15
+            if (preview.activityStep === 0 || preview.activityStep === 12)
+                preview.technical = false
+            else if (preview.activityStep === 6)
+                preview.technical = true
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -26,9 +41,20 @@ StoneField {
             smooth: true
         }
         Text {
+            objectName: "featurePreviewActivityText"
             visible: ["ui-activity", "activity-mode", "welcome-activity"].indexOf(preview.previewKey) >= 0
-            text: preview.technical ? "[download] Downloading media\n[info] Checking output\n[success] Download complete" :
-                                      "Getting video information\nDownloading media\nConverting media\nChecking the output\nDownload complete"
+            text: preview.previewKey === "ui-activity" ?
+                      "Getting video information\nDownloading media\nConverting media\nChecking the output\nDownload complete" :
+                  preview.technical ?
+                      ["Video 1 of 1: selected format 270+251",
+                       "Video 1 of 1: Auto CBR target 6000 kbps video + 192 kbps audio.",
+                       "Video 1 of 1: downloading",
+                       "Video 1 of 1: FFmpeg command started (1/1) using CPU libx264"].slice(0, Math.max(1, preview.activityStep - 5)).join("\n") :
+                      ["Video 1 of 1 — analyzing source formats",
+                       "Video 1 of 1 — downloading",
+                       "Video 1 of 1 — transcoding",
+                       "Video 1 of 1 — validating output",
+                       "Completed"].slice(0, Math.min(5, preview.activityStep + 1)).join("\n")
             color: theme.text
             font.family: monoFontFamily
             font.pixelSize: 13
@@ -51,12 +77,11 @@ StoneField {
             visible: ["output-settings", "ui-settings"].indexOf(preview.previewKey) >= 0
             label: preview.mode + "  ▾"
             Layout.fillWidth: true
-            onActivated: preview.mode = preview.mode === "Everyday" ? "Editing" : "Everyday"
+            onActivated: modePreview.open()
         }
         Text {
             visible: preview.previewKey === "output-settings"
-            text: preview.mode === "Everyday" ? "Balanced quality and speed for everyday downloads." :
-                                                     "Higher quality for editing and further processing."
+            text: bridge.describeExportMode(preview.mode)
             color: theme.muted; font.pixelSize: 13
             Layout.fillWidth: true; wrapMode: Text.WordWrap
         }
@@ -134,13 +159,60 @@ StoneField {
             color: theme.muted; font.pixelSize: 12
         }
         Text {
-            visible: ["transport", "original-audio"].indexOf(preview.previewKey) >= 0
-            text: preview.previewKey === "original-audio" ? "ORIGINAL AUDIO\nSave the original audio stream when available." :
-                                                               "Player controls  ·  Play  ·  Seek  ·  Volume"
+            visible: preview.previewKey === "ui-player"
+            text: "Player controls  ·  Play  ·  Seek  ·  Volume"
             color: theme.text; font.pixelSize: 14
             Layout.fillWidth: true; wrapMode: Text.WordWrap
         }
+        ColumnLayout {
+            visible: preview.previewKey === "original-audio"
+            Layout.fillWidth: true
+            spacing: 4
+            StoneButton {
+                objectName: "featurePreviewFormatField"
+                label: preview.demoFormat + "  ▾"
+                accessibilityLabel: "Example output format"
+                Layout.fillWidth: true
+                onActivated: preview.demoFormat = "Original audio"
+            }
+            Repeater {
+                model: ["MP4", "MP3", "Original audio"]
+                StoneButton {
+                    required property string modelData
+                    objectName: "featurePreviewFormatOption_" + modelData.replace(" ", "_")
+                    label: modelData
+                    selected: preview.demoFormat === modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 39
+                    onActivated: preview.demoFormat = modelData
+                }
+            }
+        }
         Item { Layout.fillHeight: true }
+    }
+    Popup {
+        id: modePreview
+        x: Math.max(0, (preview.width - width) / 2)
+        y: Math.max(0, (preview.height - height) / 2)
+        width: Math.min(300, preview.width - 12)
+        height: 6 * 39 + 6
+        padding: 3
+        background: StoneField {}
+        Column {
+            anchors.fill: parent
+            spacing: 0
+            Repeater {
+                model: bridge.exportModeOptions
+                StoneButton {
+                    required property var modelData
+                    width: parent.width
+                    height: 39
+                    label: modelData.label
+                    selected: preview.mode === modelData.label
+                    onActivated: { preview.mode = modelData.label; modePreview.close() }
+                }
+            }
+        }
     }
     Popup {
         id: browserPreview

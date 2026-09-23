@@ -748,7 +748,7 @@ Window {
                     Text {
                         text: bridge.forgePreview.phase !== "idle" ?
                               bridge.forgePreview.creator + "  ·  " + bridge.forgePreview.type :
-                              bridge.quality + "  ·  " + bridge.exportMode
+                              bridge.quality + "  ·  " + bridge.exportModeLabel
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
@@ -862,7 +862,7 @@ Window {
                     Text {
                         text: window.showingForgePreview ?
                               "Preview: " + window.forgeDisplayType + " · metadata only" :
-                              "Output: " + window.outputFormat + " · " + bridge.exportMode
+                              "Output: " + window.outputFormat + " · " + bridge.exportModeLabel
                         color: theme.muted
                         font.pixelSize: 14
                         wrapMode: Text.WordWrap
@@ -881,7 +881,7 @@ Window {
                         color: theme.muted
                         font.pixelSize: 14
                     }
-                    Text { text: window.showingForgePreview ? "Output mode     Preview only" : "Output mode     " + bridge.exportMode; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: window.showingForgePreview ? "Output mode     Preview only" : "Output mode     " + bridge.exportModeLabel; color: theme.muted; font.pixelSize: 14 }
                     Item { Layout.fillHeight: true }
                 }
             }
@@ -1629,7 +1629,7 @@ Window {
                         visible: window.outputFormat === "MP4"
                         Layout.fillWidth: true
                         StoneButton { label: "Quality: " + bridge.quality; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
-                        StoneButton { label: "Output mode: " + bridge.exportMode; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
+                        StoneButton { label: "Output mode: " + bridge.exportModeLabel; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); optionsMenu.open() } }
                     }
                     StoneButton { visible: window.outputFormat === "MP4" && bridge.exportMode === "Manual Override"; label: "Manual MP4 settings"; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); manualOptionsPopup.open() } }
                     Text { visible: window.outputFormat === "MP4"; text: "MP4 OUTPUT FILES"; color: theme.muted; font.pixelSize: 13; font.bold: true }
@@ -2058,16 +2058,16 @@ Window {
                 spacing: 3
                 Text { text: "Output mode"; color: theme.muted; font.pixelSize: 13; height: 25 }
                 Repeater {
-                    model: ["Everyday", "Streaming", "Editing", "Sharing", "Auto CBR", "Strict Compliance", "Manual Override"]
+                    model: bridge.exportModeOptions
                     StoneButton {
-                        required property string modelData
+                        required property var modelData
                         width: parent.width; height: 40
-                        label: modelData
-                        selected: bridge.exportMode === modelData
+                        label: modelData.label
+                        selected: bridge.exportMode === modelData.value
                         onActivated: {
-                            bridge.setExportMode(modelData)
+                            bridge.setExportMode(modelData.value)
                             optionsMenu.close()
-                            if (modelData === "Manual Override") manualOptionsPopup.open()
+                            if (modelData.value === "Manual Override") manualOptionsPopup.open()
                         }
                     }
                 }
