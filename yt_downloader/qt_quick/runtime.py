@@ -97,6 +97,8 @@ class DownloadRuntime:
         export_mode: str,
         quality_label: str = "1080p Full HD",
         preferences: DownloadPreferences | None = None,
+        manual_settings: ManualExportSettings | None = None,
+        mp3_settings: Mp3ExportSettings | None = None,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -125,8 +127,13 @@ class DownloadRuntime:
             output_type=selected_type,
             quality_label=quality_label,
             export_mode=selected_mode,
-            manual_settings=ManualExportSettings(),
-            mp3_settings=Mp3ExportSettings(),
+            manual_settings=manual_settings or ManualExportSettings()
+            if selected_type == OutputType.MP4
+            and selected_mode == ExportMode.MANUAL_OVERRIDE
+            else ManualExportSettings(),
+            mp3_settings=mp3_settings or Mp3ExportSettings()
+            if selected_type == OutputType.MP3
+            else Mp3ExportSettings(),
             single_video_only=preferences.single_video_only,
             use_nvenc=preferences.use_nvenc
             if selected_type == OutputType.MP4

@@ -10,8 +10,9 @@ output, quality, and mode preferences use the existing settings store. The
 existing local MP3 plus still-image transaction owner also feeds Qt and Library.
 The first six MP4 output presets and the persisted MP4 sidecar/encoder/playlist
 choices now enter the same durable `DownloadJob` fields as Tk. Manual Override
-is retained from saved settings but blocked at submission until its editor is
-ported, preventing an incorrect default manual export.
+and MP3 output settings use shared Tk/Qt validation in `export_inputs.py` and
+enter the existing durable job fields. Their editors use `StoneButton` and
+`StoneField`; invalid inputs block submission.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,
@@ -56,6 +57,10 @@ non-widget class; the remaining product owners still need port qualification.
   validated 720p MP4; a second run through the Qt bridge committed the output
   into durable Library history. The shared-control QML dialog was rendered
   and inspected. Library filter/Play source-index regression passes.
+- Mac legal source fixture: Quality-mode Manual MP4 and nondefault 256 kbps,
+  mono MP3 jobs each completed through the Qt runtime with one valid output.
+  Shared Tk/Qt export-input regressions passed; the Manual and MP3 QML editors
+  were rendered and inspected in isolated profile screenshots.
 - Genesis exact `86ef55c`: QA-only source and fixture hashes verified, real
   MP4 worker/Library/ffprobe proof passed, offscreen Qt Multimedia advanced,
   and physical Forge/Options/Library/Watch screens were inspected. The first

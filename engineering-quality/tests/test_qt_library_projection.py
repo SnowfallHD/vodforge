@@ -39,6 +39,12 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
             self.history = records
             self.activity: list[dict[str, str]] = []
             self.active_job = None
+            self.submitted: list[tuple[Any, ...]] = []
+
+        def start(self, *arguments: Any) -> object:
+            self.submitted.append(arguments)
+            self.active_job = object()
+            return self.active_job
 
         def close(self) -> None:
             pass
@@ -91,7 +97,8 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         bridge.setExportMode("Manual Override")
         bridge._settings_writable = True
         bridge.submit("https://example.com/watch?v=example", "MP4")
-        assert "full Qt editor" in bridge.status
+        assert bridge.status == "Preparing download…"
+        assert bridge._runtime.submitted[0][6].video_bitrate_kbps == 10000
     finally:
         bridge.close()
         application.processEvents()

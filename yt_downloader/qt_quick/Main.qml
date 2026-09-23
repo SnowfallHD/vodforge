@@ -74,6 +74,12 @@ Window {
         nameFilters: ["Images (*.jpg *.jpeg *.png *.webp)"]
         onAccepted: bridge.setLocalImageUrl(selectedFile)
     }
+    FileDialog {
+        id: mp3CoverDialog
+        title: "Choose MP3 cover image"
+        nameFilters: ["Images (*.jpg *.jpeg *.png *.webp)"]
+        onAccepted: bridge.setMp3CoverUrl(selectedFile)
+    }
 
     Image {
         id: artwork
@@ -206,7 +212,7 @@ Window {
                     label: "Options"
                     Layout.preferredWidth: 100
                     Layout.preferredHeight: 44
-                    onActivated: optionsMenu.open()
+                    onActivated: window.outputFormat === "MP3" ? mp3OptionsPopup.open() : optionsMenu.open()
                 }
                 StoneButton {
                     label: bridge.running ? "Queue" : "Download"
@@ -514,6 +520,130 @@ Window {
     }
 
     Popup {
+        id: manualOptionsPopup
+        objectName: "manualOptionsPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(650, window.width - 40)
+        height: 482
+        padding: 18
+        modal: true
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 9
+            Text { text: "Manual MP4 settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text { text: "Review the codec and rate settings before a Manual Override run."; color: theme.muted; font.pixelSize: 14 }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 16
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 6
+                    Text { text: "Rate control"; color: theme.muted; font.pixelSize: 13 }
+                    StoneButton { label: bridge.manualValues.manual_rate_control; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_rate_control", bridge.manualValues.manual_rate_control === "CBR" ? "Quality" : "CBR") }
+                    Text { text: "Video bitrate (kbps)"; color: theme.muted; font.pixelSize: 13 }
+                    StoneField {
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        TextField { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; padding: 0; verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 15; text: bridge.manualValues.manual_video_bitrate; enabled: bridge.manualValues.manual_rate_control === "CBR"; color: theme.text; background: Item {} onEditingFinished: bridge.setManualValue("manual_video_bitrate", text) }
+                    }
+                    Text { text: "Quality CRF"; color: theme.muted; font.pixelSize: 13 }
+                    StoneField {
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        TextField { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; padding: 0; verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 15; text: bridge.manualValues.manual_crf; enabled: bridge.manualValues.manual_rate_control === "Quality"; color: theme.text; background: Item {} onEditingFinished: bridge.setManualValue("manual_crf", text) }
+                    }
+                    Text { text: "x264 preset"; color: theme.muted; font.pixelSize: 13 }
+                    StoneButton {
+                        label: bridge.manualValues.manual_preset + "  ▾"; Layout.fillWidth: true; Layout.preferredHeight: 39
+                        onActivated: {
+                            var choices = ["ultrafast", "veryfast", "fast", "medium", "slow"]
+                            bridge.setManualValue("manual_preset", choices[(choices.indexOf(bridge.manualValues.manual_preset) + 1) % choices.length])
+                        }
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 6
+                    Text { text: "Audio bitrate (kbps)"; color: theme.muted; font.pixelSize: 13 }
+                    StoneField {
+                        Layout.fillWidth: true; Layout.preferredHeight: 40
+                        TextField { anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; padding: 0; verticalAlignment: TextInput.AlignVCenter; font.pixelSize: 15; text: bridge.manualValues.manual_audio_bitrate; color: theme.text; background: Item {} onEditingFinished: bridge.setManualValue("manual_audio_bitrate", text) }
+                    }
+                    Text { text: "Audio codec"; color: theme.muted; font.pixelSize: 13 }
+                    StoneButton { label: bridge.manualValues.manual_audio_codec; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_audio_codec", bridge.manualValues.manual_audio_codec === "AAC" ? "MP3" : "AAC") }
+                    Text { text: "Audio sample rate"; color: theme.muted; font.pixelSize: 13 }
+                    StoneButton { label: bridge.manualValues.manual_sample_rate === "48000" ? "48 kHz" : "44.1 kHz"; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_sample_rate", bridge.manualValues.manual_sample_rate === "48000" ? "44100" : "48000") }
+                    Text { text: "Audio channels"; color: theme.muted; font.pixelSize: 13 }
+                    StoneButton { label: bridge.manualValues.manual_channels; Layout.fillWidth: true; Layout.preferredHeight: 39; onActivated: bridge.setManualValue("manual_channels", bridge.manualValues.manual_channels === "Stereo" ? "Mono" : "Stereo") }
+                }
+            }
+            Text { text: bridge.status; color: theme.muted; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Done"; Layout.preferredWidth: 84; Layout.preferredHeight: 40; onActivated: manualOptionsPopup.close() }
+            }
+        }
+    }
+    Popup {
+        id: mp3OptionsPopup
+        objectName: "mp3OptionsPopup"
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        width: Math.min(560, window.width - 40)
+        height: 420
+        padding: 18
+        modal: true
+        background: Rectangle { color: theme.bg; border.color: theme.border; radius: 10 }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 9
+            Text { text: "MP3 output settings"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Repeater {
+                model: [
+                    { key: "mp3_quality", title: "Quality", choices: bridge.mp3QualityOptions },
+                    { key: "mp3_sample_rate", title: "Sample rate", choices: bridge.mp3SampleRateOptions },
+                    { key: "mp3_channels", title: "Channels", choices: bridge.mp3ChannelOptions },
+                    { key: "mp3_cover_art_mode", title: "Cover art", choices: bridge.mp3CoverOptions }
+                ]
+                RowLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 47
+                    Text { text: modelData.title; color: theme.muted; font.pixelSize: 14; Layout.preferredWidth: 95 }
+                    StoneButton {
+                        label: bridge.mp3Values[modelData.key] + "  ▾"
+                        Layout.fillWidth: true; Layout.preferredHeight: 39
+                        onActivated: {
+                            var choices = modelData.choices
+                            bridge.setMp3Value(modelData.key, choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length])
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true; Layout.preferredHeight: 45
+                Text { text: "Embed metadata"; color: theme.muted; font.pixelSize: 14; Layout.fillWidth: true }
+                StoneButton { label: bridge.mp3Values.mp3_embed_metadata ? "On" : "Off"; selected: bridge.mp3Values.mp3_embed_metadata; Layout.preferredWidth: 74; Layout.preferredHeight: 38; onActivated: bridge.setMp3Metadata(!bridge.mp3Values.mp3_embed_metadata) }
+            }
+            RowLayout {
+                visible: bridge.mp3Values.mp3_cover_art_mode === "Custom art"
+                Layout.fillWidth: true
+                Text { text: bridge.mp3CoverName; color: theme.muted; font.pixelSize: 14; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                StoneButton { label: "Choose image"; Layout.preferredWidth: 130; Layout.preferredHeight: 38; onActivated: mp3CoverDialog.open() }
+            }
+            Item { Layout.fillHeight: true }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                StoneButton { label: "Done"; Layout.preferredWidth: 84; Layout.preferredHeight: 40; onActivated: mp3OptionsPopup.close() }
+            }
+        }
+    }
+    Popup {
         id: settingsPopup
         objectName: "downloadSettingsPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -649,7 +779,11 @@ Window {
                     height: 44
                     label: modelData
                     selected: window.outputFormat === modelData
-                    onActivated: { bridge.setOutputFormat(modelData); formatMenu.close() }
+                    onActivated: {
+                        bridge.setOutputFormat(modelData)
+                        formatMenu.close()
+                        if (modelData === "MP3") mp3OptionsPopup.open()
+                    }
                 }
             }
         }
@@ -671,13 +805,17 @@ Window {
                 spacing: 3
                 Text { text: "Output mode"; color: theme.muted; font.pixelSize: 13; height: 25 }
                 Repeater {
-                    model: ["Everyday", "Streaming", "Editing", "Sharing", "Auto CBR", "Strict Compliance"]
+                    model: ["Everyday", "Streaming", "Editing", "Sharing", "Auto CBR", "Strict Compliance", "Manual Override"]
                     StoneButton {
                         required property string modelData
                         width: parent.width; height: 40
                         label: modelData
                         selected: bridge.exportMode === modelData
-                        onActivated: { bridge.setExportMode(modelData); optionsMenu.close() }
+                        onActivated: {
+                            bridge.setExportMode(modelData)
+                            optionsMenu.close()
+                            if (modelData === "Manual Override") manualOptionsPopup.open()
+                        }
                     }
                 }
             }

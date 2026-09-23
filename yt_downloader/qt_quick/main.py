@@ -30,6 +30,15 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from yt_downloader.app import validate_custom_cover_art
+from yt_downloader.export_inputs import (
+    MP3_CHANNEL_OPTIONS,
+    MP3_COVER_ART_OPTIONS,
+    MP3_QUALITY_OPTIONS,
+    MP3_SAMPLE_RATE_OPTIONS,
+    manual_export_settings,
+    mp3_export_settings,
+)
 from yt_downloader.export_planning import QUALITY_OPTIONS
 from yt_downloader.history import HistoryError, history_output_path
 from yt_downloader.library_search import LIBRARY_ALL_MEDIA, library_visible_indices
@@ -136,6 +145,7 @@ class Bridge(QObject):
     libraryTypeChanged = Signal()
     localChanged = Signal()
     downloadOptionsChanged = Signal()
+    exportSettingsChanged = Signal()
 
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
@@ -166,6 +176,37 @@ class Bridge(QObject):
                 for field in fields(DownloadPreferences)
             }
         )
+        self._manual_values = {
+            key: str(value)
+            if (value := self._settings.get(key)) is not None
+            else default
+            for key, default in {
+                "manual_rate_control": "CBR",
+                "manual_crf": "21",
+                "manual_video_bitrate": "10000",
+                "manual_audio_bitrate": "320",
+                "manual_audio_codec": "AAC",
+                "manual_sample_rate": "48000",
+                "manual_channels": "Stereo",
+                "manual_preset": "medium",
+            }.items()
+        }
+        self._mp3_values: dict[str, str | bool] = {
+            "mp3_quality": str(
+                self._settings.get("mp3_quality", "Maximum — 320 kbps CBR")
+            ),
+            "mp3_sample_rate": str(
+                self._settings.get("mp3_sample_rate", "Preserve source")
+            ),
+            "mp3_channels": str(self._settings.get("mp3_channels", "Preserve source")),
+            "mp3_cover_art_mode": str(
+                self._settings.get("mp3_cover_art_mode", "No Art")
+            ),
+            "mp3_embed_metadata": self._settings.get("mp3_embed_metadata") is not False,
+        }
+        if self._mp3_values["mp3_cover_art_mode"] == "Custom art":
+            self._mp3_values["mp3_cover_art_mode"] = "No Art"
+        self._mp3_custom_cover: Path | None = None
         self._status = self._runtime.recovery_notice or (
             "Settings need attention before changes can be saved."
             if not self._settings_writable
@@ -294,6 +335,34 @@ class Bridge(QObject):
     def downloadOptions(self) -> dict[str, bool]:
         return asdict(self._download_preferences)
 
+    @Property("QVariantMap", notify=exportSettingsChanged)
+    def manualValues(self) -> dict[str, str]:
+        return dict(self._manual_values)
+
+    @Property("QVariantMap", notify=exportSettingsChanged)
+    def mp3Values(self) -> dict[str, str | bool]:
+        return dict(self._mp3_values)
+
+    @Property("QVariantList", constant=True)
+    def mp3QualityOptions(self) -> list[str]:
+        return list(MP3_QUALITY_OPTIONS)
+
+    @Property("QVariantList", constant=True)
+    def mp3SampleRateOptions(self) -> list[str]:
+        return list(MP3_SAMPLE_RATE_OPTIONS)
+
+    @Property("QVariantList", constant=True)
+    def mp3ChannelOptions(self) -> list[str]:
+        return list(MP3_CHANNEL_OPTIONS)
+
+    @Property("QVariantList", constant=True)
+    def mp3CoverOptions(self) -> list[str]:
+        return list(MP3_COVER_ART_OPTIONS)
+
+    @Property(str, notify=exportSettingsChanged)
+    def mp3CoverName(self) -> str:
+        return self._mp3_custom_cover.name if self._mp3_custom_cover else "Choose image"
+
     @Property("QVariantList", notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
         return self._runtime.activity
@@ -357,6 +426,46 @@ class Bridge(QObject):
         )
         self.downloadOptionsChanged.emit()
         self._schedule_preferences_save()
+
+    @Slot(str, str)
+    def setManualValue(self, key: str, value: str) -> None:
+        if key not in self._manual_values or len(value) > 32:
+            return
+        if self._manual_values[key] == value:
+            return
+        self._manual_values[key] = value
+        self.exportSettingsChanged.emit()
+        self._schedule_preferences_save()
+
+    @Slot(str, str)
+    def setMp3Value(self, key: str, value: str) -> None:
+        allowed = {
+            "mp3_quality": MP3_QUALITY_OPTIONS,
+            "mp3_sample_rate": MP3_SAMPLE_RATE_OPTIONS,
+            "mp3_channels": MP3_CHANNEL_OPTIONS,
+            "mp3_cover_art_mode": MP3_COVER_ART_OPTIONS,
+        }
+        if key not in allowed or value not in allowed[key]:
+            return
+        self._mp3_values[key] = value
+        if key == "mp3_cover_art_mode" and value != "Custom art":
+            self._mp3_custom_cover = None
+        self.exportSettingsChanged.emit()
+        self._schedule_preferences_save()
+
+    @Slot(bool)
+    def setMp3Metadata(self, enabled: bool) -> None:
+        self._mp3_values["mp3_embed_metadata"] = enabled
+        self.exportSettingsChanged.emit()
+        self._schedule_preferences_save()
+
+    @Slot(QUrl)
+    def setMp3CoverUrl(self, url: QUrl) -> None:
+        if not url.isLocalFile():
+            return
+        self._mp3_custom_cover = Path(url.toLocalFile())
+        self._mp3_values["mp3_cover_art_mode"] = "Custom art"
+        self.exportSettingsChanged.emit()
 
     @Slot()
     def startLocalConversion(self) -> None:
@@ -439,6 +548,11 @@ class Bridge(QObject):
             "quality": self._quality,
             "export_mode": self._export_mode,
             **self.downloadOptions,
+            **self._manual_values,
+            **self._mp3_values,
+            "mp3_cover_art_mode": "No Art"
+            if self._mp3_custom_cover is not None
+            else self._mp3_values["mp3_cover_art_mode"],
         }
         try:
             save_settings(self._settings_path, updated)
@@ -574,10 +688,22 @@ class Bridge(QObject):
                 raise SettingsError(
                     "Settings need attention before a download can start."
                 )
-            if self._export_mode == ExportMode.MANUAL_OVERRIDE.value:
-                raise ValueError(
-                    "Manual Override settings need the full Qt editor before this run."
+            selected_type = OutputType(output_format)
+            manual = (
+                manual_export_settings(self._manual_values)
+                if selected_type == OutputType.MP4
+                and self._export_mode == ExportMode.MANUAL_OVERRIDE.value
+                else None
+            )
+            mp3 = (
+                mp3_export_settings(
+                    self._mp3_values,
+                    custom_cover_path=self._mp3_custom_cover,
+                    validate_cover=validate_custom_cover_art,
                 )
+                if selected_type == OutputType.MP3
+                else None
+            )
             job = self._runtime.start(
                 value,
                 Path(self._output_path),
@@ -585,6 +711,8 @@ class Bridge(QObject):
                 self._export_mode,
                 self._quality,
                 self._download_preferences,
+                manual,
+                mp3,
             )
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)

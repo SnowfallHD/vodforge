@@ -57,6 +57,14 @@ from .detail_ui import FactsText, OutputDetailsDialog
 from .download_error_presentation import technical_download_error
 from .encoding_summary import AUDIO_SUMMARY_COMPARISON_ROWS, SUMMARY_COMPARISON_ROWS
 from .engagement_ui import EngagementUI
+from .export_inputs import (
+    MP3_CHANNEL_OPTIONS,
+    MP3_COVER_ART_OPTIONS,
+    MP3_QUALITY_OPTIONS,
+    MP3_SAMPLE_RATE_OPTIONS,
+    manual_export_settings,
+    mp3_export_settings,
+)
 from .export_planning import (
     DEFAULT_MAX_HEIGHT,
     EXPORT_MODES,
@@ -449,22 +457,6 @@ DOWNLOAD_EXTRACTOR_RETRIES = 5
 NETWORK_RETRY_MAX_DELAY_SECONDS = 15.0
 VIDEO_TARGET_BITRATE = "10M"
 AUDIO_BITRATE = "320k"
-MP3_IN_MP4_BITRATES_KBPS = (
-    32,
-    40,
-    48,
-    56,
-    64,
-    80,
-    96,
-    112,
-    128,
-    160,
-    192,
-    224,
-    256,
-    320,
-)
 THUMBNAIL_MAX_BYTES = 300 * 1024
 THUMBNAIL_MAX_PIXELS = 16_000_000
 THUMBNAIL_MAX_DIMENSION = 8192
@@ -476,23 +468,6 @@ PROGRESS_EVENT_INTERVAL_SECONDS = 0.10
 MAX_CONCURRENT_BLOCKING_ANALYSES = 2
 MAX_QUEUED_PREVIEW_REQUESTS = 64
 _BLOCKING_ANALYSIS_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_BLOCKING_ANALYSES)
-MP3_QUALITY_OPTIONS = {
-    "Maximum — 320 kbps CBR": 320,
-    "High — 256 kbps CBR": 256,
-    "Standard — 192 kbps CBR": 192,
-    "Compact — 128 kbps CBR": 128,
-}
-MP3_SAMPLE_RATE_OPTIONS = {
-    "Preserve source": None,
-    "48 kHz — video / DAW": "48000",
-    "44.1 kHz — music": "44100",
-}
-MP3_CHANNEL_OPTIONS = {
-    "Preserve source": None,
-    "Stereo": "2",
-    "Mono": "1",
-}
-MP3_COVER_ART_OPTIONS = ("No Art", "YouTube art", "Custom art")
 DEFAULT_IGNORE_PLAYLISTS = True
 BACKEND_TEMP_OUTPUT_NAME = "__vodforge-tmp.mp4"
 BACKEND_ORIGINAL_BACKUP_NAME = "__vodforge-original.mp4"
@@ -10155,32 +10130,16 @@ class DownloaderApp(
         self.cookie_source_var.set(source.value)
 
     def _mp3_export_settings(self) -> Mp3ExportSettings:
-        quality_label = self.mp3_quality_var.get()
-        sample_rate_label = self.mp3_sample_rate_var.get()
-        channels_label = self.mp3_channels_var.get()
-        if quality_label not in MP3_QUALITY_OPTIONS:
-            raise ValueError("Choose a valid MP3 quality setting.")
-        if sample_rate_label not in MP3_SAMPLE_RATE_OPTIONS:
-            raise ValueError("Choose a valid MP3 sample-rate setting.")
-        if channels_label not in MP3_CHANNEL_OPTIONS:
-            raise ValueError("Choose a valid MP3 channel setting.")
-        cover_mode = self.mp3_cover_art_mode_var.get()
-        if cover_mode not in MP3_COVER_ART_OPTIONS:
-            raise ValueError("Choose a valid MP3 cover-art setting.")
-        custom_cover = (
-            self.mp3_custom_cover_art_path if cover_mode == "Custom art" else None
-        )
-        if custom_cover is not None:
-            custom_cover = validate_custom_cover_art(custom_cover)
-        if cover_mode == "Custom art" and custom_cover is None:
-            raise ValueError("Choose a custom cover image or select No Art.")
-        return Mp3ExportSettings(
-            bitrate_kbps=MP3_QUALITY_OPTIONS[quality_label],
-            sample_rate=MP3_SAMPLE_RATE_OPTIONS[sample_rate_label],
-            channels=MP3_CHANNEL_OPTIONS[channels_label],
-            embed_metadata=self.mp3_embed_metadata_var.get(),
-            embed_cover_art=cover_mode == "YouTube art",
-            custom_cover_art_path=custom_cover,
+        return mp3_export_settings(
+            {
+                "mp3_quality": self.mp3_quality_var.get(),
+                "mp3_sample_rate": self.mp3_sample_rate_var.get(),
+                "mp3_channels": self.mp3_channels_var.get(),
+                "mp3_cover_art_mode": self.mp3_cover_art_mode_var.get(),
+                "mp3_embed_metadata": self.mp3_embed_metadata_var.get(),
+            },
+            custom_cover_path=self.mp3_custom_cover_art_path,
+            validate_cover=validate_custom_cover_art,
         )
 
     def _choose_mp3_custom_cover_art(self) -> bool:
@@ -13331,54 +13290,20 @@ class DownloaderApp(
             dialog.refresh_manual_settings(manual_override)
 
     def _manual_export_settings(self) -> ManualExportSettings:
-        def positive_int(value: str, label: str, low: int, high: int) -> int:
-            try:
-                parsed = int(str(value).strip())
-            except ValueError as exc:
-                raise ValueError(f"{label} must be a whole number.") from exc
-            if parsed < low or parsed > high:
-                unit = "" if label == "Video quality CRF" else " kbps"
-                raise ValueError(f"{label} must be between {low} and {high}{unit}.")
-            return parsed
-
-        channels_label = self.manual_channels_var.get()
-        channels = "1" if channels_label == "Mono" else "2"
-        audio_codec = ManualAudioCodec(self.manual_audio_codec_var.get())
-        audio_bitrate_kbps = positive_int(
-            self.manual_audio_bitrate_var.get(),
-            "Manual audio bitrate",
-            32,
-            1024,
-        )
-        if (
-            audio_codec is ManualAudioCodec.MP3
-            and audio_bitrate_kbps not in MP3_IN_MP4_BITRATES_KBPS
-        ):
-            choices = ", ".join(str(value) for value in MP3_IN_MP4_BITRATES_KBPS)
-            raise ValueError(
-                "MP3 audio bitrate must be one of the encoder-supported values: "
-                f"{choices} kbps."
-            )
-        quality_control = (
-            self.__dict__.get("manual_rate_control_var") is not None
-            and self.manual_rate_control_var.get() == "Quality"
-        )
-        return ManualExportSettings(
-            video_bitrate_kbps=positive_int(
-                self.manual_video_bitrate_var.get(), "Manual video bitrate", 100, 100000
-            )
-            if not quality_control
-            else STRICT_VIDEO_BITRATE_KBPS,
-            audio_bitrate_kbps=audio_bitrate_kbps,
-            audio_sample_rate=self.manual_sample_rate_var.get() or AUDIO_SAMPLE_RATE,
-            audio_channels=channels,
-            audio_codec=audio_codec,
-            x264_preset=self.manual_preset_var.get() or "medium",
-            video_crf=positive_int(
-                self.manual_crf_var.get(), "Video quality CRF", 1, 51
-            )
-            if quality_control
-            else None,
+        rate_control = self.__dict__.get("manual_rate_control_var")
+        return manual_export_settings(
+            {
+                "manual_rate_control": rate_control.get() if rate_control else "CBR",
+                "manual_video_bitrate": self.manual_video_bitrate_var.get(),
+                "manual_audio_bitrate": self.manual_audio_bitrate_var.get(),
+                "manual_audio_codec": self.manual_audio_codec_var.get(),
+                "manual_sample_rate": self.manual_sample_rate_var.get(),
+                "manual_channels": self.manual_channels_var.get(),
+                "manual_preset": self.manual_preset_var.get(),
+                "manual_crf": self.manual_crf_var.get()
+                if self.__dict__.get("manual_crf_var") is not None
+                else "21",
+            }
         )
 
     def _browse_output(self) -> None:
