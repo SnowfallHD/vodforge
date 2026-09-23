@@ -70,6 +70,16 @@ def _windows_capture(
 
         reject_foreign_overlap()
         bitmap = ImageGrab.grab(bbox=box)
+        owner_after = W.DWORD()
+        if (
+            not user32.IsWindow(W.HWND(number))
+            or not user32.IsWindowVisible(W.HWND(number))
+            or not user32.GetWindowThreadProcessId(
+                W.HWND(number), C.byref(owner_after)
+            )
+            or owner_after.value != owner_pid
+        ):
+            raise RuntimeError("Windows capture target changed owner during grab")
         after = W.RECT()
         if not user32.GetWindowRect(W.HWND(number), C.byref(after)) or not (
             after.left + 20 <= left < right <= after.right - 20

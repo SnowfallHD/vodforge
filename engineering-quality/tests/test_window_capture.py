@@ -74,15 +74,16 @@ def test_windows_capture_requires_same_live_window_owner(monkeypatch, actual_pid
 
 
 @pytest.mark.parametrize(
-    ("covered", "outside", "error"),
+    ("covered", "outside", "covered_after", "error"),
     [
-        (False, False, None),
-        (True, False, "Foreign window covers"),
-        (False, True, "left the owned window"),
+        (False, False, False, None),
+        (True, False, False, "Foreign window covers"),
+        (False, True, False, "left the owned window"),
+        (False, False, True, "Foreign window covers"),
     ],
 )
 def test_screen_interior_rejects_foreign_or_outside_pixels(
-    monkeypatch, covered, outside, error
+    monkeypatch, covered, outside, covered_after, error
 ):
     calls = []
 
@@ -108,7 +109,11 @@ def test_screen_interior_rejects_foreign_or_outside_pixels(
 
         def GetWindowRect(self, hwnd, pointer):
             if getattr(hwnd, "value", hwnd) == 90:
-                rectangle = (40, 40, 80, 80) if covered else (300, 300, 400, 400)
+                rectangle = (
+                    (40, 40, 80, 80)
+                    if covered or covered_after
+                    else (300, 300, 400, 400)
+                )
             else:
                 rectangle = (10, 20, 185 if outside else 210, 170)
             (
@@ -120,7 +125,12 @@ def test_screen_interior_rejects_foreign_or_outside_pixels(
             return 1
 
         def GetWindow(self, hwnd, _command):
-            return 90 if getattr(hwnd, "value", hwnd) == 75 and covered else 0
+            return (
+                90
+                if getattr(hwnd, "value", hwnd) == 75
+                and (covered or (covered_after and calls))
+                else 0
+            )
 
     user32 = User32()
     for name in (
@@ -143,7 +153,7 @@ def test_screen_interior_rejects_foreign_or_outside_pixels(
     if error:
         with pytest.raises(RuntimeError, match=error):
             capture()
-        assert calls == []
+        assert calls == ([{"bbox": (30, 40, 170, 140)}] if covered_after else [])
     else:
         bitmap, bounds = capture()
         assert bitmap.size == (140, 100)

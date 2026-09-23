@@ -4,8 +4,10 @@
 
 `test_windows_resize_inflight_native.py` is required by the Windows
 `native_surface_contract`. It runs the real Forge window in an interactive
-session, injects two OS window-edge drags, and records its exact owned HWND from
-a separate process every 50 ms. The static fixture fails when an interior frame
+session, injects two OS window-edge drags, and samples a fixed, verified
+interior crop of its owned HWND from a separate process every 50 ms. A sample
+is discarded if native bounds change during the grab; foreign top-level
+overlap is checked before and after it. The static fixture fails when an interior frame
 is still more than 2% different from the end of the same-size interval after
 200 ms. Both drags must change native window width by at least 80 px, and at
 least four distinct window sizes must be captured. Empty or missing transition
@@ -18,17 +20,23 @@ Forge held one window size for up to 1.9 seconds while the composer, labels,
 buttons and Run Deck repainted in stages. A plain Tk baseline followed the
 same drag without the long holds. Restricting the existing shared matte
 projection to redraw text on actual widget/content changes improved callback
-gaps and geometry cadence, but the exact Windows native gate still fails.
+gaps and geometry cadence, but the exact Windows native gate still fails. The
+`4427088` source-native Genesis run had two admitted native drags (315 and
+327 px), a maximum overlapping timer gap of 98.8 ms, and a same-bounds
+Forge epoch still 5.4% different after 403 ms. Root Configure was delivered
+before that epoch, but the old breakpoint layout remained visible.
 This is a **release blocker**; the sampled HWND frames are server-side window
 pixels, not physical display refresh or packaged-app proof. Do not claim the
 resize is fixed from a settled screenshot, an empty capture, or the improved
 timing alone.
 
-The diagnostic recorder captures only the attested VODForge HWND. A trial
-desktop crop could include pixels outside the window during a live drag; that
-capture path and its cropped frames were removed. Win32 descendant compositing
-also corrupted the own-window settled capture and was discarded. Neither
-experiment is a runtime fix. Keep physical display and packaged validation
+The diagnostic recorder saves only a fixed interior of the attested VODForge
+HWND. An earlier moving desktop crop could include pixels outside the window;
+those frames were removed. An earlier recorder also associated pixels with
+bounds read before a 60–70 ms grab, even if the window resized during it.
+`test_window_capture.py` now rejects that mixed-size case. Win32 descendant
+compositing was tested in an isolated QA candidate; it failed both pixel and
+timer gates and was removed. Keep physical display and packaged validation
 separate after the source-native gate passes.
 
 ## Header action material ownership — 2026-09-22
