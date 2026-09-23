@@ -37,6 +37,9 @@ parser.add_argument(
     "--no-deck-thumbnails", action="store_true", help="Attribution only: omit Run Deck artwork"
 )
 parser.add_argument(
+    "--no-run-deck", action="store_true", help="Attribution only: omit Run Deck records"
+)
+parser.add_argument(
     "--baseline",
     action="store_true",
     help="Representative Tk controls without app layout work",
@@ -422,6 +425,8 @@ with (
         app = DownloaderApp()
         if args.no_deck_thumbnails:
             app._focus_thumbnail_source_for_record = lambda _record: None
+        if args.no_run_deck:
+            app._focus_run_records = lambda: []
     app.title("VODForge Resize QA")
     app.geometry("1100x740+30+30")
     base = approved_metadata()
