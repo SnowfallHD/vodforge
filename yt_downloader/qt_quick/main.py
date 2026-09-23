@@ -3394,7 +3394,7 @@ class Bridge(QObject):
                     + ("\n" if self._forge_technical else "")
                     + str(payload)
                 )[-50_000:]
-            elif kind in {"history_record", "job_metadata"}:
+            elif kind in {"history_record", "job_metadata", "item_terminal"}:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
                 if kind in {"partial", "error"} and active_job_before is not None:

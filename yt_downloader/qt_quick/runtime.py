@@ -517,6 +517,9 @@ class DownloadRuntime:
                 if job is self.active_job and isinstance(info, dict):
                     job.preview_info = info
                     self._activity_upsert(job, "Running", "Processing media")
+            elif kind == "item_terminal":
+                if not self._record_item_terminal(payload):
+                    continue
             elif kind == "job_log" and isinstance(payload, dict):
                 job = payload.get("job")
                 active = self.active_job
@@ -546,6 +549,33 @@ class DownloadRuntime:
         ):
             self._launch_next_queued()
         return result
+
+    def _record_item_terminal(self, payload: Any) -> bool:
+        """Persist one playlist child before exposing its retryable Library row."""
+        if not isinstance(payload, dict):
+            return False
+        child = payload.get("job")
+        info = payload.get("info")
+        active = self.active_job
+        if not (
+            isinstance(child, DownloadJob)
+            and isinstance(info, dict)
+            and active is not None
+            and child.origin_run_id == active.run_id
+            and child.execution_run_id == active.run_id
+            and child.run_id != active.run_id
+            and child.terminal_status in {"Failed", "Stopped", "Skipped"}
+        ):
+            return False
+        terminal = replace(child, preview_info=dict(info))
+        self.recovery.terminal_attempt(
+            terminal, terminal.terminal_status, terminal.terminal_message
+        )
+        self.recovered = self.recovery.store.load_terminal_jobs()
+        self._activity_upsert(
+            terminal, terminal.terminal_status, terminal.terminal_message
+        )
+        return True
 
     def _record_history(self, payload: dict[str, Any]) -> None:
         job = payload.get("job")
