@@ -48,25 +48,27 @@ def _windows_capture(
             and bounds.top + 20 <= top < bottom <= bounds.bottom - 20
         ):
             raise RuntimeError("Interior capture left the owned window")
-        # Reject every visible foreign top-level window above the QA window
-        # whose bounds touch the capture region. The desktop itself is never
-        # saved; only this fixed, always-inside rectangle is read.
-        above = user32.GetWindow(W.HWND(number), 3)  # GW_HWNDPREV
-        while above:
-            if user32.IsWindowVisible(above):
-                other = W.RECT()
-                if user32.GetWindowRect(above, C.byref(other)):
-                    foreign_pid = W.DWORD()
-                    user32.GetWindowThreadProcessId(above, C.byref(foreign_pid))
-                    if (
-                        foreign_pid.value != owner_pid
-                        and other.left < right
-                        and other.right > left
-                        and other.top < bottom
-                        and other.bottom > top
-                    ):
-                        raise RuntimeError("Foreign window covers interior QA capture")
-            above = user32.GetWindow(above, 3)
+        def reject_foreign_overlap() -> None:
+            # A different top-level window could cover the crop during the
+            # grab, so inspect z-order on both sides of that operation.
+            above = user32.GetWindow(W.HWND(number), 3)  # GW_HWNDPREV
+            while above:
+                if user32.IsWindowVisible(above):
+                    other = W.RECT()
+                    if user32.GetWindowRect(above, C.byref(other)):
+                        foreign_pid = W.DWORD()
+                        user32.GetWindowThreadProcessId(above, C.byref(foreign_pid))
+                        if (
+                            foreign_pid.value != owner_pid
+                            and other.left < right
+                            and other.right > left
+                            and other.top < bottom
+                            and other.bottom > top
+                        ):
+                            raise RuntimeError("Foreign window covers interior QA capture")
+                above = user32.GetWindow(above, 3)
+
+        reject_foreign_overlap()
         bitmap = ImageGrab.grab(bbox=box)
         after = W.RECT()
         if not user32.GetWindowRect(W.HWND(number), C.byref(after)) or not (
@@ -74,6 +76,13 @@ def _windows_capture(
             and after.top + 20 <= top < bottom <= after.bottom - 20
         ):
             raise RuntimeError("Interior capture crossed a moving window edge")
+        reject_foreign_overlap()
+        if (
+            bounds.left, bounds.top, bounds.right, bounds.bottom
+        ) != (after.left, after.top, after.right, after.bottom):
+            # The screenshot spans two geometry epochs. Treating it as a
+            # same-size sample invents delayed paint at responsive breakpoints.
+            return None, None
     else:
         bitmap = ImageGrab.grab(window=number)
     if bitmap.width <= 0 or bitmap.height <= 0:
@@ -148,6 +157,9 @@ def main() -> int:
                     Quartz.CGImageGetBytesPerRow(raw),
                 )
                 bounds = None
+            if bitmap is None:
+                time.sleep(max(0, args.interval - (time.monotonic() - origin - begin)))
+                continue
             frames.append(
                 {
                     "begin": begin,

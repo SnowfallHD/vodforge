@@ -36,7 +36,9 @@ def assess_static_resize_frames(
     The Forge QA fixture is idle and static. Cursor blinking and edge movement
     occupy much less than two percent of its inner surface. A frame still more
     than two percent different 200 ms after a geometry step is incomplete.
-    These are sampled PrintWindow images, not physical display presentation.
+    These are fixed on-screen interior samples from an attested window. Each
+    accepted sample kept the same native bounds throughout its capture; this
+    measures server pixels, not physical display presentation.
     """
     if not frames:
         return {"passed": False, "reason": "No in-flight window pixels captured"}

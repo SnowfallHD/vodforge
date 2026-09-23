@@ -149,3 +149,55 @@ def test_screen_interior_rejects_foreign_or_outside_pixels(
         assert bitmap.size == (140, 100)
         assert bounds == [10, 20, 210, 170]
         assert calls == [{"bbox": (30, 40, 170, 140)}]
+
+
+def test_screen_interior_discards_a_grab_that_crossed_native_geometry(monkeypatch):
+    calls = []
+
+    class NativeFunction:
+        def __init__(self, callback):
+            self.callback = callback
+            self.argtypes = None
+            self.restype = None
+
+        def __call__(self, *args):
+            return self.callback(*args)
+
+    class User32:
+        def IsWindow(self, _hwnd):
+            return 1
+
+        def IsWindowVisible(self, _hwnd):
+            return 1
+
+        def GetWindowThreadProcessId(self, _hwnd, pointer):
+            pointer._obj.value = 422
+            return 1
+
+        def GetWindowRect(self, _hwnd, pointer):
+            right = 210 if not calls else 250
+            pointer._obj.left, pointer._obj.top = 10, 20
+            pointer._obj.right, pointer._obj.bottom = right, 170
+            return 1
+
+        def GetWindow(self, _hwnd, _command):
+            return 0
+
+    user32 = User32()
+    for name in (
+        "IsWindow", "IsWindowVisible", "GetWindowThreadProcessId",
+        "GetWindowRect", "GetWindow",
+    ):
+        setattr(user32, name, NativeFunction(getattr(user32, name)))
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32), raising=False)
+    monkeypatch.setattr(
+        ImageGrab,
+        "grab",
+        lambda **kwargs: calls.append(kwargs) or Image.new("RGB", (140, 100)),
+    )
+
+    bitmap, bounds = _windows_capture(
+        75, 422, method="screen-interior", box=(30, 40, 170, 140)
+    )
+    assert bitmap is None and bounds is None
+    assert calls == [{"bbox": (30, 40, 170, 140)}]
