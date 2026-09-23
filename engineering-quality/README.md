@@ -54,12 +54,14 @@ must each stay within 24 px. Samples whose pointer/frame query spans more than
 baselines establish the oracle: Genesis baseline p95 4 px and Mac baseline
 p95 3 px. A failed or unobserved drag cannot pass.
 
-The exact `d0e1412` Forge source still fails: Genesis p95 lag was 67/66 px,
-with 78/70 px stationary-edge pointer travel; Mac right-edge p95 lag was
-90/87 px with 47/49 px stationary-edge travel. Mac Library without records
-also lagged 40/43 px. `test_windows_resize_inflight_native.py` now requires
-both pixels and pointer tracking; `test_macos_resize_pointer_native.py` is in
-the Mac `native_surface_contract`. No packaging or release promotion can use
+The exact `d0e1412` Forge source still fails: Genesis corner-drag p95 lag was
+67/66 px, with 78/70 px stationary-edge pointer travel; Mac right-edge p95
+lag was 90/87 px with 47/49 px stationary-edge travel. A clean `e31d6e1`
+Genesis right-edge run without pixel capture still failed at 44/47 px p95,
+versus the 4 px plain-Tk baseline. Mac Library without records also lagged
+40/43 px. Windows runs separate required pixel and right-edge pointer tests;
+`test_macos_resize_pointer_native.py` is required by the Mac
+`native_surface_contract`. No packaging or release promotion can use
 the paint-only pass to clear this live-drag defect. The next fix must reduce
 the frame motion lag without bypassing either shared rendering or native edge
 authority.

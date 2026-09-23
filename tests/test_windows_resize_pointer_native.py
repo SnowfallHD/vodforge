@@ -1,4 +1,4 @@
-"""Windows release gate for controls that repaint one by one during resize."""
+"""Windows native frame edge must stay with the held pointer during resize."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ import pytest
     sys.platform != "win32" or os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1",
     reason="Interactive Windows native display required",
 )
-def test_forge_controls_remain_complete_during_live_resize(tmp_path):
+def test_forge_frame_tracks_pointer_during_live_resize(tmp_path):
     checkout = Path(os.environ["VODFORGE_NATIVE_SOURCE_ROOT"])
-    output = tmp_path / "resize"
+    output = tmp_path / "resize-pointer"
     completed = subprocess.run(
         [
             sys.executable,
@@ -32,8 +32,9 @@ def test_forge_controls_remain_complete_during_live_resize(tmp_path):
             "forge",
             "--drag-count",
             "2",
-            "--pixel-capture",
-            "--assert-inflight-pixels",
+            "--edge",
+            "right",
+            "--assert-pointer-tracking",
             "--auto-continue",
         ],
         cwd=checkout,
@@ -42,8 +43,8 @@ def test_forge_controls_remain_complete_during_live_resize(tmp_path):
         timeout=180,
         check=False,
     )
-    assessment = output / "pixel-assessment.json"
-    evidence = json.loads(assessment.read_text()) if assessment.exists() else None
+    report = output / "pointer-assessment.json"
+    evidence = json.loads(report.read_text()) if report.exists() else None
     assert completed.returncode == 0, {
         "assessment": evidence,
         "stdout": completed.stdout[-2000:],

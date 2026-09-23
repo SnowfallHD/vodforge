@@ -85,6 +85,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal"):
                     [
                         "tests/test_windows_surface_capture_native.py",
                         "tests/test_windows_resize_inflight_native.py",
+                        "tests/test_windows_resize_pointer_native.py",
                     ]
                     if sys.platform == "win32"
                     else []
