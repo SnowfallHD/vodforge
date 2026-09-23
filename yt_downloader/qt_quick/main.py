@@ -44,7 +44,7 @@ from yt_downloader.export_inputs import (
 from yt_downloader.export_planning import QUALITY_OPTIONS
 from yt_downloader.history import (
     HistoryError,
-    history_annotation_owner,
+    history_archive_owner,
     history_output_path,
 )
 from yt_downloader.library_annotations import (
@@ -56,6 +56,12 @@ from yt_downloader.library_search import (
     LIBRARY_ALL_MEDIA,
     library_categories,
     library_visible_indices,
+)
+from yt_downloader.library_state import (
+    ANNOTATION_OWNER_KEY,
+    PROJECTION_OWNER_KEY,
+    RUN_STATUS_KEY,
+    LibraryProjectionOwner,
 )
 from yt_downloader.local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
@@ -178,6 +184,7 @@ class Bridge(QObject):
             diagnostic=lambda _message: setattr(self, "_annotations_writable", False),
         )
         self._annotations.load()
+        self._library_projection = LibraryProjectionOwner()
         self._annotation_owner = ""
         self._annotation_values = {"note": "", "tags": "", "category": ""}
         self._local = LocalConversionRuntime()
@@ -325,15 +332,26 @@ class Bridge(QObject):
         return self._playback_url
 
     @Property("QVariantList", notify=historyChanged)
-    def history(self) -> list[dict[str, str]]:
-        projected = self._projected_history()
+    def history(self) -> list[dict[str, Any]]:
+        projected = self._projected_library()
+        history_owners = {
+            history_archive_owner(row): index
+            for index, row in enumerate(self._runtime.history)
+        }
         return [
             {
-                "sourceIndex": index,
+                "projectionIndex": index,
+                "sourceIndex": history_owners.get(
+                    str(item.get(PROJECTION_OWNER_KEY) or ""), -1
+                ),
                 "title": str(item.get("title") or "Untitled media"),
                 "type": str(item.get("vodforge_output_type") or "MP4"),
-                "path": str(item.get("vodforge_output_path") or ""),
                 "category": str(item.get("vodforge_user_category") or ""),
+                "status": str(
+                    item.get("vodforge_terminal_status")
+                    or item.get(RUN_STATUS_KEY)
+                    or ""
+                ),
             }
             for index in library_visible_indices(
                 projected,
@@ -344,20 +362,19 @@ class Bridge(QObject):
             for item in [projected[index]]
         ]
 
-    def _projected_history(self) -> list[dict[str, Any]]:
-        projected: list[dict[str, Any]] = []
-        for source in self._runtime.history:
-            row: dict[str, Any] = dict(source)
-            annotation = self._annotations.annotation_for(
-                history_annotation_owner(source)
-            )
-            row["vodforge_user_note"] = annotation.note
-            row["vodforge_user_tags"] = list(annotation.tags)
-            row["vodforge_user_category"] = annotation.category
-            if annotation.description is not None:
-                row["vodforge_user_description"] = annotation.description
-            projected.append(row)
-        return projected
+    @Property(int, notify=historyChanged)
+    def savedCount(self) -> int:
+        return len(self._runtime.history)
+
+    def _projected_library(self) -> list[dict[str, Any]]:
+        projection = self._library_projection.reconcile(
+            history_items=self._runtime.history,
+            active_job=self._runtime.active_job,
+            queued_jobs=getattr(self._runtime, "queued", []),
+            terminal_jobs=getattr(self._runtime, "recovered", []),
+            annotations=self._annotations.snapshot,
+        )
+        return [dict(row) for row in projection.rows]
 
     @Property(str, notify=libraryCategoryChanged)
     def libraryCategory(self) -> str:
@@ -365,7 +382,7 @@ class Bridge(QObject):
 
     @Property("QVariantList", notify=historyChanged)
     def libraryCategories(self) -> list[str]:
-        return [LIBRARY_ALL_CATEGORIES, *library_categories(self._projected_history())]
+        return [LIBRARY_ALL_CATEGORIES, *library_categories(self._projected_library())]
 
     @Property("QVariantMap", notify=annotationChanged)
     def annotationValues(self) -> dict[str, str]:
@@ -499,9 +516,12 @@ class Bridge(QObject):
 
     @Slot(int, result=bool)
     def openAnnotation(self, index: int) -> bool:
-        if not 0 <= index < len(self._runtime.history):
+        rows = self._projected_library()
+        if not 0 <= index < len(rows):
             return False
-        self._annotation_owner = history_annotation_owner(self._runtime.history[index])
+        self._annotation_owner = str(rows[index].get(ANNOTATION_OWNER_KEY) or "")
+        if not self._annotation_owner:
+            return False
         annotation = self._annotations.annotation_for(self._annotation_owner)
         self._annotation_values = {
             "note": annotation.note,
@@ -840,12 +860,13 @@ class Bridge(QObject):
             elif kind == "status":
                 self._status = str(payload)
                 self.statusChanged.emit()
-            elif kind == "history_record":
+            elif kind in {"history_record", "job_metadata"}:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
                 self._status = str(payload)
                 self.statusChanged.emit()
                 self.runningChanged.emit()
+                self.historyChanged.emit()
         if events:
             self.activityChanged.emit()
             self.runningChanged.emit()
@@ -920,6 +941,7 @@ class Bridge(QObject):
         else:
             self.clearBatchList()
             self.sourceAccepted.emit()
+            self.historyChanged.emit()
             self._progress = 0.0
             self.progressChanged.emit()
             self.runningChanged.emit()

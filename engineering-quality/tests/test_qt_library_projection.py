@@ -17,6 +17,7 @@ from PySide6.QtTest import QSignalSpy
 
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.qt_quick import main as qt_main
+from yt_downloader.qt_quick import runtime as qt_runtime
 from yt_downloader.settings_store import load_settings
 
 
@@ -112,6 +113,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         assert bridge._runtime.submitted[0][1]["batch_mode"] is True
         assert bridge.batchSummary == "No URL list loaded"
         assert accepted.count() == 1
+        bridge._runtime.active_job = None
         assert bridge.openAnnotation(1)
         assert bridge.saveAnnotation("Private note", "serendipity, audio", "Saved")
         assert "vodforge_user_note" not in records[1]
@@ -177,6 +179,67 @@ def test_qt_annotation_editor_preserves_malformed_private_ledger(
         assert bridge.openAnnotation(0)
         assert not bridge.saveAnnotation("new note", "tag", "Group")
         assert ledger.read_bytes() == b"{malformed private data"
+    finally:
+        bridge.close()
+        application.processEvents()
+
+
+def test_qt_library_uses_shared_projection_for_active_queued_and_terminal_rows(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    application = QGuiApplication.instance() or QGuiApplication([])
+    output = tmp_path / "output"
+    output.mkdir()
+    maker = qt_runtime.DownloadRuntime.__new__(qt_runtime.DownloadRuntime)
+    maker._closing = False
+    maker.recovery_notice = None
+    maker.active_job = None
+    maker.worker = None
+    maker.queued = []
+    maker._launch = lambda _job: None
+    active, queued, terminal = [
+        maker.start(f"https://example.com/{name}", output, "MP4", "Everyday")
+        for name in ("active", "queued", "terminal")
+    ]
+    terminal.terminal_status = "Failed"
+    terminal.terminal_message = "Source unavailable"
+
+    class Runtime:
+        def __init__(self) -> None:
+            self.recovery_notice = None
+            self.history_path = tmp_path / "history.json"
+            self.history = [
+                {"id": "saved", "title": "Saved", "vodforge_output_type": "MP4"}
+            ]
+            self.active_job = active
+            self.queued = [queued]
+            self.recovered = [terminal]
+            self.activity: list[dict[str, str]] = []
+
+        def close(self) -> None:
+            pass
+
+    class LocalRuntime:
+        def poll(self) -> list[Any]:
+            return []
+
+        def close(self) -> bool:
+            return True
+
+    monkeypatch.setattr(qt_main, "DownloadRuntime", Runtime)
+    monkeypatch.setattr(qt_main, "LocalConversionRuntime", LocalRuntime)
+    monkeypatch.setattr(
+        qt_main, "settings_file_path", lambda: tmp_path / "settings.json"
+    )
+    bridge = qt_main.Bridge(None)
+    try:
+        rows = bridge.history
+        assert [row["status"] for row in rows] == ["Preparing", "Queued", "Failed", ""]
+        assert [row["sourceIndex"] for row in rows] == [-1, -1, -1, 0]
+        assert bridge.savedCount == 1
+        assert bridge.openAnnotation(rows[1]["projectionIndex"])
+        assert bridge.saveAnnotation("queued note", "later", "Queue")
+        assert bridge.history[1]["category"] == "Queue"
     finally:
         bridge.close()
         application.processEvents()

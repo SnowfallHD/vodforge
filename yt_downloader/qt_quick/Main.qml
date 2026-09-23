@@ -404,7 +404,7 @@ Window {
                     anchors.margins: 17
                     spacing: 8
                     Text { text: "Recent downloads"; color: theme.text; font.pixelSize: 16; font.bold: true }
-                    Text { text: bridge.history.length + " saved item(s) in Library"; color: theme.muted; font.pixelSize: 14 }
+                    Text { text: bridge.savedCount + " saved item(s) in Library"; color: theme.muted; font.pixelSize: 14 }
                 }
             }
             RowLayout {
@@ -464,15 +464,16 @@ Window {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 Text { text: modelData.title; color: theme.text; font.pixelSize: 17; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: modelData.type; color: theme.muted; font.pixelSize: 13 }
+                                Text { text: modelData.type + (modelData.status ? " · " + modelData.status : ""); color: theme.muted; font.pixelSize: 13 }
                             }
                             StoneButton {
                                 label: "Organize"
                                 Layout.preferredWidth: 95
                                 Layout.preferredHeight: 38
-                                onActivated: { if (bridge.openAnnotation(modelData.sourceIndex)) annotationPopup.open() }
+                                onActivated: { if (bridge.openAnnotation(modelData.projectionIndex)) annotationPopup.open() }
                             }
                             StoneButton {
+                                visible: modelData.sourceIndex >= 0
                                 label: "Play"
                                 Layout.preferredWidth: 72
                                 Layout.preferredHeight: 38

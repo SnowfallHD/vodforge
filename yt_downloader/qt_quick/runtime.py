@@ -374,6 +374,7 @@ class DownloadRuntime:
         self._activity_upsert(job, status, message)
         if status in {"Failed", "Stopped"}:
             self.recovery.terminal(status, message, activity_lines=job.activity_lines)
+            self.recovered = self.recovery.store.load_terminal_jobs()
         if status not in {"Failed", "Stopped"}:
             self.recovery.finished(job.run_id, application_closing=self._closing)
         self.active_job = None

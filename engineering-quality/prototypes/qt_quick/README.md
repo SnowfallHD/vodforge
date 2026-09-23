@@ -32,8 +32,11 @@ completed history for search and category filtering. The Organize dialog edits
 notes, tags, and category through shared stone controls, preserving any separate
 description and refusing to overwrite a malformed annotation ledger. A fresh
 Bridge reload proves the saved values survive restart without modifying provider
-history metadata. This is a completed-history slice; active/queued Library rows,
-archive file operations, and other Library actions still need porting.
+history metadata. The Qt view now asks the existing `LibraryProjectionOwner` for
+completed, active, queued, and retained terminal rows. It retains the original
+history index only for playable saved media; live and terminal rows can be
+organized without pretending to have a local file. Archive file operations
+and other Library actions still need porting.
 
 This is not a replacement application or release candidate. Forge's remaining
 options, Library management, complete Watch behavior,
