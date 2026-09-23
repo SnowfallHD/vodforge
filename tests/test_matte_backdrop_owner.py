@@ -8,7 +8,10 @@ import yt_downloader.ui_materials as materials
 def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):
     palette = ["violet"]
     photo = object()
-    root = SimpleNamespace(_matte_texture=("violet", photo))
+    extent = (1200, 800)
+    root = SimpleNamespace(
+        _matte_extent=extent, _matte_texture=(("violet", extent), photo)
+    )
     calls = []
 
     class Canvas:
@@ -43,10 +46,11 @@ def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):
         def tag_lower(self, *args):
             calls.append(("lower", args))
 
-    anchor = SimpleNamespace(x=10, width=240, y=20)
+    anchor = SimpleNamespace(x=10, width=240, height=120, y=20)
     anchor.winfo_rootx = lambda: anchor.x
     anchor.winfo_rooty = lambda: anchor.y
     anchor.winfo_width = lambda: anchor.width
+    anchor.winfo_height = lambda: anchor.height
     canvas = Canvas()
     canvas._matte_anchor = anchor
     monkeypatch.setattr(materials, "theme_palette_snapshot", lambda: palette[0])
@@ -72,7 +76,7 @@ def test_backdrop_repositions_only_on_actual_scene_motion(monkeypatch):
     assert len(calls) == first_count + 1
 
     palette[0] = "cobalt"
-    root._matte_texture = ("cobalt", object())
+    root._matte_texture = (("cobalt", extent), object())
     owner.draw()
     assert owner.builds == 2
     assert any(call[0] == "itemconfigure" for call in calls[first_count + 1 :])

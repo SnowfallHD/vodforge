@@ -1,5 +1,17 @@
 # VODForge engineering-quality harness
 
+## Full-cover shared artwork during resize — 2026-09-22
+
+`MatteBackdrop` owns one display-sized motif image per window and theme. The
+image is shared by scene underlays and projected labels, and normal resize
+events only move the image; they do not resample it. The old 1200×800 image
+left a 150 px uncovered strip in a 1350 px Mac window. The expanded-window
+native case failed before the repair and now checks coverage across three
+sizes, unchanged image identity, and the final captured surface. The same
+coverage case is required on Mac and Windows through
+`test_matte_projection_resize_native.py`. This is a structural and rendered
+native check; the held-pointer test below remains a separate release blocker.
+
 ## Windows live-resize paint gate — 2026-09-22
 
 `test_windows_resize_inflight_native.py` is required by the Windows

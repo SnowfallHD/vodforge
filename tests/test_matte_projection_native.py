@@ -22,6 +22,44 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def test_shared_artwork_covers_expanded_window(application, tmp_path):
+    """A larger native window must never expose an unpainted matte strip."""
+    from yt_downloader.ui_materials import draw_matte_backdrop
+
+    popup = tk.Toplevel(application)
+    try:
+        width = min(1350, popup.winfo_screenwidth() - 40)
+        height = min(860, popup.winfo_screenheight() - 40)
+        popup.geometry("1100x740+20+20")
+        canvas = tk.Canvas(popup, highlightthickness=0, bd=0)
+        canvas.pack(fill="both", expand=True)
+        owner = draw_matte_backdrop(canvas)
+        pump(application, 0.15)
+        photo = owner.photo
+        for current_width, current_height in (
+            (1100, 740),
+            (1250, 800),
+            (width, height),
+        ):
+            popup.geometry(f"{current_width}x{current_height}+20+20")
+            pump(application, 0.08)
+            owner.draw()
+            assert owner.item is not None
+            x, y = canvas.coords(owner.item)
+            assert x - application.tk.call("image", "width", str(owner.photo)) <= 0
+            assert (
+                y + application.tk.call("image", "height", str(owner.photo))
+                >= current_height
+            )
+            assert x >= current_width
+            assert y <= 0
+            assert owner.photo is photo, "resize rebuilt shared artwork"
+        out = Path(os.environ.get("VODFORGE_NATIVE_EVIDENCE_DIR", str(tmp_path)))
+        save_native_capture(popup, out / "expanded-artwork-cover.png")
+    finally:
+        popup.destroy()
+
+
 def test_shared_backdrop_replacement_plateaus_and_retires(
     application, monkeypatch, tmp_path
 ):
@@ -58,8 +96,8 @@ def test_shared_backdrop_replacement_plateaus_and_retires(
             )
             name = str(owners[0].photo)
             names.add(name)
-            assert popup.tk.call("image", "width", name) == 1200
-            assert popup.tk.call("image", "height", name) == 800
+            assert popup.tk.call("image", "width", name) == popup._matte_extent[0]
+            assert popup.tk.call("image", "height", name) == popup._matte_extent[1]
             gc.collect()
             live = set(popup.tk.splitlist(popup.tk.call("image", "names")))
             assert names & live == {name}, "Retired theme backdrops remain in Tcl"
@@ -89,7 +127,10 @@ def test_shared_backdrop_replacement_plateaus_and_retires(
     assert not errors and len(rss) == 12, errors
     # Allow two old/new native texture representations plus the existing8MiB
     # reuse allowance. Compare current RSS after warmup, never lifetime peak.
-    budget = 2 * 1200 * 800 * surface_backing_scale(popup) ** 2 * 8 + 8 * 1024 * 1024
+    width, height = popup._matte_extent
+    budget = (
+        2 * width * height * surface_backing_scale(popup) ** 2 * 8 + 8 * 1024 * 1024
+    )
     growth = max(rss[4:]) - min(rss[3:5])
     out = Path(os.environ.get("VODFORGE_NATIVE_EVIDENCE_DIR", str(tmp_path)))
     (out / "backdrop-memory.json").write_text(

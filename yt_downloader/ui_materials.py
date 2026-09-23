@@ -1,4 +1,4 @@
-"""Shared static matte artwork. No timers, animation or resize-time resampling."""
+"""Shared static matte artwork sized once for the display, then moved on resize."""
 
 from __future__ import annotations
 
@@ -21,13 +21,19 @@ def material_asset(name: str) -> Path:
 
 
 @lru_cache(maxsize=8)
-def backdrop_pixels(motif: str, background: str, tint: str) -> Image.Image:
+def backdrop_pixels(
+    motif: str,
+    background: str,
+    tint: str,
+    size: tuple[int, int] = (1200, 800),
+) -> Image.Image:
     """Cache one full composition, with readable quiet zones and soft edges."""
     with Image.open(material_asset(motif)) as source:
-        mask = source.convert("L").resize((1200, 800), Image.Resampling.LANCZOS)
+        mask = ImageOps.fit(source.convert("L"), size, Image.Resampling.LANCZOS)
     # Full-height composition rather than a decorative heading strip. The
     # source's quiet left zone protects content hierarchy; edge fades eliminate
-    # hard bitmap boundaries. Raster work occurs only on theme changes.
+    # hard bitmap boundaries. Raster work occurs on first use, theme changes,
+    # or when a window actually outgrows the display-sized shared image.
     fade = Image.new("L", (1, mask.height))
     fade.putdata(
         [
@@ -56,13 +62,14 @@ def tint_brand(source: Image.Image, *, wordmark: bool = False) -> Image.Image:
 
 
 class MatteBackdrop:
-    """One decorative canvas item; configure moves it, never rebuilds pixels."""
+    """One shared decorative image covers the window through ordinary resize."""
 
     def __init__(self, canvas: tk.Canvas) -> None:
         self.canvas = canvas
         self.photo: ImageTk.PhotoImage | None = None
         self.item: int | None = None
         self.identity: tuple | None = None
+        self.extent: tuple[int, int] | None = None
         self.position: tuple[int, int] | None = None
         self.builds = 0
         self.pending: str | None = None
@@ -108,22 +115,51 @@ class MatteBackdrop:
             self.position = None
 
     def draw(self) -> None:
+        root = self.canvas.winfo_toplevel()
+        anchor = getattr(self.canvas, "_matte_anchor", None)
+        required_width = (
+            anchor.winfo_width() if anchor is not None else self.canvas.winfo_width()
+        )
+        required_height = (
+            anchor.winfo_height() if anchor is not None else self.canvas.winfo_height()
+        )
+        extent = getattr(root, "_matte_extent", None)
+        if extent is None or required_width > extent[0] or required_height > extent[1]:
+            extent = (
+                max(
+                    1200,
+                    root.winfo_screenwidth(),
+                    root.winfo_vrootwidth(),
+                    required_width,
+                ),
+                max(
+                    800,
+                    root.winfo_screenheight(),
+                    root.winfo_vrootheight(),
+                    required_height,
+                ),
+            )
+            cast(Any, root)._matte_extent = extent
         identity = theme_palette_snapshot()
-        theme_changed = identity != self.identity
+        theme_changed = identity != self.identity or extent != getattr(
+            self, "extent", None
+        )
         if theme_changed:
-            root = self.canvas.winfo_toplevel()
             shared = getattr(root, "_matte_texture", None)
-            if shared is None or shared[0] != identity:
+            if shared is None or shared[0] != (identity, extent):
                 shared = (
-                    identity,
+                    (identity, extent),
                     ImageTk.PhotoImage(
-                        backdrop_pixels(theme_motif(), THEME["bg"], THEME["accent"]),
+                        backdrop_pixels(
+                            theme_motif(), THEME["bg"], THEME["accent"], extent
+                        ),
                         master=root,
                     ),
                 )
                 cast(Any, root)._matte_texture = shared
             self.photo = shared[1]
             self.identity = identity
+            self.extent = extent
             self.builds += 1
         try:
             if theme_changed:
@@ -136,7 +172,6 @@ class MatteBackdrop:
                 self.canvas.tag_lower(self.item)
             elif theme_changed:
                 self.canvas.itemconfigure(self.item, image=self.photo)
-            anchor = getattr(self.canvas, "_matte_anchor", None)
             x = max(1, self.canvas.winfo_width())
             y = 0
             if anchor is not None:
@@ -437,9 +472,19 @@ class MatteTextProjection:
         justify = option("justify", "left")
         wraplength = int(option("wraplength", 0))
         identity = (
-            width, height, name, states, variable, text, anchor,
-            str(picture), str(font), str(foreground), str(justify),
-            wraplength, theme_palette_snapshot(),
+            width,
+            height,
+            name,
+            states,
+            variable,
+            text,
+            anchor,
+            str(picture),
+            str(font),
+            str(foreground),
+            str(justify),
+            wraplength,
+            theme_palette_snapshot(),
         )
         if identity == self.render_identity and self.canvas.find_withtag("matte-text"):
             return
