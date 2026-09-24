@@ -635,6 +635,7 @@ def _history_persistence_receipt(
     expected_output_type: str | None,
     expected_description: str | None = None,
     expected_description_title: str | None = None,
+    qt_restart_visibility_verified: bool | None = None,
 ) -> dict[str, Any]:
     history_path = (
         home / "Library" / "Application Support" / "VODForge" / "download-history.json"
@@ -691,7 +692,11 @@ def _history_persistence_receipt(
         restart_baseline.get("history_sha256")
         == (sha256_file(history_path) if history_path.is_file() else None)
     )
-    loaded_after_restart = f"Loaded download history: {history_path}" in activity
+    loaded_after_restart = (
+        qt_restart_visibility_verified
+        if qt_restart_visibility_verified is not None
+        else f"Loaded download history: {history_path}" in activity
+    )
     restart_launches = [
         item
         for item in launches[1:]
@@ -760,6 +765,7 @@ def _history_persistence_receipt(
         "launch_count_at_least_two": len(launches) >= 2,
         "driver_requested_restart_launch_count": len(restart_launches),
         "loaded_after_restart": loaded_after_restart,
+        "qt_restart_visibility_verified": qt_restart_visibility_verified,
         "media_hashes_stable_across_restart": media_stable,
         "history_hash_stable_across_restart": history_hash_stable,
         "pre_restart_snapshot": restart_baseline,
@@ -773,8 +779,9 @@ def _library_description_visibility_receipt(
     launches: list[dict[str, Any]],
     session_nonce: str,
     expected_description: str,
+    event_name: str = "library_description_observed",
 ) -> dict[str, Any]:
-    """Validate the real Tk visibility receipt against UI and launch provenance."""
+    """Validate the owned visibility receipt against UI and launch provenance."""
 
     events = driver_trace.get("events")
     events = events if isinstance(events, list) else []
@@ -782,8 +789,7 @@ def _library_description_visibility_receipt(
         (
             item
             for item in events
-            if isinstance(item, dict)
-            and item.get("event") == "library_description_observed"
+            if isinstance(item, dict) and item.get("event") == event_name
         ),
         None,
     )
@@ -791,7 +797,7 @@ def _library_description_visibility_receipt(
     if event is None:
         return {
             "verified": False,
-            "errors": ["library_description_observed event is missing"],
+            "errors": [f"{event_name} event is missing"],
             "receipt_path": None,
         }
     launch = next(
@@ -1723,6 +1729,23 @@ def run_packaged_e2e_session(
         session_nonce=session_nonce,
         expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
     )
+    renderer = (
+        launches[0].get("attestation", {}).get("renderer", "tk")
+        if launches and isinstance(launches[0].get("attestation"), dict)
+        else "tk"
+    )
+    qt_restart_visibility = (
+        _library_description_visibility_receipt(
+            state_paths=state_paths,
+            driver_trace=events_payload,
+            launches=launches,
+            session_nonce=session_nonce,
+            expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+            event_name="restart_observed",
+        )
+        if renderer == "qt"
+        else None
+    )
     required_ui_events = _required_ui_events(args.profile)
     missing_events = trace_validation["missing_events"]
     media_paths = _exported_media_paths(home)
@@ -1750,6 +1773,11 @@ def run_packaged_e2e_session(
         expected_description_title=(
             LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
             if args.profile == "telemetry"
+            else None
+        ),
+        qt_restart_visibility_verified=(
+            qt_restart_visibility["verified"]
+            if qt_restart_visibility is not None
             else None
         ),
     )
@@ -1969,6 +1997,7 @@ def run_packaged_e2e_session(
         "driver_trace": events_payload,
         "driver_trace_validation": trace_validation,
         "library_description_visibility": library_description_visibility,
+        "qt_restart_visibility": qt_restart_visibility,
         "launches": launches,
         "media_probes": media_probes,
         "history_persistence": history_persistence,

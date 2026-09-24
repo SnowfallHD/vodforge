@@ -50,7 +50,12 @@ from yt_downloader.quality_e2e import (
         ("selected_owner_sha256", "0" * 64),
     ),
 )
-def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(tmp_path, mutation):
+@pytest.mark.parametrize(
+    "event_name", ("library_description_observed", "restart_observed")
+)
+def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(
+    tmp_path, mutation, event_name
+):
     environment, *_ = _isolated_launch(tmp_path)
     fields = _qt_visibility_fields()
     fields["full_title"] = LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
@@ -65,7 +70,7 @@ def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(tmp_path, mut
         receipt_path.write_text(json.dumps(payload), encoding="utf-8")
         receipt_path.chmod(0o600)
     event = {
-        "event": "library_description_observed",
+        "event": event_name,
         "launch_id": environment["VODFORGE_QUALITY_E2E_LAUNCH_ID"],
         "window_title_token": environment["VODFORGE_QUALITY_E2E_WINDOW_TOKEN"],
         "pid": 7001,
@@ -82,8 +87,44 @@ def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(tmp_path, mut
         launches=[launch],
         session_nonce=environment["VODFORGE_QUALITY_E2E_SESSION_NONCE"],
         expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+        event_name=event_name,
     )
     assert result["verified"] is (mutation is None), result["errors"]
+
+
+def test_qt_restart_visibility_requires_exact_observed_text(tmp_path):
+    environment, *_ = _isolated_launch(tmp_path)
+    fields = _qt_visibility_fields()
+    fields["full_title"] = LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
+    fields["description_text"] = LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+    assert write_quality_e2e_qt_library_visibility_receipt(
+        **fields, environ=environment, pid=7001
+    )
+    event = {
+        "event": "restart_observed",
+        "launch_id": environment["VODFORGE_QUALITY_E2E_LAUNCH_ID"],
+        "window_title_token": environment["VODFORGE_QUALITY_E2E_WINDOW_TOKEN"],
+        "pid": 7001,
+    }
+    receipt = _library_description_visibility_receipt(
+        state_paths={"tmp": environment["TMPDIR"]},
+        driver_trace={"events": [event]},
+        launches=[
+            {
+                "launch_id": event["launch_id"],
+                "window_token": event["window_title_token"],
+                "attestation": {"renderer": "qt"},
+            }
+        ],
+        session_nonce=environment["VODFORGE_QUALITY_E2E_SESSION_NONCE"],
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+        event_name="restart_observed",
+    )
+    assert receipt["verified"] is False
+    assert (
+        "UI event did not record the exact visible fixture description"
+        in receipt["errors"]
+    )
 
 
 def test_packaged_session_uses_slow_description_stress_fixture() -> None:
@@ -756,8 +797,10 @@ def test_media_probe_uses_exact_bundled_ffprobe(monkeypatch, tmp_path: Path) -> 
     assert probes[0]["ffprobe_sha256"] == sha256_file(ffprobe)
 
 
+@pytest.mark.parametrize("qt_visibility", (None, True, False))
 def test_history_persistence_binds_two_launches_to_stable_output(
     tmp_path: Path,
+    qt_visibility: bool | None,
 ) -> None:
     home = tmp_path / "home"
     media = home / "Downloads" / "Channel" / "video.mp4"
@@ -795,12 +838,13 @@ def test_history_persistence_binds_two_launches_to_stable_output(
         home,
         probes,
         launches,
-        f"Loaded download history: {history_path}",
+        f"Loaded download history: {history_path}" if qt_visibility is None else "",
         baseline,
         expected_output_type="MP4",
+        qt_restart_visibility_verified=qt_visibility,
     )
 
-    assert receipt["verified"] is True
+    assert receipt["verified"] is (qt_visibility is not False)
     assert receipt["launch_count_at_least_two"] is True
     assert receipt["media_hashes_stable_across_restart"] is True
     assert receipt["history_hash_stable_across_restart"] is True

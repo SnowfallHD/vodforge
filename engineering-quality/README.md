@@ -787,6 +787,13 @@ window belongs to the same attested process, captures that window directly, and
 stores both window identities. Do not attribute a player screenshot to the main
 window or substitute an image from another process.
 
+For Qt, return to Library > Folders > the saved item > Description after the
+driver-requested restart. Record `restart_observed` there with
+`--observed-text` set to the exact fixture Description. The verifier binds that
+event to the second launch's private Qt visibility receipt and checks rendered
+geometry, selected owner and projection identity. Tk continues to require its
+own post-restart history-load activity line.
+
 If a UI surface cannot be reached, keep it missing and use `--allow-gap` only
 when recording the next later event. The recorder adds the skipped event names
 to the receipt; it never turns the gap into a pass.
