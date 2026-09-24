@@ -1175,7 +1175,9 @@ def test_primary_views_allocate_only_current_surface_and_restore_latest_layout(
                 hidden_library_layouts.append(args)
                 return original_layout(*args)
 
-            monkeypatch.setattr(application, "_apply_archive_layout", count_library_layout)
+            monkeypatch.setattr(
+                application, "_apply_archive_layout", count_library_layout
+            )
             application.geometry("1180x780")
             settle_native(application)
             application.geometry("1100x740")
