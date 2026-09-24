@@ -273,6 +273,7 @@ class Bridge(QObject):
     progressChanged = Signal()
     runningChanged = Signal()
     historyChanged = Signal()
+    librarySceneChanged = Signal()
     activityChanged = Signal()
     runDeckChanged = Signal()
     forgePreviewChanged = Signal()
@@ -325,6 +326,8 @@ class Bridge(QObject):
         self.historyChanged.connect(self.playerSceneChanged.emit)
         self.historyChanged.connect(self.watchSceneChanged.emit)
         self.selectionChanged.connect(self.watchSceneChanged.emit)
+        self.historyChanged.connect(self.librarySceneChanged.emit)
+        self.selectionChanged.connect(self.librarySceneChanged.emit)
         self.historyChanged.connect(self.runDeckChanged.emit)
         self._support = QtSupportSession(self._runtime.history_path.parent)
         self._latest_failure: FailureContext | None = None
@@ -1208,24 +1211,29 @@ class Bridge(QObject):
     def savedCount(self) -> int:
         return len(self._runtime.history)
 
-    @Property("QVariantMap", notify=historyChanged)
+    @Property("QVariantMap", notify=librarySceneChanged)
     def libraryScene(self) -> dict[str, Any]:
         return library_scene(
             self._projected_library(),
             self._library_scene_route,
             self._library_group_key,
             self._library_group_kind,
-            self._artwork.request,
+            self._artwork.request
+            if self._selection == "Library"
+            else lambda _record, _size, _role: "",
             self._library_search,
             ""
             if self._library_category == LIBRARY_ALL_CATEGORIES
             else self._library_category,
             self._library_sort,
             defer_media_artwork=True,
+            defer_group_artwork=True,
         )
 
     @Slot(str, result=str)
     def mediaArtwork(self, owner: str) -> str:
+        if self._selection != "Library":
+            return ""
         matches = [
             row for row in self._runtime.history
             if row.get("vodforge_output_dir") and history_archive_owner(row) == owner
@@ -1233,6 +1241,30 @@ class Bridge(QObject):
         if len(matches) != 1:
             return ""
         return self._artwork.request(matches[0], (320, 180), "media")
+
+    @Slot(str, str, result=str)
+    def watchGroupArtwork(self, owner: str, kind: str) -> str:
+        if self._selection != "Watch":
+            return ""
+        return self._group_artwork(owner, kind)
+
+    @Slot(str, str, result=str)
+    def libraryGroupArtwork(self, owner: str, kind: str) -> str:
+        if self._selection != "Library":
+            return ""
+        return self._group_artwork(owner, kind)
+
+    def _group_artwork(self, owner: str, kind: str) -> str:
+        if kind not in {"channel", "playlist", "collection"}:
+            return ""
+        item = self._saved_item_for_owner(owner)
+        if item is None:
+            return ""
+        return self._artwork.request(
+            item,
+            (160, 160) if kind == "channel" else (480, 200),
+            "avatar" if kind == "channel" else "playlist",
+        )
 
     @Property("QVariantMap", notify=historyChanged)
     def libraryFolders(self) -> dict[str, Any]:
@@ -1291,6 +1323,7 @@ class Bridge(QObject):
             self._watch_search,
             self._playback_progress.for_record,
             defer_media_artwork=True,
+            defer_group_artwork=True,
         )
         prior_route = self._watch_history[-1][0] if self._watch_history else "home"
         scene["backLabel"] = (

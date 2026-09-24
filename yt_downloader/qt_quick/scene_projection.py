@@ -49,6 +49,7 @@ def _group(
 ) -> dict[str, Any]:
     return {
         "key": key,
+        "owner": history_archive_owner(record),
         "title": title,
         "count": count,
         "kind": kind,
@@ -71,6 +72,7 @@ def library_scene(
     sort: str = "recent",
     *,
     defer_media_artwork: bool = False,
+    defer_group_artwork: bool = False,
 ) -> dict[str, Any]:
     """Use the Tk scene's saved-item, channel, playlist and collection definitions."""
     saved = [
@@ -96,6 +98,7 @@ def library_scene(
         "audio": len(audio),
     }
     groups: list[dict[str, Any]] = []
+    group_image = _defer_artwork if defer_group_artwork else artwork
     if route == "channels":
         groups = [
             _group(
@@ -104,7 +107,7 @@ def library_scene(
                 channel.name,
                 len(channel.videos),
                 "channel",
-                artwork,
+                group_image,
             )
             for channel in channels
             if channel.videos
@@ -120,7 +123,7 @@ def library_scene(
                 rail.title,
                 len(rail.videos),
                 "collection" if chosen is collections else "playlist",
-                artwork,
+                group_image,
             )
             for rail in chosen
             if rail.videos
@@ -210,6 +213,7 @@ def watch_scene(
     progress_for: Callable[[dict[str, Any]], Any] | None = None,
     *,
     defer_media_artwork: bool = False,
+    defer_group_artwork: bool = False,
 ) -> dict[str, Any]:
     query = query.strip()
     effective_route = "videos" if query else route
@@ -235,6 +239,7 @@ def watch_scene(
     )
     videos = unique_watch_videos(records, source_videos)
     media_image = _defer_artwork if defer_media_artwork else artwork
+    group_image = _defer_artwork if defer_group_artwork else artwork
     media = [
         {
             **_media(records[video.indices[0]], video.indices[0], media_image),
@@ -329,7 +334,7 @@ def watch_scene(
                 channel.name,
                 len(channel.videos),
                 "channel",
-                artwork,
+                group_image,
             )
             for channel in channels
             if channel.videos
@@ -341,7 +346,7 @@ def watch_scene(
                 rail.title,
                 len(rail.videos),
                 "playlist",
-                artwork,
+                group_image,
             )
             for rail in playlists
             if rail.videos
@@ -353,7 +358,7 @@ def watch_scene(
                 rail.title,
                 len(rail.videos),
                 "collection",
-                artwork,
+                group_image,
             )
             for rail in collections
             if rail.videos

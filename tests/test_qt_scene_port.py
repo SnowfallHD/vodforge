@@ -1513,3 +1513,146 @@ def test_qt_watch_media_windows_cards_and_restores_back_scroll(tmp_path, monkeyp
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
+
+
+@pytest.mark.parametrize("route,role", [("channels", "avatar"), ("playlists", "playlist")])
+def test_qt_watch_group_routes_window_cards_and_artwork(
+    tmp_path, monkeypatch, route, role
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    records = []
+    for index in range(200):
+        record = saved(tmp_path, f"Channel video {index:03d}", "MP4")
+        record["channel"] = f"Channel {index:03d}"
+        record["playlist_id"] = f"playlist-{index:03d}"
+        record["playlist_title"] = f"Playlist {index:03d}"
+        records.append(record)
+    bridge._runtime.history = records
+    requested = []
+    monkeypatch.setattr(
+        bridge._artwork,
+        "request",
+        lambda record, size=(320, 180), role="media":
+            requested.append((record["title"], size, role)) or "",
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Watch")
+        bridge.navigateWatch(route)
+        for _ in range(3):
+            app.processEvents()
+        routes = window.findChild(QObject, "watchGroupRoutesRepeater")
+        columns = [
+            item for item in routes.parent().childItems()
+            if item is not routes and item.isVisible()
+        ]
+        assert len(columns) == 1
+        flow = next(
+            item for item in columns[0].childItems()
+            if item.objectName() == "watchGroupFlow"
+        )
+        repeater = next(
+            item for item in flow.childItems()
+            if item.objectName() == "watchGroupRepeater"
+        )
+        viewport = window.findChild(QObject, "watchViewport")
+        assert len(bridge.watchScene[route]) == 200
+        assert repeater.property("count") < 40
+        group_requests = {title for title, _size, request_role in requested if request_role == role}
+        assert len(group_requests) < 40
+        flickable = viewport.property("contentItem")
+        assert flickable.setProperty("contentY", 30 * flow.property("rowStride"))
+        for _ in range(3):
+            app.processEvents()
+        frame = window.grabWindow()
+        assert not frame.isNull()
+        assert flow.property("firstRow") >= 25
+        assert 0 < repeater.property("count") < 40
+        assert any(
+            card.mapToItem(viewport, 0, 0).y() < viewport.height()
+            and card.mapToItem(viewport, 0, 0).y() + card.height() > 0
+            for card in flow.childItems()
+            if card.width() == flow.property("cardWidth")
+            and card.height() == flow.property("cardHeight")
+        )
+        group_requests = {title for title, _size, request_role in requested if request_role == role}
+        assert len(group_requests) < 80
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
+@pytest.mark.parametrize("route,role", [("channels", "avatar"), ("playlists", "playlist")])
+def test_qt_library_group_routes_window_cards_and_artwork(
+    tmp_path, monkeypatch, route, role
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    records = []
+    for index in range(200):
+        record = saved(tmp_path, f"Library video {index:03d}", "MP4")
+        record["channel"] = f"Channel {index:03d}"
+        record["playlist_id"] = f"playlist-{index:03d}"
+        record["playlist_title"] = f"Playlist {index:03d}"
+        records.append(record)
+    bridge._runtime.history = records
+    requested = []
+    monkeypatch.setattr(
+        bridge._artwork,
+        "request",
+        lambda record, size=(320, 180), request_role="media":
+            requested.append((record["title"], size, request_role)) or "",
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        bridge.navigateLibrary(route)
+        for _ in range(3):
+            app.processEvents()
+        flow = window.findChild(QObject, "libraryGroupFlow")
+        repeater = window.findChild(QObject, "libraryGroupRepeater")
+        viewport = window.findChild(QObject, "libraryViewport")
+        assert len(bridge.libraryScene["groups"]) == 200
+        assert repeater.property("count") < 40
+        group_requests = {title for title, _size, owner_role in requested if owner_role == role}
+        assert len(group_requests) < 40
+        flickable = viewport.property("contentItem")
+        assert flickable.setProperty("contentY", 30 * flow.property("rowStride"))
+        for _ in range(3):
+            app.processEvents()
+        frame = window.grabWindow()
+        assert not frame.isNull()
+        assert flow.property("firstRow") >= 25
+        assert 0 < repeater.property("count") < 40
+        card_positions = [
+            card.mapToItem(viewport, 0, 0).y()
+            for card in flow.childItems()
+            if card.width() == flow.property("cardWidth") and card.height() == 192
+        ]
+        assert any(y < viewport.height() and y + 192 > 0 for y in card_positions), (
+            f"route={route} contentY={flickable.property('contentY')} "
+            f"flowY={flow.y()} firstRow={flow.property('firstRow')} "
+            f"viewportH={viewport.height()} positions={card_positions[:30]}"
+        )
+        group_requests = {title for title, _size, owner_role in requested if owner_role == role}
+        assert len(group_requests) < 80
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()

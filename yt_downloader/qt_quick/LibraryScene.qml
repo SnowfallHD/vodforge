@@ -235,15 +235,33 @@ Item {
                 }
                 Flow {
                     id: groupFlow
+                    objectName: "libraryGroupFlow"
                     visible: scene.route === "home" || scene.route === "channels" ||
                              scene.route === "playlists" || scene.route === "collections"
                     width: parent.width
                     spacing: 12
+                    readonly property real cardWidth: Math.max(155, (width - 36) / 4)
+                    readonly property int columns: Math.max(1, Math.floor((width + spacing) / (cardWidth + spacing)))
+                    readonly property var items: scene.route === "home" ? scene.groups.slice(0, columns) : scene.groups
+                    readonly property real rowStride: 192 + spacing
+                    readonly property int totalRows: Math.ceil(items.length / columns)
+                    readonly property real scrollTop: viewport.contentItem.contentY - groupFlow.y
+                    readonly property int firstRow: scene.route === "home" ? 0 :
+                        Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
+                    readonly property int lastRow: scene.route === "home" ? totalRows :
+                        Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                    Item {
+                        visible: groupFlow.firstRow > 0
+                        width: groupFlow.width
+                        height: Math.max(0, groupFlow.firstRow * groupFlow.rowStride - groupFlow.spacing)
+                    }
                     Repeater {
-                        model: scene.groups
+                        objectName: "libraryGroupRepeater"
+                        model: groupFlow.items.slice(groupFlow.firstRow * groupFlow.columns,
+                                                     groupFlow.lastRow * groupFlow.columns)
                         StoneButton {
                             required property var modelData
-                            width: Math.max(155, (groupFlow.width - 36) / 4)
+                            width: groupFlow.cardWidth
                             height: 192
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
@@ -252,7 +270,7 @@ Item {
                                 x: 4; y: 4
                                 width: parent.width - 8
                                 height: 108
-                                source: modelData.artwork
+                                source: scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind)
                                 fillMode: Image.PreserveAspectCrop
                                 visible: source.toString().length > 0
                                 smooth: true
@@ -481,6 +499,11 @@ Item {
                                 scene.selectionActionRequested(modelData.action, owners)
                             }
                         }
+                    }
+                    Item {
+                        visible: groupFlow.lastRow < groupFlow.totalRows
+                        width: groupFlow.width
+                        height: Math.max(0, (groupFlow.totalRows - groupFlow.lastRow) * groupFlow.rowStride - groupFlow.spacing)
                     }
                 }
             }

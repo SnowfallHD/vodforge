@@ -310,6 +310,7 @@ Item {
                 width: parent.width
                 spacing: 18
             Repeater {
+                objectName: "watchGroupRoutesRepeater"
                 model: [
                     { route: "playlists", title: "Playlists", items: scene.projection.playlists || [] },
                     { route: "channels", title: "Channels", items: scene.projection.channels || [] },
@@ -333,14 +334,37 @@ Item {
                         }
                     }
                     Flow {
+                        id: groupFlow
+                        objectName: "watchGroupFlow"
                         width: parent.width
                         spacing: 12
+                        readonly property var items: scene.route === "home" ?
+                            (modelData.route === "collections" ? [] : modelData.items.slice(0, 1)) :
+                            scene.route === modelData.route ? modelData.items : []
+                        readonly property real cardWidth: scene.route === "home" ? width : Math.max(164, (width - 36) / 4)
+                        readonly property real cardHeight: scene.route === "home" ? 136 : modelData.route === "channels" ? 80 : 136
+                        readonly property int columns: Math.max(1, Math.floor((width + spacing) / (cardWidth + spacing)))
+                        readonly property real rowStride: cardHeight + spacing
+                        readonly property int totalRows: Math.ceil(items.length / columns)
+                        readonly property real scrollTop: viewport.contentItem.contentY -
+                            (groupFlow.y + groupFlow.parent.y + groupFlow.parent.parent.y)
+                        readonly property int firstRow: scene.route === "home" ? 0 :
+                            Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
+                        readonly property int lastRow: scene.route === "home" ? totalRows :
+                            Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                        Item {
+                            visible: groupFlow.firstRow > 0
+                            width: groupFlow.width
+                            height: Math.max(0, groupFlow.firstRow * groupFlow.rowStride - groupFlow.spacing)
+                        }
                         Repeater {
-                            model: scene.route === "home" ? modelData.items.slice(0, 1) : modelData.items
+                            objectName: "watchGroupRepeater"
+                            model: groupFlow.items.slice(groupFlow.firstRow * groupFlow.columns,
+                                                         groupFlow.lastRow * groupFlow.columns)
                             StoneButton {
                                 required property var modelData
-                                width: scene.route === "home" ? parent.width : Math.max(164, (parent.width - 36) / 4)
-                                height: scene.route === "home" ? 136 : modelData.kind === "channel" ? 80 : 136
+                                width: groupFlow.cardWidth
+                                height: groupFlow.cardHeight
                                 label: ""
                                 accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
                                 onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
@@ -353,7 +377,7 @@ Item {
                                     clip: true
                                 Image {
                                     anchors.fill: parent
-                                    source: modelData.artwork
+                                    source: scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind)
                                     visible: source.toString().length > 0
                                     fillMode: Image.PreserveAspectCrop
                                     smooth: true
@@ -377,6 +401,11 @@ Item {
                                     font.pixelSize: 12
                                 }
                             }
+                        }
+                        Item {
+                            visible: groupFlow.lastRow < groupFlow.totalRows
+                            width: groupFlow.width
+                            height: Math.max(0, (groupFlow.totalRows - groupFlow.lastRow) * groupFlow.rowStride - groupFlow.spacing)
                         }
                     }
                 }
@@ -405,7 +434,7 @@ Item {
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
                             onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
-                            Image { x: 4; y: 4; width: parent.width - 8; height: 96; source: modelData.artwork; visible: source.toString().length > 0; fillMode: Image.PreserveAspectCrop; smooth: true }
+                            Image { x: 4; y: 4; width: parent.width - 8; height: 96; source: scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind); visible: source.toString().length > 0; fillMode: Image.PreserveAspectCrop; smooth: true }
                             Text { x: 11; y: 106; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight }
                             Text { x: 11; y: 128; text: modelData.count + " saved"; color: theme.muted; font.pixelSize: 12 }
                         }
