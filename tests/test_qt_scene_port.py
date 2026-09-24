@@ -28,6 +28,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 
 from tests.test_quality_e2e import _isolated_launch
 from tests.test_run_identity import make_job
+from yt_downloader.app import cached_thumbnail_path
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_annotations import LibraryAnnotationsError
@@ -870,6 +871,41 @@ def test_qt_artwork_close_retires_blocked_file_io_without_process_shutdown_wait(
     finally:
         release.set()
     assert called == ["First"]
+
+
+def test_qt_private_cached_art_survives_blocked_artwork_lane(tmp_path, monkeypatch):
+    from PIL import Image
+
+    blocked = threading.Event()
+    release = threading.Event()
+    owner = QtArtwork(tmp_path / "artwork")
+    first = saved(tmp_path, "Uncached media", "MP4")
+    second = saved(tmp_path, "Cached media", "MP4")
+    path = cached_thumbnail_path(second, data_dir=tmp_path)
+    assert path is not None
+    path.parent.mkdir(parents=True)
+    Image.new("RGB", (640, 360), "#7197b8").save(path)
+
+    def resolve(record, _size, _role, _cancelled):
+        if record["id"] == first["id"]:
+            blocked.set()
+            release.wait(timeout=2)
+
+    monkeypatch.setattr(owner._source, "resolve_asset", resolve)
+    try:
+        assert owner.request(first) == ""
+        assert blocked.wait(timeout=1)
+        for role, size in (
+            ("media", (320, 180)),
+            ("playlist", (480, 200)),
+            ("avatar", (160, 160)),
+        ):
+            url = owner.request(second, size, role)
+            assert Path(QUrl(url).toLocalFile()) == path
+        assert owner.poll() is False
+    finally:
+        owner.close()
+        release.set()
 
 
 def test_qt_artwork_reads_existing_shared_thumbnail_cache(tmp_path, monkeypatch):

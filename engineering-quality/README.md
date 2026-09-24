@@ -14,6 +14,16 @@ The bridge now admits the Watch route and the QML bindings depend on the
 notified scene projection, so completion repaints the cards. This covers
 representative local-cache paths; native packages and remote thumbnail
 acquisition still need separate evidence.
+An exact Mac `88f6700` package then showed that the source regression was
+insufficient for a real profile: an artwork worker remained in an OS file
+open while the visible Watch groups had valid private cached JPEGs. The
+single queued artwork lane prevented those later jobs from finishing. The
+existing `QtArtwork` adapter now exposes only the bounded app-owned stable
+thumbnail cache path immediately, while its background owner remains
+responsible for role-specific and acquired art. A blocked-lane test asserts
+media, playlist and avatar requests all return their real cached image URL
+before the first job can finish. The first package remains a failed visual
+gate; rebuild and native acceptance are required.
 
 The Forge/Welcome scene test previously verified the slider object and emblem
 URL but not the final arrangement. It now checks the Tk-derived Activity to

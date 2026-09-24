@@ -10,7 +10,9 @@ from typing import Any
 from PySide6.QtCore import QUrl
 
 from yt_downloader.app import (
+    THUMBNAIL_MAX_BYTES,
     best_thumbnail_for_download,
+    cached_thumbnail_path,
     existing_cached_thumbnail_path,
     save_cached_thumbnail_bytes,
 )
@@ -49,7 +51,23 @@ class QtArtwork:
         self._pending: dict[str, tuple[dict[str, Any], tuple[int, int], str]] = {}
         self._active_key: str | None = None
         self._ready: dict[str, str] = {}
+        self._cached_fallback: dict[str, str] = {}
         self._unavailable: dict[str, float] = {}
+
+    def _private_cached_fallback(self, record: dict[str, Any], key: str) -> str:
+        if key in self._cached_fallback:
+            return self._cached_fallback[key]
+        path = cached_thumbnail_path(record, data_dir=self._source.cache_dir.parent)
+        url = ""
+        if path is not None:
+            try:
+                if path.is_file() and 0 < path.stat().st_size <= THUMBNAIL_MAX_BYTES:
+                    url = QUrl.fromLocalFile(str(path)).toString()
+            except OSError:
+                pass
+        if url:
+            self._cached_fallback[key] = url
+        return url
 
     def request(
         self,
@@ -65,16 +83,17 @@ class QtArtwork:
         key = f"{owner}\0{role}\0{size[0]}x{size[1]}"
         if key in self._ready:
             return self._ready[key]
+        fallback = self._private_cached_fallback(record, key)
         if (
             self._unavailable.get(key, 0) > time.monotonic()
             or key in self._pending
             or len(self._pending) >= 16
         ):
-            return ""
+            return fallback
         self._unavailable.pop(key, None)
         self._pending[key] = (dict(record), size, role)
         self._start_next()
-        return ""
+        return fallback
 
     def _start_next(self) -> None:
         if (
@@ -147,3 +166,4 @@ class QtArtwork:
         self._source.close()
         self._owner.close()
         self._pending.clear()
+        self._cached_fallback.clear()

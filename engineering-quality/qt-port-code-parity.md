@@ -76,6 +76,15 @@ slider at 1100×740; 75 Qt scene tests pass. The prior QML tests checked that
 the slider object and icon source existed, but did not check final popup size,
 heading position or Activity/Details ratio. Native exact-package acceptance
 of this revision remains open.
+The exact `88f6700` Mac QA package did show the new Forge ratio and smiley
+slider, but Watch's real saved group cards remained blank after settlement.
+Local records had valid 1280×720 private cached JPEGs. A native process sample
+found a background thread in OS `_io_open`, and the single artwork lane could
+not publish queued later images. The `QtArtwork` adapter now returns a bounded
+app-owned stable cached JPEG directly while continuing its normal async
+resolution. A blocked-first-job, cached-second-item regression covers media,
+playlist and avatar roles. A fresh exact package must prove visible pixels;
+the `88f6700` Watch capture is a failed visual gate, not acceptance.
 The actual Tk `whats_new_ui.py` places the preview exhibit before its title
 and description caption. The first `c14a63d` Qt capture had that order
 reversed. `EditorialPopup.qml` now follows the Tk placement; a live source
