@@ -27,7 +27,9 @@ class PreviewImages(QQuickImageProvider):
             self._images.clear()
 
     def put(self, key: str, data: bytes) -> bool:
-        image = QImage.fromData(data, "PNG")
+        # PySide6's runtime binding accepts the format name as str here even
+        # though its current type stub advertises bytes.
+        image = QImage.fromData(data, "PNG")  # type: ignore[arg-type]
         if image.isNull() or image.width() > 512 or image.height() > 512:
             return False
         with self._lock:

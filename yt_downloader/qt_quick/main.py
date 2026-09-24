@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import threading
@@ -15,6 +14,7 @@ import uuid
 from dataclasses import asdict, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from subprocess import SubprocessError  # nosec B404 - exception type only
 from typing import Any
 
 SOURCE = Path(__file__).resolve().parents[2]
@@ -350,7 +350,7 @@ class Bridge(QObject):
         super().__init__()
         self._runtime = DownloadRuntime()
         self._run_menu_identity_job: Any | None = None
-        self._run_menu_identity_token = ""
+        self._run_menu_identity_token = ""  # nosec B105 - empty UI identity sentinel
         self._run_menu_admitted_job: Any | None = None
         self._selected_run_key = ""
         self.historyChanged.connect(self.playerSceneChanged.emit)
@@ -1663,7 +1663,7 @@ class Bridge(QObject):
                             OSError,
                             ValueError,
                             RuntimeError,
-                            subprocess.SubprocessError,
+                            SubprocessError,
                         ):
                             failed += 1
                     return completed, failed
@@ -4437,7 +4437,8 @@ def main() -> int:
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         application.processEvents()
         bridge.close()
-        assert smoke_home is not None
+        if smoke_home is None:
+            raise RuntimeError("Runtime smoke home was not initialized")
         smoke_home.cleanup()
         return 0
     if args.ready_file:

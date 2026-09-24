@@ -282,8 +282,10 @@ class DownloadRuntime:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("This run has no usable source link. Paste it in Forge.")
-        assert previous.terminal_status is not None
-        return previous.terminal_status, url
+        status = previous.terminal_status
+        if status is None:
+            raise ValueError("That saved run is no longer available to retry.")
+        return status, url
 
     def retry_terminal(
         self, run_id: str, *, current_job: DownloadJob | None = None

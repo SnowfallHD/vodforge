@@ -1935,3 +1935,24 @@ The first Genesis attempt stopped before Play because the saved item displayed
 `Resume`; a native UI tree diagnosed the harness label assumption. The retry
 accepted Play or Resume and passed without changing runtime code. Full
 installed-app lifecycle remains unproven.
+
+### Qt port static guard cleanup (2026-09-24)
+
+The fast repository gate exposed six Bandit `B101` signals in Qt code already
+being ported. They were real optimized-Python guard omissions: consent,
+Library move, retry status and runtime-smoke branches relied on `assert`.
+Those paths now use captured owners or explicit checks. The Qt-scoped Bandit
+scan reports zero findings; two prior non-guard signals were checked against
+their use and annotated precisely: importing only `SubprocessError`, and an
+empty UI identity sentinel. The pre-change Bandit output and new scan are
+retained in `build/qt-port-package/fast-be5c85b/engineering-quality/results.json`
+and `build/qt-port-package/qt-bandit-after.json`.
+
+The current PySide6 runtime accepts `QImage.fromData(data, "PNG")`; its type
+stub incorrectly asks for bytes. Focused tests demonstrated that changing to
+`b"PNG"` raises at runtime. The runtime argument is retained with a local
+typing exception. Existing cross-owner Qt analytics/Library tests passed
+15/15, Qt scene and quality tests passed 78/78, and the full source suite
+passed 3688 with 813 skips. The repository fast gate still fails unrelated
+format, complexity and mypy signals. A new exact packaged build is required
+after these source changes; earlier `ccaaa17` native receipts remain historical.

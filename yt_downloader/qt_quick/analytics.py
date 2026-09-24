@@ -22,11 +22,14 @@ from yt_downloader.product_telemetry import (
     PRODUCT_TELEMETRY_STATE_FILENAME,
     ProductTelemetryOwner,
 )
+from yt_downloader.run_state import RunRecoveryOwner
 from yt_downloader.telemetry_policy import telemetry_collection_allowed
 
 
 class QtAnalyticsSession:
-    def __init__(self, directory: Path, app_version: str, recovery: object) -> None:
+    def __init__(
+        self, directory: Path, app_version: str, recovery: RunRecoveryOwner
+    ) -> None:
         self.owner: AnalyticsConsentOwner | None = None
         self.telemetry: ProductTelemetryOwner | None = None
         self._mode = "unknown"
@@ -86,19 +89,19 @@ class QtAnalyticsSession:
         )
 
     def start(self) -> None:
-        if self.owner is None or self._started:
+        owner = self.owner
+        if owner is None or self._started:
             return
         self._started = True
         self._deadline = time.monotonic() + 2.5
 
         def resolve() -> None:
             try:
-                assert self.owner is not None
-                saved = self.owner.saved_region_mode
+                saved = owner.saved_region_mode
                 self._mode = (
                     saved
                     if saved is not None
-                    else self.owner.resolve(deadline=self._deadline)
+                    else owner.resolve(deadline=self._deadline)
                 )
             except (OSError, ValueError):
                 self._mode = "unknown"
@@ -111,27 +114,28 @@ class QtAnalyticsSession:
 
     def poll(self) -> bool:
         """Return True exactly once when the existing owner requires a prompt."""
-        if self.owner is None or not self._started or self._presented:
+        owner = self.owner
+        telemetry = self.telemetry
+        if owner is None or telemetry is None or not self._started or self._presented:
             return False
         if not self._resolved.is_set() and time.monotonic() < self._deadline:
             return False
         self._presented = True
-        assert self.telemetry is not None
         try:
-            self.owner.update(region_checked=True)
+            owner.update(region_checked=True)
         except (OSError, RuntimeError, ValueError):
-            self.telemetry.set_enabled(False)
+            telemetry.set_enabled(False)
             return False
-        self.telemetry.set_enabled(self.owner.allowed)
+        telemetry.set_enabled(owner.allowed)
         self._record_opened_if_allowed()
-        state = self.owner.snapshot()
+        state = owner.snapshot()
         if (
             self._mode in {"opt-in", "unknown"}
             and not state.get("choice")
             and not state.get("prompted")
         ):
             try:
-                self.owner.update(prompted=True)
+                owner.update(prompted=True)
             except (OSError, RuntimeError, ValueError):
                 return False
             return True

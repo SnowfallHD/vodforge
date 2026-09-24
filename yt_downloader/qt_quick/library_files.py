@@ -108,7 +108,8 @@ class QtLibraryFiles:
                     self.events.put(("pending", pending))
                     return
                 if action == "move":
-                    assert destination is not None
+                    if destination is None:
+                        raise ValueError("Move destination is unavailable")
                     plan = plan_move_operation(
                         self.records, selected, destination, cancelled=self.cancelled
                     )
@@ -144,7 +145,8 @@ class QtLibraryFiles:
                 if tuple(map(record_fingerprint, actual)) != plan.snapshot:
                     raise ValueError("Durable Library changed")
                 if self.action == "move":
-                    assert self.destination is not None
+                    if self.destination is None:
+                        raise ValueError("Move destination is unavailable")
                     result = move_files(
                         plan,
                         actual,
