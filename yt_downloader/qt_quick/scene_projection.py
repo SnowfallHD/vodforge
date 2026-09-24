@@ -233,6 +233,7 @@ def watch_scene(
     *,
     defer_media_artwork: bool = False,
     defer_group_artwork: bool = False,
+    channel_profile: Callable[[dict[str, Any]], dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     query = query.strip()
     effective_route = "videos" if query else route
@@ -349,7 +350,15 @@ def watch_scene(
         if selected is not None
         else "",
         "groupDescription": (
-            str(group_record.get("channel_description") or "")
+            str(
+                group_record.get("channel_description")
+                or (
+                    channel_profile(group_record).get("description")
+                    if channel_profile
+                    else ""
+                )
+                or ""
+            )
             if group_record is not None and group_kind == "channel"
             else ""
         ),

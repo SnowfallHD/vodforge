@@ -559,6 +559,26 @@ def test_qt_watch_group_header_uses_tk_media_summary_and_creator(tmp_path, monke
     )
     assert playlist["groupSubtitle"] == "One channel  ·  2 items saved"
     assert channel["groupCountLabel"] == "2 items  ·  1 playlist"
+    profile_channel = watch_scene(
+        records,
+        "group",
+        group_key=home["channels"][0]["key"],
+        group_kind="channel",
+        channel_profile=lambda _record: {"description": "Saved channel profile"},
+    )
+    assert profile_channel["groupDescription"] == "Saved channel profile"
+    for record in records:
+        record["channel_description"] = "Direct description"
+    direct_channel = watch_scene(
+        records,
+        "group",
+        group_key=home["channels"][0]["key"],
+        group_kind="channel",
+        channel_profile=lambda _record: {"description": "Saved channel profile"},
+    )
+    assert direct_channel["groupDescription"] == "Direct description"
+    for record in records:
+        record.pop("channel_description")
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -567,6 +587,11 @@ def test_qt_watch_group_header_uses_tk_media_summary_and_creator(tmp_path, monke
     app = QGuiApplication.instance() or QGuiApplication([])
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = records
+    monkeypatch.setattr(
+        bridge._artwork,
+        "channel_profile",
+        lambda _record: {"description": "Saved channel profile"},
+    )
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
@@ -582,6 +607,10 @@ def test_qt_watch_group_header_uses_tk_media_summary_and_creator(tmp_path, monke
         assert (
             window.findChild(QObject, "watchGroupCountLabel").property("text")
             == channel["groupCountLabel"]
+        )
+        assert (
+            window.findChild(QObject, "watchGroupDescription").property("text")
+            == "Saved channel profile"
         )
     finally:
         window.close()

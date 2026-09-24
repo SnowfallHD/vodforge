@@ -55,6 +55,9 @@ class QtArtwork:
         )
         return ""
 
+    def channel_profile(self, record: dict[str, Any]) -> dict[str, str]:
+        return self._source.channels.snapshot(record)
+
     def _resolve(self, record: dict[str, Any], size: tuple[int, int], role: str) -> str:
         asset = self._source.resolve_asset(record, size, role, self._cancelled)
         return (

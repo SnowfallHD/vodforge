@@ -1396,6 +1396,7 @@ class Bridge(QObject):
             self._playback_progress.for_record,
             defer_media_artwork=True,
             defer_group_artwork=True,
+            channel_profile=self._artwork.channel_profile,
         )
         prior_route = self._watch_history[-1][0] if self._watch_history else "home"
         scene["backLabel"] = (
