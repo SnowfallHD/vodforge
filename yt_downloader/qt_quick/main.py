@@ -158,6 +158,7 @@ from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
+from yt_downloader.qt_quick.mac_windowing import integrate_qt_main_window
 from yt_downloader.qt_quick.metadata_preview import QtMetadataPreview
 from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.relink import QtRelinkSession
@@ -4293,6 +4294,7 @@ def main() -> int:
             smoke_home.cleanup()
         return 2
     bridge._window = engine.rootObjects()[0]
+    native_header_integrated = integrate_qt_main_window(bridge._window)
     try:
         attest_qt_launch(bridge, bridge._window)
     except QualityE2EAttestationError as exc:
@@ -4328,6 +4330,8 @@ def main() -> int:
                         "platform": QGuiApplication.platformName(),
                         "window_id": int(window.winId()),
                         "visible": window.isVisible(),
+                        "native_header_integrated": native_header_integrated,
+                        "frame_top_px": window.frameMargins().top(),
                         "geometry": [
                             window.x(),
                             window.y(),

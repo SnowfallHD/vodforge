@@ -51,6 +51,10 @@ not cleared parity. None of these labels claims package or installed proof.
 - Current Qt source Watch and Library captures: `build/qt-port-package/{watch,library}-source-current.png`.
 
 The current Qt captures verify the scenes render and expose real geometry gaps.
+They are not a complete visual acceptance matrix. For each row above, compare
+the implementation path, emitted actions, actual rendered bounds at matched
+client dimensions, and the resulting state. Do not substitute a Tk screenshot
+for newer intended Qt controls or copy a broken Tk rendering artifact.
 
 2026-09-23 Library rail follow-up: Qt Folders now uses the Tk-style 380 px
 Selected Item rail and a fixed 360 px Item/Description panel at wide sizes,
@@ -62,7 +66,12 @@ the owned launch's attested renderer, recomputes Qt geometry and owner identity,
 and keeps the Tk receipt checks unchanged. Source/QML and mutation tests pass;
 the maintained packaged journey has not yet driven this Qt route on Mac or
 Genesis, so the package gate remains open.
-They are not a complete visual acceptance matrix. For each row above, compare
-the implementation path, emitted actions, actual rendered bounds at matched
-client dimensions, and the resulting state. Do not substitute a Tk screenshot
-for newer intended Qt controls or copy a broken Tk rendering artifact.
+
+2026-09-23 Mac header follow-up: A native Qt package showed Cocoa's standard
+32 px title bar above the otherwise measured 44 px QML header. Tk uses native
+traffic lights within its full-size content area. The Qt macOS adapter now
+requests the same AppKit full-size content view, hidden visual title, transparent
+title bar and unified native toolbar while retaining the accessible window
+title. A live Cocoa source probe changed `frameMargins().top()` from 32 to 0;
+the ready receipt records integration and frame margin. Exact packaged visual,
+drag and resize acceptance remain open.
