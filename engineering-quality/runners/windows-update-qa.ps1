@@ -9,6 +9,7 @@ param(
 )
 # Run in an interactive Windows QA account. Never use a user's normal install.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'windows-update-visibility.ps1')
 $run = Join-Path $OutputDirectory ([guid]::NewGuid().ToString('N'))
 $installRoot = Join-Path $run 'installed'
 New-Item -ItemType Directory -Force $run | Out-Null
@@ -16,6 +17,7 @@ $receiptPath = Join-Path $run 'update-journey.json'
 $result = @{ status='failed'; evidence_tier='windows-running-upgrade'; ui_click_verified=$false; source_commit=(& git -C $SourceRoot rev-parse HEAD) }
 $old = $null
 $new = $null
+$visibilityStarted = $null
 try {
   $env:VODFORGE_DISABLE_TELEMETRY = '1'
   $env:LOCALAPPDATA = Join-Path $run 'profile'
@@ -62,9 +64,12 @@ try {
     $outcome = Get-Content -LiteralPath $handoff -Raw | ConvertFrom-Json
     if ($outcome.status -ne 'relaunched' -or $outcome.installer_exit_code -ne 0) { throw ('Update failed: ' + $outcome.error) }
   }
-  $new = Get-Process -Id $outcome.pid -ErrorAction Stop
-  $new.Refresh()
-  if ($new.MainWindowHandle -eq 0 -or $new.Path -ne $exe) { throw 'Updated app is not visibly running from the expected target' }
+  $result.new_pid = $outcome.pid
+  $result.handoff_status = $outcome.status
+  $result.handoff_receipt = $handoff
+  $visibilityStarted = Get-Date
+  $new = Wait-VODForgeUpdatedWindow -TargetProcessId $outcome.pid -ExpectedPath $exe
+  $result.visibility_wait_ms = [int]((Get-Date) - $visibilityStarted).TotalMilliseconds
   if ((Get-FileHash $exe).Hash -ne $candidateHash -or $outcome.executable_sha256 -ne $candidateHash) { throw 'Updated executable does not match candidate' }
   $result.status = 'passed'
   $result.legacy_handoff = [bool]$LegacyHandoff
@@ -76,6 +81,9 @@ try {
   $result.new_pid = $new.Id
   $result.handoff_receipt = $handoff
 } catch {
+  if ($visibilityStarted) {
+    $result.visibility_wait_ms = [int]((Get-Date) - $visibilityStarted).TotalMilliseconds
+  }
   $result.error = $_.Exception.Message
 } finally {
   $result | ConvertTo-Json -Depth 6 | Set-Content $receiptPath -Encoding UTF8

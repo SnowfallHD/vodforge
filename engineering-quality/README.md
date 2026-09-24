@@ -23,6 +23,17 @@ archive because the receipt allowlist omitted the two existing build selectors
 reviewed in the candidate owner and tested alongside rejection of arbitrary
 keys and values. This records the actual Qt build settings without admitting
 secrets into candidate metadata.
+The first signed Windows Qt release-draft run `36060600829` installed the
+candidate and its handoff receipt reported `relaunched`, but the QA runner
+checked `MainWindowHandle` immediately. The app process existed while its Qt
+window was still starting; the runner failed before measuring visibility over
+time. The existing updater fault tests covered helper/installer outcomes, not
+that post-handoff transition. The Windows QA runner now waits up to 30 seconds
+for a visible window from the exact relaunched PID and executable, and records
+the bounded wait in its receipt. The native PowerShell regression exercises
+delayed visibility, a wrong executable, and a window that never appears. It
+passed on Genesis; the failed CI receipt and handoff remain retained. A new
+signed-artifact upgrade journey is still required before clearing this gate.
 
 ## Qt artwork and Forge visual ownership — 2026-09-24
 
