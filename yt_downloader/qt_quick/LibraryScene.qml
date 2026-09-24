@@ -333,6 +333,8 @@ Item {
                     Text { text: "Collections"; color: theme.text; font.pixelSize: 23; font.bold: true }
                     Item { width: Math.max(0, parent.width - 200); height: 1 }
                     StoneButton {
+                        objectName: "libraryCollectionsSeeAll"
+                        visible: scene.projection.recordCount > 0
                         label: "See All"
                         size: "inline"
                         width: 80

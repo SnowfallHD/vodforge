@@ -1650,8 +1650,10 @@ def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypat
         scene = window.findChild(QObject, "libraryBrowseScene")
         collections = window.findChild(QObject, "libraryCollectionsEmptyPanel")
         media = window.findChild(QObject, "libraryMediaEmptyPanel")
+        see_all = window.findChild(QObject, "libraryCollectionsSeeAll")
         assert collections.property("visible")
         assert media.property("visible")
+        assert not see_all.property("visible")
         assert collections.property("collections")
         assert not media.property("filtered")
         assert not media.property("actions")
@@ -1673,6 +1675,10 @@ def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypat
         assert collections.property("actions")
 
         bridge._runtime.history = [saved(tmp_path, "One", "MP4", category="News")]
+        bridge.historyChanged.emit()
+        bridge.navigateLibrary("home")
+        app.processEvents()
+        assert see_all.property("visible")
         bridge.setLibraryCategory("News")
         bridge.setLibrarySearch("absent")
         bridge.navigateLibrary("all")

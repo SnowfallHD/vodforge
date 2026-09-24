@@ -215,6 +215,7 @@ def library_scene(
     media_image = _defer_artwork if defer_media_artwork else artwork
     return {
         "route": route,
+        "recordCount": len(records),
         "counts": counts,
         "groups": groups,
         "media": [_media(record, index, media_image) for index, record in media],
