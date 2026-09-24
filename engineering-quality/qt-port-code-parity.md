@@ -167,3 +167,21 @@ A rendered interaction test verifies ordered bounds, shared backgrounds and
 menu reachability, and fails against the prior bare-text implementation.
 Post-edit native Mac/Genesis packaging and remaining exhibit variants remain
 open; earlier 5791e51 package proof predates this change.
+
+Exact `be5c85b` editorial native acceptance: Full source suite 3688 passed,
+813 skipped; Mac package build, runtime smoke and deep strict ad hoc code-sign
+verification passed with embedded revision
+`be5c85b65e0cc9c1371b3d0f5c2dd329dc9c685a`. Native CUA in an isolated
+profile showed the fourth Welcome slide's recessed Tags/Notes fields and
+Category button; clicking Category opened its one-option shared menu. The QA
+process exited 0. Genesis clean exact-source EXE SHA256 is
+`c7cefc52b7cf00d8062e6fdd1a857a56dfee0db964deb55cd3257ae2ad36cf7e`;
+packaged smoke and isolated interactive observer passed. The screenshot
+`build/qt-port-package/genesis-be5c85b-library-exhibit.png` shows the same
+three controls, and `genesis-be5c85b-result.json` binds the PID, hash and
+revision. The owned Windows PID exited and both QA scheduled tasks were
+removed. First Mac build attempt failed with `No space left on device` while
+PyInstaller copied deno; after identity-checked deletion of superseded
+`88f6700`, `677aa6a` and `6e4b5ac` generated QA bundles, the exact rebuild
+passed. Logs and visual receipts were retained. These proofs cover the
+editorial slice, not the broader release gates.
