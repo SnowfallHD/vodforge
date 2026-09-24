@@ -127,24 +127,20 @@ def test_qt_recovers_legacy_run_without_retry_url_and_saves_next_source(
         assert runtime.recovery_notice is None
         assert [job.run_id for job in runtime.recovered] == [legacy.run_id]
         assert runtime.recovered[0].url == ""
-        fresh = runtime.start(
-            "https://example.com/new-video", output_dir, "MP4", "Everyday"
-        )
+        first_source = "https://www.youtube.com/watch?v=qtRetry01A&list=PLQtRecovery01"
+        second_source = "https://www.youtube.com/watch?v=qtRetry02B&list=PLQtRecovery01"
+        fresh = runtime.start(first_source, output_dir, "MP4", "Everyday")
         saved = ActiveRunStore(state_path).load()
         assert saved is not None
         assert saved["job"]["url"] == fresh.url
-        assert fresh.url == "https://example.com/new-video"
-        next_job = runtime.start(
-            "https://example.com/second-video", output_dir, "MP4", "Everyday"
-        )
+        assert fresh.url == first_source
+        next_job = runtime.start(second_source, output_dir, "MP4", "Everyday")
         cold_reader = ActiveRunStore(state_path)
         persisted = cold_reader.load()
         assert persisted is not None
         assert deserialize_download_job(persisted["job"]).url == fresh.url
-        assert [job.url for job in cold_reader.load_queued_jobs()] == [
-            next_job.url
-        ]
-        assert next_job.url == "https://example.com/second-video"
+        assert [job.url for job in cold_reader.load_queued_jobs()] == [next_job.url]
+        assert next_job.url == second_source
     finally:
         release_worker.set()
         runtime.close()

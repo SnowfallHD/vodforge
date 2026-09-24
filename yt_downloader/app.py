@@ -262,6 +262,7 @@ from .run_identity import (
 from .run_state import (
     RunRecoveryOwner,
     RunStateError,
+    run_admission_failure_message,
     run_state_file_path,
     serialize_download_job,
 )
@@ -16300,14 +16301,7 @@ class DownloaderApp(
                 messagebox.showerror(
                     APP_NAME,
                     getattr(recovery_owner, "recovery_notice", None)
-                    or (
-                        "VODForge could not save this source link. Paste a valid web link "
-                        "and try again. No download was started."
-                        if exc.cause == "missing_retry_url"
-                        else "VODForge could not save the recovery data needed to start this download. "
-                        "Check available disk space and app data folder access, then try again. "
-                        "No download was started."
-                    ),
+                    or run_admission_failure_message(exc),
                 )
                 return False
         self.active_job = job

@@ -177,7 +177,7 @@ from yt_downloader.quality_e2e import (
     write_quality_e2e_startup_attestation,
 )
 from yt_downloader.run_identity import annotate_job_metadata, metadata_output_profile
-from yt_downloader.run_state import RunStateError
+from yt_downloader.run_state import RunStateError, run_admission_failure_message
 from yt_downloader.settings_store import (
     SettingsError,
     load_settings,
@@ -4327,6 +4327,9 @@ class Bridge(QObject):
                 self._metadata_preview_info = None
                 self._metadata_preview_record = {}
                 self.forgePreviewChanged.emit()
+        except RunStateError as exc:
+            self._status = run_admission_failure_message(exc)
+            outcome = "rejected"
         except (OSError, RuntimeError, SettingsError, ValueError) as exc:
             self._status = str(exc)
             outcome = "rejected"

@@ -61,6 +61,20 @@ class RunStateError(RuntimeError):
         self.attempt_key = attempt_key
 
 
+def run_admission_failure_message(error: RunStateError) -> str:
+    """Give both renderers the same bounded guidance for an unsaved source."""
+    if error.cause == "missing_retry_url":
+        return (
+            "VODForge could not save this source link. Paste a valid web link "
+            "and try again. No download was started."
+        )
+    return (
+        "VODForge could not save the recovery data needed to start this download. "
+        "Check available disk space and app data folder access, then try again. "
+        "No download was started."
+    )
+
+
 def run_state_file_path(**kwargs: Any) -> Path:
     return application_data_dir(**kwargs) / "active-run.json"
 

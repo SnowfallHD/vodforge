@@ -124,3 +124,32 @@ def test_rejected_source_link_guidance_matches_actual_launch_refusal(
     assert "link" in message and "paste" in message
     assert "disk" not in message and "PRIVATE" not in notices[0]
     assert job.url == "file:///PRIVATE/source"
+
+
+def test_tk_journal_write_failure_uses_bounded_admission_guidance(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from yt_downloader import app as app_module
+    from yt_downloader.app import DownloaderApp
+    from yt_downloader.run_state import RunRecoveryOwner, RunStateError
+
+    job = _job(tmp_path)
+    owner = RunRecoveryOwner(tmp_path / "active-run.json")
+    notices = []
+    monkeypatch.setattr(
+        app_module.messagebox,
+        "showerror",
+        lambda _title, message: notices.append(message),
+    )
+
+    def refuse(*_args, **_kwargs):
+        raise RunStateError("PRIVATE journal path", cause="write_failed")
+
+    monkeypatch.setattr(owner, "begin", refuse)
+    app = SimpleNamespace(run_recovery=owner, pending_jobs=[], active_job=None)
+    assert not DownloaderApp._launch_download_job(app, job)
+    assert app.active_job is None
+    assert notices and "No download was started." in notices[0]
+    assert "PRIVATE" not in notices[0]

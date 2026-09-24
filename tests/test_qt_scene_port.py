@@ -37,6 +37,7 @@ from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
+from yt_downloader.run_state import RunStateError
 from yt_downloader.support_diagnostics import FailureContext
 from yt_downloader.whats_new import NativePreview
 
@@ -144,6 +145,39 @@ def test_qt_settings_extra_tags_reach_existing_download_job(tmp_path, monkeypatc
             tags=observed[0]["tags"],
         )
         assert job.tags == ["one", "two", "three"]
+    finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("cause", ["missing_retry_url", "write_failed"])
+def test_qt_unsaved_source_shows_shared_guidance_without_clearing_entry(
+    tmp_path, monkeypatch, cause
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    accepted = []
+    bridge.sourceAccepted.connect(lambda: accepted.append(True))
+    try:
+
+        def refuse(*_args, **_kwargs):
+            raise RunStateError(
+                "PRIVATE journal path and technical write details",
+                cause=cause,
+                stage="journal_write",
+            )
+
+        monkeypatch.setattr(bridge._runtime, "start", refuse)
+        assert not bridge.submit("https://www.youtube.com/watch?v=qtRetry01A", "MP4")
+        assert "PRIVATE" not in bridge.status
+        assert "No download was started." in bridge.status
+        assert ("Paste a valid web link" in bridge.status) == (
+            cause == "missing_retry_url"
+        )
+        assert accepted == []
     finally:
         bridge.close()
 
