@@ -1574,6 +1574,11 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         choices[0].activated.emit()
         app.processEvents()
         assert bridge.forgeSelection["selectionKey"] == selection["selectionKey"]
+        title = window.findChild(QObject, "forgeSelectedTitle")
+        title_right = title.mapToScene(QPointF(title.property("width"), 0)).x()
+        assert title.property("width") >= 200
+        assert title_right <= window.width() - 60
+        assert title.property("truncated") is True
         deadline = time.monotonic() + 2
         while not bridge._artwork.poll() and time.monotonic() < deadline:
             time.sleep(0.005)

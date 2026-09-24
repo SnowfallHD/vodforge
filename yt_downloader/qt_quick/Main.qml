@@ -835,10 +835,16 @@ Window {
                     }
                 }
                 ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredWidth: 1
                     spacing: window.compactHeight ? 3 : 7
                     Text {
                         objectName: "forgeSelectedTitle"
                         text: window.selectedForgeRun.title || "Ready for a new run"
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        elide: Text.ElideRight
                         color: theme.text
                         font.pixelSize: window.compactHeight ? 21 : 24
                         font.bold: true
@@ -847,12 +853,18 @@ Window {
                         objectName: "forgeSelectedStatus"
                         text: window.selectedForgeRun.status ||
                               "Paste a video URL above, then press Return to begin."
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        elide: Text.ElideRight
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
                     Text {
                         text: window.selectedForgeRun.detail ||
                               (window.selectedForgeRun.kind === "active" ? bridge.quality + "  ·  " + bridge.exportModeLabel : "")
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        elide: Text.ElideRight
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
@@ -864,7 +876,6 @@ Window {
                         onActivated: bridge.startPreviewDownload()
                     }
                 }
-                Item { Layout.fillWidth: true }
                 Text {
                     text: window.showingForgePreview ?
                           (bridge.forgePreview.phase === "complete" ? "Preview" : "…") :
