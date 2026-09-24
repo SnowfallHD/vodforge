@@ -51,9 +51,12 @@ Item {
             id: caption
             objectName: "stoneButtonCaption"
             text: control.label
-            width: Math.min(implicitWidth, Math.max(0, control.width
-                            - 2 * buttonMetrics[control.size].horizontalPadding
-                            - (control.icon.length ? buttonMetrics[control.size].iconPixels + 8 : 0)))
+            readonly property real availableWidth: Math.max(0, control.width
+                    - (control.icon.length ? buttonMetrics[control.size].iconPixels + 8 : 0))
+            readonly property real sidePadding: Math.min(
+                    buttonMetrics[control.size].horizontalPadding,
+                    Math.max(8, (availableWidth - implicitWidth) / 2))
+            width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
             color: control.emphasized ? "#80d5ef" : theme.text
             font.family: buttonFontFamily

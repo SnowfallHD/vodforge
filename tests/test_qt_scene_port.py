@@ -2016,6 +2016,9 @@ def test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds(tmp_path, monkeyp
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = QGuiApplication.instance() or QGuiApplication([])
     bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, f"Media {index}", "MP4") for index in range(31)
+    ]
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
@@ -2058,6 +2061,23 @@ def test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds(tmp_path, monkeyp
                 )
                 assert round(icon.property("x")) == 14
                 assert round(icon.property("y")) == 12
+                expected_count = {
+                    "all": "31",
+                    "channels": "1",
+                    "playlists": "1",
+                    "videos": "31",
+                    "audio": "0",
+                }[route]
+                badge = next(
+                    item
+                    for item in button.childItems()
+                    if item.property("label") == expected_count
+                )
+                caption = badge.findChild(QObject, "stoneButtonCaption")
+                assert (
+                    caption.property("width") >= caption.property("implicitWidth") - 1
+                )
+                assert caption.property("truncated") is False
     finally:
         window.close()
         engine.deleteLater()
