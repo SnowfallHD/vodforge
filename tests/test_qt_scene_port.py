@@ -1530,6 +1530,8 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
     app = QGuiApplication.instance() or QGuiApplication([])
     QQuickStyle.setStyle("Basic")
     records = [saved(tmp_path, f"Media {index}", "MP4") for index in range(5)]
+    long_title = "Media 4 " + "Very long title " * 8
+    records[-1] = saved(tmp_path, long_title, "MP4")
     image = tmp_path / "selected-thumbnail.jpg"
     Image.new("RGB", (320, 180), "#7197b8").save(image)
     records[-1]["preview_thumbnail_path"] = str(image)
@@ -1540,7 +1542,7 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
     try:
         window = engine.rootObjects()[0]
         selection = next(
-            row for row in bridge.runDeck["records"] if row["title"] == "Media 4"
+            row for row in bridge.runDeck["records"] if row["title"] == long_title
         )
         assert selection not in bridge.runDeck["visible"]
         popup = window.findChild(QObject, "allRunsPopup")
@@ -1565,6 +1567,10 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
             == selection["selectionKey"]
         ]
         assert len(choices) == 1
+        caption = choices[0].findChild(QObject, "stoneButtonCaption")
+        assert caption is not None
+        assert caption.property("width") <= choices[0].property("width")
+        assert caption.property("truncated") is True
         choices[0].activated.emit()
         app.processEvents()
         assert bridge.forgeSelection["selectionKey"] == selection["selectionKey"]

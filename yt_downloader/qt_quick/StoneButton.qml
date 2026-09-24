@@ -49,7 +49,12 @@ Item {
         }
         Text {
             id: caption
+            objectName: "stoneButtonCaption"
             text: control.label
+            width: Math.min(implicitWidth, Math.max(0, control.width
+                            - 2 * buttonMetrics[control.size].horizontalPadding
+                            - (control.icon.length ? buttonMetrics[control.size].iconPixels + 8 : 0)))
+            elide: Text.ElideRight
             color: control.emphasized ? "#80d5ef" : theme.text
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels
