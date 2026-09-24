@@ -620,36 +620,42 @@ def integration_probe(repo_root: Path, case_dir: Path, runner, server):
                 from yt_downloader.media_player_ui import MediaPlayerWindow
 
                 player = object.__new__(MediaPlayerWindow)
-                player._details_visible = False
-                player._apply_details_visibility = lambda: None
+                player._closed = False
+                player.popup = SimpleNamespace(winfo_ismapped=lambda: True)
+                player._page_surface = SimpleNamespace(
+                    viewport=SimpleNamespace(
+                        winfo_rooty=lambda: 0, winfo_height=lambda: 100
+                    )
+                )
+                player._information_seen = set()
                 player._on_feature = lambda action, **fields: copy_app._record_feature(
                     "player", action, **fields
                 )
-                selected_panels = []
-                player._info_notebook = SimpleNamespace(select=selected_panels.append)
                 previous = len(delivered)
                 targets = ("chapters", "info", "source", "output", "notes", "moments")
                 player._detail_targets = {
                     f"PRIVATE owned panel {i}": target
                     for i, target in enumerate(targets)
                 }
+                positions = {key: 200 for key in player._detail_targets}
+                player._information_sections = {
+                    key: SimpleNamespace(
+                        winfo_rooty=lambda key=key: positions[key],
+                        winfo_height=lambda: 40,
+                    )
+                    for key in player._detail_targets
+                }
+                player._observe_information()
                 for panel in player._detail_targets:
-                    player._select_information_panel(panel)
-                    player._select_information_panel(panel)
-                player._select_information_panel(
-                    "PRIVATE unregistered source path title note"
-                )
-                player._toggle_details()
+                    positions[panel] = 10
+                    player._observe_information()
+                    player._observe_information()
+                    positions[panel] = 200
                 assert usage.shutdown(10), "Player disclosure producers did not drain"
                 player_events = delivered[previous:]
-                assert selected_panels == [
-                    panel for panel in player._detail_targets for _ in range(2)
-                ]
                 assert [event["action"] for event in player_events] == [
-                    "details_opened",
-                    *(["detail_viewed"] * 6),
-                    "details_closed",
-                ]
+                    "detail_viewed"
+                ] * 6
                 assert [
                     event["dimensions"]["detail_target"]
                     for event in player_events

@@ -761,6 +761,22 @@ by NORMAL. The renderer selection test fails if Qt selects the Tk suite, and
 the rendered Qt native-surface contract passed 297 cases with no skipped cases.
 This coverage does not qualify macOS or Windows package painting by itself.
 
+The Qt candidate NORMAL run at `fb0ea22` then exposed independent harness
+drift. The internal QA workspace name could push valid media output paths past
+the production 240-character guard; the workspace now uses a random 16-digit
+hex name while the report keeps its full run identity. The staging scenario
+called a Tk UI method on the shared worker after the Qt split; it now calls the
+actual selected Library removal owner and verifies an unrelated active stage
+survives. The disabled-embedding probe now accepts FFprobe's valid null `tags`
+value. The window-chrome required-node list tracks the current stronger test
+names rather than names removed by the transition refactor. The local player
+telemetry probe now drives the actual visibility producer instead of removed
+notebook controls. Focused reruns independently passed all seven affected
+scenarios and the Tk staging variant. The Qt Library source test also covers
+active-stage preservation. A source-native diagnostic presentation probe still
+targets Tk and does not qualify Qt presentation telemetry; preview-D1 and
+signed-app observation remain open release gates.
+
 Deeper run (longer fixtures/soak plus the first default-download W3C public boundary; the larger manifest remains an explicit candidate set rather than implied coverage):
 
 ```sh

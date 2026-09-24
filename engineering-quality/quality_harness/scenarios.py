@@ -19,10 +19,8 @@ from .mutation import run_bounded_mutation_campaign
 from .native_ui_checks import native_surface_contract
 from .pipeline import (
     HeadlessPipelineRunner,
-    TracingQueue,
     active_child_snapshot,
     build_job,
-    make_headless_app,
 )
 from .recovery_contract import REGRESSION_CLASSES, recovery_class_contract
 from .reliability import batch_failure_report_reset_probe
@@ -1183,9 +1181,11 @@ def correctness_mp4_embedding_disabled(
     ]
     format_data = (media[0].get("ffprobe") or {}).get("format") if media else {}
     raw_tags = format_data.get("tags") if isinstance(format_data, dict) else {}
-    embedded_tag_keys = {
-        str(key).casefold() for key in raw_tags if isinstance(raw_tags, dict)
-    }
+    embedded_tag_keys = (
+        {str(key).casefold() for key in raw_tags}
+        if isinstance(raw_tags, dict)
+        else set()
+    )
     user_metadata_keys = {
         "title",
         "artist",
@@ -1847,6 +1847,8 @@ def reliability_malformed(
 def lifecycle_staging_transitions(
     runner: HeadlessPipelineRunner,
     server: FixtureHTTPServer,
+    *,
+    ui: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Observe staging ownership through skip, successor, completion, and removal."""
 
@@ -1927,19 +1929,55 @@ def lifecycle_staging_transitions(
         "vodforge_terminal_status": "Skipped",
         "vodforge_terminal_message": "Video skipped by user",
     }
-    library_app = make_headless_app(TracingQueue())
-    library_app.download_history = []
-    library_app.metadata_items = [terminal_info]
-    library_app.pending_jobs = []
-    library_app._terminal_jobs = []
-    library_app._completed_jobs = []
-    library_app._rebuild_output_dir_index = lambda: None
-    removal_plan = resolve_library_removal_plan(
-        terminal_info,
-        active_job=None,
-        pending_jobs=(),
-    )
-    library_app._apply_library_removal_plan(terminal_info, 0, removal_plan)
+    if ui == "qt":
+        from PySide6.QtGui import QGuiApplication
+
+        from yt_downloader.history import history_archive_owner
+        from yt_downloader.qt_quick.main import Bridge
+
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        qt_app = QGuiApplication.instance() or QGuiApplication([])
+        media = output_dir / "saved-library-item.mp4"
+        media.write_bytes(b"saved media remains")
+        saved_info = {
+            "id": "saved-staging-fixture",
+            "title": "Saved staging lifecycle fixture",
+            "vodforge_output_type": "MP4",
+            "vodforge_output_dir": str(output_dir),
+            "vodforge_output_path": str(media),
+        }
+        bridge = Bridge(None)
+        try:
+            bridge._runtime.history_path = case_root / "library-history.json"
+            bridge._runtime.history = [saved_info]
+            owner = history_archive_owner(saved_info)
+            removal_completed = (
+                bridge.prepareLibraryRemoval(owner)
+                and bridge.confirmLibraryRemoval()
+                and not bridge._runtime.history
+                and media.read_bytes() == b"saved media remains"
+            )
+        finally:
+            bridge.close()
+            qt_app.processEvents()
+    else:
+        from yt_downloader.app import DownloaderApp as App
+
+        library_app = App.__new__(App)
+        library_app.download_history = []
+        library_app.metadata_items = [terminal_info]
+        library_app.pending_jobs = []
+        library_app._terminal_jobs = []
+        library_app._completed_jobs = []
+        library_app._reconcile_library_projection = lambda: None
+        library_app._record_feature = lambda *_args: None
+        removal_plan = resolve_library_removal_plan(
+            terminal_info,
+            active_job=None,
+            pending_jobs=(),
+        )
+        library_app._apply_library_removal_plan(terminal_info, 0, removal_plan)
+        removal_completed = True
     active_stage_preserved_by_library_removal = (
         library_stage / "active-owner-sentinel"
     ).is_file()
@@ -1957,6 +1995,7 @@ def lifecycle_staging_transitions(
         and idle_after_completion
         and not completed.get("staging_entries_after")
         and active_stage_preserved_by_library_removal
+        and removal_completed
         and idle_after_owned_cleanup
         and _worker_cleanup_is_clean(skipped)
         and _worker_cleanup_is_clean(completed)
@@ -1972,6 +2011,7 @@ def lifecycle_staging_transitions(
             4,
         ),
         "metrics": {
+            "ui": ui,
             "jobs_attempted": 2,
             "jobs_completed": int(completed.get("media_output_count") == 1),
             "jobs_failed": 0 if passed else 1,
@@ -1985,6 +2025,7 @@ def lifecycle_staging_transitions(
             "active_stage_preserved_by_library_removal": (
                 active_stage_preserved_by_library_removal
             ),
+            "library_removal_completed": removal_completed,
             "idle_root_absent_after_owned_cleanup": idle_after_owned_cleanup,
             "skip_staging_snapshot_count": len(skipped_trace),
             "successor_staging_snapshot_count": len(completed_trace),
@@ -2692,7 +2733,7 @@ def run_scenarios(
         ),
         (
             "lifecycle.staging_transaction_transitions",
-            lambda: lifecycle_staging_transitions(runner, server),
+            lambda: lifecycle_staging_transitions(runner, server, ui=ui),
         ),
         (
             "lifecycle.quit_restart_recovery",

@@ -120,11 +120,11 @@ SCENE_REQUIRED_TESTS = {
         "tests/test_player_presentation.py::test_queue_host_show_does_not_focus_background_embedded_window",
     ),
     "window_chrome": (
-        "tests/test_view_transition.py::test_new_navigation_cancels_previous_timer_and_overlay_without_old_capture",
+        "tests/test_view_transition.py::test_replacement_retires_timer_and_old_callback_cannot_remove_new_cover",
         "tests/test_view_transition.py::test_within_view_navigation_retires_pending_reveal_and_images",
         "tests/test_view_transition.py::test_optional_transition_observations_are_content_free_bounded_and_isolated",
-        "tests/test_view_transition.py::test_player_release_precedes_new_tab_reveal",
-        "tests/test_view_transition.py::test_target_destroyed_after_scheduling_cancels_without_capture",
+        "tests/test_view_transition.py::test_player_release_precedes_old_capture_and_new_tab_reveal",
+        "tests/test_view_transition.py::test_destroyed_source_is_not_captured",
         "tests/test_view_transition.py::test_owner_destroy_cancels_timer_and_late_callbacks_cannot_restore_overlay",
     ),
     "bounded_navigation": (

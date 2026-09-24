@@ -4,6 +4,7 @@ import argparse
 import importlib.metadata
 import json
 import os
+import secrets
 import shlex
 import sys
 import time
@@ -503,7 +504,9 @@ def run_profile(
     machine, repository = machine_snapshot(repo_root)
     run_id = _run_id(profile, repository.get("commit"))
     report_dir = (args.output_dir or (harness_root / "reports" / run_id)).resolve()
-    run_root = (harness_root / ".runs" / run_id).resolve()
+    # Keep the isolated output path short enough for the production
+    # Windows-compatible media path limit, even from a named worktree.
+    run_root = (harness_root / ".runs" / secrets.token_hex(8)).resolve()
     run_root.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
     from .telemetry_checks import install_telemetry_guard

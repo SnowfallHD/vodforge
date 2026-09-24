@@ -83,6 +83,22 @@ def test_removal_commits_exact_saved_card_without_deleting_media(
     assert media.read_bytes() == b"media remains"
 
 
+def test_removing_saved_card_preserves_another_active_staging_owner(
+    bridge: qt_main.Bridge,
+) -> None:
+    item = bridge._runtime.history[0]
+    root = Path(item["vodforge_output_dir"]) / ".vfstage"
+    active = root / "another-active-run"
+    active.mkdir(parents=True)
+    sentinel = active / "in-progress.part"
+    sentinel.write_bytes(b"owned by another run")
+
+    assert bridge.prepareLibraryRemoval(history_archive_owner(item))
+    assert bridge.confirmLibraryRemoval()
+    assert sentinel.read_bytes() == b"owned by another run"
+    assert bridge._runtime.history == []
+
+
 def test_removal_refuses_changed_owner_and_failed_durable_commit(
     bridge: qt_main.Bridge, monkeypatch: Any
 ) -> None:
