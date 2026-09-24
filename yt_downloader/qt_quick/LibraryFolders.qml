@@ -71,6 +71,14 @@ Item {
                     color: theme.text; font.pixelSize: 17; elide: Text.ElideMiddle
                     Layout.fillWidth: true
                 }
+                StoneButton {
+                    objectName: "libraryFolderRelinkButton"
+                    visible: browser.model.mode === "folders" && !!browser.model.path
+                    label: "Find this folder…"
+                    size: "inline"
+                    Layout.preferredWidth: 160
+                    onActivated: browser.appBridge.requestFolderRelink(browser.model.path)
+                }
             }
             ScrollView {
                 id: viewport

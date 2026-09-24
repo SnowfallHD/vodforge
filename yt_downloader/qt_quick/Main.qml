@@ -18,6 +18,7 @@ Window {
     property real playerVolume: 0.8
     property string pendingRelinkOwner: ""
     property string missingAction: ""
+    property string pendingRelinkFolderPath: ""
     property var mediaPlayer: playerLoader.item
     readonly property var selectedForgeRun: bridge.forgeSelection
     readonly property bool showingForgePreview: selectedForgeRun.kind === "preview"
@@ -88,6 +89,10 @@ Window {
         function onSourceAccepted() { urlInput.text = "" }
         function onSourcePrepared(url) { urlInput.text = url }
         function onMissingMediaRequested() { missingMediaPopup.open() }
+        function onFolderRelinkRequested(path) {
+            window.pendingRelinkFolderPath = path
+            relinkFolderDialog.open()
+        }
         function onPlaybackRequested(generation) {
             // Retire the old provider object before a queued item opens. Any
             // late signal carries the old generation and cannot advance it.
@@ -471,6 +476,16 @@ Window {
                 relinkPopup.open()
             }
         }
+    }
+    FolderDialog {
+        id: relinkFolderDialog
+        title: "Choose this folder's new location"
+        onAccepted: {
+            if (bridge.beginFolderRelink(window.pendingRelinkFolderPath, selectedFolder))
+                relinkPopup.open()
+            window.pendingRelinkFolderPath = ""
+        }
+        onRejected: window.pendingRelinkFolderPath = ""
     }
     FolderDialog {
         id: missingFolderDialog
@@ -1041,15 +1056,16 @@ Window {
         background: StoneField {}
         ColumnLayout {
             anchors.fill: parent; spacing: 12
-            Text { text: "Update saved file location"; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true }
+            Text { text: bridge.relinkInfo.mode === "folder" ? "Review saved folder locations" : "Update saved file location"; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true }
             Text { text: bridge.relinkInfo.destination; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideMiddle }
+            Text { visible: bridge.relinkInfo.mode === "folder"; text: bridge.relinkInfo.readyCount + " of " + bridge.relinkInfo.selectedCount + " selected files verified"; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true }
             Text { text: bridge.relinkInfo.status; color: theme.text; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
             Item { Layout.fillHeight: true }
             RowLayout {
                 Layout.fillWidth: true
                 StoneButton {
                     visible: bridge.relinkInfo.eligible
-                    label: "Update location"; emphasized: true
+                    label: bridge.relinkInfo.readyCount > 1 ? "Update " + bridge.relinkInfo.readyCount + " locations" : "Update location"; emphasized: true
                     Layout.preferredWidth: 170; Layout.preferredHeight: 40
                     onActivated: bridge.acceptRelink()
                 }

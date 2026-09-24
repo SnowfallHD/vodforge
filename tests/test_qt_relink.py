@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import time
 
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QUrl
 from PySide6.QtGui import QGuiApplication
 
+from yt_downloader.archive_paths import ArchivePath
 from yt_downloader.history import (
     RETRY_JOB_METADATA_KEY,
     history_archive_owner,
@@ -133,6 +134,115 @@ def test_qt_relink_rejects_concurrent_disk_history_change(tmp_path):
         assert load_history(history_path)[0]["vodforge_output_path"] == str(original)
     finally:
         session.close()
+
+
+def test_qt_folder_relink_reviews_only_verified_files_and_keeps_other_history(tmp_path):
+    source = tmp_path / "old"
+    destination = tmp_path / "new"
+    source.mkdir()
+    destination.mkdir()
+    (destination / "ready.mp4").write_bytes(b"ready media")
+    rows = [
+        {
+            "id": name,
+            "title": name,
+            "vodforge_output_type": "MP4",
+            "vodforge_output_dir": str(source),
+            "vodforge_output_path": str(source / f"{name}.mp4"),
+        }
+        for name in ("ready", "missing")
+    ]
+    history_path = tmp_path / "history.json"
+    save_history(history_path, rows)
+    rows = load_history(history_path)
+    session = QtRelinkSession(history_path)
+    try:
+        owners = tuple(history_archive_owner(row) for row in rows)
+        assert session.begin_folder(
+            ArchivePath.parse(str(source)),
+            ArchivePath.parse(str(destination)),
+            owners,
+            rows,
+        )
+        _settle(session)
+        assert session.phase == "preview"
+        assert session.mode == "folder"
+        assert session.selected == (0, 1)
+        assert session.ready_indices == (0,)
+        assert session.accept(rows)
+        _settle(session)
+        assert session.phase == "done"
+        actual = load_history(history_path)
+        assert actual[0]["vodforge_output_path"] == str(destination / "ready.mp4")
+        assert actual[1]["vodforge_output_path"] == str(source / "missing.mp4")
+    finally:
+        session.close()
+
+
+def test_qt_folder_relink_rejects_stale_scope_and_disk_history(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    source = tmp_path / "old"
+    destination = tmp_path / "new"
+    source.mkdir()
+    destination.mkdir()
+    (destination / "ready.mp4").write_bytes(b"ready media")
+    rows = [
+        {
+            "id": "ready",
+            "title": "Ready",
+            "vodforge_output_type": "MP4",
+            "vodforge_output_dir": str(source),
+            "vodforge_output_path": str(source / "ready.mp4"),
+        }
+    ]
+    save_history(bridge._runtime.history_path, rows)
+    bridge._runtime.history = load_history(bridge._runtime.history_path)
+    bridge.select("Library")
+    bridge.navigateLibrary("folders")
+    bridge.openLibraryFolderComponent(str(source.parent))
+    bridge.openLibraryFolderComponent(str(source))
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    requested = []
+    bridge.folderRelinkRequested.connect(requested.append)
+    try:
+        bridge.requestFolderRelink(str(source))
+        assert requested == [str(source)]
+        button = window.findChild(QObject, "libraryFolderRelinkButton")
+        assert button is not None and button.property("visible")
+        button.activated.emit()
+        assert requested == [str(source), str(source)]
+        assert not bridge.beginFolderRelink(
+            str(source / "other"), QUrl.fromLocalFile(str(destination))
+        )
+        assert bridge.beginFolderRelink(
+            str(source), QUrl.fromLocalFile(str(destination))
+        )
+        for _ in range(200):
+            bridge._pump()
+            if bridge.relinkInfo["phase"] == "preview":
+                break
+            time.sleep(0.01)
+        assert bridge.relinkInfo["readyCount"] == 1
+        save_history(bridge._runtime.history_path, [{**rows[0], "title": "Changed"}])
+        assert bridge.acceptRelink()
+        for _ in range(200):
+            bridge._pump()
+            if bridge.relinkInfo["phase"] == "error":
+                break
+            time.sleep(0.01)
+        assert bridge.relinkInfo["phase"] == "error"
+        assert load_history(bridge._runtime.history_path)[0]["title"] == "Changed"
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
 
 
 def test_qt_missing_media_opens_review_and_serializes_history_writers(

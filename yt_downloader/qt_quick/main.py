@@ -49,12 +49,17 @@ from yt_downloader.app import (
     prepare_activity_log,
     retry_url_for_item,
 )
-from yt_downloader.archive_browser import PAGE_SIZE, ArchiveBrowserModel
+from yt_downloader.archive_browser import (
+    PAGE_SIZE,
+    ArchiveBrowserModel,
+    archive_directory,
+)
 from yt_downloader.archive_observations import (
     bind_operation,
     operation,
     relink_dimensions,
 )
+from yt_downloader.archive_paths import ArchivePath
 from yt_downloader.archive_relink import record_fingerprint
 from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.cloud_funnel import (
@@ -298,6 +303,7 @@ class Bridge(QObject):
     missingMediaRequested = Signal()
     sourcePrepared = Signal(str)
     relinkChanged = Signal()
+    folderRelinkRequested = Signal(str)
     batchListChanged = Signal()
     sourceAccepted = Signal()
     cookieAccessChanged = Signal()
@@ -615,19 +621,19 @@ class Bridge(QObject):
         return dict(self._missing_media)
 
     @Property("QVariantMap", notify=relinkChanged)
-    def relinkInfo(self) -> dict[str, str | bool]:
+    def relinkInfo(self) -> dict[str, str | bool | int]:
         return {
             "phase": self._relink.phase,
             "status": self._relink.status,
             "owner": self._relink.owner,
             "destination": self._relink.destination,
             "eligible": self._relink.eligible,
+            "mode": self._relink.mode,
+            "readyCount": len(self._relink.ready_indices),
+            "selectedCount": len(self._relink.selected),
         }
 
-    @Slot(str, QUrl, result=bool)
-    def beginRelink(self, owner: str, url: QUrl) -> bool:
-        if not url.isLocalFile():
-            return False
+    def _can_begin_relink(self) -> bool:
         if (
             self._runtime.active_job is not None
             or self._runtime.busy
@@ -640,6 +646,12 @@ class Bridge(QObject):
         ):
             self._status = "Finish active work before changing saved locations."
             self.statusChanged.emit()
+            return False
+        return True
+
+    @Slot(str, QUrl, result=bool)
+    def beginRelink(self, owner: str, url: QUrl) -> bool:
+        if not url.isLocalFile() or not self._can_begin_relink():
             return False
         started = self._relink.begin(
             owner, Path(url.toLocalFile()), self._runtime.history
@@ -660,6 +672,61 @@ class Bridge(QObject):
             self.relinkChanged.emit()
         return started
 
+    @Slot(str, QUrl, result=bool)
+    def beginFolderRelink(self, captured_path: str, url: QUrl) -> bool:
+        if not url.isLocalFile() or not self._can_begin_relink():
+            return False
+        self._reconcile_folder_browser()
+        model = self._folder_browser
+        if (
+            model.mode != "folders"
+            or model.path is None
+            or str(model.path) != captured_path
+        ):
+            return False
+        try:
+            destination = ArchivePath.parse(url.toLocalFile())
+        except ValueError:
+            return False
+        owners = tuple(
+            history_archive_owner(dict(model.records[index]))
+            for index in model.visible
+            if (directory := archive_directory(model.records[index])) is not None
+            and directory.relative_to(model.path) is not None
+        )
+        try:
+            started = self._relink.begin_folder(
+                model.path, destination, owners, self._runtime.history
+            )
+        except ValueError:
+            return False
+        if started:
+            self._relink_operation = bind_operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                operation_key=str(uuid.uuid4()),
+            )
+            operation(
+                self._analytics.telemetry,
+                "archive_relink_operation",
+                "requested",
+                self._relink_operation,
+                {"relink_mode": "folder", "item_count": str(len(owners))},
+            )
+            self.relinkChanged.emit()
+        return started
+
+    @Slot(str)
+    def requestFolderRelink(self, path: str) -> None:
+        self._reconcile_folder_browser()
+        model = self._folder_browser
+        if (
+            self._selection == "Library"
+            and model.mode == "folders"
+            and (model.path is not None and str(model.path) == path)
+        ):
+            self.folderRelinkRequested.emit(path)
+
     @Slot(result=bool)
     def acceptRelink(self) -> bool:
         if (
@@ -679,7 +746,7 @@ class Bridge(QObject):
                 "archive_relink_operation",
                 "commit_requested",
                 self._relink_operation,
-                {"item_count": "1"},
+                {"item_count": str(len(self._relink.ready_indices))},
             )
         self.relinkChanged.emit()
         return accepted
@@ -1235,7 +1302,8 @@ class Bridge(QObject):
         if self._selection != "Library":
             return ""
         matches = [
-            row for row in self._runtime.history
+            row
+            for row in self._runtime.history
             if row.get("vodforge_output_dir") and history_archive_owner(row) == owner
         ]
         if len(matches) != 1:
@@ -1866,13 +1934,16 @@ class Bridge(QObject):
                     "title": str(
                         preview.get("title") or f"{active.output_type.value} download"
                     ),
-                    "detail": str(preview.get("uploader") or preview.get("channel") or ""),
+                    "detail": str(
+                        preview.get("uploader") or preview.get("channel") or ""
+                    ),
                     "status": self._status,
                     "type": active.output_type.value,
                     "progress": self._progress,
                     "artwork": (
                         self._artwork.request(preview)
-                        if preview and len(records) < 4 else ""
+                        if preview and len(records) < 4
+                        else ""
                     ),
                 }
             )
@@ -1901,7 +1972,8 @@ class Bridge(QObject):
                         "progress": 0,
                         "artwork": (
                             self._artwork.request(preview)
-                            if preview and len(records) < 4 else ""
+                            if preview and len(records) < 4
+                            else ""
                         ),
                     }
                 )
@@ -1915,7 +1987,9 @@ class Bridge(QObject):
                 {
                     "runId": str(record["run_id"]),
                     "selectionKey": "saved:"
-                    + str(item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)),
+                    + str(
+                        item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)
+                    ),
                     "owner": str(
                         item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)
                     ),
@@ -3260,10 +3334,17 @@ class Bridge(QObject):
     @Slot(str)
     def recordPresentation(self, action: str) -> None:
         if (
-            action in {
-                "fit", "fill", "fullscreen", "floating", "returned",
-                "captions_selected", "caption_fit_applied",
-                "caption_fill_restored", "caption_fill_unavailable",
+            action
+            in {
+                "fit",
+                "fill",
+                "fullscreen",
+                "floating",
+                "returned",
+                "captions_selected",
+                "caption_fit_applied",
+                "caption_fill_restored",
+                "caption_fill_unavailable",
             }
             and self._playback_record is not None
             and watch_media_kind(self._playback_record) == "video"
@@ -3489,7 +3570,10 @@ class Bridge(QObject):
                     "archive_relink_operation",
                     "committed",
                     self._relink_operation,
-                    {"committed_count": "1", **relink_dimensions(preview)},
+                    {
+                        "committed_count": str(len(self._relink.ready_indices)),
+                        **relink_dimensions(preview),
+                    },
                 )
                 self._relink_operation = None
             actual = self._relink.updated_history

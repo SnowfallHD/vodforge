@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from yt_downloader.archive_paths import ArchivePath, RootMapping
 from yt_downloader.archive_relink import (
     RelinkPreview,
     commit_relink,
@@ -40,6 +41,8 @@ class QtRelinkSession:
         self.owner = ""
         self.destination = ""
         self.index = -1
+        self.mode = "file"
+        self.selected: tuple[int, ...] = ()
         self.preview: RelinkPreview | None = None
         self.records: list[dict[str, Any]] = []
         self.updated_history: list[dict[str, Any]] | None = None
@@ -56,8 +59,17 @@ class QtRelinkSession:
         return (
             self.phase == "preview"
             and self.preview is not None
-            and len(self.preview.entries) == 1
-            and self.preview.entries[0].state == "ready"
+            and bool(self.ready_indices)
+        )
+
+    @property
+    def ready_indices(self) -> tuple[int, ...]:
+        return (
+            tuple(
+                entry.index for entry in self.preview.entries if entry.state == "ready"
+            )
+            if self.preview is not None
+            else ()
         )
 
     def begin(
@@ -78,6 +90,44 @@ class QtRelinkSession:
             snapshot, selected=[index], exact_files={index: str(destination)}
         )
 
+        return self._begin_proposal(
+            owner, str(destination), (index,), snapshot, proposal
+        )
+
+    def begin_folder(
+        self,
+        source: ArchivePath,
+        destination: ArchivePath,
+        owners: tuple[str, ...],
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if self.active or not owners:
+            return False
+        by_owner: dict[str, list[int]] = {}
+        for index, row in enumerate(records):
+            by_owner.setdefault(history_archive_owner(row), []).append(index)
+        if len(set(owners)) != len(owners) or any(
+            len(by_owner.get(owner, ())) != 1 for owner in owners
+        ):
+            return False
+        selected = tuple(by_owner[owner][0] for owner in owners)
+        snapshot = [dict(row) for row in records]
+        proposal = preview_relink(
+            snapshot,
+            (RootMapping(source, destination),),
+            selected=selected,
+        )
+        return self._begin_proposal("", str(destination), selected, snapshot, proposal)
+
+    def _begin_proposal(
+        self,
+        owner: str,
+        destination: str,
+        selected: tuple[int, ...],
+        snapshot: list[dict[str, Any]],
+        proposal: RelinkPreview,
+    ) -> bool:
+
         def verify(cancelled: Any) -> tuple[RelinkPreview, bytes]:
             on_disk = load_history(self.history_path)
             if _content_fingerprints(on_disk) != _content_fingerprints(snapshot):
@@ -89,15 +139,17 @@ class QtRelinkSession:
         if generation is None:
             return False
         self.owner = owner
-        self.destination = str(destination)
-        self.index = index
+        self.destination = destination
+        self.index = selected[0] if owner else -1
+        self.mode = "file" if owner else "folder"
+        self.selected = selected
         self.records = snapshot
         self.preview = None
         self.updated_history = None
         self._document_hash = None
         self._cancel_requested = False
         self.phase = "checking"
-        self.status = "Checking the selected file and saved details…"
+        self.status = "Checking the selected files and saved details…"
         self._started = time.monotonic()
         return True
 
@@ -110,7 +162,7 @@ class QtRelinkSession:
             return False
         preview = self.preview
         snapshot = self.records
-        selected = self.index
+        selected = self.ready_indices
 
         def commit(cancelled: Any) -> list[dict[str, Any]]:
             if (
@@ -126,7 +178,7 @@ class QtRelinkSession:
                 preview,
                 snapshot,
                 self.history_path,
-                accepted=(selected,),
+                accepted=selected,
                 cancelled=cancelled,
             )
 
@@ -156,14 +208,11 @@ class QtRelinkSession:
                 self.status = "The selected file could not be checked."
                 return True
             self.preview, self._document_hash = result.value
-            if (
-                len(self.preview.entries) == 1
-                and self.preview.entries[0].state == "ready"
-            ):
+            if self.ready_indices:
                 self.phase = "preview"
                 self.status = (
-                    "Review this exact location before updating Library. "
-                    "Its saved details were checked; identical content is not confirmed."
+                    f"Review {len(self.ready_indices)} verified location(s) before updating Library. "
+                    "Other files will stay unchanged. Identical content is not confirmed."
                 )
             else:
                 self.phase = "error"
