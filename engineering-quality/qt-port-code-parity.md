@@ -138,3 +138,20 @@ structure; a rendered geometry regression fails against the previous QML and
 all 76 scene tests pass after the change. The 1100×740 source capture
 `build/qt-port-package/activity-divider-welcome.png` was inspected. Fresh
 post-edit native Mac and Genesis packages and full journey gates are still open.
+
+The exact clean `5791e51` Mac QA package passed build-time source tests,
+packaged runtime smoke and strict deep ad hoc signature verification. CUA
+observed the Welcome divider/emblems and Forge divider/3:2 facts row in its
+isolated profile; Command-Q exited code 0. The first Genesis build embedded
+`unknown` because an untracked transfer bundle was inside its QA checkout;
+that build is rejected as provenance evidence. Moving the bundle into the
+QA runs directory restored clean source and the rebuilt EXE embeds exact
+`5791e519cd2c1b53160d363626f5ec0d91aa0989` (SHA256
+`4893c760213b5e28ea2e2b95229682e9f271f84c6c147fa610b467da84201da1`).
+Packaged runtime smoke and an isolated interactive Genesis run passed, with
+visible dividers/event/success emblems on Welcome slide one and the slider on
+slide three. Screenshots and result are under
+`build/qt-port-package/genesis-5791e51-{welcome,smiley,result}.*`.
+The owned Windows PID exited and both scheduled QA tasks were removed; no
+normal installation or Kryden state was changed. This qualifies the specific
+shared activity visual change, not the full Qt release or installed app.
