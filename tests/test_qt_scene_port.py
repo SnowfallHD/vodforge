@@ -1807,6 +1807,52 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         sliders[0].selected.emit(False)
         app.processEvents()
         assert preview.property("technical") is False
+        popup.setProperty("index", 3)
+        app.processEvents()
+        library_fields = preview.findChild(QObject, "featurePreviewLibraryFields")
+        category = preview.findChild(QObject, "featurePreviewCategory")
+        tags = preview.findChild(QObject, "featurePreviewTags")
+        notes = preview.findChild(QObject, "featurePreviewNotes")
+        assert library_fields.isVisible()
+        assert category.property("label") == "Travel  ▾"
+        assert tags.property("text") == "mountains, quiet, inspiration"
+        assert notes.property("text").startswith("A short film")
+        assert (
+            category.property("height")
+            == tags.property("height")
+            == notes.property("height")
+            == 38
+        )
+        assert category.mapToScene(QPointF()).y() < tags.mapToScene(QPointF()).y()
+        assert tags.mapToScene(QPointF()).y() < notes.mapToScene(QPointF()).y()
+        for field in (tags, notes):
+            assert (
+                field.property("background")
+                .metaObject()
+                .className()
+                .startswith("StoneField")
+            )
+        category.activated.emit()
+        app.processEvents()
+        category_menu = preview.findChild(QObject, "featurePreviewCategoryMenu")
+        assert category_menu.property("visible") is True
+        category_menu.setProperty("visible", False)
+        preview.setProperty("previewKey", "local-video")
+        app.processEvents()
+        assert preview.findChild(QObject, "featurePreviewLocalVideoFields").isVisible()
+        assert (
+            preview.findChild(QObject, "featurePreviewLocalAudio").property("text")
+            == "Choose an MP3 file"
+        )
+        assert (
+            preview.findChild(QObject, "featurePreviewLocalImage").property("text")
+            == "Choose a still image"
+        )
+        assert (
+            preview.findChild(QObject, "featurePreviewLocalProfile")
+            .property("label")
+            .endswith("▾")
+        )
     finally:
         window.close()
         engine.deleteLater()

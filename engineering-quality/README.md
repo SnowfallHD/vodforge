@@ -1889,3 +1889,19 @@ the previous QML fails; corrected source passes all 76 Qt scene tests. An
 was inspected. This is representative cross-consumer coverage; exact native
 Mac and Genesis packages built after this edit and every activity token variant
 remain separate checks.
+
+### Editorial examples render their actual control hierarchy (2026-09-24)
+
+The Qt carousel advertised Library categories, tags and notes with one flat
+`Text` item. Tk's preview owner instead composes a category dropdown and two
+recessed entries; the shared visual material alone was absent in Qt. The same
+flat-text shortcut existed for local video inputs/profile. `FeaturePreview.qml`
+now uses the existing StoneButton and StoneField controls for both exhibits,
+with illustrative values kept local. A rendered QML interaction test checks
+three ordered Library controls, shared field backgrounds, example text and
+category-menu opening; it also checks the local-video fields/profile. The test
+fails on the prior bare-text QML and passes after the change. The 1100×740
+Welcome six-slide matrix and Library/local-video frames were inspected under
+`build/qt-port-package/welcome-matrix-5791e51/`. This covers these two exhibit
+variants at source density; post-change native Mac/Genesis packages and all
+other editorial previews still need qualification.

@@ -11,6 +11,7 @@ Item {
     property string mode: "Everyday"
     property string cookieMode: "Browser"
     property string demoFormat: "Original audio"
+    property string demoLocalProfile: localVideoProfiles.length ? localVideoProfiles[0] : "720p"
     property int activityStep: 0
     readonly property int preferredWidth: previewKey === "ui-activity" ? 280 :
                                           previewKey === "welcome-activity" ? 300 :
@@ -144,17 +145,66 @@ Item {
             Layout.preferredWidth: 170
             onActivated: browserPreview.open()
         }
-        Text {
+        ColumnLayout {
+            objectName: "featurePreviewLibraryFields"
             visible: preview.previewKey === "library"
-            text: "CATEGORY  ·  Travel\nYOUR TAGS  ·  mountains, quiet, inspiration\nNOTES  ·  A short film about finding peace in the mountains."
-            color: theme.text; font.pixelSize: 13
-            Layout.fillWidth: true; wrapMode: Text.WordWrap; lineHeight: 1.5
+            Layout.fillWidth: true
+            spacing: 3
+            Text { text: "CATEGORY"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            StoneButton {
+                objectName: "featurePreviewCategory"
+                label: "Travel  ▾"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                onActivated: categoryPreview.open()
+            }
+            Text { text: "YOUR TAGS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            TextField {
+                objectName: "featurePreviewTags"
+                text: "mountains, quiet, inspiration"
+                color: theme.text; font.pixelSize: 15
+                leftPadding: 16; rightPadding: 16
+                Layout.fillWidth: true; Layout.preferredHeight: 38
+                background: StoneField {}
+            }
+            Text { text: "NOTES"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            TextField {
+                objectName: "featurePreviewNotes"
+                text: "A short film about finding peace in the mountains."
+                color: theme.text; font.pixelSize: 15
+                leftPadding: 16; rightPadding: 16
+                Layout.fillWidth: true; Layout.preferredHeight: 38
+                background: StoneField {}
+            }
         }
-        Text {
+        ColumnLayout {
+            objectName: "featurePreviewLocalVideoFields"
             visible: preview.previewKey === "local-video"
-            text: "MP3 AUDIO  ·  Choose an MP3 file\nSTILL IMAGE  ·  Choose a still image\nOUTPUT PROFILE  ·  720p"
-            color: theme.text; font.pixelSize: 13
-            Layout.fillWidth: true; wrapMode: Text.WordWrap; lineHeight: 1.5
+            Layout.fillWidth: true
+            spacing: 3
+            Text { text: "MP3 AUDIO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            TextField {
+                objectName: "featurePreviewLocalAudio"
+                text: "Choose an MP3 file"; color: theme.text; font.pixelSize: 15
+                leftPadding: 16; rightPadding: 16
+                Layout.fillWidth: true; Layout.preferredHeight: 38
+                background: StoneField {}
+            }
+            Text { text: "STILL IMAGE"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            TextField {
+                objectName: "featurePreviewLocalImage"
+                text: "Choose a still image"; color: theme.text; font.pixelSize: 15
+                leftPadding: 16; rightPadding: 16
+                Layout.fillWidth: true; Layout.preferredHeight: 38
+                background: StoneField {}
+            }
+            Text { text: "OUTPUT PROFILE"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            StoneButton {
+                objectName: "featurePreviewLocalProfile"
+                label: preview.demoLocalProfile + "  ▾"
+                Layout.fillWidth: true; Layout.preferredHeight: 38
+                onActivated: localProfilePreview.open()
+            }
         }
         RowLayout {
             visible: ["ui-player", "player"].indexOf(preview.previewKey) >= 0
@@ -201,6 +251,42 @@ Item {
             }
         }
         Item { Layout.fillHeight: true }
+    }
+    Popup {
+        id: categoryPreview
+        objectName: "featurePreviewCategoryMenu"
+        x: Math.max(0, (preview.width - width) / 2)
+        y: Math.max(0, (preview.height - height) / 2)
+        width: Math.min(300, preview.width - 12)
+        height: 45; padding: 3
+        background: StoneField {}
+        StoneButton {
+            anchors.fill: parent
+            label: "Travel"; selected: true
+            onActivated: categoryPreview.close()
+        }
+    }
+    Popup {
+        id: localProfilePreview
+        objectName: "featurePreviewLocalProfileMenu"
+        x: Math.max(0, (preview.width - width) / 2)
+        y: Math.max(0, (preview.height - height) / 2)
+        width: Math.min(300, preview.width - 12)
+        height: localVideoProfiles.length * 39 + 6; padding: 3
+        background: StoneField {}
+        Column {
+            anchors.fill: parent
+            Repeater {
+                model: localVideoProfiles
+                StoneButton {
+                    required property string modelData
+                    width: parent.width; height: 39
+                    label: modelData
+                    selected: preview.demoLocalProfile === modelData
+                    onActivated: { preview.demoLocalProfile = modelData; localProfilePreview.close() }
+                }
+            }
+        }
     }
     Popup {
         id: modePreview

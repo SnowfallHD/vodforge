@@ -155,3 +155,15 @@ slide three. Screenshots and result are under
 The owned Windows PID exited and both scheduled QA tasks were removed; no
 normal installation or Kryden state was changed. This qualifies the specific
 shared activity visual change, not the full Qt release or installed app.
+
+2026-09-24 editorial exhibit control parity: A six-slide Qt Welcome contact
+sheet exposed bare text on the Library slide where Tk uses Category choice,
+Tags entry and Notes entry. The local-video exhibit had the same flat-text
+shortcut. Both now compose the existing StoneButton/StoneField controls and
+isolated example values in `FeaturePreview.qml`; Category and Output Profile
+choices open shared-control menus. The Library frame and local-video frame at
+`build/qt-port-package/welcome-matrix-5791e51/` were inspected at 1100×740.
+A rendered interaction test verifies ordered bounds, shared backgrounds and
+menu reachability, and fails against the prior bare-text implementation.
+Post-edit native Mac/Genesis packaging and remaining exhibit variants remain
+open; earlier 5791e51 package proof predates this change.
