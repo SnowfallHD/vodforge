@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -15,6 +16,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtMultimedia import QMediaPlayer
 
+from tests.test_quality_e2e import _isolated_launch
 from tests.test_run_identity import make_job
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
@@ -351,6 +353,15 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
             )
             == 360
         )
+        panel = window.findChild(QObject, "libraryFolderDetailsPanel")
+        folder_viewport = window.findChild(QObject, "libraryFolderViewport")
+        assert (
+            abs(
+                panel.mapToItem(None, 0, panel.height()).y()
+                - folder_viewport.mapToItem(None, 0, folder_viewport.height()).y()
+            )
+            <= 2
+        )
         window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
         app.processEvents()
         assert (
@@ -370,6 +381,53 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
         compact.activated.emit()
         assert bridge.libraryScene["route"] == "detail"
         assert bridge.libraryDetail["owner"] == selected_owner
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_folder_description_attests_real_rendered_visibility(tmp_path, monkeypatch):
+    environment, *_ = _isolated_launch(tmp_path)
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    title = "A selected archive title with enough words to occupy more than two lines in the inspector rail"
+    record = saved(tmp_path / ("very-long-folder-name-" * 5), title, "MP4")
+    record["description"] = "Visible description. " * 80
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        window.resize(1100, 740)
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("all")
+        media = next(
+            row for row in bridge.libraryFolders["components"] if row["kind"] == "media"
+        )
+        app.processEvents()
+        listing = window.findChild(QObject, "libraryFolderList")
+        button = next(
+            item
+            for item in listing.childItems()
+            if item.objectName() == "libraryFolderComponent_" + media["key"]
+        )
+        button.activated.emit()
+        app.processEvents()
+        window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
+        for _ in range(5):
+            app.processEvents()
+        receipts = list(Path(environment["TMPDIR"]).glob("*library*visibility*.json"))
+        assert len(receipts) == 1
+        payload = json.loads(receipts[0].read_text(encoding="utf-8"))
+        assert payload["verified"], payload
+        assert payload["renderer"] == "qt"
+        assert title not in receipts[0].read_text(encoding="utf-8")
     finally:
         window.close()
         engine.deleteLater()

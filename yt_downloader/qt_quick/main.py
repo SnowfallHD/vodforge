@@ -26,6 +26,7 @@ from PySide6.QtCore import (
     QCoreApplication,
     QEvent,
     QObject,
+    QPointF,
     QSize,
     QTimer,
     QUrl,
@@ -166,6 +167,8 @@ from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
 from yt_downloader.quality_e2e import (
     QualityE2EAttestationError,
+    quality_e2e_mode_enabled,
+    write_quality_e2e_qt_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
 from yt_downloader.run_identity import annotate_job_metadata, metadata_output_profile
@@ -2308,6 +2311,76 @@ class Bridge(QObject):
         self._detail_versions = list(self._folder_inspector_versions)
         return self.openLibraryDetails(self._folder_inspector_owner)
 
+    @Slot(result=bool)
+    def attestQtLibraryVisibility(self) -> bool:
+        if not quality_e2e_mode_enabled():
+            return False
+        window = self._window
+        if window is None or self._library_scene_route != "folders":
+            return False
+        names = {
+            "rail": "libraryFolderInspector",
+            "details": "libraryFolderDetailsPanel",
+            "table": "libraryFolderViewport",
+            "heading": "libraryFolderDescriptionHeading",
+            "scroll": "libraryFolderDescriptionScroll",
+            "description": "libraryFolderDescriptionText",
+            "title": "libraryFolderSelectedTitle",
+            "location": "libraryFolderSelectedLocation",
+        }
+        items = {key: window.findChild(QObject, name) for key, name in names.items()}
+        if any(item is None for item in items.values()):
+            return False
+        rail = items["rail"]
+        if rail.property("section") != "Description" or not rail.isVisible():
+            return False
+        detail = self.libraryFolderInspector
+        selected_owner = self._folder_inspector_owner
+        if not selected_owner or detail.get("owner") != selected_owner:
+            return False
+        if window.grabWindow().isNull():
+            return False
+
+        def bounds(item: Any) -> dict[str, int]:
+            point = item.mapToScene(QPointF(0, 0))
+            return {
+                "x": round(window.x() + point.x()),
+                "y": round(window.y() + point.y()),
+                "width": round(item.width()),
+                "height": round(item.height()),
+            }
+
+        scroll_content = items["scroll"].property("contentItem")
+        if scroll_content is None:
+            return False
+        receipt = write_quality_e2e_qt_library_visibility_receipt(
+            full_title=str(detail.get("title") or ""),
+            description_text=str(items["description"].property("text") or ""),
+            selected_owner=selected_owner,
+            projected_owner=str(detail.get("owner") or ""),
+            displayed_title_visible_lines=min(
+                2, int(items["title"].property("lineCount") or 0)
+            ),
+            title_truncated=bool(items["title"].property("truncated")),
+            location_truncated=bool(items["location"].property("truncated")),
+            rail_bounds=bounds(rail),
+            details_bounds=bounds(items["details"]),
+            library_table_bounds=bounds(items["table"]),
+            description_heading_bounds=bounds(items["heading"]),
+            description_viewport_bounds=bounds(items["scroll"]),
+            description_text_bounds=bounds(items["description"]),
+            rail_visible=rail.isVisible(),
+            heading_visible=items["heading"].isVisible(),
+            description_visible=items["description"].isVisible(),
+            library_table_visible=items["table"].isVisible(),
+            description_scroll_at_start=abs(
+                float(scroll_content.property("contentY") or 0)
+            )
+            <= 0.5,
+            library_invariant_receipt=self._library_projection.snapshot.receipt,
+        )
+        return receipt is not None
+
     @Slot(str, result=bool)
     def openLibraryFolderComponent(self, key: str) -> bool:
         component = self._folder_component(key)
@@ -4183,6 +4256,7 @@ def attest_qt_launch(bridge: Bridge, window: Any) -> Path | None:
     return write_quality_e2e_startup_attestation(
         QtQualityE2EApp(bridge, window),
         app_version=__version__,
+        renderer="qt",
         application_data_path=application_data_dir(),
         diagnostics_path=DIAGNOSTICS_LOG_PATH,
     )

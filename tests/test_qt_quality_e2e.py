@@ -66,6 +66,7 @@ def test_qt_launch_uses_existing_isolation_attestor(
     assert receipt is not None
     payload = json.loads(receipt.read_text(encoding="utf-8"))
     assert payload["history_path"] == str(bridge._runtime.history_path)
+    assert payload["renderer"] == "qt"
     assert payload["output_root"] == str(output)
     assert window.title() == "VODForge [VFQ-012345abcdef-L1]"
     assert receipt.parent == temporary

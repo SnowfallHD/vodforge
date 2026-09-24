@@ -21,6 +21,7 @@ from yt_downloader.quality_e2e import (
     QUALITY_E2E_WINDOW_TOKEN_ENV,
     QualityE2EAttestationError,
     write_quality_e2e_library_visibility_receipt,
+    write_quality_e2e_qt_library_visibility_receipt,
     write_quality_e2e_startup_attestation,
 )
 
@@ -37,6 +38,78 @@ def _clean_library_invariant_receipt() -> SimpleNamespace:
         statuses=("Completed",),
         violation_codes=(),
     )
+
+
+def _qt_visibility_fields() -> dict[str, object]:
+    return {
+        "full_title": "An intentionally long selected title",
+        "description_text": "The exact visible description.",
+        "selected_owner": "archive-owner-1",
+        "projected_owner": "archive-owner-1",
+        "displayed_title_visible_lines": 2,
+        "title_truncated": True,
+        "location_truncated": True,
+        "rail_bounds": {"x": 700, "y": 50, "width": 380, "height": 650},
+        "details_bounds": {"x": 700, "y": 300, "width": 380, "height": 360},
+        "library_table_bounds": {"x": 220, "y": 100, "width": 460, "height": 560},
+        "description_heading_bounds": {"x": 710, "y": 310, "width": 140, "height": 20},
+        "description_viewport_bounds": {
+            "x": 710,
+            "y": 335,
+            "width": 360,
+            "height": 325,
+        },
+        "description_text_bounds": {"x": 710, "y": 335, "width": 360, "height": 800},
+        "rail_visible": True,
+        "heading_visible": True,
+        "description_visible": True,
+        "library_table_visible": True,
+        "description_scroll_at_start": True,
+        "library_invariant_receipt": _clean_library_invariant_receipt(),
+    }
+
+
+def test_qt_library_visibility_receipt_keeps_geometry_and_identity_gate(tmp_path):
+    environment, *_ = _isolated_launch(tmp_path)
+    receipt = write_quality_e2e_qt_library_visibility_receipt(
+        **_qt_visibility_fields(), environ=environment
+    )
+    assert receipt is not None
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    assert payload["renderer"] == "qt"
+    assert payload["verified"] is True
+    assert payload["description_table_bottom_delta_px"] == 0
+    assert payload["selected_owner_sha256"] == payload["projected_owner_sha256"]
+    assert "archive-owner-1" not in receipt.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        {"projected_owner": "different-owner"},
+        {"title_truncated": False},
+        {"location_truncated": False},
+        {"description_scroll_at_start": False},
+        {"details_bounds": {"x": 700, "y": 300, "width": 380, "height": 359}},
+        {
+            "description_viewport_bounds": {
+                "x": 710,
+                "y": 335,
+                "width": 360,
+                "height": 310,
+            }
+        },
+    ),
+)
+def test_qt_library_visibility_receipt_fails_changed_rendering(tmp_path, mutation):
+    environment, *_ = _isolated_launch(tmp_path)
+    fields = _qt_visibility_fields()
+    fields.update(mutation)
+    receipt = write_quality_e2e_qt_library_visibility_receipt(
+        **fields, environ=environment
+    )
+    assert receipt is not None
+    assert json.loads(receipt.read_text(encoding="utf-8"))["verified"] is False
 
 
 class _FakeStringValue:
@@ -205,6 +278,7 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
     payload = json.loads(expected.read_text(encoding="utf-8"))
     assert payload == {
         "schema_version": "1.0.0",
+        "renderer": "tk",
         "telemetry_preview": False,
         "telemetry_production": False,
         "session_nonce": SESSION_NONCE,

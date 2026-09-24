@@ -832,6 +832,27 @@ def _library_description_visibility_receipt(
     expected_title_sha256 = hashlib.sha256(
         LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE.encode("utf-8")
     ).hexdigest()
+    renderer = (
+        launch.get("attestation", {}).get("renderer", "tk")
+        if isinstance(launch, dict) and isinstance(launch.get("attestation"), dict)
+        else "tk"
+    )
+    if renderer == "qt":
+        return _qt_library_description_visibility_receipt(
+            payload=payload,
+            errors=errors,
+            event=event,
+            receipt_path=receipt_path,
+            session_nonce=session_nonce,
+            window_token=window_token,
+            expected_description=expected_description,
+            expected_description_sha256=expected_description_sha256,
+            expected_title_sha256=expected_title_sha256,
+        )
+    if renderer != "tk":
+        errors.append("owned launch renderer is invalid")
+    if payload.get("renderer", "tk") != "tk":
+        errors.append("Library visibility receipt renderer does not match Tk launch")
     expected_values = {
         "session_nonce": session_nonce,
         "launch_id": event.get("launch_id"),
@@ -987,6 +1008,146 @@ def _library_description_visibility_receipt(
             "library_projection_invariants_clean"
         )
         is True,
+        "receipt_path": str(receipt_path),
+        "receipt_sha256": sha256_file(receipt_path)
+        if receipt_path.is_file() and not receipt_path.is_symlink()
+        else None,
+        "receipt": payload,
+        "errors": errors,
+    }
+
+
+def _qt_library_description_visibility_receipt(
+    *,
+    payload: dict[str, Any],
+    errors: list[str],
+    event: dict[str, Any],
+    receipt_path: Path,
+    session_nonce: str,
+    window_token: str,
+    expected_description: str,
+    expected_description_sha256: str,
+    expected_title_sha256: str,
+) -> dict[str, Any]:
+    """Recompute Qt's visible geometry from its private, owned launch receipt."""
+    expected = {
+        "schema_version": "1.0.0",
+        "renderer": "qt",
+        "session_nonce": session_nonce,
+        "launch_id": event.get("launch_id"),
+        "window_token": window_token,
+        "pid": event.get("pid"),
+        "description_sha256": expected_description_sha256,
+        "full_title_sha256": expected_title_sha256,
+        "details_configured_height_px": 360,
+        "minimum_displayed_title_visible_lines": QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
+        "description_table_bottom_tolerance_px": QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            errors.append(f"Qt Library visibility receipt {key} mismatch")
+    for key in (
+        "verified",
+        "rail_mapped_and_viewable",
+        "description_heading_mapped_and_viewable",
+        "description_body_mapped_and_viewable",
+        "library_table_mapped_and_viewable",
+        "description_heading_fully_inside_details",
+        "description_viewport_fully_inside_details",
+        "description_first_line_visible",
+        "title_ellipsized",
+        "path_ellipsized",
+        "library_projection_invariants_clean",
+    ):
+        if payload.get(key) is not True:
+            errors.append(f"Qt Library visibility receipt {key} is not true")
+    bounds: dict[str, dict[str, int]] = {}
+    for key in (
+        "rail_bounds",
+        "details_bounds",
+        "library_table_bounds",
+        "description_heading_bounds",
+        "description_viewport_bounds",
+        "description_text_bounds",
+    ):
+        value = payload.get(key)
+        if not isinstance(value, dict) or any(
+            type(value.get(axis)) is not int
+            or (axis in {"width", "height"} and value[axis] <= 0)
+            for axis in ("x", "y", "width", "height")
+        ):
+            errors.append(f"Qt Library visibility receipt {key} is invalid")
+        else:
+            bounds[key] = value
+    if len(bounds) == 6:
+        rail = bounds["rail_bounds"]
+        details = bounds["details_bounds"]
+        table = bounds["library_table_bounds"]
+        heading = bounds["description_heading_bounds"]
+        viewport = bounds["description_viewport_bounds"]
+        body = bounds["description_text_bounds"]
+
+        def inside(inner: dict[str, int], outer: dict[str, int]) -> bool:
+            return (
+                inner["x"] >= outer["x"]
+                and inner["y"] >= outer["y"]
+                and inner["x"] + inner["width"] <= outer["x"] + outer["width"]
+                and inner["y"] + inner["height"] <= outer["y"] + outer["height"]
+            )
+
+        bottom = viewport["y"] + viewport["height"]
+        table_bottom = table["y"] + table["height"]
+        delta = bottom - table_bottom
+        if details["height"] != 360 or not inside(details, rail):
+            errors.append("Qt Library details panel geometry is invalid")
+        if not inside(heading, details) or not inside(viewport, details):
+            errors.append("Qt Library description geometry is invalid")
+        if not (viewport["y"] <= body["y"] < bottom):
+            errors.append("Qt Library first description line is outside the viewport")
+        if abs(delta) > QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX:
+            errors.append("Qt Library description bottom is not table aligned")
+        for key, value in (
+            ("details_height_px", details["height"]),
+            ("description_bottom_px", bottom),
+            ("library_table_bottom_px", table_bottom),
+            ("description_table_bottom_delta_px", delta),
+        ):
+            if payload.get(key) != value:
+                errors.append(f"Qt Library visibility receipt {key} mismatch")
+    lines = payload.get("displayed_title_visible_lines")
+    if type(lines) is not int or lines < QUALITY_E2E_MIN_TITLE_VISIBLE_LINES:
+        errors.append("Qt Library visible title has too few lines")
+    if event.get("observed_text") != expected_description:
+        errors.append("UI event did not record the exact visible fixture description")
+    selected_owner_hash = payload.get("selected_owner_sha256")
+    if (
+        not isinstance(selected_owner_hash, str)
+        or len(selected_owner_hash) != 64
+        or any(char not in "0123456789abcdef" for char in selected_owner_hash)
+        or selected_owner_hash != payload.get("projected_owner_sha256")
+    ):
+        errors.append("Qt Library selected owner differs from projected owner")
+    canonical = payload.get("library_projection_canonical_run_ids")
+    projected = payload.get("library_projection_projected_run_ids")
+    violations = payload.get("library_projection_violation_codes")
+    if (
+        not isinstance(canonical, list)
+        or not isinstance(projected, list)
+        or any(not isinstance(value, str) for value in canonical + projected)
+        or canonical != projected
+        or len(canonical) != len(set(canonical))
+        or violations != []
+    ):
+        errors.append("Qt Library projection invariants are invalid")
+    return {
+        "verified": not errors,
+        "fixture_id": "generated-library-description-stress",
+        "expected_description_sha256": expected_description_sha256,
+        "expected_title_sha256": expected_title_sha256,
+        "observed_description_sha256": payload.get("description_sha256"),
+        "event_observed_text_matches": event.get("observed_text")
+        == expected_description,
+        "library_projection_invariants_clean": not errors,
         "receipt_path": str(receipt_path),
         "receipt_sha256": sha256_file(receipt_path)
         if receipt_path.is_file() and not receipt_path.is_symlink()

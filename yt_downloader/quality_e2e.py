@@ -213,6 +213,41 @@ def _bounds_inside(child: Mapping[str, int], parent: Mapping[str, int]) -> bool:
     )
 
 
+def _library_visibility_envelope(
+    environment: Mapping[str, str],
+) -> tuple[Path, str, str, str]:
+    nonce = _required_environment_value(environment, QUALITY_E2E_NONCE_ENV)
+    if _NONCE_RE.fullmatch(nonce) is None:
+        raise QualityE2EAttestationError("quality-E2E session nonce is invalid")
+    window_token = _required_environment_value(
+        environment, QUALITY_E2E_WINDOW_TOKEN_ENV
+    )
+    if _WINDOW_TOKEN_RE.fullmatch(window_token) is None:
+        raise QualityE2EAttestationError("quality-E2E window token is invalid")
+    launch_id = _required_environment_value(environment, QUALITY_E2E_LAUNCH_ID_ENV)
+    if _NONCE_RE.fullmatch(launch_id) is None:
+        raise QualityE2EAttestationError("quality-E2E launch ID is invalid")
+    isolation_root = _existing_directory_without_symlinks(
+        _required_environment_value(environment, QUALITY_E2E_ISOLATION_ROOT_ENV),
+        label="quality-E2E isolation root",
+    )
+    tmp_path = _existing_directory_without_symlinks(
+        _required_environment_value(environment, "TMPDIR"),
+        label="quality-E2E temporary directory",
+    )
+    if tmp_path != isolation_root / "tmp":
+        raise QualityE2EAttestationError(
+            "quality-E2E temporary directory does not belong to the isolation root"
+        )
+    filename = f"{QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX}{nonce}-{window_token}.json"
+    receipt_path = tmp_path / filename
+    if receipt_path.parent != tmp_path or receipt_path.name != filename:
+        raise QualityE2EAttestationError(
+            "quality-E2E Library visibility receipt path is invalid"
+        )
+    return receipt_path, nonce, window_token, launch_id
+
+
 def write_quality_e2e_library_visibility_receipt(
     *,
     details: _GeometryWidget,
@@ -239,29 +274,9 @@ def write_quality_e2e_library_visibility_receipt(
     environment = os.environ if environ is None else environ
     if not quality_e2e_mode_enabled(environment):
         return None
-    nonce = _required_environment_value(environment, QUALITY_E2E_NONCE_ENV)
-    if _NONCE_RE.fullmatch(nonce) is None:
-        raise QualityE2EAttestationError("quality-E2E session nonce is invalid")
-    window_token = _required_environment_value(
-        environment, QUALITY_E2E_WINDOW_TOKEN_ENV
+    receipt_path, nonce, window_token, launch_id = _library_visibility_envelope(
+        environment
     )
-    if _WINDOW_TOKEN_RE.fullmatch(window_token) is None:
-        raise QualityE2EAttestationError("quality-E2E window token is invalid")
-    launch_id = _required_environment_value(environment, QUALITY_E2E_LAUNCH_ID_ENV)
-    if _NONCE_RE.fullmatch(launch_id) is None:
-        raise QualityE2EAttestationError("quality-E2E launch ID is invalid")
-    isolation_root = _existing_directory_without_symlinks(
-        _required_environment_value(environment, QUALITY_E2E_ISOLATION_ROOT_ENV),
-        label="quality-E2E isolation root",
-    )
-    tmp_path = _existing_directory_without_symlinks(
-        _required_environment_value(environment, "TMPDIR"),
-        label="quality-E2E temporary directory",
-    )
-    if tmp_path != isolation_root / "tmp":
-        raise QualityE2EAttestationError(
-            "quality-E2E temporary directory does not belong to the isolation root"
-        )
 
     if isinstance(displayed_title_visible_lines, bool) or not isinstance(
         displayed_title_visible_lines, int
@@ -466,12 +481,157 @@ def write_quality_e2e_library_visibility_receipt(
         "recorded_at": recorded_at
         or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
-    filename = f"{QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX}{nonce}-{window_token}.json"
-    receipt_path = tmp_path / filename
-    if receipt_path.parent != tmp_path or receipt_path.name != filename:
+    _write_exclusive_private_json(receipt_path, payload)
+    return receipt_path
+
+
+def write_quality_e2e_qt_library_visibility_receipt(
+    *,
+    full_title: str,
+    description_text: str,
+    selected_owner: str,
+    projected_owner: str,
+    displayed_title_visible_lines: int,
+    title_truncated: bool,
+    location_truncated: bool,
+    rail_bounds: Mapping[str, int],
+    details_bounds: Mapping[str, int],
+    library_table_bounds: Mapping[str, int],
+    description_heading_bounds: Mapping[str, int],
+    description_viewport_bounds: Mapping[str, int],
+    description_text_bounds: Mapping[str, int],
+    rail_visible: bool,
+    heading_visible: bool,
+    description_visible: bool,
+    library_table_visible: bool,
+    description_scroll_at_start: bool,
+    library_invariant_receipt: _LibraryInvariantReceipt,
+    environ: Mapping[str, str] | None = None,
+    pid: int | None = None,
+    recorded_at: str | None = None,
+) -> Path | None:
+    """Attest Qt's real Selected Item reader without changing the Tk oracle."""
+
+    environment = os.environ if environ is None else environ
+    if not quality_e2e_mode_enabled(environment):
+        return None
+    receipt_path, nonce, window_token, launch_id = _library_visibility_envelope(
+        environment
+    )
+    bounds = (
+        rail_bounds,
+        details_bounds,
+        library_table_bounds,
+        description_heading_bounds,
+        description_viewport_bounds,
+        description_text_bounds,
+    )
+    if any(
+        any(type(item.get(name)) is not int for name in ("x", "y", "width", "height"))
+        or item["width"] <= 0
+        or item["height"] <= 0
+        for item in bounds
+    ):
+        raise QualityE2EAttestationError("quality-E2E Qt Library bounds are invalid")
+    if type(displayed_title_visible_lines) is not int:
         raise QualityE2EAttestationError(
-            "quality-E2E Library visibility receipt path is invalid"
+            "quality-E2E displayed title visible-line count is invalid"
         )
+
+    description_bottom = (
+        description_viewport_bounds["y"] + description_viewport_bounds["height"]
+    )
+    table_bottom = library_table_bounds["y"] + library_table_bounds["height"]
+    bottom_delta = description_bottom - table_bottom
+    first_line_visible = bool(
+        description_scroll_at_start
+        and description_text_bounds["y"] >= description_viewport_bounds["y"]
+        and description_text_bounds["y"] < description_bottom
+    )
+    canonical_run_ids = tuple(library_invariant_receipt.canonical_run_ids)
+    projected_run_ids = tuple(library_invariant_receipt.projected_run_ids)
+    violations = tuple(library_invariant_receipt.violation_codes)
+    projection_clean = bool(
+        not violations
+        and canonical_run_ids == projected_run_ids
+        and len(canonical_run_ids) == len(set(canonical_run_ids))
+        and len(projected_run_ids) == len(set(projected_run_ids))
+    )
+    verified = bool(
+        full_title
+        and description_text.strip()
+        and selected_owner
+        and selected_owner == projected_owner
+        and rail_visible
+        and heading_visible
+        and description_visible
+        and library_table_visible
+        and details_bounds["height"] == 360
+        and _bounds_inside(details_bounds, rail_bounds)
+        and _bounds_inside(description_heading_bounds, details_bounds)
+        and _bounds_inside(description_viewport_bounds, details_bounds)
+        and abs(bottom_delta) <= QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX
+        and first_line_visible
+        and title_truncated
+        and location_truncated
+        and displayed_title_visible_lines >= QUALITY_E2E_MIN_TITLE_VISIBLE_LINES
+        and projection_clean
+    )
+    payload: dict[str, object] = {
+        "schema_version": QUALITY_E2E_SCHEMA_VERSION,
+        "renderer": "qt",
+        "session_nonce": nonce,
+        "launch_id": launch_id,
+        "window_token": window_token,
+        "pid": os.getpid() if pid is None else int(pid),
+        "rail_bounds": dict(rail_bounds),
+        "details_bounds": dict(details_bounds),
+        "library_table_bounds": dict(library_table_bounds),
+        "description_heading_bounds": dict(description_heading_bounds),
+        "description_viewport_bounds": dict(description_viewport_bounds),
+        "description_text_bounds": dict(description_text_bounds),
+        "details_configured_height_px": 360,
+        "details_height_px": details_bounds["height"],
+        "description_bottom_px": description_bottom,
+        "library_table_bottom_px": table_bottom,
+        "description_table_bottom_delta_px": bottom_delta,
+        "description_table_bottom_tolerance_px": QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
+        "rail_mapped_and_viewable": rail_visible,
+        "description_heading_mapped_and_viewable": heading_visible,
+        "description_body_mapped_and_viewable": description_visible,
+        "library_table_mapped_and_viewable": library_table_visible,
+        "description_heading_fully_inside_details": _bounds_inside(
+            description_heading_bounds, details_bounds
+        ),
+        "description_viewport_fully_inside_details": _bounds_inside(
+            description_viewport_bounds, details_bounds
+        ),
+        "description_first_line_visible": first_line_visible,
+        "title_ellipsized": title_truncated,
+        "path_ellipsized": location_truncated,
+        "displayed_title_visible_lines": displayed_title_visible_lines,
+        "minimum_displayed_title_visible_lines": QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
+        "full_title_sha256": hashlib.sha256(full_title.encode("utf-8")).hexdigest(),
+        "description_sha256": hashlib.sha256(
+            description_text.encode("utf-8")
+        ).hexdigest(),
+        "description_length": len(description_text),
+        "selected_owner_sha256": hashlib.sha256(
+            selected_owner.encode("utf-8")
+        ).hexdigest(),
+        "projected_owner_sha256": hashlib.sha256(
+            projected_owner.encode("utf-8")
+        ).hexdigest(),
+        "library_projection_row_count": int(library_invariant_receipt.row_count),
+        "library_projection_canonical_run_ids": list(canonical_run_ids),
+        "library_projection_projected_run_ids": list(projected_run_ids),
+        "library_projection_statuses": list(library_invariant_receipt.statuses),
+        "library_projection_violation_codes": list(violations),
+        "library_projection_invariants_clean": projection_clean,
+        "verified": verified,
+        "recorded_at": recorded_at
+        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
     _write_exclusive_private_json(receipt_path, payload)
     return receipt_path
 
@@ -480,6 +640,7 @@ def write_quality_e2e_startup_attestation(
     app: QualityE2EApp,
     *,
     app_version: str,
+    renderer: str = "tk",
     application_data_path: Path,
     diagnostics_path: Path,
     environ: Mapping[str, str] | None = None,
@@ -493,6 +654,8 @@ def write_quality_e2e_startup_attestation(
     environment = os.environ if environ is None else environ
     if not quality_e2e_mode_enabled(environment):
         return None
+    if renderer not in {"tk", "qt"}:
+        raise QualityE2EAttestationError("quality-E2E renderer is invalid")
 
     nonce = _required_environment_value(environment, QUALITY_E2E_NONCE_ENV)
     if _NONCE_RE.fullmatch(nonce) is None:
@@ -590,6 +753,7 @@ def write_quality_e2e_startup_attestation(
 
     payload: dict[str, object] = {
         "schema_version": QUALITY_E2E_SCHEMA_VERSION,
+        "renderer": renderer,
         "telemetry_preview": preview_telemetry_allowed(),
         "telemetry_production": production_telemetry_allowed(),
         "session_nonce": nonce,

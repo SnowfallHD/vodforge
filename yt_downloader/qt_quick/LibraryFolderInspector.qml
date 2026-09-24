@@ -7,15 +7,18 @@ Column {
     property var appBridge
     readonly property var item: appBridge.libraryFolderInspector
     property string section: "Item"
+    property real targetPanelBottom: height
     spacing: 8
 
     Text {
+        id: eyebrow
         text: "SELECTED ITEM"
         color: theme.muted
         font.pixelSize: 12
         font.bold: true
     }
     Row {
+        id: overview
         objectName: "libraryFolderOverview"
         width: parent.width
         height: 81
@@ -62,7 +65,21 @@ Column {
             }
         }
     }
+    StoneButton {
+        id: openDetails
+        objectName: "libraryFolderOpenDetails"
+        label: "Open details"
+        width: parent.width; height: 40
+        enabled: !!inspector.item.owner
+        onActivated: inspector.appBridge.openSelectedLibraryFolderDetail()
+    }
+    Item {
+        width: 1
+        height: Math.max(0, inspector.targetPanelBottom -
+            (eyebrow.height + overview.height + openDetails.height + tabs.height + detailsPanel.height + inspector.spacing * 5))
+    }
     Row {
+        id: tabs
         spacing: 8
         StoneButton {
             objectName: "libraryFolderItemTab"
@@ -76,10 +93,14 @@ Column {
             label: "Description"
             selected: inspector.section === "Description"
             width: 140; height: 36
-            onActivated: inspector.section = "Description"
+            onActivated: {
+                inspector.section = "Description"
+                Qt.callLater(function() { inspector.appBridge.attestQtLibraryVisibility() })
+            }
         }
     }
     StoneField {
+        id: detailsPanel
         objectName: "libraryFolderDetailsPanel"
         width: parent.width
         height: 360
@@ -135,6 +156,7 @@ Column {
         Item {
             anchors.fill: parent
             anchors.margins: 10
+            anchors.bottomMargin: 0
             visible: inspector.section === "Description"
             Text {
                 objectName: "libraryFolderDescriptionHeading"
@@ -161,12 +183,5 @@ Column {
                 }
             }
         }
-    }
-    StoneButton {
-        objectName: "libraryFolderOpenDetails"
-        label: "Open details"
-        width: parent.width; height: 40
-        enabled: !!inspector.item.owner
-        onActivated: inspector.appBridge.openSelectedLibraryFolderDetail()
     }
 }

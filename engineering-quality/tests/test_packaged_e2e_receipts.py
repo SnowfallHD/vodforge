@@ -28,11 +28,62 @@ from quality_harness.packaged_e2e import (
 )
 from quality_harness.util import CommandResult, sha256_file
 
+from tests.test_quality_e2e import _isolated_launch, _qt_visibility_fields
 from yt_downloader.quality_e2e import (
     QUALITY_E2E_LIBRARY_BOTTOM_ALIGNMENT_TOLERANCE_PX,
     QUALITY_E2E_LIBRARY_VISIBILITY_PREFIX,
     QUALITY_E2E_MIN_TITLE_VISIBLE_LINES,
+    write_quality_e2e_qt_library_visibility_receipt,
 )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        None,
+        ("renderer", "tk"),
+        ("description_table_bottom_delta_px", 1),
+        (
+            "description_viewport_bounds",
+            {"x": 710, "y": 335, "width": 360, "height": 310},
+        ),
+        ("selected_owner_sha256", "0" * 64),
+    ),
+)
+def test_qt_visibility_gate_binds_renderer_and_recomputes_geometry(tmp_path, mutation):
+    environment, *_ = _isolated_launch(tmp_path)
+    fields = _qt_visibility_fields()
+    fields["full_title"] = LIBRARY_DESCRIPTION_STRESS_SELECTED_TITLE
+    fields["description_text"] = LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+    receipt_path = write_quality_e2e_qt_library_visibility_receipt(
+        **fields, environ=environment, pid=7001
+    )
+    assert receipt_path is not None
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if mutation is not None:
+        payload[mutation[0]] = mutation[1]
+        receipt_path.write_text(json.dumps(payload), encoding="utf-8")
+        receipt_path.chmod(0o600)
+    event = {
+        "event": "library_description_observed",
+        "launch_id": environment["VODFORGE_QUALITY_E2E_LAUNCH_ID"],
+        "window_title_token": environment["VODFORGE_QUALITY_E2E_WINDOW_TOKEN"],
+        "pid": 7001,
+        "observed_text": LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    }
+    launch = {
+        "launch_id": event["launch_id"],
+        "window_token": event["window_title_token"],
+        "attestation": {"renderer": "qt"},
+    }
+    result = _library_description_visibility_receipt(
+        state_paths={"tmp": environment["TMPDIR"]},
+        driver_trace={"events": [event]},
+        launches=[launch],
+        session_nonce=environment["VODFORGE_QUALITY_E2E_SESSION_NONCE"],
+        expected_description=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    assert result["verified"] is (mutation is None), result["errors"]
 
 
 def test_packaged_session_uses_slow_description_stress_fixture() -> None:

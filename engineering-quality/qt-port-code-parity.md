@@ -51,6 +51,17 @@ not cleared parity. None of these labels claims package or installed proof.
 - Current Qt source Watch and Library captures: `build/qt-port-package/{watch,library}-source-current.png`.
 
 The current Qt captures verify the scenes render and expose real geometry gaps.
+
+2026-09-23 Library rail follow-up: Qt Folders now uses the Tk-style 380 px
+Selected Item rail and a fixed 360 px Item/Description panel at wide sizes,
+with the compact details route at narrow sizes. The quality-E2E Qt visibility
+receipt measures the rendered rail, title/path ellipsis, description viewport,
+first line and Library table bottom. A live offscreen scene exposed and then
+resolved a 10 px Description inset error. The packaged verifier dispatches from
+the owned launch's attested renderer, recomputes Qt geometry and owner identity,
+and keeps the Tk receipt checks unchanged. Source/QML and mutation tests pass;
+the maintained packaged journey has not yet driven this Qt route on Mac or
+Genesis, so the package gate remains open.
 They are not a complete visual acceptance matrix. For each row above, compare
 the implementation path, emitted actions, actual rendered bounds at matched
 client dimensions, and the resulting state. Do not substitute a Tk screenshot

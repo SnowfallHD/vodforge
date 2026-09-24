@@ -94,6 +94,7 @@ Item {
             }
             ScrollView {
                 id: viewport
+                objectName: "libraryFolderViewport"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -192,9 +193,11 @@ Item {
             color: theme.border
         }
         LibraryFolderInspector {
+            id: selectedInspector
             visible: browser.showInspector
             Layout.preferredWidth: visible ? (browser.width + 40 < 1000 ? 350 : 380) : 0
             Layout.fillHeight: true
+            targetPanelBottom: viewport.mapToItem(selectedInspector, 0, viewport.height).y
             appBridge: browser.appBridge
         }
     }

@@ -213,6 +213,8 @@ def _attestation_errors(
         for key, value in expected.items()
         if attestation.get(key) != value
     ]
+    if attestation.get("renderer", "tk") not in {"tk", "qt"}:
+        errors.append("attestation renderer is invalid")
     isolation_root = _resolved(state_paths["isolation_root"])
     for key in (
         "home",
