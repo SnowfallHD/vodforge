@@ -128,3 +128,13 @@ title bar and unified native toolbar while retaining the accessible window
 title. A live Cocoa source probe changed `frameMargins().top()` from 32 to 0;
 the ready receipt records integration and frame margin. Exact packaged visual,
 drag and resize acceptance remain open.
+
+2026-09-24 activity-row visual parity: The Tk `ActivityLogText` rows place a
+thin accent divider before each event/success emblem. Qt's existing shared
+`ActivityLines` rendered the emblems but omitted the divider in both Forge and
+the Welcome activity exhibit. The shared row now paints divider, emblem and
+caption in that order. The prior emblem-URL-only test missed the visible
+structure; a rendered geometry regression fails against the previous QML and
+all 76 scene tests pass after the change. The 1100×740 source capture
+`build/qt-port-package/activity-divider-welcome.png` was inspected. Fresh
+post-edit native Mac and Genesis packages and full journey gates are still open.

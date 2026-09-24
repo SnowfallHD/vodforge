@@ -1875,3 +1875,17 @@ pixels for either native NSImage or PhotoImage. Both scales retain the strict
 RGB1 interior oracle, deliberate missing-backdrop failure and exact restoration
 across home/all routes, reflow, scroll, themes and retirement. This is representative
 nested-owner coverage, not proof that every field in the app is enrolled.
+
+### Activity rows preserve their complete rendered structure (2026-09-24)
+
+The Qt Forge activity and welcome preview shared the correct emblem image, but
+both omitted the thin divider drawn by the Tk `ActivityLogText` owner. The old
+Qt scene test only looked for the success image URL, so a visibly bare row
+passed. `ActivityLines.qml` now owns the divider, emblem and caption as one row.
+The rendered scene regression checks their ordered positions in the welcome
+exhibit and the divider's presence in Forge. Running that regression against
+the previous QML fails; corrected source passes all 76 Qt scene tests. An
+1100×740 source capture at `build/qt-port-package/activity-divider-welcome.png`
+was inspected. This is representative cross-consumer coverage; exact native
+Mac and Genesis packages built after this edit and every activity token variant
+remain separate checks.

@@ -21,18 +21,29 @@ ColumnLayout {
                                             modelData === "Completed"
             readonly property bool error: modelData.indexOf("ERROR:") === 0
             readonly property bool warning: modelData.indexOf("WARNING:") === 0
-            Image {
-                objectName: "activityLineEmblem"
-                source: "image://vodforge/activity-icon/" +
-                        (success ? "check" : error ? "error" : warning ? "warning" : "circle-dashed") +
-                        "/r" + bridge.themeRevision
-                Layout.preferredWidth: 16
+            Item {
+                Layout.preferredWidth: 35
                 Layout.preferredHeight: 16
                 Layout.alignment: Qt.AlignTop
-                fillMode: Image.PreserveAspectFit
-                smooth: true
+                Rectangle {
+                    objectName: "activityLineDivider"
+                    x: 0; y: 0
+                    width: 1; height: 16
+                    color: theme.accent
+                }
+                Image {
+                    objectName: "activityLineEmblem"
+                    x: 19; y: 0
+                    width: 16; height: 16
+                    source: "image://vodforge/activity-icon/" +
+                            (success ? "check" : error ? "error" : warning ? "warning" : "circle-dashed") +
+                            "/r" + bridge.themeRevision
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
             }
             Text {
+                objectName: "activityLineCaption"
                 text: modelData.replace(/^\[(info|download|debug|success|warning|error)\]\s*/i, "")
                 color: error ? theme.danger : warning ? theme.warning : theme.muted
                 font.pixelSize: 14

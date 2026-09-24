@@ -1760,11 +1760,42 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         app.processEvents()
         activity = preview.findChild(QObject, "featurePreviewActivityLines")
         assert "[success] Download complete" in activity.property("activityText")
+        rows = activity.childItems()
+        emblems = [
+            child
+            for row in rows
+            for group in row.childItems()
+            for child in group.childItems()
+            if child.objectName() == "activityLineEmblem"
+        ]
         assert any(
-            "activity-icon/check" in str(icon.property("source"))
-            for row in activity.childItems()
-            for icon in row.childItems()
+            "activity-icon/check" in str(icon.property("source")) for icon in emblems
         )
+        for row in activity.childItems():
+            nested = [
+                child for group in row.childItems() for child in group.childItems()
+            ]
+            divider = next(
+                (item for item in nested if item.objectName() == "activityLineDivider"),
+                None,
+            )
+            emblem = next(
+                (item for item in nested if item.objectName() == "activityLineEmblem"),
+                None,
+            )
+            caption = next(
+                (
+                    item
+                    for item in row.childItems()
+                    if item.objectName() == "activityLineCaption"
+                ),
+                None,
+            )
+            if divider is None:
+                continue
+            assert divider.property("width") == 1
+            assert divider.mapToScene(QPointF()).x() < emblem.mapToScene(QPointF()).x()
+            assert emblem.mapToScene(QPointF()).x() < caption.mapToScene(QPointF()).x()
         popup.setProperty("index", 2)
         preview.setProperty("activityStep", 6)
         preview.setProperty("technical", True)
@@ -1800,6 +1831,12 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
         assert slider.property("height") == 116
         activity = window.findChild(QObject, "forgeActivityLines")
         assert "next run" in activity.property("activityText")
+        assert any(
+            child.objectName() == "activityLineDivider"
+            for row in activity.childItems()
+            for group in row.childItems()
+            for child in group.childItems()
+        )
         details = next(
             item
             for item in window.findChildren(QObject, "forgeSourceDetails")
