@@ -31,7 +31,7 @@ from tests.test_run_identity import make_job
 from yt_downloader.app import cached_thumbnail_path
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
-from yt_downloader.library_annotations import LibraryAnnotationsError
+from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotationsError
 from yt_downloader.library_artwork_source import ArtworkAsset
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
@@ -1497,6 +1497,50 @@ def test_qt_watch_navigation_telemetry_uses_only_closed_dimensions(
             {"watch_mode": "channels"},
         ) in observer.events
         assert ("watch", "searched", None) in observer.events
+        assert "Private title" not in repr(observer.events)
+    finally:
+        bridge._analytics.telemetry = None
+        bridge.close()
+
+
+def test_qt_library_navigation_telemetry_matches_saved_actions_without_user_text(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+
+    class Observer:
+        def __init__(self):
+            self.events = []
+
+        def record_feature(self, feature, action, *, dimensions=None):
+            self.events.append((feature, action, dimensions))
+
+    observer = Observer()
+    bridge._analytics.telemetry = observer
+    try:
+        record = saved(tmp_path, "Private title", "MP4", category="News")
+        bridge._runtime.history = [record]
+        owner = history_archive_owner(record)
+        bridge._annotations.replace(owner, LibraryAnnotation(category="News"))
+        bridge.select("Library")
+        bridge.select("Library")
+        bridge.setLibrarySearch("Private title")
+        bridge.setLibrarySearch("")
+        bridge.setLibraryType("MP4")
+        bridge.setLibraryCategory("News")
+        assert bridge.openLibraryDetails(owner)
+        assert observer.events == [
+            ("library", "opened", None),
+            ("library", "searched", None),
+            ("library", "filtered", None),
+            ("library", "filtered", None),
+            ("library", "selected", None),
+        ]
         assert "Private title" not in repr(observer.events)
     finally:
         bridge._analytics.telemetry = None

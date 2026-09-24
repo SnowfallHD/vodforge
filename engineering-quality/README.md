@@ -1971,3 +1971,22 @@ bounded mutations and telemetry isolation passed. Exact receipt:
 `build/qt-port-package/fast-aaa4c44/fast-gate.json`. Of the complexity
 findings, 26 are in `qt_quick`; the remainder spans older owners. No static
 threshold was relaxed and this receipt does not qualify release.
+
+### Qt Library navigation telemetry parity (2026-09-24)
+
+The existing Qt Watch navigation test checked its closed telemetry actions, and
+telemetry vocabulary tests checked whether a declared Library event could be
+stored. Neither exercised whether Qt Library navigation actually emitted those
+events. Tk emitted `library/opened`, `searched`, `filtered` and `selected` from
+its UI paths; Qt had no corresponding calls in those actions. Qt now reports
+the same bounded actions through the existing consent-gated telemetry owner
+when the Library tab opens, a nonempty search changes, a type/category filter
+changes, or a saved item detail opens. The new cross-owner test executes those
+real bridge methods with a saved annotation category and asserts the exact
+sequence, deduplicated tab open, and absence of the private title/search text.
+It failed on the old Qt path because those emissions were absent; its first
+new-run fixture lacked a durable annotation category and was corrected without
+changing the telemetry oracle. The focused Qt scene, telemetry vocabulary and
+quality suite passed 128 tests. This covers those representative Library
+intents and the existing Watch navigation test; native package/D1 delivery,
+other Library action classes and consent changes still need separate proof.

@@ -2231,6 +2231,8 @@ class Bridge(QObject):
             return
         if name == "Watch" and self._selection != "Watch":
             self._record_update_feature("watch", "opened")
+        if name == "Library" and self._selection != "Library":
+            self._record_update_feature("library", "opened")
         self._selection = name
         self.selectionChanged.emit()
         self._record("select", name)
@@ -2360,6 +2362,7 @@ class Bridge(QObject):
         self._library_detail_owner = owner
         self._library_scene_route = "detail"
         self.historyChanged.emit()
+        self._record_update_feature("library", "selected")
         return True
 
     @Slot()
@@ -2845,6 +2848,8 @@ class Bridge(QObject):
             self._library_scene_route = "all"
         self.librarySearchChanged.emit()
         self.historyChanged.emit()
+        if query.strip():
+            self._record_update_feature("library", "searched")
 
     @Slot(str)
     def setLibraryType(self, output_type: str) -> None:
@@ -2855,14 +2860,18 @@ class Bridge(QObject):
         self._library_type = output_type
         self.libraryTypeChanged.emit()
         self.historyChanged.emit()
+        self._record_update_feature("library", "filtered")
 
     @Slot(str)
     def setLibraryCategory(self, category: str) -> None:
         if category not in self.libraryCategories:
             return
+        if category == self._library_category:
+            return
         self._library_category = category
         self.libraryCategoryChanged.emit()
         self.historyChanged.emit()
+        self._record_update_feature("library", "filtered")
 
     @Slot(str)
     def setLibrarySort(self, value: str) -> None:
