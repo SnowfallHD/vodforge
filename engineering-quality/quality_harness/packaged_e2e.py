@@ -1475,7 +1475,7 @@ def run_packaged_e2e_session(
             "Use Command+2 to open Library, observe the completed item, then record library_observed.",
             "For Qt, open Library → Folders, select the canonical export, and open the Description tab; All Media details alone do not create the Folder Inspector geometry receipt. Verify the DESCRIPTION heading and exact fixture description, then record library_description_observed.",
             "Request normal app shutdown, set control action to relaunch, and record shutdown_requested plus restart_requested.",
-            "After restart, reopen Qt Library → Folders → canonical export → Description (or the Tk selected item) so this launch writes its own visibility receipt. Verify the same exact artifact restores history/output, then record restart_observed.",
+            "After restart, reopen Qt Library → Folders → canonical export → Description (or the Tk selected item) so this launch writes its own visibility receipt. Verify history/output, then record restart_observed with --observed-text set to the exact visible fixture description.",
             "Quit normally again and set control action to finish.",
         ]
         if args.profile in {"deep", "telemetry"}:

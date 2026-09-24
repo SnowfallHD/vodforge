@@ -2063,3 +2063,13 @@ and shows `?` for malformed values. One representative test covers fractional,
 zero, and non-finite values through the event consumed by both Tk and Qt; the
 signed 605 bundle predates this follow-up and needs rebuilding before final
 visual acceptance.
+
+The same signed smoke failed its final restart gate despite clean exits and
+stable media/history: launch 2 stayed on Forge, so the required Qt Folder
+Inspector Description receipt was never made. The previous recorder checked
+only launch 1 and the final verifier found the missing launch-2 receipt after
+the app had closed. The journey now names the exact route on both launches,
+and `restart_observed` requires the visible description and verifies its own
+launch receipt before accepting the event. A focused recorder case rejects
+both missing text and a missing launch receipt without appending an event;
+the final verifier remains an independent check.

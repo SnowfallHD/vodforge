@@ -65,7 +65,14 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         raise RuntimeError(
             f"event {args.event!r} is not valid for the {profile!r} E2E profile"
         )
-    if args.event == "library_description_observed":
+    attestation = current_launch.get("attestation")
+    renderer = (
+        attestation.get("renderer", "tk") if isinstance(attestation, dict) else "tk"
+    )
+    needs_visibility = args.event == "library_description_observed" or (
+        args.event == "restart_observed" and renderer == "qt"
+    )
+    if needs_visibility:
         expectation = session.get("library_visibility_expectation")
         expected_description = (
             str(expectation.get("description") or "")
@@ -74,7 +81,7 @@ def record_e2e_event(args: argparse.Namespace) -> int:
         )
         if not expected_description or args.observed_text != expected_description:
             raise RuntimeError(
-                "library_description_observed requires the exact visible fixture description"
+                f"{args.event} requires the exact visible fixture description"
             )
 
     trace_path = Path(
@@ -111,7 +118,7 @@ def record_e2e_event(args: argparse.Namespace) -> int:
     else:
         unobserved_prior_events = []
 
-    if args.event == "library_description_observed":
+    if needs_visibility:
         visibility = _library_description_visibility_receipt(
             state_paths=current_launch.get("state_paths") or {},
             driver_trace={
@@ -128,10 +135,11 @@ def record_e2e_event(args: argparse.Namespace) -> int:
             launches=[current_launch],
             session_nonce=session["session_nonce"],
             expected_description=expected_description,
+            event_name=args.event,
         )
         if visibility.get("verified") is not True:
             raise RuntimeError(
-                "Library description checkpoint refused before continuing the journey: "
+                f"{args.event} visibility checkpoint refused before continuing the journey: "
                 + "; ".join(visibility.get("errors") or [])
             )
 

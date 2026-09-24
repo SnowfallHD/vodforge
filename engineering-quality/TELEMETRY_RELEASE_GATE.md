@@ -111,6 +111,9 @@ its Description tab. All Media details can visibly show the description but do
 not write the Folder Inspector geometry receipt. On launch 2, revisit that same
 Folder Inspector Description view before recording `restart_observed`; the
 restart gate requires a separate receipt owned by launch 2.
+Pass the exact visible fixture description with `--observed-text` when recording
+`restart_observed`; the recorder checks the launch-2 receipt before accepting
+that event, while the app is still open.
 
 Before each native dialog action, discover the current window owned by the
 attested PID and use its exact title and current bounds. Opening a dialog and

@@ -400,6 +400,57 @@ def test_recorder_requires_exact_visible_description_for_library_receipt(
     assert event["observed_text"] == LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
 
 
+@pytest.mark.parametrize("receipt_verified", [False, True])
+def test_qt_restart_refuses_missing_description_receipt_before_shutdown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, receipt_verified: bool
+) -> None:
+    session_path, trace_path = _write_session(tmp_path)
+    session = json.loads(session_path.read_text())
+    session["current_launch"]["attestation"] = {"renderer": "qt"}
+    session_path.write_text(json.dumps(session))
+    monkeypatch.setattr(e2e_record, "verify_live_launch", _verified_live_receipt)
+    screenshot = tmp_path / "restart.png"
+    screenshot.write_bytes(b"visible-restarted-library")
+    observed_events: list[str] = []
+
+    def visibility(**kwargs: Any) -> dict[str, Any]:
+        observed_events.append(kwargs["event_name"])
+        return {
+            "verified": receipt_verified,
+            "errors": [] if receipt_verified else ["launch-2 receipt missing"],
+        }
+
+    monkeypatch.setattr(
+        e2e_record, "_library_description_visibility_receipt", visibility
+    )
+    with pytest.raises(RuntimeError, match="exact visible fixture description"):
+        record_e2e_event(
+            _args(
+                session_path, "restart_observed", screenshot=screenshot, allow_gap=True
+            )
+        )
+    assert observed_events == []
+    assert json.loads(trace_path.read_text())["events"] == []
+
+    args = _args(
+        session_path,
+        "restart_observed",
+        screenshot=screenshot,
+        allow_gap=True,
+        observed_text=LIBRARY_DESCRIPTION_STRESS_DESCRIPTION,
+    )
+    if not receipt_verified:
+        with pytest.raises(RuntimeError, match="launch-2 receipt missing"):
+            record_e2e_event(args)
+        assert json.loads(trace_path.read_text())["events"] == []
+    else:
+        assert record_e2e_event(args) == 0
+        assert json.loads(trace_path.read_text())["events"][0]["observed_text"] == (
+            LIBRARY_DESCRIPTION_STRESS_DESCRIPTION
+        )
+    assert observed_events == ["restart_observed"]
+
+
 @pytest.mark.parametrize(
     ("argument_overrides", "message"),
     [
