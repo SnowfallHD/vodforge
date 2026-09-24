@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+import threading
 import time
 import wave
 from pathlib import Path
@@ -840,6 +841,35 @@ def test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset
         assert calls[-1] == ("Media", (160, 160), "avatar", False)
     finally:
         owner.close()
+
+
+def test_qt_artwork_close_retires_blocked_file_io_without_process_shutdown_wait(
+    tmp_path, monkeypatch
+):
+    started = threading.Event()
+    release = threading.Event()
+    called = []
+    owner = QtArtwork(tmp_path / "cache")
+
+    def resolve(record, _size, _role, _cancelled):
+        called.append(record["title"])
+        started.set()
+        release.wait(timeout=2)
+
+    monkeypatch.setattr(owner._source, "resolve_asset", resolve)
+    try:
+        assert owner._owner._thread.daemon
+        owner.request(saved(tmp_path, "First", "MP4"))
+        assert started.wait(timeout=1)
+        owner.request(saved(tmp_path, "Second", "MP4"))
+        begun = time.monotonic()
+        owner.close()
+        assert time.monotonic() - begun < 0.2
+        assert owner.poll() is False
+        assert owner.request(saved(tmp_path, "Third", "MP4")) == ""
+    finally:
+        release.set()
+    assert called == ["First"]
 
 
 def test_qt_import_uses_shared_inspection_and_commits_before_reporting_success(
