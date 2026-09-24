@@ -33,7 +33,21 @@ Popup {
         spacing: 11
         RowLayout {
             Layout.fillWidth: true
-            Text { text: editorial.heading; color: theme.accent; font.pixelSize: 15; font.bold: true; Layout.fillWidth: true }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Text {
+                    text: editorial.heading.indexOf("VODForge") >= 0 ?
+                          editorial.heading.split("VODForge")[0] + "VOD" : editorial.heading
+                    color: theme.accent; font.pixelSize: 15; font.bold: true
+                }
+                Text {
+                    visible: editorial.heading.indexOf("VODForge") >= 0
+                    text: "Forge"
+                    color: theme.text; font.pixelSize: 15; font.bold: true
+                }
+                Item { Layout.fillWidth: true }
+            }
             StoneButton {
                 label: "×"; accessibilityLabel: "Close tour"
                 size: "inline"; Layout.preferredWidth: 34
@@ -52,12 +66,15 @@ Popup {
             horizontalAlignment: Text.AlignHCenter
             Layout.fillWidth: true; wrapMode: Text.WordWrap
         }
-        FeaturePreview {
-            previewKey: editorial.current.preview || ""
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.maximumWidth: 470
-            Layout.alignment: Qt.AlignHCenter
+            FeaturePreview {
+                previewKey: editorial.current.preview || ""
+                anchors.centerIn: parent
+                width: Math.min(preferredWidth, parent.width - 20)
+                height: Math.min(preferredHeight, parent.height - 12)
+            }
         }
         Text {
             visible: editorial.slides.length > 1

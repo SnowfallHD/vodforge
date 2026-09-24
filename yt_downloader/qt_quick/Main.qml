@@ -115,6 +115,27 @@ Window {
             if (tryIt) settingsPopup.open()
         }
     }
+    Popup {
+        id: outputDetailsPopup
+        objectName: "forgeOutputDetailsPopup"
+        parent: window.contentItem
+        width: Math.min(440, window.width - 40)
+        height: Math.min(330, window.height - 40)
+        x: Math.max(0, (window.width - width) / 2)
+        y: Math.max(0, (window.height - height) / 2)
+        padding: 20
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: StoneField {}
+        ForgeSourceDetails {
+            anchors.fill: parent
+            appBridge: bridge
+            outputFormat: window.outputFormat
+            displayType: window.forgeDisplayType
+            preview: window.showingForgePreview
+            selectedFacts: bridge.forgeSelectedFacts
+        }
+    }
     Timer {
         interval: 700
         running: true
@@ -821,59 +842,90 @@ Window {
             }
 
             RowLayout {
+                visible: window.forgeDensity !== "compact"
                 Layout.fillWidth: true
-                Layout.preferredHeight: window.compactHeight ? 70 : 185
-                spacing: window.compactHeight ? 8 : 24
+                Text {
+                    text: window.selectedForgeRun.kind === "completed" ?
+                          "Showing completed run: " + window.selectedForgeRun.title :
+                          window.selectedForgeRun.kind === "terminal" ?
+                          "Showing " + window.selectedForgeRun.status.toLowerCase() + " run: " + window.selectedForgeRun.title :
+                          window.selectedForgeRun.kind === "queued" ?
+                          "Showing queued run: " + window.selectedForgeRun.title :
+                          window.selectedForgeRun.kind === "active" ? bridge.status :
+                          bridge.history.length ? "Loaded " + bridge.history.length + " downloaded media item(s) from history." : "Ready for a new run."
+                    color: theme.muted; font.pixelSize: 14
+                    Layout.fillWidth: true; elide: Text.ElideRight
+                }
+                Text {
+                    text: window.selectedForgeRun.kind === "completed" ? "Complete / Ready to open in Library" :
+                          window.selectedForgeRun.kind === "terminal" ? window.selectedForgeRun.status + " / Retry is available" :
+                          window.selectedForgeRun.kind === "queued" ? "Queued / Waiting for the current run" :
+                          window.showingForgePreview ? "Metadata only / No media is being downloaded" :
+                          window.outputFormat === "MP4" ? "VOD-ready MP4 / H.264 video / AAC audio" :
+                          window.outputFormat === "MP3" ? "Audio-only MP3 / best YouTube audio source" :
+                          "Original audio / No re-encoding"
+                    color: theme.muted; font.pixelSize: 14
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: window.width * 0.42
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: window.compactHeight ? 116 : 185
+                spacing: 22
                 ColumnLayout {
                     id: forgeLivePane
                     Layout.fillWidth: true
+                    Layout.preferredWidth: 1
                     Layout.fillHeight: true
-                    spacing: 7
+                    spacing: 9
                     property bool technical: false
                     RowLayout {
+                        visible: window.forgeDensity === "compact"
                         Layout.fillWidth: true
-                        Text { text: "LIVE ACTIVITY"; color: theme.muted; font.pixelSize: 12; font.bold: true; Layout.fillWidth: true }
+                        Text {
+                            text: "LIVE ACTIVITY"
+                            color: theme.muted; font.pixelSize: 14
+                            Layout.fillWidth: true; elide: Text.ElideRight
+                        }
                         StoneButton {
-                            label: forgeLivePane.technical ? "Friendly" : "Technical details"
-                            accessibilityLabel: forgeLivePane.technical ? "Show friendly progress" : "Show technical details"
+                            visible: window.forgeDensity === "compact"
+                            label: "Output details"
                             size: "inline"
-                            Layout.preferredWidth: forgeLivePane.technical ? 90 : 136
-                            onActivated: {
-                                forgeLivePane.technical = !forgeLivePane.technical
-                                if (forgeLivePane.technical) bridge.openTechnicalDetails()
-                            }
+                            Layout.preferredWidth: 116
+                            onActivated: outputDetailsPopup.open()
                         }
                     }
-                    Text {
-                        visible: bridge.batchSummary !== "No URL list loaded"
-                        text: bridge.batchSummary
-                        color: theme.muted
-                        font.pixelSize: 14
-                        elide: Text.ElideMiddle
-                        Layout.fillWidth: true
-                    }
-                    ScrollView {
-                        id: forgeActivityViewport
+                    RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        clip: true
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                        TextArea {
-                            objectName: "forgeActivityText"
-                            readOnly: true
-                            selectByMouse: true
-                            text: window.showingForgePreview ?
-                                  "Metadata only — no media is being downloaded" :
-                                  forgeLivePane.technical ? bridge.forgeActivity.technical : bridge.forgeActivity.friendly
-                            color: theme.muted
-                            font.pixelSize: 14
-                            font.family: forgeLivePane.technical ? monoFontFamily : buttonFontFamily
-                            wrapMode: TextArea.Wrap
-                            background: Item {}
-                            leftPadding: 0
-                            rightPadding: 8
-                            topPadding: 0
-                            bottomPadding: 0
+                        spacing: 8
+                        ActivityModeSlider {
+                            id: forgeActivityMode
+                            objectName: "forgeActivityModeSlider"
+                            technical: forgeLivePane.technical
+                            Layout.alignment: Qt.AlignTop
+                            onSelected: function(value) {
+                                forgeLivePane.technical = value
+                                if (value) bridge.openTechnicalDetails()
+                            }
+                        }
+                        ScrollView {
+                            id: forgeActivityViewport
+                            objectName: "forgeActivityViewport"
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            ActivityLines {
+                                objectName: "forgeActivityLines"
+                                width: forgeActivityViewport.availableWidth
+                                technical: forgeLivePane.technical
+                                activityText: window.showingForgePreview ?
+                                      "Metadata only — no media is being downloaded" :
+                                      forgeLivePane.technical ? bridge.forgeActivity.technical : bridge.forgeActivity.friendly
+                            }
                         }
                     }
                     RowLayout {
@@ -898,35 +950,17 @@ Window {
                         onActivated: bridge.clearBatchList()
                     }
                 }
-                ColumnLayout {
-                    visible: !window.compactHeight
-                    Layout.preferredWidth: Math.min(315, window.width * 0.28)
+                ForgeSourceDetails {
+                    appBridge: bridge
+                    outputFormat: window.outputFormat
+                    displayType: window.forgeDisplayType
+                    preview: window.showingForgePreview
+                    selectedFacts: bridge.forgeSelectedFacts
+                    showHeading: false
+                    visible: window.forgeDensity !== "compact"
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
                     Layout.fillHeight: true
-                    spacing: 11
-                    Text {
-                        text: window.showingForgePreview ?
-                              "Preview: " + window.forgeDisplayType + " · metadata only" :
-                              "Output: " + window.forgeDisplayType + " · " + bridge.exportModeLabel
-                        color: theme.muted
-                        font.pixelSize: 14
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                    }
-                    Text { text: "Format             " + window.forgeDisplayType; color: theme.muted; font.pixelSize: 14 }
-                    Text {
-                        text: "Video               " + (window.showingForgePreview ? "Not downloaded" : window.outputFormat === "MP4" ? "H.264" : "None")
-                        color: theme.muted
-                        font.pixelSize: 14
-                    }
-                    Text {
-                        text: "Audio               " + (window.showingForgePreview ? "Not downloaded" : window.outputFormat === "MP3" ? "MP3" :
-                              window.outputFormat === "Original audio" ? "Source" :
-                              bridge.exportMode === "Manual Override" ? bridge.manualValues.manual_audio_codec : "AAC")
-                        color: theme.muted
-                        font.pixelSize: 14
-                    }
-                    Text { text: window.showingForgePreview ? "Output mode     Preview only" : "Output mode     " + bridge.exportModeLabel; color: theme.muted; font.pixelSize: 14 }
-                    Item { Layout.fillHeight: true }
                 }
             }
 

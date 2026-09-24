@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-StoneField {
+Item {
     id: preview
     objectName: "featurePreview"
     property string previewKey: ""
@@ -12,7 +12,17 @@ StoneField {
     property string cookieMode: "Browser"
     property string demoFormat: "Original audio"
     property int activityStep: 0
-    interactive: false
+    readonly property int preferredWidth: previewKey === "ui-activity" ? 280 :
+                                          previewKey === "welcome-activity" ? 300 :
+                                          previewKey === "activity-mode" ? 470 :
+                                          previewKey === "playlists" ? 220 :
+                                          previewKey === "youtube-access" || previewKey === "youtube-access-expanded" ? 340 : 430
+    readonly property int preferredHeight: previewKey === "ui-activity" || previewKey === "welcome-activity" ? 130 :
+                                           previewKey === "activity-mode" ? 180 :
+                                           previewKey === "playlists" ? 65 :
+                                           previewKey === "youtube-access" ? 110 :
+                                           previewKey === "youtube-access-expanded" ? 230 :
+                                           ["library", "local-video", "player"].indexOf(previewKey) >= 0 ? 210 : 190
 
     Timer {
         interval: preview.previewKey === "welcome-activity" ? 200 : 500
@@ -40,11 +50,24 @@ StoneField {
             fillMode: Image.PreserveAspectCrop
             smooth: true
         }
-        Text {
-            objectName: "featurePreviewActivityText"
+        RowLayout {
             visible: ["ui-activity", "activity-mode", "welcome-activity"].indexOf(preview.previewKey) >= 0
-            text: preview.previewKey === "ui-activity" ?
-                      "Getting video information\nDownloading media\nConverting media\nChecking the output\nDownload complete" :
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 8
+            ActivityModeSlider {
+                visible: preview.previewKey !== "ui-activity"
+                technical: preview.technical
+                Layout.alignment: Qt.AlignTop
+                onSelected: function(value) { preview.technical = value }
+            }
+            ActivityLines {
+                objectName: "featurePreviewActivityLines"
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
+                technical: preview.technical
+                activityText: preview.previewKey === "ui-activity" ?
+                      "Getting video information\nDownloading media\nConverting media\nChecking the output\n[success] Download complete" :
                   preview.technical ?
                       ["Video 1 of 1: selected format 270+251",
                        "Video 1 of 1: Auto CBR target 6000 kbps video + 192 kbps audio.",
@@ -54,19 +77,8 @@ StoneField {
                        "Video 1 of 1 — downloading",
                        "Video 1 of 1 — transcoding",
                        "Video 1 of 1 — validating output",
-                       "Completed"].slice(0, Math.min(5, preview.activityStep + 1)).join("\n")
-            color: theme.text
-            font.family: monoFontFamily
-            font.pixelSize: 13
-            Layout.fillWidth: true
-            lineHeight: 1.35
-        }
-        StoneButton {
-            visible: ["activity-mode", "welcome-activity"].indexOf(preview.previewKey) >= 0
-            label: preview.technical ? "Technical details" : "Friendly progress"
-            selected: preview.technical
-            Layout.preferredWidth: 185
-            onActivated: preview.technical = !preview.technical
+                       "[success] Download complete"].slice(0, Math.min(5, preview.activityStep + 1)).join("\n")
+            }
         }
         Text {
             visible: ["output-settings", "ui-settings"].indexOf(preview.previewKey) >= 0

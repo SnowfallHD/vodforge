@@ -12,7 +12,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QEventLoop,
+    QObject,
+    QPointF,
+    QSize,
+    QTimer,
+    QUrl,
+)
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtMultimedia import QMediaPlayer
 
@@ -1110,6 +1119,10 @@ def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatc
             window.findChild(QObject, "forgeSelectedTitle").property("text") == "Second"
         )
         assert bridge.forgeActivity["technical"] == "Saved output validated"
+        assert bridge.forgeSelectedFacts["heading"] == "Saved output"
+        assert {
+            row["label"]: row["value"] for row in bridge.forgeSelectedFacts["rows"]
+        }["Saved Location"] == str(tmp_path)
         deck.showActions(second_record)
         app.processEvents()
         copy = next(
@@ -1183,6 +1196,11 @@ def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
         assert title.property("text") == "Queued source"
         assert "Queued" in status.property("text")
         assert bridge.forgeActivity["friendly"] == bridge.forgeSelection["status"]
+        facts = {
+            row["label"]: row["value"] for row in bridge.forgeSelectedFacts["rows"]
+        }
+        assert facts["Save to"] == str(queued.output_dir)
+        assert facts["Status"] == "Queued"
         assert not bridge.selectRunRecord("missing")
         bridge._runtime.queued = []
         bridge.runDeckChanged.emit()
@@ -1492,14 +1510,87 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
             window.findChild(QObject, "featurePreviewFormatField").property("label")
             == "MP3  ▾"
         )
+        popup.setProperty("index", 0)
+        app.processEvents()
+        activity = preview.findChild(QObject, "featurePreviewActivityLines")
+        assert "[success] Download complete" in activity.property("activityText")
+        assert any(
+            "activity-icon/check" in str(icon.property("source"))
+            for row in activity.childItems()
+            for icon in row.childItems()
+        )
         popup.setProperty("index", 2)
         preview.setProperty("activityStep", 6)
         preview.setProperty("technical", True)
         app.processEvents()
         assert preview.property("previewKey") == "welcome-activity"
-        assert "selected format 270+251" in preview.findChild(
-            QObject, "featurePreviewActivityText"
-        ).property("text")
+        assert "selected format 270+251" in activity.property("activityText")
+        sliders = preview.findChildren(QObject, "activityModeSlider")
+        assert len(sliders) == 1 and sliders[0].property("technical") is True
+        sliders[0].selected.emit(False)
+        app.processEvents()
+        assert preview.property("technical") is False
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        app.processEvents()
+        slider = window.findChild(QObject, "forgeActivityModeSlider")
+        assert slider is not None
+        assert slider.property("width") == 30
+        assert slider.property("height") == 116
+        activity = window.findChild(QObject, "forgeActivityLines")
+        assert "next run" in activity.property("activityText")
+        details = next(
+            item
+            for item in window.findChildren(QObject, "forgeSourceDetails")
+            if item.isVisible()
+        )
+        assert details.property("appBridge") is not None
+        assert 0.45 < details.mapToScene(QPointF()).x() / window.width() < 0.57
+        assert details.property("preview") is False
+        assert any(
+            "Save to" == row.property("modelData").get("label")
+            for row in details.childItems()
+            if isinstance(row.property("modelData"), dict)
+        )
+        slider.selected.emit(True)
+        app.processEvents()
+        assert activity.property("technical") is True
+        bridge._forge_technical = "\n".join(
+            f"technical step {index}" for index in range(50)
+        )
+        bridge.activityChanged.emit()
+        settled = QEventLoop()
+        QTimer.singleShot(100, settled.quit)
+        settled.exec()
+        assert "technical step 49" in activity.property("activityText")
+        viewport = window.findChild(QObject, "forgeActivityViewport")
+        assert viewport.property("contentHeight") > viewport.property("height")
+        window.setWidth(850)
+        app.processEvents()
+        assert details.isVisible() is False
+        action = next(
+            item
+            for item in window.findChildren(QObject)
+            if item.property("label") == "Output details" and item.property("visible")
+        )
+        action.activated.emit()
+        app.processEvents()
+        assert window.findChild(QObject, "forgeOutputDetailsPopup").property("visible")
     finally:
         window.close()
         engine.deleteLater()

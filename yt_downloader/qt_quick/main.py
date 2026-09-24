@@ -268,6 +268,21 @@ class Materials(QQuickImageProvider):
                 ) as original:
                     source = Image.new("RGBA", original.size, THEME["icon"])
                     source.putalpha(original.getchannel("A"))
+            elif parts[0] == "activity-icon" and len(parts) == 2:
+                tone = {
+                    "circle-dashed": THEME["accent"],
+                    "check": THEME["success"],
+                    "warning": THEME["warning"],
+                    "error": THEME["danger"],
+                }.get(parts[1])
+                if tone is None:
+                    raise ValueError("unknown activity icon")
+                filename = "check.png" if parts[1] == "check" else "circle-dashed.png"
+                with Image.open(
+                    SOURCE / "assets" / "icons" / "lucide" / filename
+                ) as original:
+                    source = Image.new("RGBA", original.size, tone)
+                    source.putalpha(original.getchannel("A"))
             else:
                 raise ValueError("unknown material request")
             image = qt_image(source)
@@ -2071,6 +2086,75 @@ class Bridge(QObject):
             None,
         )
         return selected or (records[0] if records else {})
+
+    @Property("QVariantMap", notify=runDeckChanged)
+    def forgeSelectedFacts(self) -> dict[str, Any]:
+        """Project selected-run facts from its owner, not pending download options."""
+        selected = self.forgeSelection
+        run_id = str(selected.get("runId") or "")
+        kind = str(selected.get("kind") or "")
+        if kind in {"active", "queued", "terminal"}:
+            jobs = [
+                job
+                for job in [
+                    self._runtime.active_job,
+                    *self._runtime.queued,
+                    *self._runtime.recovered,
+                ]
+                if job is not None and job.run_id == run_id
+            ]
+            if len(jobs) == 1:
+                job = jobs[0]
+                rows = [{"label": "Format", "value": job.output_type.value}]
+                if job.output_type == OutputType.ORIGINAL:
+                    rows.append({"label": "Encoding", "value": "Stream copy"})
+                elif job.output_type == OutputType.MP3:
+                    rows.extend(
+                        (
+                            {
+                                "label": "Audio quality",
+                                "value": f"{job.mp3_settings.bitrate_kbps} kbps",
+                            },
+                            {
+                                "label": "Sample rate",
+                                "value": str(
+                                    job.mp3_settings.sample_rate or "Preserve source"
+                                ),
+                            },
+                        )
+                    )
+                else:
+                    rows.extend(
+                        (
+                            {"label": "Quality ceiling", "value": job.quality_label},
+                            {
+                                "label": "Output mode",
+                                "value": export_mode_display_name(job.export_mode),
+                            },
+                        )
+                    )
+                rows.append({"label": "Save to", "value": str(job.output_dir)})
+                if kind != "active":
+                    rows.append(
+                        {
+                            "label": "Status",
+                            "value": str(selected.get("status") or "Queued"),
+                        }
+                    )
+                return {"heading": f"Output: {job.output_type.value}", "rows": rows}
+        if kind == "completed":
+            owner = str(selected.get("owner") or "")
+            item = self._saved_item_for_owner(owner)
+            if item is not None:
+                _source, output = library_detail_facts(item)
+                return {
+                    "heading": "Saved output",
+                    "rows": [
+                        {"label": label, "value": value}
+                        for label, value, _icon in output
+                    ],
+                }
+        return {"heading": "", "rows": []}
 
     @Slot(str, result=bool)
     def selectRunRecord(self, selection_key: str) -> bool:
