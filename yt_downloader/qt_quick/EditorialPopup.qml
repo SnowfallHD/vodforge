@@ -54,19 +54,8 @@ Popup {
                 onActivated: editorial.finish(false)
             }
         }
-        Text {
-            text: editorial.current.title || ""
-            color: theme.text; font.pixelSize: 24; font.bold: true
-            horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-        }
-        Text {
-            text: editorial.current.description || ""
-            color: theme.muted; font.pixelSize: 15
-            horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true; wrapMode: Text.WordWrap
-        }
         Item {
+            objectName: "editorialPreviewRegion"
             Layout.fillWidth: true
             Layout.fillHeight: true
             FeaturePreview {
@@ -75,6 +64,20 @@ Popup {
                 width: Math.min(preferredWidth, parent.width - 20)
                 height: Math.min(preferredHeight, parent.height - 12)
             }
+        }
+        Text {
+            objectName: "editorialSlideTitle"
+            text: editorial.current.title || ""
+            color: theme.text; font.pixelSize: 24; font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+        }
+        Text {
+            objectName: "editorialSlideDescription"
+            text: editorial.current.description || ""
+            color: theme.muted; font.pixelSize: 15
+            horizontalAlignment: Text.AlignHCenter
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
         }
         Text {
             visible: editorial.slides.length > 1

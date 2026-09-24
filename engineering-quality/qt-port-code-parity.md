@@ -65,6 +65,11 @@ popup controls, verified a second slider inside the activity slide, captured
 each slide, and exited code 0. The images are under
 `build/qt-port-package/genesis-c14a63d-v2/`. This is visual acceptance of
 these states only, not full Mac/Windows journey or release proof.
+The actual Tk `whats_new_ui.py` places the preview exhibit before its title
+and description caption. The first `c14a63d` Qt capture had that order
+reversed. `EditorialPopup.qml` now follows the Tk placement; a live source
+capture at `build/qt-port-package/editorial-order-current.png` was inspected,
+and the QML geometry regression requires the exhibit above both caption rows.
 
 2026-09-23 Library rail follow-up: Qt Folders now uses the Tk-style 380 px
 Selected Item rail and a fixed 360 px Item/Description panel at wide sizes,

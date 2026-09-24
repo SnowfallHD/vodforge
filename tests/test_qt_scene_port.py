@@ -1520,6 +1520,11 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         popup.open()
         popup.setProperty("index", 1)
         app.processEvents()
+        exhibit = popup.findChild(QObject, "editorialPreviewRegion")
+        title = popup.findChild(QObject, "editorialSlideTitle")
+        description = popup.findChild(QObject, "editorialSlideDescription")
+        assert exhibit.property("y") + exhibit.property("height") <= title.property("y")
+        assert title.property("y") + title.property("height") <= description.property("y")
         preview = window.findChild(QObject, "featurePreview")
         assert preview.property("previewKey") == "original-audio"
         options = next(
