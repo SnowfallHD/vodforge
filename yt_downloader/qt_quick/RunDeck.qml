@@ -103,7 +103,7 @@ Item {
         id: actionsPopup
         objectName: "runActionsPopup"
         x: Math.max(0, deck.width - width)
-        y: Math.max(0, deck.height - height - 40)
+        y: deck.height - height - 40
         width: 225
         padding: 10
         modal: true
@@ -185,7 +185,7 @@ Item {
         id: allRunsPopup
         objectName: "allRunsPopup"
         x: Math.max(0, deck.width - width)
-        y: Math.max(0, deck.height - height - 40)
+        y: deck.height - height - 40
         width: Math.min(440, deck.width)
         height: Math.min(285, Math.max(80, deck.projection.count * 42 + 18))
         padding: 9

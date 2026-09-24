@@ -1546,6 +1546,11 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         popup = window.findChild(QObject, "allRunsPopup")
         popup.open()
         app.processEvents()
+        assert popup.property("y") < 0
+        deck = window.findChild(QObject, "forgeRunDeck")
+        popup_top = deck.mapToScene(QPointF(0, popup.property("y"))).y()
+        assert popup_top >= 0
+        assert popup_top + popup.property("height") <= window.height()
 
         def visual_children(item):
             for child in item.childItems():
