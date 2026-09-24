@@ -1927,4 +1927,11 @@ floated, returned, restored embedded controls and exited 0 after main-window
 PID and visible-window identity in
 `build/qt-port-package/genesis-ccaaa17-player-result.json`; the Mac journey
 is recorded in `build/qt-port-package/mac-ccaaa17-player-result.json`.
-Direct close while Floating and full installed-app lifecycle remain unproven.
+Separate exact-package Mac and Genesis journeys directly closed the active
+Floating window, observed embedded controls return and exited 0; receipts
+`build/qt-port-package/mac-ccaaa17-direct-close-result.json` and
+`build/qt-port-package/genesis-ccaaa17-direct-close-result.json`.
+The first Genesis attempt stopped before Play because the saved item displayed
+`Resume`; a native UI tree diagnosed the harness label assumption. The retry
+accepted Play or Resume and passed without changing runtime code. Full
+installed-app lifecycle remains unproven.

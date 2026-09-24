@@ -213,6 +213,15 @@ package embedded the same revision, passed runtime smoke, and had EXE SHA256
 Its isolated interactive native observer verified Play/Pause, Floating,
 Return, restored embedded controls and main-window `WM_CLOSE` exit code 0;
 receipt: `build/qt-port-package/genesis-ccaaa17-player-result.json`.
-The owned QA process exited and its two scheduled tasks were removed. Direct
-close of the active Floating window and installed-app Quit are still open.
-These two focused journeys do not qualify the complete Watch feature set.
+The owned QA process exited and its two scheduled tasks were removed. A
+second isolated Mac run clicked the native Floating close button, observed
+the embedded player and controls return, then exited 0 with Command-Q;
+`build/qt-port-package/mac-ccaaa17-direct-close-result.json`.
+The matching Genesis observer first timed out before Play because the
+persisted button label was `Resume`; a native UI tree established that
+cause, and the revised observer accepted either label without changing app
+code. It then directly closed Floating, verified the embedded controls and
+exited 0 after main-window `WM_CLOSE`; receipt:
+`build/qt-port-package/genesis-ccaaa17-direct-close-result.json`.
+All owned QA tasks were removed. Installed-app Quit and the complete Watch
+feature set remain open.
