@@ -17,6 +17,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
+from yt_downloader.library_annotations import LibraryAnnotationsError
 from yt_downloader.library_artwork_source import ArtworkAsset
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
@@ -590,6 +591,49 @@ def test_qt_saved_collection_is_visible_through_shared_projection(
         assert bridge.libraryDetail["output"][0]["label"] == "Saved Filename"
         bridge.returnLibraryDetails()
         assert bridge.libraryScene["route"] == "all"
+    finally:
+        bridge.close()
+
+
+def test_qt_organization_records_only_durable_changed_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._runtime.history = [saved(tmp_path, "First", "MP4")]
+        owner = bridge.collectionCandidates[0]["owner"]
+        events = []
+        monkeypatch.setattr(
+            bridge,
+            "_record_update_feature",
+            lambda feature, action: events.append((feature, action)),
+        )
+        assert bridge.openAnnotationOwner(owner)
+        assert bridge.saveAnnotation("Private note", "private-tag", "Private category")
+        assert events == [
+            ("organization", "notes_saved"),
+            ("organization", "tags_saved"),
+            ("organization", "category_saved"),
+        ]
+        events.clear()
+        assert bridge.saveAnnotation("Private note", "private-tag", "Private category")
+        assert events == []
+        assert not bridge.createCollection("x" * 121, [owner])
+        assert events == []
+        original = bridge._annotations.replace
+        monkeypatch.setattr(
+            bridge._annotations,
+            "replace",
+            lambda *_: (_ for _ in ()).throw(LibraryAnnotationsError("disk failed")),
+        )
+        assert not bridge.saveAnnotation("Changed", "private-tag", "Private category")
+        assert events == []
+        monkeypatch.setattr(bridge._annotations, "replace", original)
+        assert bridge.createCollection("Travel", [owner])
+        assert events == [("organization", "category_saved")]
     finally:
         bridge.close()
 

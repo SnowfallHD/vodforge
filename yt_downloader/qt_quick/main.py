@@ -43,6 +43,7 @@ from yt_downloader.app import (
     ProviderNetworkCoordinator,
     append_activity_log,
     canonical_youtube_url,
+    close_activity_log,
     iter_video_infos,
     load_activity_log_tail,
     prepare_activity_log,
@@ -2294,7 +2295,13 @@ class Bridge(QObject):
         name = name.strip()
         available = {item["owner"] for item in self.collectionCandidates}
         chosen = set(owners)
-        if not name or not chosen or not chosen <= available:
+        if (
+            not name
+            or len(name) > 120
+            or not chosen
+            or not chosen <= available
+            or not self._annotations_writable
+        ):
             self._status = "Name a collection and choose saved media."
             self.statusChanged.emit()
             return False
@@ -2311,6 +2318,7 @@ class Bridge(QObject):
             self._status = str(error)
             self.statusChanged.emit()
             return False
+        self._record_update_feature("organization", "category_saved")
         self.historyChanged.emit()
         self._status = f"Collection {name} saved."
         self.statusChanged.emit()
@@ -2420,6 +2428,13 @@ class Bridge(QObject):
             self._status = str(exc)
             self.statusChanged.emit()
             return False
+        for before, after, action in (
+            (previous.note, annotation.note, "notes_saved"),
+            (previous.tags, annotation.tags, "tags_saved"),
+            (previous.category, annotation.category, "category_saved"),
+        ):
+            if after != before:
+                self._record_update_feature("organization", action)
         if self._library_category not in self.libraryCategories:
             self._library_category = LIBRARY_ALL_CATEGORIES
             self.libraryCategoryChanged.emit()
@@ -3538,6 +3553,7 @@ class Bridge(QObject):
         self._analytics.close()
         if self._analytics.telemetry is not None:
             self._analytics.telemetry.shutdown(timeout_seconds=1.0)
+        close_activity_log(self._activity_log_path)
 
     def _current_export_inputs(
         self, selected_type: OutputType

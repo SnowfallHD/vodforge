@@ -727,6 +727,14 @@ def _close_activity_log_locked() -> None:
         handle.close()
 
 
+def close_activity_log(path: Path | None = None) -> None:
+    """Release this activity sink before a Qt session removes its temporary home."""
+    target = ACTIVITY_LOG_PATH if path is None else path
+    with _ACTIVITY_LOG_LOCK:
+        if _ACTIVITY_LOG_HANDLE_PATH == target:
+            _close_activity_log_locked()
+
+
 def _record_activity_log_failure() -> None:
     """Detach a failed sink and emit one secret-free receipt per failure episode."""
     global \

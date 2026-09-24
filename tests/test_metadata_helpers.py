@@ -236,6 +236,18 @@ def test_private_log_sinks_harden_preexisting_permissions(monkeypatch, tmp_path:
         ]
 
 
+def test_activity_sink_closes_only_the_requested_path(tmp_path: Path):
+    activity = tmp_path / "activity.log"
+    app_module.append_activity_log("ready", activity)
+    assert app_module._ACTIVITY_LOG_HANDLE_PATH == activity
+    app_module.close_activity_log(tmp_path / "other.log")
+    assert app_module._ACTIVITY_LOG_HANDLE_PATH == activity
+    app_module.close_activity_log(activity)
+    assert app_module._ACTIVITY_LOG_HANDLE is None
+    assert app_module._ACTIVITY_LOG_HANDLE_PATH is None
+    activity.unlink()
+
+
 def test_diagnostics_writer_does_not_follow_existing_symlink(
     monkeypatch, tmp_path: Path
 ):
