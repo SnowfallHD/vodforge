@@ -106,6 +106,11 @@ item in each launch. Record `library_description_observed` immediately: the
 recorder validates the receipt's item, description, launch and geometry at that
 point, rather than discovering a mismatch after the rest of the journey. Preserve
 a rejected receipt; never overwrite it or treat a later screenshot as its repair.
+For Qt, use Library → Folders, select the export in Folder Inspector, then open
+its Description tab. All Media details can visibly show the description but do
+not write the Folder Inspector geometry receipt. On launch 2, revisit that same
+Folder Inspector Description view before recording `restart_observed`; the
+restart gate requires a separate receipt owned by launch 2.
 
 Before each native dialog action, discover the current window owned by the
 attested PID and use its exact title and current bounds. Opening a dialog and

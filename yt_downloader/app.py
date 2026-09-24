@@ -7044,12 +7044,15 @@ class DownloadWorkerCore:
                 else:
                     self.events.put(("progress", pct))
             speed = data.get("speed")
-            eta = data.get("eta")
+            eta_seconds = _finite_float(data.get("eta"))
+            eta = (
+                f"{max(0, math.ceil(eta_seconds))}s" if eta_seconds is not None else "?"
+            )
             filename = Path(str(data.get("filename") or "")).name
             self.events.put(
                 (
                     "status",
-                    f"Downloading {filename} — {self._fmt_bytes(speed)}/s ETA {eta or '?'}s",
+                    f"Downloading {filename} — {self._fmt_bytes(speed)}/s ETA {eta}",
                 )
             )
         elif status == "finished":

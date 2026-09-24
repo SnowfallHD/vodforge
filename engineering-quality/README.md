@@ -2054,3 +2054,12 @@ shape with the actual failed conversion attempt. A separate admission test
 checks that an immediate FFprobe error also stays out of the Qt status. The
 earlier Qt local telemetry test covered only a successful commit, which is why
 it missed both failure paths. Preview-D1 and packaged UI proof remain open.
+
+The signed Qt Mac smoke also exposed a shared progress defect: the provider's
+floating ETA was copied verbatim into Forge and Run Deck, yielding many decimal
+places. The existing coalescing test counted events but never inspected the
+visible status text. The shared worker now rounds finite ETAs to whole seconds
+and shows `?` for malformed values. One representative test covers fractional,
+zero, and non-finite values through the event consumed by both Tk and Qt; the
+signed 605 bundle predates this follow-up and needs rebuilding before final
+visual acceptance.

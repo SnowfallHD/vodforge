@@ -7588,6 +7588,37 @@ def test_progress_hook_coalesces_high_frequency_updates(monkeypatch):
     assert sum(kind == "progress" for kind, _payload in events) == 2
 
 
+@pytest.mark.parametrize(
+    ("eta", "expected"),
+    [(79.32760974594562, "ETA 80s"), (0.0, "ETA 0s"), (float("nan"), "ETA ?")],
+)
+def test_progress_hook_bounds_provider_eta_for_both_ui_owners(
+    monkeypatch, eta, expected
+):
+    app = DownloaderApp.__new__(DownloaderApp)
+    app.events = queue.Queue()
+    app.cancel_requested = False
+    app.skip_video_requested = False
+    app.skip_url_requested = False
+    app._active_progress_context = None
+    app._last_progress_event_at = 0.0
+    monkeypatch.setattr(app_module.time, "monotonic", lambda: 10.0)
+
+    app._progress_hook(
+        {
+            "status": "downloading",
+            "downloaded_bytes": 50,
+            "total_bytes": 100,
+            "speed": 1024,
+            "eta": eta,
+            "filename": "sample.mp4",
+        }
+    )
+
+    statuses = [value for kind, value in app.events.queue if kind == "status"]
+    assert len(statuses) == 1 and statuses[0].endswith(expected)
+
+
 @pytest.mark.parametrize("speed", ["not-a-number", float("nan"), float("inf")])
 def test_progress_hook_tolerates_malformed_provider_numbers(monkeypatch, speed):
     app = DownloaderApp.__new__(DownloaderApp)
