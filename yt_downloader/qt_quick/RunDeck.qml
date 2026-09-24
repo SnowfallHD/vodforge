@@ -183,6 +183,7 @@ Item {
     }
     Popup {
         id: allRunsPopup
+        objectName: "allRunsPopup"
         x: Math.max(0, deck.width - width)
         y: Math.max(0, deck.height - height - 40)
         width: Math.min(440, deck.width)
@@ -205,8 +206,7 @@ Item {
                         height: 36
                         size: "inline"
                         onActivated: {
-                            if (modelData.kind === "completed") deck.openSaved(modelData.owner)
-                            else if (modelData.kind === "preview") deck.appBridge.openPreviewOwner(modelData.owner)
+                            if (modelData.kind === "preview") deck.appBridge.openPreviewOwner(modelData.owner)
                             else deck.appBridge.selectRunRecord(modelData.selectionKey)
                             allRunsPopup.close()
                         }

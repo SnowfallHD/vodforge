@@ -814,6 +814,25 @@ Window {
                         fillMode: Image.PreserveAspectFit
                         smooth: true
                     }
+                    Rectangle {
+                        objectName: "forgeHeroDurationBadge"
+                        visible: !!window.selectedForgeRun.duration
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: 6
+                        anchors.bottomMargin: 6
+                        width: durationText.implicitWidth + 8
+                        height: durationText.implicitHeight + 2
+                        color: "#08090a"
+                        Text {
+                            id: durationText
+                            anchors.centerIn: parent
+                            text: window.selectedForgeRun.duration || ""
+                            color: "#ffffff"
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
+                    }
                 }
                 ColumnLayout {
                     spacing: window.compactHeight ? 3 : 7

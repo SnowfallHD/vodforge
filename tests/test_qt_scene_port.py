@@ -1533,6 +1533,7 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
     image = tmp_path / "selected-thumbnail.jpg"
     Image.new("RGB", (320, 180), "#7197b8").save(image)
     records[-1]["preview_thumbnail_path"] = str(image)
+    records[-1]["duration"] = 124
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = records
     engine = qt_main.create_engine(bridge)
@@ -1542,7 +1543,26 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
             row for row in bridge.runDeck["records"] if row["title"] == "Media 4"
         )
         assert selection not in bridge.runDeck["visible"]
-        assert bridge.selectRunRecord(selection["selectionKey"])
+        popup = window.findChild(QObject, "allRunsPopup")
+        popup.open()
+        app.processEvents()
+
+        def visual_children(item):
+            for child in item.childItems():
+                yield child
+                yield from visual_children(child)
+
+        choices = [
+            item
+            for item in visual_children(window.contentItem())
+            if isinstance(item.property("modelData"), dict)
+            and item.property("modelData").get("selectionKey")
+            == selection["selectionKey"]
+        ]
+        assert len(choices) == 1
+        choices[0].activated.emit()
+        app.processEvents()
+        assert bridge.forgeSelection["selectionKey"] == selection["selectionKey"]
         deadline = time.monotonic() + 2
         while not bridge._artwork.poll() and time.monotonic() < deadline:
             time.sleep(0.005)
@@ -1553,6 +1573,9 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         media = window.findChild(QObject, "forgeHeroMediaImage")
         assert hero.property("width") >= 150
         assert media.property("visible") is True
+        assert bridge.forgeSelection["duration"] == "2:04"
+        badge = window.findChild(QObject, "forgeHeroDurationBadge")
+        assert badge.property("visible") is True
         assert Path(media.property("source").toLocalFile()).resolve() == image.resolve()
         settled = QEventLoop()
         QTimer.singleShot(100, settled.quit)

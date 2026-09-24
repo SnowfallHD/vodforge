@@ -128,6 +128,7 @@ from yt_downloader.library_state import (
     PROJECTION_OWNER_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
+    format_duration,
     is_metadata_preview,
     metadata_output_type,
     metadata_run_key,
@@ -1969,6 +1970,7 @@ class Bridge(QObject):
                     "type": preview["type"],
                     "progress": 100 if preview["phase"] == "complete" else 0,
                     "artwork": preview["artwork"],
+                    "duration": "",
                 }
             )
         active = self._runtime.active_job
@@ -1992,6 +1994,7 @@ class Bridge(QObject):
                     "status": self._status,
                     "type": active.output_type.value,
                     "progress": self._progress,
+                    "duration": format_duration(preview.get("duration")),
                     "artwork": (
                         self._artwork.request(preview)
                         if preview and len(records) < 4
@@ -2022,6 +2025,7 @@ class Bridge(QObject):
                         "status": job.terminal_status or "Queued",
                         "type": job.output_type.value,
                         "progress": 0,
+                        "duration": format_duration(preview.get("duration")),
                         "artwork": (
                             self._artwork.request(preview)
                             if preview and len(records) < 4
@@ -2052,6 +2056,7 @@ class Bridge(QObject):
                     "status": str(record["status"]),
                     "type": str(record["output_type"]),
                     "progress": 100,
+                    "duration": format_duration(item.get("duration")),
                     "artwork": self._artwork.request(item) if len(records) < 4 else "",
                 }
             )
@@ -2067,6 +2072,9 @@ class Bridge(QObject):
         for kind in ("active", "queued", "completed", "terminal", "preview"):
             if count := counts.get(kind, 0):
                 summary += f"  •  {count} {kind}"
+        for record in records:
+            if record.get("duration") == "—":
+                record["duration"] = ""
         return {
             "records": records,
             "visible": records[:4],
