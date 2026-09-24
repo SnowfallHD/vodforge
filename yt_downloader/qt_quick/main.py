@@ -1981,6 +1981,7 @@ class Bridge(QObject):
                     + str(self._metadata_preview_record.get("runId") or ""),
                     "owner": "",
                     "kind": "preview",
+                    "phase": preview["phase"],
                     "title": preview["title"],
                     "status": preview["status"],
                     "type": preview["type"],

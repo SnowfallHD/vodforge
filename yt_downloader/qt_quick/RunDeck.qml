@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 Item {
     id: deck
+    RunStatusTone { id: runStatusTone }
     property var appBridge
     property bool compact: false
     readonly property var projection: appBridge.runDeck
@@ -77,7 +78,24 @@ Item {
                                 Layout.fillWidth: true
                                 spacing: 3
                                 Text { text: modelData.title; color: theme.text; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: modelData.status; color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text {
+                                    objectName: "runDeckStatus"
+                                    text: modelData.status
+                                    color: runStatusTone.colorFor(modelData.kind,
+                                                                  modelData.phase === "failed" ? "Failed" : modelData.status,
+                                                                  theme)
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                RunProgress {
+                                    visible: modelData.kind === "active"
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: visible ? 3 : 0
+                                    kind: modelData.kind
+                                    status: modelData.status
+                                    progress: modelData.progress
+                                }
                             }
                             StoneButton {
                                 label: "⋯"

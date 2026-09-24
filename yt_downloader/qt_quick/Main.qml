@@ -6,6 +6,7 @@ import QtMultimedia
 
 Window {
     id: window
+    RunStatusTone { id: runStatusTone }
     visible: true
     width: 1100
     height: 740
@@ -21,6 +22,9 @@ Window {
     property string pendingRelinkFolderPath: ""
     property var mediaPlayer: playerLoader.item
     readonly property var selectedForgeRun: bridge.forgeSelection
+    readonly property string selectedForgeToneStatus:
+        window.showingForgePreview && bridge.forgePreview.phase === "failed" ?
+            "Failed" : (window.selectedForgeRun.status || "")
     readonly property bool showingForgePreview: selectedForgeRun.kind === "preview"
     readonly property string forgeDisplayType: selectedForgeRun.type || window.outputFormat
     readonly property bool playerSurfaceBound: mediaPlayer && mediaPlayer.videoOutput === playerScene.activeVideoSurface
@@ -856,7 +860,8 @@ Window {
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
                         elide: Text.ElideRight
-                        color: theme.muted
+                        color: runStatusTone.colorFor(window.selectedForgeRun.kind,
+                                                      window.selectedForgeToneStatus, theme)
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
                     Text {
@@ -877,18 +882,25 @@ Window {
                     }
                 }
                 Text {
+                    objectName: "forgeSelectedProgressLabel"
                     text: window.showingForgePreview ?
-                          (bridge.forgePreview.phase === "complete" ? "Preview" : "…") :
-                          Math.round(window.selectedForgeRun.progress || 0) + "%"
-                    color: theme.selection
+                          (bridge.forgePreview.phase === "failed" ? "Failed" : "…") :
+                          runStatusTone.progressLabel(window.selectedForgeRun.kind,
+                                                      window.selectedForgeRun.status,
+                                                      window.selectedForgeRun.progress)
+                    color: runStatusTone.colorFor(window.selectedForgeRun.kind,
+                                                  window.selectedForgeToneStatus, theme)
                     font.pixelSize: window.compactHeight ? 28 : 34
                 }
             }
 
-            Rectangle {
+            RunProgress {
+                objectName: "forgeSelectedProgress"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 1
-                color: theme.border
+                Layout.preferredHeight: 5
+                kind: window.selectedForgeRun.kind || ""
+                status: window.selectedForgeToneStatus
+                progress: window.selectedForgeRun.progress || 0
             }
 
             RowLayout {

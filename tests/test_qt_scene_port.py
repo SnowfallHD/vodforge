@@ -23,7 +23,7 @@ from PySide6.QtCore import (
     QTimer,
     QUrl,
 )
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtMultimedia import QMediaPlayer
 
 from tests.test_quality_e2e import _isolated_launch
@@ -39,6 +39,7 @@ from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.run_state import RunStateError
 from yt_downloader.support_diagnostics import FailureContext
+from yt_downloader.ui_theme import THEME
 from yt_downloader.whats_new import NativePreview
 
 
@@ -1373,6 +1374,88 @@ def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
         bridge.activityChanged.emit()
         app.processEvents()
         assert title.property("text") == "Active source"
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
+def test_qt_forge_and_run_deck_use_shared_terminal_progress_tones(
+    tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    jobs = []
+    for status in ("Failed", "Stopped", "Skipped"):
+        job = replace(make_job(tmp_path), run_id=f"{status.lower()}-run")
+        job.terminal_status = status
+        job.preview_info = {"title": f"{status} source"}
+        jobs.append(job)
+    bridge._runtime.recovered = jobs
+    bridge.runDeckChanged.emit()
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        app.processEvents()
+        label = window.findChild(QObject, "forgeSelectedProgressLabel")
+        status_label = window.findChild(QObject, "forgeSelectedStatus")
+        track = window.findChild(QObject, "forgeSelectedProgress")
+        fill = track.findChild(QObject, "runProgressFill")
+        assert track.property("height") == pytest.approx(5)
+        assert fill.property("width") == pytest.approx(track.property("width"))
+        for job in jobs:
+            assert bridge.selectRunRecord(f"terminal:{job.run_id}")
+            app.processEvents()
+            color = QColor(
+                THEME["danger" if job.terminal_status == "Failed" else "warning"]
+            )
+            assert label.property("text") == job.terminal_status
+            assert label.property("color") == color
+            assert status_label.property("color") == color
+            assert fill.property("color") == color
+        deck = window.findChild(QObject, "forgeRunDeck")
+
+        def _visual_items(item):
+            yield item
+            for child in item.childItems():
+                yield from _visual_items(child)
+
+        deck_statuses = [
+            item for item in _visual_items(deck) if item.objectName() == "runDeckStatus"
+        ]
+        assert {
+            item.property("text"): item.property("color").name()
+            for item in deck_statuses
+        } == {
+            "Failed": QColor(THEME["danger"]).name(),
+            "Stopped": QColor(THEME["warning"]).name(),
+            "Skipped": QColor(THEME["warning"]).name(),
+        }
+        bridge._metadata_preview_record = {
+            "runId": "failed-preview",
+            "phase": "failed",
+            "title": "Preview failed",
+            "status": "Could not load this source.",
+            "type": "MP4",
+        }
+        bridge.forgePreviewChanged.emit()
+        bridge.runDeckChanged.emit()
+        assert bridge.selectRunRecord("preview:failed-preview")
+        app.processEvents()
+        assert label.property("text") == "Failed"
+        assert label.property("color") == QColor(THEME["danger"])
+        preview_statuses = [
+            item for item in _visual_items(deck) if item.objectName() == "runDeckStatus"
+        ]
+        assert preview_statuses[0].property("color") == QColor(THEME["danger"])
     finally:
         window.close()
         engine.deleteLater()

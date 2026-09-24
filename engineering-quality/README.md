@@ -1,5 +1,19 @@
 # VODForge engineering-quality harness
 
+## Qt run progress semantics — 2026-09-24
+
+The prior Qt scene checks verified run selection and status text, but never
+checked the rendered tone or progress track. That let Forge keep a purple
+percentage and the Run Deck keep muted text for failed, stopped, and skipped
+runs. `RunStatusTone.qml` owns the status-to-color and terminal-label mapping;
+`RunProgress.qml` owns the thin track. The rendered QML regression checks red
+Failed, orange Stopped/Skipped, a red preview failure, the filled terminal
+track, and the visible Run Deck labels after selection changes. A controlled
+change from red to muted in the shared tone made the regression fail
+(`build/qt-port-package/qt-status-tone-mutation.log`). The coverage is bounded
+to representative statuses and rendered source QML; signed Mac and Windows
+package visuals remain separate gates.
+
 ## Qt artwork and Forge visual ownership — 2026-09-24
 
 The earlier Watch/Library source tests counted bounded artwork requests and
