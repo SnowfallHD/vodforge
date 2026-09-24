@@ -23,7 +23,12 @@ thumbnail cache path immediately, while its background owner remains
 responsible for role-specific and acquired art. A blocked-lane test asserts
 media, playlist and avatar requests all return their real cached image URL
 before the first job can finish. The first package remains a failed visual
-gate; rebuild and native acceptance are required.
+gate. The corrected exact `677aa6a` Mac package visibly renders the Watch
+hero/group and Library collection images, and its welcome first/third slides
+show the emblem rows and slider. The exact Genesis package passed a synthetic
+cached-image pixel check in its interactive desktop: both red/green channel
+images and both Library media images appear. These are focused visual gates;
+the remaining package, installed, telemetry and release journeys are separate.
 
 The Forge/Welcome scene test previously verified the slider object and emblem
 URL but not the final arrangement. It now checks the Tk-derived Activity to

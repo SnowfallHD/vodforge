@@ -85,6 +85,24 @@ app-owned stable cached JPEG directly while continuing its normal async
 resolution. A blocked-first-job, cached-second-item regression covers media,
 playlist and avatar roles. A fresh exact package must prove visible pixels;
 the `88f6700` Watch capture is a failed visual gate, not acceptance.
+The clean `677aa6a` Mac QA package embeds the exact revision, passes ad hoc
+deep code-sign verification and packaged runtime smoke, and native inspection
+shows Watch hero/playlist/channel art, Library collection art and count
+badges. Its Welcome popup shows event/success emblems on slide one and the
+smiley/frowny control on slide three. The Genesis `677aa6a` EXE SHA256 is
+`e074e50ad3ea8b49d748fcc0c31369b1b54406fc79b2337c0fac8f12f05c5c9b`;
+the packaged runtime smoke passes. An isolated interactive Windows profile
+with two app-cache JPEGs passed native Watch Channels red/green pixel counts
+(4709/3761), Library media counts (21709/20034), and UIA slide-three slider
+visibility. Captures and receipt are under
+`build/qt-port-package/genesis-677aa6a-{watch-channels,library-media,welcome,smiley,result}.*`.
+The first Genesis observer run failed because it expected the second channel
+on the one-card Watch home; a corrected route-specific run passed. The
+initial Windows build failed while an older exact QA app still held a DLL;
+that PID was verified under `E:\VODForgeQA` and closed before the successful
+build. The final observer closed its PID and both owned scheduled tasks were
+removed. This accepts these particular package visuals; it does not satisfy
+the complete Mac/Genesis feature, telemetry, updater or signed release gates.
 The actual Tk `whats_new_ui.py` places the preview exhibit before its title
 and description caption. The first `c14a63d` Qt capture had that order
 reversed. `EditorialPopup.qml` now follows the Tk placement; a live source
