@@ -144,6 +144,10 @@ if (Test-Path $deno) {
   Write-Host "WARNING: deno.exe missing; yt-dlp may warn that no JavaScript runtime is available. Run install_deno_windows.ps1 for best YouTube extraction support."
 }
 
+# PyInstaller writes normal progress to stderr. Windows PowerShell can turn
+# that stream into a terminating NativeCommandError under Stop, even when the
+# process succeeds. Judge the native process by its exit code instead.
+$ErrorActionPreference = "Continue"
 python -m PyInstaller `
   --noconfirm `
   --clean `
@@ -157,6 +161,11 @@ python -m PyInstaller `
   @qtArgs `
   @vlcArgs `
   $entrypoint
+$buildExitCode = $LASTEXITCODE
+$ErrorActionPreference = "Stop"
+if ($buildExitCode -ne 0) {
+  throw "PyInstaller failed with exit code $buildExitCode."
+}
 
 $appBinary = Join-Path $PSScriptRoot "dist\VODForge\VODForge.exe"
 $smokeProcess = Start-Process -FilePath $appBinary -ArgumentList "--runtime-smoke" -Wait -PassThru
