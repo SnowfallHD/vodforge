@@ -59,6 +59,8 @@ Canvas {
         } else if (name === "plus") {
             line([[.5, 0], [.5, 1]])
             line([[0, .5], [1, .5]])
+        } else if (name === "chevron") {
+            line([[.35, .15], [.70, .5], [.35, .85]])
         }
     }
 }

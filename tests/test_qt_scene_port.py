@@ -1679,6 +1679,50 @@ def test_qt_forge_composer_matches_tk_control_bounds(tmp_path, monkeypatch):
         bridge.close()
 
 
+def test_qt_library_category_tiles_follow_tk_column_and_content_branches(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        for width, height, columns, compact in (
+            (820, 560, 2, False),
+            (1100, 740, 4, True),
+            (1180, 790, 4, True),
+        ):
+            window.resize(width, height)
+            for _ in range(3):
+                app.processEvents()
+            flow = window.findChild(QObject, "libraryCategoryFlow")
+            cards = [
+                item
+                for item in flow.childItems()
+                if item.objectName().startswith("libraryCategoryTile_")
+            ]
+            assert flow.property("columns") == columns
+            assert len(cards) == 4
+            assert all(item.property("compact") is compact for item in cards)
+            assert all(round(item.height()) == 106 for item in cards)
+            assert all(
+                abs(item.width() - flow.property("cardWidth")) < 1 for item in cards
+            )
+            assert round(cards[1].x() - cards[0].x() - cards[0].width()) == 14
+            assert round(cards[2].y()) == (120 if columns == 2 else 0)
+        assert not window.grabWindow().isNull()
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))

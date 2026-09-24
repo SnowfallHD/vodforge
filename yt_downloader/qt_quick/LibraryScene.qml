@@ -246,28 +246,80 @@ Item {
 
                 Flow {
                     id: categoryFlow
+                    objectName: "libraryCategoryFlow"
                     width: parent.width
-                    spacing: 12
+                    spacing: 14
+                    readonly property int columns: Math.max(1, Math.min(4, Math.floor((width + spacing) / 200)))
+                    readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     Repeater {
                         model: [
-                            { route: "channels", label: "Channels", count: scene.counts.channels || 0 },
-                            { route: "playlists", label: "Playlists", count: scene.counts.playlists || 0 },
-                            { route: "videos", label: "Videos", count: scene.counts.videos || 0 },
-                            { route: "audio", label: "Audio", count: scene.counts.audio || 0 }
+                            { route: "channels", label: "Channels", summary: "channel", subtitle: "Downloaded channel archives", empty: "No channel archives yet", count: scene.counts.channels || 0 },
+                            { route: "playlists", label: "Playlists", summary: "playlist", subtitle: "Your curated collections", empty: "No playlists yet", count: scene.counts.playlists || 0 },
+                            { route: "videos", label: "Videos", summary: "video", subtitle: "All downloaded videos", empty: "No downloaded videos", count: scene.counts.videos || 0 },
+                            { route: "audio", label: "Audio", summary: "audio file", subtitle: "Music, podcasts & more", empty: "No audio files yet", count: scene.counts.audio || 0 }
                         ]
                         StoneButton {
+                            id: categoryTile
                             required property var modelData
-                            width: Math.max(145, (categoryFlow.width - 36) / 4)
+                            objectName: "libraryCategoryTile_" + modelData.route
+                            width: categoryFlow.cardWidth
                             height: 106
                             label: ""
                             accessibilityLabel: modelData.label + ", " + modelData.count
                             onActivated: scene.appBridge.navigateLibrary(modelData.route)
-                            Column {
-                                anchors.fill: parent
-                                anchors.margins: 15
-                                spacing: 8
-                                Text { text: modelData.label; color: theme.text; font.pixelSize: 16; font.bold: true }
-                                Text { text: modelData.count; color: theme.muted; font.pixelSize: 23 }
+                            readonly property bool compact: width < 220
+                            readonly property int iconSize: width >= 255 ? 64 : 48
+                            Rectangle {
+                                visible: !categoryTile.compact
+                                x: 16; y: 21
+                                width: categoryTile.iconSize; height: 64
+                                radius: 9
+                                color: theme.accent_dark
+                                SceneIcon {
+                                    name: categoryTile.modelData.route === "playlists" ? "list" : categoryTile.modelData.route
+                                    tone: theme.icon
+                                    width: 34; height: 34
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    y: 16
+                                }
+                            }
+                            Text {
+                                x: categoryTile.compact ? 16 : categoryTile.iconSize + 36
+                                y: categoryTile.compact ? 18 : 24
+                                width: categoryTile.compact ? parent.width - 32 : parent.width - categoryTile.iconSize - 51
+                                text: categoryTile.modelData.label
+                                color: theme.text
+                                font.pixelSize: categoryTile.compact ? 15 : 16
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                x: categoryTile.compact ? 16 : categoryTile.iconSize + 36
+                                y: categoryTile.compact ? 48 : 51
+                                width: categoryTile.compact ? parent.width - 32 : parent.width - categoryTile.iconSize - 51
+                                text: categoryTile.compact ? String(categoryTile.modelData.count) :
+                                    categoryTile.modelData.count + " " + categoryTile.modelData.summary +
+                                    (categoryTile.modelData.count === 1 ? "" : "s")
+                                color: theme.muted
+                                font.pixelSize: categoryTile.compact ? 22 : 13
+                                font.bold: categoryTile.compact
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: !categoryTile.compact
+                                x: categoryTile.iconSize + 36; y: 73
+                                width: parent.width - categoryTile.iconSize - 51
+                                text: categoryTile.modelData.count ? categoryTile.modelData.subtitle : categoryTile.modelData.empty
+                                color: theme.muted
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
+                            SceneIcon {
+                                visible: !categoryTile.compact
+                                name: "chevron"
+                                tone: theme.muted
+                                x: parent.width - 29; y: 43
+                                width: 17; height: 17
                             }
                         }
                     }
