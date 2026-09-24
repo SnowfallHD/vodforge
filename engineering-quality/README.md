@@ -13,6 +13,10 @@ change from red to muted in the shared tone made the regression fail
 (`build/qt-port-package/qt-status-tone-mutation.log`). The coverage is bounded
 to representative statuses and rendered source QML; signed Mac and Windows
 package visuals remain separate gates.
+The first exact Windows package capture then exposed internal "staging files"
+wording on an interrupted run. Shared recovery guidance now says unfinished
+download files were removed and asks the user to try again; the durable
+recovery test checks the actionable wording and excludes the internal term.
 
 ## Qt artwork and Forge visual ownership — 2026-09-24
 

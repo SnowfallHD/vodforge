@@ -38,8 +38,8 @@ from .safe_output import (
 RUN_STATE_SCHEMA_VERSION = 1
 MAX_RUN_STATE_BYTES = 512 * 1024
 INTERRUPTED_FAILURE_MESSAGE = (
-    "VODForge closed before this run finished. Its incomplete staging files were "
-    "removed; retry the run to start again."
+    "VODForge closed before this run finished. Unfinished download files were "
+    "removed. Try the run again."
 )
 PERSISTED_TERMINAL_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
 

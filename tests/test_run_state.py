@@ -102,6 +102,11 @@ def test_active_run_store_is_private_and_failed_state_survives_restart(
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert failed.terminal_status == "Failed"
     assert failed.terminal_message == INTERRUPTED_FAILURE_MESSAGE
+    assert (
+        "Unfinished download files were removed. Try the run again."
+        in failed.terminal_message
+    )
+    assert "staging" not in failed.terminal_message.lower()
     assert ActiveRunStore(path).load_failed_job() is not None
 
 
