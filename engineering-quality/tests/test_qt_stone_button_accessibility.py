@@ -160,6 +160,10 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
 
         for name in ("Forge", "Library", "Watch", "Activity", "Help", "Settings"):
             assert inside(visible_button(name)), name
+        for name in ("Forge", "Library", "Watch", "Activity"):
+            bounds = visible_button(name).rect()
+            assert bounds.height() == 44, name
+            assert bounds.width() >= 86, name
         bridge.select("Library")
         bridge.navigateLibrary("folders")
         for _ in range(5):

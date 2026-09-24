@@ -236,3 +236,39 @@ def test_windows_bus_query_failure_keeps_kind_unknown(monkeypatch):
 
     monkeypatch.setattr(volume_storage.subprocess, "run", fail)
     assert volume_storage._windows_fixed_drive_kinds() == {}
+
+
+def test_windows_discovered_drive_root_matches_default_capacity_owner(monkeypatch):
+    calls = []
+
+    class Kernel:
+        def GetLogicalDrives(self):
+            return 1 << 2
+
+        def GetDriveTypeW(self, path):
+            calls.append(path)
+            return 3
+
+        def GetVolumeInformationW(self, *_args):
+            return False
+
+    monkeypatch.setattr(storage.os, "name", "nt")
+    monkeypatch.setattr(
+        storage._windows_ctypes,
+        "windll",
+        SimpleNamespace(kernel32=Kernel()),
+        raising=False,
+    )
+    monkeypatch.setattr(storage, "_windows_fixed_drive_kinds", dict)
+    monkeypatch.setattr(
+        storage.shutil,
+        "disk_usage",
+        lambda path: SimpleNamespace(total=1000, free=400),
+    )
+    choices, capacity = storage.read_volume_capacity(
+        storage.default_volume("win32"), threading.Event()
+    )
+    assert calls == [f"{chr(65 + bit)}:\\" for bit in range(26)]
+    assert [volume.path for volume in choices] == ["C:\\"]
+    assert capacity is not None
+    assert (capacity.total, capacity.used, capacity.free) == (1000, 600, 400)

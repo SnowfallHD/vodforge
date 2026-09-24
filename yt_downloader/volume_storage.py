@@ -147,7 +147,7 @@ def available_volumes(cancelled: threading.Event) -> tuple[StorageVolume, ...]:
         for bit in range(26):
             if cancelled.is_set():
                 break
-            mount = f"{chr(65 + bit)}:\\\\"
+            mount = f"{chr(65 + bit)}:\\"
             drive_type = kernel.GetDriveTypeW(mount)
             if not mask & (1 << bit) or drive_type not in {2, 3, 4}:
                 continue

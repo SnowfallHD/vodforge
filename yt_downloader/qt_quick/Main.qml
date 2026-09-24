@@ -516,9 +516,8 @@ Window {
             Layout.preferredHeight: stacked ? 100 : 52
             readonly property bool compact: window.width < 960
             readonly property int brandWidth: compact ? 150 : 196
-            readonly property int navButtonWidth: compact ? 93 : 108
             readonly property int searchWidth: compact ? 150 : 220
-            readonly property int navWidth: navButtonWidth * 4 + 30
+            readonly property int navWidth: navigationRow.implicitWidth
             readonly property int utilityWidth: searchWidth + 64 + 46 + 20
             readonly property bool stacked: brandWidth + navWidth + utilityWidth + 20 > width
 
@@ -554,8 +553,8 @@ Window {
                             modelData === "Forge" ? "download-20.png" :
                             modelData === "Library" ? "folder-20.png" :
                             modelData === "Watch" ? "play.png" : "activity-20.png") + "/r" + bridge.themeRevision
-                        width: focusHeader.navButtonWidth
-                        height: 40
+                        width: Math.max(86, implicitWidth)
+                        height: implicitHeight
                         onActivated: bridge.select(modelData)
                     }
                 }
