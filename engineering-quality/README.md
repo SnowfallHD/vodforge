@@ -1919,3 +1919,12 @@ plus the one-player surface binding. It fails against the previous QML and
 passes with the fix. This covers the close-event contract for floating and
 fullscreen reuse; fresh packaged Mac/Genesis Quit journeys must still pass
 before clearing the native lifecycle gate.
+
+Exact `ccaaa17` packaged follow-up: isolated Mac playback then Floating →
+Return → Command-Q exited 0. On Genesis, the exact clean-source EXE played,
+floated, returned, restored embedded controls and exited 0 after main-window
+`WM_CLOSE`. The Windows observer binds executable hash, embedded revision,
+PID and visible-window identity in
+`build/qt-port-package/genesis-ccaaa17-player-result.json`; the Mac journey
+is recorded in `build/qt-port-package/mac-ccaaa17-player-result.json`.
+Direct close while Floating and full installed-app lifecycle remain unproven.

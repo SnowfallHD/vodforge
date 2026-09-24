@@ -201,3 +201,18 @@ the previous code and passes after the change. A fresh exact Mac/Genesis
 package, native Quit from active Floating and after Return, and installed-app
 lifecycle proof remain open. This failed package is not release evidence for
 close behavior.
+
+2026-09-24 exact `ccaaa17` package follow-up: Mac ad hoc signed QA bundle
+passed build preflight, runtime smoke and strict code-signature verification.
+An isolated native Watch → Play → Floating → Return → Command-Q journey
+showed advancing playback, the same embedded controls after Return, and
+process exit code 0. Receipt:
+`build/qt-port-package/mac-ccaaa17-player-result.json`. Genesis clean-source
+package embedded the same revision, passed runtime smoke, and had EXE SHA256
+`8eaf997f0257ab0d39d7da81a5ac9e3b5af1f4f8cdf947346639de13f4fbc2f2`.
+Its isolated interactive native observer verified Play/Pause, Floating,
+Return, restored embedded controls and main-window `WM_CLOSE` exit code 0;
+receipt: `build/qt-port-package/genesis-ccaaa17-player-result.json`.
+The owned QA process exited and its two scheduled tasks were removed. Direct
+close of the active Floating window and installed-app Quit are still open.
+These two focused journeys do not qualify the complete Watch feature set.
