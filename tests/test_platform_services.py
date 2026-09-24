@@ -363,6 +363,35 @@ def test_relocated_native_failure_keeps_closed_diagnostic_label():
         assert _first_party_location(error) == {}
 
 
+def test_qt_failure_location_keeps_closed_module_without_private_context():
+    from yt_downloader.failure_diagnostics import _first_party_location
+
+    namespace = {"__name__": "yt_downloader.qt_quick.local_conversion"}
+    exec(  # noqa: S102 - fixed synthetic traceback fixture
+        compile(
+            "def fail():\n    raise RuntimeError('private-path-sentinel')\n",
+            "private-file-sentinel",
+            "exec",
+        ),
+        namespace,
+    )
+    try:
+        namespace["fail"]()
+    except RuntimeError as error:
+        detail = _first_party_location(error)
+    assert detail == {
+        "source_module": "qt_quick.local_conversion",
+        "source_line": 2,
+        "source_scope": "first_party_frame",
+    }
+    assert "sentinel" not in str(detail)
+    namespace["__name__"] = "yt_downloader.qt_quick.private_user_module"
+    try:
+        namespace["fail"]()
+    except RuntimeError as error:
+        assert _first_party_location(error) == {}
+
+
 @pytest.mark.parametrize("size", [(1, 40), (40, 1), (4000, 4000)])
 def test_optional_capture_rejects_invalid_geometry_before_platform_call(
     size, monkeypatch

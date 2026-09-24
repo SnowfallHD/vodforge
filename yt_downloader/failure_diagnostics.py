@@ -90,6 +90,18 @@ FIRST_PARTY_MODULES = frozenset(
         "playback_surface",
         "player_presentation_ui",
         "player_overlay_macos",
+        "qt_quick.analytics",
+        "qt_quick.artwork",
+        "qt_quick.library_files",
+        "qt_quick.local_conversion",
+        "qt_quick.main",
+        "qt_quick.metadata_preview",
+        "qt_quick.previews",
+        "qt_quick.relink",
+        "qt_quick.runtime",
+        "qt_quick.scene_projection",
+        "qt_quick.support",
+        "qt_quick.update_session",
     }
 )
 

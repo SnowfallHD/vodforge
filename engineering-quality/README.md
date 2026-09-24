@@ -777,6 +777,15 @@ active-stage preservation. A source-native diagnostic presentation probe still
 targets Tk and does not qualify Qt presentation telemetry; preview-D1 and
 signed-app observation remain open release gates.
 
+Qt Python failures now use the existing closed first-party source-location
+contract: twelve named `qt_quick` modules are accepted by both desktop and
+the site validator, while arbitrary nested module names, filenames, exception
+messages, paths and user content remain excluded. The earlier location tests
+covered shared/Tk and relocated macOS owners but missed Qt frames. Paired
+desktop and Worker tests verify accepted Qt labels and rejected private module
+names. This improves localization for observed Qt exceptions; it cannot
+reconstruct failures that the client never captures or verify on-screen pixels.
+
 Deeper run (longer fixtures/soak plus the first default-download W3C public boundary; the larger manifest remains an explicit candidate set rather than implied coverage):
 
 ```sh
