@@ -1954,5 +1954,13 @@ stub incorrectly asks for bytes. Focused tests demonstrated that changing to
 typing exception. Existing cross-owner Qt analytics/Library tests passed
 15/15, Qt scene and quality tests passed 78/78, and the full source suite
 passed 3688 with 813 skips. The repository fast gate still fails unrelated
-format, complexity and mypy signals. A new exact packaged build is required
-after these source changes; earlier `ccaaa17` native receipts remain historical.
+format, complexity and mypy signals. Fresh exact `e16ee3e` Mac/Genesis
+packages passed focused native routes; earlier `ccaaa17` receipts remain
+historical.
+
+The subsequent `aaa4c44` fast rerun is still failed, with 391 complexity
+findings and 140 mypy errors. Ruff checks, formatting, Bandit, source tests,
+bounded mutations and telemetry isolation passed. Exact receipt:
+`build/qt-port-package/fast-aaa4c44/fast-gate.json`. Of the complexity
+findings, 26 are in `qt_quick`; the remainder spans older owners. No static
+threshold was relaxed and this receipt does not qualify release.
