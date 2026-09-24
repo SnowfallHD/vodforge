@@ -276,12 +276,13 @@ def test_live_disclosure_geometry_identity_and_lossless_log():
 @pytest.mark.skipif(
     os.environ.get("VODFORGE_NATIVE_UI_TESTS") != "1", reason="native Tk"
 )
-def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path):
+def test_worker_failure_cause_stays_in_private_diagnostics(monkeypatch, tmp_path):
     import yt_downloader.app as app_module
     from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
 
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
-    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    diagnostics = []
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
     app = _worker_test_app()
     cause = "the MP4 output does not match its export plan: the measured audio bitrate (unavailable kbps) does not match 160 kbps"
     app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
@@ -292,7 +293,8 @@ def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path
     raw = "\n".join(
         payload["line"] for kind, payload in app.events.queue if kind == "job_log"
     )
-    assert cause in raw
+    assert cause not in raw
+    assert any(cause in line for line in diagnostics)
     root = tk.Tk()
     root.geometry("620x260")
     panel = ForgeActivityPanel(root)
@@ -310,7 +312,7 @@ def test_worker_failure_cause_is_visible_only_in_technical(monkeypatch, tmp_path
         panel.set_technical(True)
         root.update()
         assert panel.technical.winfo_ismapped()
-        assert cause in panel.technical.get("1.0", "end-1c")
+        assert cause not in panel.technical.get("1.0", "end-1c")
         panel.set_technical(False)
         root.update()
         assert panel.friendly.get("1.0", "end-1c") == friendly

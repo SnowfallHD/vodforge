@@ -577,8 +577,6 @@ class UiEventHandlersMixin:
             ):
                 self._display_metadata_preview_request(preview_request)
         self.status_var.set("Metadata preview failed")
-        if details:
-            self._append_log(details)
         self._append_log(f"ERROR: {payload}")
         messagebox.showerror(self._event_app_name, str(payload))
 

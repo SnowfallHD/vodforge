@@ -2002,3 +2002,35 @@ completion. The existing updater owner already emits download-completed and
 failed observations through Qt's poll loop, so the lexical comparison did not
 justify duplicating those events. These tests establish source behavior; D1
 readback and final packaged platform paths remain open.
+
+### Provider errors and legacy URL recovery in the Qt port (2026-09-24)
+
+A public-app screenshot showed an entire provider explanation, a local log path,
+and an unverified missing-runtime suggestion in the failure popup. The older
+user log proves Deno was present in that bundle, so the exact reason the site
+returned no selectable video is unknown. The current shared failure presenter
+already reduces this class to a short action; the remaining leak was the
+worker's technical cause in `job_log`, which both Tk and Qt can display. The
+worker now writes that cause to private diagnostics and sends only bounded
+user wording to the UI. Optional sidecar warnings no longer interpolate raw
+exceptions. Metadata preview retains details for explicit review but does not
+append them to the default visible log. An actual shared-worker no-formats
+failure test asserts the event stream excludes provider names, paths, and the
+raw cause while local diagnostics retain it; a native Tk panel test checks the
+same visible boundary. Earlier presenter tests checked only the popup string,
+and the previous native test expected the raw cause in the technical activity
+pane, so neither guarded this shared worker-to-screen path.
+
+The older `active-run.json` symptom was a missing safe retry URL. The current
+durable owner rejects newly admitted jobs whose URL cannot be saved and can
+restore an older damaged attempt without retry authority. Qt uses that owner.
+A new Qt runtime test creates a valid journal, simulates the old missing-URL
+record, then verifies startup retains it without blocking a fresh run and that
+the new URL is saved before work starts. Existing owner tests covered damaged
+journals and Qt tests covered clean retries, but not this combined port path.
+The Qt package smoke now invokes the existing dependency probe for FFmpeg,
+FFprobe, Deno, pinned extractor/solver data, and TLS roots while exempting
+libVLC, which Qt intentionally does not package. The earlier Qt smoke only
+opened and closed QML, so a missing Deno could pass packaging. These are
+source and local-native checks; rebuilt Mac/Windows packages, an affected
+public user's site response, and signed release journeys remain separate.

@@ -49,6 +49,7 @@ from yt_downloader.app import (
     load_activity_log_tail,
     prepare_activity_log,
     retry_url_for_item,
+    runtime_smoke,
 )
 from yt_downloader.archive_browser import (
     PAGE_SIZE,
@@ -4436,6 +4437,9 @@ def main() -> int:
         os.environ["HOME"] = smoke_home.name
         os.environ["LOCALAPPDATA"] = smoke_home.name
         os.environ["VODFORGE_DISABLE_TELEMETRY"] = "1"
+        if runtime_smoke(require_libvlc=False) != 0:
+            smoke_home.cleanup()
+            return 1
     QQuickStyle.setStyle("Basic")
     application = QGuiApplication(sys.argv[:1])
     application.setApplicationName("VODForge Qt Quick")

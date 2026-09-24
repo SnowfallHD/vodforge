@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import replace
@@ -89,6 +90,50 @@ def test_qt_worker_log_keeps_current_attempt_activity_and_rejects_stale_copy(
         )
         assert ("log", "Active event") in runtime.poll()
         assert active.activity_lines == ["Active event"]
+    finally:
+        release_worker.set()
+        runtime.close()
+
+
+def test_qt_recovers_legacy_run_without_retry_url_and_saves_next_source(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A damaged older journal stays visible without blocking a fresh URL."""
+    from tests.test_metadata_helpers import _worker_test_job
+
+    state_path = tmp_path / "active-run.json"
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(
+        qt_runtime, "history_file_path", lambda: tmp_path / "history.json"
+    )
+    monkeypatch.setattr(qt_runtime, "run_state_file_path", lambda: state_path)
+    legacy = _worker_test_job(tmp_path)
+    legacy.output_dir = output_dir
+    ActiveRunStore(state_path).begin(legacy)
+    saved_legacy = json.loads(state_path.read_text())
+    saved_legacy["job"]["url"] = ""
+    saved_legacy["job"]["urls"] = []
+    state_path.write_text(json.dumps(saved_legacy))
+
+    release_worker = threading.Event()
+
+    def worker(self: DownloadWorkerCore, _job: Any) -> None:
+        assert release_worker.wait(timeout=5)
+
+    monkeypatch.setattr(DownloadWorkerCore, "_download_worker", worker)
+    runtime = qt_runtime.DownloadRuntime()
+    try:
+        assert runtime.recovery_notice is None
+        assert [job.run_id for job in runtime.recovered] == [legacy.run_id]
+        assert runtime.recovered[0].url == ""
+        fresh = runtime.start(
+            "https://example.com/new-video", output_dir, "MP4", "Everyday"
+        )
+        saved = ActiveRunStore(state_path).load()
+        assert saved is not None
+        assert saved["job"]["url"] == fresh.url
+        assert fresh.url == "https://example.com/new-video"
     finally:
         release_worker.set()
         runtime.close()

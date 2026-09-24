@@ -5075,7 +5075,6 @@ class DownloadWorkerCore:
             write_diagnostic(
                 f"batch download worker error: {type(exc).__name__}: {exc}"
             )
-            self._emit_job_log(job, technical_download_error(exc))
             self.events.put(("error", format_ytdlp_user_error(exc)))
 
     def _try_reuse_existing_output(
@@ -5221,13 +5220,13 @@ class DownloadWorkerCore:
             DownloadWorkerCore._observe_download_sidecar_failure(
                 self, job, exc, kind="library_artwork", reused=True
             )
-            self._emit_job_log(job, technical_download_error(exc))
+            write_diagnostic(technical_download_error(exc))
             reuse_outcome = reuse_outcome.combined_with(
                 DownloadOutcome(sidecar_failure_count=1)
             )
             self._emit_job_log(
                 job,
-                f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed: {exc}",
+                f"WARNING: {label}: existing media is valid, but Library artwork could not be refreshed.",
             )
         if job.write_info_json:
             try:
@@ -5244,13 +5243,13 @@ class DownloadWorkerCore:
                 DownloadWorkerCore._observe_download_sidecar_failure(
                     self, job, exc, kind="metadata", reused=True
                 )
-                self._emit_job_log(job, technical_download_error(exc))
+                write_diagnostic(technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
                 self._emit_job_log(
                     job,
-                    f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed: {exc}",
+                    f"WARNING: {label}: existing media is valid, but compact metadata could not be refreshed.",
                 )
         else:
             observer = DownloadWorkerCore._download_sidecar_observer(
@@ -5273,13 +5272,13 @@ class DownloadWorkerCore:
                 DownloadWorkerCore._observe_download_sidecar_failure(
                     self, job, exc, kind="thumbnail", reused=True
                 )
-                self._emit_job_log(job, technical_download_error(exc))
+                write_diagnostic(technical_download_error(exc))
                 reuse_outcome = reuse_outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
                 self._emit_job_log(
                     job,
-                    f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed: {exc}",
+                    f"WARNING: {label}: existing media is valid, but its separate thumbnail could not be refreshed.",
                 )
         else:
             observer = DownloadWorkerCore._download_sidecar_observer(
@@ -5535,7 +5534,6 @@ class DownloadWorkerCore:
             DownloadWorkerCore._observe_download_sidecar_failure(
                 self, job, exc, kind="library_artwork", reused=False
             )
-            self._emit_job_log(job, technical_download_error(exc))
             outcome = outcome.combined_with(DownloadOutcome(sidecar_failure_count=1))
             write_diagnostic(
                 f"{label} private thumbnail cache failed: {type(exc).__name__}: {exc}"
@@ -5570,7 +5568,6 @@ class DownloadWorkerCore:
                 DownloadWorkerCore._observe_download_sidecar_failure(
                     self, job, exc, kind="metadata", reused=False
                 )
-                self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -5579,7 +5576,7 @@ class DownloadWorkerCore:
                 )
                 self._emit_job_log(
                     job,
-                    f"WARNING: {label}: media is valid, but compact metadata could not be saved: {exc}",
+                    f"WARNING: {label}: media is valid, but compact metadata could not be saved.",
                 )
         else:
             observer = DownloadWorkerCore._download_sidecar_observer(
@@ -5604,7 +5601,6 @@ class DownloadWorkerCore:
                 DownloadWorkerCore._observe_download_sidecar_failure(
                     self, job, exc, kind="thumbnail", reused=False
                 )
-                self._emit_job_log(job, technical_download_error(exc))
                 outcome = outcome.combined_with(
                     DownloadOutcome(sidecar_failure_count=1)
                 )
@@ -5613,7 +5609,7 @@ class DownloadWorkerCore:
                 )
                 self._emit_job_log(
                     job,
-                    f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved: {exc}",
+                    f"WARNING: {label}: media is valid, but its separate thumbnail could not be saved.",
                 )
         else:
             observer = DownloadWorkerCore._download_sidecar_observer(
@@ -6247,7 +6243,6 @@ class DownloadWorkerCore:
         issue = format_ytdlp_user_error(error)
         if item.total <= 1:
             raise _DownloadItemExecutionError(error, result) from error
-        self._emit_job_log(job, technical_download_error(error))
         self._emit_failed_download_item_metadata(job, result, issue)
         write_diagnostic(
             f"{item.label} failed but playlist will continue: "
@@ -6769,7 +6764,6 @@ class DownloadWorkerCore:
         self._active_progress_context = None
         user_error = format_ytdlp_user_error(error)
         job.failure_diagnostic = capture_failure(error, stage=job.failure_stage)
-        self._emit_job_log(job, technical_download_error(error))
         self._emit_failed_download_item_metadata(job, result, user_error)
         write_diagnostic(f"download worker error: {type(error).__name__}: {error}")
         if re_raise:
@@ -17239,7 +17233,7 @@ def _smoke_ytdlp_stack() -> tuple[str, str, tuple[str, ...]]:
     return ytdlp_version, ejs_version, tuple(verified_resources)
 
 
-def runtime_smoke() -> int:
+def runtime_smoke(*, require_libvlc: bool = True) -> int:
     """Verify packaged dependencies without opening the GUI or fetching media."""
     try:
         context = update_ssl_context()
@@ -17273,22 +17267,23 @@ def runtime_smoke() -> int:
             failures.append(name)
         else:
             _runtime_smoke_output(f"{name}={path} version={version}")
-    libvlc_runtime = find_libvlc_runtime()
-    if libvlc_runtime is None:
-        _runtime_smoke_output("libvlc=missing")
-        failures.append("libvlc")
-    else:
-        try:
-            libvlc_version = probe_libvlc_runtime(libvlc_runtime)
-        except Exception as exc:  # noqa: BLE001 - smoke probe must receipt native failure
-            _runtime_smoke_output(
-                f"libvlc={libvlc_runtime.root} execution_failed={type(exc).__name__}: {exc}"
-            )
+    if require_libvlc:
+        libvlc_runtime = find_libvlc_runtime()
+        if libvlc_runtime is None:
+            _runtime_smoke_output("libvlc=missing")
             failures.append("libvlc")
         else:
-            _runtime_smoke_output(
-                f"libvlc={libvlc_runtime.root} version={libvlc_version}"
-            )
+            try:
+                libvlc_version = probe_libvlc_runtime(libvlc_runtime)
+            except Exception as exc:  # noqa: BLE001 - smoke probe must receipt native failure
+                _runtime_smoke_output(
+                    f"libvlc={libvlc_runtime.root} execution_failed={type(exc).__name__}: {exc}"
+                )
+                failures.append("libvlc")
+            else:
+                _runtime_smoke_output(
+                    f"libvlc={libvlc_runtime.root} version={libvlc_version}"
+                )
     try:
         ytdlp_version, ejs_version, solver_resources = _smoke_ytdlp_stack()
     except Exception as exc:  # noqa: BLE001 - smoke probe must receipt any provider-stack failure

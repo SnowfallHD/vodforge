@@ -8128,11 +8128,12 @@ def test_format_ytdlp_user_error_catches_sign_in_to_confirm():
     assert "select your browser" in result
 
 
-def test_worker_failure_keeps_cause_in_run_log_and_friendly_terminal(
+def test_worker_failure_keeps_cause_private_and_terminal_friendly(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
-    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    diagnostics = []
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
     app = _worker_test_app()
     cause = "the MP4 output does not match its export plan: the measured audio bitrate does not match 160 kbps"
     app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
@@ -8142,7 +8143,8 @@ def test_worker_failure_keeps_cause_in_run_log_and_friendly_terminal(
     app._download_worker_single(job)
     events = list(app.events.queue)
     logs = [payload["line"] for kind, payload in events if kind == "job_log"]
-    assert any(cause in line for line in logs)
+    assert not any(cause in line for line in logs)
+    assert any(cause in line for line in diagnostics)
     assert [(kind, payload) for kind, payload in events if kind == "error"] == [
         ("error", format_ytdlp_user_error(RuntimeError(cause)))
     ]

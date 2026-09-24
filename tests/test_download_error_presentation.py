@@ -31,6 +31,38 @@ def test_no_formats_does_not_guess_age_or_missing_runtime():
     assert "select your browser" in message
 
 
+def test_provider_no_formats_keeps_machine_cause_out_of_visible_worker_events(
+    monkeypatch, tmp_path
+):
+    import yt_downloader.app as app_module
+    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+
+    diagnostics = []
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", diagnostics.append)
+    app = _worker_test_app()
+    cause = (
+        "yt-dlp could not find any downloadable video formats. "
+        "Original yt-dlp error: No usable video source was found for this URL. "
+        "Diagnostics log: /Users/example/Library/Logs/VODForge/latest.log"
+    )
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        RuntimeError(cause)
+    )
+    app._download_worker_single(_worker_test_job(tmp_path))
+
+    visible = "\n".join(
+        payload["line"] if kind == "job_log" else str(payload)
+        for kind, payload in app.events.queue
+        if kind in {"job_log", "error", "status"}
+    )
+    assert "No downloadable video was available" in visible
+    assert "yt-dlp" not in visible
+    assert "Diagnostics log:" not in visible
+    assert "/Users/example" not in visible
+    assert any("No usable video source" in line for line in diagnostics)
+
+
 def test_explicit_age_restriction_has_specific_issue():
     assert download_error_message("Sign in to confirm your age").startswith(
         "YouTube requires age verification"
@@ -177,7 +209,8 @@ def test_preview_keeps_friendly_message_separate_from_technical(monkeypatch):
     assert shown[0]["details"] == details
     assert "HTTP Error 503" in details
     assert "HTTP Error 503" not in message
-    assert details in logged
+    assert details not in logged
+    assert logged == [f"ERROR: {message}"]
 
 
 def test_nested_http_code_overrides_sign_in_wording():

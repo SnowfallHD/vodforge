@@ -157,6 +157,32 @@ def test_packaged_runtime_gate_rejects_missing_certificate_bundle(monkeypatch):
     assert app.runtime_smoke() == 1
 
 
+def test_qt_packaged_runtime_gate_requires_deno_but_not_legacy_player(monkeypatch):
+    from yt_downloader import app
+
+    class Roots:
+        def cert_store_stats(self):
+            return {"x509_ca": 100}
+
+    monkeypatch.setattr(app, "update_ssl_context", Roots)
+    monkeypatch.setattr(
+        app.DownloaderApp, "_find_ffmpeg", staticmethod(lambda: "ffmpeg")
+    )
+    monkeypatch.setattr(
+        app.DownloaderApp, "_find_ffprobe", staticmethod(lambda: "ffprobe")
+    )
+    monkeypatch.setattr(app.DownloaderApp, "_find_deno", staticmethod(lambda: "deno"))
+    monkeypatch.setattr(app, "probe_runtime_version", lambda name, _path: name)
+    monkeypatch.setattr(
+        app, "_smoke_ytdlp_stack", lambda: ("pinned", "pinned", ("solver",))
+    )
+    monkeypatch.setattr(app, "find_libvlc_runtime", lambda: None)
+    assert app.runtime_smoke(require_libvlc=False) == 0
+    assert app.runtime_smoke() == 1
+    monkeypatch.setattr(app.DownloaderApp, "_find_deno", staticmethod(lambda: None))
+    assert app.runtime_smoke(require_libvlc=False) == 1
+
+
 def test_every_persisted_setting_has_an_explicit_privacy_decision():
     import ast
     import inspect
