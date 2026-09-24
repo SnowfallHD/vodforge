@@ -7,7 +7,12 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from yt_downloader.app import DownloadWorkerCore
+from yt_downloader.app import DownloadWorkerCore, write_diagnostic
+from yt_downloader.download_error_presentation import (
+    download_error_message,
+    technical_download_error,
+)
+from yt_downloader.failure_diagnostics import FailureDiagnostic, capture_failure
 from yt_downloader.local_audio_video import (
     LocalAudioVideoCancelled,
     LocalAudioVideoConversionOwner,
@@ -34,7 +39,12 @@ class LocalConversionRuntime:
         self.product_telemetry: Any | None = None
 
     def _observe(
-        self, event_name: str, run_id: str, *, dimensions: dict[str, str] | None = None
+        self,
+        event_name: str,
+        run_id: str,
+        *,
+        dimensions: dict[str, str] | None = None,
+        failure_detail: FailureDiagnostic | None = None,
     ) -> None:
         telemetry = self.product_telemetry
         if telemetry is None:
@@ -47,6 +57,8 @@ class LocalConversionRuntime:
                 dimensions=dimensions,
                 run_kind="local_audio_video",
                 output_type="mp4",
+                failure_reason=(failure_detail.reason if failure_detail else None),
+                failure_detail=(failure_detail.payload() if failure_detail else None),
             )
         except (OSError, ValueError):
             pass
@@ -78,15 +90,12 @@ class LocalConversionRuntime:
                 )
             except LocalAudioVideoCancelled as exc:
                 self._observe("local_conversion_stopped", request.run_id)
-                self.events.put(("error", str(exc)))
+                write_diagnostic(technical_download_error(exc))
+                self.events.put(("error", "Conversion stopped."))
             except LocalAudioVideoError as exc:
-                self._observe("local_conversion_failed", request.run_id)
-                self.events.put(("error", str(exc)))
+                self._report_failure(request.run_id, exc)
             except Exception as exc:  # noqa: BLE001 - worker must report its terminal result
-                self._observe("local_conversion_failed", request.run_id)
-                self.events.put(
-                    ("error", f"Local conversion failed: {type(exc).__name__}")
-                )
+                self._report_failure(request.run_id, exc)
             else:
                 self.events.put(("done", result))
 
@@ -95,6 +104,12 @@ class LocalConversionRuntime:
         )
         self._observe("local_conversion_started", request.run_id)
         self._thread.start()
+
+    def _report_failure(self, run_id: str, error: Exception) -> None:
+        detail = capture_failure(error, stage="processing")
+        self._observe("local_conversion_failed", run_id, failure_detail=detail)
+        write_diagnostic(technical_download_error(error))
+        self.events.put(("error", download_error_message(error)))
 
     def observe_committed(self, result: LocalAudioVideoResult) -> None:
         run_id = str(result.history_metadata.get("vodforge_run_id") or "")

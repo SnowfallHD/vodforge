@@ -2042,3 +2042,13 @@ libVLC, which Qt intentionally does not package. The earlier Qt smoke only
 opened and closed QML, so a missing Deno could pass packaging. These are
 source and local-native checks; rebuilt Mac/Windows packages, an affected
 public user's site response, and signed release journeys remain separate.
+
+The same user-facing boundary was missing in Qt local conversion: a worker
+could put an FFmpeg/FFprobe exception directly into the visible status, and
+its failure event lacked bounded diagnostic facts. Qt now sends a categorized
+next step to the status, retains redacted technical detail in private local
+diagnostics, and records the existing closed `failure_reason`/`failure_detail`
+shape with the actual failed conversion attempt. A separate admission test
+checks that an immediate FFprobe error also stays out of the Qt status. The
+earlier Qt local telemetry test covered only a successful commit, which is why
+it missed both failure paths. Preview-D1 and packaged UI proof remain open.

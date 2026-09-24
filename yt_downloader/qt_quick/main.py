@@ -74,6 +74,7 @@ from yt_downloader.cloud_funnel import (
     record_cloud_seen,
 )
 from yt_downloader.cookie_inputs import browser_cookie_value
+from yt_downloader.download_error_presentation import download_error_message
 from yt_downloader.engagement_state import WELCOME_SLIDES, EngagementState
 from yt_downloader.export_inputs import (
     MP3_CHANNEL_OPTIONS,
@@ -3228,7 +3229,11 @@ class Bridge(QObject):
             SettingsError,
             ValueError,
         ) as exc:
-            self._status = str(exc)
+            self._status = (
+                download_error_message(exc)
+                if isinstance(exc, (LocalAudioVideoError, OSError))
+                else str(exc)
+            )
             self.statusChanged.emit()
             return
         self._local_running = True
