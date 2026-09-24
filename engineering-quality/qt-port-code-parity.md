@@ -225,3 +225,20 @@ exited 0 after main-window `WM_CLOSE`; receipt:
 `build/qt-port-package/genesis-ccaaa17-direct-close-result.json`.
 All owned QA tasks were removed. Installed-app Quit and the complete Watch
 feature set remain open.
+
+2026-09-24 `e16ee3e` package checkpoint after Qt guard cleanup: exact clean
+Mac ad hoc signed build passed the full source preflight, strict deep signature
+verification and bundled runtime smoke. An isolated native Watch → Resume →
+Floating → Return → Command-Q journey exposed the real player controls and
+exited 0. Genesis clean-source build embedded
+`e16ee3eb1043c110391af05c8fd41efc7797046c`, passed bundled smoke, and
+produced EXE SHA256
+`cb7767119991792e567941f937a1fe6a5114a9ad96dc7db5a9f8e300683120cb`.
+The isolated interactive route observer passed Watch/Channels/Library colors,
+the Welcome activity slider/emblems and shared Library category/tags/notes
+exhibit; `build/qt-port-package/genesis-e16ee3e-result.json` binds its PID,
+revision and hash. Screenshots `genesis-e16ee3e-smiley.png` and
+`genesis-e16ee3e-library-exhibit.png` were visually inspected. The owned app
+exited and its two scheduled tasks were removed. These are focused route
+checks; full native feature, telemetry, update and installed-app gates remain
+open.
