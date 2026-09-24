@@ -266,13 +266,17 @@ def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
         assert scene.property("activeSurfaceName") == "watchVideoSurface"
         assert window.property("playerSurfaceBound")
     finally:
+        window.close()
+        app.processEvents()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
         bridge.close()
 
 
-def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(tmp_path, monkeypatch):
+def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
+    tmp_path, monkeypatch
+):
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         pytest.skip("FFmpeg is needed for an actual subtitle track")
@@ -281,10 +285,25 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(tmp_path, mon
     media = tmp_path / "captions.mp4"
     subprocess.run(
         [
-            ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "color=c=blue:s=320x180:r=10:d=3",
-            "-i", str(subtitles), "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-c:s", "mov_text", "-shortest", str(media),
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=320x180:r=10:d=3",
+            "-i",
+            str(subtitles),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:s",
+            "mov_text",
+            "-shortest",
+            str(media),
         ],
         check=True,
         capture_output=True,
@@ -313,16 +332,24 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(tmp_path, mon
         popup = window.findChild(QObject, "playerCaptionsMenu")
         assert popup.property("visible")
         repeaters = [
-            item for item in popup.findChildren(QObject)
+            item
+            for item in popup.findChildren(QObject)
             if item.metaObject().className().startswith("QQuickRepeater")
         ]
         assert len(repeaters) == 1
         controls = {
             item.property("label"): item
-            for item in [*popup.findChildren(QObject), *repeaters[0].parent().childItems()]
+            for item in [
+                *popup.findChildren(QObject),
+                *repeaters[0].parent().childItems(),
+            ]
             if item.property("label") is not None
         }
-        track_label = next(label for label in controls if str(label).endswith("Track 1") or label == "Caption track 1")
+        track_label = next(
+            label
+            for label in controls
+            if str(label).endswith("Track 1") or label == "Caption track 1"
+        )
         controls[track_label].activated.emit()
         app.processEvents()
         assert player.activeSubtitleTrack() == 0
@@ -330,7 +357,9 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(tmp_path, mon
         player.play()
         caption = window.findChild(QObject, "embeddedCaptionText")
         deadline = time.monotonic() + 4
-        while caption.property("text") != "Caption proof" and time.monotonic() < deadline:
+        while (
+            caption.property("text") != "Caption proof" and time.monotonic() < deadline
+        ):
             app.processEvents()
             time.sleep(0.02)
         assert caption.property("text") == "Caption proof"
@@ -348,11 +377,13 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(tmp_path, mon
         presentation_menu = window.findChild(QObject, "presentationCaptionsMenu")
         assert presentation_menu.property("visible")
         repeater = next(
-            item for item in presentation_menu.findChildren(QObject)
+            item
+            for item in presentation_menu.findChildren(QObject)
             if item.metaObject().className().startswith("QQuickRepeater")
         )
         track = next(
-            item for item in repeater.parent().childItems()
+            item
+            for item in repeater.parent().childItems()
             if str(item.property("label")).endswith("Track 1")
             or item.property("label") == "Caption track 1"
         )
@@ -675,9 +706,7 @@ def test_qt_run_menu_cannot_control_successor_execution(
             )
         if transition == "stale_at_open":
             bridge._runtime.active_job = replace(original)
-        admitted = bridge.admitRunMenu(
-            record["runId"], record["executionToken"]
-        )
+        admitted = bridge.admitRunMenu(record["runId"], record["executionToken"])
         assert admitted is (transition != "stale_at_open")
         if transition == "successor":
             bridge._runtime.active_job = replace(original, run_id="successor")
@@ -694,7 +723,9 @@ def test_qt_run_menu_cannot_control_successor_execution(
                 {
                     "run_control_action": action,
                     "run_control_origin": "run_menu",
-                    "run_control_owner": "current" if transition == "same" else "retired",
+                    "run_control_owner": "current"
+                    if transition == "same"
+                    else "retired",
                 },
             )
         ]
@@ -785,7 +816,8 @@ def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatc
         deck.showActions(first_record)
         app.processEvents()
         view = next(
-            item for item in popup.findChildren(QObject)
+            item
+            for item in popup.findChildren(QObject)
             if item.property("label") == "View in Library"
         )
         view.activated.emit()
@@ -796,22 +828,28 @@ def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatc
         bridge.select("Forge")
         assert bridge.selectRunRecord(second_record["selectionKey"])
         app.processEvents()
-        assert window.findChild(QObject, "forgeSelectedTitle").property("text") == "Second"
+        assert (
+            window.findChild(QObject, "forgeSelectedTitle").property("text") == "Second"
+        )
         assert bridge.forgeActivity["technical"] == "Saved output validated"
         deck.showActions(second_record)
         app.processEvents()
         copy = next(
-            item for item in popup.findChildren(QObject)
+            item
+            for item in popup.findChildren(QObject)
             if item.property("label") == "Copy YouTube URL"
         )
         copy.activated.emit()
         app.processEvents()
-        assert QGuiApplication.clipboard().text() == qt_main.canonical_youtube_url(second)
+        assert QGuiApplication.clipboard().text() == qt_main.canonical_youtube_url(
+            second
+        )
 
         deck.showActions(first_record)
         app.processEvents()
         remove = next(
-            item for item in popup.findChildren(QObject)
+            item
+            for item in popup.findChildren(QObject)
             if item.property("label") == "Remove from Library…"
         )
         remove.activated.emit()
@@ -881,7 +919,9 @@ def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
         bridge.close()
 
 
-def test_qt_library_detail_keeps_full_long_description_scrollable(tmp_path, monkeypatch):
+def test_qt_library_detail_keeps_full_long_description_scrollable(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -1384,7 +1424,7 @@ def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
         bridge.select("Library")
         app.processEvents()
         repeater = window.findChild(QObject, "libraryMediaRepeater")
-        assert repeater.property("count") == 3
+        assert repeater.property("count") == 4
         window.setWidth(820)
         app.processEvents()
         assert repeater.property("count") == 2
@@ -1395,6 +1435,58 @@ def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
         bridge.navigateLibrary("all")
         app.processEvents()
         assert repeater.property("count") == 9
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        for width in (820, 1100, 1180):
+            window.setWidth(width)
+            app.processEvents()
+            scene = window.findChild(QObject, "libraryBrowseScene")
+            sidebar = window.findChild(QObject, "librarySidebar")
+            divider = window.findChild(QObject, "librarySidebarDivider")
+            viewport = window.findChild(QObject, "libraryViewport")
+            buttons = [
+                next(
+                    item for item in sidebar.childItems()
+                    if item.objectName() == "librarySidebarButton_" + route
+                )
+                for route in ("all", "channels", "playlists", "videos", "audio")
+            ]
+            assert round(scene.property("x")) == 0
+            assert round(scene.property("width")) == width - 40
+            assert round(sidebar.property("x")) == 0
+            assert round(sidebar.property("width")) == 226
+            assert round(divider.property("x")) == 226
+            assert round(viewport.property("x")) == 247
+            assert round(viewport.property("width")) == width - 40 - 247
+            assert [(round(button.property("x")), round(button.property("y"))) for button in buttons] == [
+                (8, 54 + index * 49) for index in range(5)
+            ]
+            assert all(round(button.property("width")) == 203 for button in buttons)
+            for route, button in zip(
+                ("all", "channels", "playlists", "videos", "audio"), buttons
+            ):
+                icon = next(
+                    item for item in button.childItems()
+                    if item.objectName() == "librarySidebarIcon_" + route
+                )
+                assert round(icon.property("x")) == 14
+                assert round(icon.property("y")) == 12
     finally:
         window.close()
         engine.deleteLater()
@@ -1414,9 +1506,11 @@ def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkey
     ]
     requested = []
     monkeypatch.setattr(
-        bridge._artwork, "request",
-        lambda record, _size=(320, 180), _role="media":
-            requested.append(record["title"]) or "",
+        bridge._artwork,
+        "request",
+        lambda record, _size=(320, 180), _role="media": (
+            requested.append(record["title"]) or ""
+        ),
     )
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -1432,7 +1526,13 @@ def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkey
         assert len(set(requested)) < 40
         start_requests = set(requested)
         flickable = viewport.property("contentItem")
-        assert flickable.setProperty("contentY", 50 * flow.property("rowStride"))
+        # Keep the scroll within the real content range; an out-of-range
+        # programmatic offset is clamped when the detail route reflows.
+        scroll_target = min(
+            50 * flow.property("rowStride"),
+            flickable.property("contentHeight") - viewport.height() - 1,
+        )
+        assert flickable.setProperty("contentY", scroll_target)
         app.processEvents()
         assert flow.property("firstRow") >= 45
         assert repeater.property("count") < 40
@@ -1472,9 +1572,11 @@ def test_qt_watch_media_windows_cards_and_restores_back_scroll(tmp_path, monkeyp
     ]
     requested = []
     monkeypatch.setattr(
-        bridge._artwork, "request",
-        lambda record, _size=(320, 180), _role="media":
-            requested.append((record["title"], _size, _role)) or "",
+        bridge._artwork,
+        "request",
+        lambda record, _size=(320, 180), _role="media": (
+            requested.append((record["title"], _size, _role)) or ""
+        ),
     )
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -1488,7 +1590,11 @@ def test_qt_watch_media_windows_cards_and_restores_back_scroll(tmp_path, monkeyp
         viewport = window.findChild(QObject, "watchViewport")
         assert len(bridge.watchScene["videos"]) == 200
         assert repeater.property("count") < 40
-        media_requests = {title for title, size, role in requested if size == (320, 180) and role == "media"}
+        media_requests = {
+            title
+            for title, size, role in requested
+            if size == (320, 180) and role == "media"
+        }
         assert len(media_requests) < 40
         flickable = viewport.property("contentItem")
         assert flickable.setProperty("contentY", 40 * flow.property("rowStride"))
@@ -1515,7 +1621,9 @@ def test_qt_watch_media_windows_cards_and_restores_back_scroll(tmp_path, monkeyp
         bridge.close()
 
 
-@pytest.mark.parametrize("route,role", [("channels", "avatar"), ("playlists", "playlist")])
+@pytest.mark.parametrize(
+    "route,role", [("channels", "avatar"), ("playlists", "playlist")]
+)
 def test_qt_watch_group_routes_window_cards_and_artwork(
     tmp_path, monkeypatch, route, role
 ):
@@ -1537,8 +1645,9 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
     monkeypatch.setattr(
         bridge._artwork,
         "request",
-        lambda record, size=(320, 180), role="media":
-            requested.append((record["title"], size, role)) or "",
+        lambda record, size=(320, 180), role="media": (
+            requested.append((record["title"], size, role)) or ""
+        ),
     )
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -1549,23 +1658,30 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
             app.processEvents()
         routes = window.findChild(QObject, "watchGroupRoutesRepeater")
         columns = [
-            item for item in routes.parent().childItems()
+            item
+            for item in routes.parent().childItems()
             if item is not routes and item.isVisible()
         ]
         assert len(columns) == 1
         flow = next(
-            item for item in columns[0].childItems()
+            item
+            for item in columns[0].childItems()
             if item.objectName() == "watchGroupFlow"
         )
         repeater = next(
-            item for item in flow.childItems()
+            item
+            for item in flow.childItems()
             if item.objectName() == "watchGroupRepeater"
         )
         viewport = window.findChild(QObject, "watchViewport")
         assert len(bridge.watchScene[route]) == 200
-        assert repeater.property("count") < 40
-        group_requests = {title for title, _size, request_role in requested if request_role == role}
-        assert len(group_requests) < 40
+        # The Tk-matched 20 px shell gutter admits four columns here;
+        # overscanned visible rows therefore reach exactly 40 cards.
+        assert repeater.property("count") <= 40
+        group_requests = {
+            title for title, _size, request_role in requested if request_role == role
+        }
+        assert len(group_requests) <= 40
         flickable = viewport.property("contentItem")
         assert flickable.setProperty("contentY", 30 * flow.property("rowStride"))
         for _ in range(3):
@@ -1573,7 +1689,7 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
         frame = window.grabWindow()
         assert not frame.isNull()
         assert flow.property("firstRow") >= 25
-        assert 0 < repeater.property("count") < 40
+        assert 0 < repeater.property("count") <= 40
         assert any(
             card.mapToItem(viewport, 0, 0).y() < viewport.height()
             and card.mapToItem(viewport, 0, 0).y() + card.height() > 0
@@ -1581,8 +1697,10 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
             if card.width() == flow.property("cardWidth")
             and card.height() == flow.property("cardHeight")
         )
-        group_requests = {title for title, _size, request_role in requested if request_role == role}
-        assert len(group_requests) < 80
+        group_requests = {
+            title for title, _size, request_role in requested if request_role == role
+        }
+        assert len(group_requests) <= 80
     finally:
         window.close()
         engine.deleteLater()
@@ -1591,7 +1709,9 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
         bridge.close()
 
 
-@pytest.mark.parametrize("route,role", [("channels", "avatar"), ("playlists", "playlist")])
+@pytest.mark.parametrize(
+    "route,role", [("channels", "avatar"), ("playlists", "playlist")]
+)
 def test_qt_library_group_routes_window_cards_and_artwork(
     tmp_path, monkeypatch, route, role
 ):
@@ -1613,8 +1733,9 @@ def test_qt_library_group_routes_window_cards_and_artwork(
     monkeypatch.setattr(
         bridge._artwork,
         "request",
-        lambda record, size=(320, 180), request_role="media":
-            requested.append((record["title"], size, request_role)) or "",
+        lambda record, size=(320, 180), request_role="media": (
+            requested.append((record["title"], size, request_role)) or ""
+        ),
     )
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -1628,7 +1749,9 @@ def test_qt_library_group_routes_window_cards_and_artwork(
         viewport = window.findChild(QObject, "libraryViewport")
         assert len(bridge.libraryScene["groups"]) == 200
         assert repeater.property("count") < 40
-        group_requests = {title for title, _size, owner_role in requested if owner_role == role}
+        group_requests = {
+            title for title, _size, owner_role in requested if owner_role == role
+        }
         assert len(group_requests) < 40
         flickable = viewport.property("contentItem")
         assert flickable.setProperty("contentY", 30 * flow.property("rowStride"))
@@ -1648,8 +1771,83 @@ def test_qt_library_group_routes_window_cards_and_artwork(
             f"flowY={flow.y()} firstRow={flow.property('firstRow')} "
             f"viewportH={viewport.height()} positions={card_positions[:30]}"
         )
-        group_requests = {title for title, _size, owner_role in requested if owner_role == role}
+        group_requests = {
+            title for title, _size, owner_role in requested if owner_role == role
+        }
         assert len(group_requests) < 80
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
+def test_qt_mp3_cover_selection_validates_and_clears_like_tk(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge.setMp3Value("mp3_cover_art_mode", "Custom art")
+        assert bridge.mp3Values["mp3_cover_art_mode"] == "No Art"
+        invalid = tmp_path / "cover.png"
+        invalid.write_text("not an image")
+        assert not bridge.setMp3CoverUrl(QUrl.fromLocalFile(str(invalid)))
+        assert not bridge.mp3CoverAvailable
+        assert bridge.mp3Values["mp3_cover_art_mode"] == "No Art"
+
+        Image.new("RGB", (32, 32), "#665588").save(invalid)
+        assert bridge.setMp3CoverUrl(QUrl.fromLocalFile(str(invalid)))
+        assert bridge.mp3CoverAvailable
+        assert bridge.mp3Values["mp3_cover_art_mode"] == "Custom art"
+        bridge.setMp3Value("mp3_cover_art_mode", "YouTube art")
+        assert bridge.mp3CoverAvailable
+        bridge.setMp3Value("mp3_cover_art_mode", "Custom art")
+        assert bridge.mp3Values["mp3_cover_art_mode"] == "Custom art"
+        bridge.clearMp3Cover()
+        assert bridge.mp3Values["mp3_cover_art_mode"] == "No Art"
+        assert not bridge.mp3CoverAvailable
+        assert invalid.is_file()
+    finally:
+        bridge.close()
+
+
+def test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces(
+    tmp_path, monkeypatch
+):
+    from PIL import Image
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge.setOutputFormat("MP3")
+    cover = tmp_path / "cover.png"
+    Image.new("RGB", (32, 32), "#665588").save(cover)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        for popup_name in ("mp3OptionsPopup", "downloadSettingsPopup"):
+            assert bridge.setMp3CoverUrl(QUrl.fromLocalFile(str(cover)))
+            popup = window.findChild(QObject, popup_name)
+            assert popup is not None
+            controls = [
+                item
+                for item in popup.findChildren(QObject)
+                if item.property("label") == "Clear"
+            ]
+            assert len(controls) == 1
+            controls[0].activated.emit()
+            app.processEvents()
+            assert bridge.mp3Values["mp3_cover_art_mode"] == "No Art"
+            assert not bridge.mp3CoverAvailable
     finally:
         window.close()
         engine.deleteLater()

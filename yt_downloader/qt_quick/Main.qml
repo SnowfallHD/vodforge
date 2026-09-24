@@ -514,7 +514,7 @@ Window {
         cache: true
     }
 
-    property int gutter: width < 960 ? 22 : 38
+    property int gutter: 20
     property bool compactHeight: height < 640
     property int rowGap: compactHeight ? 8 : 14
     property string outputFormat: bridge.outputFormat
@@ -1474,7 +1474,11 @@ Window {
                         Layout.fillWidth: true; Layout.preferredHeight: 39
                         onActivated: {
                             var choices = modelData.choices
-                            bridge.setMp3Value(modelData.key, choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length])
+                            var next = choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length]
+                            if (modelData.key === "mp3_cover_art_mode" && next === "Custom art" && !bridge.mp3CoverAvailable)
+                                mp3CoverDialog.open()
+                            else
+                                bridge.setMp3Value(modelData.key, next)
                         }
                     }
                 }
@@ -1488,7 +1492,8 @@ Window {
                 visible: bridge.mp3Values.mp3_cover_art_mode === "Custom art"
                 Layout.fillWidth: true
                 Text { text: bridge.mp3CoverName; color: theme.muted; font.pixelSize: 14; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                StoneButton { label: "Choose image"; Layout.preferredWidth: 130; Layout.preferredHeight: 38; onActivated: mp3CoverDialog.open() }
+                StoneButton { label: "Replace image"; Layout.preferredWidth: 130; Layout.preferredHeight: 38; onActivated: mp3CoverDialog.open() }
+                StoneButton { label: "Clear"; Layout.preferredWidth: 64; Layout.preferredHeight: 38; onActivated: bridge.clearMp3Cover() }
             }
             Item { Layout.fillHeight: true }
             RowLayout {
@@ -1655,10 +1660,14 @@ Window {
                             StoneButton {
                                 label: bridge.mp3Values[modelData.key] + "  ▾"
                                 Layout.fillWidth: true; Layout.preferredHeight: 38
-                                onActivated: {
-                                    var choices = modelData.choices
-                                    bridge.setMp3Value(modelData.key, choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length])
-                                }
+                        onActivated: {
+                            var choices = modelData.choices
+                            var next = choices[(choices.indexOf(bridge.mp3Values[modelData.key]) + 1) % choices.length]
+                            if (modelData.key === "mp3_cover_art_mode" && next === "Custom art" && !bridge.mp3CoverAvailable)
+                                mp3CoverDialog.open()
+                            else
+                                bridge.setMp3Value(modelData.key, next)
+                        }
                             }
                         }
                     }
@@ -1673,6 +1682,7 @@ Window {
                         Layout.fillWidth: true
                         Text { text: bridge.mp3CoverName; color: theme.muted; font.pixelSize: 13; elide: Text.ElideMiddle; Layout.fillWidth: true }
                         StoneButton { label: "Replace image"; Layout.preferredWidth: 130; Layout.preferredHeight: 38; onActivated: mp3CoverDialog.open() }
+                        StoneButton { label: "Clear"; Layout.preferredWidth: 64; Layout.preferredHeight: 38; onActivated: bridge.clearMp3Cover() }
                     }
                     Text {
                         visible: window.outputFormat === "Original audio"

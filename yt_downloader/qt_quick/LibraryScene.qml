@@ -35,10 +35,17 @@ Item {
     readonly property var groups: projection.groups || []
     readonly property var media: projection.media || []
     property string previousRoute: "home"
+    property real browseScrollY: 0
     onRouteChanged: {
         const returningFromDetail = previousRoute === "detail"
+        if (route === "detail" && viewport && viewport.contentItem)
+            browseScrollY = viewport.contentItem.contentY
         finishSelection()
         if (route !== "detail" && !returningFromDetail) resetViewport()
+        if (returningFromDetail) Qt.callLater(function() {
+            if (viewport && viewport.contentItem && route !== "detail")
+                viewport.contentItem.contentY = browseScrollY
+        })
         previousRoute = route
     }
     Connections {
@@ -65,48 +72,90 @@ Item {
     RowLayout {
         anchors.fill: parent
         visible: scene.route !== "detail" && scene.route !== "folders"
-        spacing: 20
+        spacing: 0
 
         ColumnLayout {
+            objectName: "librarySidebar"
             Layout.preferredWidth: 226
             Layout.fillHeight: true
             spacing: 4
-            Text {
-                text: "ARCHIVE"
-                color: theme.muted
-                font.pixelSize: 12
-                font.bold: true
-                Layout.leftMargin: 7
-                Layout.bottomMargin: 8
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 50
+                Text {
+                    x: 14
+                    y: 23
+                    text: "ARCHIVE"
+                    color: theme.muted
+                    font.pixelSize: 11
+                    font.bold: true
+                }
             }
             Repeater {
                 model: [
-                    { route: "all", label: "All Media", count: scene.counts.all || 0 },
-                    { route: "channels", label: "Channels", count: scene.counts.channels || 0 },
-                    { route: "playlists", label: "Playlists", count: scene.counts.playlists || 0 },
-                    { route: "videos", label: "Videos", count: scene.counts.videos || 0 },
-                    { route: "audio", label: "Audio", count: scene.counts.audio || 0 }
+                    { route: "all", label: "All Media", icon: "folder", count: scene.counts.all || 0 },
+                    { route: "channels", label: "Channels", icon: "channels", count: scene.counts.channels || 0 },
+                    { route: "playlists", label: "Playlists", icon: "list", count: scene.counts.playlists || 0 },
+                    { route: "videos", label: "Videos", icon: "videos", count: scene.counts.videos || 0 },
+                    { route: "audio", label: "Audio", icon: "audio", count: scene.counts.audio || 0 }
                 ]
                 StoneButton {
+                    id: categoryButton
                     required property var modelData
+                    objectName: "librarySidebarButton_" + modelData.route
                     Layout.fillWidth: true
                     Layout.preferredHeight: 45
-                    label: modelData.label + "  " + modelData.count
+                    Layout.leftMargin: 8
+                    Layout.rightMargin: 15
+                    label: ""
+                    accessibilityLabel: modelData.label + ", " + modelData.count
                     selected: scene.route === modelData.route ||
                               (scene.route === "home" && modelData.route === "all")
                     onActivated: scene.appBridge.navigateLibrary(modelData.route)
+                    SceneIcon {
+                        objectName: "librarySidebarIcon_" + categoryButton.modelData.route
+                        name: categoryButton.modelData.icon
+                        tone: categoryButton.selected ? theme.selection : theme.icon
+                        x: 14
+                        y: 12
+                    }
+                    Text {
+                        x: 53
+                        y: 12
+                        width: parent.width - 107
+                        text: categoryButton.modelData.label
+                        color: theme.text
+                        font.pixelSize: 15
+                        elide: Text.ElideRight
+                    }
+                    StoneButton {
+                        x: parent.width - 47
+                        y: 7
+                        width: 36
+                        height: 31
+                        label: String(categoryButton.modelData.count)
+                        size: "inline"
+                        interactive: false
+                        transientMaterial: false
+                        emphasized: categoryButton.selected
+                    }
                 }
             }
             StoneButton {
                 label: "Folders"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 45
+                Layout.leftMargin: 8
+                Layout.rightMargin: 15
                 onActivated: scene.appBridge.navigateLibrary("folders")
             }
             Item { Layout.fillHeight: true }
             StoneField {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 124
+                Layout.leftMargin: 9
+                Layout.rightMargin: 16
+                Layout.bottomMargin: 17
                 interactive: true
                 accessibilityLabel: "Storage for " + scene.appBridge.storageSummary.label
                 onActivated: storagePopup.open()
@@ -152,6 +201,7 @@ Item {
         }
 
         Rectangle {
+            objectName: "librarySidebarDivider"
             Layout.fillHeight: true
             Layout.preferredWidth: 1
             color: theme.border
@@ -162,6 +212,7 @@ Item {
             objectName: "libraryViewport"
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.leftMargin: 20
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 

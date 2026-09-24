@@ -87,7 +87,7 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         assert bridge.selection == "Library"
         application.processEvents()
         library_nav = next(
-            child for name, child in buttons.items() if name.startswith("All Media  ")
+            child for name, child in buttons.items() if name.startswith("All Media, ")
         )
         assert not library_nav.state().invisible
         buttons["Watch"].actionInterface().doAction(

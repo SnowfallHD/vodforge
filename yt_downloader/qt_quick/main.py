@@ -1725,6 +1725,10 @@ class Bridge(QObject):
     def mp3CoverName(self) -> str:
         return self._mp3_custom_cover.name if self._mp3_custom_cover else "Choose image"
 
+    @Property(bool, notify=exportSettingsChanged)
+    def mp3CoverAvailable(self) -> bool:
+        return self._mp3_custom_cover is not None
+
     @Property(str, notify=extraTagsChanged)
     def extraTags(self) -> str:
         return self._extra_tags
@@ -2799,9 +2803,13 @@ class Bridge(QObject):
         }
         if key not in allowed or value not in allowed[key]:
             return
+        if (
+            key == "mp3_cover_art_mode"
+            and value == "Custom art"
+            and self._mp3_custom_cover is None
+        ):
+            return
         self._mp3_values[key] = value
-        if key == "mp3_cover_art_mode" and value != "Custom art":
-            self._mp3_custom_cover = None
         self.exportSettingsChanged.emit()
         self._schedule_preferences_save()
 
@@ -2811,13 +2819,28 @@ class Bridge(QObject):
         self.exportSettingsChanged.emit()
         self._schedule_preferences_save()
 
-    @Slot(QUrl)
-    def setMp3CoverUrl(self, url: QUrl) -> None:
+    @Slot(QUrl, result=bool)
+    def setMp3CoverUrl(self, url: QUrl) -> bool:
         if not url.isLocalFile():
-            return
-        self._mp3_custom_cover = Path(url.toLocalFile())
+            return False
+        try:
+            cover_path = validate_custom_cover_art(Path(url.toLocalFile()))
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return False
+        self._mp3_custom_cover = cover_path
         self._mp3_values["mp3_cover_art_mode"] = "Custom art"
         self.exportSettingsChanged.emit()
+        self._schedule_preferences_save()
+        return True
+
+    @Slot()
+    def clearMp3Cover(self) -> None:
+        self._mp3_custom_cover = None
+        if self._mp3_values["mp3_cover_art_mode"] == "Custom art":
+            self._mp3_values["mp3_cover_art_mode"] = "No Art"
+        self.exportSettingsChanged.emit()
+        self._schedule_preferences_save()
 
     @Slot(QUrl)
     def loadBatchUrl(self, url: QUrl) -> None:
