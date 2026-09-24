@@ -118,22 +118,35 @@ Item {
                 spacing: 16
                 StoneField {
                     id: descriptionPanel
+                    objectName: "libraryDescriptionPanel"
                     property bool editing: false
                     width: detail.compact ? annotationRow.width : Math.round(annotationRow.width * 0.62)
-                    height: editing ? 220 : 150
+                    height: editing ? 220 : 184
                     Column {
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 8
                         Text {
+                            objectName: "libraryDescriptionHeading"
                             text: detail.item.userDescription ? "Your description" : "Source description"
                             color: theme.text; font.pixelSize: 20
                         }
-                        Text {
+                        ScrollView {
+                            id: descriptionScroll
+                            objectName: "libraryDescriptionScroll"
                             visible: !descriptionPanel.editing
-                            text: detail.item.description || ""
-                            width: parent.width; color: theme.muted; font.pixelSize: 14
-                            wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight
+                            width: parent.width
+                            height: 78
+                            clip: true
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                            Text {
+                                objectName: "libraryDescriptionText"
+                                text: detail.item.description || ""
+                                width: descriptionScroll.availableWidth
+                                color: theme.muted
+                                font.pixelSize: 14
+                                wrapMode: Text.WordWrap
+                            }
                         }
                         StoneField {
                             visible: descriptionPanel.editing

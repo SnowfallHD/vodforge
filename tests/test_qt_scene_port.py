@@ -881,6 +881,46 @@ def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
         bridge.close()
 
 
+def test_qt_library_detail_keeps_full_long_description_scrollable(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    record = saved(tmp_path, "Long description", "MP4")
+    description = "\n".join(
+        f"Chapter {index}: preserve this full description in the detail view."
+        for index in range(24)
+    )
+    record["description"] = description
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        owner = history_archive_owner(record)
+        assert bridge.openLibraryDetails(owner)
+        bridge.select("Library")
+        for _ in range(5):
+            app.processEvents()
+        body = window.findChild(QObject, "libraryDescriptionText")
+        scroll = window.findChild(QObject, "libraryDescriptionScroll")
+        heading = window.findChild(QObject, "libraryDescriptionHeading")
+        panel = window.findChild(QObject, "libraryDescriptionPanel")
+        assert all(item is not None for item in (body, scroll, heading, panel))
+        assert body.property("text") == description
+        assert body.property("lineCount") > 4
+        assert scroll.property("contentHeight") > scroll.property("height")
+        assert heading.property("visible") is True
+        assert panel.property("height") >= 180
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
 def test_qt_popup_and_navigation_materials_use_shared_renderer():
     qml_root = Path(qt_main.__file__).parent
     qml_sources = [path.read_text() for path in qml_root.glob("*.qml")]
