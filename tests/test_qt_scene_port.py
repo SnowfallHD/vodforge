@@ -542,6 +542,54 @@ def test_qt_routes_keep_tk_channel_playlist_collection_and_media_membership(tmp_
     assert [row["title"] for row in results["videos"]] == ["Video A"]
 
 
+def test_qt_watch_group_header_uses_tk_media_summary_and_creator(tmp_path, monkeypatch):
+    records = [saved(tmp_path, "Video A", "MP4"), saved(tmp_path, "Audio B", "MP3")]
+    home = watch_scene(records, "home")
+    playlist = watch_scene(
+        records,
+        "group",
+        group_key=home["playlists"][0]["key"],
+        group_kind="playlist",
+    )
+    channel = watch_scene(
+        records,
+        "group",
+        group_key=home["channels"][0]["key"],
+        group_kind="channel",
+    )
+    assert playlist["groupSubtitle"] == "One channel  ·  2 items saved"
+    assert channel["groupCountLabel"] == "2 items  ·  1 playlist"
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = records
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Watch")
+        bridge.navigateWatchGroup("playlist", home["playlists"][0]["key"])
+        app.processEvents()
+        assert (
+            window.findChild(QObject, "watchGroupDescription").property("text")
+            == playlist["groupSubtitle"]
+        )
+        bridge.navigateWatchGroup("channel", home["channels"][0]["key"])
+        app.processEvents()
+        assert (
+            window.findChild(QObject, "watchGroupCountLabel").property("text")
+            == channel["groupCountLabel"]
+        )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_watch_uses_shared_variant_identity_and_playback_preference(tmp_path):
     mp3 = saved(tmp_path, "One source", "MP3")
     mp4 = saved(tmp_path, "One source", "MP4")

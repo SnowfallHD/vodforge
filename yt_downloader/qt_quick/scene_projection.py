@@ -15,6 +15,7 @@ from yt_downloader.watch_library import (
     unique_watch_videos,
     watch_channels,
     watch_media_kind,
+    watch_media_summary,
     watch_rails,
 )
 
@@ -321,6 +322,25 @@ def watch_scene(
         if selected is not None and group_kind == "channel"
         else 0
     )
+    group_summary = (
+        watch_media_summary(records, selected.videos).label
+        if selected is not None
+        else ""
+    )
+    group_creators = (
+        {
+            str(
+                records[video.indices[0]].get("channel")
+                or records[video.indices[0]].get("uploader")
+                or ""
+            )
+            for video in selected.videos
+            if video.indices
+        }
+        - {""}
+        if selected is not None and group_kind != "channel"
+        else set()
+    )
     return {
         "route": effective_route,
         "query": query,
@@ -335,6 +355,21 @@ def watch_scene(
         ),
         "groupCount": len(videos),
         "groupPlaylistCount": group_playlist_count,
+        "groupSubtitle": (
+            (next(iter(group_creators)) + "  ·  " if len(group_creators) == 1 else "")
+            + group_summary
+            + " saved"
+            if selected is not None and group_kind != "channel"
+            else ""
+        ),
+        "groupCountLabel": (
+            group_summary
+            + "  ·  "
+            + f"{group_playlist_count} playlist"
+            + ("s" if group_playlist_count != 1 else "")
+            if selected is not None and group_kind == "channel"
+            else ""
+        ),
         "groupAvatar": artwork(group_record, (150, 150), "avatar")
         if group_record is not None and group_kind == "channel"
         else "",

@@ -191,11 +191,12 @@ Item {
                 }
                 Text {
                     id: groupDescription
+                    objectName: "watchGroupDescription"
                     x: groupHeader.textLeft
                     y: groupTitle.y + groupTitle.implicitHeight + 14
                     width: Math.min(760, parent.width - x - 32)
                     text: groupHeader.channel ? (scene.projection.groupDescription || "Your saved media and playlists from " + scene.projection.groupTitle + ".") :
-                          scene.projection.groupCount + " saved " + (scene.projection.groupCount === 1 ? "item" : "items")
+                          scene.projection.groupSubtitle
                     color: theme.muted
                     font.pixelSize: 16
                     wrapMode: Text.WordWrap
@@ -204,10 +205,11 @@ Item {
                 }
                 Text {
                     id: groupCount
+                    objectName: "watchGroupCountLabel"
                     visible: groupHeader.channel
                     x: groupHeader.textLeft
                     y: groupDescription.y + groupDescription.implicitHeight + 18
-                    text: scene.projection.groupCount + " saved media  ·  " + scene.projection.groupPlaylistCount + " playlists"
+                    text: scene.projection.groupCountLabel
                     color: theme.muted
                     font.pixelSize: 15
                 }
