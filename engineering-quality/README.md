@@ -2021,6 +2021,14 @@ same visible boundary. Earlier presenter tests checked only the popup string,
 and the previous native test expected the raw cause in the technical activity
 pane, so neither guarded this shared worker-to-screen path.
 
+The old popup listed missing Deno and rate limits as possible causes even
+though the provided log recorded Deno in the bundle. The telemetry classifier
+could have converted those speculative phrases into a false
+`dependency_missing` reason. It now prioritizes the observed empty format
+outcome and retains `no_video_stream` as the failure code. A focused regression
+checks this exact ambiguity; actual runtime absence is checked by the package
+smoke rather than inferred from provider prose.
+
 The older `active-run.json` symptom was a missing safe retry URL. The current
 durable owner rejects newly admitted jobs whose URL cannot be saved and can
 restore an older damaged attempt without retry authority. Qt uses that owner.

@@ -442,6 +442,18 @@ FAILURE_REASONS = frozenset(
 def classify_failure(message: str) -> str:
     """Best-effort classification, never an error-message sanitization/upload path."""
     text = message[:16384].casefold()
+    # Older provider wrappers listed possible missing runtimes and rate limits
+    # after an observed empty format list. Those suggestions are not evidence
+    # that either condition occurred on the user's machine.
+    if any(
+        observed in text
+        for observed in (
+            "no usable video source",
+            "no video formats",
+            "no usable audio source",
+        )
+    ):
+        return "unsupported_format"
     for reason, markers in (
         (
             "dependency_missing",

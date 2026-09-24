@@ -35,6 +35,19 @@ def test_source_selection_failure_retains_counts_without_private_formats():
     assert validate_failure_detail(detail).payload() == detail
 
 
+def test_possible_provider_causes_do_not_override_observed_empty_formats():
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    error = RuntimeError(
+        "No usable video source was found. This can happen when a JavaScript "
+        "runtime is missing or the site is rate limiting the connection."
+    )
+    detail = capture_failure(error, stage="analysis").payload()
+    assert detail["failure_code"] == "no_video_stream"
+    assert detail["reason"] == "unsupported_format"
+    assert "deno" not in json.dumps(detail).lower()
+
+
 def test_nested_certificate_reason_survives_generic_wrapper():
     cause = ssl.SSLCertVerificationError(1, "private hostname and path")
     cause.verify_code = 20
