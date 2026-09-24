@@ -46,6 +46,8 @@ def test_release_draft_builds_qt_on_both_platforms():
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    windows_build = (ROOT / "build_windows.ps1").read_text(encoding="utf-8")
 
     for start, end in (
         ("name: Build Windows application", "name: Sign in to Azure"),
@@ -56,6 +58,10 @@ def test_release_draft_builds_qt_on_both_platforms():
     ):
         build_step = workflow.split(start, 1)[1].split(end, 1)[0]
         assert "VODFORGE_UI: qt" in build_step
+    assert "install_vlc_macos.sh" not in workflow
+    assert "install_vlc_windows.ps1" not in workflow
+    assert "vlc_args=(--exclude-module vlc)" in macos_build
+    assert '"--exclude-module", "vlc"' in windows_build
 
 
 def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
