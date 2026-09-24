@@ -12,6 +12,8 @@ from typing import Any
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_state import format_duration
 from yt_downloader.watch_library import (
+    WatchChannel,
+    WatchRail,
     unique_watch_videos,
     watch_channels,
     watch_media_kind,
@@ -20,6 +22,14 @@ from yt_downloader.watch_library import (
 )
 
 Artwork = Callable[[dict[str, Any], tuple[int, int], str], str]
+
+
+def _group_title(group: WatchChannel | WatchRail | None) -> str:
+    if isinstance(group, WatchChannel):
+        return group.name
+    if isinstance(group, WatchRail):
+        return group.title
+    return ""
 
 
 def _defer_artwork(_record: dict[str, Any], _size: tuple[int, int], _role: str) -> str:
@@ -163,11 +173,7 @@ def library_scene(
             else playlists
         )
         selected = next((group for group in candidates if group.key == group_key), None)
-        group_title = (
-            (selected.name if group_kind == "channel" else selected.title)
-            if selected is not None
-            else ""
-        )
+        group_title = _group_title(selected)
         indices = (
             {index for video in selected.videos for index in video.indices}
             if selected is not None
@@ -301,12 +307,16 @@ def watch_scene(
                 (rail.title for rail in playlists if featured in rail.videos), ""
             ),
             "resume": hero_resume,
-            "progress": hero_progress.fraction if hero_resume else 0.0,
+            "progress": (
+                hero_progress.fraction
+                if hero_resume and hero_progress is not None
+                else 0.0
+            ),
             "progressLabel": (
                 format_duration(hero_progress.position)
                 + " / "
                 + format_duration(hero_progress.duration)
-                if hero_resume
+                if hero_resume and hero_progress is not None
                 else ""
             ),
             "backdrop": artwork(hero_record, (1100, 400), "media"),
@@ -347,9 +357,7 @@ def watch_scene(
         "route": effective_route,
         "query": query,
         "groupKind": group_kind,
-        "groupTitle": (selected.name if group_kind == "channel" else selected.title)
-        if selected is not None
-        else "",
+        "groupTitle": _group_title(selected),
         "groupDescription": (
             str(
                 group_record.get("channel_description")

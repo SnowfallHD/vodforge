@@ -4948,6 +4948,14 @@ def _resolve_run_finish_decision(
 class DownloadWorkerCore:
     """UI-independent serialized provider, staging, and export owner."""
 
+    events: queue.Queue[Any]
+    cancel_requested: bool
+    download_history: list[dict[str, Any]]
+    run_recovery: RunRecoveryOwner
+    product_telemetry: Any
+    _active_progress_context: tuple[int, int, float, float] | None
+    video_output_dirs_by_id: dict[str, Path]
+
     def _provider_network_coordinator(self) -> ProviderNetworkCoordinator:
         coordinator = self.__dict__.get("_provider_network")
         if coordinator is None:
@@ -7494,7 +7502,7 @@ class DownloaderApp(
         )
         self.last_output_dirs: list[Path] = []
         self.video_output_dirs_by_id: dict[str, Path] = {}
-        self._active_progress_context: tuple[int, int, float, float] | None = None
+        self._active_progress_context = None
         self._provider_network = ProviderNetworkCoordinator()
         self._persist_activity = False
 

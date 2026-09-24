@@ -72,11 +72,20 @@ class _DescriptionWidget(_GeometryWidget, Protocol):
 
 
 class _LibraryInvariantReceipt(Protocol):
-    row_count: int
-    canonical_run_ids: tuple[str, ...]
-    projected_run_ids: tuple[str, ...]
-    statuses: tuple[str, ...]
-    violation_codes: tuple[str, ...]
+    @property
+    def row_count(self) -> int: ...
+
+    @property
+    def canonical_run_ids(self) -> tuple[str, ...]: ...
+
+    @property
+    def projected_run_ids(self) -> tuple[str, ...]: ...
+
+    @property
+    def statuses(self) -> tuple[str, ...]: ...
+
+    @property
+    def violation_codes(self) -> tuple[str, ...]: ...
 
 
 def quality_e2e_mode_enabled(environ: Mapping[str, str] | None = None) -> bool:

@@ -516,7 +516,11 @@ class DownloadRuntime:
             elif kind == "job_metadata" and isinstance(payload, dict):
                 job = payload.get("job")
                 info = payload.get("info")
-                if job is self.active_job and isinstance(info, dict):
+                if (
+                    isinstance(job, DownloadJob)
+                    and job is self.active_job
+                    and isinstance(info, dict)
+                ):
                     job.preview_info = info
                     self._activity_upsert(job, "Running", "Processing media")
             elif kind == "item_terminal":
@@ -570,13 +574,12 @@ class DownloadRuntime:
         ):
             return False
         terminal = replace(child, preview_info=dict(info))
-        self.recovery.terminal_attempt(
-            terminal, terminal.terminal_status, terminal.terminal_message
-        )
+        status = terminal.terminal_status
+        if status is None:
+            return False
+        self.recovery.terminal_attempt(terminal, status, terminal.terminal_message)
         self.recovered = self.recovery.store.load_terminal_jobs()
-        self._activity_upsert(
-            terminal, terminal.terminal_status, terminal.terminal_message
-        )
+        self._activity_upsert(terminal, status, terminal.terminal_message)
         return True
 
     def _record_history(self, payload: dict[str, Any]) -> None:
@@ -595,7 +598,8 @@ class DownloadRuntime:
             and job.output_type == active.output_type
         )
         if (
-            not (job is active or same_batch_child)
+            not isinstance(job, DownloadJob)
+            or not (job is active or same_batch_child)
             or not isinstance(info, dict)
             or not output_dir
         ):

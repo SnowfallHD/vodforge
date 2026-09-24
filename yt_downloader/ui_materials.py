@@ -519,7 +519,7 @@ class MatteTextProjection:
                 else "normal"
             )
             focused = "focus" in states
-            identity = (
+            control_identity = (
                 width,
                 height,
                 name,
@@ -528,7 +528,7 @@ class MatteTextProjection:
                 density,
                 theme_palette_snapshot(),
             )
-            if identity != self.control_identity:
+            if control_identity != self.control_identity:
                 bitmap = action_button_image(
                     width,
                     height,
@@ -540,7 +540,7 @@ class MatteTextProjection:
                 self.control_photo = create_surface_image(
                     self.canvas, bitmap, density, logical_size=(width, height)
                 )[0]
-                self.control_identity = identity
+                self.control_identity = control_identity
             self.canvas.create_image(
                 0, 0, anchor="nw", image=self.control_photo, tags="matte-text"
             )

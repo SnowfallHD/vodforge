@@ -811,11 +811,11 @@ class CanvasFieldMaterial:
         if hasattr(self.canvas, "_matte_anchor"):
             from .ui_materials import draw_matte_backdrop
 
-            draw_matte_backdrop(self.canvas)
+            matte_backdrop = draw_matte_backdrop(self.canvas)
             # The field face belongs directly above the shared matte and below
             # the entry window. Lowering it to the absolute bottom hides the
             # recessed material when the matte owner skips unchanged work.
-            matte_item = self.canvas._matte_backdrop.item
+            matte_item = matte_backdrop.item
             order = self.canvas.find_all()
             if order.index(self.item) < order.index(matte_item):
                 self.canvas.tag_raise(self.item, matte_item)

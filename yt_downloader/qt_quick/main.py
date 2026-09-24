@@ -15,7 +15,7 @@ from dataclasses import asdict, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import SubprocessError  # nosec B404 - exception type only
-from typing import Any
+from typing import Any, Literal, TypedDict, cast, overload
 
 SOURCE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SOURCE))
@@ -90,6 +90,7 @@ from yt_downloader.export_planning import (
     export_mode_display_name,
     export_mode_from_display_name,
 )
+from yt_downloader.failure_diagnostics import FailureDiagnostic
 from yt_downloader.forge_activity import ForgeActivityProjection
 from yt_downloader.history import (
     HistoryError,
@@ -150,7 +151,7 @@ from yt_downloader.models import (
     OutputType,
 )
 from yt_downloader.platform_services import diagnostics_dir
-from yt_downloader.playback_backend import PlaybackSnapshot
+from yt_downloader.playback_backend import PlaybackSnapshot, PlaybackStatus
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.player_related import player_related_plan
@@ -184,7 +185,7 @@ from yt_downloader.settings_store import (
 from yt_downloader.support_diagnostics import FailureContext, failure_context
 from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
-from yt_downloader.ui_button_contract import button_metrics
+from yt_downloader.ui_button_contract import BUTTON_METRICS
 from yt_downloader.ui_chrome import action_button_image, field_border_image
 from yt_downloader.ui_materials import backdrop_pixels
 from yt_downloader.ui_theme import (
@@ -212,6 +213,19 @@ from yt_downloader.whats_new import (
     FeatureHighlight,
 )
 from yt_downloader.youtube_access import COOKIE_BROWSER_OPTIONS
+
+# PySide6 accepts Qt metatype names here; its typing stub models only classes.
+_QVARIANT_LIST = cast(type, "QVariantList")
+_QVARIANT_MAP = cast(type, "QVariantMap")
+
+
+class _SubmitJobOptions(TypedDict):
+    urls: list[str] | None
+    batch_mode: bool
+    cookie_source: CookieSource
+    cookie_file: Path | None
+    cookie_browser: str | None
+    tags: list[str] | None
 
 
 def qt_image(source: Image.Image) -> QImage:
@@ -447,7 +461,7 @@ class Bridge(QObject):
         self._previews = QtPreviewSession(DownloaderApp._find_ffmpeg())
         self._playback_position = 0.0
         self._playback_duration = 0.0
-        self._playback_status = "Ready"
+        self._playback_status: PlaybackStatus = "Ready"
         self._playback_recorded = False
         self._playback_output_type = ""
         self._playback_chapters: list[dict[str, Any]] = []
@@ -643,11 +657,11 @@ class Bridge(QObject):
     def fileActionCanFinish(self) -> bool:
         return self._files.can_finish
 
-    @Property("QVariantMap", notify=missingMediaChanged)
+    @Property(_QVARIANT_MAP, notify=missingMediaChanged)
     def missingMedia(self) -> dict[str, str]:
         return dict(self._missing_media)
 
-    @Property("QVariantMap", notify=relinkChanged)
+    @Property(_QVARIANT_MAP, notify=relinkChanged)
     def relinkInfo(self) -> dict[str, str | bool | int]:
         return {
             "phase": self._relink.phase,
@@ -1165,19 +1179,19 @@ class Bridge(QObject):
     def playbackUrl(self) -> QUrl:
         return self._playback_url
 
-    @Property("QVariantList", notify=playbackUrlChanged)
+    @Property(_QVARIANT_LIST, notify=playbackUrlChanged)
     def playbackChapters(self) -> list[dict[str, Any]]:
         return list(self._playback_chapters)
 
-    @Property("QVariantList", notify=playbackUrlChanged)
+    @Property(_QVARIANT_LIST, notify=playbackUrlChanged)
     def playbackHeatmap(self) -> list[dict[str, float]]:
         return list(self._playback_heatmap)
 
-    @Property("QVariantList", notify=playbackPreviewsChanged)
+    @Property(_QVARIANT_LIST, notify=playbackPreviewsChanged)
     def playbackPreviews(self) -> list[dict[str, Any]]:
         return self._previews.records
 
-    @Property("QVariantMap", notify=playerSceneChanged)
+    @Property(_QVARIANT_MAP, notify=playerSceneChanged)
     def playerScene(self) -> dict[str, Any]:
         snapshot = self._playback_record
         if snapshot is None:
@@ -1269,7 +1283,7 @@ class Bridge(QObject):
             self._record_update_feature("player", "related_details")
         return opened
 
-    @Property("QVariantList", notify=historyChanged)
+    @Property(_QVARIANT_LIST, notify=historyChanged)
     def history(self) -> list[dict[str, Any]]:
         projected = self._projected_library()
         history_owners = {
@@ -1305,7 +1319,7 @@ class Bridge(QObject):
     def savedCount(self) -> int:
         return len(self._runtime.history)
 
-    @Property("QVariantMap", notify=librarySceneChanged)
+    @Property(_QVARIANT_MAP, notify=librarySceneChanged)
     def libraryScene(self) -> dict[str, Any]:
         return library_scene(
             self._projected_library(),
@@ -1361,7 +1375,7 @@ class Bridge(QObject):
             "avatar" if kind == "channel" else "playlist",
         )
 
-    @Property("QVariantMap", notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=historyChanged)
     def libraryFolders(self) -> dict[str, Any]:
         self._reconcile_folder_browser()
         model = self._folder_browser
@@ -1406,7 +1420,7 @@ class Bridge(QObject):
         records = self._projected_library()
         self._folder_browser.replace(records, range(len(records)))
 
-    @Property("QVariantMap", notify=watchSceneChanged)
+    @Property(_QVARIANT_MAP, notify=watchSceneChanged)
     def watchScene(self) -> dict[str, Any]:
         scene = watch_scene(
             self._projected_library(),
@@ -1458,12 +1472,12 @@ class Bridge(QObject):
     def supportSent(self) -> bool:
         return self._support.sent
 
-    @Property("QVariantMap", notify=supportChanged)
+    @Property(_QVARIANT_MAP, notify=supportChanged)
     def supportContext(self) -> dict[str, str]:
         context = self._support.context
         return {
             "diagnostics": context.diagnostics if context is not None else "",
-            "videoUrl": context.video_url if context is not None else "",
+            "videoUrl": (context.video_url or "") if context is not None else "",
         }
 
     @Property(str, notify=editorialChanged)
@@ -1485,7 +1499,7 @@ class Bridge(QObject):
             return "Try it"
         return "Done"
 
-    @Property("QVariantList", notify=editorialChanged)
+    @Property(_QVARIANT_LIST, notify=editorialChanged)
     def editorialSlides(self) -> list[dict[str, str]]:
         return [
             {
@@ -1497,7 +1511,7 @@ class Bridge(QObject):
             for slide in self._editorial_slides
         ]
 
-    @Property("QVariantMap", notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=historyChanged)
     def libraryDetail(self) -> dict[str, Any]:
         return self._library_detail_projection(
             self._library_detail_owner,
@@ -1508,7 +1522,7 @@ class Bridge(QObject):
             ),
         )
 
-    @Property("QVariantMap", notify=historyChanged)
+    @Property(_QVARIANT_MAP, notify=historyChanged)
     def libraryFolderInspector(self) -> dict[str, Any]:
         if self._library_scene_route != "folders":
             return {}
@@ -1557,7 +1571,7 @@ class Bridge(QObject):
             "fromFolders": from_folders,
         }
 
-    @Property("QVariantList", notify=historyChanged)
+    @Property(_QVARIANT_LIST, notify=historyChanged)
     def collectionCandidates(self) -> list[dict[str, str]]:
         return [
             {
@@ -1590,7 +1604,7 @@ class Bridge(QObject):
     def importBusy(self) -> bool:
         return self._import_pending
 
-    @Property("QVariantMap", notify=storageChanged)
+    @Property(_QVARIANT_MAP, notify=storageChanged)
     def storageSummary(self) -> dict[str, Any]:
         snapshot = self._storage_snapshot
         capacity = snapshot.capacity
@@ -1609,7 +1623,7 @@ class Bridge(QObject):
             "fraction": capacity.fraction_used,
         }
 
-    @Property("QVariantList", notify=storageChanged)
+    @Property(_QVARIANT_LIST, notify=storageChanged)
     def storageChoices(self) -> list[dict[str, str]]:
         return [
             {"path": volume.path, "label": volume.label}
@@ -1692,11 +1706,11 @@ class Bridge(QObject):
         self.statusChanged.emit()
         return False
 
-    @Property("QVariantList", notify=historyChanged)
+    @Property(_QVARIANT_LIST, notify=historyChanged)
     def libraryCategories(self) -> list[str]:
         return [LIBRARY_ALL_CATEGORIES, *library_categories(self._projected_library())]
 
-    @Property("QVariantMap", notify=annotationChanged)
+    @Property(_QVARIANT_MAP, notify=annotationChanged)
     def annotationValues(self) -> dict[str, str]:
         return dict(self._annotation_values)
 
@@ -1728,23 +1742,23 @@ class Bridge(QObject):
     def localRunning(self) -> bool:
         return self._local_running
 
-    @Property("QVariantMap", notify=downloadOptionsChanged)
+    @Property(_QVARIANT_MAP, notify=downloadOptionsChanged)
     def downloadOptions(self) -> dict[str, bool]:
         return asdict(self._download_preferences)
 
-    @Property("QVariantMap", notify=exportSettingsChanged)
+    @Property(_QVARIANT_MAP, notify=exportSettingsChanged)
     def manualValues(self) -> dict[str, str]:
         return dict(self._manual_values)
 
-    @Property("QVariantMap", notify=exportSettingsChanged)
+    @Property(_QVARIANT_MAP, notify=exportSettingsChanged)
     def mp3Values(self) -> dict[str, str | bool]:
         return dict(self._mp3_values)
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def mp3QualityOptions(self) -> list[str]:
         return list(MP3_QUALITY_OPTIONS)
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def exportModeOptions(self) -> list[dict[str, str]]:
         return [
             {"label": label, "value": export_mode_from_display_name(label).value}
@@ -1758,15 +1772,15 @@ class Bridge(QObject):
         except ValueError:
             return ""
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def mp3SampleRateOptions(self) -> list[str]:
         return list(MP3_SAMPLE_RATE_OPTIONS)
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def mp3ChannelOptions(self) -> list[str]:
         return list(MP3_CHANNEL_OPTIONS)
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def mp3CoverOptions(self) -> list[str]:
         return list(MP3_COVER_ART_OPTIONS)
 
@@ -1790,7 +1804,7 @@ class Bridge(QObject):
     def customAccent(self) -> str:
         return self._custom_accent
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def appearanceThemes(self) -> list[str]:
         return list(THEME_NAMES)
 
@@ -1862,11 +1876,11 @@ class Bridge(QObject):
     def cookieFileName(self) -> str:
         return self._cookie_file.name if self._cookie_file else "Choose cookies.txt"
 
-    @Property("QVariantList", constant=True)
+    @Property(_QVARIANT_LIST, constant=True)
     def cookieBrowserOptions(self) -> list[str]:
         return list(COOKIE_BROWSER_OPTIONS[1:])
 
-    @Property("QVariantList", notify=activityChanged)
+    @Property(_QVARIANT_LIST, notify=activityChanged)
     def activity(self) -> list[dict[str, str]]:
         return self._runtime.activity
 
@@ -1874,7 +1888,7 @@ class Bridge(QObject):
     def activityLog(self) -> str:
         return self._activity_log_text
 
-    @Property("QVariantMap", notify=activityChanged)
+    @Property(_QVARIANT_MAP, notify=activityChanged)
     def forgeActivity(self) -> dict[str, str]:
         selection = self.forgeSelection
         if selection and selection.get("kind") != "active":
@@ -1937,7 +1951,7 @@ class Bridge(QObject):
             self._status = "The Activity log folder is unavailable."
             self.statusChanged.emit()
 
-    @Property("QVariantMap", notify=forgePreviewChanged)
+    @Property(_QVARIANT_MAP, notify=forgePreviewChanged)
     def forgePreview(self) -> dict[str, Any]:
         record = self._metadata_preview_record
         info = self._metadata_preview_info or {}
@@ -1953,7 +1967,7 @@ class Bridge(QObject):
             ),
         }
 
-    @Property("QVariantMap", notify=runDeckChanged)
+    @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def runDeck(self) -> dict[str, Any]:
         records: list[dict[str, Any]] = []
         preview = self.forgePreview
@@ -2082,7 +2096,7 @@ class Bridge(QObject):
             "summary": summary,
         }
 
-    @Property("QVariantMap", notify=runDeckChanged)
+    @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def forgeSelection(self) -> dict[str, Any]:
         records = self.runDeck["records"]
         selected = next(
@@ -2124,7 +2138,7 @@ class Bridge(QObject):
                 }
         return selected
 
-    @Property("QVariantMap", notify=runDeckChanged)
+    @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def forgeSelectedFacts(self) -> dict[str, Any]:
         """Project selected-run facts from its owner, not pending download options."""
         selected = self.forgeSelection
@@ -2239,27 +2253,27 @@ class Bridge(QObject):
     def _record_watch_queue_operation(
         self,
         action: str,
-        operation_key: str,
+        operation: str,
         dimensions: dict[str, str],
         *,
-        failure_detail: Any = None,
+        failure_detail: FailureDiagnostic | None = None,
     ) -> None:
         telemetry = self._analytics.telemetry
         if action == "requested":
-            self._watch_queue_observations[operation_key] = (
+            self._watch_queue_observations[operation] = (
                 telemetry.bind_operation(
-                    "watch_queue_operation", operation_key=operation_key
+                    "watch_queue_operation", operation_key=operation
                 )
                 if telemetry is not None
                 else None
             )
-        observation = self._watch_queue_observations.get(operation_key)
+        observation = self._watch_queue_observations.get(operation)
         try:
             if observation is not None:
                 observation.record(action, dimensions, failure_detail=failure_detail)
         finally:
             if action in {"completed", "cancelled", "failed"}:
-                self._watch_queue_observations.pop(operation_key, None)
+                self._watch_queue_observations.pop(operation, None)
 
     def _open_queued_watch_record(
         self, record: dict[str, Any], token: QueueToken
@@ -2365,7 +2379,9 @@ class Bridge(QObject):
     def navigateLibraryFolders(self, mode: str) -> None:
         if mode not in {"folders", "all", "activity"}:
             return
-        self._folder_browser.navigate(None, mode=mode)
+        self._folder_browser.navigate(
+            None, mode=cast(Literal["folders", "all", "activity"], mode)
+        )
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions = []
@@ -3079,7 +3095,7 @@ class Bridge(QObject):
             "mp3_channels": MP3_CHANNEL_OPTIONS,
             "mp3_cover_art_mode": MP3_COVER_ART_OPTIONS,
         }
-        if key not in allowed or value not in allowed[key]:
+        if key not in allowed or value not in cast(tuple[str, ...], allowed[key]):
             return
         if (
             key == "mp3_cover_art_mode"
@@ -3585,7 +3601,7 @@ class Bridge(QObject):
             return
         self._playback_position = position
         self._playback_duration = duration
-        self._playback_status = status
+        self._playback_status = cast(PlaybackStatus, status)
         if status == "Playing" and not self._playback_recorded:
             self._playback_recorded = True
             telemetry = self._analytics.telemetry
@@ -3665,7 +3681,7 @@ class Bridge(QObject):
         admitted = (
             active is not None
             and active is self._run_menu_identity_job
-            and active.run_id == run_id
+            and getattr(active, "run_id", None) == run_id
             and bool(execution_token)
             and execution_token == self._run_menu_identity_token
         )
@@ -3684,7 +3700,7 @@ class Bridge(QObject):
         admitted = (
             active is not None
             and active is self._run_menu_admitted_job
-            and active.run_id == run_id
+            and getattr(active, "run_id", None) == run_id
         )
         operation(
             self._analytics.telemetry,
@@ -4253,7 +4269,7 @@ class Bridge(QObject):
                 manual,
                 mp3,
             )
-            job_options = {
+            job_options: _SubmitJobOptions = {
                 "urls": self._batch_urls if self._batch_urls else None,
                 "batch_mode": bool(self._batch_urls),
                 "cookie_source": self._cookie_source,
@@ -4340,12 +4356,12 @@ def create_engine(bridge: Bridge) -> QQmlApplicationEngine:
         "buttonMetrics",
         {
             name: {
-                "height": button_metrics(name).height,
-                "fontPixels": button_metrics(name).font_pixels,
-                "horizontalPadding": button_metrics(name).horizontal_padding,
-                "iconPixels": button_metrics(name).icon_pixels,
+                "height": metrics.height,
+                "fontPixels": metrics.font_pixels,
+                "horizontalPadding": metrics.horizontal_padding,
+                "iconPixels": metrics.icon_pixels,
             }
-            for name in ("default", "compact", "inline")
+            for name, metrics in BUTTON_METRICS.items()
         },
     )
     assets = SOURCE / "assets"
@@ -4368,9 +4384,16 @@ class QtQualityE2EApp:
     def get(self) -> str:
         return self._bridge._output_path
 
-    def title(self, value: str | None = None) -> str:
+    @overload
+    def title(self, value: None = None) -> str: ...
+
+    @overload
+    def title(self, value: str) -> None: ...
+
+    def title(self, value: str | None = None) -> str | None:
         if value is not None:
             self._window.setTitle(value)
+            return None
         return str(self._window.title())
 
 
@@ -4409,7 +4432,7 @@ def main() -> int:
     engine = create_engine(bridge)
     if not engine.rootObjects():
         engine.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
         bridge.close()
         if smoke_home is not None:
             smoke_home.cleanup()
@@ -4420,7 +4443,7 @@ def main() -> int:
         attest_qt_launch(bridge, bridge._window)
     except QualityE2EAttestationError as exc:
         engine.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
         bridge.close()
         if smoke_home is not None:
             smoke_home.cleanup()
@@ -4434,7 +4457,7 @@ def main() -> int:
     if args.runtime_smoke:
         application.processEvents()
         engine.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        QCoreApplication.sendPostedEvents(None, cast(Any, QEvent).DeferredDelete)
         application.processEvents()
         bridge.close()
         if smoke_home is None:
