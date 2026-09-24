@@ -348,7 +348,7 @@ Item {
                 Flow {
                     id: groupFlow
                     objectName: "libraryGroupFlow"
-                    visible: scene.route === "home" || scene.route === "channels" ||
+                    visible: (scene.route === "home" && scene.media.length > 0) || scene.route === "channels" ||
                              scene.route === "playlists" || scene.route === "collections"
                     width: parent.width
                     spacing: 14
@@ -463,6 +463,21 @@ Item {
                             font.pixelSize: 13
                             lineHeight: 1.5
                         }
+                    }
+                }
+                LibraryEmptyPanel {
+                    objectName: "libraryCollectionsEmptyPanel"
+                    visible: (scene.route === "home" && scene.media.length === 0) ||
+                        (["channels", "playlists", "collections"].indexOf(scene.route) >= 0 && scene.groups.length === 0)
+                    width: parent.width
+                    collections: true
+                    filtered: scene.appBridge.librarySearch.length > 0
+                    onForgeRequested: scene.appBridge.select("Forge")
+                    onImportRequested: scene.importRequested()
+                    onClearRequested: {
+                        scene.appBridge.setLibrarySearch("")
+                        scene.appBridge.setLibraryCategory("All categories")
+                        scene.appBridge.navigateLibrary("all")
                     }
                 }
 
@@ -635,11 +650,19 @@ Item {
                         height: Math.max(0, (mediaFlow.totalRows - mediaFlow.lastRow) * mediaFlow.rowStride - mediaFlow.spacing)
                     }
                 }
-                Text {
-                    visible: scene.groups.length === 0 && scene.media.length === 0
-                    text: "No items yet"
-                    color: theme.muted
-                    font.pixelSize: 16
+                LibraryEmptyPanel {
+                    objectName: "libraryMediaEmptyPanel"
+                    visible: scene.media.length === 0 && ["channels", "playlists", "collections"].indexOf(scene.route) < 0
+                    width: parent.width
+                    filtered: scene.appBridge.librarySearch.length > 0 || scene.appBridge.libraryCategory !== "All categories" || scene.route === "group"
+                    actions: scene.route !== "home" || scene.counts.all > 0 || filtered
+                    onForgeRequested: scene.appBridge.select("Forge")
+                    onImportRequested: scene.importRequested()
+                    onClearRequested: {
+                        scene.appBridge.setLibrarySearch("")
+                        scene.appBridge.setLibraryCategory("All categories")
+                        scene.appBridge.navigateLibrary("all")
+                    }
                 }
                 Item { width: 1; height: 20 }
             }

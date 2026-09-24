@@ -1558,6 +1558,66 @@ def test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds(tmp_path, monkeyp
         bridge.close()
 
 
+def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        app.processEvents()
+        scene = window.findChild(QObject, "libraryBrowseScene")
+        collections = window.findChild(QObject, "libraryCollectionsEmptyPanel")
+        media = window.findChild(QObject, "libraryMediaEmptyPanel")
+        assert collections.property("visible")
+        assert media.property("visible")
+        assert collections.property("collections")
+        assert not media.property("filtered")
+        assert not media.property("actions")
+        assert round(collections.property("height")) == 232
+        assert round(media.property("height")) == 188
+
+        imports = []
+        scene.importRequested.connect(lambda: imports.append(True))
+        collections.findChild(QObject, "libraryEmptyImportMedia").activated.emit()
+        assert imports == [True]
+        collections.findChild(QObject, "libraryEmptyGoForge").activated.emit()
+        assert bridge.selection == "Forge"
+
+        bridge.select("Library")
+        bridge.navigateLibrary("channels")
+        app.processEvents()
+        assert collections.property("visible")
+        assert not media.property("visible")
+        assert collections.property("actions")
+
+        bridge._runtime.history = [saved(tmp_path, "One", "MP4", category="News")]
+        bridge.setLibraryCategory("News")
+        bridge.setLibrarySearch("absent")
+        bridge.navigateLibrary("all")
+        app.processEvents()
+        assert not collections.property("visible")
+        assert media.property("visible")
+        assert media.property("filtered")
+        assert media.property("actions")
+        media.findChild(QObject, "libraryEmptyClearFilters").activated.emit()
+        app.processEvents()
+        assert bridge.librarySearch == ""
+        assert bridge.libraryCategory == "All categories"
+        assert bridge.libraryScene["route"] == "all"
+        assert bridge.libraryScene["media"]
+        assert not media.property("visible")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
