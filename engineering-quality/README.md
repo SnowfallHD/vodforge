@@ -2034,7 +2034,9 @@ durable owner rejects newly admitted jobs whose URL cannot be saved and can
 restore an older damaged attempt without retry authority. Qt uses that owner.
 A new Qt runtime test creates a valid journal, simulates the old missing-URL
 record, then verifies startup retains it without blocking a fresh run and that
-the new URL is saved before work starts. Existing owner tests covered damaged
+the new URL is saved before work starts. That test also queues a second distinct
+URL and opens the journal through a fresh store reader, proving both executable
+records still contain their respective sources. Existing owner tests covered damaged
 journals and Qt tests covered clean retries, but not this combined port path.
 The Qt package smoke now invokes the existing dependency probe for FFmpeg,
 FFprobe, Deno, pinned extractor/solver data, and TLS roots while exempting

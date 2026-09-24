@@ -16,7 +16,7 @@ from yt_downloader.app import DownloaderApp, DownloadWorkerCore
 from yt_downloader.history import load_history
 from yt_downloader.local_audio_video import LocalAudioVideoResult
 from yt_downloader.qt_quick import runtime as qt_runtime
-from yt_downloader.run_state import ActiveRunStore
+from yt_downloader.run_state import ActiveRunStore, deserialize_download_job
 
 
 def test_tk_qt_and_harness_share_the_non_widget_worker() -> None:
@@ -134,6 +134,17 @@ def test_qt_recovers_legacy_run_without_retry_url_and_saves_next_source(
         assert saved is not None
         assert saved["job"]["url"] == fresh.url
         assert fresh.url == "https://example.com/new-video"
+        next_job = runtime.start(
+            "https://example.com/second-video", output_dir, "MP4", "Everyday"
+        )
+        cold_reader = ActiveRunStore(state_path)
+        persisted = cold_reader.load()
+        assert persisted is not None
+        assert deserialize_download_job(persisted["job"]).url == fresh.url
+        assert [job.url for job in cold_reader.load_queued_jobs()] == [
+            next_job.url
+        ]
+        assert next_job.url == "https://example.com/second-video"
     finally:
         release_worker.set()
         runtime.close()
