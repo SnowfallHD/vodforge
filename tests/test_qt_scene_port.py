@@ -1599,6 +1599,86 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
         bridge.close()
 
 
+def test_qt_forge_composer_matches_tk_control_bounds(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        for (
+            width,
+            height,
+            command_x,
+            command_y,
+            field_width,
+            destination_x,
+            destination_width,
+        ) in (
+            (820, 560, 32, 70, 499, 240, 170),
+            (1100, 740, 62, 78, 719, 270, 210),
+            (1180, 790, 120, 94, 683, 328, 240),
+        ):
+            window.resize(width, height)
+            for _ in range(3):
+                app.processEvents()
+
+            def bounds(name):
+                item = window.findChild(QObject, name)
+                point = item.mapToItem(None, 0, 0)
+                return tuple(
+                    round(value)
+                    for value in (point.x(), point.y(), item.width(), item.height())
+                )
+
+            assert bounds("forgeCommandRow") == (
+                command_x,
+                command_y,
+                width - 2 * command_x,
+                48,
+            )
+            assert bounds("forgeUrlField") == (command_x, command_y, field_width, 48)
+            assert bounds("forgeOptionsButton") == (
+                command_x + field_width + 12,
+                command_y + 1,
+                106,
+                46,
+            )
+            assert bounds("forgeDownloadButton") == (
+                command_x + field_width + 126,
+                command_y + 2,
+                131,
+                44,
+            )
+            assert bounds("forgeLocalRow") == (
+                command_x,
+                command_y + 56,
+                width - 2 * command_x,
+                44,
+            )
+            assert bounds("forgeLoadListButton") == (command_x, command_y + 56, 131, 44)
+            assert bounds("forgeDestinationField") == (
+                destination_x,
+                command_y + 61,
+                destination_width,
+                34,
+            )
+            assert bounds("forgeCreateVideoButton") == (
+                width - command_x - 131,
+                command_y + 56,
+                131,
+                44,
+            )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))

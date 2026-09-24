@@ -517,6 +517,10 @@ Window {
     property int gutter: width < 960 ? 12 : 20
     property bool compactHeight: height < 640
     property int rowGap: compactHeight ? 8 : 14
+    readonly property string forgeDensity: width < 920 || height < 690 ? "compact" :
+        width < 1080 || height < 760 ? "balanced" : "wide"
+    readonly property int forgeHorizontalPad: forgeDensity === "compact" ? 20 : forgeDensity === "balanced" ? 42 : 100
+    readonly property int forgeTopPad: forgeDensity === "compact" ? 18 : forgeDensity === "balanced" ? 26 : 42
     property string outputFormat: bridge.outputFormat
     property string selectedSavedOwner: ""
     property var pendingFileOwners: []
@@ -628,18 +632,25 @@ Window {
         }
 
         ColumnLayout {
+            objectName: "forgeScene"
             visible: bridge.selection === "Forge"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: window.rowGap
+            Layout.leftMargin: window.forgeHorizontalPad
+            Layout.rightMargin: window.forgeHorizontalPad
+            Layout.topMargin: window.forgeTopPad - 2
+            spacing: 8
 
             RowLayout {
+                objectName: "forgeCommandRow"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 52
-                spacing: 12
+                Layout.preferredHeight: 48
+                spacing: 8
                 StoneField {
+                    objectName: "forgeUrlField"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 52
+                    Layout.preferredHeight: 48
+                    Layout.rightMargin: 4
                     focused: urlInput.activeFocus
                     RowLayout {
                         anchors.fill: parent
@@ -676,68 +687,77 @@ Window {
                     }
                 }
                 StoneButton {
+                    objectName: "forgeOptionsButton"
                     label: "Options"
-                    Layout.preferredWidth: 100
-                    Layout.preferredHeight: 44
+                    Layout.preferredWidth: 106
+                    Layout.preferredHeight: 46
                     onActivated: window.outputFormat === "MP3" ? mp3OptionsPopup.open() : optionsMenu.open()
                 }
                 StoneButton {
+                    objectName: "forgeDownloadButton"
                     label: bridge.running ? "Queue" : "Download"
                     emphasized: true
-                    Layout.preferredWidth: 134
+                    Layout.preferredWidth: 131
                     Layout.preferredHeight: 44
                     onActivated: bridge.submit(urlInput.text, window.outputFormat)
                 }
             }
 
             RowLayout {
+                objectName: "forgeLocalRow"
                 Layout.fillWidth: true
-                Layout.preferredHeight: window.compactHeight ? 42 : 48
+                Layout.preferredHeight: 44
                 spacing: 12
                 StoneButton {
+                    objectName: "forgeLoadListButton"
                     label: bridge.batchSummary === "No URL list loaded" ? "Load URL list" : "List loaded"
-                    Layout.preferredWidth: 116
-                    Layout.preferredHeight: 42
+                    Layout.preferredWidth: 131
+                    Layout.preferredHeight: 44
                     onActivated: urlListDialog.open()
                 }
-                Text {
-                    text: "Save to"
-                    color: theme.muted
-                    font.pixelSize: 15
-                    Layout.leftMargin: 7
-                }
-                StoneField {
-                    Layout.preferredWidth: Math.min(250, Math.max(150, window.width * 0.23))
-                    Layout.preferredHeight: 42
-                    interactive: true
-                    accessibilityLabel: "Choose output folder"
-                    onActivated: outputFolderDialog.open()
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 8
-                        Image {
-                            source: "image://vodforge/icon/folder-20.png/r" + bridge.themeRevision
-                            Layout.preferredWidth: 18
-                            Layout.preferredHeight: 18
-                            fillMode: Image.PreserveAspectFit
-                        }
-                        Text {
-                            text: bridge.outputPath
-                            color: theme.text
-                            font.pixelSize: 15
-                            elide: Text.ElideLeft
-                            Layout.fillWidth: true
+                RowLayout {
+                    spacing: 6
+                    Text {
+                        text: "Save to"
+                        color: theme.muted
+                        font.pixelSize: 15
+                        Layout.leftMargin: 7
+                    }
+                    StoneField {
+                        objectName: "forgeDestinationField"
+                        Layout.preferredWidth: window.forgeDensity === "compact" ? 170 : window.forgeDensity === "balanced" ? 210 : 240
+                        Layout.preferredHeight: 34
+                        interactive: true
+                        accessibilityLabel: "Choose output folder"
+                        onActivated: outputFolderDialog.open()
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            spacing: 8
+                            Image {
+                                source: "image://vodforge/icon/folder-20.png/r" + bridge.themeRevision
+                                Layout.preferredWidth: 18
+                                Layout.preferredHeight: 18
+                                fillMode: Image.PreserveAspectFit
+                            }
+                            Text {
+                                text: bridge.outputPath
+                                color: theme.text
+                                font.pixelSize: 15
+                                elide: Text.ElideLeft
+                                Layout.fillWidth: true
+                            }
                         }
                     }
                 }
                 Item { Layout.fillWidth: true }
                 Text { text: "Have local audio?"; color: theme.muted; font.pixelSize: 15 }
                 StoneButton {
+                    objectName: "forgeCreateVideoButton"
                     label: "Create video"
-                    Layout.preferredWidth: 132
-                    Layout.preferredHeight: 42
+                    Layout.preferredWidth: 131
+                    Layout.preferredHeight: 44
                     onActivated: localConversionPopup.open()
                 }
             }
