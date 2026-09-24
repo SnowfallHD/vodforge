@@ -72,6 +72,14 @@ def test_stone_buttons_expose_named_press_actions_and_hide_other_views(
         )
         assert pro.actionInterface() is not None
         assert pro.rect().intersects(window.rect())
+        help_button = next(
+            child
+            for child in accessible_descendants(window)
+            if child.role() == QAccessible.Button
+            and child.text(QAccessible.Name) == "Help"
+            and not child.state().invisible
+        )
+        assert help_button.actionInterface() is not None
         done = next(
             child
             for child in accessible_descendants(window)
@@ -158,7 +166,7 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
                 and bounds.bottom() <= frame.bottom()
             )
 
-        for name in ("Forge", "Library", "Watch", "Activity", "Help", "Settings"):
+        for name in ("Forge", "Library", "Watch", "Activity", "Settings"):
             assert inside(visible_button(name)), name
         for name in ("Forge", "Library", "Watch", "Activity"):
             bounds = visible_button(name).rect()

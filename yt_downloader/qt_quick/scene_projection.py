@@ -61,6 +61,33 @@ def _group(
     }
 
 
+def _library_group(
+    group: Any, kind: str, records: Sequence[dict[str, Any]], artwork: Artwork
+) -> dict[str, Any]:
+    indices = tuple(index for video in group.videos for index in video.indices)
+    first = records[indices[0]]
+    audio = sum(watch_media_kind(records[index]) == "audio" for index in indices)
+    result = _group(
+        first,
+        group.key,
+        group.name if kind == "channel" else group.title,
+        len(indices),
+        kind,
+        artwork,
+    )
+    result["videoCount"] = len(indices) - audio
+    result["audioCount"] = audio
+    result["owners"] = [history_archive_owner(records[index]) for index in indices]
+    parts = [f"{len(indices)} item" + ("s" if len(indices) != 1 else "")]
+    if len(indices) - audio:
+        videos = len(indices) - audio
+        parts.append(f"{videos} video" + ("s" if videos != 1 else ""))
+    if audio:
+        parts.append(f"{audio} audio")
+    result["summary"] = " · ".join(parts)
+    return result
+
+
 def library_scene(
     records: Sequence[dict[str, Any]],
     route: str,
@@ -101,14 +128,7 @@ def library_scene(
     group_image = _defer_artwork if defer_group_artwork else artwork
     if route == "channels":
         groups = [
-            _group(
-                records[channel.videos[0].indices[0]],
-                channel.key,
-                channel.name,
-                len(channel.videos),
-                "channel",
-                group_image,
-            )
+            _library_group(channel, "channel", records, group_image)
             for channel in channels
             if channel.videos
         ]
@@ -117,12 +137,10 @@ def library_scene(
         if route == "home":
             chosen = collections or playlists
         groups = [
-            _group(
-                records[rail.videos[0].indices[0]],
-                rail.key,
-                rail.title,
-                len(rail.videos),
+            _library_group(
+                rail,
                 "collection" if chosen is collections else "playlist",
+                records,
                 group_image,
             )
             for rail in chosen

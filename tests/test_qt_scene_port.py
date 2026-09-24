@@ -42,6 +42,66 @@ def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     }
 
 
+def test_qt_library_group_card_counts_saved_variants_like_tk(tmp_path):
+    records = [saved(tmp_path, "One", "MP4"), saved(tmp_path, "One", "MP3")]
+    groups = library_scene(records, "home")["groups"]
+    assert len(groups) == 1
+    group = groups[0]
+    assert group["count"] == 2
+    assert group["videoCount"] == group["audioCount"] == 1
+    assert group["summary"] == "2 items · 1 video · 1 audio"
+    assert len(set(group["owners"])) == 2
+    assert watch_scene(records, "home")["playlists"][0]["count"] == 1
+
+
+def test_qt_library_group_menu_selects_every_saved_variant(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, "One", "MP4"),
+        saved(tmp_path, "One", "MP3"),
+    ]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        app.processEvents()
+        scene = window.findChild(QObject, "libraryBrowseScene")
+        flow = window.findChild(QObject, "libraryGroupFlow")
+        card = next(
+            item
+            for item in flow.childItems()
+            if str(item.property("accessibilityLabel") or "").startswith(
+                "One playlist, "
+            )
+        )
+        more = next(
+            item
+            for item in card.childItems()
+            if item.objectName() == "libraryGroupMore"
+        )
+        more.activated.emit()
+        app.processEvents()
+        menu = window.findChild(QObject, "libraryGroupMenu")
+        assert menu.property("visible")
+        window.findChild(QObject, "libraryGroupSelectButton").activated.emit()
+        app.processEvents()
+        assert not menu.property("visible")
+        assert scene.property("selectionMode")
+        assert set(scene.property("selectedOwners").toVariant()) == set(
+            bridge.libraryScene["groups"][0]["owners"]
+        )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_settings_extra_tags_reach_existing_download_job(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -1456,37 +1516,82 @@ def test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds(tmp_path, monkeyp
         for width in (820, 1100, 1180):
             window.setWidth(width)
             app.processEvents()
+            shell_margin = 12 if width < 960 else 20
             scene = window.findChild(QObject, "libraryBrowseScene")
             sidebar = window.findChild(QObject, "librarySidebar")
             divider = window.findChild(QObject, "librarySidebarDivider")
             viewport = window.findChild(QObject, "libraryViewport")
             buttons = [
                 next(
-                    item for item in sidebar.childItems()
+                    item
+                    for item in sidebar.childItems()
                     if item.objectName() == "librarySidebarButton_" + route
                 )
                 for route in ("all", "channels", "playlists", "videos", "audio")
             ]
             assert round(scene.property("x")) == 0
-            assert round(scene.property("width")) == width - 40
+            assert round(scene.property("width")) == width - 2 * shell_margin
             assert round(sidebar.property("x")) == 0
             assert round(sidebar.property("width")) == 226
             assert round(divider.property("x")) == 226
             assert round(viewport.property("x")) == 247
-            assert round(viewport.property("width")) == width - 40 - 247
-            assert [(round(button.property("x")), round(button.property("y"))) for button in buttons] == [
-                (8, 54 + index * 49) for index in range(5)
-            ]
+            assert round(viewport.property("width")) == width - 2 * shell_margin - 247
+            assert [
+                (round(button.property("x")), round(button.property("y")))
+                for button in buttons
+            ] == [(8, 54 + index * 49) for index in range(5)]
             assert all(round(button.property("width")) == 203 for button in buttons)
             for route, button in zip(
                 ("all", "channels", "playlists", "videos", "audio"), buttons
             ):
                 icon = next(
-                    item for item in button.childItems()
+                    item
+                    for item in button.childItems()
                     if item.objectName() == "librarySidebarIcon_" + route
                 )
                 assert round(icon.property("x")) == 14
                 assert round(icon.property("y")) == 12
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        for width, height, margin, nav_x, search_x in (
+            (820, 560, 12, 148, 584),
+            (1100, 740, 20, 290, 757),
+            (1180, 790, 20, 330, 837),
+        ):
+            window.resize(width, height)
+            for _ in range(3):
+                app.processEvents()
+            header = window.findChild(QObject, "focusHeader")
+            nav = window.findChild(QObject, "navigationRow")
+            brand = window.findChild(QObject, "brandRow")
+            search = window.findChild(QObject, "globalSearchField")
+            scene = window.findChild(QObject, "libraryBrowseScene")
+            assert (
+                round(header.mapToItem(None, 0, 0).x()),
+                round(header.mapToItem(None, 0, 0).y()),
+            ) == (margin, 5)
+            assert round(header.height()) == 44
+            assert round(brand.mapToItem(None, 0, 0).x()) == margin + 82
+            assert round(nav.mapToItem(None, 0, 0).x()) == nav_x
+            assert round(nav.mapToItem(None, 0, 0).y()) == 5
+            assert abs(search.mapToItem(None, 0, 0).x() - search_x) <= 2
+            assert round(scene.mapToItem(None, 0, 0).y()) == 54
     finally:
         window.close()
         engine.deleteLater()

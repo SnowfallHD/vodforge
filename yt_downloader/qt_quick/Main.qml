@@ -514,7 +514,7 @@ Window {
         cache: true
     }
 
-    property int gutter: 20
+    property int gutter: width < 960 ? 12 : 20
     property bool compactHeight: height < 640
     property int rowGap: compactHeight ? 8 : 14
     property string outputFormat: bridge.outputFormat
@@ -523,32 +523,39 @@ Window {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: window.gutter
-        spacing: window.rowGap
+        anchors.leftMargin: window.gutter
+        anchors.rightMargin: window.gutter
+        anchors.topMargin: 5
+        anchors.bottomMargin: window.width < 960 ? 10 : 14
+        spacing: 2
 
         Item {
             id: focusHeader
+            objectName: "focusHeader"
             Layout.fillWidth: true
-            Layout.preferredHeight: stacked ? 100 : 52
+            Layout.preferredHeight: stacked ? 100 : 44
             readonly property bool compact: window.width < 960
-            readonly property int brandWidth: compact ? 150 : 196
-            readonly property int searchWidth: compact ? 150 : 220
+            readonly property int nativeHeaderInset: Qt.platform.os === "osx" ? 82 : 0
+            readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
+            readonly property int searchWidth: compact ? 186 : 285
             readonly property int navWidth: navigationRow.implicitWidth
-            readonly property int utilityWidth: searchWidth + 64 + 46 + 20
-            readonly property bool stacked: brandWidth + navWidth + utilityWidth + 20 > width
+            readonly property int utilityWidth: searchWidth + 28 + 8
+            readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
 
             Row {
                 id: brandRow
-                x: 0; y: 8; spacing: 7
+                objectName: "brandRow"
+                x: focusHeader.nativeHeaderInset; y: 2; spacing: 10
                 Image {
                     source: assetUrl + "brand/vf-mark.png"
-                    width: 32; height: 32
+                    width: 46; height: 36
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
                 Image {
                     source: assetUrl + "brand/vf-name.png"
-                    width: focusHeader.compact ? 107 : 145
+                    visible: !focusHeader.compact
+                    width: visible ? 94 : 0
                     height: 27
                     fillMode: Image.PreserveAspectFit
                     smooth: true
@@ -556,8 +563,11 @@ Window {
             }
             Row {
                 id: navigationRow
-                x: focusHeader.stacked ? 0 : focusHeader.brandWidth + 10
-                y: focusHeader.stacked ? 56 : 6
+                objectName: "navigationRow"
+                x: focusHeader.stacked ? 0 : focusHeader.brandWidth
+                    + (focusHeader.width - focusHeader.brandWidth - focusHeader.navWidth - focusHeader.utilityWidth) / 2
+                    + (focusHeader.compact ? 4 : 3)
+                y: focusHeader.stacked ? 56 : 0
                 spacing: 10
                 Repeater {
                     model: ["Forge", "Library", "Watch", "Activity"]
@@ -577,10 +587,12 @@ Window {
             }
             Row {
                 id: utilitiesRow
+                objectName: "utilitiesRow"
                 anchors.right: parent.right
-                y: 6
-                spacing: 10
+                y: 1
+                spacing: 8
                 StoneField {
+                    objectName: "globalSearchField"
                     width: focusHeader.searchWidth
                     height: 40
                     focused: searchInput.activeFocus
@@ -599,23 +611,19 @@ Window {
                     }
                 }
                 StoneButton {
-                    label: "Help"
-                    accessibilityLabel: "Help"
-                    width: 64; height: 40
-                    onActivated: helpMenu.open()
-                }
-                StoneButton {
                     label: "⚙"
                     accessibilityLabel: "Settings"
-                    width: 46; height: 40
+                    width: 28; height: 40
                     onActivated: settingsPopup.open()
                 }
             }
         }
 
         Rectangle {
+            objectName: "focusHeaderDivider"
             Layout.fillWidth: true
             Layout.preferredHeight: 1
+            Layout.topMargin: 0
             color: theme.border
         }
 
@@ -1756,6 +1764,7 @@ Window {
                     }
                 }
                 StoneButton { label: "Help & feedback"; Layout.preferredWidth: 160; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); bridge.openSupport("feedback") } }
+                StoneButton { label: "Help menu"; accessibilityLabel: "Help"; Layout.preferredWidth: 100; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); helpMenu.open() } }
                 StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.open(); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
                 StoneButton {

@@ -16,6 +16,15 @@ Item {
 
     property bool selectionMode: false
     property var selectedOwners: []
+    property string groupMenuKind: ""
+    property string groupMenuKey: ""
+    property real groupMenuX: 0
+    property real groupMenuY: 0
+    function currentMenuGroup() {
+        return scene.groups.find(function(group) {
+            return group.kind === groupMenuKind && group.key === groupMenuKey
+        })
+    }
     function toggleSelection(owner) {
         if (!owner || !scene.media.some(function(item) { return item.owner === owner })) return
         var next = selectedOwners.slice()
@@ -290,9 +299,9 @@ Item {
                     visible: scene.route === "home" || scene.route === "channels" ||
                              scene.route === "playlists" || scene.route === "collections"
                     width: parent.width
-                    spacing: 12
-                    readonly property real cardWidth: Math.max(155, (width - 36) / 4)
-                    readonly property int columns: Math.max(1, Math.floor((width + spacing) / (cardWidth + spacing)))
+                    spacing: 14
+                    readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + spacing) / 200)))
+                    readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     readonly property var items: scene.route === "home" ? scene.groups.slice(0, columns) : scene.groups
                     readonly property real rowStride: 192 + spacing
                     readonly property int totalRows: Math.ceil(items.length / columns)
@@ -311,37 +320,97 @@ Item {
                         model: groupFlow.items.slice(groupFlow.firstRow * groupFlow.columns,
                                                      groupFlow.lastRow * groupFlow.columns)
                         StoneButton {
+                            id: groupCard
                             required property var modelData
                             width: groupFlow.cardWidth
                             height: 192
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
-                            onActivated: scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
+                            onActivated: {
+                                if (scene.selectionMode) {
+                                    for (const owner of modelData.owners) {
+                                        if (scene.selectedOwners.indexOf(owner) < 0)
+                                            scene.selectedOwners = scene.selectedOwners.concat([owner])
+                                    }
+                                } else scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
+                            }
                             Image {
-                                x: 4; y: 4
-                                width: parent.width - 8
-                                height: 108
+                                x: groupCard.modelData.kind === "channel" ? (parent.width - 96) / 2 : 0
+                                y: groupCard.modelData.kind === "channel" ? 14 : 0
+                                width: groupCard.modelData.kind === "channel" ? 96 : parent.width
+                                height: groupCard.modelData.kind === "channel" ? 96 : 125
                                 source: scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind)
                                 fillMode: Image.PreserveAspectCrop
                                 visible: source.toString().length > 0
                                 smooth: true
                             }
-                            Column {
-                                x: 12; y: 119
-                                width: parent.width - 24
-                                spacing: 3
-                                Text { text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; width: parent.width; elide: Text.ElideRight }
-                                Text { text: modelData.count + " item(s)"; color: theme.muted; font.pixelSize: 12 }
+                            Text {
+                                x: 14; y: 136
+                                width: parent.width - 52
+                                text: groupCard.modelData.title
+                                color: theme.text
+                                font.pixelSize: 14
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                x: 14; y: 164
+                                width: parent.width - 28
+                                text: groupCard.modelData.summary
+                                color: theme.muted
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+                            StoneButton {
+                                objectName: "libraryGroupMore"
+                                x: parent.width - 42
+                                y: 129
+                                width: 36
+                                height: 36
+                                label: "⋮"
+                                size: "inline"
+                                accessibilityLabel: "More actions for " + groupCard.modelData.title
+                                onActivated: {
+                                    scene.groupMenuKind = groupCard.modelData.kind
+                                    scene.groupMenuKey = groupCard.modelData.key
+                                    const point = groupCard.mapToItem(scene, groupCard.width - 20, 129)
+                                    scene.groupMenuX = Math.max(0, Math.min(scene.width - 200, point.x))
+                                    scene.groupMenuY = Math.max(0, Math.min(scene.height - 100, point.y))
+                                    groupMenu.open()
+                                }
                             }
                         }
                     }
                     StoneButton {
                         visible: scene.route === "home"
-                        width: Math.max(155, (groupFlow.width - 36) / 4)
+                        objectName: "addLibraryCollectionCard"
+                        width: groupFlow.cardWidth
                         height: 192
-                        label: "+\nAdd Collection"
+                        label: ""
                         accessibilityLabel: "Add Collection"
                         onActivated: scene.collectionRequested()
+                        Rectangle {
+                            x: (parent.width - 52) / 2
+                            y: 30
+                            width: 52; height: 52; radius: 26
+                            color: theme.accent_surface
+                            SceneIcon { anchors.centerIn: parent; name: "plus"; tone: theme.icon }
+                        }
+                        Text {
+                            x: 0; y: 100; width: parent.width
+                            text: "Add Collection"
+                            horizontalAlignment: Text.AlignHCenter
+                            color: theme.action
+                            font.pixelSize: 17
+                        }
+                        Text {
+                            x: 0; y: 130; width: parent.width
+                            text: "Group downloads\nfrom any source."
+                            horizontalAlignment: Text.AlignHCenter
+                            color: theme.muted
+                            font.pixelSize: 13
+                            lineHeight: 1.5
+                        }
                     }
                 }
 
@@ -595,6 +664,43 @@ Item {
                         }
                     }
                     StoneButton { label: "Refresh storage"; width: parent.width; height: 38; onActivated: { scene.appBridge.refreshStorage(); storagePopup.close() } }
+                }
+            }
+        }
+    }
+    Popup {
+        id: groupMenu
+        objectName: "libraryGroupMenu"
+        x: scene.groupMenuX
+        y: scene.groupMenuY
+        width: 200
+        height: 100
+        padding: 3
+        background: StoneField {}
+        Column {
+            anchors.fill: parent
+            spacing: 3
+            StoneButton {
+                objectName: "libraryGroupOpenButton"
+                width: parent.width; height: 44
+                label: "Open " + (scene.groupMenuKind === "channel" ? "channel" : scene.groupMenuKind)
+                onActivated: {
+                    const group = scene.currentMenuGroup()
+                    groupMenu.close()
+                    if (group) scene.appBridge.navigateLibraryGroup(group.kind, group.key)
+                }
+            }
+            StoneButton {
+                objectName: "libraryGroupSelectButton"
+                width: parent.width; height: 44
+                label: "Select media"
+                onActivated: {
+                    const group = scene.currentMenuGroup()
+                    groupMenu.close()
+                    if (group) {
+                        scene.selectionMode = true
+                        scene.selectedOwners = group.owners.slice()
+                    }
                 }
             }
         }
