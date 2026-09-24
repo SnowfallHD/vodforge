@@ -1905,3 +1905,17 @@ Welcome six-slide matrix and Library/local-video frames were inspected under
 `build/qt-port-package/welcome-matrix-5791e51/`. This covers these two exhibit
 variants at source density; post-change native Mac/Genesis packages and all
 other editorial previews still need qualification.
+
+### Secondary-window close must not veto application Quit (2026-09-24)
+
+After a packaged Mac video entered Floating mode and returned to Watch, both
+Command-Q and the native Quit menu left the process running. A process sample
+showed the main Qt event loop idle, not a decoder deadlock. The presentation
+`Window.onClosing` unconditionally set `accepted=false`; source QML proved its
+close still returned false after it was hidden. The floating window now returns
+to the embedded surface without vetoing close. The presentation regression
+checks close acceptance before showing, while floating, and after returning,
+plus the one-player surface binding. It fails against the previous QML and
+passes with the fix. This covers the close-event contract for floating and
+fullscreen reuse; fresh packaged Mac/Genesis Quit journeys must still pass
+before clearing the native lifecycle gate.

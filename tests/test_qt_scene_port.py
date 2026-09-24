@@ -462,6 +462,16 @@ def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
         assert window.findChild(QObject, "watchMediaPlayer") is not None
         assert scene.property("activeSurfaceName") == "watchVideoSurface"
         assert window.property("playerSurfaceBound")
+        presentation = window.findChild(QObject, "watchPresentationWindow")
+        assert presentation.property("visible") is False
+        assert presentation.close() is True
+        assert scene.setProperty("presentationMode", "floating")
+        app.processEvents()
+        assert presentation.close() is True
+        app.processEvents()
+        assert scene.property("presentationMode") == "embedded"
+        assert scene.property("activeSurfaceName") == "watchVideoSurface"
+        assert window.property("playerSurfaceBound")
         assert scene.setProperty("presentationMode", "floating")
         for _ in range(5):
             app.processEvents()
@@ -477,6 +487,8 @@ def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
             app.processEvents()
         assert scene.property("activeSurfaceName") == "watchVideoSurface"
         assert window.property("playerSurfaceBound")
+        assert presentation.property("visible") is False
+        assert presentation.close() is True
     finally:
         window.close()
         app.processEvents()

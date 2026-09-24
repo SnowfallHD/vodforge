@@ -185,3 +185,19 @@ PyInstaller copied deno; after identity-checked deletion of superseded
 `88f6700`, `677aa6a` and `6e4b5ac` generated QA bundles, the exact rebuild
 passed. Logs and visual receipts were retained. These proofs cover the
 editorial slice, not the broader release gates.
+
+2026-09-24 player presentation close defect: Exact `be5c85b` Mac package
+played a generated 30-second MP4 with visible native video, entered Floating,
+returned to embedded Watch, and kept its video surface and controls. Command-Q
+then failed to exit; the native Quit menu also left the process alive. A
+separate run without Floating exited 0 after Back to Watch. Both affected
+owned QA PIDs were terminated with SIGTERM after bounded observation. A sample
+of the lingering PID showed the Qt main event loop waiting for events, not a
+media-decoder deadlock. Source QML confirmed `presentationWindow.close()` was
+rejected even after the window had been shown and hidden: its `onClosing`
+unconditionally vetoed close. The existing presentation owner now returns to
+embedded mode while accepting close; a cross-mode source regression fails on
+the previous code and passes after the change. A fresh exact Mac/Genesis
+package, native Quit from active Floating and after Return, and installed-app
+lifecycle proof remain open. This failed package is not release evidence for
+close behavior.

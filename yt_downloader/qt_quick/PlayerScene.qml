@@ -88,10 +88,7 @@ Item {
         color: "black"
         title: scene.projection.title || "VODForge Player"
         flags: scene.presentationMode === "floating" ? Qt.Window | Qt.WindowStaysOnTopHint : Qt.Window
-        onClosing: function(close) {
-            close.accepted = false
-            scene.setPresentation("embedded")
-        }
+        onClosing: scene.setPresentation("embedded")
         VideoOutput {
             id: presentationVideo
             objectName: "watchPresentationVideoSurface"
