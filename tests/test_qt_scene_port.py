@@ -767,6 +767,7 @@ def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatc
     second = saved(tmp_path, "Second", "MP4")
     first["webpage_url"] = "https://www.youtube.com/watch?v=abcdefghijk"
     second["webpage_url"] = "https://www.youtube.com/watch?v=lmnopqrstuv"
+    second["vodforge_run_activity"] = ["Saved output validated"]
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [first, second]
     engine = qt_main.create_engine(bridge)
@@ -793,6 +794,10 @@ def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatc
         assert bridge.libraryDetail["owner"] == first_owner
 
         bridge.select("Forge")
+        assert bridge.selectRunRecord(second_record["selectionKey"])
+        app.processEvents()
+        assert window.findChild(QObject, "forgeSelectedTitle").property("text") == "Second"
+        assert bridge.forgeActivity["technical"] == "Saved output validated"
         deck.showActions(second_record)
         app.processEvents()
         copy = next(
@@ -822,6 +827,54 @@ def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatc
         assert not bridge.openLibraryDetails(first_owner)
         assert second_owner == history_archive_owner(second)
     finally:
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
+def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
+    tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    active = make_job(tmp_path)
+    active.preview_info = {"title": "Active source", "uploader": "Creator"}
+    queued = replace(active, run_id="queued-run")
+    queued.preview_info = {"title": "Queued source", "uploader": "Second creator"}
+    bridge._runtime.active_job = active
+    bridge._runtime.queued = [queued]
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        app.processEvents()
+        title = window.findChild(QObject, "forgeSelectedTitle")
+        status = window.findChild(QObject, "forgeSelectedStatus")
+        assert title.property("text") == "Active source"
+        queued_key = next(
+            record["selectionKey"]
+            for record in bridge.runDeck["records"]
+            if record["runId"] == queued.run_id
+        )
+        assert bridge.selectRunRecord(queued_key)
+        app.processEvents()
+        assert title.property("text") == "Queued source"
+        assert "Queued" in status.property("text")
+        assert bridge.forgeActivity["friendly"] == bridge.forgeSelection["status"]
+        assert not bridge.selectRunRecord("missing")
+        bridge._runtime.queued = []
+        bridge.runDeckChanged.emit()
+        bridge.activityChanged.emit()
+        app.processEvents()
+        assert title.property("text") == "Active source"
+    finally:
+        window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()

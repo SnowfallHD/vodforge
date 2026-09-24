@@ -19,8 +19,9 @@ Window {
     property string pendingRelinkOwner: ""
     property string missingAction: ""
     property var mediaPlayer: playerLoader.item
-    readonly property bool showingForgePreview: bridge.forgePreview.phase !== "idle"
-    readonly property string forgeDisplayType: showingForgePreview ? bridge.forgePreview.type : window.outputFormat
+    readonly property var selectedForgeRun: bridge.forgeSelection
+    readonly property bool showingForgePreview: selectedForgeRun.kind === "preview"
+    readonly property string forgeDisplayType: selectedForgeRun.type || window.outputFormat
     readonly property bool playerSurfaceBound: mediaPlayer && mediaPlayer.videoOutput === playerScene.activeVideoSurface
     property int pendingPlaybackGeneration: -1
     onClosing: function(close) {
@@ -733,27 +734,27 @@ Window {
                 ColumnLayout {
                     spacing: window.compactHeight ? 3 : 7
                     Text {
-                        text: bridge.running ? "Download in progress" :
-                              bridge.forgePreview.phase !== "idle" ? bridge.forgePreview.title : "Ready for a new run"
+                        objectName: "forgeSelectedTitle"
+                        text: window.selectedForgeRun.title || "Ready for a new run"
                         color: theme.text
                         font.pixelSize: window.compactHeight ? 21 : 24
                         font.bold: true
                     }
                     Text {
-                        text: bridge.forgePreview.phase !== "idle" ? bridge.forgePreview.status :
+                        objectName: "forgeSelectedStatus"
+                        text: window.selectedForgeRun.status ||
                               "Paste a video URL above, then press Return to begin."
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
                     Text {
-                        text: bridge.forgePreview.phase !== "idle" ?
-                              bridge.forgePreview.creator + "  ·  " + bridge.forgePreview.type :
-                              bridge.quality + "  ·  " + bridge.exportModeLabel
+                        text: window.selectedForgeRun.detail ||
+                              (window.selectedForgeRun.kind === "active" ? bridge.quality + "  ·  " + bridge.exportModeLabel : "")
                         color: theme.muted
                         font.pixelSize: window.compactHeight ? 13 : 15
                     }
                     StoneButton {
-                        visible: bridge.forgePreview.canStart
+                        visible: window.showingForgePreview && bridge.forgePreview.canStart
                         label: "Start download"
                         Layout.preferredWidth: 142
                         Layout.preferredHeight: 38
@@ -764,7 +765,7 @@ Window {
                 Text {
                     text: window.showingForgePreview ?
                           (bridge.forgePreview.phase === "complete" ? "Preview" : "…") :
-                          Math.round(bridge.progress) + "%"
+                          Math.round(window.selectedForgeRun.progress || 0) + "%"
                     color: theme.selection
                     font.pixelSize: window.compactHeight ? 28 : 34
                 }
@@ -862,7 +863,7 @@ Window {
                     Text {
                         text: window.showingForgePreview ?
                               "Preview: " + window.forgeDisplayType + " · metadata only" :
-                              "Output: " + window.outputFormat + " · " + bridge.exportModeLabel
+                              "Output: " + window.forgeDisplayType + " · " + bridge.exportModeLabel
                         color: theme.muted
                         font.pixelSize: 14
                         wrapMode: Text.WordWrap

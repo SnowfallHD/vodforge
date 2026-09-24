@@ -94,6 +94,7 @@ from yt_downloader.history import (
     history_output_path,
     sanitize_chapters,
     sanitize_heatmap,
+    sanitize_run_activity,
     save_history,
 )
 from yt_downloader.library_annotations import (
@@ -320,6 +321,7 @@ class Bridge(QObject):
         self._run_menu_identity_job: Any | None = None
         self._run_menu_identity_token = ""
         self._run_menu_admitted_job: Any | None = None
+        self._selected_run_key = ""
         self.historyChanged.connect(self.playerSceneChanged.emit)
         self.historyChanged.connect(self.watchSceneChanged.emit)
         self.selectionChanged.connect(self.watchSceneChanged.emit)
@@ -1720,6 +1722,33 @@ class Bridge(QObject):
 
     @Property("QVariantMap", notify=activityChanged)
     def forgeActivity(self) -> dict[str, str]:
+        selection = self.forgeSelection
+        if selection and selection.get("kind") != "active":
+            run_id = str(selection.get("runId") or "")
+            job = next(
+                (
+                    row
+                    for row in [*self._runtime.queued, *self._runtime.recovered]
+                    if row.run_id == run_id
+                ),
+                None,
+            )
+            saved = (
+                self._saved_item_for_owner(str(selection.get("owner") or ""))
+                if selection.get("kind") == "completed"
+                else None
+            )
+            if job is not None:
+                lines = job.activity_lines
+            elif saved is not None:
+                lines = sanitize_run_activity(saved.get("vodforge_run_activity"))
+            else:
+                lines = []
+            technical = "\n".join(lines)[-50_000:]
+            return {
+                "friendly": str(selection.get("status") or "No run selected."),
+                "technical": technical or "No technical activity for this run yet.",
+            }
         return {
             "friendly": self._forge_activity.friendly(
                 self._forge_run_id, self._forge_technical
@@ -1778,6 +1807,8 @@ class Bridge(QObject):
             records.append(
                 {
                     "runId": str(self._metadata_preview_record.get("runId") or ""),
+                    "selectionKey": "preview:"
+                    + str(self._metadata_preview_record.get("runId") or ""),
                     "owner": "",
                     "kind": "preview",
                     "title": preview["title"],
@@ -1796,11 +1827,13 @@ class Bridge(QObject):
             records.append(
                 {
                     "runId": active.run_id,
+                    "selectionKey": "active:" + active.run_id,
                     "executionToken": self._run_menu_identity_token,
                     "kind": "active",
                     "title": str(
                         preview.get("title") or f"{active.output_type.value} download"
                     ),
+                    "detail": str(preview.get("uploader") or preview.get("channel") or ""),
                     "status": self._status,
                     "type": active.output_type.value,
                     "progress": self._progress,
@@ -1819,9 +1852,16 @@ class Bridge(QObject):
                 records.append(
                     {
                         "runId": job.run_id,
+                        "selectionKey": kind + ":" + job.run_id,
                         "kind": kind,
                         "title": str(
                             preview.get("title") or f"{job.output_type.value} download"
+                        ),
+                        "detail": str(
+                            preview.get("uploader")
+                            or preview.get("channel")
+                            or job.terminal_message
+                            or ""
                         ),
                         "status": job.terminal_status or "Queued",
                         "type": job.output_type.value,
@@ -1841,12 +1881,15 @@ class Bridge(QObject):
             records.append(
                 {
                     "runId": str(record["run_id"]),
+                    "selectionKey": "saved:"
+                    + str(item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)),
                     "owner": str(
                         item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)
                     ),
                     "hasYoutubeUrl": bool(canonical_youtube_url(item)),
                     "kind": str(record["kind"]),
                     "title": str(record["title"]),
+                    "detail": str(record["detail"]),
                     "status": str(record["status"]),
                     "type": str(record["output_type"]),
                     "progress": 100,
@@ -1871,6 +1914,32 @@ class Bridge(QObject):
             "count": len(records),
             "summary": summary,
         }
+
+    @Property("QVariantMap", notify=runDeckChanged)
+    def forgeSelection(self) -> dict[str, Any]:
+        records = self.runDeck["records"]
+        selected = next(
+            (
+                record
+                for record in records
+                if record["selectionKey"] == self._selected_run_key
+            ),
+            None,
+        )
+        return selected or (records[0] if records else {})
+
+    @Slot(str, result=bool)
+    def selectRunRecord(self, selection_key: str) -> bool:
+        if not selection_key or not any(
+            record["selectionKey"] == selection_key
+            for record in self.runDeck["records"]
+        ):
+            return False
+        self._selected_run_key = selection_key
+        self.runDeckChanged.emit()
+        self.activityChanged.emit()
+        self.select("Forge")
+        return True
 
     def _record(self, action: str, outcome: str) -> None:
         if self._event_log is not None:

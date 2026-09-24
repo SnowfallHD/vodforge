@@ -60,6 +60,7 @@ Item {
                         required property var modelData
                         Layout.fillWidth: true
                         Layout.preferredHeight: deck.compact ? 50 : 68
+                        TapHandler { onTapped: deck.appBridge.selectRunRecord(modelData.selectionKey) }
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 6
@@ -206,7 +207,7 @@ Item {
                         onActivated: {
                             if (modelData.kind === "completed") deck.openSaved(modelData.owner)
                             else if (modelData.kind === "preview") deck.appBridge.openPreviewOwner(modelData.owner)
-                            else deck.appBridge.select("Forge")
+                            else deck.appBridge.selectRunRecord(modelData.selectionKey)
                             allRunsPopup.close()
                         }
                     }
