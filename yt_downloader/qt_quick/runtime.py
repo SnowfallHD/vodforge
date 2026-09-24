@@ -670,6 +670,13 @@ class DownloadRuntime:
             self.recovered = self.recovery.store.load_terminal_jobs()
         if status not in {"Failed", "Stopped"}:
             self.recovery.finished(job.run_id, application_closing=self._closing)
+        if status == "Completed" and job.recovery_reason == "missing_media":
+            telemetry = self.product_telemetry
+            if telemetry is not None:
+                try:
+                    telemetry.record_feature("missing_media", "completed")
+                except (OSError, ValueError):
+                    pass
         self.active_job = None
         self._worker_app = None
 

@@ -3379,6 +3379,9 @@ class Bridge(QObject):
             self.missingMediaRequested.emit()
             self._status = prompt.heading
             self.statusChanged.emit()
+            self._record_update_feature(
+                "missing_media", "offered", {"input_kind": "single"}
+            )
             return False
         if self._playback_binding is not None:
             self._playback_binding.close()
@@ -3578,6 +3581,7 @@ class Bridge(QObject):
         self._status = "Removed the Library card. Media files remain on your computer."
         self.statusChanged.emit()
         self.historyChanged.emit()
+        self._record_update_feature("library", "removed")
         return True
 
     def _playback_snapshot(self) -> PlaybackSnapshot:

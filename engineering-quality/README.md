@@ -1990,3 +1990,15 @@ changing the telemetry oracle. The focused Qt scene, telemetry vocabulary and
 quality suite passed 128 tests. This covers those representative Library
 intents and the existing Watch navigation test; native package/D1 delivery,
 other Library action classes and consent changes still need separate proof.
+
+A related saved-media parity check found that Qt did not emit Tk's bounded
+`missing_media/offered`, `library/removed`, or `missing_media/completed` actions.
+Qt now records an offer only after it prepares the actual prompt, removal only
+after the history save succeeds, and completion only after the run recovery
+owner commits a completed attempt. Focused tests cover the missing-file prompt,
+confirmed card removal with saved title excluded from telemetry, completed vs
+partial/failed recovery, and a refused durable finish that must not report
+completion. The existing updater owner already emits download-completed and
+failed observations through Qt's poll loop, so the lexical comparison did not
+justify duplicating those events. These tests establish source behavior; D1
+readback and final packaged platform paths remain open.

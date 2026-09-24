@@ -1547,6 +1547,43 @@ def test_qt_library_navigation_telemetry_matches_saved_actions_without_user_text
         bridge.close()
 
 
+def test_qt_missing_media_offer_and_durable_library_removal_are_observed(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+
+    class Observer:
+        def __init__(self):
+            self.events = []
+
+        def record_feature(self, feature, action, *, dimensions=None):
+            self.events.append((feature, action, dimensions))
+
+    observer = Observer()
+    bridge._analytics.telemetry = observer
+    try:
+        record = saved(tmp_path, "Private title", "MP4")
+        bridge._runtime.history = [record]
+        assert not bridge.openLibraryItem(0)
+        assert observer.events == [
+            ("missing_media", "offered", {"input_kind": "single"})
+        ]
+        owner = history_archive_owner(record)
+        assert bridge.prepareLibraryRemoval(owner)
+        assert bridge.confirmLibraryRemoval()
+        assert not bridge._runtime.history
+        assert observer.events[-1] == ("library", "removed", None)
+        assert "Private title" not in repr(observer.events)
+    finally:
+        bridge._analytics.telemetry = None
+        bridge.close()
+
+
 def test_qt_player_replaces_provider_and_tags_each_open(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))

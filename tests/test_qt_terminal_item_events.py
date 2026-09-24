@@ -47,6 +47,67 @@ def _child(parent: DownloadJob, *, origin: str | None = None) -> DownloadJob:
     )
 
 
+@pytest.mark.parametrize(
+    ("kind", "expected"), [("done", True), ("partial", False), ("error", False)]
+)
+def test_qt_missing_media_completion_feature_requires_completed_recovery(
+    tmp_path: Path, monkeypatch, kind: str, expected: bool
+) -> None:
+    runtime, parent = _runtime_with_active_parent(tmp_path, monkeypatch)
+    parent.recovery_reason = "missing_media"
+
+    class Observer:
+        def __init__(self):
+            self.features = []
+
+        def record(self, *_args, **_kwargs):
+            return True
+
+        def record_feature(self, feature, action):
+            self.features.append((feature, action))
+            return True
+
+    observer = Observer()
+    runtime.product_telemetry = observer
+    try:
+        runtime._finish(kind, "Finished recovery attempt")
+        assert (("missing_media", "completed") in observer.features) is expected
+    finally:
+        runtime.close()
+
+
+def test_qt_missing_media_completion_is_not_reported_before_durable_finish(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime, parent = _runtime_with_active_parent(tmp_path, monkeypatch)
+    parent.recovery_reason = "missing_media"
+
+    class Observer:
+        def __init__(self):
+            self.features = []
+
+        def record(self, *_args, **_kwargs):
+            return True
+
+        def record_feature(self, feature, action):
+            self.features.append((feature, action))
+            return True
+
+    observer = Observer()
+    runtime.product_telemetry = observer
+
+    def reject_finish(*_args, **_kwargs):
+        raise RunStateError("durable finish refused")
+
+    monkeypatch.setattr(runtime.recovery, "finished", reject_finish)
+    try:
+        with pytest.raises(RunStateError):
+            runtime._finish("done", "Finished recovery attempt")
+        assert ("missing_media", "completed") not in observer.features
+    finally:
+        runtime.close()
+
+
 def test_qt_playlist_child_is_durable_and_visible_without_ending_parent(
     tmp_path: Path, monkeypatch
 ) -> None:
