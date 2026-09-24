@@ -34,7 +34,7 @@ from yt_downloader.library_annotations import LibraryAnnotationsError
 from yt_downloader.library_artwork_source import ArtworkAsset
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
-from yt_downloader.qt_quick.artwork import QtArtwork
+from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
 from yt_downloader.support_diagnostics import FailureContext
 from yt_downloader.whats_new import NativePreview
@@ -872,6 +872,60 @@ def test_qt_artwork_close_retires_blocked_file_io_without_process_shutdown_wait(
     assert called == ["First"]
 
 
+def test_qt_artwork_reads_existing_shared_thumbnail_cache(tmp_path, monkeypatch):
+    image = tmp_path / "cached.jpeg"
+    image.write_bytes(b"cached image")
+    monkeypatch.setattr(
+        "yt_downloader.qt_quick.artwork.existing_cached_thumbnail_path",
+        lambda _record, *, data_dir=None: image,
+    )
+    assert thumbnail_path({"title": "Cached media"}) == image
+
+
+def test_qt_selected_hero_uses_bounded_shared_thumbnail_fetch(tmp_path, monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image
+
+    payload = BytesIO()
+    Image.new("RGB", (320, 180), "#7197b8").save(payload, format="JPEG")
+    record = {
+        "id": "abcdefghijk",
+        "title": "Remote media",
+        "vodforge_output_type": "MP4",
+        "webpage_url": "https://www.youtube.com/watch?v=abcdefghijk",
+        "thumbnail": "https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg",
+    }
+    calls = []
+
+    def download(url, *, source_url, timeout_seconds):
+        calls.append((url, source_url, timeout_seconds))
+        return payload.getvalue()
+
+    monkeypatch.setattr(
+        "yt_downloader.qt_quick.artwork.download_bounded_url_bytes", download
+    )
+    owner = QtArtwork(tmp_path / "artwork")
+    monkeypatch.setattr(owner._source, "resolve_asset", lambda *_args: None)
+    try:
+        assert owner.request(record, role="media") == ""
+        deadline = time.monotonic() + 2
+        while owner._pending and time.monotonic() < deadline:
+            owner.poll()
+            time.sleep(0.005)
+        assert calls == []
+        assert owner.request(record, (304, 171), "hero") == ""
+        deadline = time.monotonic() + 2
+        while not owner.poll() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        cached = Path(QUrl(owner.request(record, (304, 171), "hero")).toLocalFile())
+        assert cached.is_file()
+        assert cached.parent == tmp_path / "thumbnail-cache"
+        assert calls == [(record["thumbnail"], record["webpage_url"], 15)]
+    finally:
+        owner.close()
+
+
 def test_qt_import_uses_shared_inspection_and_commits_before_reporting_success(
     tmp_path, monkeypatch
 ):
@@ -1463,6 +1517,74 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
         bridge.close()
 
 
+def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
+    tmp_path, monkeypatch
+):
+    from PIL import Image
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    QQuickStyle.setStyle("Basic")
+    records = [saved(tmp_path, f"Media {index}", "MP4") for index in range(5)]
+    image = tmp_path / "selected-thumbnail.jpg"
+    Image.new("RGB", (320, 180), "#7197b8").save(image)
+    records[-1]["preview_thumbnail_path"] = str(image)
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = records
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        selection = next(
+            row for row in bridge.runDeck["records"] if row["title"] == "Media 4"
+        )
+        assert selection not in bridge.runDeck["visible"]
+        assert bridge.selectRunRecord(selection["selectionKey"])
+        deadline = time.monotonic() + 2
+        while not bridge._artwork.poll() and time.monotonic() < deadline:
+            time.sleep(0.005)
+        bridge.runDeckChanged.emit()
+        app.processEvents()
+        assert bridge.forgeSelection["artwork"].startswith("file:")
+        hero = window.findChild(QObject, "forgeHeroArtwork")
+        media = window.findChild(QObject, "forgeHeroMediaImage")
+        assert hero.property("width") >= 150
+        assert media.property("visible") is True
+        assert Path(media.property("source").toLocalFile()).resolve() == image.resolve()
+        settled = QEventLoop()
+        QTimer.singleShot(100, settled.quit)
+        settled.exec()
+        facts_viewport = window.findChild(QObject, "forgeSourceDetailsViewport")
+        assert facts_viewport.property("clip") is True
+        assert facts_viewport.property("contentHeight") > facts_viewport.property(
+            "height"
+        )
+        details = next(
+            item
+            for item in window.findChildren(QObject, "forgeSourceDetails")
+            if item.isVisible()
+        )
+        rows = [
+            item
+            for item in details.childItems()
+            if isinstance(item.property("modelData"), dict)
+        ]
+        assert len(rows) > 6
+        for row in rows:
+            label, value = [
+                item for item in row.childItems() if item.property("text") is not None
+            ][:2]
+            assert label.property("x") + label.property("width") <= value.property("x")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges(
     tmp_path, monkeypatch
 ):
@@ -1524,7 +1646,9 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         title = popup.findChild(QObject, "editorialSlideTitle")
         description = popup.findChild(QObject, "editorialSlideDescription")
         assert exhibit.property("y") + exhibit.property("height") <= title.property("y")
-        assert title.property("y") + title.property("height") <= description.property("y")
+        assert title.property("y") + title.property("height") <= description.property(
+            "y"
+        )
         preview = window.findChild(QObject, "featurePreview")
         assert preview.property("previewKey") == "original-audio"
         options = next(

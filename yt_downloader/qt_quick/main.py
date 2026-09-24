@@ -2085,7 +2085,36 @@ class Bridge(QObject):
             ),
             None,
         )
-        return selected or (records[0] if records else {})
+        selected = selected or (records[0] if records else {})
+        if selected and not selected.get("artwork"):
+            source: dict[str, Any] | None = None
+            kind = str(selected.get("kind") or "")
+            if kind == "completed":
+                source = self._saved_item_for_owner(str(selected.get("owner") or ""))
+            elif kind in {"active", "queued", "terminal"}:
+                jobs = (
+                    [self._runtime.active_job]
+                    if kind == "active"
+                    else self._runtime.queued
+                    if kind == "queued"
+                    else self._runtime.recovered
+                )
+                source = next(
+                    (
+                        job.preview_info
+                        for job in jobs
+                        if job is not None
+                        and job.run_id == selected.get("runId")
+                        and job.preview_info
+                    ),
+                    None,
+                )
+            if source:
+                selected = {
+                    **selected,
+                    "artwork": self._artwork.request(source, (304, 171), "hero"),
+                }
+        return selected
 
     @Property("QVariantMap", notify=runDeckChanged)
     def forgeSelectedFacts(self) -> dict[str, Any]:

@@ -41,7 +41,8 @@ ColumnLayout {
                 text: modelData.label
                 color: theme.muted
                 font.pixelSize: 14
-                Layout.preferredWidth: 110
+                wrapMode: Text.WordWrap
+                Layout.preferredWidth: 135
                 Layout.alignment: Qt.AlignTop
             }
             Text {

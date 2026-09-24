@@ -127,13 +127,18 @@ Window {
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: StoneField {}
-        ForgeSourceDetails {
+        ScrollView {
             anchors.fill: parent
-            appBridge: bridge
-            outputFormat: window.outputFormat
-            displayType: window.forgeDisplayType
-            preview: window.showingForgePreview
-            selectedFacts: bridge.forgeSelectedFacts
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ForgeSourceDetails {
+                width: parent.availableWidth
+                appBridge: bridge
+                outputFormat: window.outputFormat
+                displayType: window.forgeDisplayType
+                preview: window.showingForgePreview
+                selectedFacts: bridge.forgeSelectedFacts
+            }
         }
     }
     Timer {
@@ -788,12 +793,27 @@ Window {
                 Layout.preferredHeight: window.compactHeight ? 70 : 128
                 Layout.topMargin: window.compactHeight ? 4 : 16
                 spacing: window.compactHeight ? 16 : 28
-                Image {
-                    source: assetUrl + "brand/icon-180.png"
-                    Layout.preferredWidth: window.compactHeight ? 48 : 68
-                    Layout.preferredHeight: window.compactHeight ? 48 : 68
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
+                Item {
+                    objectName: "forgeHeroArtwork"
+                    Layout.preferredWidth: window.compactHeight ? 120 : 152
+                    Layout.preferredHeight: window.compactHeight ? 68 : 86
+                    Image {
+                        objectName: "forgeHeroMediaImage"
+                        anchors.fill: parent
+                        visible: !!window.selectedForgeRun.artwork
+                        source: window.selectedForgeRun.artwork || ""
+                        fillMode: Image.PreserveAspectCrop
+                        smooth: true
+                    }
+                    Image {
+                        anchors.centerIn: parent
+                        width: window.compactHeight ? 48 : 68
+                        height: width
+                        visible: !window.selectedForgeRun.artwork
+                        source: assetUrl + "brand/icon-180.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                    }
                 }
                 ColumnLayout {
                     spacing: window.compactHeight ? 3 : 7
@@ -950,17 +970,24 @@ Window {
                         onActivated: bridge.clearBatchList()
                     }
                 }
-                ForgeSourceDetails {
-                    appBridge: bridge
-                    outputFormat: window.outputFormat
-                    displayType: window.forgeDisplayType
-                    preview: window.showingForgePreview
-                    selectedFacts: bridge.forgeSelectedFacts
-                    showHeading: false
+                ScrollView {
+                    id: forgeSourceDetailsViewport
+                    objectName: "forgeSourceDetailsViewport"
                     visible: window.forgeDensity !== "compact"
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Layout.fillHeight: true
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ForgeSourceDetails {
+                        width: forgeSourceDetailsViewport.availableWidth
+                        appBridge: bridge
+                        outputFormat: window.outputFormat
+                        displayType: window.forgeDisplayType
+                        preview: window.showingForgePreview
+                        selectedFacts: bridge.forgeSelectedFacts
+                        showHeading: false
+                    }
                 }
             }
 
