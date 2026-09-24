@@ -29,6 +29,15 @@ preview and deploy its current handlers through the site's guarded preview scrip
 Record the site commit/deployment version alongside the report. Do not copy
 production users or change production data to create test fixtures.
 
+For a Qt candidate, run `normal --ui qt` so the presentation contract observes
+QML image status and the Qt native surface suite. The five Qt presentation
+producer cases send bounded roles and counts through the existing telemetry
+owner to a migrated **local** D1. They exercise shared controls, Library
+artwork, the full-cover surface, and resize, including fault recovery with one
+operation identity. This source-tier gate does not replace the signed macOS and
+desktop-genesis preview-D1 journey below. Image status cannot explain arbitrary
+pixel defects; retain screenshot and native visual acceptance for those.
+
 ## Required observed journey
 
 ### Execution discipline

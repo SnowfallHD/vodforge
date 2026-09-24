@@ -27,6 +27,7 @@ Item {
     }
 
     Image {
+        property string presentationRole: "control"
         anchors.fill: parent
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
@@ -40,6 +41,7 @@ Item {
         anchors.centerIn: parent
         spacing: 8
         Image {
+            property string presentationRole: "control"
             visible: control.icon.length > 0
             width: visible ? buttonMetrics[control.size].iconPixels : 0
             height: buttonMetrics[control.size].iconPixels

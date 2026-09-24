@@ -164,6 +164,7 @@ from yt_downloader.qt_quick.library_files import QtLibraryFiles
 from yt_downloader.qt_quick.local_conversion import LocalConversionRuntime
 from yt_downloader.qt_quick.mac_windowing import integrate_qt_main_window
 from yt_downloader.qt_quick.metadata_preview import QtMetadataPreview
+from yt_downloader.qt_quick.presentation import QtPresentationProbe
 from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.relink import QtRelinkSession
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
@@ -408,6 +409,7 @@ class Bridge(QObject):
         self._files = QtLibraryFiles(self._runtime.history_path)
         self._import_work = ArchiveWorkOwner()
         self._relink = QtRelinkSession(self._runtime.history_path)
+        self._presentation_probe: QtPresentationProbe | None = None
         self._relink_operation: Any | None = None
         self._media_recovery = LibraryMediaRecoveryOwner()
         self._missing_media: dict[str, str] = {}
@@ -4123,6 +4125,9 @@ class Bridge(QObject):
         if self._closed:
             return
         self._closed = True
+        if self._presentation_probe is not None:
+            self._presentation_probe.close()
+            self._presentation_probe = None
         self._timer.stop()
         if self._save_timer.isActive():
             self._save_timer.stop()
@@ -4475,6 +4480,10 @@ def main() -> int:
             smoke_home.cleanup()
         raise SystemExit(f"VODForge Qt quality-E2E startup rejected: {exc}") from exc
     bridge.startSession()
+    if bridge._analytics.telemetry is not None and not args.runtime_smoke:
+        bridge._presentation_probe = QtPresentationProbe(
+            bridge, bridge._window, bridge._analytics.telemetry
+        )
     QTimer.singleShot(6000, bridge._record_update_telemetry_receipt)
     if bridge._files.pending and not args.runtime_smoke:
         QTimer.singleShot(0, bridge.fileActionRequested.emit)

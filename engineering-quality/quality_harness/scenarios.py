@@ -2796,7 +2796,7 @@ def run_scenarios(
         (
             "unit_static.telemetry_presentation_contract",
             lambda: diagnostic_surface_contract(
-                repo_root, run_root / "cases" / "telemetry-presentation"
+                repo_root, run_root / "cases" / "telemetry-presentation", ui=ui
             ),
         ),
         ("unit_static.telemetry_isolation", isolation_receipt),

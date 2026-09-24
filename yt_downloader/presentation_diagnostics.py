@@ -7,7 +7,6 @@ are inspected locally, never retained in observations or transported.
 from __future__ import annotations
 
 import time
-import tkinter as tk
 import uuid
 import weakref
 from collections.abc import Mapping
@@ -194,7 +193,12 @@ class PresentationProbe:
     """Coalesced owner boundaries; no pointer/animation-frame observations."""
 
     def __init__(self, widget: Any, telemetry: Any, surface: str):
+        # Only the Tk adapter needs Tcl. Qt imports the shared bounded owner
+        # without pulling Tcl/Tk into its frozen runtime.
+        from tkinter import TclError
+
         self.widget = widget
+        self._tcl_error = TclError
         self.observations = PresentationObservations(telemetry, surface)
         self.surface = surface
         self.after: str | None = None
@@ -220,7 +224,7 @@ class PresentationProbe:
             if self.after is not None:
                 try:
                     self.widget.after_cancel(self.after)
-                except tk.TclError:
+                except self._tcl_error:
                     self.close()
                     return
                 self.after = None
@@ -263,7 +267,7 @@ class PresentationProbe:
                 }
             )
             self.observations.observe(dimensions, pending=pending)
-        except (tk.TclError, AttributeError):
+        except (self._tcl_error, AttributeError):
             self.close()
 
     def close(self) -> None:
@@ -273,7 +277,7 @@ class PresentationProbe:
         if self.after is not None:
             try:
                 self.widget.after_cancel(self.after)
-            except tk.TclError:
+            except self._tcl_error:
                 pass
             self.after = None
         if self.observations.last:

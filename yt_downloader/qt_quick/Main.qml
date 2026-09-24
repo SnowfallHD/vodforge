@@ -29,6 +29,60 @@ Window {
     readonly property string forgeDisplayType: selectedForgeRun.type || window.outputFormat
     readonly property bool playerSurfaceBound: mediaPlayer && mediaPlayer.videoOutput === playerScene.activeVideoSurface
     property int pendingPlaybackGeneration: -1
+    // The shared diagnostics owner receives only these bounded scene counts.
+    // Source URLs stay inside QML and are never sent to telemetry.
+    property var presentationDiagnosticSnapshot: ({})
+    function refreshPresentationDiagnosticSnapshot() {
+        const counts = {
+            artworkExpected: 0, artworkDisplayed: 0, artworkUnavailable: 0,
+            pending: 0, artworkPending: 0, missing: 0, missingRoles: [], rendered: 0,
+            visible: window.visible, eligible: bridge.savedCount, matching: 0
+        }
+        const projection = bridge.selection === "Library"
+            ? libraryBrowseScene.projection
+            : bridge.selection === "Watch" ? watchBrowseScene.projection : ({})
+        counts.matching = (projection.media || projection.videos || []).length
+            + (projection.groups || []).length
+        const repeaters = {
+            libraryGroupRepeater: true, libraryMediaRepeater: true,
+            libraryFolderList: true, watchGroupRepeater: true,
+            watchMediaRepeater: true
+        }
+        function inspect(item) {
+            if (!item || !item.visible) return
+            const name = String(item.objectName || "")
+            if (repeaters[name] && typeof item.count === "number")
+                counts.rendered += item.count
+            if (typeof item.source !== "undefined"
+                    && typeof item.status !== "undefined"
+                    && typeof item.paintedWidth !== "undefined"
+                    && item.width > 0 && item.height > 0) {
+                const source = String(item.source || "")
+                if (source.length > 0) {
+                    const role = item.presentationRole ||
+                        (source.indexOf("image://vodforge/") === 0
+                            ? (source.indexOf("/backdrop/") >= 0 ? "surface" : "control")
+                            : source.indexOf(assetUrl) === 0 ? "surface" : "artwork")
+                    if (role === "artwork") counts.artworkExpected++
+                    if (item.status === Image.Ready) {
+                        if (role === "artwork") counts.artworkDisplayed++
+                    } else if (item.status === Image.Error) {
+                        counts.missing++
+                        counts.missingRoles.push(role)
+                        if (role === "artwork") counts.artworkUnavailable++
+                    } else if (item.status === Image.Loading) {
+                        counts.pending++
+                        if (role === "artwork") counts.artworkPending++
+                    }
+                }
+            }
+            const children = item.children || []
+            for (let index = 0; index < children.length; index++)
+                inspect(children[index])
+        }
+        inspect(window.contentItem)
+        presentationDiagnosticSnapshot = counts
+    }
     onClosing: function(close) {
         if (bridge.running) {
             bridge.cancel()
@@ -537,6 +591,7 @@ Window {
     Image {
         id: artwork
         objectName: "fullCoverArtwork"
+        property string presentationRole: "surface"
         anchors.fill: parent
         source: "image://vodforge/backdrop/r" + bridge.themeRevision
         fillMode: Image.PreserveAspectCrop
@@ -1052,6 +1107,7 @@ Window {
         }
 
         LibraryScene {
+            id: libraryBrowseScene
             visible: bridge.selection === "Library"
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -1090,6 +1146,7 @@ Window {
             onImportRequested: libraryImportDialog.open()
         }
         WatchScene {
+            id: watchBrowseScene
             objectName: "watchBrowseScene"
             visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length === 0
             Layout.fillWidth: true

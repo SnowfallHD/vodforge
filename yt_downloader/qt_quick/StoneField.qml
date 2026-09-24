@@ -14,6 +14,7 @@ Item {
     Accessible.focused: activeFocus
     Accessible.onPressAction: { if (interactive && enabled) activated() }
     Image {
+        property string presentationRole: "control"
         anchors.fill: parent
         source: "image://vodforge/field/" + Math.max(1, Math.round(field.width))
                 + "/" + Math.max(1, Math.round(field.height))

@@ -30,6 +30,7 @@ from .diagnostic_probes import (
     relink_case,
 )
 from .library_disclosure_probe import DISCLOSURE_CASES, disclosure_case
+from .qt_diagnostic_probes import QT_PRESENTATION_CASES, qt_presentation_case
 from .telemetry_checks import (
     _read_line,
     assert_feature_vocabulary,
@@ -152,6 +153,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
         + RELINK_CASES
         + QUEUE_CASES
         + DISCLOSURE_CASES
+        + QT_PRESENTATION_CASES
     )
     with (destination / "worker.stderr.txt").open("w") as errors:
         process = subprocess.Popen(
@@ -213,6 +215,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
 
                 for case in (
                     *PRESENTATION_CASES,
+                    *QT_PRESENTATION_CASES,
                     *LIBRARY_CASES,
                     *OPENING_CASES,
                     *RELINK_CASES,
@@ -229,6 +232,8 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                             if case in DISCLOSURE_CASES
                             else queue_case
                             if case in QUEUE_CASES
+                            else qt_presentation_case
+                            if case in QT_PRESENTATION_CASES
                             else presentation_case
                             if case in PRESENTATION_CASES
                             else opening_case
@@ -250,7 +255,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                         else "watch_queue_operation"
                         if case in QUEUE_CASES
                         else "presentation_operation"
-                        if case in PRESENTATION_CASES
+                        if case in (*PRESENTATION_CASES, *QT_PRESENTATION_CASES)
                         else "playback_operation"
                         if case in OPENING_CASES
                         else "archive_relink_operation"
@@ -562,7 +567,7 @@ if __name__ == "__main__":
     main()
 
 
-def diagnostic_surface_contract(repo_root: Path, output_dir: Path):
+def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = "tk"):
     """Enroll the actual producer/transport matrix in the engineering harness."""
     import sys
 
@@ -573,18 +578,24 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path):
         os.environ.get("VODFORGE_SITE_REPO", str(repo_root.parent / "vodforge-site"))
     ).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    if ui not in {"tk", "qt"}:
+        raise ValueError(f"Unsupported presentation renderer: {ui}")
+    command = [
+        sys.executable,
+        "-m",
+        "quality_harness.diagnostic_pipeline",
+        "--repo",
+        str(repo_root),
+        "--site",
+        str(site),
+        "--destination",
+        str(output_dir),
+    ]
+    if ui == "qt":
+        for case in QT_PRESENTATION_CASES:
+            command.extend(("--case", case))
     result = run_command(
-        [
-            sys.executable,
-            "-m",
-            "quality_harness.diagnostic_pipeline",
-            "--repo",
-            str(repo_root),
-            "--site",
-            str(site),
-            "--destination",
-            str(output_dir),
-        ],
+        command,
         cwd=repo_root,
         timeout=240,
         env={
@@ -597,22 +608,30 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path):
     log.write_text(result.stdout + "\n" + result.stderr)
     report = output_dir / "receipt.json"
     data = json.loads(report.read_text()) if report.exists() else {}
-    passed = (
-        result.returncode == 0
-        and data.get("passed") is True
-        and data.get("case_count")
-        == len(PRESENTATION_CASES)
+    expected_cases = (
+        len(QT_PRESENTATION_CASES)
+        if ui == "qt"
+        else len(PRESENTATION_CASES)
         + len(LIBRARY_CASES)
         + len(OPENING_CASES)
         + len(RELINK_CASES)
         + len(QUEUE_CASES)
         + len(DISCLOSURE_CASES)
     )
+    passed = (
+        result.returncode == 0
+        and data.get("passed") is True
+        and data.get("case_count") == expected_cases
+    )
     return receipt(
         "unit_static.telemetry_presentation_contract",
         passed,
         [
-            "Actual native presentation and source admission producers through loopback HTTP, real Worker, migrated local D1.",
+            (
+                "Actual Qt Quick image-status producers through loopback HTTP, real Worker, migrated local D1."
+                if ui == "qt"
+                else "Actual Tk presentation and source admission producers through loopback HTTP, real Worker, migrated local D1."
+            ),
             "Hash-bound source only; synthetic fixtures; no packaged, preview or deployment authority.",
             f"Producer cases: {data.get('case_count', 0)}; stored events: {data.get('stored_events', 0)}",
         ],

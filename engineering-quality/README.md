@@ -13,6 +13,25 @@ change from red to muted in the shared tone made the regression fail
 (`build/qt-port-package/qt-status-tone-mutation.log`). The coverage is bounded
 to representative statuses and rendered source QML; signed Mac and Windows
 package visuals remain separate gates.
+The Qt port exposed a telemetry ownership gap: `--ui qt` selected the Qt native
+surface gate, while the presentation transport gate still constructed Tk
+canvases. Its first `cold_ready` case failed before the Qt renderer was observed.
+The Qt gate now reads actual QML `Image.status` through the existing bounded
+`PresentationObservations` owner; image URLs remain in QML. Four rendered tests
+cover a shared button, shared field, Library artwork, resize, and consent.
+Five source-bound producer cases traverse the real local Worker and migrated D1
+with 21 stored events, fault recovery, replay deduplication, and denied delivery
+checks (`build/qt-port-package/qt-presentation-local-d1-repeat/receipt.json`).
+The first Qt D1 attempt caught artwork recovery being split across two
+operations when a Library data signal arrived between fault and repair; the
+observer now retains that operation, and the regression asserts its identity.
+The shared bounded owner also imports without Tcl; Tk's adapter loads Tcl only
+when a Tk view is constructed. Other Qt runtime imports still reach `app.py`
+helpers and their Tk dependency, so this check is scoped to the presentation
+owner rather than a claim that the entire Qt bundle is Tk-free.
+This is representative image-status coverage, not proof of every visual pixel
+or of delivery from a final signed preview-telemetry package.
+
 The first exact Windows package capture then exposed internal "staging files"
 wording on an interrupted run. Shared recovery guidance now says unfinished
 download files were removed and asks the user to try again; the durable

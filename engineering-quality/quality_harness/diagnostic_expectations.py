@@ -4,6 +4,41 @@ from __future__ import annotations
 
 
 def verify_scenario_events(case: str, events: list[dict]) -> None:
+    if case.startswith("qt_"):
+        qt_events = [
+            event
+            for event in events
+            if event.get("feature") == "presentation_operation"
+            and event["dimensions"].get("presentation_surface") == "library"
+        ]
+        assert qt_events, (case, "Qt scene produced no presentation events")
+        assert any(
+            event["action"] == "settled"
+            and event["dimensions"]["artwork_state"] == "ready"
+            for event in qt_events
+        ), (case, "Qt artwork never settled visibly")
+        if case.endswith("_fault"):
+            role = case.removeprefix("qt_").removesuffix("_fault")
+            faults = [
+                event
+                for event in qt_events
+                if event["action"] == "fault"
+                and event["dimensions"]["missing_image_role"] == role
+            ]
+            assert faults, (case, "Qt did not observe the actual image error")
+            assert any(
+                event["action"] == "recovered"
+                and event["dimensions"]["operation_id"]
+                == fault["dimensions"]["operation_id"]
+                for fault in faults
+                for event in qt_events
+            ), (case, "Qt image recovery lost operation identity")
+        if case == "qt_resize":
+            assert any(
+                event["dimensions"]["presentation_trigger"] == "resize"
+                for event in qt_events
+            ), (case, "Qt resize transition was not observed")
+        return
     presentation = [
         e
         for e in events

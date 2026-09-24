@@ -36,6 +36,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         "tests/test_qt_previews.py",
         "tests/test_qt_terminal_item_events.py",
         "tests/test_qt_relink.py",
+        "tests/test_qt_presentation_diagnostics.py",
     ]
     tk_tests = [
         "tests/test_choice_popover_lifecycle.py",
