@@ -17,6 +17,12 @@ The first exact Windows package capture then exposed internal "staging files"
 wording on an interrupted run. Shared recovery guidance now says unfinished
 download files were removed and asks the user to try again; the durable
 recovery test checks the actionable wording and excludes the internal term.
+The first final Qt candidate-freeze attempt also failed before copying its
+archive because the receipt allowlist omitted the two existing build selectors
+(`VODFORGE_UI` and `VODFORGE_BUILD_TELEMETRY`). Their closed values are now
+reviewed in the candidate owner and tested alongside rejection of arbitrary
+keys and values. This records the actual Qt build settings without admitting
+secrets into candidate metadata.
 
 ## Qt artwork and Forge visual ownership — 2026-09-24
 

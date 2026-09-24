@@ -359,6 +359,15 @@ def test_candidate_requires_clean_source_and_reviewed_build_environment(
         if path.is_file()
     )
     assert "must-not-persist" not in persisted_text
+    with pytest.raises(ValueError, match="invalid VODFORGE_UI"):
+        candidate_artifact._validate_build_environment({"VODFORGE_UI": "other"})
+    with pytest.raises(ValueError, match="invalid VODFORGE_BUILD_TELEMETRY"):
+        candidate_artifact._validate_build_environment(
+            {"VODFORGE_BUILD_TELEMETRY": "secret-value"}
+        )
+    assert candidate_artifact._validate_build_environment(
+        {"VODFORGE_UI": "qt", "VODFORGE_BUILD_TELEMETRY": "production"}
+    ) == {"VODFORGE_UI": "qt", "VODFORGE_BUILD_TELEMETRY": "production"}
 
 
 def test_archive_rejects_symlink_that_escapes_app(tmp_path: Path) -> None:

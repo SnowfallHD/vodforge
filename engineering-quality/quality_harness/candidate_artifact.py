@@ -29,10 +29,16 @@ MAX_UNCOMPRESSED_BYTES = 16 * 1024 * 1024 * 1024
 SAFE_BUILD_ENVIRONMENT_KEYS = frozenset(
     {
         "VODFORGE_BUILD_VERSION",
+        "VODFORGE_BUILD_TELEMETRY",
         "VODFORGE_PYTHON",
+        "VODFORGE_UI",
         "VODFORGE_UNSIGNED_REVIEW",
     }
 )
+SAFE_BUILD_ENVIRONMENT_VALUES = {
+    "VODFORGE_BUILD_TELEMETRY": frozenset({"disabled", "preview", "production"}),
+    "VODFORGE_UI": frozenset({"tk", "qt"}),
+}
 
 
 def _default_artifact_inspector(
@@ -312,6 +318,9 @@ def _validate_build_environment(
             "candidate receipt cannot persist unreviewed build environment keys: "
             + ", ".join(unsupported)
         )
+    for key, allowed in SAFE_BUILD_ENVIRONMENT_VALUES.items():
+        if key in values and values[key] not in allowed:
+            raise ValueError(f"candidate receipt has invalid {key} value")
     return values
 
 
