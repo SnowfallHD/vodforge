@@ -276,9 +276,20 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
         assert folder["path"]
         media = next(item for item in folder["components"] if item["kind"] == "media")
         assert media["count"] == 2
-        assert bridge.openLibraryFolderComponent(media["key"])
+        assert bridge.selectLibraryFolderComponent(media["key"])
+        assert bridge.libraryFolders["selectedKey"] == media["key"]
+        inspector = bridge.libraryFolderInspector
+        assert inspector["title"] == "Same source"
+        assert len(inspector["versions"]) == 2
+        assert bridge.chooseLibraryFolderInspectorVersion(
+            inspector["versions"][1]["owner"]
+        )
+        assert bridge.libraryFolderInspector["type"] == "MP3"
+        assert not bridge.chooseLibraryFolderInspectorVersion("stale-owner")
+        assert bridge.openSelectedLibraryFolderDetail()
         detail = bridge.libraryDetail
         assert detail["fromFolders"] is True
+        assert detail["type"] == "MP3"
         assert len(detail["versions"]) == 2
         assert bridge.chooseLibraryVersion(detail["versions"][1]["owner"])
         assert bridge.libraryDetail["type"] == "MP3"
@@ -291,6 +302,78 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
         bridge.navigateLibraryFolders("all")
         assert bridge.libraryFolders["mode"] == "all"
     finally:
+        bridge.close()
+
+
+def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    record = saved(tmp_path, "Selected", "MP4")
+    record["description"] = "Visible description for the selected saved item."
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.resize(1100, 740)
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("all")
+        media = next(
+            row for row in bridge.libraryFolders["components"] if row["kind"] == "media"
+        )
+        app.processEvents()
+        assert not window.grabWindow().isNull()
+        assert window.findChild(QObject, "libraryFolderBrowser").property(
+            "showInspector"
+        )
+        listing = window.findChild(QObject, "libraryFolderList")
+        button = next(
+            item
+            for item in listing.childItems()
+            if item.objectName() == "libraryFolderComponent_" + media["key"]
+        )
+        button.activated.emit()
+        app.processEvents()
+        inspector = window.findChild(QObject, "libraryFolderInspector")
+        assert inspector.property("visible")
+        assert round(inspector.property("width")) == 380
+        assert bridge.libraryFolders["selectedKey"] == media["key"]
+        assert (
+            round(
+                window.findChild(QObject, "libraryFolderDetailsPanel").property(
+                    "height"
+                )
+            )
+            == 360
+        )
+        window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
+        app.processEvents()
+        assert (
+            window.findChild(QObject, "libraryFolderDescriptionText").property("text")
+            == record["description"]
+        )
+        assert window.findChild(QObject, "libraryFolderDescriptionHeading").property(
+            "visible"
+        )
+
+        window.resize(820, 560)
+        app.processEvents()
+        assert not inspector.property("visible")
+        compact = window.findChild(QObject, "libraryFolderCompactDetails")
+        assert compact.property("visible")
+        selected_owner = bridge.libraryFolderInspector["owner"]
+        compact.activated.emit()
+        assert bridge.libraryScene["route"] == "detail"
+        assert bridge.libraryDetail["owner"] == selected_owner
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
 
 

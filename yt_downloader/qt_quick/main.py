@@ -409,6 +409,9 @@ class Bridge(QObject):
         self._preview_download_info: dict[str, Any] | None = None
         self._annotation_owner = ""
         self._library_detail_owner = ""
+        self._folder_inspector_owner = ""
+        self._folder_inspector_key = ""
+        self._folder_inspector_versions: list[dict[str, str]] = []
         self._library_detail_origin: tuple[str, str, str] | None = None
         self._pending_library_removal: tuple[str, str] | None = None
         self._annotation_values = {"note": "", "tags": "", "category": ""}
@@ -1344,6 +1347,7 @@ class Bridge(QObject):
         model = self._folder_browser
         return {
             "mode": model.mode,
+            "selectedKey": self._folder_inspector_key,
             "path": str(model.path) if model.path is not None else "",
             "locations": [
                 {
@@ -1475,11 +1479,33 @@ class Bridge(QObject):
 
     @Property("QVariantMap", notify=historyChanged)
     def libraryDetail(self) -> dict[str, Any]:
+        return self._library_detail_projection(
+            self._library_detail_owner,
+            self._detail_versions,
+            bool(
+                self._library_detail_origin
+                and self._library_detail_origin[0] == "folders"
+            ),
+        )
+
+    @Property("QVariantMap", notify=historyChanged)
+    def libraryFolderInspector(self) -> dict[str, Any]:
+        if self._library_scene_route != "folders":
+            return {}
+        return self._library_detail_projection(
+            self._folder_inspector_owner, self._folder_inspector_versions, True
+        )
+
+    def _library_detail_projection(
+        self, owner: str, versions: list[dict[str, str]], from_folders: bool
+    ) -> dict[str, Any]:
+        if not owner:
+            return {}
         row = next(
             (
                 row
                 for row in self._projected_library()
-                if history_archive_owner(row) == self._library_detail_owner
+                if history_archive_owner(row) == owner
                 and row.get("vodforge_output_dir")
             ),
             None,
@@ -1488,7 +1514,7 @@ class Bridge(QObject):
             return {}
         source, output = library_detail_facts(row)
         return {
-            "owner": self._library_detail_owner,
+            "owner": owner,
             "title": str(row.get("title") or "Saved media"),
             "creator": str(row.get("channel") or row.get("uploader") or "Local media"),
             "type": str(row.get("vodforge_output_type") or ""),
@@ -1502,15 +1528,13 @@ class Bridge(QObject):
             ),
             "userDescription": "vodforge_user_description" in row,
             "note": str(row.get("vodforge_user_note") or ""),
+            "location": str(history_output_path(row) or ""),
             "tags": [str(tag) for tag in row.get("vodforge_user_tags") or ()],
             "artwork": self._artwork.request(row),
             "source": [{"label": label, "value": value} for label, value, _ in source],
             "output": [{"label": label, "value": value} for label, value, _ in output],
-            "versions": list(self._detail_versions),
-            "fromFolders": bool(
-                self._library_detail_origin
-                and self._library_detail_origin[0] == "folders"
-            ),
+            "versions": list(versions),
+            "fromFolders": from_folders,
         }
 
     @Property("QVariantList", notify=historyChanged)
@@ -2160,6 +2184,9 @@ class Bridge(QObject):
             return
         if route == "folders":
             self._folder_browser.navigate(None, mode="folders")
+            self._folder_inspector_owner = ""
+            self._folder_inspector_key = ""
+            self._folder_inspector_versions = []
         self._library_scene_route = route
         self._library_group_key = ""
         self._library_group_kind = ""
@@ -2214,15 +2241,17 @@ class Bridge(QObject):
         if mode not in {"folders", "all", "activity"}:
             return
         self._folder_browser.navigate(None, mode=mode)
+        self._folder_inspector_owner = ""
+        self._folder_inspector_key = ""
+        self._folder_inspector_versions = []
         self._library_scene_route = "folders"
         self.historyChanged.emit()
 
-    @Slot(str, result=bool)
-    def openLibraryFolderComponent(self, key: str) -> bool:
+    def _folder_component(self, key: str) -> Any:
         if self._library_scene_route != "folders":
-            return False
+            return None
         self._reconcile_folder_browser()
-        component = next(
+        return next(
             (
                 item
                 for item in (
@@ -2234,10 +2263,61 @@ class Bridge(QObject):
             ),
             None,
         )
+
+    def _folder_versions(self, component: Any) -> list[dict[str, str]]:
+        rows = self._folder_browser.records
+        return [
+            {
+                "owner": history_archive_owner(rows[index]),
+                "label": f"{position + 1}. {metadata_output_profile(dict(rows[index]))}",
+            }
+            for position, index in enumerate(component.indices)
+            if rows[index].get("vodforge_output_dir")
+        ]
+
+    @Slot(str, result=bool)
+    def selectLibraryFolderComponent(self, key: str) -> bool:
+        component = self._folder_component(key)
+        if component is None or component.kind != "media":
+            return False
+        versions = self._folder_versions(component)
+        if not versions:
+            return False
+        self._folder_inspector_owner = versions[0]["owner"]
+        self._folder_inspector_key = key
+        self._folder_inspector_versions = versions
+        self.historyChanged.emit()
+        return True
+
+    @Slot(str, result=bool)
+    def chooseLibraryFolderInspectorVersion(self, owner: str) -> bool:
+        if (
+            self._library_scene_route != "folders"
+            or owner not in {item["owner"] for item in self._folder_inspector_versions}
+            or self._saved_item_for_owner(owner) is None
+        ):
+            return False
+        self._folder_inspector_owner = owner
+        self.historyChanged.emit()
+        return True
+
+    @Slot(result=bool)
+    def openSelectedLibraryFolderDetail(self) -> bool:
+        if self._library_scene_route != "folders" or not self._folder_inspector_owner:
+            return False
+        self._detail_versions = list(self._folder_inspector_versions)
+        return self.openLibraryDetails(self._folder_inspector_owner)
+
+    @Slot(str, result=bool)
+    def openLibraryFolderComponent(self, key: str) -> bool:
+        component = self._folder_component(key)
         if component is None:
             return False
         if component.kind == "folder" and component.path is not None:
             self._folder_browser.navigate(component.path)
+            self._folder_inspector_owner = ""
+            self._folder_inspector_key = ""
+            self._folder_inspector_versions = []
             self.historyChanged.emit()
             return True
         if component.kind == "activity":
@@ -2251,15 +2331,7 @@ class Bridge(QObject):
             return True
         if component.kind != "media":
             return False
-        rows = self._folder_browser.records
-        versions = [
-            {
-                "owner": history_archive_owner(rows[index]),
-                "label": f"{position + 1}. {metadata_output_profile(dict(rows[index]))}",
-            }
-            for position, index in enumerate(component.indices)
-            if rows[index].get("vodforge_output_dir")
-        ]
+        versions = self._folder_versions(component)
         if not versions:
             return False
         self._detail_versions = versions
@@ -2273,6 +2345,9 @@ class Bridge(QObject):
         self._folder_browser.navigate(
             path.parent if path is not None and path.parent != path else None
         )
+        self._folder_inspector_owner = ""
+        self._folder_inspector_key = ""
+        self._folder_inspector_versions = []
         self.historyChanged.emit()
 
     @Slot(int)
@@ -2285,6 +2360,9 @@ class Bridge(QObject):
             max(0, model.page + delta),
             max(0, (len(model.components) - 1) // PAGE_SIZE),
         )
+        self._folder_inspector_owner = ""
+        self._folder_inspector_key = ""
+        self._folder_inspector_versions = []
         self.historyChanged.emit()
 
     @Slot(str, result=bool)

@@ -11,6 +11,7 @@ Item {
     property bool interactive: true
     property string size: "default"
     signal activated()
+    signal doubleActivated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
                             + (icon.length ? buttonMetrics[size].iconPixels + 8 : 0), 44)
     implicitHeight: buttonMetrics[size].height
@@ -63,6 +64,7 @@ Item {
         enabled: control.interactive
         cursorShape: Qt.PointingHandCursor
         onClicked: control.activated()
+        onDoubleClicked: control.doubleActivated()
     }
     Keys.onReturnPressed: { if (control.interactive && control.enabled) control.activated() }
     Keys.onSpacePressed: { if (control.interactive && control.enabled) control.activated() }

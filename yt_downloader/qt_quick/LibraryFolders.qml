@@ -1,11 +1,14 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 
 Item {
     id: browser
+    objectName: "libraryFolderBrowser"
     property var appBridge
     readonly property var model: appBridge.libraryFolders
+    readonly property bool showInspector: Window.window && Window.window.width >= 920 && Window.window.height >= 740
 
     RowLayout {
         anchors.fill: parent
@@ -79,6 +82,15 @@ Item {
                     Layout.preferredWidth: 160
                     onActivated: browser.appBridge.requestFolderRelink(browser.model.path)
                 }
+                StoneButton {
+                    objectName: "libraryFolderCompactDetails"
+                    visible: !browser.showInspector
+                    enabled: !!browser.appBridge.libraryFolderInspector.owner
+                    label: "Selected details"
+                    size: "inline"
+                    Layout.preferredWidth: 145
+                    onActivated: browser.appBridge.openSelectedLibraryFolderDetail()
+                }
             }
             ScrollView {
                 id: viewport
@@ -87,17 +99,25 @@ Item {
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                 Column {
+                    objectName: "libraryFolderList"
                     width: viewport.availableWidth
                     spacing: 9
                     Repeater {
                         model: browser.model.components || []
                         StoneButton {
                             required property var modelData
+                            objectName: "libraryFolderComponent_" + modelData.key
                             width: parent.width
                             height: 78
                             label: ""
+                            selected: modelData.key === browser.model.selectedKey
                             accessibilityLabel: modelData.title + ", " + modelData.detail
-                            onActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
+                            onActivated: {
+                                if (modelData.kind === "media")
+                                    browser.appBridge.selectLibraryFolderComponent(modelData.key)
+                                else browser.appBridge.openLibraryFolderComponent(modelData.key)
+                            }
+                            onDoubleActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.margins: 13
@@ -123,13 +143,14 @@ Item {
                         width: parent.width; spacing: 12
                         Repeater {
                             model: browser.model.highlights || []
-                            StoneButton {
-                                required property var modelData
+                        StoneButton {
+                            required property var modelData
                                 width: Math.min(220, Math.max(150, (viewport.availableWidth - 36) / 4))
                                 height: 126
                                 label: ""
                                 accessibilityLabel: modelData.title + ", " + modelData.detail
-                                onActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
+                            onActivated: browser.appBridge.selectLibraryFolderComponent(modelData.key)
+                            onDoubleActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
                                 Column {
                                     anchors.fill: parent; anchors.margins: 12; spacing: 9
                                     Text { text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; width: parent.width; elide: Text.ElideRight }
@@ -163,6 +184,18 @@ Item {
                     onActivated: browser.appBridge.pageLibraryFolder(1)
                 }
             }
+        }
+        Rectangle {
+            visible: browser.showInspector
+            Layout.fillHeight: true
+            Layout.preferredWidth: visible ? 1 : 0
+            color: theme.border
+        }
+        LibraryFolderInspector {
+            visible: browser.showInspector
+            Layout.preferredWidth: visible ? (browser.width + 40 < 1000 ? 350 : 380) : 0
+            Layout.fillHeight: true
+            appBridge: browser.appBridge
         }
     }
 }
