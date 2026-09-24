@@ -747,6 +747,20 @@ Normal adversarial run (generated local corpus, real pipeline, faults, short soa
 ./engineering-quality/run normal
 ```
 
+For a Qt Quick release candidate, pass `--ui qt` to `normal` and `deep`. The
+native-surface scenario then executes the rendered Qt scene, metadata,
+terminal, preview, and relink contracts and records `metrics.ui=qt`. The
+default `--ui tk` retains the legacy Tk contract for Tk builds. The separate
+signed packaged-app and preview-D1 journeys remain required; an offscreen QML
+source test cannot establish an installed desktop journey.
+
+The Qt-port gate correction followed an actual `--ui tk` NORMAL run with 29
+Tk-only native failures while evaluating a Qt package. Earlier Qt scene tests
+passed in the repository suite but were not the native-surface owner selected
+by NORMAL. The renderer selection test fails if Qt selects the Tk suite, and
+the rendered Qt native-surface contract passed 297 cases with no skipped cases.
+This coverage does not qualify macOS or Windows package painting by itself.
+
 Deeper run (longer fixtures/soak plus the first default-download W3C public boundary; the larger manifest remains an explicit candidate set rather than implied coverage):
 
 ```sh

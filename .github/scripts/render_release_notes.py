@@ -7,7 +7,7 @@ import argparse
 import re
 
 REPOSITORY = "SnowfallHD/vodforge"
-VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$")
 
 
 def asset_url(version: str, filename: str) -> str:
@@ -56,10 +56,11 @@ Choose this only when **About This Mac** shows an **Intel Processor**. Using thi
 
 ## About this release
 
+- **Qt Quick desktop interface:** Forge, Library, Watch and Activity use the shared stone controls and retain their familiar layout. Run progress now shows failure in red, stopped or skipped work in orange, and completed work in green.
 - **More reliable optional analytics:** app-open observations, export outcomes, retries and feature usage now share a validated telemetry contract. Attempt identifiers are installation-scoped and do not contain media URLs, filenames or content.
 - **Consent stays in control:** pending updater observations are discarded when analytics permission is withdrawn, including across a later opt-in.
 - **Stronger release verification:** regression coverage and final Mac/Windows preview-D1 journeys check telemetry delivery, duplicate prevention and privacy suppression.
-- **No release announcements:** this update does not show What’s new or Did you know popups.
+- **In-app guidance:** What’s New and Did You Know retain their illustrated feature examples.
 
 Checksums for every download are available in `SHA256SUMS.txt` below.
 """

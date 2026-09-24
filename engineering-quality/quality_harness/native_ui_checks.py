@@ -24,76 +24,88 @@ def complete_native_report(path):
     )
 
 
-def native_surface_contract(repo_root, output_dir, *, profile="normal"):
+def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk"):
+    if ui not in {"tk", "qt"}:
+        raise ValueError(f"Unsupported native UI renderer: {ui}")
     output_dir.mkdir(parents=True, exist_ok=True)
     report = output_dir / "native.xml"
     report.unlink(missing_ok=True)
+    qt_tests = [
+        "tests/test_qt_scene_port.py",
+        "tests/test_qt_metadata_preview.py",
+        "tests/test_qt_previews.py",
+        "tests/test_qt_terminal_item_events.py",
+        "tests/test_qt_relink.py",
+    ]
+    tk_tests = [
+        "tests/test_choice_popover_lifecycle.py",
+        "tests/test_native_interaction_readiness.py",
+        "tests/test_native_thumbnail_rendering.py",
+        "tests/test_archive_native.py",
+        "tests/test_player_action_retirement_native.py",
+        "tests/test_archive_presentation_native.py",
+        "tests/test_archive_composed_native.py",
+        "tests/test_presentation_native.py",
+        "tests/test_archive_actual_playback.py",
+        "tests/test_watch_queue_native.py",
+        "tests/test_foundation_acceptance_native.py",
+        "tests/test_library_file_actions_native.py",
+        "tests/test_relink_consent_native.py",
+        "tests/test_relink_navigation_native.py",
+        "tests/test_relink_admission_native.py",
+        "tests/test_relink_layout_native.py",
+        "tests/test_widget_reveal_native.py",
+        "tests/test_button_parity_native.py",
+        "tests/test_shared_header_action_native.py",
+        "tests/test_matte_projection_resize_native.py",
+        "tests/test_inline_description_native.py",
+        "tests/test_player_layout_native.py",
+        "tests/test_startup_update_native.py",
+        *(
+            [
+                "tests/test_library_restraint_native.py",
+                "tests/test_archive_overlay_reveal_native.py",
+                "tests/test_platform_trash_native.py",
+                "tests/test_shared_controls_native.py",
+                "tests/test_catalog_scale_native.py",
+                "tests/test_description_readability_native.py",
+                "tests/test_window_chrome_native.py",
+                "tests/test_brand_native.py",
+                "tests/test_matte_native.py",
+                "tests/test_matte_projection_native.py",
+                "tests/test_scene_inflight_native.py",
+                "tests/test_macos_resize_pointer_native.py",
+                "tests/test_scroll_inflight_native.py",
+                "tests/test_scroll_idle_native.py",
+                "tests/test_surface_raster_native.py",
+                "tests/test_field_density_native.py",
+                "tests/test_window_logical_metrics_native.py",
+                "tests/test_surface_memory_native.py",
+                "tests/test_view_transition_native.py",
+            ]
+            if sys.platform == "darwin"
+            else []
+        ),
+        *(
+            [
+                "tests/test_windows_surface_capture_native.py",
+                "tests/test_windows_resize_inflight_native.py",
+                "tests/test_windows_resize_pointer_native.py",
+            ]
+            if sys.platform == "win32"
+            else []
+        ),
+        "tests/test_native_ui_polish.py",
+        "tests/test_support_native.py",
+        "tests/test_forge_activity_ui.py",
+        "tests/test_analytics_consent_ui.py",
+    ]
     result = run_command(
         native_pytest_command(
             [
                 "-p",
                 "quality_harness.native_reports",
-                "tests/test_choice_popover_lifecycle.py",
-                "tests/test_native_interaction_readiness.py",
-                "tests/test_native_thumbnail_rendering.py",
-                "tests/test_archive_native.py",
-                "tests/test_player_action_retirement_native.py",
-                "tests/test_archive_presentation_native.py",
-                "tests/test_archive_composed_native.py",
-                "tests/test_presentation_native.py",
-                "tests/test_archive_actual_playback.py",
-                "tests/test_watch_queue_native.py",
-                "tests/test_foundation_acceptance_native.py",
-                "tests/test_library_file_actions_native.py",
-                "tests/test_relink_consent_native.py",
-                "tests/test_relink_navigation_native.py",
-                "tests/test_relink_admission_native.py",
-                "tests/test_relink_layout_native.py",
-                "tests/test_widget_reveal_native.py",
-                "tests/test_button_parity_native.py",
-                "tests/test_shared_header_action_native.py",
-                "tests/test_matte_projection_resize_native.py",
-                "tests/test_inline_description_native.py",
-                "tests/test_player_layout_native.py",
-                "tests/test_startup_update_native.py",
-                *(
-                    [
-                        "tests/test_library_restraint_native.py",
-                        "tests/test_archive_overlay_reveal_native.py",
-                        "tests/test_platform_trash_native.py",
-                        "tests/test_shared_controls_native.py",
-                        "tests/test_catalog_scale_native.py",
-                        "tests/test_description_readability_native.py",
-                        "tests/test_window_chrome_native.py",
-                        "tests/test_brand_native.py",
-                        "tests/test_matte_native.py",
-                        "tests/test_matte_projection_native.py",
-                        "tests/test_scene_inflight_native.py",
-                        "tests/test_macos_resize_pointer_native.py",
-                        "tests/test_scroll_inflight_native.py",
-                        "tests/test_scroll_idle_native.py",
-                        "tests/test_surface_raster_native.py",
-                        "tests/test_field_density_native.py",
-                        "tests/test_window_logical_metrics_native.py",
-                        "tests/test_surface_memory_native.py",
-                        "tests/test_view_transition_native.py",
-                    ]
-                    if sys.platform == "darwin"
-                    else []
-                ),
-                *(
-                    [
-                        "tests/test_windows_surface_capture_native.py",
-                        "tests/test_windows_resize_inflight_native.py",
-                        "tests/test_windows_resize_pointer_native.py",
-                    ]
-                    if sys.platform == "win32"
-                    else []
-                ),
-                "tests/test_native_ui_polish.py",
-                "tests/test_support_native.py",
-                "tests/test_forge_activity_ui.py",
-                "tests/test_analytics_consent_ui.py",
+                *(qt_tests if ui == "qt" else tk_tests),
                 "-q",
                 f"--junitxml={report}",
             ]
@@ -118,6 +130,8 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal"):
             ),
             "VODFORGE_NATIVE_UI_TESTS": "1",
             "VODFORGE_NATIVE_PROFILE": profile,
+            "VODFORGE_UI": ui,
+            **({"QT_QPA_PLATFORM": "offscreen"} if ui == "qt" else {}),
             "VODFORGE_NATIVE_FILE_QA": "1",
             "VODFORGE_ACTUAL_PLAYBACK_TESTS": "1",
             "VODFORGE_NATIVE_EVIDENCE_DIR": str(output_dir),
@@ -136,6 +150,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal"):
             else "failed",
             "duration_seconds": result.duration_seconds,
             "metrics": {
+                "ui": ui,
                 "timed_out": result.timed_out,
                 "unavailable": result.unavailable,
             },

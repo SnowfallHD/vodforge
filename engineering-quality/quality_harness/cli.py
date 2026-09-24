@@ -45,6 +45,12 @@ def _parser() -> argparse.ArgumentParser:
             help="Run only this exact scenario id (repeatable)",
         )
         run.add_argument(
+            "--ui",
+            choices=("tk", "qt"),
+            default=os.environ.get("VODFORGE_UI", "tk"),
+            help="Select the source-native renderer contract for this candidate",
+        )
+        run.add_argument(
             "--compare", type=Path, help="Compare metrics with a prior results.json"
         )
         run.add_argument(
@@ -358,6 +364,7 @@ def run_fast_gate(
     raw_dir = gate_dir / "engineering-quality"
     profile_args = argparse.Namespace(
         command="normal",
+        ui=os.environ.get("VODFORGE_UI", "tk"),
         include_public=False,
         scenario=[
             "unit_static.repository_suite",
@@ -543,6 +550,7 @@ def run_profile(
             run_root=run_root,
             server=server,
             profile=profile,
+            ui=args.ui,
             soak_jobs=getattr(args, "soak_jobs", None),
             include_public=bool(args.include_public),
             selected=selected,
@@ -564,6 +572,7 @@ def run_profile(
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
         "profile": profile,
+        "ui": args.ui,
         "started_at": started_at,
         "completed_at": utc_now(),
         "duration_seconds": round(time.monotonic() - started, 4),

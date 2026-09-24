@@ -1,6 +1,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -315,8 +316,18 @@ def test_release_notes_lead_with_clear_user_facing_platform_choices():
     assert "**More reliable optional analytics:**" in notes
     assert "installation-scoped" in notes
     assert "**Consent stays in control:**" in notes
-    assert "does not show What’s new or Did you know popups" in notes
-    assert "One What’s new slide" not in notes
+    assert "Qt Quick desktop interface" in notes
+    assert "failure in red" in notes
+    assert "stopped or skipped work in orange" in notes
+    assert "What’s New and Did You Know" in notes
+
+
+def test_review_draft_accepts_qa_prerelease_version_without_unsafe_tag_text():
+    notes = _release_notes_module().render_release_notes("0.2.3-qt-port", draft=True)
+    assert "VODForge-Windows-Setup-v0.2.3-qt-port.exe" in notes
+    for invalid in ("0.2.3/other", "0.2.3-", "0.2.3-qa..port"):
+        with pytest.raises(ValueError):
+            _release_notes_module().render_release_notes(invalid, draft=True)
 
 
 def test_draft_release_notes_keep_the_release_team_safety_gate():

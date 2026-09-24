@@ -2588,6 +2588,7 @@ def run_scenarios(
     run_root: Path,
     server: FixtureHTTPServer,
     profile: str,
+    ui: str,
     soak_jobs: int | None,
     include_public: bool,
     selected: set[str] | None,
@@ -2761,7 +2762,7 @@ def run_scenarios(
         (
             "unit_static.native_surface_contract",
             lambda: native_surface_contract(
-                repo_root, run_root / "cases" / "native-ui", profile=profile
+                repo_root, run_root / "cases" / "native-ui", profile=profile, ui=ui
             ),
         ),
     ]
