@@ -8,6 +8,7 @@ Item {
     readonly property var projection: appBridge.watchScene
     readonly property string route: projection.route || "home"
     readonly property var videos: projection.videos || []
+    readonly property bool emptyHome: route === "home" && videos.length === 0
     readonly property string viewKey: route + "|" + (projection.query || "") + "|" +
         (projection.groupKind || "") + "|" + (projection.groupTitle || "")
     property string previousViewKey: ""
@@ -144,6 +145,11 @@ Item {
                     elide: Text.ElideRight
                 }
             }
+            WatchEmptyScene {
+                visible: scene.emptyHome
+                width: parent.width
+                appBridge: scene.appBridge
+            }
             Item {
                 id: groupHeader
                 visible: scene.route === "group" && scene.videos.length > 0
@@ -236,7 +242,7 @@ Item {
                 }
             }
             Item {
-                visible: scene.route === "home" && !!scene.projection.hero.owner
+                visible: scene.route === "home" && !scene.emptyHome && !!scene.projection.hero.owner
                 width: parent.width
                 height: visible ? Math.max(350, heroActions.y + heroActions.height + 36) : 0
                 clip: true
@@ -318,7 +324,7 @@ Item {
                 ]
                 Column {
                     required property var modelData
-                    visible: (scene.route === "home" && modelData.route !== "collections") || scene.route === modelData.route
+                    visible: (scene.route === "home" && !scene.emptyHome && modelData.route !== "collections") || scene.route === modelData.route
                     width: scene.route === "home" ? (parent.width - 18) / 2 : parent.width
                     spacing: 9
                     RowLayout {
@@ -413,7 +419,7 @@ Item {
             }
 
             Column {
-                visible: scene.route === "home" && (scene.projection.collections || []).length > 0
+                visible: scene.route === "home" && !scene.emptyHome && (scene.projection.collections || []).length > 0
                 width: parent.width
                 spacing: 9
                 RowLayout {
@@ -443,7 +449,7 @@ Item {
             }
 
             RowLayout {
-                visible: scene.route === "home" || scene.route === "videos" || scene.route === "group"
+                visible: (scene.route === "home" && !scene.emptyHome) || scene.route === "videos" || scene.route === "group"
                 width: parent.width
                 height: 42
                 Text { text: scene.route === "home" ? "Recently Added" : scene.route === "group" ? "Saved media" : "Videos"; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
@@ -458,7 +464,7 @@ Item {
             Flow {
                 id: mediaFlow
                 objectName: "watchMediaFlow"
-                visible: scene.route === "home" || scene.route === "videos" || scene.route === "group"
+                visible: (scene.route === "home" && !scene.emptyHome) || scene.route === "videos" || scene.route === "group"
                 width: parent.width
                 height: Math.max(0, totalRows * rowStride - spacing)
                 spacing: 12
@@ -507,7 +513,7 @@ Item {
             }
             Text {
                 visible: scene.videos.length === 0 &&
-                         (scene.route === "home" || scene.route === "videos" || scene.route === "group")
+                         (scene.route === "videos" || scene.route === "group")
                 text: "No saved media yet"
                 color: theme.muted
                 font.pixelSize: 16

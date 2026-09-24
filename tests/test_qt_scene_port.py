@@ -1618,6 +1618,54 @@ def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypat
         bridge.close()
 
 
+def test_qt_watch_empty_home_uses_tk_welcome_and_shared_actions(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Watch")
+        app.processEvents()
+        scene = window.findChild(QObject, "watchBrowseScene")
+        empty = window.findChild(QObject, "watchEmptyScene")
+        assert scene.property("emptyHome")
+        assert empty.property("visible")
+        viewport = window.findChild(QObject, "watchViewport")
+        assert round(empty.property("width")) == round(
+            viewport.property("availableWidth")
+        )
+        assert round(empty.childItems()[0].property("height")) == 415
+        assert empty.findChild(QObject, "watchEmptyTitle").property("text") == (
+            "Nothing to watch yet"
+        )
+        image_size = QSize()
+        emblem = qt_main.Materials().requestImage("watch-welcome", image_size, QSize())
+        assert (image_size.width(), image_size.height()) == (256, 218)
+        assert not emblem.isNull()
+        assert not window.grabWindow().isNull()
+        empty.findChild(QObject, "watchEmptyOpenLibrary").activated.emit()
+        assert bridge.selection == "Library"
+        bridge.select("Watch")
+        empty.findChild(QObject, "watchEmptyGoForge").activated.emit()
+        assert bridge.selection == "Forge"
+
+        bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
+        bridge.historyChanged.emit()
+        bridge.select("Watch")
+        app.processEvents()
+        assert not scene.property("emptyHome")
+        assert not empty.property("visible")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))

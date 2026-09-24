@@ -235,6 +235,10 @@ class Materials(QQuickImageProvider):
                 source = backdrop_pixels(
                     theme_motif(), THEME["bg"], THEME["accent"], (1920, 1200)
                 )
+            elif parts[0] == "watch-welcome" and len(parts) == 1:
+                from yt_downloader.ui_chrome import watch_welcome_emblem
+
+                source = watch_welcome_emblem()
             elif parts[0] == "button" and len(parts) == 5:
                 width, height = int(parts[1]), int(parts[2])
                 if not (1 <= width <= 4096 and 1 <= height <= 512):
