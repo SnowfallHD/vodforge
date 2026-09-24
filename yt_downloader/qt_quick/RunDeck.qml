@@ -9,11 +9,18 @@ Item {
     readonly property var projection: appBridge.runDeck
     readonly property var visibleRecords: projection.visible || []
     signal openSaved(string owner)
+    signal removeSaved(string owner)
+    function showActions(record) {
+        if (record.kind === "active" &&
+                !deck.appBridge.admitRunMenu(record.runId, record.executionToken || ""))
+            return
+        selectedRecord = record
+        actionsPopup.open()
+    }
     function openActiveActions() {
         for (let record of projection.records || []) {
             if (record.kind === "active") {
-                selectedRecord = record
-                actionsPopup.open()
+                showActions(record)
                 return
             }
         }
@@ -76,10 +83,7 @@ Item {
                                 accessibilityLabel: "Actions for " + modelData.title
                                 size: "inline"
                                 Layout.preferredWidth: 31
-                                onActivated: {
-                                    deck.selectedRecord = modelData
-                                    actionsPopup.open()
-                                }
+                                onActivated: deck.showActions(modelData)
                             }
                         }
                     }
@@ -96,11 +100,13 @@ Item {
     property var selectedRecord: ({})
     Popup {
         id: actionsPopup
+        objectName: "runActionsPopup"
         x: Math.max(0, deck.width - width)
         y: Math.max(0, deck.height - height - 40)
         width: 225
         padding: 10
         modal: true
+        onClosed: deck.appBridge.retireRunMenu()
         background: StoneField {}
         ColumnLayout {
             spacing: 6
@@ -108,19 +114,19 @@ Item {
                 visible: deck.selectedRecord.kind === "active"
                 label: "Cancel run"
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.cancel(); actionsPopup.close() }
+                onActivated: { deck.appBridge.controlRun(deck.selectedRecord.runId, "cancel"); actionsPopup.close() }
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "active"
                 label: "Skip current item"
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.skipItem(); actionsPopup.close() }
+                onActivated: { deck.appBridge.controlRun(deck.selectedRecord.runId, "skip_item"); actionsPopup.close() }
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "active"
                 label: "Skip current source URL"
                 Layout.fillWidth: true
-                onActivated: { deck.appBridge.skipSource(); actionsPopup.close() }
+                onActivated: { deck.appBridge.controlRun(deck.selectedRecord.runId, "skip_source"); actionsPopup.close() }
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "queued"
@@ -139,6 +145,24 @@ Item {
                 label: "View in Library"
                 Layout.fillWidth: true
                 onActivated: { deck.openSaved(deck.selectedRecord.owner); actionsPopup.close() }
+            }
+            StoneButton {
+                visible: deck.selectedRecord.kind === "completed"
+                label: "Open saved location"
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.openLibraryFolder(deck.selectedRecord.owner); actionsPopup.close() }
+            }
+            StoneButton {
+                visible: deck.selectedRecord.kind === "completed" && deck.selectedRecord.hasYoutubeUrl
+                label: "Copy YouTube URL"
+                Layout.fillWidth: true
+                onActivated: { deck.appBridge.copySavedYoutubeUrl(deck.selectedRecord.owner); actionsPopup.close() }
+            }
+            StoneButton {
+                visible: deck.selectedRecord.kind === "completed"
+                label: "Remove from Library…"
+                Layout.fillWidth: true
+                onActivated: { deck.removeSaved(deck.selectedRecord.owner); actionsPopup.close() }
             }
             StoneButton {
                 visible: deck.selectedRecord.kind === "preview"

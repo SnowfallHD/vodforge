@@ -15,6 +15,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QObject, QSize, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtMultimedia import QMediaPlayer
 
+from tests.test_run_identity import make_job
 from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_annotations import LibraryAnnotationsError
@@ -635,6 +636,195 @@ def test_qt_organization_records_only_durable_changed_fields(tmp_path, monkeypat
         assert bridge.createCollection("Travel", [owner])
         assert events == [("organization", "category_saved")]
     finally:
+        bridge.close()
+
+
+@pytest.mark.parametrize("action", ["cancel", "skip_item", "skip_source"])
+@pytest.mark.parametrize(
+    "transition", ["same", "successor", "finished", "equal_copy", "stale_at_open"]
+)
+def test_qt_run_menu_cannot_control_successor_execution(
+    tmp_path, monkeypatch, action, transition
+):
+    from dataclasses import replace
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        original = make_job(tmp_path)
+        bridge._runtime.active_job = original
+        record = bridge.runDeck["records"][0]
+        calls = []
+        observations = []
+        monkeypatch.setattr(
+            qt_main,
+            "operation",
+            lambda _owner, feature, outcome, _key, dimensions: observations.append(
+                (feature, outcome, dimensions)
+            ),
+        )
+        for method in ("cancel", "skip_item", "skip_source"):
+            monkeypatch.setattr(
+                bridge._runtime,
+                method,
+                lambda method=method: calls.append(method),
+            )
+        if transition == "stale_at_open":
+            bridge._runtime.active_job = replace(original)
+        admitted = bridge.admitRunMenu(
+            record["runId"], record["executionToken"]
+        )
+        assert admitted is (transition != "stale_at_open")
+        if transition == "successor":
+            bridge._runtime.active_job = replace(original, run_id="successor")
+        elif transition == "finished":
+            bridge._runtime.active_job = None
+        elif transition == "equal_copy":
+            bridge._runtime.active_job = replace(original)
+        assert bridge.controlRun(record["runId"], action) is (transition == "same")
+        assert calls == ([action] if transition == "same" else [])
+        assert observations == [
+            (
+                "run_control_operation",
+                "admitted" if transition == "same" else "rejected",
+                {
+                    "run_control_action": action,
+                    "run_control_origin": "run_menu",
+                    "run_control_owner": "current" if transition == "same" else "retired",
+                },
+            )
+        ]
+        assert not bridge.controlRun(record["runId"], action)
+        assert calls == ([action] if transition == "same" else [])
+    finally:
+        bridge.close()
+
+
+def test_qt_rendered_run_menu_uses_admitted_execution(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    QQuickStyle.setStyle("Basic")
+    bridge = qt_main.Bridge(None)
+    original = make_job(tmp_path)
+    bridge._runtime.active_job = original
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        app.processEvents()
+        deck = window.findChild(QObject, "forgeRunDeck")
+        popup = window.findChild(QObject, "runActionsPopup")
+        assert deck is not None and popup is not None
+        calls = []
+        monkeypatch.setattr(bridge._runtime, "cancel", lambda: calls.append("cancel"))
+        deck.openActiveActions()
+        app.processEvents()
+        assert popup.property("visible") is True
+        cancel = next(
+            item
+            for item in popup.findChildren(QObject)
+            if item.property("label") == "Cancel run"
+        )
+        bridge._runtime.active_job = replace(original)
+        cancel.activated.emit()
+        app.processEvents()
+        assert calls == []
+        bridge._runtime.active_job = original
+        bridge.runDeckChanged.emit()
+        deck.openActiveActions()
+        app.processEvents()
+        assert popup.property("visible") is True
+        cancel.activated.emit()
+        app.processEvents()
+        assert calls == ["cancel"]
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatch):
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    QQuickStyle.setStyle("Basic")
+    first = saved(tmp_path, "First", "MP4")
+    second = saved(tmp_path, "Second", "MP4")
+    first["webpage_url"] = "https://www.youtube.com/watch?v=abcdefghijk"
+    second["webpage_url"] = "https://www.youtube.com/watch?v=lmnopqrstuv"
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [first, second]
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        app.processEvents()
+        deck = window.findChild(QObject, "forgeRunDeck")
+        popup = window.findChild(QObject, "runActionsPopup")
+        assert deck is not None and popup is not None
+        first_record = bridge.runDeck["records"][0]
+        second_record = bridge.runDeck["records"][1]
+        first_owner = first_record["owner"]
+        second_owner = second_record["owner"]
+        assert first_record["hasYoutubeUrl"]
+        deck.showActions(first_record)
+        app.processEvents()
+        view = next(
+            item for item in popup.findChildren(QObject)
+            if item.property("label") == "View in Library"
+        )
+        view.activated.emit()
+        app.processEvents()
+        assert bridge.selection == "Library"
+        assert bridge.libraryDetail["owner"] == first_owner
+
+        bridge.select("Forge")
+        deck.showActions(second_record)
+        app.processEvents()
+        copy = next(
+            item for item in popup.findChildren(QObject)
+            if item.property("label") == "Copy YouTube URL"
+        )
+        copy.activated.emit()
+        app.processEvents()
+        assert QGuiApplication.clipboard().text() == qt_main.canonical_youtube_url(second)
+
+        deck.showActions(first_record)
+        app.processEvents()
+        remove = next(
+            item for item in popup.findChildren(QObject)
+            if item.property("label") == "Remove from Library…"
+        )
+        remove.activated.emit()
+        app.processEvents()
+        assert bridge._pending_library_removal[0] == first_owner
+        removal_popup = window.findChild(QObject, "libraryRemovalConfirmation")
+        assert removal_popup is not None
+        assert removal_popup.property("visible") is True
+        removal_popup.close()
+        bridge.cancelLibraryRemoval()
+        bridge._runtime.history = [second]
+        assert not bridge.copySavedYoutubeUrl(first_owner)
+        assert not bridge.openLibraryDetails(first_owner)
+        assert second_owner == history_archive_owner(second)
+    finally:
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
         bridge.close()
 
 

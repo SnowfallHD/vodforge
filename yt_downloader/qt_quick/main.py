@@ -317,6 +317,9 @@ class Bridge(QObject):
     def __init__(self, event_log: Path | None) -> None:
         super().__init__()
         self._runtime = DownloadRuntime()
+        self._run_menu_identity_job: Any | None = None
+        self._run_menu_identity_token = ""
+        self._run_menu_admitted_job: Any | None = None
         self.historyChanged.connect(self.playerSceneChanged.emit)
         self.historyChanged.connect(self.watchSceneChanged.emit)
         self.selectionChanged.connect(self.watchSceneChanged.emit)
@@ -1786,10 +1789,14 @@ class Bridge(QObject):
             )
         active = self._runtime.active_job
         if active is not None:
+            if active is not self._run_menu_identity_job:
+                self._run_menu_identity_job = active
+                self._run_menu_identity_token = uuid.uuid4().hex
             preview = active.preview_info or {}
             records.append(
                 {
                     "runId": active.run_id,
+                    "executionToken": self._run_menu_identity_token,
                     "kind": "active",
                     "title": str(
                         preview.get("title") or f"{active.output_type.value} download"
@@ -1837,6 +1844,7 @@ class Bridge(QObject):
                     "owner": str(
                         item.get(PROJECTION_OWNER_KEY) or history_archive_owner(item)
                     ),
+                    "hasYoutubeUrl": bool(canonical_youtube_url(item)),
                     "kind": str(record["kind"]),
                     "title": str(record["title"]),
                     "status": str(record["status"]),
@@ -2947,6 +2955,23 @@ class Bridge(QObject):
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
+    @Slot(str, result=bool)
+    def copySavedYoutubeUrl(self, owner: str) -> bool:
+        item = self._saved_item_for_owner(owner)
+        url = canonical_youtube_url(item) if item is not None else None
+        if not url:
+            self._status = "This item does not include a YouTube URL to copy."
+            self.statusChanged.emit()
+            return False
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            return False
+        clipboard.setText(url)
+        self._status = "Copied YouTube URL to clipboard."
+        self.statusChanged.emit()
+        self._record_update_feature("library", "youtube_url_copied")
+        return True
+
     @Slot(str)
     def copyLibraryPath(self, owner: str) -> None:
         item = self._saved_item_for_owner(owner)
@@ -3149,6 +3174,56 @@ class Bridge(QObject):
             self._runtime.cancel()
             self._status = "Stopping download…"
             self.statusChanged.emit()
+
+    @Slot(str, str, result=bool)
+    def admitRunMenu(self, run_id: str, execution_token: str) -> bool:
+        active = self._runtime.active_job
+        admitted = (
+            active is not None
+            and active is self._run_menu_identity_job
+            and active.run_id == run_id
+            and bool(execution_token)
+            and execution_token == self._run_menu_identity_token
+        )
+        self._run_menu_admitted_job = active if admitted else None
+        return admitted
+
+    @Slot()
+    def retireRunMenu(self) -> None:
+        self._run_menu_admitted_job = None
+
+    @Slot(str, str, result=bool)
+    def controlRun(self, run_id: str, action: str) -> bool:
+        if action not in {"cancel", "skip_item", "skip_source"}:
+            return False
+        active = self._runtime.active_job
+        admitted = (
+            active is not None
+            and active is self._run_menu_admitted_job
+            and active.run_id == run_id
+        )
+        operation(
+            self._analytics.telemetry,
+            "run_control_operation",
+            "admitted" if admitted else "rejected",
+            str(uuid.uuid4()),
+            {
+                "run_control_action": action,
+                "run_control_origin": "run_menu",
+                "run_control_owner": "current" if admitted else "retired",
+            },
+        )
+        self._run_menu_admitted_job = None
+        if not admitted:
+            self._status = "That run changed. Open its actions again."
+            self.statusChanged.emit()
+            return False
+        {
+            "cancel": self.cancel,
+            "skip_item": self.skipItem,
+            "skip_source": self.skipSource,
+        }[action]()
+        return True
 
     @Slot()
     def skipItem(self) -> None:

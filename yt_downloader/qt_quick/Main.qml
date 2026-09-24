@@ -896,8 +896,10 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 115 : 139
                 onOpenSaved: function(owner) {
-                    bridge.select("Library")
-                    bridge.navigateLibrary("all")
+                    if (bridge.openLibraryDetails(owner)) bridge.select("Library")
+                }
+                onRemoveSaved: function(owner) {
+                    if (bridge.prepareLibraryRemoval(owner)) libraryRemovalPopup.open()
                 }
             }
         }
