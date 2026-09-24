@@ -927,7 +927,7 @@ Window {
                 ColumnLayout {
                     id: forgeLivePane
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 1
+                    Layout.preferredWidth: 3
                     Layout.fillHeight: true
                     spacing: 9
                     property bool technical: false
@@ -1005,7 +1005,7 @@ Window {
                     objectName: "forgeSourceDetailsViewport"
                     visible: window.forgeDensity !== "compact"
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 1
+                    Layout.preferredWidth: 2
                     Layout.fillHeight: true
                     clip: true
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff

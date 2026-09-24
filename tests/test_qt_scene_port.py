@@ -1679,6 +1679,18 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         assert bridge.openWelcomeTour()
         popup = window.findChild(QObject, "editorialPopup")
         popup.open()
+        app.processEvents()
+        assert popup.property("width") == 490
+        assert popup.property("height") == 470
+        heading = popup.findChild(QObject, "editorialHeadingRegion")
+        assert (
+            abs(
+                heading.mapToScene(QPointF()).x()
+                + heading.property("width") / 2
+                - window.width() / 2
+            )
+            < 3
+        )
         popup.setProperty("index", 1)
         app.processEvents()
         exhibit = popup.findChild(QObject, "editorialPreviewRegion")
@@ -1758,7 +1770,7 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
             if item.isVisible()
         )
         assert details.property("appBridge") is not None
-        assert 0.45 < details.mapToScene(QPointF()).x() / window.width() < 0.57
+        assert 0.58 < details.mapToScene(QPointF()).x() / window.width() < 0.64
         assert details.property("preview") is False
         assert any(
             "Save to" == row.property("modelData").get("label")
@@ -2571,6 +2583,82 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
             title for title, _size, request_role in requested if request_role == role
         }
         assert len(group_requests) <= 80
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        app.processEvents()
+        bridge.close()
+
+
+@pytest.mark.parametrize(
+    ("surface", "mode", "image_name"),
+    [
+        ("Watch", "groups", "watchGroupArtworkImage"),
+        ("Library", "groups", "libraryGroupArtworkImage"),
+        ("Watch", "media", "watchMediaArtworkImage"),
+        ("Library", "media", "libraryMediaArtworkImage"),
+    ],
+)
+def test_qt_visible_cards_show_resolved_local_artwork(
+    tmp_path, monkeypatch, surface, mode, image_name
+):
+    from PIL import Image
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    image_path = tmp_path / "saved-thumb.jpg"
+    Image.new("RGB", (640, 360), "#7197b8").save(image_path)
+    record = saved(tmp_path, "Saved group artwork", "MP4")
+    record["preview_thumbnail_path"] = str(image_path)
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select(surface)
+        if surface == "Watch":
+            bridge.navigateWatch("playlists" if mode == "groups" else "videos")
+        elif mode == "media":
+            bridge.navigateLibrary("all")
+        for _ in range(3):
+            app.processEvents()
+        assert not window.grabWindow().isNull()
+
+        def visual_children(item):
+            for child in item.childItems():
+                yield child
+                yield from visual_children(child)
+
+        images = [
+            item
+            for item in visual_children(window.contentItem())
+            if item.objectName() == image_name
+        ]
+        assert images
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if bridge._artwork.poll():
+                bridge.historyChanged.emit()
+            app.processEvents()
+            if any(image.property("source").toLocalFile() for image in images):
+                break
+            time.sleep(0.005)
+        assert any(
+            Path(image.property("source").toLocalFile()).resolve() == image_path
+            for image in images
+            if image.property("source").toLocalFile()
+        ), (
+            surface,
+            mode,
+            len(bridge._artwork._pending),
+            len(bridge._artwork._ready),
+            len(bridge._artwork._unavailable),
+            [image.property("source").toString() for image in images],
+        )
     finally:
         window.close()
         engine.deleteLater()

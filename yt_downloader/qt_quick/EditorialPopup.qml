@@ -19,8 +19,8 @@ Popup {
     }
     onOpened: { index = 0; completed = false }
     onClosed: { if (!completed) editorial.acknowledged(false) }
-    width: Math.min(590, parent.width - 40)
-    height: Math.min(560, parent.height - 40)
+    width: Math.min(490, parent.width - 40)
+    height: Math.min(470, parent.height - 40)
     x: Math.max(0, (parent.width - width) / 2)
     y: Math.max(0, (parent.height - height) / 2)
     padding: 20
@@ -33,20 +33,26 @@ Popup {
         spacing: 11
         RowLayout {
             Layout.fillWidth: true
-            RowLayout {
+            Layout.preferredHeight: 36
+            Item { Layout.preferredWidth: 34; Layout.preferredHeight: 34 }
+            Item {
+                objectName: "editorialHeadingRegion"
                 Layout.fillWidth: true
-                spacing: 0
-                Text {
-                    text: editorial.heading.indexOf("VODForge") >= 0 ?
-                          editorial.heading.split("VODForge")[0] + "VOD" : editorial.heading
-                    color: theme.accent; font.pixelSize: 15; font.bold: true
+                Layout.preferredHeight: 34
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 0
+                    Text {
+                        text: editorial.heading.indexOf("VODForge") >= 0 ?
+                              editorial.heading.split("VODForge")[0] + "VOD" : editorial.heading
+                        color: theme.accent; font.pixelSize: 15; font.bold: true
+                    }
+                    Text {
+                        visible: editorial.heading.indexOf("VODForge") >= 0
+                        text: "Forge"
+                        color: theme.text; font.pixelSize: 15; font.bold: true
+                    }
                 }
-                Text {
-                    visible: editorial.heading.indexOf("VODForge") >= 0
-                    text: "Forge"
-                    color: theme.text; font.pixelSize: 15; font.bold: true
-                }
-                Item { Layout.fillWidth: true }
             }
             StoneButton {
                 label: "×"; accessibilityLabel: "Close tour"

@@ -1326,7 +1326,7 @@ class Bridge(QObject):
 
     @Slot(str, result=str)
     def mediaArtwork(self, owner: str) -> str:
-        if self._selection != "Library":
+        if self._selection not in {"Library", "Watch"}:
             return ""
         matches = [
             row

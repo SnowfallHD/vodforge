@@ -65,6 +65,17 @@ popup controls, verified a second slider inside the activity slide, captured
 each slide, and exited code 0. The images are under
 `build/qt-port-package/genesis-c14a63d-v2/`. This is visual acceptance of
 these states only, not full Mac/Windows journey or release proof.
+The current source comparison found two remaining geometry differences: Qt split
+Forge Activity and Source Details equally while Tk assigns them 3:2, and the
+Qt welcome popup was 590×560 with a left-aligned heading while Tk's logical
+surface is about 478×454 with centered branding. The QML now uses the 3:2
+row and a 490×470 centered popup. Rendered source captures
+`build/qt-port-package/parity-welcome-current.png` and
+`parity-slider-current.png` show the actual emblem rows and smiley/frowny
+slider at 1100×740; 75 Qt scene tests pass. The prior QML tests checked that
+the slider object and icon source existed, but did not check final popup size,
+heading position or Activity/Details ratio. Native exact-package acceptance
+of this revision remains open.
 The actual Tk `whats_new_ui.py` places the preview exhibit before its title
 and description caption. The first `c14a63d` Qt capture had that order
 reversed. `EditorialPopup.qml` now follows the Tk placement; a live source

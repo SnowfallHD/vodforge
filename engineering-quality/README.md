@@ -1,5 +1,26 @@
 # VODForge engineering-quality harness
 
+## Qt artwork and Forge visual ownership — 2026-09-24
+
+The earlier Watch/Library source tests counted bounded artwork requests and
+checked the projected owner, but did not require an image to appear after the
+asynchronous artwork worker completed. A native Library/Watch inspection
+therefore exposed blank cards even with a usable cached thumbnail. The
+four-case rendered QML regression now resolves one local JPEG through the
+real artwork owner in Watch/Library group and media routes and checks the
+final image source. Watch media also reached a Library-only bridge gate; the
+test failed with the image still empty after five artwork results were ready.
+The bridge now admits the Watch route and the QML bindings depend on the
+notified scene projection, so completion repaints the cards. This covers
+representative local-cache paths; native packages and remote thumbnail
+acquisition still need separate evidence.
+
+The Forge/Welcome scene test previously verified the slider object and emblem
+URL but not the final arrangement. It now checks the Tk-derived Activity to
+Source Details split, popup size, centered heading and exhibit order. The
+rendered captures are in `build/qt-port-package/parity-*.png`. Mac/Genesis
+package visuals remain a separate release gate.
+
 ## Qt consent and lifecycle ownership — 2026-09-23
 
 The Qt presentation binds the existing analytics consent, product telemetry,
