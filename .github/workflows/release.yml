@@ -34,6 +34,7 @@ jobs:
       - name: Build Windows application
         shell: pwsh
         env:
+          VODFORGE_UI: qt
           VODFORGE_BUILD_VERSION: ${{ inputs.version }}
           VODFORGE_BUILD_TELEMETRY: production
         run: .\build_windows.ps1
@@ -144,6 +145,7 @@ jobs:
           echo "$(brew --prefix deno)/bin" >> "$GITHUB_PATH"
       - name: Build unsigned macOS review application
         env:
+          VODFORGE_UI: qt
           VODFORGE_UNSIGNED_REVIEW: "1"
           VODFORGE_BUILD_TELEMETRY: production
         run: ./build_and_package_macos.sh "${{ inputs.version }}"

@@ -42,6 +42,22 @@ def test_release_workflow_keeps_macos_artifacts_explicitly_review_only():
     assert "--draft" in workflow
 
 
+def test_release_draft_builds_qt_on_both_platforms():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    for start, end in (
+        ("name: Build Windows application", "name: Sign in to Azure"),
+        (
+            "name: Build unsigned macOS review application",
+            "uses: actions/upload-artifact",
+        ),
+    ):
+        build_step = workflow.split(start, 1)[1].split(end, 1)[0]
+        assert "VODFORGE_UI: qt" in build_step
+
+
 def test_macos_dependency_install_recovers_only_when_every_formula_is_present():
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
