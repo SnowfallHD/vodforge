@@ -16,7 +16,6 @@ from .history import (
     HISTORY_MEDIA_UNAVAILABLE,
     RETRY_JOB_METADATA_KEY,
     history_annotation_owner,
-    history_identity,
     history_media_file_state,
     history_output_dir,
 )
@@ -49,7 +48,6 @@ class LibraryMediaRecoveryPlan:
     kind: MediaRecoveryKind
     destination: Path | None
     job: DownloadJob | None = None
-    replaced_history_identity: tuple[str, str, str] | None = None
     previous_annotation_owner: str = ""
     requires_destination_choice: bool = False
     preset_migrated: bool = False
@@ -59,11 +57,24 @@ class LibraryMediaRecoveryPlan:
         return self.kind == "missing" and self.job is not None
 
 
-def _selected_item_url(info: Mapping[str, Any]) -> str | None:
+def _selected_item_url(info: Mapping[str, Any], saved_job: DownloadJob) -> str | None:
     """Recover the captured video only; playlist identity remains organization."""
     video_id = str(info.get("id") or "").strip()
     if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", video_id) is None:
         return None
+    # A single-item source may not have a provider watch URL at all. Reuse its
+    # validated saved input only when the committed row and preview both bind
+    # that input to this exact item. Playlist and batch recovery still targets
+    # the selected video below.
+    if (
+        saved_job.single_video_only
+        and not saved_job.batch_mode
+        and len(saved_job.urls or [saved_job.url]) == 1
+        and saved_job.url
+        == str(info.get("original_url") or info.get("webpage_url") or "").strip()
+        and str((saved_job.preview_info or {}).get("id") or "").strip() == video_id
+    ):
+        return saved_job.url
     query = {"v": video_id}
     playlist_id = str(info.get("playlist_id") or "").strip()
     if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", playlist_id):
@@ -283,7 +294,7 @@ class LibraryMediaRecoveryOwner:
                 != saved_job.export_mode,
             )
 
-        source_url = _selected_item_url(row)
+        source_url = _selected_item_url(row, saved_job)
         if source_url is None:
             return LibraryMediaRecoveryPlan("invalid", destination)
         export_mode = _redownload_export_mode(saved_job, row)
@@ -318,7 +329,6 @@ class LibraryMediaRecoveryOwner:
             job=job,
             requires_destination_choice=relocated,
             preset_migrated=export_mode != saved_job.export_mode,
-            replaced_history_identity=history_identity(row),
             previous_annotation_owner=previous_annotation_owner,
         )
 
@@ -341,19 +351,3 @@ class LibraryMediaRecoveryOwner:
         return replace(
             plan, destination=destination, job=job, requires_destination_choice=False
         )
-
-    @staticmethod
-    def history_after_acceptance(
-        history_items: Sequence[dict[str, Any]],
-        plan: LibraryMediaRecoveryPlan,
-    ) -> list[dict[str, Any]]:
-        """Retire only the exact stale artifact after replacement is durable."""
-
-        replaced = plan.replaced_history_identity
-        if replaced is None:
-            return [dict(item) for item in history_items]
-        return [
-            dict(item)
-            for item in history_items
-            if history_identity(dict(item)) != replaced
-        ]

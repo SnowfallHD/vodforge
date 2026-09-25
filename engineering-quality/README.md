@@ -1,5 +1,29 @@
 # VODForge engineering-quality harness
 
+## Missing-media recovery keeps the saved item until replacement — 2026-09-24
+
+The exact signed `761c878` Mac preview journey found a real failure: after a
+saved MP4 was moved aside, Redownload synthesized a YouTube watch URL from the
+item ID even though the original, single-item source was a different page.
+That source could not be downloaded. Qt also removed the old Library record
+as soon as the retry was accepted, before a replacement file or history write
+existed. Tk used the same shared plan and early-removal method. A failed retry
+could therefore erase the only saved Library card for missing media.
+
+The shared plan now reuses the validated saved input only when the committed
+row and original preview bind it to the same single item; playlist and batch
+recovery still target the selected video ID. Both Qt and Tk review actions use
+that planned source. Both UIs retain the old card through admission, failure,
+and cancellation. The existing history upsert removes a missing old card only
+when a validated replacement is durably recorded. Focused tests exercise the
+single-source and playlist decisions, both UI review paths, retained Qt
+history after admission, and replacement-on-commit. The prior Qt test asserted
+the wrong early deletion; the packaged failure and that prior assertion explain
+why existing coverage missed the loss. These tests run in the repository
+quality collection. The signed `761c878` artifact is still a failed recovery
+gate; a new signed package must prove native redownload, failed retry retention,
+and preview-D1 outcome before release.
+
 ## Qt composer terminal-state visibility — 2026-09-24
 
 The first signed preview-D1 Mac journey exposed a local conversion failure

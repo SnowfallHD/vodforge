@@ -11,6 +11,7 @@ from yt_downloader.archive_paths import ArchivePath
 from yt_downloader.history import (
     RETRY_JOB_METADATA_KEY,
     history_archive_owner,
+    history_identity,
     load_history,
     save_history,
 )
@@ -348,7 +349,7 @@ def test_qt_missing_media_can_prepare_forge_without_changing_default(
         bridge.close()
 
 
-def test_qt_missing_media_redownload_uses_saved_job_and_retires_only_its_card(
+def test_qt_missing_media_redownload_keeps_card_until_replacement_commits(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -361,13 +362,15 @@ def test_qt_missing_media_redownload_uses_saved_job_and_retires_only_its_card(
     root.mkdir()
     missing = root / "channel" / "missing.mp4"
     missing.parent.mkdir()
-    job = bridge._runtime.prepare_job(
-        "https://www.youtube.com/watch?v=abcdefghijk", root, "MP4", "Everyday"
-    )
+    source = "https://example.com/video-page"
+    job = bridge._runtime.prepare_job(source, root, "MP4", "Everyday")
+    job.preview_info = {"id": "abcdefghijk"}
     rows = [
         {
             "id": "abcdefghijk",
             "title": "Missing",
+            "original_url": source,
+            "webpage_url": source,
             "vodforge_output_type": "MP4",
             "vodforge_output_dir": str(missing.parent),
             "vodforge_output_path": str(missing),
@@ -376,6 +379,9 @@ def test_qt_missing_media_redownload_uses_saved_job_and_retires_only_its_card(
     ]
     save_history(bridge._runtime.history_path, rows)
     bridge._runtime.history = load_history(bridge._runtime.history_path)
+    baseline = bridge._runtime.history
+    prepared = []
+    bridge.sourcePrepared.connect(prepared.append)
     admitted = []
     monkeypatch.setattr(
         bridge._runtime,
@@ -385,11 +391,16 @@ def test_qt_missing_media_redownload_uses_saved_job_and_retires_only_its_card(
     try:
         assert not bridge.openLibraryItem(0)
         assert bridge.missingMedia["primaryAction"] == "redownload"
+        assert bridge.openMissingInForge()
+        assert prepared == [source]
+        assert not bridge.openLibraryItem(0)
         assert bridge.redownloadMissingTo()
         assert len(admitted) == 1
         assert admitted[0].recovery_reason == "missing_media"
-        assert admitted[0].urls == ["https://www.youtube.com/watch?v=abcdefghijk"]
-        assert bridge._runtime.history == []
-        assert load_history(bridge._runtime.history_path) == []
+        assert admitted[0].urls == [source]
+        assert bridge._runtime.history == baseline
+        persisted = load_history(bridge._runtime.history_path)
+        assert len(persisted) == 1
+        assert history_identity(persisted[0]) == history_identity(baseline[0])
     finally:
         bridge.close()

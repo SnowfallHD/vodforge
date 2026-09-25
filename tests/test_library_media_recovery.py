@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from yt_downloader.app import video_output_dir
-from yt_downloader.history import RETRY_JOB_METADATA_KEY, history_identity
+from yt_downloader.history import (
+    RETRY_JOB_METADATA_KEY,
+    history_identity,
+    upsert_history,
+)
 from yt_downloader.library_media_recovery import LibraryMediaRecoveryOwner
 from yt_downloader.models import (
     DownloadJob,
@@ -204,7 +208,7 @@ def test_missing_artifact_outside_saved_base_is_rejected(tmp_path: Path) -> None
     assert plan.can_redownload is False
 
 
-def test_missing_media_recovery_retires_only_accepted_exact_history_row(
+def test_missing_media_recovery_retires_only_committed_exact_history_row(
     tmp_path: Path,
 ) -> None:
     original = _job(tmp_path)
@@ -215,12 +219,77 @@ def test_missing_media_recovery_retires_only_accepted_exact_history_row(
         "title": "Other",
         "vodforge_output_path": str(original.output_dir / "Other.mp3"),
     }
-    owner = LibraryMediaRecoveryOwner(run_id_factory=lambda: "redownload-run")
+    replacement = {
+        **record,
+        "vodforge_output_path": str(original.output_dir / "replacement.mp3"),
+    }
+    (original.output_dir).mkdir(parents=True, exist_ok=True)
+    Path(replacement["vodforge_output_path"]).write_bytes(b"committed")
+
+    remaining = upsert_history(
+        [record, other], replacement, original.output_dir, replace_missing_media=True
+    )
+
+    assert [history_identity(item) for item in remaining] == [
+        history_identity(replacement),
+        history_identity(other),
+    ]
+
+
+def test_single_item_recovery_reuses_exact_saved_source_without_watch_url(
+    tmp_path: Path,
+) -> None:
+    original = _job(tmp_path)
+    original.url = "https://example.com/video-page"
+    original.urls = [original.url]
+    original.preview_info = {"id": "missing"}
+    record = _missing_record(original)
+    record["original_url"] = original.url
+
+    plan = LibraryMediaRecoveryOwner().plan(record)
+
+    assert plan.can_redownload and plan.job is not None
+    assert plan.job.url == original.url
+    assert plan.job.urls == [original.url]
+
+    original.preview_info = {"id": "different"}
+    mismatched = _missing_record(original)
+    mismatched["original_url"] = original.url
+    fallback = LibraryMediaRecoveryOwner().plan(mismatched)
+    assert fallback.can_redownload and fallback.job is not None
+    assert fallback.job.url == "https://www.youtube.com/watch?v=missing"
+
+
+def test_tk_recovery_review_prepares_the_same_saved_source(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from yt_downloader.app import DownloaderApp
+
+    original = _job(tmp_path)
+    original.url = "https://example.com/video-page"
+    original.urls = [original.url]
+    original.preview_info = {"id": "missing"}
+    record = _missing_record(original)
+    record["original_url"] = original.url
+    owner = LibraryMediaRecoveryOwner()
     plan = owner.plan(record)
+    assert plan.can_redownload
+    app = SimpleNamespace(
+        _pick_output_directory=Mock(),
+        _reset_source_input_after_send=Mock(),
+        url_var=Mock(),
+        library_media_recovery=owner,
+        _sync_focus_destination=Mock(),
+        output_type_var=Mock(),
+        _select_focus_view=Mock(),
+        status_var=Mock(),
+    )
 
-    remaining = owner.history_after_acceptance([record, other], plan)
+    DownloaderApp._open_missing_media_in_forge(app, record, plan)
 
-    assert [history_identity(item) for item in remaining] == [history_identity(other)]
+    app.url_var.set.assert_called_once_with(original.url)
+    assert owner.is_draft_for(original.url)
 
 
 def test_legacy_or_tampered_missing_media_never_guesses_saved_settings(
@@ -403,10 +472,7 @@ def test_missing_item_recovery_downloads_only_captured_video(
         "id": "other",
         "vodforge_output_path": str(original.output_dir / "Other.mp4"),
     }
-    assert plan.replaced_history_identity == history_identity(row)
-    assert LibraryMediaRecoveryOwner.history_after_acceptance([row, sibling], plan) == [
-        sibling
-    ]
+    assert history_identity(row) != history_identity(sibling)
 
 
 @pytest.mark.parametrize("video_id", ["", "../other", "bad&list=other"])

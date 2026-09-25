@@ -14816,7 +14816,7 @@ class DownloaderApp(
             if not folder:
                 return
             destination = Path(folder)
-        source_url = canonical_youtube_url(info)
+        source_url = plan.job.url if plan.job is not None else canonical_youtube_url(info)
         if source_url:
             self._reset_source_input_after_send()
             self.url_var.set(source_url)
@@ -14868,16 +14868,8 @@ class DownloaderApp(
                 "preset_migrated",
                 dimensions={"preset": "everyday", "input_kind": "single"},
             )
-        updated_history = self.library_media_recovery.history_after_acceptance(
-            self.download_history,
-            plan,
-        )
-        try:
-            save_history(self.history_path, updated_history)
-        except HistoryError as exc:
-            write_diagnostic(f"missing-media history retirement deferred: {exc}")
-        else:
-            self.download_history = updated_history
+        # Keep the missing Library card until a replacement has been committed.
+        # _record_download_history removes it atomically on success.
         self._reconcile_library_projection()
         self._focus_selected_run_id = job.run_id
         self._select_focus_view("forge")

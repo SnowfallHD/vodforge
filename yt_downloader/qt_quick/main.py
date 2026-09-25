@@ -833,7 +833,7 @@ class Bridge(QObject):
             destination = Path(folder.toLocalFile())
             if not destination.is_dir():
                 return False
-        source_url = canonical_youtube_url(item)
+        source_url = plan.job.url if plan.job is not None else canonical_youtube_url(item)
         if not source_url:
             return False
         self._media_recovery.clear_destination()
@@ -893,17 +893,9 @@ class Bridge(QObject):
                 "preset_migrated",
                 {"preset": "everyday", "input_kind": "single"},
             )
-        updated = self._media_recovery.history_after_acceptance(
-            self._runtime.history, plan
-        )
-        try:
-            save_history(self._runtime.history_path, updated)
-        except HistoryError:
-            self._status = "Redownload started. The old Library card needs review."
-        else:
-            self._runtime.history = updated
-            self.historyChanged.emit()
-            self._status = "Redownloading this saved video with its output profile."
+        # Keep the missing Library card until a replacement has been committed.
+        # The history owner's record_file removes it atomically on success.
+        self._status = "Redownloading this saved video with its output profile."
         self.select("Forge")
         self.runningChanged.emit()
         self.activityChanged.emit()
