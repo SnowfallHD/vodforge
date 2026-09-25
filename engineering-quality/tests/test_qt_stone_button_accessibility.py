@@ -16,6 +16,7 @@ from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QGuiApplicati
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from tests.test_run_identity import make_job
 from yt_downloader.qt_quick.main import Bridge, create_engine
 
 
@@ -214,9 +215,13 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
             }
         ]
         bridge.historyChanged.emit()
+        bridge._runtime.active_job = make_job(tmp_path)
+        bridge.runDeckChanged.emit()
         for _ in range(5):
             application.processEvents()
-        assert inside(visible_button("All 1 runs"))
+        assert inside(visible_button("All 1 run"))
+        bridge._runtime.active_job = None
+        bridge.runDeckChanged.emit()
         assert bridge.openLibraryItem(0)
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:

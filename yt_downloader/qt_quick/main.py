@@ -501,18 +501,20 @@ class Bridge(QObject):
         defaults = DownloadPreferences()
         self._nvenc_available = False
         self._saved_nvenc_preference = self._settings.get("use_nvenc") is True
-        self._download_preferences = DownloadPreferences(
-            **{
-                field.name: value
-                if isinstance((value := self._settings.get(field.name)), bool)
-                else getattr(defaults, field.name)
-                for field in fields(DownloadPreferences)
-            }
-        )
-        if self._download_preferences.use_nvenc:
-            self._download_preferences = replace(
-                self._download_preferences, use_nvenc=False
+        preference_values: dict[str, bool] = {}
+        for preference_field in fields(DownloadPreferences):
+            value = self._settings.get(preference_field.name)
+            preference_values[preference_field.name] = (
+                value
+                if isinstance(value, bool)
+                else getattr(defaults, preference_field.name)
             )
+        preferences = DownloadPreferences(**preference_values)
+        self._download_preferences = (
+            replace(preferences, use_nvenc=False)
+            if preferences.use_nvenc
+            else preferences
+        )
         self._nvenc_probe: QProcess | None = None
         if sys.platform == "win32":
             QTimer.singleShot(0, self._start_nvenc_probe)
