@@ -186,8 +186,10 @@ Window {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: StoneField {}
         ScrollView {
+            objectName: "forgeOutputDetailsScroll"
             anchors.fill: parent
             clip: true
+            contentWidth: availableWidth
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ForgeSourceDetails {
                 width: parent.availableWidth
@@ -1092,6 +1094,7 @@ Window {
                     Layout.preferredWidth: 2
                     Layout.fillHeight: true
                     clip: true
+                    contentWidth: availableWidth
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                     ForgeSourceDetails {
                         width: forgeSourceDetailsViewport.availableWidth

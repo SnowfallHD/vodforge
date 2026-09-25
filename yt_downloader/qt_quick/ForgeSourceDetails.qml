@@ -35,6 +35,8 @@ ColumnLayout {
         RowLayout {
             required property var modelData
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            Layout.maximumWidth: details.width
             Layout.topMargin: modelData.label === "Save to" ? 8 : 0
             spacing: 10
             Text {
@@ -43,6 +45,7 @@ ColumnLayout {
                 font.pixelSize: 14
                 wrapMode: Text.WordWrap
                 Layout.preferredWidth: 135
+                Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignTop
             }
             Text {
@@ -52,6 +55,8 @@ ColumnLayout {
                 font.pixelSize: 14
                 wrapMode: Text.WrapAnywhere
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: 0
             }
         }
     }

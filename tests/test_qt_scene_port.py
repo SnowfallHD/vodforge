@@ -2234,6 +2234,29 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
             for row in details.childItems()
             if isinstance(row.property("modelData"), dict)
         )
+        details.setProperty(
+            "selectedFacts",
+            {
+                "heading": "",
+                "rows": [
+                    {"label": "Save to", "value": "/very-long-output-directory" * 30}
+                ],
+            },
+        )
+        app.processEvents()
+        source_viewport = window.findChild(QObject, "forgeSourceDetailsViewport")
+        assert (
+            source_viewport.property("contentWidth")
+            <= source_viewport.property("availableWidth") + 1
+        )
+        assert source_viewport.property("contentItem").property("contentX") == 0
+        save_row = next(
+            row
+            for row in details.childItems()
+            if isinstance(row.property("modelData"), dict)
+            and row.property("modelData").get("label") == "Save to"
+        )
+        assert save_row.property("width") <= details.property("width") + 1
         slider.selected.emit(True)
         app.processEvents()
         assert activity.property("technical") is True
@@ -2258,6 +2281,11 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
         action.activated.emit()
         app.processEvents()
         assert window.findChild(QObject, "forgeOutputDetailsPopup").property("visible")
+        popup_scroll = window.findChild(QObject, "forgeOutputDetailsScroll")
+        assert (
+            popup_scroll.property("contentWidth")
+            <= popup_scroll.property("availableWidth") + 1
+        )
     finally:
         window.close()
         engine.deleteLater()
