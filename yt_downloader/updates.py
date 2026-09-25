@@ -562,15 +562,15 @@ def write_macos_swap_script(
     # QA update must instead inherit the validated profile, feed and telemetry
     # environment from this detached helper, without putting the key in argv.
     relaunch = (
-        'new_nonce=$(/usr/bin/openssl rand -hex 16) &&\n'
-        '            new_launch_id=$(/usr/bin/openssl rand -hex 16) &&\n'
+        "new_nonce=$(/usr/bin/openssl rand -hex 16) &&\n"
+        "            new_launch_id=$(/usr/bin/openssl rand -hex 16) &&\n"
         '            export VODFORGE_QUALITY_E2E_SESSION_NONCE="$new_nonce" &&\n'
         '            export VODFORGE_QUALITY_E2E_WINDOW_TOKEN="VFQ-${new_nonce:0:12}-L1" &&\n'
         '            export VODFORGE_QUALITY_E2E_LAUNCH_ID="$new_launch_id" &&\n'
         '            VODFORGE_UPDATE_RECEIPT="$telemetry_receipt" '
         '"$target_app/Contents/MacOS/VODForge" >/dev/null 2>&1 &\n'
-        '            relaunched_pid=$!\n'
-        '            /bin/sleep 1\n'
+        "            relaunched_pid=$!\n"
+        "            /bin/sleep 1\n"
         '            /bin/kill -0 "$relaunched_pid" 2>/dev/null'
         if qa_relaunch
         else '/usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"'

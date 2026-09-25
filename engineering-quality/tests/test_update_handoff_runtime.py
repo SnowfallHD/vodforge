@@ -225,14 +225,14 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
     observed = tmp_path / "relaunch-environment"
     (source / "Contents/MacOS/VODForge").write_text(
         "#!/bin/bash\n"
-        f"printf '%s\\n' \"$HOME\" \"$VODFORGE_QA_PROFILE\" "
-        f"\"$VODFORGE_QA_PREVIEW_TELEMETRY\" "
-        f"\"$VODFORGE_QUALITY_E2E\" "
-        f"\"$VODFORGE_QA_ACCESS_KEY\" "
-        f"\"$VODFORGE_UPDATE_RECEIPT\" "
-        f"\"$VODFORGE_QUALITY_E2E_SESSION_NONCE\" "
-        f"\"$VODFORGE_QUALITY_E2E_WINDOW_TOKEN\" "
-        f"\"$VODFORGE_QUALITY_E2E_LAUNCH_ID\" "
+        f'printf \'%s\\n\' "$HOME" "$VODFORGE_QA_PROFILE" '
+        f'"$VODFORGE_QA_PREVIEW_TELEMETRY" '
+        f'"$VODFORGE_QUALITY_E2E" '
+        f'"$VODFORGE_QA_ACCESS_KEY" '
+        f'"$VODFORGE_UPDATE_RECEIPT" '
+        f'"$VODFORGE_QUALITY_E2E_SESSION_NONCE" '
+        f'"$VODFORGE_QUALITY_E2E_WINDOW_TOKEN" '
+        f'"$VODFORGE_QUALITY_E2E_LAUNCH_ID" '
         f"> {shlex.quote(str(observed))}\n"
         "sleep 3\n"
     )
