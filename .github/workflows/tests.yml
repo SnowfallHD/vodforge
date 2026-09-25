@@ -39,6 +39,8 @@ jobs:
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
       - name: Run tests
+        env:
+          QT_QUICK_BACKEND: software
         run: python -m pytest -q
       - name: Execute Windows updater fault cases
         if: runner.os == 'Windows'

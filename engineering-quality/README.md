@@ -2251,6 +2251,17 @@ the class without relying on allocator behavior. This proves the nonempty
 replacement boundary; a broader adversarial filesystem race campaign is not
 claimed.
 
+The next Ubuntu run showed that the non-Mac navigation row also has a wider
+implicit width under its platform font. The header test now uses that measured
+width in the same centering rule while retaining the Mac measured absolute
+reference and compact height. Two local package attempts then crashed in
+Qt Quick's offscreen `grabWindow()` after earlier tests, though the isolated
+scene file and an ordinary full suite passed. A full suite using Qt's software
+offscreen backend passed 3,735/814 without the crash. The source and macOS
+build test commands now select that backend only for headless tests; the app
+bundle and signed native visual journey still use the normal renderer. This
+separates deterministic headless test execution from actual package acceptance.
+
 The same signed smoke failed its final restart gate despite clean exits and
 stable media/history: launch 2 stayed on Forge, so the required Qt Folder
 Inspector Description receipt was never made. The previous recorder checked
