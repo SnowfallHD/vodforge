@@ -3237,7 +3237,9 @@ class Bridge(QObject):
                 if isinstance(exc, (LocalAudioVideoError, OSError))
                 else str(exc)
             )
+            self._local_progress = self._status
             self.statusChanged.emit()
+            self.localChanged.emit()
             return
         self._local_running = True
         self._local_progress = "Preparing local video…"
@@ -4117,6 +4119,7 @@ class Bridge(QObject):
                 self.statusChanged.emit()
             elif kind == "error":
                 self._status = str(payload)
+                self._local_progress = self._status
                 self._local_running = False
                 self.statusChanged.emit()
             self.localChanged.emit()

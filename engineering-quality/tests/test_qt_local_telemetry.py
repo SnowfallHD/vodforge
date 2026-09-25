@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QGuiApplication
 
 from yt_downloader.local_audio_video import (
@@ -176,5 +177,62 @@ def test_qt_local_admission_failure_keeps_component_error_out_of_status(
         assert "FFprobe" not in bridge.status
         assert "/Users/example" not in bridge.status
         assert bridge.status
+        assert bridge.localProgress == bridge.status
     finally:
+        bridge.close()
+
+
+def test_qt_local_worker_failure_replaces_progress_with_friendly_message(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._local_running = True
+        bridge._local_progress = "Checking local files…"
+        bridge._local.events.put(
+            ("error", "That audio file could not be read. Choose another MP3.")
+        )
+        bridge._pump()
+        assert not bridge.localRunning
+        assert bridge.localProgress == "That audio file could not be read. Choose another MP3."
+        assert bridge.status == "That audio file could not be read. Choose another MP3."
+    finally:
+        bridge.close()
+
+
+def test_qt_local_worker_failure_is_rendered_in_composer(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    try:
+        root = engine.rootObjects()[0]
+        popup = root.findChild(QObject, "localConversionPopup")
+        assert popup is not None
+        popup.open()
+        bridge._local_running = True
+        bridge._local_progress = "Checking local files…"
+        bridge.localChanged.emit()
+        app.processEvents()
+        message = "That audio file could not be read. Choose another MP3."
+        bridge._local.events.put(("error", message))
+        bridge._pump()
+        app.processEvents()
+        assert any(
+            child.property("text") == message and child.property("visible") is True
+            for child in root.findChildren(QObject)
+        )
+    finally:
+        engine.deleteLater()
+        app.processEvents()
         bridge.close()

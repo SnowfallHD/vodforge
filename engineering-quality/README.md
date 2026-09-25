@@ -1,5 +1,18 @@
 # VODForge engineering-quality harness
 
+## Qt composer terminal-state visibility — 2026-09-24
+
+The first signed preview-D1 Mac journey exposed a local conversion failure
+that was logged and counted, while the visible composer remained on "Checking
+local files…". The bridge updated the global status but left its local progress
+property nonempty; QML always prefers that property over global status. The
+shared local conversion handoff now replaces progress with the friendly
+terminal message for both worker failures and admission failures. A test first
+failed against the prior bridge, then passed after the fix. It covers the
+bridge terminal transition and actual rendered composer text, plus the
+admission path. The signed `5dedd9c` package remains a failed visual gate;
+the next signed Mac and Genesis packages must verify this user-visible state.
+
 ## Qt run progress semantics — 2026-09-24
 
 The prior Qt scene checks verified run selection and status text, but never
