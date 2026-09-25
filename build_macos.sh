@@ -37,7 +37,12 @@ fi
 "$python_bin" -m pip install --upgrade pip
 "$python_bin" -m pip install -r requirements-dev.txt -r engineering-quality/requirements.txt
 "$python_bin" -m compileall -q yt_downloader main.py qt_main.py macos_smoke_test.py
-QT_QUICK_BACKEND=software "$python_bin" -m pytest -q
+(
+  # Build policy belongs to the packaged bytes, not to source tests that may
+  # create live Qt bridges and telemetry owners in the same process.
+  unset VODFORGE_UI VODFORGE_BUILD_TELEMETRY VODFORGE_BUILD_VERSION VODFORGE_DIST_DIR
+  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q
+)
 
 ui_mode="${VODFORGE_UI:-tk}"
 entrypoint="main.py"

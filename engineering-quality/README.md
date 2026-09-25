@@ -2262,6 +2262,15 @@ build test commands now select that backend only for headless tests; the app
 bundle and signed native visual journey still use the normal renderer. This
 separates deterministic headless test execution from actual package acceptance.
 
+The first build-script retry still crashed at that screenshot because the build
+process also inherited its `VODFORGE_UI`, build telemetry policy, version and
+output directory into pytest. Those inputs are intended for the bundle, not
+for source tests that create live Qt bridges. The macOS build now clears them
+only in the test subshell. The build must finish with its **production**
+telemetry policy before the signed preview-D1 QA route is admissible. This
+runner correction is a causal hypothesis until the exact build completes;
+the software-only full pass does not itself qualify a package.
+
 The same signed smoke failed its final restart gate despite clean exits and
 stable media/history: launch 2 stayed on Forge, so the required Qt Folder
 Inspector Description receipt was never made. The previous recorder checked
