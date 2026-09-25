@@ -229,7 +229,11 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
         f"\"$VODFORGE_QA_PREVIEW_TELEMETRY\" "
         f"\"$VODFORGE_QUALITY_E2E\" "
         f"\"$VODFORGE_QA_ACCESS_KEY\" "
-        f"\"$VODFORGE_UPDATE_RECEIPT\" > {shlex.quote(str(observed))}\n"
+        f"\"$VODFORGE_UPDATE_RECEIPT\" "
+        f"\"$VODFORGE_QUALITY_E2E_SESSION_NONCE\" "
+        f"\"$VODFORGE_QUALITY_E2E_WINDOW_TOKEN\" "
+        f"\"$VODFORGE_QUALITY_E2E_LAUNCH_ID\" "
+        f"> {shlex.quote(str(observed))}\n"
         "sleep 3\n"
     )
     (source / "Contents/MacOS/VODForge").chmod(0o755)
@@ -261,6 +265,9 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
         "VODFORGE_QA_PREVIEW_TELEMETRY": "1",
         "VODFORGE_QUALITY_E2E": "1",
         "VODFORGE_QA_ACCESS_KEY": "a" * 64,
+        "VODFORGE_QUALITY_E2E_SESSION_NONCE": "b" * 32,
+        "VODFORGE_QUALITY_E2E_WINDOW_TOKEN": "VFQ-bbbbbbbbbbbb-L1",
+        "VODFORGE_QUALITY_E2E_LAUNCH_ID": "c" * 32,
     }
     result = subprocess.run(
         ["/bin/bash", str(path), "99999999", str(source), str(target), str(staging)],
@@ -274,6 +281,9 @@ def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
     values = observed.read_text().splitlines()
     assert values[:5] == [str(home), str(profile), "1", "1", "a" * 64]
     assert values[5].endswith(".json")
+    assert len(values[6]) == 32 and values[6] != "b" * 32
+    assert values[7] == f"VFQ-{values[6][:12]}-L1"
+    assert len(values[8]) == 32 and values[8] != "c" * 32
     assert (target / "Contents/MacOS/VODForge").is_file()
 
 

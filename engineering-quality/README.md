@@ -103,8 +103,13 @@ feed, inheriting the isolated HOME, profile, telemetry policy, feed and key
 without writing the key into a script or command argument. Normal updates keep
 LaunchServices. A native helper test executes the generated swap script and
 checks the child environment and installed target; it fails against the old
-path. This covers the macOS QA handoff and its production/QA boundary, not a
-Windows installer or a final signed update. Rebuild and repeat the real
+path. The next signed baseline-to-candidate attempt exposed a second handoff
+invariant: the isolated relaunch inherited the prior launch's exclusive
+attestation nonce and exited at startup. The helper now generates a fresh QA
+nonce, window token and launch ID before the new process starts. The native
+helper test asserts both continuity of the private profile and rotation of
+that identity. This covers the macOS QA handoff and its production/QA boundary,
+not a Windows installer or a final signed update. Rebuild and repeat the real
 baseline-to-candidate update, Repair, D1 and user-data checks before release.
 
 ## Qt artwork and Forge visual ownership — 2026-09-24
