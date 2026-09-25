@@ -40,10 +40,31 @@ jobs:
           "QT_QPA_FONTDIR=$env:WINDIR\Fonts" >> $env:GITHUB_ENV
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
-      - name: Run tests outside Qt scene module
+      - name: Run backend tests without Qt renderer modules
         env:
           QT_QUICK_BACKEND: software
-        run: python -m pytest -q --ignore=tests/test_qt_scene_port.py
+        run: >-
+          python -m pytest -q
+          --ignore=tests/test_qt_artwork_image.py
+          --ignore=tests/test_qt_metadata_preview.py
+          --ignore=tests/test_qt_presentation_diagnostics.py
+          --ignore=tests/test_qt_previews.py
+          --ignore=tests/test_qt_quality_e2e.py
+          --ignore=tests/test_qt_relink.py
+          --ignore=tests/test_qt_terminal_item_events.py
+          --ignore=tests/test_qt_scene_port.py
+      - name: Run Qt component tests in a fresh process
+        env:
+          QT_QUICK_BACKEND: software
+        run: >-
+          python -m pytest -q
+          tests/test_qt_artwork_image.py
+          tests/test_qt_metadata_preview.py
+          tests/test_qt_presentation_diagnostics.py
+          tests/test_qt_previews.py
+          tests/test_qt_quality_e2e.py
+          tests/test_qt_relink.py
+          tests/test_qt_terminal_item_events.py
       - name: Run Qt scene tests in a fresh process
         env:
           QT_QUICK_BACKEND: software

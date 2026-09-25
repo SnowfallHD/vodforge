@@ -3163,16 +3163,18 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
 
 
 @pytest.mark.parametrize(
-    ("surface", "mode", "image_name"),
+    ("surface", "mode", "image_name", "channel"),
     [
-        ("Watch", "groups", "watchGroupArtworkImage"),
-        ("Library", "groups", "libraryGroupArtworkImage"),
-        ("Watch", "media", "watchMediaArtworkImage"),
-        ("Library", "media", "libraryMediaArtworkImage"),
+        ("Watch", "groups", "watchGroupArtworkImage", False),
+        ("Library", "groups", "libraryGroupArtworkImage", False),
+        ("Watch", "groups", "watchGroupArtworkImage", True),
+        ("Library", "groups", "libraryGroupArtworkImage", True),
+        ("Watch", "media", "watchMediaArtworkImage", False),
+        ("Library", "media", "libraryMediaArtworkImage", False),
     ],
 )
 def test_qt_visible_cards_show_resolved_local_artwork(
-    tmp_path, monkeypatch, surface, mode, image_name
+    tmp_path, monkeypatch, surface, mode, image_name, channel
 ):
     from PIL import Image
 
@@ -3185,6 +3187,7 @@ def test_qt_visible_cards_show_resolved_local_artwork(
     Image.new("RGB", (640, 360), "#7197b8").save(image_path)
     record = saved(tmp_path, "Saved group artwork", "MP4")
     record["preview_thumbnail_path"] = str(image_path)
+    record["channel"] = "Saved channel" if channel else ""
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [record]
     engine = qt_main.create_engine(bridge)
@@ -3192,7 +3195,11 @@ def test_qt_visible_cards_show_resolved_local_artwork(
     try:
         bridge.select(surface)
         if surface == "Watch":
-            bridge.navigateWatch("playlists" if mode == "groups" else "videos")
+            bridge.navigateWatch(
+                "channels" if channel else "playlists" if mode == "groups" else "videos"
+            )
+        elif channel:
+            bridge.navigateLibrary("channels")
         elif mode == "media":
             bridge.navigateLibrary("all")
         for _ in range(3):
@@ -3230,6 +3237,7 @@ def test_qt_visible_cards_show_resolved_local_artwork(
             len(bridge._artwork._unavailable),
             [image.property("source").toString() for image in images],
         )
+        assert any(image.property("circular") is channel for image in images)
     finally:
         window.close()
         engine.deleteLater()
