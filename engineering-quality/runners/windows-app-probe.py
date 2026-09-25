@@ -13,12 +13,15 @@ from pathlib import Path
 from PIL import ImageGrab
 
 
-def main():
-    exe, run = map(Path, sys.argv[1:3])
-    profile = run / "profile"
-    profile.mkdir()
-    env = dict(os.environ, LOCALAPPDATA=str(profile), VODFORGE_DISABLE_TELEMETRY="1")
-    user32 = ctypes.windll.user32
+def configure_window_api(user32):
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    user32.GetWindowThreadProcessId.argtypes = [
+        wintypes.HWND,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
     user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     user32.SetForegroundWindow.argtypes = [wintypes.HWND]
     user32.PostMessageW.argtypes = [
@@ -27,6 +30,16 @@ def main():
         wintypes.WPARAM,
         wintypes.LPARAM,
     ]
+    return callback_type
+
+
+def main():
+    exe, run = map(Path, sys.argv[1:3])
+    profile = run / "profile"
+    profile.mkdir()
+    env = dict(os.environ, LOCALAPPDATA=str(profile), VODFORGE_DISABLE_TELEMETRY="1")
+    user32 = ctypes.windll.user32
+    callback_type = configure_window_api(user32)
     result = {
         "passed": False,
         "executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
@@ -41,7 +54,7 @@ def main():
             while time.monotonic() - started < 30 and process.poll() is None:
                 windows = []
 
-                @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+                @callback_type
                 def collect(hwnd, _param, expected_pid=process.pid, owned=windows):
                     pid = wintypes.DWORD()
                     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))

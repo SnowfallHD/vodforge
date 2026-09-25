@@ -166,15 +166,15 @@ Item {
                     smooth: true
                     opacity: 0.24
                 }
-                Image {
+                ArtworkImage {
+                    objectName: "watchGroupAvatarImage"
                     x: 32
                     y: 42
                     width: groupHeader.width >= 1000 ? 150 : 112
                     height: width
-                    visible: groupHeader.channel && source.toString().length > 0
                     source: scene.projection.groupAvatar || ""
-                    fillMode: Image.PreserveAspectCrop
-                    smooth: true
+                    circular: true
+                    visible: groupHeader.channel && hasArtwork
                 }
                 Text {
                     id: groupTitle
@@ -376,22 +376,17 @@ Item {
                                 label: ""
                                 accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
                                 onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
-                                Item {
+                                ArtworkImage {
                                     id: artworkFrame
                                     x: modelData.kind === "channel" ? 16 : 4
                                     y: modelData.kind === "channel" ? (parent.height - height) / 2 : 4
                                     width: modelData.kind === "channel" ? Math.min(96, parent.height - 20) : parent.width - 8
                                     height: modelData.kind === "channel" ? width : 101
-                                    clip: true
-                                Image {
                                     objectName: "watchGroupArtworkImage"
-                                    anchors.fill: parent
+                                    circular: modelData.kind === "channel"
+                                    inset: modelData.kind === "channel" ? 4 : 0
                                     source: scene.projection ?
                                             scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind) : ""
-                                    visible: source.toString().length > 0
-                                    fillMode: Image.PreserveAspectCrop
-                                    smooth: true
-                                }
                                 }
                                 Text {
                                     x: modelData.kind === "channel" ? artworkFrame.x + artworkFrame.width + 18 : 12
@@ -444,7 +439,7 @@ Item {
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
                             onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
-                            Image { x: 4; y: 4; width: parent.width - 8; height: 96; source: scene.projection ? scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind) : ""; visible: source.toString().length > 0; fillMode: Image.PreserveAspectCrop; smooth: true }
+                            ArtworkImage { x: 0; y: 0; width: parent.width; height: 104; source: scene.projection ? scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind) : "" }
                             Text { x: 11; y: 106; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight }
                             Text { x: 11; y: 128; text: modelData.count + " saved"; color: theme.muted; font.pixelSize: 12 }
                         }
@@ -498,13 +493,10 @@ Item {
                         label: ""
                         accessibilityLabel: "Play " + modelData.title
                         onActivated: scene.appBridge.openLibraryOwner(modelData.owner)
-                        Image {
+                        ArtworkImage {
                             objectName: "watchMediaArtworkImage"
-                            x: 4; y: 4; width: parent.width - 8; height: 105
+                            x: 0; y: 0; width: parent.width; height: 113
                             source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
-                            visible: source.toString().length > 0
-                            fillMode: Image.PreserveAspectCrop
-                            smooth: true
                         }
                         Text { x: 11; y: 115; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }
                         Text { x: 11; y: 139; width: parent.width - 22; text: modelData.creator; color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight }

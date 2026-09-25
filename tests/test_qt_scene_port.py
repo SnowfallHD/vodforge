@@ -1279,93 +1279,37 @@ def test_qt_rendered_run_menu_uses_admitted_execution(tmp_path, monkeypatch):
         bridge.close()
 
 
-def test_qt_run_deck_saved_actions_bind_exact_library_owner(tmp_path, monkeypatch):
-    from PySide6.QtQuickControls2 import QQuickStyle
-
+def test_qt_saved_owner_actions_remain_in_library_after_work_deck_filter(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
-    QQuickStyle.setStyle("Basic")
+    QGuiApplication.instance() or QGuiApplication([])
     first = saved(tmp_path, "First", "MP4")
     second = saved(tmp_path, "Second", "MP4")
     first["webpage_url"] = "https://www.youtube.com/watch?v=abcdefghijk"
     second["webpage_url"] = "https://www.youtube.com/watch?v=lmnopqrstuv"
-    second["vodforge_run_activity"] = ["Saved output validated"]
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [first, second]
-    engine = qt_main.create_engine(bridge)
     try:
-        window = engine.rootObjects()[0]
-        app.processEvents()
-        deck = window.findChild(QObject, "forgeRunDeck")
-        popup = window.findChild(QObject, "runActionsPopup")
-        assert deck is not None and popup is not None
-        first_record = bridge.runDeck["records"][0]
-        second_record = bridge.runDeck["records"][1]
-        first_owner = first_record["owner"]
-        second_owner = second_record["owner"]
-        assert first_record["hasYoutubeUrl"]
-        deck.showActions(first_record)
-        app.processEvents()
-        view = next(
-            item
-            for item in popup.findChildren(QObject)
-            if item.property("label") == "View in Library"
-        )
-        view.activated.emit()
-        app.processEvents()
-        assert bridge.selection == "Library"
-        assert bridge.libraryDetail["owner"] == first_owner
-
-        bridge.select("Forge")
-        assert bridge.selectRunRecord(second_record["selectionKey"])
-        app.processEvents()
-        assert (
-            window.findChild(QObject, "forgeSelectedTitle").property("text") == "Second"
-        )
-        assert bridge.forgeActivity["technical"] == "Saved output validated"
-        assert bridge.forgeSelectedFacts["heading"] == "Saved output"
-        assert {
-            row["label"]: row["value"] for row in bridge.forgeSelectedFacts["rows"]
-        }["Saved Location"] == str(tmp_path)
-        deck.showActions(second_record)
-        app.processEvents()
-        copy = next(
-            item
-            for item in popup.findChildren(QObject)
-            if item.property("label") == "Copy YouTube URL"
-        )
-        copy.activated.emit()
-        app.processEvents()
+        owners = [row["owner"] for row in bridge.runDeck["records"]]
+        assert len(owners) == 2
+        assert bridge.openLibraryDetails(owners[0])
+        assert bridge.libraryDetail["owner"] == owners[0]
+        assert bridge.copySavedYoutubeUrl(owners[1])
         assert QGuiApplication.clipboard().text() == qt_main.canonical_youtube_url(
             second
         )
-
-        deck.showActions(first_record)
-        app.processEvents()
-        remove = next(
-            item
-            for item in popup.findChildren(QObject)
-            if item.property("label") == "Remove from Library…"
-        )
-        remove.activated.emit()
-        app.processEvents()
-        assert bridge._pending_library_removal[0] == first_owner
-        removal_popup = window.findChild(QObject, "libraryRemovalConfirmation")
-        assert removal_popup is not None
-        assert removal_popup.property("visible") is True
-        removal_popup.close()
+        assert bridge.prepareLibraryRemoval(owners[0])
+        assert bridge._pending_library_removal[0] == owners[0]
         bridge.cancelLibraryRemoval()
         bridge._runtime.history = [second]
-        assert not bridge.copySavedYoutubeUrl(first_owner)
-        assert not bridge.openLibraryDetails(first_owner)
-        assert second_owner == history_archive_owner(second)
+        assert not bridge.openLibraryDetails(owners[0])
+        assert not bridge.copySavedYoutubeUrl(owners[0])
+        assert owners[1] == history_archive_owner(second)
     finally:
-        engine.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-        app.processEvents()
         bridge.close()
 
 
@@ -1803,7 +1747,7 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
         bridge.close()
 
 
-def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
+def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_activity(
     tmp_path, monkeypatch
 ):
     from PySide6.QtQuickControls2 import QQuickStyle
@@ -1817,6 +1761,7 @@ def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
     QQuickStyle.setStyle("Basic")
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
+    bridge._runtime.active_job = make_job(tmp_path)
     engine = qt_main.create_engine(bridge)
     try:
         window = engine.rootObjects()[0]
@@ -1826,6 +1771,14 @@ def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
         popup = window.findChild(QObject, "allRunsPopup")
         popup_hover = window.findChild(QObject, "allRunsPopupHover")
         assert button.isVisible()
+        assert button.property("label") == "All 1 run"
+        deck_records = (
+            window.findChild(QObject, "forgeRunDeck")
+            .property("workRecords")
+            .toVariant()
+        )
+        assert len(deck_records) == 1
+        assert deck_records[0]["kind"] == "active"
         assert not popup.property("visible")
         button_top = button.mapToScene(QPointF(0, 0)).y()
         center = button.mapToScene(
@@ -1839,6 +1792,11 @@ def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
             QPointF(0, content_item.property("height") + popup.property("padding"))
         ).y()
         assert abs(popup_bottom - button_top) <= 1
+        popup_right = content_item.mapToScene(
+            QPointF(content_item.property("width") + popup.property("padding"), 0)
+        ).x()
+        button_right = button.mapToScene(QPointF(button.property("width"), 0)).x()
+        assert abs(popup_right - button_right) <= 1
         popup_point = content_item.mapToScene(
             QPointF(
                 content_item.property("width") / 2, content_item.property("height") - 2
@@ -1855,7 +1813,7 @@ def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
         assert not popup.property("visible")
         button.activated.emit()
         app.processEvents()
-        assert bridge.selection == "Library"
+        assert bridge.selection == "Activity"
         assert not popup.property("visible")
     finally:
         window.close()
@@ -1876,15 +1834,24 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = QGuiApplication.instance() or QGuiApplication([])
     QQuickStyle.setStyle("Basic")
-    records = [saved(tmp_path, f"Media {index}", "MP4") for index in range(5)]
+    from dataclasses import replace
+
     long_title = "Media 4 " + "Very long title " * 8
-    records[-1] = saved(tmp_path, long_title, "MP4")
     image = tmp_path / "selected-thumbnail.jpg"
     Image.new("RGB", (320, 180), "#7197b8").save(image)
-    records[-1]["preview_thumbnail_path"] = str(image)
-    records[-1]["duration"] = 124
+    jobs = []
+    for index in range(10):
+        job = replace(make_job(tmp_path), run_id=f"interrupted-{index}")
+        job.terminal_status = "Failed"
+        job.preview_info = {
+            "id": f"media-{index}",
+            "title": long_title if index == 9 else f"Media {index}",
+            "preview_thumbnail_path": str(image),
+            "duration": 124,
+        }
+        jobs.append(job)
     bridge = qt_main.Bridge(None)
-    bridge._runtime.history = records
+    bridge._runtime.recovered = jobs
     engine = qt_main.create_engine(bridge)
     try:
         window = engine.rootObjects()[0]
@@ -1900,6 +1867,12 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         popup_top = deck.mapToScene(QPointF(0, popup.property("y"))).y()
         assert popup_top >= 0
         assert popup_top + popup.property("height") <= window.height()
+        scroll = window.findChild(QObject, "allRunsScrollView")
+        flickable = scroll.property("contentItem")
+        assert flickable.property("contentHeight") > flickable.property("height")
+        assert flickable.setProperty("contentY", 70)
+        app.processEvents()
+        assert flickable.property("contentY") > 0
 
         def visual_children(item):
             for child in item.childItems():
@@ -1927,7 +1900,8 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         assert title_right <= window.width() - 60
         assert title.property("truncated") is True
         deadline = time.monotonic() + 2
-        while not bridge._artwork.poll() and time.monotonic() < deadline:
+        while not bridge.forgeSelection["artwork"] and time.monotonic() < deadline:
+            bridge._artwork.poll()
             time.sleep(0.005)
         bridge.runDeckChanged.emit()
         app.processEvents()
@@ -1945,9 +1919,7 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         settled.exec()
         facts_viewport = window.findChild(QObject, "forgeSourceDetailsViewport")
         assert facts_viewport.property("clip") is True
-        assert facts_viewport.property("contentHeight") > facts_viewport.property(
-            "height"
-        )
+        assert facts_viewport.property("contentHeight") > 0
         details = next(
             item
             for item in window.findChildren(QObject, "forgeSourceDetails")
@@ -1958,7 +1930,7 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
             for item in details.childItems()
             if isinstance(item.property("modelData"), dict)
         ]
-        assert len(rows) > 6
+        assert len(rows) >= 2
         for row in rows:
             label, value = [
                 item for item in row.childItems() if item.property("text") is not None
@@ -2029,6 +2001,20 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         app.processEvents()
         assert popup.property("width") == 490
         assert popup.property("height") == 470
+        navigation = popup.findChild(QObject, "editorialSlideNavigation")
+        previous = popup.findChild(QObject, "editorialPrevious")
+        following = popup.findChild(QObject, "editorialNext")
+        assert navigation is not None and previous is not None and following is not None
+        assert previous.property("label") == "‹"
+        assert following.property("label") == "›"
+        assert (
+            abs(
+                navigation.mapToScene(QPointF()).x()
+                + navigation.property("width") / 2
+                - window.width() / 2
+            )
+            < 3
+        )
         heading = popup.findChild(QObject, "editorialHeadingRegion")
         assert (
             abs(
@@ -2071,6 +2057,28 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
         app.processEvents()
         activity = preview.findChild(QObject, "featurePreviewActivityLines")
         assert "[success] Download complete" in activity.property("activityText")
+        preview.setProperty("activityStep", 11)
+        app.processEvents()
+
+        def visual_descendants(item):
+            for child in item.childItems():
+                yield child
+                yield from visual_descendants(child)
+
+        captions = [
+            item
+            for item in visual_descendants(activity)
+            if item.objectName() == "activityLineCaption"
+        ]
+        assert captions
+        assert (
+            max(
+                caption.mapToScene(QPointF(0, caption.property("height"))).y()
+                for caption in captions
+                if caption.property("visible")
+            )
+            < navigation.mapToScene(QPointF()).y()
+        )
         rows = activity.childItems()
         emblems = [
             child

@@ -35,13 +35,9 @@ Item {
                     interactive: true
                     accessibilityLabel: "Play " + (detail.item.title || "saved media")
                     onActivated: detail.appBridge.openLibraryOwner(detail.item.owner)
-                    Image {
+                    ArtworkImage {
                         anchors.fill: parent
-                        anchors.margins: 3
                         source: detail.item.artwork || ""
-                        visible: source.toString().length > 0
-                        fillMode: Image.PreserveAspectCrop
-                        smooth: true
                     }
                     StoneButton {
                         anchors.centerIn: parent

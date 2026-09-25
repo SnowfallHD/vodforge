@@ -18,7 +18,7 @@ Item {
                                           previewKey === "activity-mode" ? 470 :
                                           previewKey === "playlists" ? 220 :
                                           previewKey === "youtube-access" || previewKey === "youtube-access-expanded" ? 340 : 430
-    readonly property int preferredHeight: previewKey === "ui-activity" || previewKey === "welcome-activity" ? 130 :
+    readonly property int preferredHeight: previewKey === "ui-activity" || previewKey === "welcome-activity" ? 180 :
                                            previewKey === "activity-mode" ? 180 :
                                            previewKey === "playlists" ? 65 :
                                            previewKey === "youtube-access" ? 110 :

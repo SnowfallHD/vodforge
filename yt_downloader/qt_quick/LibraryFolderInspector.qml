@@ -25,13 +25,9 @@ Column {
         spacing: 12
         StoneField {
             width: 124; height: 70
-            Image {
+            ArtworkImage {
                 anchors.fill: parent
-                anchors.margins: 3
                 source: inspector.item.artwork || ""
-                visible: source.toString().length > 0
-                fillMode: Image.PreserveAspectCrop
-                smooth: true
             }
         }
         Column {

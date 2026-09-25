@@ -1101,12 +1101,6 @@ Window {
                 compact: window.compactHeight
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 115 : 139
-                onOpenSaved: function(owner) {
-                    if (bridge.openLibraryDetails(owner)) bridge.select("Library")
-                }
-                onRemoveSaved: function(owner) {
-                    if (bridge.prepareLibraryRemoval(owner)) libraryRemovalPopup.open()
-                }
             }
         }
 

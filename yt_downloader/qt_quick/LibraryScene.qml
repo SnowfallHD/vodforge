@@ -397,17 +397,15 @@ Item {
                                     }
                                 } else scene.appBridge.navigateLibraryGroup(modelData.kind, modelData.key)
                             }
-                            Image {
+                            ArtworkImage {
                                 objectName: "libraryGroupArtworkImage"
                                 x: groupCard.modelData.kind === "channel" ? (parent.width - 96) / 2 : 0
                                 y: groupCard.modelData.kind === "channel" ? 14 : 0
                                 width: groupCard.modelData.kind === "channel" ? 96 : parent.width
                                 height: groupCard.modelData.kind === "channel" ? 96 : 125
+                                circular: groupCard.modelData.kind === "channel"
                                 source: scene.projection ?
                                         scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind) : ""
-                                fillMode: Image.PreserveAspectCrop
-                                visible: source.toString().length > 0
-                                smooth: true
                             }
                             Text {
                                 x: 14; y: 136
@@ -650,15 +648,12 @@ Item {
                                 if (scene.selectionMode) scene.toggleSelection(modelData.owner)
                                 else scene.appBridge.openLibraryDetails(modelData.owner)
                             }
-                            Image {
+                            ArtworkImage {
                                 objectName: "libraryMediaArtworkImage"
-                                x: 4; y: 4
-                                width: parent.width - 8
+                                x: 0; y: 0
+                                width: parent.width
                                 height: parent.width * 9 / 16
                                 source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
-                                fillMode: Image.PreserveAspectCrop
-                                visible: source.toString().length > 0
-                                smooth: true
                             }
                             StoneButton {
                                 visible: scene.selectionMode

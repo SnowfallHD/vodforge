@@ -8,9 +8,21 @@ Item {
     property var appBridge
     property bool compact: false
     readonly property var projection: appBridge.runDeck
-    readonly property var visibleRecords: projection.visible || []
-    signal openSaved(string owner)
-    signal removeSaved(string owner)
+    // The deck is the work queue. Saved outputs and metadata previews live in Library.
+    readonly property var workRecords: (projection.records || []).filter(
+        record => ["active", "queued", "terminal"].indexOf(record.kind) >= 0)
+    readonly property var visibleRecords: workRecords.slice(0, 4)
+    readonly property string workSummary: {
+        if (workRecords.length === 0) return "No runs in progress"
+        const parts = []
+        for (const [kind, label] of [["active", "active"], ["queued", "queued"],
+                                     ["terminal", "interrupted"]]) {
+            const count = workRecords.filter(record => record.kind === kind).length
+            if (count) parts.push(count + " " + label)
+        }
+        return workRecords.length + " run" + (workRecords.length === 1 ? "" : "s") +
+               "  •  " + parts.join("  •  ")
+    }
     function showActions(record) {
         if (record.kind === "active" &&
                 !deck.appBridge.admitRunMenu(record.runId, record.executionToken || ""))
@@ -31,13 +43,15 @@ Item {
         anchors.fill: parent
         spacing: 8
         RowLayout {
+            id: deckHeader
             Layout.fillWidth: true
             Text { text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; Layout.fillWidth: true }
             StoneButton {
                 id: allRunsButton
                 objectName: "allRunsButton"
-                visible: deck.projection.count > 0
-                label: "All " + deck.projection.count + " runs"
+                visible: deck.workRecords.length > 0
+                label: "All " + deck.workRecords.length +
+                       (deck.workRecords.length === 1 ? " run" : " runs")
                 size: "inline"
                 Layout.preferredWidth: 120
                 onHoveredChanged: {
@@ -48,7 +62,7 @@ Item {
                 }
                 onActivated: {
                     allRunsPopup.close()
-                    deck.appBridge.select("Library")
+                    deck.appBridge.select("Activity")
                 }
                 onVisibleChanged: { if (!visible) allRunsPopup.close() }
             }
@@ -62,7 +76,7 @@ Item {
                 spacing: 8
                 Text {
                     visible: deck.visibleRecords.length === 0
-                    text: "Your runs will collect here. Start with a URL above."
+                    text: "Ready for a new run. Start with a URL above."
                     color: theme.muted
                     font.pixelSize: 14
                     Layout.fillWidth: true
@@ -123,7 +137,7 @@ Item {
         }
         RowLayout {
             Layout.fillWidth: true
-            Text { text: deck.projection.summary; color: theme.muted; font.pixelSize: 12; Layout.fillWidth: true }
+            Text { text: deck.workSummary; color: theme.muted; font.pixelSize: 12; Layout.fillWidth: true }
             Text { text: "Runs process one at a time"; color: theme.muted; font.pixelSize: 12 }
         }
     }
@@ -172,39 +186,6 @@ Item {
                 onActivated: { deck.appBridge.retryTerminal(deck.selectedRecord.runId); actionsPopup.close() }
             }
             StoneButton {
-                visible: deck.selectedRecord.kind === "completed"
-                label: "View in Library"
-                Layout.fillWidth: true
-                onActivated: { deck.openSaved(deck.selectedRecord.owner); actionsPopup.close() }
-            }
-            StoneButton {
-                visible: deck.selectedRecord.kind === "completed"
-                label: "Open saved location"
-                Layout.fillWidth: true
-                onActivated: { deck.appBridge.openLibraryFolder(deck.selectedRecord.owner); actionsPopup.close() }
-            }
-            StoneButton {
-                visible: deck.selectedRecord.kind === "completed" && deck.selectedRecord.hasYoutubeUrl
-                label: "Copy YouTube URL"
-                Layout.fillWidth: true
-                onActivated: { deck.appBridge.copySavedYoutubeUrl(deck.selectedRecord.owner); actionsPopup.close() }
-            }
-            StoneButton {
-                visible: deck.selectedRecord.kind === "completed"
-                label: "Remove from Library…"
-                Layout.fillWidth: true
-                onActivated: { deck.removeSaved(deck.selectedRecord.owner); actionsPopup.close() }
-            }
-            StoneButton {
-                visible: deck.selectedRecord.kind === "preview"
-                label: "Start download"
-                Layout.fillWidth: true
-                onActivated: {
-                    if (deck.appBridge.openPreviewOwner(deck.selectedRecord.owner)) deck.appBridge.startPreviewDownload()
-                    actionsPopup.close()
-                }
-            }
-            StoneButton {
                 label: "View Activity"
                 Layout.fillWidth: true
                 onActivated: { deck.appBridge.select("Activity"); actionsPopup.close() }
@@ -215,18 +196,20 @@ Item {
         id: allRunsPopup
         objectName: "allRunsPopup"
         parent: deck
-        readonly property point anchor: allRunsButton.mapToItem(deck, 0, 0)
-        x: Math.max(0, Math.min(deck.width - width, anchor.x + allRunsButton.width - width))
-        y: anchor.y - height
+        x: Math.max(0, Math.min(deck.width - width,
+                                deckHeader.x + allRunsButton.x + allRunsButton.width - width))
+        y: deckHeader.y + allRunsButton.y - height
         width: Math.min(440, deck.width)
-        height: Math.min(285, Math.max(80, deck.projection.count * 42 + 18))
+        height: Math.min(285, Math.max(80, deck.workRecords.length * 42 + 18))
         padding: 9
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: StoneField {}
         ScrollView {
+            objectName: "allRunsScrollView"
             anchors.fill: parent
             clip: true
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
             HoverHandler {
                 id: popupHover
                 objectName: "allRunsPopupHover"
@@ -239,7 +222,7 @@ Item {
                 width: parent.width
                 spacing: 3
                 Repeater {
-                    model: deck.projection.records || []
+                    model: deck.workRecords
                     StoneButton {
                         required property var modelData
                         label: modelData.title + "  —  " + modelData.status
@@ -247,8 +230,7 @@ Item {
                         height: 36
                         size: "inline"
                         onActivated: {
-                            if (modelData.kind === "preview") deck.appBridge.openPreviewOwner(modelData.owner)
-                            else deck.appBridge.selectRunRecord(modelData.selectionKey)
+                            deck.appBridge.selectRunRecord(modelData.selectionKey)
                             allRunsPopup.close()
                         }
                     }

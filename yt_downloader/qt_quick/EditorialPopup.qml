@@ -92,30 +92,44 @@ Popup {
             horizontalAlignment: Text.AlignHCenter
             Layout.fillWidth: true
         }
-        RowLayout {
+        Item {
             Layout.fillWidth: true
-            StoneButton {
-                visible: editorial.slides.length > 1 && editorial.index > 0
-                label: "Previous"; Layout.preferredWidth: 105
-                onActivated: editorial.index--
+            Layout.preferredHeight: 40
+            Row {
+                id: slideNavigation
+                objectName: "editorialSlideNavigation"
+                anchors.centerIn: parent
+                spacing: 10
+                visible: editorial.slides.length > 1
+                StoneButton {
+                    objectName: "editorialPrevious"
+                    label: "‹"; accessibilityLabel: "Previous slide"
+                    size: "inline"; width: 40
+                    enabled: editorial.index > 0
+                    onActivated: editorial.index--
+                }
+                StoneButton {
+                    objectName: "editorialNext"
+                    label: "›"; accessibilityLabel: "Next slide"
+                    size: "inline"; width: 40
+                    enabled: editorial.index < editorial.slides.length - 1
+                    onActivated: editorial.index++
+                }
             }
-            Item { Layout.fillWidth: true }
             StoneButton {
-                visible: editorial.slides.length > 1 && editorial.index < editorial.slides.length - 1
-                label: "Next"; Layout.preferredWidth: 100
-                onActivated: editorial.index++
-            }
-            StoneButton {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
                 visible: editorial.index === editorial.slides.length - 1
                 label: editorial.finishLabel
                 emphasized: true
-                Layout.preferredWidth: Math.max(110, implicitWidth)
+                width: Math.max(110, implicitWidth)
                 onActivated: editorial.finish(editorial.finishLabel === "Try it")
             }
-            Item { Layout.fillWidth: true }
             StoneButton {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 visible: editorial.finishLabel === "Start using VODForge" && editorial.index < editorial.slides.length - 1
-                label: "Skip tour"; size: "inline"; Layout.preferredWidth: 95
+                label: "Skip tour"; size: "inline"; width: 95
                 onActivated: editorial.finish(false)
             }
         }
