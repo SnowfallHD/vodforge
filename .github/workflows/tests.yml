@@ -38,10 +38,14 @@ jobs:
           "$PWD\vendor\ffmpeg\bin" >> $env:GITHUB_PATH
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
-      - name: Run tests
+      - name: Run tests outside Qt scene module
         env:
           QT_QUICK_BACKEND: software
-        run: python -m pytest -q
+        run: python -m pytest -q --ignore=tests/test_qt_scene_port.py
+      - name: Run Qt scene tests in a fresh process
+        env:
+          QT_QUICK_BACKEND: software
+        run: python -m pytest -q tests/test_qt_scene_port.py
       - name: Execute Windows updater fault cases
         if: runner.os == 'Windows'
         run: python -m pytest engineering-quality/tests/test_update_handoff_runtime.py -q

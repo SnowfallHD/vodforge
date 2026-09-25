@@ -41,7 +41,8 @@ fi
   # Build policy belongs to the packaged bytes, not to source tests that may
   # create live Qt bridges and telemetry owners in the same process.
   unset VODFORGE_UI VODFORGE_BUILD_TELEMETRY VODFORGE_BUILD_VERSION VODFORGE_DIST_DIR
-  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q
+  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q --ignore=tests/test_qt_scene_port.py
+  QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
 
 ui_mode="${VODFORGE_UI:-tk}"

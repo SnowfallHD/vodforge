@@ -2271,6 +2271,15 @@ telemetry policy before the signed preview-D1 QA route is admissible. This
 runner correction is a causal hypothesis until the exact build completes;
 the software-only full pass does not itself qualify a package.
 
+CI then reproduced the same native crash on Ubuntu 3.13 with the software
+backend, and the sanitized Mac build also crashed at the same offscreen
+`grabWindow()` assertion. The scene module passes as its own 81-test process;
+the failure requires earlier modules in the shared pytest process. The build
+and CI now run every other test first and the full scene module in a fresh
+process. The screenshot assertion stays intact. This bounds the observed
+cross-module Qt state interaction without claiming a production renderer fix;
+native signed-package visual checks remain required.
+
 The same signed smoke failed its final restart gate despite clean exits and
 stable media/history: launch 2 stayed on Forge, so the required Qt Folder
 Inspector Description receipt was never made. The previous recorder checked
