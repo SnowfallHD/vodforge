@@ -46,7 +46,7 @@ REGRESSION_CLASSES = {
             _BASE + "test_missing_item_recovery_downloads_only_captured_video",
             _BASE + "test_missing_identity_never_replays_original_playlist",
             _NEW
-            + "test_recovery_admission_controls_history_retirement_and_bounded_migration_telemetry",
+            + "test_recovery_admission_preserves_history_and_bounded_migration_telemetry",
         ),
     ),
     "retired_presets": (
