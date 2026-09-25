@@ -2280,6 +2280,14 @@ process. The screenshot assertion stays intact. This bounds the observed
 cross-module Qt state interaction without claiming a production renderer fix;
 native signed-package visual checks remain required.
 
+The first split Ubuntu 3.11 scene run passed 80/81 but found a rounding edge:
+actual navigation x was 238.500px and a Mac-based reference formula gave
+238.508px. Rounding each produced 238 versus 239. The assertion now retains
+the exact Mac measured x values and, on other OSes, computes the authored
+centering position from the actual header and navigation widths. It checks the
+raw coordinate within 0.05px, so platform font and fractional layout widths
+cannot turn a correct center into a false integer mismatch.
+
 The same signed smoke failed its final restart gate despite clean exits and
 stable media/history: launch 2 stayed on Forge, so the required Qt Folder
 Inspector Description receipt was never made. The previous recorder checked

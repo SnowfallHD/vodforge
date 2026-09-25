@@ -2572,13 +2572,28 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
             assert round(header.height()) == 44
             native_title_inset = 82 if sys.platform == "darwin" else 0
             assert round(brand.mapToItem(None, 0, 0).x()) == margin + native_title_inset
-            # Navigation stays centered between the brand and utility area.
-            # Its label widths vary with the platform font; 438 is the Mac
-            # measured reference used by the original absolute bounds.
-            expected_nav_x = (
-                nav_x - (82 - native_title_inset) / 2 - (nav.implicitWidth() - 438) / 2
-            )
-            assert round(nav.mapToItem(None, 0, 0).x()) == round(expected_nav_x)
+            nav_screen_x = nav.mapToItem(None, 0, 0).x()
+            if sys.platform == "darwin":
+                assert round(nav_screen_x) == nav_x
+            else:
+                # Other OS fonts change implicit label widths. Preserve the
+                # authored centering contract using actual layout width.
+                compact = width < 960
+                brand_width = 46 if compact else 150
+                utility_width = (186 if compact else 285) + 36
+                expected_nav_x = (
+                    margin
+                    + brand_width
+                    + (
+                        header.width()
+                        - brand_width
+                        - nav.implicitWidth()
+                        - utility_width
+                    )
+                    / 2
+                    + (4 if compact else 3)
+                )
+                assert abs(nav_screen_x - expected_nav_x) < 0.05
             assert round(nav.mapToItem(None, 0, 0).y()) == 5
             assert abs(search.mapToItem(None, 0, 0).x() - search_x) <= 2
             assert round(scene.mapToItem(None, 0, 0).y()) == 54
