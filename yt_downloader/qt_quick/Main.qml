@@ -634,20 +634,33 @@ Window {
             Row {
                 id: brandRow
                 objectName: "brandRow"
-                x: focusHeader.nativeHeaderInset; y: 2; spacing: 10
+                x: focusHeader.nativeHeaderInset
+                y: Math.round((44 - height) / 2)
+                spacing: 10
                 Image {
                     source: assetUrl + "brand/vf-mark.png"
                     width: 46; height: 36
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                 }
-                Image {
-                    source: assetUrl + "brand/vf-name.png"
+                Row {
                     visible: !focusHeader.compact
-                    width: visible ? 94 : 0
-                    height: 27
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 0
+                    Text {
+                        objectName: "brandVodText"
+                        text: "VOD"
+                        color: theme.accent
+                        font.pixelSize: 19
+                        font.bold: true
+                    }
+                    Text {
+                        objectName: "brandForgeText"
+                        text: "Forge"
+                        color: "#ffffff"
+                        font.pixelSize: 19
+                        font.bold: true
+                    }
                 }
             }
             Row {

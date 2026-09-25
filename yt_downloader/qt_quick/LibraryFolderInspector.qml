@@ -12,6 +12,7 @@ Column {
 
     Text {
         id: eyebrow
+        objectName: "libraryFolderInspectorHeading"
         text: "SELECTED ITEM"
         color: theme.muted
         font.pixelSize: 12

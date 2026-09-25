@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+import json
+import math
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
+from PIL import Image, ImageDraw
 from PySide6.QtCore import QUrl
 
 from yt_downloader.app import (
@@ -19,6 +24,7 @@ from yt_downloader.app import (
 from yt_downloader.archive_work import ArchiveWorkOwner
 from yt_downloader.history import history_archive_owner, history_output_path
 from yt_downloader.library_artwork_source import LibraryArtworkSource
+from yt_downloader.private_files import write_private_bytes
 from yt_downloader.thumbnail_network import download_bounded_url_bytes
 
 
@@ -31,6 +37,47 @@ def thumbnail_path(
         if path.is_file():
             return path
     return existing_cached_thumbnail_path(record, data_dir=data_dir)
+
+
+def circular_avatar_asset(
+    source: Path, cache_dir: Path, size: tuple[int, int]
+) -> Path | None:
+    """Cache an uncropped channel image inside a transparent circular avatar."""
+    try:
+        stat = source.stat()
+        if not source.is_file() or not 0 < stat.st_size <= 10 * 1024 * 1024:
+            return None
+        diameter = max(32, min(512, size[0], size[1]))
+        identity = (str(source.resolve()), stat.st_size, stat.st_mtime_ns, diameter)
+        digest = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+        target = cache_dir / f"avatar-{digest}.png"
+        if target.is_file() and target.stat().st_size > 0:
+            return target
+        with Image.open(source) as opened:
+            if opened.width * opened.height > 40_000_000:
+                return None
+            image = opened.convert("RGBA")
+        average = image.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))[:3]
+        radius = diameter / 2 - 4
+        scale = 2 * radius / math.hypot(image.width, image.height)
+        image = image.resize(
+            (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        canvas = Image.new("RGBA", (diameter, diameter), (0, 0, 0, 0))
+        ImageDraw.Draw(canvas).ellipse(
+            (0, 0, diameter - 1, diameter - 1), fill=(*average, 220)
+        )
+        canvas.alpha_composite(
+            image,
+            ((diameter - image.width) // 2, (diameter - image.height) // 2),
+        )
+        output = io.BytesIO()
+        canvas.save(output, format="PNG")
+        write_private_bytes(target, output.getvalue())
+        return target
+    except (OSError, ValueError, OverflowError):
+        return None
 
 
 class QtArtwork:
@@ -69,6 +116,32 @@ class QtArtwork:
             self._cached_fallback[key] = url
         return url
 
+    def _private_cached_avatar_fallback(
+        self, record: dict[str, Any], key: str, size: tuple[int, int]
+    ) -> str:
+        if key in self._cached_fallback:
+            return self._cached_fallback[key]
+        path = cached_thumbnail_path(record, data_dir=self._source.cache_dir.parent)
+        if path is None:
+            return ""
+        try:
+            # Keep first paint responsive; larger sources go through the worker.
+            if not path.is_file() or path.stat().st_size > 1_000_000:
+                return ""
+            with Image.open(path) as image:
+                if image.width * image.height > 1_000_000:
+                    return ""
+            avatar = circular_avatar_asset(
+                path, self._source.cache_dir / "avatars", size
+            )
+            if avatar is None:
+                return ""
+            url = QUrl.fromLocalFile(str(avatar)).toString()
+            self._cached_fallback[key] = url
+            return url
+        except (OSError, ValueError):
+            return ""
+
     def request(
         self,
         record: dict[str, Any],
@@ -83,7 +156,11 @@ class QtArtwork:
         key = f"{owner}\0{role}\0{size[0]}x{size[1]}"
         if key in self._ready:
             return self._ready[key]
-        fallback = self._private_cached_fallback(record, key)
+        fallback = (
+            self._private_cached_avatar_fallback(record, key, size)
+            if role == "avatar"
+            else self._private_cached_fallback(record, key)
+        )
         if (
             self._unavailable.get(key, 0) > time.monotonic()
             or key in self._pending
@@ -123,6 +200,11 @@ class QtArtwork:
         cancelled: threading.Event,
     ) -> str:
         asset = self._source.resolve_asset(record, size, role, cancelled)
+        if asset is not None and role == "avatar" and not cancelled.is_set():
+            avatar = circular_avatar_asset(
+                asset.path, self._source.cache_dir / "avatars", size
+            )
+            return QUrl.fromLocalFile(str(avatar)).toString() if avatar else ""
         if asset is None and role == "hero" and not cancelled.is_set():
             thumbnail = best_thumbnail_for_download(record)
             url = str((thumbnail or {}).get("url") or "").strip()

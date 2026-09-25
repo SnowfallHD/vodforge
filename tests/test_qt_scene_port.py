@@ -909,10 +909,12 @@ def test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork(tmp_path):
 def test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset(
     tmp_path, monkeypatch
 ):
+    from PIL import Image
+
     output = tmp_path / "media.mp4"
     output.write_bytes(b"media fixture")
     image = tmp_path / "thumb.jpg"
-    image.write_bytes(b"image fixture")
+    Image.new("RGB", (320, 180), "#7197b8").save(image)
     calls = []
 
     def resolve(record, size, role, cancelled):
@@ -998,7 +1000,14 @@ def test_qt_private_cached_art_survives_blocked_artwork_lane(tmp_path, monkeypat
             ("avatar", (160, 160)),
         ):
             url = owner.request(second, size, role)
-            assert Path(QUrl(url).toLocalFile()) == path
+            rendered = Path(QUrl(url).toLocalFile())
+            if role == "avatar":
+                assert rendered != path
+                with Image.open(rendered) as avatar:
+                    assert avatar.getpixel((0, 0))[3] == 0
+                    assert avatar.getpixel((80, 80))[3] > 0
+            else:
+                assert rendered == path
         assert owner.poll() is False
     finally:
         owner.close()
@@ -2801,6 +2810,27 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
             assert round(header.height()) == 44
             native_title_inset = 82 if sys.platform == "darwin" else 0
             assert round(brand.mapToItem(None, 0, 0).x()) == margin + native_title_inset
+            assert (
+                abs(
+                    brand.mapToItem(None, 0, brand.height() / 2).y()
+                    - header.mapToItem(None, 0, 22).y()
+                )
+                <= 0.5
+            )
+            if width >= 960:
+                vod = window.findChild(QObject, "brandVodText")
+                forge = window.findChild(QObject, "brandForgeText")
+                assert vod.property("text") == "VOD"
+                assert forge.property("text") == "Forge"
+                assert vod.property("color").name() == qt_main.THEME["accent"]
+                assert forge.property("color").name() == "#ffffff"
+                assert (
+                    abs(
+                        vod.mapToItem(None, 0, vod.height() / 2).y()
+                        - header.mapToItem(None, 0, 22).y()
+                    )
+                    <= 1
+                )
             nav_screen_x = nav.mapToItem(None, 0, 0).x()
             if sys.platform == "darwin":
                 assert round(nav_screen_x) == nav_x
@@ -2826,6 +2856,40 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
             assert round(nav.mapToItem(None, 0, 0).y()) == 5
             assert abs(search.mapToItem(None, 0, 0).x() - search_x) <= 2
             assert round(scene.mapToItem(None, 0, 0).y()) == 54
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        for width, height in ((1100, 740), (820, 560)):
+            window.resize(width, height)
+            for _ in range(3):
+                app.processEvents()
+            browser = window.findChild(QObject, "libraryFolderBrowser")
+            columns = window.findChild(QObject, "libraryFolderColumns")
+            browse = window.findChild(QObject, "libraryFolderBrowseHeading")
+            top = window.findChild(QObject, "libraryFolderTopRow")
+            inspector = window.findChild(QObject, "libraryFolderInspectorHeading")
+            browser_y = browser.mapToItem(None, 0, 0).y()
+            assert abs(columns.mapToItem(None, 0, 0).y() - browser_y - 12) <= 1
+            assert browse.mapToItem(None, 0, 0).y() >= browser_y + 12
+            assert top.mapToItem(None, 0, 0).y() >= browser_y + 12
+            if width >= 920 and height >= 740:
+                assert inspector.mapToItem(None, 0, 0).y() >= browser_y + 12
     finally:
         window.close()
         engine.deleteLater()
@@ -3235,11 +3299,12 @@ def test_qt_visible_cards_show_resolved_local_artwork(
             if any(image.property("source").toLocalFile() for image in images):
                 break
             time.sleep(0.005)
-        assert any(
-            Path(image.property("source").toLocalFile()).resolve() == image_path
+        resolved = [
+            Path(image.property("source").toLocalFile()).resolve()
             for image in images
             if image.property("source").toLocalFile()
-        ), (
+        ]
+        assert resolved, (
             surface,
             mode,
             len(bridge._artwork._pending),
@@ -3247,6 +3312,19 @@ def test_qt_visible_cards_show_resolved_local_artwork(
             len(bridge._artwork._unavailable),
             [image.property("source").toString() for image in images],
         )
+        if channel:
+            assert any(path.name.startswith("avatar-") for path in resolved)
+            with Image.open(
+                next(path for path in resolved if path.name.startswith("avatar-"))
+            ) as avatar:
+                assert avatar.getpixel((0, 0))[3] == 0
+                center = avatar.getpixel((avatar.width // 2, avatar.height // 2))[:3]
+                assert all(
+                    abs(actual - expected) <= 2
+                    for actual, expected in zip(center, (113, 151, 184))
+                )
+        else:
+            assert image_path in resolved
         assert any(image.property("circular") is channel for image in images)
     finally:
         window.close()

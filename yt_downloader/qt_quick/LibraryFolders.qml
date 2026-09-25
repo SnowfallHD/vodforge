@@ -11,13 +11,15 @@ Item {
     readonly property bool showInspector: Window.window && Window.window.width >= 920 && Window.window.height >= 740
 
     RowLayout {
+        objectName: "libraryFolderColumns"
         anchors.fill: parent
+        anchors.topMargin: 12
         spacing: 20
         ColumnLayout {
             Layout.preferredWidth: 184
             Layout.fillHeight: true
             spacing: 6
-            Text { text: "BROWSE"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            Text { objectName: "libraryFolderBrowseHeading"; text: "BROWSE"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             Repeater {
                 model: [
                     { key: "folders", label: "Folders" },
@@ -62,6 +64,7 @@ Item {
             Layout.fillHeight: true
             spacing: 10
             RowLayout {
+                objectName: "libraryFolderTopRow"
                 Layout.fillWidth: true
                 StoneButton {
                     label: "Up one folder"
