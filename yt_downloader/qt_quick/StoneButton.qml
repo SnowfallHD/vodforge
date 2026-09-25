@@ -10,6 +10,7 @@ Item {
     property bool transientMaterial: true
     property bool interactive: true
     property string size: "default"
+    readonly property bool hovered: mouse.containsMouse
     signal activated()
     signal doubleActivated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth

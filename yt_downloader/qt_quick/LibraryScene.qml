@@ -349,8 +349,9 @@ Item {
                 }
                 Item {
                     id: homeGroupsSlot
+                    objectName: "libraryHomeGroupsSlot"
                     width: parent.width
-                    visible: scene.route === "home" && groupFlow.visible
+                    visible: scene.route === "home" && scene.groups.length > 0
                     height: visible ? groupFlow.height : 0
                 Flow {
                     id: groupFlow
@@ -570,8 +571,9 @@ Item {
                 }
                 Item {
                     id: routeGroupsSlot
+                    objectName: "libraryRouteGroupsSlot"
                     width: parent.width
-                    visible: scene.route !== "home" && groupFlow.visible
+                    visible: scene.route !== "home" && scene.groups.length > 0
                     height: visible ? groupFlow.height : 0
                 }
                 LibraryEmptyPanel {

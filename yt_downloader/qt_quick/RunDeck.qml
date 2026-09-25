@@ -34,11 +34,23 @@ Item {
             Layout.fillWidth: true
             Text { text: "RUN DECK"; color: theme.muted; font.pixelSize: 12; font.bold: true; Layout.fillWidth: true }
             StoneButton {
+                id: allRunsButton
+                objectName: "allRunsButton"
                 visible: deck.projection.count > 0
                 label: "All " + deck.projection.count + " runs"
                 size: "inline"
                 Layout.preferredWidth: 120
-                onActivated: allRunsPopup.open()
+                onHoveredChanged: {
+                    if (hovered) {
+                        hoverClose.stop()
+                        allRunsPopup.open()
+                    } else if (allRunsPopup.visible) hoverClose.restart()
+                }
+                onActivated: {
+                    allRunsPopup.close()
+                    deck.appBridge.select("Library")
+                }
+                onVisibleChanged: { if (!visible) allRunsPopup.close() }
             }
         }
         StoneField {
@@ -202,16 +214,26 @@ Item {
     Popup {
         id: allRunsPopup
         objectName: "allRunsPopup"
-        x: Math.max(0, deck.width - width)
-        y: deck.height - height - 40
+        parent: deck
+        readonly property point anchor: allRunsButton.mapToItem(deck, 0, 0)
+        x: Math.max(0, Math.min(deck.width - width, anchor.x + allRunsButton.width - width))
+        y: anchor.y - height
         width: Math.min(440, deck.width)
         height: Math.min(285, Math.max(80, deck.projection.count * 42 + 18))
         padding: 9
-        modal: true
+        modal: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: StoneField {}
         ScrollView {
             anchors.fill: parent
             clip: true
+            HoverHandler {
+                id: popupHover
+                onHoveredChanged: {
+                    if (hovered) hoverClose.stop()
+                    else if (allRunsPopup.visible) hoverClose.restart()
+                }
+            }
             Column {
                 width: parent.width
                 spacing: 3
@@ -231,6 +253,13 @@ Item {
                     }
                 }
             }
+        }
+    }
+    Timer {
+        id: hoverClose
+        interval: 100
+        onTriggered: {
+            if (!allRunsButton.hovered && !popupHover.hovered) allRunsPopup.close()
         }
     }
 }

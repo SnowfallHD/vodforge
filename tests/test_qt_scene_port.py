@@ -19,8 +19,10 @@ from PySide6.QtCore import (
     QEvent,
     QEventLoop,
     QObject,
+    QPoint,
     QPointF,
     QSize,
+    Qt,
     QTimer,
     QUrl,
 )
@@ -111,6 +113,44 @@ def test_qt_library_group_menu_selects_every_saved_variant(tmp_path, monkeypatch
         assert set(scene.property("selectedOwners").toVariant()) == set(
             bridge.libraryScene["groups"][0]["owners"]
         )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_library_group_cards_remain_visible_across_home_and_group_routes(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.select("Library")
+        flow = window.findChild(QObject, "libraryGroupFlow")
+        home_slot = window.findChild(QObject, "libraryHomeGroupsSlot")
+        route_slot = window.findChild(QObject, "libraryRouteGroupsSlot")
+        for route in ("home", "channels", "playlists", "home"):
+            bridge.navigateLibrary(route)
+            for _ in range(3):
+                app.processEvents()
+            slot = home_slot if route == "home" else route_slot
+            assert slot.isVisible(), route
+            assert slot.height() >= 192, route
+            assert flow.isVisible(), route
+            assert any(
+                child.isVisible()
+                and child.height() == 192
+                and child.property("accessibilityLabel")
+                for child in flow.childItems()
+            ), route
     finally:
         window.close()
         engine.deleteLater()
@@ -1761,6 +1801,68 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
         assert bridge.openSupport("review")
         assert bridge.supportContext == {"diagnostics": "", "videoUrl": ""}
     finally:
+        bridge.close()
+
+
+def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtQuickControls2 import QQuickStyle
+    from PySide6.QtTest import QTest
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    QQuickStyle.setStyle("Basic")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
+    engine = qt_main.create_engine(bridge)
+    try:
+        window = engine.rootObjects()[0]
+        window.show()
+        app.processEvents()
+        button = window.findChild(QObject, "allRunsButton")
+        popup = window.findChild(QObject, "allRunsPopup")
+        assert button.isVisible()
+        assert not popup.property("visible")
+        button_top = button.mapToScene(QPointF(0, 0)).y()
+        center = button.mapToScene(
+            QPointF(button.property("width") / 2, button.property("height") / 2)
+        )
+        QTest.mouseMove(window, QPoint(round(center.x()), round(center.y())))
+        app.processEvents()
+        assert popup.property("visible")
+        content_item = popup.property("contentItem")
+        popup_bottom = content_item.mapToScene(
+            QPointF(0, content_item.property("height") + popup.property("padding"))
+        ).y()
+        assert abs(popup_bottom - button_top) <= 1
+        popup_point = content_item.mapToScene(
+            QPointF(
+                content_item.property("width") / 2, content_item.property("height") - 2
+            )
+        )
+        QTest.mouseMove(window, QPoint(round(popup_point.x()), round(popup_point.y())))
+        QTest.qWait(150)
+        assert popup.property("visible")
+        QTest.mouseMove(window, QPoint(2, 2))
+        QTest.qWait(150)
+        assert not popup.property("visible")
+        QTest.mouseMove(window, QPoint(round(center.x()), round(center.y())))
+        app.processEvents()
+        assert popup.property("visible")
+        QTest.mouseClick(
+            window, Qt.LeftButton, pos=QPoint(round(center.x()), round(center.y()))
+        )
+        app.processEvents()
+        assert bridge.selection == "Library"
+        assert not popup.property("visible")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         bridge.close()
 
 
