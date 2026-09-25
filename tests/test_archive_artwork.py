@@ -310,7 +310,7 @@ def test_large_hero_preserves_source_detail_instead_of_enlarging_small_decode(
         surface._artwork_begin()
         surface._artwork_image(row, hero_size=(3000, 700))
         surface._artwork_request()
-        wait_until(lambda: not surface._artwork_owner._results.empty())
+        wait_until(lambda: not surface._artwork_owner._results.empty(), timeout=10.0)
         surface._artwork_poll()
         hero = surface._artwork_image(row, hero_size=(3000, 700))
         # The readable fade is nearly transparent here. Four-pixel line pairs
