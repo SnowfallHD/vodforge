@@ -2234,3 +2234,24 @@ and `restart_observed` requires the visible description and verifies its own
 launch receipt before accepting the event. A focused recorder case rejects
 both missing text and a missing launch receipt without appending an event;
 the final verifier remains an independent check.
+
+### Full telemetry outbox replay after credential recovery (2026-09-25)
+
+The exact signed Qt preview journey reached the preview D1 enrollment limit and
+filled its bounded 256-event local outbox. After one preview-only enrollment
+slot was restored, D1 accepted the client and first launch, but the queued
+events did not replay. The shared telemetry owner attempted delivery when a
+new event was retained; at capacity it rejected that event and returned before
+starting a flush. Existing replay tests called `flush_async()` directly, so
+they did not cover this normal app-session path.
+
+The invariant is that capacity limits admission, not delivery: with current
+consent and a recovered sink, a full outbox must start replay when a new
+observation arrives, without retaining an extra event. A regression fills the
+durable outbox, starts a new owner session, calls the ordinary app-open record
+path, and requires all retained event identities to reach the recovered sink
+and the file to drain. It failed against the prior implementation (zero events
+delivered) and passes after the shared-owner fix. Existing denied-consent and
+delivery tests cover adjacent boundaries. This is representative source-level
+proof; a rebuilt signed Mac/Windows package and direct preview-D1 readback are
+still required for release acceptance.

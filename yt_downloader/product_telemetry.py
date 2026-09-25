@@ -587,6 +587,9 @@ class ProductTelemetryOwner:
                 self._diagnostic(
                     "product telemetry outbox is full; event was not retained"
                 )
+                # A recovered connection must be able to drain the retained
+                # events even though this new event cannot be admitted.
+                self.flush_async()
                 return False
             try:
                 _save_outbox(self._state_path, [*events, event])

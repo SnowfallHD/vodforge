@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
+from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
-from pathlib import Path
 
 from yt_downloader.cloud_funnel import (
     load_or_create_installation_state,
@@ -106,6 +108,43 @@ def test_permanent_server_rejection_retires_event_without_claiming_delivery(tmp_
     owner.flush_async()
     assert owner.shutdown(1.0)
     assert len(calls) == 1
+    assert not state_path.exists()
+
+
+def test_full_outbox_replays_on_new_session_after_delivery_recovers(tmp_path):
+    from yt_downloader.product_telemetry import (
+        MAX_OUTBOX_EVENTS,
+        _load_outbox,
+        _save_outbox,
+    )
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state_path = tmp_path / "product-telemetry.json"
+    blocked = ProductTelemetryOwner(
+        state_path=state_path,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    assert blocked.record_app_opened()
+    assert blocked.shutdown(2)
+    first = _load_outbox(state_path)[0]
+    queued = [replace(first, event_id=str(uuid4())) for _ in range(MAX_OUTBOX_EVENTS)]
+    _save_outbox(state_path, queued)
+
+    delivered: list[str] = []
+    resumed = ProductTelemetryOwner(
+        state_path=state_path,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda event: delivered.append(event.event_id) is None,
+        heycatch_recorder=lambda *_args, **_kwargs: True,
+    )
+    assert not resumed.record_app_opened()  # The bounded outbox rejects this new event.
+    assert resumed.shutdown(5)
+    assert delivered == [event.event_id for event in queued]
     assert not state_path.exists()
 
 
