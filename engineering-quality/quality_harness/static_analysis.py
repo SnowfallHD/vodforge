@@ -14,13 +14,51 @@ def _tool_command(python: str, module: str, *args: str) -> list[str]:
     return [python, "-m", module, *args]
 
 
+def _pytest_commands(
+    repo_root: Path, python: str
+) -> list[tuple[str, list[str], float]]:
+    qt_tests = sorted((repo_root / "tests").glob("test_qt_*.py"))
+    scene = repo_root / "tests" / "test_qt_scene_port.py"
+    components = [path for path in qt_tests if path != scene]
+    if not scene.is_file() or not components:
+        raise ValueError("Qt scene and component test groups are required")
+    relative = [path.relative_to(repo_root).as_posix() for path in qt_tests]
+    return [
+        (
+            "pytest",
+            _tool_command(
+                python, "pytest", "-q", *(f"--ignore={path}" for path in relative)
+            ),
+            300,
+        ),
+        (
+            "pytest_qt_components",
+            _tool_command(
+                python,
+                "pytest",
+                "-q",
+                *(path.relative_to(repo_root).as_posix() for path in components),
+            ),
+            300,
+        ),
+        (
+            "pytest_qt_scene",
+            _tool_command(
+                python, "pytest", "-q", scene.relative_to(repo_root).as_posix()
+            ),
+            300,
+        ),
+    ]
+
+
 def run_static_suite(
     repo_root: Path, case_dir: Path, *, deep: bool = False
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     case_dir.mkdir(parents=True, exist_ok=True)
     python = sys.executable
-    commands: list[tuple[str, list[str], float]] = [
-        ("pytest", _tool_command(python, "pytest", "-q"), 300),
+    commands: list[tuple[str, list[str], float]] = _pytest_commands(
+        repo_root, python
+    ) + [
         (
             "pytest_harness",
             _tool_command(python, "pytest", "-q", "engineering-quality/tests"),
@@ -120,9 +158,9 @@ def run_static_suite(
         else:
             test_environment[key] = str(original_value)
     for name, command, timeout in commands:
-        command_environment = (
-            test_environment if name in {"pytest", "pytest_harness"} else None
-        )
+        command_environment = test_environment if name.startswith("pytest") else None
+        if name.startswith("pytest_qt_"):
+            command_environment = {**test_environment, "QT_QUICK_BACKEND": "software"}
         result = run_command(
             command, cwd=repo_root, timeout=timeout, env=command_environment
         )
@@ -168,7 +206,14 @@ def run_static_suite(
         for name, result in outputs.items()
         if result["returncode"] not in {0, None}
     ]
-    execution_gates = ("pytest", "pytest_harness", "compileall", "pip_check")
+    execution_gates = (
+        "pytest",
+        "pytest_qt_components",
+        "pytest_qt_scene",
+        "pytest_harness",
+        "compileall",
+        "pip_check",
+    )
     execution_failures = [
         name for name in execution_gates if outputs[name]["returncode"] != 0
     ]
@@ -188,6 +233,11 @@ def run_static_suite(
                 "evidence": [
                     pytest_result["stdout"][-2000:],
                     pytest_result["stderr"][-2000:],
+                    *[
+                        outputs[name]["stderr"][-2000:]
+                        for name in ("pytest_qt_components", "pytest_qt_scene")
+                        if outputs[name]["returncode"] != 0
+                    ],
                 ],
                 "suggested_fix": "Repair the failing behavior or test contract before using any downstream benchmark result.",
                 "scenario_id": "unit_static.repository_suite",

@@ -22,6 +22,7 @@ from quality_harness.release_gate import (
     profile_invocations,
     write_release_receipt,
 )
+from quality_harness.static_analysis import _pytest_commands
 
 
 def _command(returncode: int = 0, stdout: str = "") -> dict[str, Any]:
@@ -287,6 +288,45 @@ def test_fast_gate_preserves_complexity_as_failed_nonblocking_debt() -> None:
     assert complexity["status"] == "failed"
     assert complexity["required"] is False
     assert gate_outcome(checks) == "passed"
+
+
+def test_fast_gate_requires_each_isolated_qt_test_group() -> None:
+    for group in ("pytest_qt_components", "pytest_qt_scene"):
+        scenario = _static_scenario(complexity=0)
+        scenario["metrics"]["commands"][group]["returncode"] = 1
+        checks = evaluate_fast_result(
+            {
+                "scenarios": [
+                    scenario,
+                    _scenario("unit_static.bounded_mutation_history"),
+                    _scenario("unit_static.telemetry_isolation"),
+                ]
+            }
+        )
+        assert gate_outcome(checks) == "failed"
+        assert (
+            next(check for check in checks if check["id"].endswith(group))["status"]
+            == "failed"
+        )
+
+
+def test_static_pytest_partition_covers_all_qt_modules() -> None:
+    root = Path(__file__).resolve().parents[2]
+    groups = {name: command for name, command, _ in _pytest_commands(root, "python")}
+    qt_files = {
+        path.relative_to(root).as_posix()
+        for path in (root / "tests").glob("test_qt_*.py")
+    }
+    ignored = {
+        arg.removeprefix("--ignore=")
+        for arg in groups["pytest"]
+        if arg.startswith("--ignore=")
+    }
+    components = set(groups["pytest_qt_components"][4:])
+    scenes = set(groups["pytest_qt_scene"][4:])
+    assert ignored == qt_files
+    assert components | scenes == qt_files
+    assert components.isdisjoint(scenes)
 
 
 def test_missing_or_failed_required_evidence_fails_closed() -> None:

@@ -66,6 +66,8 @@ DEEP_REQUIRED_SCENARIOS = NORMAL_REQUIRED_SCENARIOS | {
 
 FAST_REQUIRED_COMMANDS = (
     "pytest",
+    "pytest_qt_components",
+    "pytest_qt_scene",
     "pytest_harness",
     "compileall",
     "ruff",
