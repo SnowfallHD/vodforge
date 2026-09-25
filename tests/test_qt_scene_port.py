@@ -44,6 +44,16 @@ from yt_downloader.support_diagnostics import FailureContext
 from yt_downloader.ui_theme import THEME
 from yt_downloader.whats_new import NativePreview
 
+_QT_TEST_APP: QGuiApplication | None = None
+
+
+def qt_app() -> QGuiApplication:
+    """Keep Qt's application wrapper alive across scene tests and worker teardown."""
+    global _QT_TEST_APP
+    if _QT_TEST_APP is None:
+        _QT_TEST_APP = QGuiApplication.instance() or QGuiApplication([])
+    return _QT_TEST_APP
+
 
 def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     return {
@@ -76,7 +86,7 @@ def test_qt_library_group_menu_selects_every_saved_variant(tmp_path, monkeypatch
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [
         saved(tmp_path, "One", "MP4"),
@@ -126,7 +136,7 @@ def test_qt_library_group_cards_remain_visible_across_home_and_group_routes(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
     engine = qt_main.create_engine(bridge)
@@ -162,7 +172,7 @@ def test_qt_settings_extra_tags_reach_existing_download_job(tmp_path, monkeypatc
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         assert bridge.setExtraTags("  one, two ,, three ")
@@ -198,7 +208,7 @@ def test_qt_unsaved_source_shows_shared_guidance_without_clearing_entry(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     accepted = []
     bridge.sourceAccepted.connect(lambda: accepted.append(True))
@@ -230,7 +240,7 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     try:
@@ -268,7 +278,7 @@ def test_qt_player_related_uses_saved_variant_owner_and_replaces_selected_media(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     first = saved(tmp_path, "First", "MP4")
     second = saved(tmp_path, "Second", "MP4")
     (tmp_path / "First.mp4").write_bytes(b"fixture one")
@@ -299,7 +309,7 @@ def test_qt_library_description_uses_current_detail_owner_and_shared_annotations
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     first = saved(tmp_path, "First", "MP4")
     second = saved(tmp_path, "Second", "MP4")
     first["webpage_url"] = "https://example.com/media/first"
@@ -347,7 +357,7 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     video = saved(tmp_path, "Same source", "MP4")
     audio = saved(tmp_path, "Same source", "MP3")
     video["webpage_url"] = audio["webpage_url"] = "https://example.com/same"
@@ -400,7 +410,7 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     record = saved(tmp_path, "Selected", "MP4")
     record["description"] = "Visible description for the selected saved item."
     bridge = qt_main.Bridge(None)
@@ -480,7 +490,7 @@ def test_qt_folder_description_attests_real_rendered_visibility(tmp_path, monkey
         monkeypatch.setenv(key, value)
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     title = "A selected archive title with enough words to occupy more than two lines in the inspector rail"
     record = saved(tmp_path / ("very-long-folder-name-" * 5), title, "MP4")
     record["description"] = "Visible description. " * 80
@@ -528,7 +538,7 @@ def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     try:
@@ -612,7 +622,7 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -712,7 +722,7 @@ def test_qt_bridge_close_stops_polling_and_commits_pending_preferences(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge.setQuality("720p HD")
     assert bridge._timer.isActive() and bridge._save_timer.isActive()
@@ -823,7 +833,7 @@ def test_qt_watch_group_header_uses_tk_media_summary_and_creator(tmp_path, monke
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = records
     monkeypatch.setattr(
@@ -1056,7 +1066,7 @@ def test_qt_import_uses_shared_inspection_and_commits_before_reporting_success(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     source = tmp_path / "my-media.mp4"
     source.write_bytes(b"fixture")
     inspected = []
@@ -1097,7 +1107,7 @@ def test_qt_saved_collection_is_visible_through_shared_projection(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         record = saved(tmp_path, "Saved video", "MP4")
@@ -1126,7 +1136,7 @@ def test_qt_organization_records_only_durable_changed_fields(tmp_path, monkeypat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         bridge._runtime.history = [saved(tmp_path, "First", "MP4")]
@@ -1177,7 +1187,7 @@ def test_qt_run_menu_cannot_control_successor_execution(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         original = make_job(tmp_path)
@@ -1238,7 +1248,7 @@ def test_qt_rendered_run_menu_uses_admitted_execution(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     QQuickStyle.setStyle("Basic")
     bridge = qt_main.Bridge(None)
     original = make_job(tmp_path)
@@ -1286,7 +1296,7 @@ def test_qt_saved_owner_actions_remain_in_library_after_work_deck_filter(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     first = saved(tmp_path, "First", "MP4")
     second = saved(tmp_path, "Second", "MP4")
     first["webpage_url"] = "https://www.youtube.com/watch?v=abcdefghijk"
@@ -1322,7 +1332,7 @@ def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     active = make_job(tmp_path)
     active.preview_info = {"title": "Active source", "uploader": "Creator"}
@@ -1375,7 +1385,7 @@ def test_qt_forge_and_run_deck_use_shared_terminal_progress_tones(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     jobs = []
     for status in ("Failed", "Stopped", "Skipped"):
@@ -1455,7 +1465,7 @@ def test_qt_library_detail_keeps_full_long_description_scrollable(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     record = saved(tmp_path, "Long description", "MP4")
     description = "\n".join(
         f"Chapter {index}: preserve this full description in the detail view."
@@ -1508,7 +1518,7 @@ def test_qt_activity_log_uses_existing_private_persistence(tmp_path, monkeypatch
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         bridge._append_activity_line("Current run changed")
@@ -1526,7 +1536,7 @@ def test_qt_watch_queue_advances_only_from_current_playback_generation(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     try:
         records = [saved(tmp_path, "First", "MP4"), saved(tmp_path, "Second", "MP4")]
@@ -1571,7 +1581,7 @@ def test_qt_watch_navigation_telemetry_uses_only_closed_dimensions(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
 
     class Observer:
@@ -1611,7 +1621,7 @@ def test_qt_library_navigation_telemetry_matches_saved_actions_without_user_text
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
 
     class Observer:
@@ -1655,7 +1665,7 @@ def test_qt_missing_media_offer_and_durable_library_removal_are_observed(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
 
     class Observer:
@@ -1690,7 +1700,7 @@ def test_qt_player_replaces_provider_and_tags_each_open(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -1729,7 +1739,7 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         bridge._latest_failure = FailureContext(
@@ -1757,7 +1767,7 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_activity(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     QQuickStyle.setStyle("Basic")
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
@@ -1832,7 +1842,7 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     QQuickStyle.setStyle("Basic")
     from dataclasses import replace
 
@@ -1950,7 +1960,7 @@ def test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     source = Path(qt_main.__file__).with_name("FeaturePreview.qml").read_text()
     assert all(f'"{preview.value}"' in source for preview in NativePreview)
     bridge = qt_main.Bridge(None)
@@ -1990,7 +2000,7 @@ def test_qt_editorial_original_audio_menu_and_activity_demo_use_live_controls(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2184,7 +2194,7 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2251,7 +2261,7 @@ def test_qt_output_mode_menu_uses_tk_shared_display_contract(tmp_path, monkeypat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2293,7 +2303,7 @@ def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkey
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2341,7 +2351,7 @@ def test_qt_settings_fit_minimum_window_and_access_returns_to_settings(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2404,7 +2414,7 @@ def test_qt_library_compact_browse_controls_keep_import_with_other_actions(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2439,7 +2449,7 @@ def test_qt_library_multi_select_presets_collection_from_visible_owners(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [
         dict(saved(tmp_path, "First", "MP4"), vodforge_run_id="first-run"),
@@ -2500,7 +2510,7 @@ def test_qt_multi_file_action_requires_all_current_owners_and_no_active_playback
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     records = [saved(tmp_path, "First", "MP4"), saved(tmp_path, "Second", "MP3")]
     owners = [history_archive_owner(row) for row in records]
@@ -2528,7 +2538,7 @@ def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [
         saved(tmp_path, f"Item {index}", "MP4") for index in range(9)
@@ -2562,7 +2572,7 @@ def test_qt_library_sidebar_and_canvas_follow_tk_parent_bounds(tmp_path, monkeyp
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [
         saved(tmp_path, f"Media {index}", "MP4") for index in range(31)
@@ -2638,7 +2648,7 @@ def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2717,7 +2727,7 @@ def test_qt_watch_empty_home_uses_tk_welcome_and_shared_actions(tmp_path, monkey
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2765,7 +2775,7 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2828,7 +2838,7 @@ def test_qt_forge_composer_matches_tk_control_bounds(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2910,7 +2920,7 @@ def test_qt_library_category_tiles_follow_tk_column_and_content_branches(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
@@ -2952,7 +2962,7 @@ def test_qt_library_all_media_windows_rows_and_artwork_requests(tmp_path, monkey
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [
         saved(tmp_path, f"Item {index:03d}", "MP4") for index in range(200)
@@ -3018,7 +3028,7 @@ def test_qt_watch_media_windows_cards_and_restores_back_scroll(tmp_path, monkeyp
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [
         saved(tmp_path, f"Video {index:03d}", "MP4") for index in range(200)
@@ -3084,7 +3094,7 @@ def test_qt_watch_group_routes_window_cards_and_artwork(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     records = []
     for index in range(200):
@@ -3182,7 +3192,7 @@ def test_qt_visible_cards_show_resolved_local_artwork(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     image_path = tmp_path / "saved-thumb.jpg"
     Image.new("RGB", (640, 360), "#7197b8").save(image_path)
     record = saved(tmp_path, "Saved group artwork", "MP4")
@@ -3256,7 +3266,7 @@ def test_qt_library_group_routes_window_cards_and_artwork(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     records = []
     for index in range(200):
@@ -3327,7 +3337,7 @@ def test_qt_mp3_cover_selection_validates_and_clears_like_tk(tmp_path, monkeypat
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     try:
         bridge.setMp3Value("mp3_cover_art_mode", "Custom art")
@@ -3363,7 +3373,7 @@ def test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    app = QGuiApplication.instance() or QGuiApplication([])
+    app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge.setOutputFormat("MP3")
     cover = tmp_path / "cover.png"
