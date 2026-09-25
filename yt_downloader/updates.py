@@ -549,11 +549,27 @@ def cleanup_stale_macos_updates(update_root: Path, *, keep: Path | None = None) 
 
 
 def write_macos_swap_script(
-    plan: MacUpdatePlan, *, repair: bool = False, telemetry_permitted: bool = False
+    plan: MacUpdatePlan,
+    *,
+    repair: bool = False,
+    telemetry_permitted: bool = False,
+    qa_relaunch: bool = False,
 ) -> Path:
     """Write the detached, rollback-capable macOS app replacement script."""
     script_path = plan.staging_root / "install-update.sh"
     receipt_token = uuid.uuid4().hex
+    # LaunchServices starts an app with the user's login environment. An isolated
+    # QA update must instead inherit the validated profile, feed and telemetry
+    # environment from this detached helper, without putting the key in argv.
+    relaunch = (
+        'VODFORGE_UPDATE_RECEIPT="$telemetry_receipt" '
+        '"$target_app/Contents/MacOS/VODForge" >/dev/null 2>&1 &\n'
+        '            relaunched_pid=$!\n'
+        '            /bin/sleep 1\n'
+        '            /bin/kill -0 "$relaunched_pid" 2>/dev/null'
+        if qa_relaunch
+        else '/usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"'
+    )
     script = textwrap.dedent(
         f"""\
         #!/bin/bash
@@ -577,7 +593,7 @@ def write_macos_swap_script(
             path_digest="${{path_digest%% *}}"
             printf '%s\n' '{{"status":"failed","stage":"'"$stage"'","executable_path_sha256":"'"$path_digest"'","telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
             /bin/mv "$telemetry_receipt.tmp" "$telemetry_receipt"
-            /usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"
+            {relaunch}
           fi
           exit 1
         }}
@@ -610,7 +626,7 @@ def write_macos_swap_script(
         /bin/mv "$target_app" "$old_app" || fail "could not preserve current app"
         if /bin/mv "$new_app" "$target_app"; then
           stage="relaunching"
-          if /usr/bin/open --env "VODFORGE_UPDATE_RECEIPT=$telemetry_receipt" "$target_app"; then
+          if {relaunch}; then
             digest=$(/usr/bin/shasum -a 256 "$target_app/Contents/MacOS/VODForge")
             digest="${{digest%% *}}"
             printf '%s\n' '{{"status":"relaunched","stage":"relaunching","executable_sha256":"'"$digest"'","repair":{str(repair).lower()},"telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
@@ -645,7 +661,10 @@ def launch_macos_update(
     """Launch the verified macOS swapper; the caller must then exit."""
     verify_macos_app(plan.source_app, runner=runner)
     script_path = write_macos_swap_script(
-        plan, repair=repair, telemetry_permitted=telemetry_permitted
+        plan,
+        repair=repair,
+        telemetry_permitted=telemetry_permitted,
+        qa_relaunch=qa_update_feed() is not None,
     )
     process = popen(
         [

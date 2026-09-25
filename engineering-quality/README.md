@@ -92,6 +92,21 @@ delayed visibility, a wrong executable, and a window that never appears. It
 passed on Genesis; the failed CI receipt and handoff remain retained. A new
 signed-artifact upgrade journey is still required before clearing this gate.
 
+The signed Qt 0.2.2 QA baseline exposed a separate macOS handoff defect: the
+helper installed and relaunched 0.2.3, but `open` gave the new process the
+login environment. It opened the normal user profile, while the isolated
+preview-D1 installation stayed on 0.2.2. Existing helper tests asserted
+relaunch and rollback, and QA-feed tests asserted the original process's
+isolation; neither crossed the handoff boundary. The existing macOS helper now
+executes the verified app binary directly only for a previously validated QA
+feed, inheriting the isolated HOME, profile, telemetry policy, feed and key
+without writing the key into a script or command argument. Normal updates keep
+LaunchServices. A native helper test executes the generated swap script and
+checks the child environment and installed target; it fails against the old
+path. This covers the macOS QA handoff and its production/QA boundary, not a
+Windows installer or a final signed update. Rebuild and repeat the real
+baseline-to-candidate update, Repair, D1 and user-data checks before release.
+
 ## Qt artwork and Forge visual ownership — 2026-09-24
 
 The earlier Watch/Library source tests counted bounded artwork requests and

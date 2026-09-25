@@ -207,6 +207,76 @@ def test_macos_swap_executes_relaunch_and_rollback(tmp_path, outcome):
     )
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="requires macOS file tools")
+def test_macos_qa_update_relaunch_keeps_isolated_profile(tmp_path):
+    import plistlib
+    import shlex
+
+    from yt_downloader.updates import MacUpdatePlan, write_macos_swap_script
+
+    staging = tmp_path / "staged-test"
+    source = staging / "VODForge.app"
+    target = tmp_path / "installed" / "VODForge.app"
+    for app in (source, target):
+        (app / "Contents/MacOS").mkdir(parents=True)
+        (app / "Contents/Info.plist").write_bytes(
+            plistlib.dumps({"CFBundleIdentifier": "com.snowfallhd.vodforge"})
+        )
+    observed = tmp_path / "relaunch-environment"
+    (source / "Contents/MacOS/VODForge").write_text(
+        "#!/bin/bash\n"
+        f"printf '%s\\n' \"$HOME\" \"$VODFORGE_QA_PROFILE\" "
+        f"\"$VODFORGE_QA_PREVIEW_TELEMETRY\" "
+        f"\"$VODFORGE_QUALITY_E2E\" "
+        f"\"$VODFORGE_QA_ACCESS_KEY\" "
+        f"\"$VODFORGE_UPDATE_RECEIPT\" > {shlex.quote(str(observed))}\n"
+        "sleep 3\n"
+    )
+    (source / "Contents/MacOS/VODForge").chmod(0o755)
+    verifier = tmp_path / "verify"
+    verifier.write_text(
+        "#!/bin/bash\n"
+        "echo 'Identifier=com.snowfallhd.vodforge'\n"
+        "echo 'TeamIdentifier=76G5W4954G'\n"
+    )
+    verifier.chmod(0o755)
+    path = write_macos_swap_script(
+        MacUpdatePlan(source, target, staging), qa_relaunch=True
+    )
+    script = (
+        path.read_text()
+        .replace("/usr/bin/codesign", shlex.quote(str(verifier)))
+        .replace("/usr/bin/xcrun stapler", "/usr/bin/true")
+        .replace("/usr/sbin/spctl", "/usr/bin/true")
+        .replace("/usr/bin/logger", "/usr/bin/true")
+    )
+    path.write_text(script)
+    home = tmp_path / "home"
+    profile = home / "profile"
+    profile.mkdir(parents=True)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "VODFORGE_QA_PROFILE": str(profile),
+        "VODFORGE_QA_PREVIEW_TELEMETRY": "1",
+        "VODFORGE_QUALITY_E2E": "1",
+        "VODFORGE_QA_ACCESS_KEY": "a" * 64,
+    }
+    result = subprocess.run(
+        ["/bin/bash", str(path), "99999999", str(source), str(target), str(staging)],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    values = observed.read_text().splitlines()
+    assert values[:5] == [str(home), str(profile), "1", "1", "a" * 64]
+    assert values[5].endswith(".json")
+    assert (target / "Contents/MacOS/VODForge").is_file()
+
+
 @pytest.mark.skipif(
     sys.platform != "win32" and not os.environ.get("VODFORGE_QA_POWERSHELL"),
     reason="requires PowerShell runtime",
