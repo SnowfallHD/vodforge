@@ -143,7 +143,9 @@ def test_full_outbox_replays_on_new_session_after_delivery_recovers(tmp_path):
         heycatch_recorder=lambda *_args, **_kwargs: True,
     )
     assert not resumed.record_app_opened()  # The bounded outbox rejects this new event.
-    assert resumed.shutdown(5)
+    # Replaying a full durable outbox rewrites its remaining events after each
+    # acknowledgement; Intel CI can take longer than five seconds for 256 writes.
+    assert resumed.shutdown(30)
     assert delivered == [event.event_id for event in queued]
     assert not state_path.exists()
 
