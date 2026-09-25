@@ -2320,3 +2320,36 @@ delivered) and passes after the shared-owner fix. Existing denied-consent and
 delivery tests cover adjacent boundaries. This is representative source-level
 proof; a rebuilt signed Mac/Windows package and direct preview-D1 readback are
 still required for release acceptance.
+
+### Qt compact geometry and cross-platform harness inputs
+
+The b636bb6 six-platform CI matrix exposed two independent classes missed by
+Mac-only checks. Qt's Windows font metrics made the Forge scene's implicit
+minimum width 800 pixels inside a 756-pixel allocation at the 820-pixel window
+minimum. The parent header grew to 840 pixels, clipping Settings; the local
+action row also put Create video beyond the right edge. The shared layout now
+allows the scene and its rows to shrink, while the optional explanatory label
+is hidden only below 880 pixels. The actual Forge controls retain their shared
+materials and fixed button sizes. The native accessibility regression asserts
+the header, both Forge rows and every Forge action fit the minimum window. The
+prior b636bb6 Windows failure and direct Genesis QML probe supply the failing
+evidence; the same probe and new test pass after the fix. This covers the
+compact Forge and header controls, not every popup or display scaling mode.
+
+The same matrix found tests and inventory reads that assumed POSIX paths or
+UTF-8 as Windows' default text encoding. The corrections compare paths as
+paths and explicitly decode repository text as UTF-8. A storage test had also
+patched the process-global `os.name`, which changed pytest's own path factory
+on Windows 3.11; it now replaces only the storage module's OS facade. These
+are cross-owner test-harness invariants: fixtures must model the target module
+without mutating the test process, and repository text/path checks must be
+platform independent. Mac focused tests passed; final full-platform CI remains
+the release gate.
+
+Genesis Qt offscreen tests additionally exposed a missing Qt font directory:
+without `QT_QPA_FONTDIR`, Qt reported no fonts and the header became 100 pixels
+high instead of 44. Setting it to the installed Windows Fonts directory made
+the four measured header, Forge, sidebar and settings-column scene tests pass
+without weakening their geometry assertions. Windows CI now supplies that
+directory for its headless test process; packaged native visuals still require
+separate acceptance.

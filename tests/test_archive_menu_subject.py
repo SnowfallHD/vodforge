@@ -1,5 +1,6 @@
 """Root menu-subject probe: late actions must retain the subject that opened the menu."""
 
+from pathlib import Path
 from types import MethodType, SimpleNamespace
 
 import pytest
@@ -84,7 +85,7 @@ def test_open_location_retains_original_menu_subject(monkeypatch, changed):
     if changed:
         selected[:] = ["1"]
     menu.commands["Open saved location"]()
-    assert opened == ["/synthetic/original"]
+    assert opened == [str(Path("/synthetic/original"))]
 
 
 @pytest.mark.parametrize("changed", [False, True])
@@ -121,7 +122,7 @@ def test_menu_subject_resolves_latest_owner_without_using_old_index(
     if change == "removed":
         assert opened == [] and confirmations == []
     elif action == "Open saved location":
-        assert opened == ["/synthetic/original"]
+        assert opened == [str(Path("/synthetic/original"))]
     else:
         assert len(confirmations) == 1 and "Original selected item" in confirmations[0]
 

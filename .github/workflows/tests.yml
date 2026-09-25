@@ -37,6 +37,7 @@ jobs:
         run: |
           .\install_ffmpeg_windows.ps1
           "$PWD\vendor\ffmpeg\bin" >> $env:GITHUB_PATH
+          "QT_QPA_FONTDIR=$env:WINDIR\Fonts" >> $env:GITHUB_ENV
       - name: Compile source
         run: python -m compileall -q yt_downloader main.py
       - name: Run tests outside Qt scene module

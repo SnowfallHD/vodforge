@@ -26,7 +26,7 @@ def test_local_face_clone_is_detected():
 def test_product_controls_do_not_freeze_theme_defaults():
     root = Path(__file__).resolve().parents[2]
     for path in (root / "yt_downloader").glob("*.py"):
-        assert theme_default_bypasses(path.read_text()) == [], path.name
+        assert theme_default_bypasses(path.read_text(encoding="utf-8")) == [], path.name
 
 
 def test_control_adapters_have_no_private_raster_face_clones():
@@ -39,5 +39,8 @@ def test_control_adapters_have_no_private_raster_face_clones():
         "media_player_ui.py",
     ):
         assert (
-            family_material_bypasses((root / "yt_downloader" / name).read_text()) == []
+            family_material_bypasses(
+                (root / "yt_downloader" / name).read_text(encoding="utf-8")
+            )
+            == []
         ), name

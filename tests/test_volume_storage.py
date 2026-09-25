@@ -174,7 +174,9 @@ def test_location_labels_preserve_identity_and_distinguish_unknown_and_duplicate
 def test_mac_discovery_uses_real_volume_names_and_network_filesystem(monkeypatch):
     import psutil
 
-    monkeypatch.setattr(storage.os, "name", "posix")
+    monkeypatch.setattr(
+        storage, "os", SimpleNamespace(name="posix", environ=storage.os.environ)
+    )
     monkeypatch.setattr(storage.sys, "platform", "darwin")
     monkeypatch.setattr(
         psutil,
@@ -252,7 +254,9 @@ def test_windows_discovered_drive_root_matches_default_capacity_owner(monkeypatc
         def GetVolumeInformationW(self, *_args):
             return False
 
-    monkeypatch.setattr(storage.os, "name", "nt")
+    monkeypatch.setattr(
+        storage, "os", SimpleNamespace(name="nt", environ=storage.os.environ)
+    )
     monkeypatch.setattr(
         storage._windows_ctypes,
         "windll",

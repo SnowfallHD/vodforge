@@ -96,7 +96,7 @@ def test_search_and_type_filter_keep_play_bound_to_original_history(
         bridge.setLibraryType("MP3")
         assert bridge.history[0]["sourceIndex"] == 1
         bridge.openLibraryItem(bridge.history[0]["sourceIndex"])
-        assert bridge.playbackUrl.toLocalFile() == str(second)
+        assert Path(bridge.playbackUrl.toLocalFile()) == second
         assert bridge.selection == "Watch"
         bridge.openLibraryItem(bridge.history[0]["sourceIndex"])
         assert playback_requests.count() == 2

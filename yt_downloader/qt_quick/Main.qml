@@ -721,6 +721,7 @@ Window {
             visible: bridge.selection === "Forge"
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumWidth: 0
             Layout.leftMargin: window.forgeHorizontalPad
             Layout.rightMargin: window.forgeHorizontalPad
             Layout.topMargin: window.forgeTopPad - 2
@@ -729,6 +730,7 @@ Window {
             RowLayout {
                 objectName: "forgeCommandRow"
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.preferredHeight: 48
                 spacing: 8
                 StoneField {
@@ -791,6 +793,7 @@ Window {
             RowLayout {
                 objectName: "forgeLocalRow"
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.preferredHeight: 44
                 spacing: 12
                 StoneButton {
@@ -838,7 +841,7 @@ Window {
                     }
                 }
                 Item { Layout.fillWidth: true }
-                Text { text: "Have local audio?"; color: theme.muted; font.pixelSize: 15 }
+                Text { text: "Have local audio?"; visible: window.width >= 880; color: theme.muted; font.pixelSize: 15 }
                 StoneButton {
                     objectName: "forgeCreateVideoButton"
                     label: "Create video"

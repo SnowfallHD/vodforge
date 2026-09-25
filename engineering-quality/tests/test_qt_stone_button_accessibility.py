@@ -11,7 +11,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QCoreApplication, QEvent, QUrl
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF, QUrl
 from PySide6.QtGui import QAccessible, QAccessibleActionInterface, QGuiApplication
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -168,6 +168,27 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
 
         for name in ("Forge", "Library", "Watch", "Activity", "Settings"):
             assert inside(visible_button(name)), name
+        for name in ("focusHeader", "forgeScene", "forgeCommandRow", "forgeLocalRow"):
+            item = window_object.findChild(QObject, name)
+            assert item is not None, name
+            origin = item.mapToScene(QPointF(0, 0))
+            assert (
+                origin.x() >= 0 and origin.x() + item.width() <= window_object.width()
+            ), name
+        for name in (
+            "forgeUrlField",
+            "forgeOptionsButton",
+            "forgeDownloadButton",
+            "forgeLoadListButton",
+            "forgeDestinationField",
+            "forgeCreateVideoButton",
+        ):
+            item = window_object.findChild(QObject, name)
+            assert item is not None, name
+            origin = item.mapToScene(QPointF(0, 0))
+            assert (
+                origin.x() >= 0 and origin.x() + item.width() <= window_object.width()
+            ), name
         for name in ("Forge", "Library", "Watch", "Activity"):
             bounds = visible_button(name).rect()
             assert bounds.height() == 44, name

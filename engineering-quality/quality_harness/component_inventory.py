@@ -12,7 +12,7 @@ def scan_button_sites(root: Path) -> dict[str, Any]:
     sites = []
     violations = []
     for path in sorted((root / "yt_downloader").glob("*.py")):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         parents = {
             child: node
             for node in ast.walk(tree)
@@ -78,7 +78,7 @@ def refresh_control_families(root: Path, previous: dict[str, Any]) -> dict[str, 
     definitions = {}
     sites: dict[str, list[dict[str, Any]]] = {name: [] for name in names}
     for path in sorted((root / "yt_downloader").glob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.ClassDef) and node.name in names:
                 definitions[node.name] = {
                     "file": str(path.relative_to(root)),
