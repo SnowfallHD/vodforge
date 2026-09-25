@@ -2287,6 +2287,8 @@ the exact Mac measured x values and, on other OSes, computes the authored
 centering position from the actual header and navigation widths. It checks the
 raw coordinate within 0.05px, so platform font and fractional layout widths
 cannot turn a correct center into a false integer mismatch.
+The CI matrix now keeps all six jobs running when one fails, allowing one
+source revision to report the Mac, Windows and Linux outcomes together.
 
 The same signed smoke failed its final restart gate despite clean exits and
 stable media/history: launch 2 stayed on Forge, so the required Qt Folder
