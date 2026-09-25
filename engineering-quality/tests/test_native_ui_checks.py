@@ -49,20 +49,48 @@ def test_native_scenario_uses_schema_compatible_evidence(tmp_path, monkeypatch):
 def test_qt_candidate_uses_rendered_qml_contract_instead_of_tk_native_suite(
     tmp_path, monkeypatch
 ):
+    observed = []
+
     def run(command, **kwargs):
-        assert "tests/test_qt_scene_port.py" in command
-        assert "tests/test_qt_terminal_item_events.py" in command
+        observed.extend(part for part in command if part.startswith("tests/test_qt_"))
         assert "tests/test_archive_actual_playback.py" not in command
         assert "tests/test_scene_inflight_native.py" not in command
         assert kwargs["env"]["VODFORGE_UI"] == "qt"
         assert kwargs["env"]["QT_QPA_PLATFORM"] == "offscreen"
-        (tmp_path / "native.xml").write_text("<testsuite><testcase /></testsuite>")
+        Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
+            "<testsuite><testcase /></testsuite>"
+        )
         return CommandResult(command, 0, 0.1, "passed", "")
 
     monkeypatch.setattr(native_ui_checks, "run_command", run)
     scenario, _ = native_ui_checks.native_surface_contract(tmp_path, tmp_path, ui="qt")
     assert scenario["status"] == "passed"
     assert scenario["metrics"]["ui"] == "qt"
+    assert "tests/test_qt_scene_port.py" in observed
+    assert "tests/test_qt_terminal_item_events.py" in observed
+    assert "tests/test_qt_artwork_image.py" in observed
+    assert len(observed) == len(set(observed))
+
+
+def test_qt_native_scene_failure_cannot_be_hidden_by_green_component_group(
+    tmp_path, monkeypatch
+):
+    def run(command, **kwargs):
+        report = Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml")
+        report.write_text("<testsuite><testcase /></testsuite>")
+        failed = "tests/test_qt_scene_port.py" in command
+        return CommandResult(
+            command, 139 if failed else 0, 0.1, "partial", "crash" if failed else ""
+        )
+
+    monkeypatch.setattr(native_ui_checks, "run_command", run)
+    scenario, _ = native_ui_checks.native_surface_contract(tmp_path, tmp_path, ui="qt")
+    assert scenario["status"] == "failed"
+    assert any(
+        "scene native pytest exit code: 139" in text for text in scenario["evidence"]
+    )
+    assert (tmp_path / "scene/native-command.json").is_file()
+    assert (tmp_path / "components/native-command.json").is_file()
 
 
 def test_native_timeout_retains_raw_result_and_cannot_reuse_old_success(

@@ -30,8 +30,8 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
     output_dir.mkdir(parents=True, exist_ok=True)
     report = output_dir / "native.xml"
     report.unlink(missing_ok=True)
-    qt_tests = [
-        "tests/test_qt_scene_port.py",
+    qt_component_tests = [
+        "tests/test_qt_artwork_image.py",
         "tests/test_qt_metadata_preview.py",
         "tests/test_qt_previews.py",
         "tests/test_qt_terminal_item_events.py",
@@ -101,43 +101,132 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         "tests/test_forge_activity_ui.py",
         "tests/test_analytics_consent_ui.py",
     ]
+    native_env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(
+            filter(
+                None,
+                (
+                    str(repo_root.resolve()),
+                    str((repo_root / "engineering-quality").resolve()),
+                    os.environ.get("PYTHONPATH", ""),
+                ),
+            )
+        ),
+        "VODFORGE_NATIVE_SOURCE_ROOT": str(repo_root.resolve()),
+        "VODFORGE_NATIVE_HARNESS_ROOT": str(
+            (repo_root / "engineering-quality").resolve()
+        ),
+        "VODFORGE_NATIVE_UI_TESTS": "1",
+        "VODFORGE_NATIVE_PROFILE": profile,
+        "VODFORGE_UI": ui,
+        **({"QT_QPA_PLATFORM": "offscreen"} if ui == "qt" else {}),
+        "VODFORGE_NATIVE_FILE_QA": "1",
+        "VODFORGE_ACTUAL_PLAYBACK_TESTS": "1",
+        "VODFORGE_DISABLE_TELEMETRY": "1",
+    }
+    if ui == "qt":
+        # QGuiApplication and native worker state are process-wide. Keep every
+        # required Qt test, but give the scene and component groups separate
+        # processes and evidence directories.
+        groups = (
+            ("scene", ["tests/test_qt_scene_port.py"]),
+            ("components", qt_component_tests),
+        )
+        group_results = []
+        for name, tests in groups:
+            group_dir = output_dir / name
+            group_dir.mkdir(parents=True, exist_ok=True)
+            group_report = group_dir / "native.xml"
+            group_report.unlink(missing_ok=True)
+            result = run_command(
+                native_pytest_command(
+                    [
+                        "-p",
+                        "quality_harness.native_reports",
+                        *tests,
+                        "-q",
+                        f"--junitxml={group_report}",
+                    ]
+                ),
+                cwd=repo_root,
+                timeout=1800,
+                env={**native_env, "VODFORGE_NATIVE_EVIDENCE_DIR": str(group_dir)},
+            )
+            (group_dir / "native-command.json").write_text(
+                json.dumps(asdict(result), indent=2) + "\n"
+            )
+            group_results.append((name, group_dir, group_report, result))
+        passed = all(
+            result.returncode == 0 and complete_native_report(group_report)
+            for _name, _group_dir, group_report, result in group_results
+        )
+        return (
+            {
+                "id": "unit_static.native_surface_contract",
+                "evidence_tier": "unit_static",
+                "category": "reliability",
+                "status": "passed" if passed else "failed",
+                "duration_seconds": sum(
+                    result.duration_seconds
+                    for _name, _group_dir, _group_report, result in group_results
+                ),
+                "metrics": {
+                    "ui": ui,
+                    "timed_out": any(
+                        result.timed_out
+                        for _name, _group_dir, _group_report, result in group_results
+                    ),
+                    "unavailable": any(
+                        result.unavailable
+                        for _name, _group_dir, _group_report, result in group_results
+                    ),
+                },
+                "evidence": [
+                    item
+                    for name, _group_dir, _group_report, result in group_results
+                    for item in (
+                        f"{name} native pytest exit code: {result.returncode}",
+                        result.stdout,
+                        result.stderr,
+                    )
+                ]
+                + ["source-native; not packaged or cross-platform proof"],
+                "artifacts": [
+                    str(group_dir / artifact)
+                    for _name, group_dir, _group_report, _result in group_results
+                    for artifact in (
+                        "native.xml",
+                        "native-command.json",
+                        "native-results.jsonl",
+                        "native-evidence.json",
+                        "native-imports.json",
+                    )
+                ],
+                "error": (
+                    "Native suite exceeded 1800 seconds"
+                    if any(
+                        result.timed_out
+                        for _name, _group_dir, _group_report, result in group_results
+                    )
+                    else None
+                ),
+            },
+            [],
+        )
     result = run_command(
         native_pytest_command(
             [
                 "-p",
                 "quality_harness.native_reports",
-                *(qt_tests if ui == "qt" else tk_tests),
+                *tk_tests,
                 "-q",
                 f"--junitxml={report}",
             ]
         ),
         cwd=repo_root,
         timeout=1800,  # Whole-suite envelope; interaction/readiness/release deadlines are unchanged.
-        env={
-            **os.environ,
-            "PYTHONPATH": os.pathsep.join(
-                filter(
-                    None,
-                    (
-                        str(repo_root.resolve()),
-                        str((repo_root / "engineering-quality").resolve()),
-                        os.environ.get("PYTHONPATH", ""),
-                    ),
-                )
-            ),
-            "VODFORGE_NATIVE_SOURCE_ROOT": str(repo_root.resolve()),
-            "VODFORGE_NATIVE_HARNESS_ROOT": str(
-                (repo_root / "engineering-quality").resolve()
-            ),
-            "VODFORGE_NATIVE_UI_TESTS": "1",
-            "VODFORGE_NATIVE_PROFILE": profile,
-            "VODFORGE_UI": ui,
-            **({"QT_QPA_PLATFORM": "offscreen"} if ui == "qt" else {}),
-            "VODFORGE_NATIVE_FILE_QA": "1",
-            "VODFORGE_ACTUAL_PLAYBACK_TESTS": "1",
-            "VODFORGE_NATIVE_EVIDENCE_DIR": str(output_dir),
-            "VODFORGE_DISABLE_TELEMETRY": "1",
-        },
+        env={**native_env, "VODFORGE_NATIVE_EVIDENCE_DIR": str(output_dir)},
     )
     command_report = output_dir / "native-command.json"
     command_report.write_text(json.dumps(asdict(result), indent=2) + "\n")
