@@ -205,7 +205,6 @@ def _attestation_errors(
         "history_path": state_paths["history"],
         "diagnostics_dir": state_paths["diagnostics"],
         "diagnostics_path": state_paths["diagnostics_log"],
-        "output_root": state_paths["output"],
         "tmp_dir": state_paths["tmp"],
     }
     errors = [
@@ -215,6 +214,11 @@ def _attestation_errors(
     ]
     if attestation.get("renderer", "tk") not in {"tk", "qt"}:
         errors.append("attestation renderer is invalid")
+    output_root = attestation.get("output_root")
+    if not isinstance(output_root, str) or not _path_is_within(
+        output_root, _resolved(state_paths["output"])
+    ):
+        errors.append("attestation output_root escaped the isolated Downloads directory")
     isolation_root = _resolved(state_paths["isolation_root"])
     for key in (
         "home",

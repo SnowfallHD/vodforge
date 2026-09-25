@@ -300,6 +300,52 @@ def test_quality_e2e_attestation_receipts_exact_isolated_startup(
         assert stat.S_IMODE(expected.stat().st_mode) == 0o600
 
 
+def test_quality_e2e_attestation_accepts_saved_output_within_isolated_downloads(
+    tmp_path: Path,
+) -> None:
+    environment, app, home, application_data, diagnostics_path = _isolated_launch(
+        tmp_path
+    )
+    chosen_output = home / "Downloads" / "later-run"
+    chosen_output.mkdir()
+    app.output_var.value = str(chosen_output)
+
+    receipt = write_quality_e2e_startup_attestation(
+        app,
+        app_version="9.8.7-dev",
+        application_data_path=application_data,
+        diagnostics_path=diagnostics_path,
+        environ=environment,
+        home=home,
+    )
+
+    assert receipt is not None
+    assert json.loads(receipt.read_text(encoding="utf-8"))["output_root"] == str(
+        chosen_output
+    )
+
+
+def test_quality_e2e_attestation_rejects_saved_output_outside_downloads(
+    tmp_path: Path,
+) -> None:
+    environment, app, home, application_data, diagnostics_path = _isolated_launch(
+        tmp_path
+    )
+    unrelated = home / "Documents"
+    unrelated.mkdir()
+    app.output_var.value = str(unrelated)
+
+    with pytest.raises(QualityE2EAttestationError, match="isolated Downloads"):
+        write_quality_e2e_startup_attestation(
+            app,
+            app_version="9.8.7-dev",
+            application_data_path=application_data,
+            diagnostics_path=diagnostics_path,
+            environ=environment,
+            home=home,
+        )
+
+
 def test_quality_e2e_library_visibility_receipts_real_widget_geometry(
     tmp_path: Path,
 ) -> None:

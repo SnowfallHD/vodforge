@@ -18,6 +18,56 @@ from quality_harness.e2e_provenance import (
 )
 
 
+def test_attestation_accepts_saved_output_beneath_downloads_only(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "isolated"
+    home = root / "home"
+    output = home / "Downloads"
+    state_paths = {
+        "isolation_root": str(root),
+        "home": str(home),
+        "application_data": str(home / "app-data"),
+        "history": str(home / "app-data" / "download-history.json"),
+        "diagnostics": str(home / "logs"),
+        "diagnostics_log": str(home / "logs" / "latest.log"),
+        "output": str(output),
+        "tmp": str(root / "tmp"),
+    }
+    attestation = {
+        "schema_version": "1.0.0",
+        "session_nonce": "nonce",
+        "pid": 123,
+        "ppid": 45,
+        "executable": str(root / "VODForge"),
+        "app_version": "0.2.3",
+        "window_title": "VODForge [token]",
+        "home": state_paths["home"],
+        "application_data_dir": state_paths["application_data"],
+        "history_path": state_paths["history"],
+        "diagnostics_dir": state_paths["diagnostics"],
+        "diagnostics_path": state_paths["diagnostics_log"],
+        "output_root": str(output / "chosen-folder"),
+        "tmp_dir": state_paths["tmp"],
+        "renderer": "qt",
+    }
+    arguments = {
+        "pid": 123,
+        "ppid": 45,
+        "executable": root / "VODForge",
+        "session_nonce": "nonce",
+        "window_token": "token",
+        "app_version": "0.2.3",
+        "state_paths": state_paths,
+    }
+
+    assert e2e_provenance._attestation_errors(attestation, **arguments) == []
+    attestation["output_root"] = str(home / "Documents")
+    assert "attestation output_root escaped the isolated Downloads directory" in (
+        e2e_provenance._attestation_errors(attestation, **arguments)
+    )
+
+
 class _ProcessDouble:
     def __init__(self, info: dict[str, Any]) -> None:
         self.info = info

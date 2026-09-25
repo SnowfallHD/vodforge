@@ -717,12 +717,12 @@ def write_quality_e2e_startup_attestation(
     app_data = _canonical_path(application_data_path, label="application-data path")
     history_path = _canonical_path(app.history_path, label="history path")
     diagnostic_file = _canonical_path(diagnostics_path, label="diagnostics path")
-    output_root = _canonical_path(app.output_var.get(), label="default output root")
+    output_root = _canonical_path(app.output_var.get(), label="output root")
     for label, path in (
         ("application-data path", app_data),
         ("history path", history_path),
         ("diagnostics path", diagnostic_file),
-        ("default output root", output_root),
+        ("output root", output_root),
     ):
         _require_path_beneath(path, home_path, label=label)
         if path.resolve(strict=False) != path:
@@ -733,12 +733,12 @@ def write_quality_e2e_startup_attestation(
         raise QualityE2EAttestationError(
             "history path does not belong to the isolated application-data directory"
         )
-    expected_output_root = home_path / "Downloads"
-    if output_root != expected_output_root:
+    allowed_output_root = home_path / "Downloads"
+    if not output_root.is_relative_to(allowed_output_root):
         raise QualityE2EAttestationError(
-            "default output root does not match the isolated Downloads directory"
+            "output root must remain inside the isolated Downloads directory"
         )
-    _existing_directory_without_symlinks(output_root, label="default output root")
+    _existing_directory_without_symlinks(output_root, label="output root")
 
     window_title = f"VODForge [{window_token}]"
     app.title(window_title)
