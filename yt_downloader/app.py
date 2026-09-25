@@ -14816,7 +14816,9 @@ class DownloaderApp(
             if not folder:
                 return
             destination = Path(folder)
-        source_url = plan.job.url if plan.job is not None else canonical_youtube_url(info)
+        source_url = (
+            plan.job.url if plan.job is not None else canonical_youtube_url(info)
+        )
         if source_url:
             self._reset_source_input_after_send()
             self.url_var.set(source_url)

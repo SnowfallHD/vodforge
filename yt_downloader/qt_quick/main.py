@@ -833,7 +833,9 @@ class Bridge(QObject):
             destination = Path(folder.toLocalFile())
             if not destination.is_dir():
                 return False
-        source_url = plan.job.url if plan.job is not None else canonical_youtube_url(item)
+        source_url = (
+            plan.job.url if plan.job is not None else canonical_youtube_url(item)
+        )
         if not source_url:
             return False
         self._media_recovery.clear_destination()
