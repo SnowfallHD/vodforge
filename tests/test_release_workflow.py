@@ -88,6 +88,20 @@ def test_every_full_repository_test_runner_installs_harness_dependencies():
     assert required_install in tests_workflow
 
 
+def test_macos_release_preflight_keeps_each_qt_module_out_of_backend_process():
+    macos_build = (ROOT / "build_macos.sh").read_text(encoding="utf-8")
+    tests_workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+    qt_modules = sorted((ROOT / "tests").glob("test_qt_*.py"))
+    assert qt_modules
+    for module in qt_modules:
+        name = f"tests/{module.name}"
+        for runner in (macos_build, tests_workflow):
+            assert runner.count(f"--ignore={name}") == 1
+            assert runner.count(name) == 2
+
+
 def test_release_builds_pin_yt_dlp_with_matching_ejs_scripts():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     app_source = (ROOT / "yt_downloader" / "app.py").read_text(encoding="utf-8")
