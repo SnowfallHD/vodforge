@@ -228,7 +228,7 @@ Window {
             spacing: 3
             StoneButton {
                 width: parent.width; height: 46
-                label: "Help & feedback"
+                label: "Support"
                 onActivated: { helpMenu.close(); bridge.openSupport("feedback") }
             }
             StoneButton {
@@ -264,7 +264,7 @@ Window {
             anchors.fill: parent
             spacing: 9
             Text {
-                text: bridge.supportKind === "feedback" ? "Help & feedback" : "How’s VODForge working for you?"
+                text: bridge.supportKind === "feedback" ? "Support" : "How’s VODForge working for you?"
                 color: theme.text; font.pixelSize: 24; font.bold: true
                 Layout.fillWidth: true; wrapMode: Text.WordWrap
             }
@@ -1708,9 +1708,9 @@ Window {
         }
         onOpened: Qt.callLater(observeVisiblePro)
         x: Math.max(0, (window.width - width) / 2)
-        y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(820, window.width - 40)
-        height: Math.min(752, window.height - 24)
+        y: 66
+        width: Math.min(820, window.width - 70)
+        height: Math.min(752, window.height - y - 12)
         padding: 18
         modal: true
         background: StoneField {}
@@ -1746,8 +1746,10 @@ Window {
                         columnSpacing: 16
                         rowSpacing: 18
                         ColumnLayout {
+                            objectName: "settingsLeftColumn"
                             Layout.fillWidth: true
                             Layout.preferredWidth: 360
+                            Layout.alignment: Qt.AlignTop
                             spacing: 12
                     Text { text: "SAVE LOCATION"; color: theme.muted; font.pixelSize: 13; font.bold: true }
                     RowLayout {
@@ -1775,7 +1777,7 @@ Window {
                         }
                     }
                     Text { text: "YOUTUBE ACCESS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
-                    StoneButton { label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); accessPopup.open() } }
+                    StoneButton { label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { accessPopup.returnToSettings = true; settingsPopup.close(); accessPopup.open() } }
                     Text { text: "METADATA"; color: theme.muted; font.pixelSize: 13; font.bold: true }
                     Text { text: "Extra tags (comma-separated)"; color: theme.muted; font.pixelSize: 13 }
                     StoneField {
@@ -1795,8 +1797,10 @@ Window {
                     Text { text: "Tags are added to embedded metadata and the compact metadata file when enabled."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
                         }
                         ColumnLayout {
+                            objectName: "settingsRightColumn"
                             Layout.fillWidth: true
                             Layout.preferredWidth: 360
+                            Layout.alignment: Qt.AlignTop
                             spacing: 12
                     Text { visible: window.outputFormat === "MP4"; text: "MP4 VIDEO"; color: theme.muted; font.pixelSize: 13; font.bold: true }
                     RowLayout {
@@ -1812,27 +1816,38 @@ Window {
                         backend: bridge
                         colors: theme
                     }
-                    Text { visible: window.outputFormat === "MP4"; text: "MP4 OUTPUT FILES"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { visible: window.outputFormat === "MP4"; text: "MP4 OPTIONS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
                     Repeater {
                 model: [
-                    { key: "use_nvenc", label: "Use NVIDIA encoder for MP4" },
-                    { key: "embed_thumbnail", label: "Embed thumbnail in MP4" },
-                    { key: "write_thumbnail", label: "Save thumbnail beside MP4" },
-                    { key: "embed_metadata", label: "Embed metadata in MP4" },
-                    { key: "write_info_json", label: "Save info JSON beside MP4" }
+                    { key: "use_nvenc", heading: "ENCODING", label: "Use NVIDIA encoder" },
+                    { key: "embed_thumbnail", heading: "EMBED IN MP4", label: "Thumbnail" },
+                    { key: "embed_metadata", heading: "", label: "Metadata" },
+                    { key: "write_thumbnail", heading: "SAVE ALONGSIDE MP4", label: "Thumbnail file" },
+                    { key: "write_info_json", heading: "", label: "Info JSON file" }
                 ]
-                RowLayout {
+                ColumnLayout {
                     required property var modelData
                     visible: window.outputFormat === "MP4"
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 45
-                    Text { text: modelData.label; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
-                    StoneButton {
-                        label: bridge.downloadOptions[modelData.key] ? "On" : "Off"
-                        selected: bridge.downloadOptions[modelData.key]
-                        Layout.preferredWidth: 74
-                        Layout.preferredHeight: 36
-                        onActivated: bridge.setDownloadOption(modelData.key, !bridge.downloadOptions[modelData.key])
+                    spacing: 3
+                    Text {
+                        visible: modelData.heading.length > 0
+                        text: modelData.heading
+                        color: theme.muted; font.pixelSize: 12; font.bold: true
+                        Layout.preferredHeight: visible ? 18 : 0
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 39
+                        Text { text: modelData.label; color: theme.text; font.pixelSize: 15; Layout.fillWidth: true }
+                        StoneButton {
+                            enabled: modelData.key !== "use_nvenc" || bridge.nvencAvailable
+                            label: !enabled ? "Unavailable" : (bridge.downloadOptions[modelData.key] ? "On" : "Off")
+                            selected: enabled && bridge.downloadOptions[modelData.key]
+                            Layout.preferredWidth: enabled ? 74 : 108
+                            Layout.preferredHeight: 36
+                            onActivated: bridge.setDownloadOption(modelData.key, !bridge.downloadOptions[modelData.key])
+                        }
                     }
                 }
                     }
@@ -1947,7 +1962,7 @@ Window {
                         if (bridge.previewMetadata(urlInput.text, window.outputFormat)) settingsPopup.close()
                     }
                 }
-                StoneButton { label: "Help & feedback"; Layout.preferredWidth: 160; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); bridge.openSupport("feedback") } }
+                StoneButton { label: "Support"; Layout.preferredWidth: 104; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); bridge.openSupport("feedback") } }
                 StoneButton { label: "Help menu"; accessibilityLabel: "Help"; Layout.preferredWidth: 100; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); helpMenu.open() } }
                 StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.open(); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
@@ -2064,6 +2079,13 @@ Window {
     Popup {
         id: accessPopup
         objectName: "youtubeAccessPopup"
+        property bool returnToSettings: false
+        onClosed: {
+            if (returnToSettings) {
+                returnToSettings = false
+                Qt.callLater(function() { if (window.visible) settingsPopup.open() })
+            }
+        }
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(560, window.width - 40)
@@ -2235,6 +2257,9 @@ Window {
         width: Math.min(550, window.width - 40)
         height: 350
         padding: 8
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        Overlay.modal: Rectangle { color: "#9915151c" }
         background: StoneField {}
         Row {
             anchors.fill: parent
@@ -2255,6 +2280,15 @@ Window {
                             optionsMenu.close()
                         }
                     }
+                }
+                Text {
+                    width: parent.width
+                    height: 40
+                    text: "Custom reveals the manual MP4 controls."
+                    color: theme.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                    verticalAlignment: Text.AlignVCenter
                 }
             }
             Column {

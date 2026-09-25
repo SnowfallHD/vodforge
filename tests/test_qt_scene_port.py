@@ -2226,6 +2226,104 @@ def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkey
         bridge.close()
 
 
+def test_qt_settings_fit_minimum_window_and_access_returns_to_settings(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.setOutputFormat("MP4")
+        bridge.setExportMode("Manual Override")
+        settings = window.findChild(QObject, "downloadSettingsPopup")
+        settings.open()
+        app.processEvents()
+        left = window.findChild(QObject, "settingsLeftColumn")
+        right = window.findChild(QObject, "settingsRightColumn")
+        assert abs(left.y() - right.y()) < 1
+        assert bridge.nvencAvailable is False
+        bridge.setDownloadOption("use_nvenc", True)
+        assert bridge.downloadOptions["use_nvenc"] is False
+        window.setWidth(820)
+        window.setHeight(560)
+        app.processEvents()
+        assert settings.property("x") >= 30
+        assert settings.property("y") >= 60
+        assert settings.property("y") + settings.property("height") <= window.height()
+        access_button = next(
+            item
+            for item in settings.findChildren(QObject)
+            if str(item.property("label") or "").startswith("YouTube access:")
+        )
+        access_button.activated.emit()
+        for _ in range(3):
+            app.processEvents()
+        access = window.findChild(QObject, "youtubeAccessPopup")
+        assert access.property("visible")
+        assert not settings.property("visible")
+        bridge.setCookieSource("Browser")
+        browser_name = bridge.cookieBrowserOptions[0]
+        bridge.setCookieBrowser(browser_name)
+        assert bridge.cookieSource == "Browser"
+        assert bridge.cookieBrowser == browser_name
+        done = next(
+            item
+            for item in access.findChildren(QObject)
+            if item.property("label") == "Done"
+        )
+        done.activated.emit()
+        for _ in range(4):
+            app.processEvents()
+        assert settings.property("visible")
+        options = window.findChild(QObject, "optionsMenu")
+        assert options.property("modal")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_library_compact_browse_controls_keep_import_with_other_actions(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.setWidth(820)
+        bridge.select("Library")
+        bridge.navigateLibrary("videos")
+        for _ in range(3):
+            app.processEvents()
+        toolbar = window.findChild(QObject, "libraryBrowseControls")
+        search = window.findChild(QObject, "libraryBrowseSearchField")
+        buttons = {
+            item.property("label"): item
+            for item in toolbar.childItems()
+            if item.property("label") is not None
+        }
+        assert abs(search.width() - toolbar.width()) < 1
+        assert buttons["Import Media"].y() == buttons["Select"].y()
+        assert buttons["Import Media"].y() == buttons["Filter"].y()
+        assert buttons["Import Media"].y() > search.y()
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_library_multi_select_presets_collection_from_visible_owners(
     tmp_path, monkeypatch
 ):
@@ -2441,6 +2539,7 @@ def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypat
         app.processEvents()
         scene = window.findChild(QObject, "libraryBrowseScene")
         collections = window.findChild(QObject, "libraryCollectionsEmptyPanel")
+        group_empty = window.findChild(QObject, "libraryGroupEmptyPanel")
         media = window.findChild(QObject, "libraryMediaEmptyPanel")
         see_all = window.findChild(QObject, "libraryCollectionsSeeAll")
         assert collections.property("visible")
@@ -2462,9 +2561,21 @@ def test_qt_library_empty_panels_match_tk_routes_and_actions(tmp_path, monkeypat
         bridge.select("Library")
         bridge.navigateLibrary("channels")
         app.processEvents()
-        assert collections.property("visible")
+        assert not collections.property("visible")
+        assert group_empty.property("visible")
         assert not media.property("visible")
-        assert collections.property("actions")
+        assert group_empty.property("actions")
+        toolbar = window.findChild(QObject, "libraryBrowseControls")
+        assert (
+            group_empty.mapToItem(scene, 0, 0).y() > toolbar.mapToItem(scene, 0, 0).y()
+        )
+        assert window.findChild(QObject, "libraryGroupFlow").height() == 0
+        bridge.navigateLibrary("playlists")
+        app.processEvents()
+        assert group_empty.property("visible")
+        assert (
+            group_empty.mapToItem(scene, 0, 0).y() > toolbar.mapToItem(scene, 0, 0).y()
+        )
 
         bridge._runtime.history = [saved(tmp_path, "One", "MP4", category="News")]
         bridge.historyChanged.emit()

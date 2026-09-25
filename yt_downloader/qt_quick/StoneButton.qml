@@ -15,6 +15,7 @@ Item {
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
                             + (icon.length ? buttonMetrics[size].iconPixels + 8 : 0), 44)
     implicitHeight: buttonMetrics[size].height
+    opacity: control.enabled ? 1 : 0.5
     activeFocusOnTab: control.interactive && control.enabled
     Accessible.role: control.interactive ? Accessible.Button : Accessible.StaticText
     Accessible.name: control.accessibilityLabel
@@ -31,7 +32,7 @@ Item {
         anchors.fill: parent
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
-                + (!control.transientMaterial ? "normal" : mouse.pressed ? "pressed" : (mouse.containsMouse || control.selected ? "hover" : "normal"))
+                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (mouse.containsMouse || control.selected ? "hover" : "normal"))
                 + "/" + (control.emphasized ? "1" : "0") + "/r" + bridge.themeRevision
         fillMode: Image.Stretch
         cache: true
@@ -71,7 +72,7 @@ Item {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
-        enabled: control.interactive
+        enabled: control.interactive && control.enabled
         cursorShape: Qt.PointingHandCursor
         onClicked: control.activated()
         onDoubleClicked: control.doubleActivated()

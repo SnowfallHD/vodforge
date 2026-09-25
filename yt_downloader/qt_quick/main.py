@@ -27,6 +27,7 @@ from PySide6.QtCore import (
     QEvent,
     QObject,
     QPointF,
+    QProcess,
     QSize,
     QTimer,
     QUrl,
@@ -336,6 +337,7 @@ class Bridge(QObject):
     libraryTypeChanged = Signal()
     localChanged = Signal()
     downloadOptionsChanged = Signal()
+    nvencAvailableChanged = Signal()
     exportSettingsChanged = Signal()
     extraTagsChanged = Signal()
     appearanceChanged = Signal()
@@ -497,6 +499,8 @@ class Bridge(QObject):
         self._theme_materials: Materials | None = None
         self._theme_owner = ThemeRenderOwner(self._render_theme)
         defaults = DownloadPreferences()
+        self._nvenc_available = False
+        self._saved_nvenc_preference = self._settings.get("use_nvenc") is True
         self._download_preferences = DownloadPreferences(
             **{
                 field.name: value
@@ -505,6 +509,13 @@ class Bridge(QObject):
                 for field in fields(DownloadPreferences)
             }
         )
+        if self._download_preferences.use_nvenc:
+            self._download_preferences = replace(
+                self._download_preferences, use_nvenc=False
+            )
+        self._nvenc_probe: QProcess | None = None
+        if sys.platform == "win32":
+            QTimer.singleShot(0, self._start_nvenc_probe)
         self._manual_values = {
             key: str(value)
             if (value := self._settings.get(key)) is not None
@@ -1743,6 +1754,49 @@ class Bridge(QObject):
     @Property(_QVARIANT_MAP, notify=downloadOptionsChanged)
     def downloadOptions(self) -> dict[str, bool]:
         return asdict(self._download_preferences)
+
+    @Property(bool, notify=nvencAvailableChanged)
+    def nvencAvailable(self) -> bool:
+        return self._nvenc_available
+
+    def _start_nvenc_probe(self) -> None:
+        if self._closed or sys.platform != "win32":
+            return
+        probe = QProcess(self)
+        self._nvenc_probe = probe
+        probe.finished.connect(self._finish_nvenc_probe)
+        probe.errorOccurred.connect(self._fail_nvenc_probe)
+        probe.start("nvidia-smi", ["-L"])
+        QTimer.singleShot(
+            3000,
+            lambda: (
+                probe.kill()
+                if self._nvenc_probe is probe and probe.state() != QProcess.NotRunning
+                else None
+            ),
+        )
+
+    def _finish_nvenc_probe(self, exit_code: int, _exit_status: object) -> None:
+        probe = self._nvenc_probe
+        if probe is None or self._closed:
+            return
+        available = exit_code == 0 and b"GPU " in bytes(probe.readAllStandardOutput())
+        self._nvenc_probe = None
+        probe.deleteLater()
+        if available != self._nvenc_available:
+            self._nvenc_available = available
+            self.nvencAvailableChanged.emit()
+        if available and self._saved_nvenc_preference:
+            self._download_preferences = replace(
+                self._download_preferences, use_nvenc=True
+            )
+            self.downloadOptionsChanged.emit()
+
+    def _fail_nvenc_probe(self, _error: object) -> None:
+        probe = self._nvenc_probe
+        self._nvenc_probe = None
+        if probe is not None:
+            probe.deleteLater()
 
     @Property(_QVARIANT_MAP, notify=exportSettingsChanged)
     def manualValues(self) -> dict[str, str]:
@@ -3079,6 +3133,8 @@ class Bridge(QObject):
     def setDownloadOption(self, key: str, enabled: bool) -> None:
         if key not in self.downloadOptions:
             return
+        if key == "use_nvenc" and enabled and not self._nvenc_available:
+            return
         self._download_preferences = replace(
             self._download_preferences, **{key: enabled}
         )
@@ -4122,6 +4178,11 @@ class Bridge(QObject):
         if self._closed:
             return
         self._closed = True
+        if self._nvenc_probe is not None:
+            probe = self._nvenc_probe
+            self._nvenc_probe = None
+            probe.kill()
+            probe.deleteLater()
         if self._presentation_probe is not None:
             self._presentation_probe.close()
             self._presentation_probe = None

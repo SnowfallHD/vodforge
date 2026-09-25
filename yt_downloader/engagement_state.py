@@ -34,7 +34,7 @@ WELCOME_SLIDES = (
     FeatureHighlight(
         "library",
         "Find it in Library",
-        "Play and organize saved media in Library. Recent items appear in Run Deck. Help & feedback is always available above.",
+        "Play and organize saved media in Library. Recent items appear in Run Deck. Support is available from the Help menu.",
         NativePreview.LIBRARY,
     ),
     FeatureHighlight(

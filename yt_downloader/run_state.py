@@ -928,7 +928,7 @@ class RunRecoveryOwner:
         else:
             guidance = (
                 "VODForge could not safely restore a previous download. Open "
-                "Help & feedback → Send feedback and include diagnostics so the "
+                "Support → Send feedback and include diagnostics so the "
                 "recovery data can be reviewed."
             )
         return (

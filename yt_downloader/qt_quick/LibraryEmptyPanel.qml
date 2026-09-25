@@ -3,6 +3,7 @@ import QtQuick
 Item {
     id: panel
     property bool collections: false
+    property string collectionKind: "collections"
     property bool filtered: false
     property bool actions: true
     signal forgeRequested()
@@ -25,7 +26,7 @@ Item {
     }
     Text {
         x: 0; y: 103; width: parent.width
-        text: panel.filtered ? "No matching media" : panel.collections ? "No collections yet" : "No downloads yet"
+        text: panel.filtered ? "No matching media" : panel.collections ? "No " + panel.collectionKind + " yet" : "No downloads yet"
         color: theme.text
         font.pixelSize: 21
         font.bold: true
@@ -34,7 +35,7 @@ Item {
     Text {
         x: 20; y: 137; width: parent.width - 40
         text: panel.filtered ? "Try a different search or clear your filters." :
-            panel.collections ? "Your collections will appear here once you start downloading content from Forge." :
+            panel.collections ? "Your " + panel.collectionKind + " will appear here once you start downloading content from Forge." :
             "Downloads from Forge will appear here automatically."
         color: theme.muted
         font.pixelSize: 14
