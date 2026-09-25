@@ -989,7 +989,7 @@ def test_history_write_lease_is_payload_scoped_and_cleared_after_exception(
 
 @pytest.mark.parametrize("replacement", ["source", "cleanup"])
 def test_removed_cleanup_recovery_preserves_replacements(
-    item, move_context, replacement
+    item, move_context, replacement, monkeypatch
 ):
     def interrupt(boundary):
         if boundary == "cleanup_removed":
@@ -1003,6 +1003,21 @@ def test_removed_cleanup_recovery_preserves_replacements(
         directory = ops.Path(entry["cleanup"])
         directory.mkdir()
         foreign = directory / "unrelated.txt"
+        # A replacement folder may reuse the original inode on Linux. Force
+        # that observation on every platform so the nonempty removal boundary
+        # still preserves foreign contents.
+        recorded = tuple(
+            (ops.Path(path), int(device), int(inode))
+            for path, device, inode in entry["cleanup_proof"]
+        )
+        actual_evidence = ops.directory_evidence
+        monkeypatch.setattr(
+            ops,
+            "directory_evidence",
+            lambda path: (
+                recorded if ops.Path(path) == directory else actual_evidence(path)
+            ),
+        )
     foreign.write_bytes(b"foreign replacement")
     with pytest.raises(ValueError, match="changed"):
         ops.recover_move_cleanup(result.journal, result.records, move_context[1])

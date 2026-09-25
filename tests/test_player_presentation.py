@@ -744,6 +744,7 @@ def test_queue_host_show_does_not_focus_background_embedded_window(
     state._poll.assert_called_once_with()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="AppKit overlay owner")
 def test_native_control_state_adapter_is_shared_and_retires_disabled_hover(monkeypatch):
     from yt_downloader.platforms.macos import player_overlay as native
 

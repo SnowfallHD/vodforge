@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import wave
@@ -2569,8 +2570,12 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
                 round(header.mapToItem(None, 0, 0).y()),
             ) == (margin, 5)
             assert round(header.height()) == 44
-            assert round(brand.mapToItem(None, 0, 0).x()) == margin + 82
-            assert round(nav.mapToItem(None, 0, 0).x()) == nav_x
+            native_title_inset = 82 if sys.platform == "darwin" else 0
+            assert round(brand.mapToItem(None, 0, 0).x()) == margin + native_title_inset
+            assert (
+                round(nav.mapToItem(None, 0, 0).x())
+                == nav_x - (82 - native_title_inset) / 2
+            )
             assert round(nav.mapToItem(None, 0, 0).y()) == 5
             assert abs(search.mapToItem(None, 0, 0).x() - search_x) <= 2
             assert round(scene.mapToItem(None, 0, 0).y()) == 54

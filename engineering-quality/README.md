@@ -2225,6 +2225,32 @@ zero, and non-finite values through the event consumed by both Tk and Qt; the
 signed 605 bundle predates this follow-up and needs rebuilding before final
 visual acceptance.
 
+### Cross-platform Qt collection and cleanup recovery (2026-09-25)
+
+The Qt port made the existing six-job Tests matrix import Qt modules on Linux.
+The Ubuntu image lacked `libEGL.so.1`, so collection stopped before any tests
+ran. The workflow now installs Qt's Linux EGL/OpenGL and XCB runtime libraries
+alongside FFmpeg; the full matrix, rather than a local Mac pass, is the gate.
+
+With collection restored, the Ubuntu job exposed four failures. A native
+AppKit overlay test had no platform marker although its `_role_color` helper
+exists only on macOS; it now runs on the platform that owns the view. The Qt
+header assertion assumed the macOS titlebar inset on every OS. It now checks
+the platform's actual QML inset while retaining exact positions. The Forge
+`Save to` label used font-dependent implicit width, shifting the adjacent
+shared selector by five pixels on Linux. Its explicit width makes the measured
+control bounds independent of font metrics; the same exact-bounds test remains.
+
+The fourth failure was in archive cleanup recovery: after an interruption,
+Linux reused a removed directory inode for a foreign replacement. The prior
+identity check therefore passed, and `rmdir` raised `ENOTEMPTY` instead of the
+owner's fail-closed `ValueError`. The owner now classifies `ENOTEMPTY` and
+`EEXIST` as changed cleanup state and preserves the foreign file. The existing
+replacement test now forces identity reuse on every platform, so it catches
+the class without relying on allocator behavior. This proves the nonempty
+replacement boundary; a broader adversarial filesystem race campaign is not
+claimed.
+
 The same signed smoke failed its final restart gate despite clean exits and
 stable media/history: launch 2 stayed on Forge, so the required Qt Folder
 Inspector Description receipt was never made. The previous recorder checked

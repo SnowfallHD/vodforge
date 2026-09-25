@@ -807,6 +807,7 @@ Window {
                         color: theme.muted
                         font.pixelSize: 15
                         Layout.leftMargin: 7
+                        Layout.preferredWidth: 52
                     }
                     StoneField {
                         objectName: "forgeDestinationField"

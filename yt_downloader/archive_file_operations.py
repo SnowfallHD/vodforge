@@ -8,6 +8,7 @@ evidence.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -920,7 +921,14 @@ def _finish_move_cleanup(
         journal.update(index, "cleanup", cleanup_steps=steps)
     if directory_evidence(cleanup) != cleanup_proof:
         raise ValueError("Cleanup location changed")
-    cleanup.rmdir()
+    try:
+        cleanup.rmdir()
+    except OSError as exc:
+        if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
+            raise
+        # A foreign entry may arrive after the preceding identity check, or
+        # a replacement directory may reuse the retired inode. Preserve it.
+        raise ValueError("Cleanup location changed; retained for recovery") from exc
     _sync_directory(item.source.parent)
     boundary("cleanup_removed")
 
