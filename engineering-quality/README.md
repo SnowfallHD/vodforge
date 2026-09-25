@@ -16,10 +16,11 @@ recovery still target the selected video ID. Both Qt and Tk review actions use
 that planned source. Both UIs retain the old card through admission, failure,
 and cancellation. The existing history upsert removes a missing old card only
 when a validated replacement is durably recorded. Focused tests exercise the
-single-source and playlist decisions, both UI review paths, retained Qt
-history after admission, and replacement-on-commit. The prior Qt test asserted
-the wrong early deletion; the packaged failure and that prior assertion explain
-why existing coverage missed the loss. These tests run in the repository
+single-source and playlist decisions, both UI review paths, retained Qt and Tk
+history after admission, annotation lineage across failed attempts, and
+replacement-on-commit. The prior Qt and Tk tests asserted the wrong early
+deletion; the packaged failure and those prior assertions explain why existing
+coverage missed the loss. All 137 focused cases pass in the repository
 quality collection. The signed `761c878` artifact is still a failed recovery
 gate; a new signed package must prove native redownload, failed retry retention,
 and preview-D1 outcome before release.

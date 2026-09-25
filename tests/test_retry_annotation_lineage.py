@@ -265,7 +265,6 @@ def test_missing_media_uses_explicit_history_owner_over_matching_terminal(
         "missing",
         tmp_path,
         job=replacement,
-        replaced_history_identity=history_identity(missing),
         previous_annotation_owner=prior_history_owner,
     )
     with monkeypatch.context() as failures:
@@ -281,7 +280,9 @@ def test_missing_media_uses_explicit_history_owner_over_matching_terminal(
     assert row["vodforge_user_note"] == EDITED.note
     assert tuple(row["vodforge_user_tags"]) == EDITED.tags
     assert row["vodforge_user_category"] == EDITED.category
-    assert load_history(app.history_path) == []
+    retained = load_history(app.history_path)
+    assert len(retained) == 1
+    assert history_identity(retained[0]) == history_identity(missing)
     assert ledger.annotation_for("run:" + previous.run_id) == ORIGINAL
     assert previous.run_id in {
         job.run_id for job in app.run_recovery.store.load_terminal_jobs()

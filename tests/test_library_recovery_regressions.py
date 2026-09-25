@@ -273,7 +273,7 @@ def test_recovery_fast_path_cannot_bypass_ordinary_or_mismatched_playlist_lookup
 
 @pytest.mark.parametrize("accepted", [False, True])
 @pytest.mark.parametrize("migrated", [False, True])
-def test_recovery_admission_controls_history_retirement_and_bounded_migration_telemetry(
+def test_recovery_admission_preserves_history_and_bounded_migration_telemetry(
     tmp_path, monkeypatch, accepted, migrated
 ):
     original = _job(tmp_path)
@@ -304,7 +304,7 @@ def test_recovery_admission_controls_history_retirement_and_bounded_migration_te
         assert not writes and not features and not status
         assert app.download_history == [row, other]
     else:
-        assert writes == [[other]] and app.download_history == [other]
+        assert not writes and app.download_history == [row, other]
         expected = [
             (("missing_media", "accepted"), {"dimensions": {"input_kind": "single"}})
         ]
