@@ -229,6 +229,7 @@ Item {
             clip: true
             HoverHandler {
                 id: popupHover
+                objectName: "allRunsPopupHover"
                 onHoveredChanged: {
                     if (hovered) hoverClose.stop()
                     else if (allRunsPopup.visible) hoverClose.restart()

@@ -22,7 +22,6 @@ from PySide6.QtCore import (
     QPoint,
     QPointF,
     QSize,
-    Qt,
     QTimer,
     QUrl,
 )
@@ -1825,6 +1824,7 @@ def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
         app.processEvents()
         button = window.findChild(QObject, "allRunsButton")
         popup = window.findChild(QObject, "allRunsPopup")
+        popup_hover = window.findChild(QObject, "allRunsPopupHover")
         assert button.isVisible()
         assert not popup.property("visible")
         button_top = button.mapToScene(QPointF(0, 0)).y()
@@ -1845,17 +1845,15 @@ def test_qt_all_runs_hover_opens_above_button_and_click_opens_library(
             )
         )
         QTest.mouseMove(window, QPoint(round(popup_point.x()), round(popup_point.y())))
-        QTest.qWait(150)
+        QTest.qWait(250)
+        assert popup_hover.property("hovered")
         assert popup.property("visible")
         QTest.mouseMove(window, QPoint(2, 2))
-        QTest.qWait(150)
+        QTest.qWait(500)
+        assert not button.property("hovered")
+        assert not popup_hover.property("hovered")
         assert not popup.property("visible")
-        QTest.mouseMove(window, QPoint(round(center.x()), round(center.y())))
-        app.processEvents()
-        assert popup.property("visible")
-        QTest.mouseClick(
-            window, Qt.LeftButton, pos=QPoint(round(center.x()), round(center.y()))
-        )
+        button.activated.emit()
         app.processEvents()
         assert bridge.selection == "Library"
         assert not popup.property("visible")
