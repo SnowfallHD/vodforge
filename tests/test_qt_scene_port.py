@@ -1901,7 +1901,7 @@ def test_qt_library_detail_keeps_full_long_description_scrollable(
 
 def test_qt_popup_and_navigation_materials_use_shared_renderer():
     qml_root = Path(qt_main.__file__).parent
-    qml_sources = [path.read_text() for path in qml_root.glob("*.qml")]
+    qml_sources = [path.read_text(encoding="utf-8") for path in qml_root.glob("*.qml")]
     assert qml_sources
     assert all("background: Rectangle" not in source for source in qml_sources)
     assert all(
@@ -1922,7 +1922,9 @@ def test_qt_activity_log_uses_existing_private_persistence(tmp_path, monkeypatch
     try:
         bridge._append_activity_line("Current run changed")
         assert "Current run changed" in bridge.activityLog
-        assert "Current run changed" in bridge._activity_log_path.read_text()
+        assert "Current run changed" in bridge._activity_log_path.read_text(
+            encoding="utf-8"
+        )
         assert bridge._activity_log_path.is_relative_to(tmp_path)
     finally:
         bridge.close()
@@ -2360,7 +2362,11 @@ def test_qt_editorial_projects_all_shared_feature_previews_and_acknowledges(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     qt_app()
-    source = Path(qt_main.__file__).with_name("FeaturePreview.qml").read_text()
+    source = (
+        Path(qt_main.__file__)
+        .with_name("FeaturePreview.qml")
+        .read_text(encoding="utf-8")
+    )
     assert all(f'"{preview.value}"' in source for preview in NativePreview)
     bridge = qt_main.Bridge(None)
     try:
