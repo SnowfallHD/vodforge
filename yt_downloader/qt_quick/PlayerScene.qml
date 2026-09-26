@@ -19,6 +19,7 @@ Item {
     readonly property var projection: appBridge.playerScene
     readonly property bool wide: width >= 1080
     readonly property real videoAspect: 16 / 9
+    readonly property real stageMaxHeight: 450
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
@@ -203,19 +204,20 @@ Item {
             }
 
             RowLayout {
-                width: parent.width
+                width: scene.wide ? Math.min(parent.width, scene.stageMaxHeight * scene.videoAspect + 334) : parent.width
+                x: (parent.width - width) / 2
                 spacing: 24
                 Column {
                     id: stageColumn
                     objectName: "playerStageColumn"
                     Layout.fillWidth: true
-                    Layout.preferredWidth: scene.wide ? Math.max(320, scene.width - 334) : scene.width
+                    Layout.preferredWidth: scene.wide ? scene.stageMaxHeight * scene.videoAspect : scene.width
                     spacing: 10
 
                     Item {
                         id: mediaStage
                         objectName: "playerMediaStage"
-                        height: Math.max(180, Math.min(390, parent.width / scene.videoAspect, scene.height - 205))
+                        height: Math.max(180, Math.min(scene.stageMaxHeight, parent.width / scene.videoAspect, scene.height - 205))
                         width: Math.min(parent.width, height * scene.videoAspect)
                         x: (parent.width - width) / 2
                         clip: true

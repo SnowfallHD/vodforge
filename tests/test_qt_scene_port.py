@@ -680,8 +680,10 @@ def test_qt_player_related_side_and_recent_artwork_rail_follow_later_design(
         side = window.findChild(QObject, "playerRelatedSide")
         compact = window.findChild(QObject, "playerRelatedCompact")
         recent = window.findChild(QObject, "playerRecentRail")
+        stage = window.findChild(QObject, "playerMediaStage")
+        stage_column = window.findChild(QObject, "playerStageColumn")
         assert window.findChild(QObject, "watchMoments") is None
-        for width, height, side_visible in ((1280, 800, True), (820, 560, False)):
+        for width, height, side_visible in ((1280, 800, True), (1920, 1080, True), (820, 560, False)):
             window.resize(width, height)
             for _ in range(5):
                 app.processEvents()
@@ -690,6 +692,11 @@ def test_qt_player_related_side_and_recent_artwork_rail_follow_later_design(
             assert recent.property("visible") is True
             assert len(bridge.playerScene["recent"]) == 3
             assert len(bridge.playerScene["upNext"]) == 2
+            if side_visible:
+                # The recommendation column stays next to the bounded video
+                # instead of inheriting unused width from the viewport.
+                gap = side.x() - (stage_column.x() + stage.x() + stage.width())
+                assert 15 <= gap <= 40
     finally:
         window.close()
         engine.deleteLater()
