@@ -2891,6 +2891,48 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
         bridge.close()
 
 
+def test_qt_header_settings_uses_centered_shared_icon(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        for width in (820, 1180):
+            window.resize(width, 740)
+            for _ in range(3):
+                app.processEvents()
+            button = window.findChild(QObject, "headerSettingsButton")
+            icon = button.findChild(QObject, "stoneButtonIcon")
+            caption = button.findChild(QObject, "stoneButtonCaption")
+            assert button.property("accessibilityLabel") == "Settings"
+            assert not button.property("label")
+            assert not caption.property("visible")
+            assert "icon/settings-20.png" in str(icon.property("source"))
+            assert (
+                abs(
+                    icon.mapToItem(button, icon.width() / 2, icon.height() / 2).x()
+                    - button.width() / 2
+                )
+                <= 0.5
+            )
+            assert (
+                abs(
+                    icon.mapToItem(button, icon.width() / 2, icon.height() / 2).y()
+                    - button.height() / 2
+                )
+                <= 0.5
+            )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))

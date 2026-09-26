@@ -715,7 +715,8 @@ Window {
                     }
                 }
                 StoneButton {
-                    label: "⚙"
+                    objectName: "headerSettingsButton"
+                    icon: "image://vodforge/icon/settings-20.png/r" + bridge.themeRevision
                     accessibilityLabel: "Settings"
                     width: 28; height: 40
                     onActivated: settingsPopup.open()

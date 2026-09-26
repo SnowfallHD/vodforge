@@ -280,6 +280,7 @@ class Materials(QQuickImageProvider):
                     "folder-20.png",
                     "play.png",
                     "activity-20.png",
+                    "settings-20.png",
                 }:
                     raise ValueError("unknown icon")
                 with Image.open(

@@ -14,7 +14,7 @@ Item {
     signal activated()
     signal doubleActivated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
-                            + (icon.length ? buttonMetrics[size].iconPixels + 8 : 0), 44)
+                            + (icon.length ? buttonMetrics[size].iconPixels + (label.length ? 8 : 0) : 0), 44)
     implicitHeight: buttonMetrics[size].height
     opacity: control.enabled ? 1 : 0.5
     activeFocusOnTab: control.interactive && control.enabled
@@ -43,6 +43,7 @@ Item {
         anchors.centerIn: parent
         spacing: 8
         Image {
+            objectName: "stoneButtonIcon"
             property string presentationRole: "control"
             visible: control.icon.length > 0
             width: visible ? buttonMetrics[control.size].iconPixels : 0
@@ -54,9 +55,10 @@ Item {
         Text {
             id: caption
             objectName: "stoneButtonCaption"
+            visible: control.label.length > 0
             text: control.label
             readonly property real availableWidth: Math.max(0, control.width
-                    - (control.icon.length ? buttonMetrics[control.size].iconPixels + 8 : 0))
+                    - (control.icon.length ? buttonMetrics[control.size].iconPixels + (control.label.length ? 8 : 0) : 0))
             readonly property real sidePadding: Math.min(
                     buttonMetrics[control.size].horizontalPadding,
                     Math.max(8, (availableWidth - implicitWidth) / 2))
