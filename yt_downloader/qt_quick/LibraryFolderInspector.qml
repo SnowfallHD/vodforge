@@ -67,16 +67,19 @@ Column {
         objectName: "libraryFolderOpenDetails"
         label: "Open details"
         width: parent.width; height: 40
+        visible: !!inspector.item.owner
         enabled: !!inspector.item.owner
         onActivated: inspector.appBridge.openSelectedLibraryFolderDetail()
     }
     Item {
         width: 1
-        height: Math.max(0, inspector.targetPanelBottom -
-            (eyebrow.height + overview.height + openDetails.height + tabs.height + detailsPanel.height + inspector.spacing * 5))
+        height: inspector.section !== "Description" || !inspector.item.owner ? 0 :
+            Math.max(0, inspector.targetPanelBottom -
+                (eyebrow.height + overview.height + openDetails.height + tabs.height + detailsPanel.height + inspector.spacing * 5))
     }
     Row {
         id: tabs
+        visible: !!inspector.item.owner
         spacing: 8
         StoneButton {
             objectName: "libraryFolderItemTab"
@@ -99,18 +102,21 @@ Column {
     StoneField {
         id: detailsPanel
         objectName: "libraryFolderDetailsPanel"
+        visible: !!inspector.item.owner
         width: parent.width
-        height: 360
+        height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 : 360
         Item {
             anchors.fill: parent
             anchors.margins: 10
             visible: inspector.section === "Item"
             Column {
+                id: itemColumn
                 anchors.fill: parent
                 spacing: 10
                 Text { text: "Saved version"; color: theme.muted; font.pixelSize: 12; font.bold: true }
                 Flow {
                     width: parent.width
+                    height: childrenRect.height
                     spacing: 5
                     Repeater {
                         model: inspector.item.versions || []
@@ -127,10 +133,11 @@ Column {
                 Text { text: "Tags"; color: theme.muted; font.pixelSize: 12; font.bold: true }
                 ScrollView {
                     width: parent.width
-                    height: 54
+                    height: Math.min(54, Math.max(18, tagsText.implicitHeight))
                     clip: true
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                     Text {
+                        id: tagsText
                         text: (inspector.item.tags || []).join(", ") || "No tags yet"
                         width: parent.width
                         color: theme.text

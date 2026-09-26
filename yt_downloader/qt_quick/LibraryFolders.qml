@@ -24,7 +24,7 @@ Item {
                 model: [
                     { key: "folders", label: "Folders" },
                     { key: "all", label: "All media" },
-                    { key: "activity", label: "Runs & previews" }
+                    { key: "activity", label: "Run Deck" }
                 ]
                 StoneButton {
                     required property var modelData
@@ -53,9 +53,9 @@ Item {
             }
             Item { Layout.fillHeight: true }
             StoneButton {
-                label: "Back to Library"
+                label: "← Back"
                 Layout.fillWidth: true
-                onActivated: browser.appBridge.navigateLibrary("home")
+                onActivated: browser.appBridge.backLibrary()
             }
         }
         Rectangle { Layout.fillHeight: true; Layout.preferredWidth: 1; color: theme.border }
@@ -69,7 +69,8 @@ Item {
                 StoneButton {
                     label: "Up one folder"
                     Layout.preferredWidth: 150
-                    enabled: browser.model.path.length > 0
+                    visible: browser.model.mode === "folders" && browser.model.path.length > 0
+                    enabled: visible
                     onActivated: browser.appBridge.upLibraryFolder()
                 }
                 Text {
@@ -147,15 +148,17 @@ Item {
                         width: parent.width; spacing: 12
                         Repeater {
                             model: browser.model.highlights || []
-                        StoneButton {
-                            required property var modelData
+                            StoneButton {
+                                required property var modelData
+                                objectName: "libraryRecentExportCard_" + modelData.key
                                 width: Math.min(220, Math.max(150, (viewport.availableWidth - 36) / 4))
-                                height: 126
+                                height: Math.max(76, cardContent.implicitHeight + 24)
                                 label: ""
                                 accessibilityLabel: modelData.title + ", " + modelData.detail
-                            onActivated: browser.appBridge.selectLibraryFolderComponent(modelData.key)
-                            onDoubleActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
+                                onActivated: browser.appBridge.selectLibraryFolderComponent(modelData.key)
+                                onDoubleActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
                                 Column {
+                                    id: cardContent
                                     anchors.fill: parent; anchors.margins: 12; spacing: 9
                                     Text { text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; width: parent.width; elide: Text.ElideRight }
                                     Text { text: modelData.detail; color: theme.muted; font.pixelSize: 13; width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight }

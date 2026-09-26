@@ -196,26 +196,28 @@ Item {
         parent: deck
         x: Math.max(0, Math.min(deck.width - width,
                                 deckHeader.x + allRunsButton.x + allRunsButton.width - width))
-        y: deckHeader.y + allRunsButton.y - height
+        // Overlap the trigger so the pointer never crosses a non-hovered seam.
+        y: deckHeader.y + allRunsButton.y - height + 10
         width: Math.min(440, deck.width)
         height: Math.min(285, Math.max(80, deck.workRecords.length * 42 + 18))
         padding: 9
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: StoneField {}
+        HoverHandler {
+            id: popupHover
+            objectName: "allRunsPopupHover"
+            parent: allRunsPopup.contentItem
+            onHoveredChanged: {
+                if (hovered) hoverClose.stop()
+                else if (allRunsPopup.visible) hoverClose.restart()
+            }
+        }
         ScrollView {
             objectName: "allRunsScrollView"
             anchors.fill: parent
             clip: true
             ScrollBar.vertical.policy: ScrollBar.AsNeeded
-            HoverHandler {
-                id: popupHover
-                objectName: "allRunsPopupHover"
-                onHoveredChanged: {
-                    if (hovered) hoverClose.stop()
-                    else if (allRunsPopup.visible) hoverClose.restart()
-                }
-            }
             Column {
                 width: parent.width
                 spacing: 3

@@ -335,6 +335,7 @@ class Bridge(QObject):
     playbackRequested = Signal(int)
     playbackSeekRequested = Signal(float)
     librarySearchChanged = Signal()
+    activeSearchChanged = Signal()
     libraryTypeChanged = Signal()
     localChanged = Signal()
     downloadOptionsChanged = Signal()
@@ -378,6 +379,9 @@ class Bridge(QObject):
         self.selectionChanged.connect(self.watchSceneChanged.emit)
         self.historyChanged.connect(self.librarySceneChanged.emit)
         self.selectionChanged.connect(self.librarySceneChanged.emit)
+        self.librarySearchChanged.connect(self.activeSearchChanged.emit)
+        self.historyChanged.connect(self.activeSearchChanged.emit)
+        self.selectionChanged.connect(self.activeSearchChanged.emit)
         self.historyChanged.connect(self.runDeckChanged.emit)
         self._support = QtSupportSession(self._runtime.history_path.parent)
         self._latest_failure: FailureContext | None = None
@@ -584,6 +588,8 @@ class Bridge(QObject):
         self._library_type = LIBRARY_ALL_MEDIA
         self._library_category = LIBRARY_ALL_CATEGORIES
         self._library_scene_route = "home"
+        self._library_history: list[tuple[str, str, str]] = []
+        self._library_detail_from_watch = False
         self._folder_browser = ArchiveBrowserModel()
         self._detail_versions: list[dict[str, str]] = []
         self._library_sort = "recent"
@@ -594,6 +600,7 @@ class Bridge(QObject):
         self._watch_group_kind = ""
         self._watch_search = ""
         self._watch_history: list[tuple[str, str, str, str]] = []
+        self._playback_origin_selection = "Watch"
         self._watch_hero_seen_key = ""
         self._local_audio = ""
         self._local_image = ""
@@ -2293,6 +2300,52 @@ class Bridge(QObject):
         self.selectionChanged.emit()
         self._record("select", name)
 
+    @Slot(str)
+    def selectHome(self, name: str) -> None:
+        """Top-level navigation always opens the destination's main screen."""
+        if name not in {"Forge", "Library", "Watch", "Activity"}:
+            return
+        if self._playback_url.isValid() and not self._playback_url.isEmpty():
+            self.closePlayback()
+        if name == "Library":
+            self.setLibrarySearch("")
+            self.navigateLibrary("home")
+        elif name == "Watch":
+            self.navigateWatch("home")
+        self.select(name)
+
+    def _remember_library_route(self) -> None:
+        current = (
+            self._library_scene_route,
+            self._library_group_kind,
+            self._library_group_key,
+        )
+        if not self._library_history or self._library_history[-1] != current:
+            self._library_history.append(current)
+            del self._library_history[:-32]
+
+    @Slot()
+    def backLibrary(self) -> None:
+        if self._library_scene_route == "detail" and self._library_detail_from_watch:
+            self._library_detail_from_watch = False
+            self.returnLibraryDetails()
+            self.select("Watch")
+            return
+        if self._library_scene_route == "detail":
+            self.returnLibraryDetails()
+            return
+        if self._library_history:
+            route, kind, key = self._library_history.pop()
+            self._library_scene_route = route
+            self._library_group_kind = kind
+            self._library_group_key = key
+        else:
+            self._library_scene_route = "home"
+            self._library_group_kind = self._library_group_key = ""
+        if self._library_scene_route != "all" and self._library_search:
+            self.setLibrarySearch("")
+        self.historyChanged.emit()
+
     def _set_status(self, value: str) -> None:
         self._status = value
         self.statusChanged.emit()
@@ -2379,6 +2432,11 @@ class Bridge(QObject):
             "folders",
         }:
             return
+        if route == "home":
+            self._library_history.clear()
+        elif route != self._library_scene_route:
+            self._remember_library_route()
+        self._library_detail_from_watch = False
         if route == "folders":
             self._folder_browser.navigate(None, mode="folders")
             self._folder_inspector_owner = ""
@@ -2396,6 +2454,12 @@ class Bridge(QObject):
     def navigateLibraryGroup(self, kind: str, key: str) -> None:
         if kind not in {"channel", "playlist", "collection"} or not key:
             return
+        if (
+            self._library_scene_route,
+            self._library_group_kind,
+            self._library_group_key,
+        ) != ("group", kind, key):
+            self._remember_library_route()
         self._library_scene_route = "group"
         self._library_group_kind = kind
         self._library_group_key = key
@@ -2408,6 +2472,7 @@ class Bridge(QObject):
             self.statusChanged.emit()
             return False
         if self._library_scene_route != "detail":
+            self._library_detail_from_watch = False
             if self._library_scene_route != "folders":
                 self._detail_versions = []
             self._library_detail_origin = (
@@ -2438,6 +2503,8 @@ class Bridge(QObject):
     def navigateLibraryFolders(self, mode: str) -> None:
         if mode not in {"folders", "all", "activity"}:
             return
+        if self._library_scene_route != "folders":
+            self._remember_library_route()
         self._folder_browser.navigate(
             None, mode=cast(Literal["folders", "all", "activity"], mode)
         )
@@ -2709,6 +2776,21 @@ class Bridge(QObject):
         if value.strip():
             self._record_update_feature("watch", "searched")
 
+    @Property(str, notify=activeSearchChanged)
+    def activeSearch(self) -> str:
+        if self._selection == "Watch":
+            return self._watch_search
+        if self._selection == "Library":
+            return self._library_search
+        return ""
+
+    @Slot(str)
+    def setActiveSearch(self, value: str) -> None:
+        if self._selection == "Watch":
+            self.setWatchSearch(value)
+        elif self._selection == "Library":
+            self.setLibrarySearch(value)
+
     @Slot()
     def backWatch(self) -> None:
         if self._watch_history:
@@ -2827,6 +2909,7 @@ class Bridge(QObject):
     def openWatchDetails(self, owner: str) -> bool:
         if not self.openLibraryDetails(owner):
             return False
+        self._library_detail_from_watch = True
         self._record_update_feature("watch", "details")
         self.select("Library")
         return True
@@ -2900,7 +2983,8 @@ class Bridge(QObject):
         if query == self._library_search:
             return
         self._library_search = query
-        if query and self._library_scene_route == "home":
+        if query and self._library_scene_route != "all":
+            self._remember_library_route()
             self._library_scene_route = "all"
         self.librarySearchChanged.emit()
         self.historyChanged.emit()
@@ -3070,6 +3154,29 @@ class Bridge(QObject):
             except (OSError, ValueError):
                 pass
         self._status = "Library description saved."
+        self.statusChanged.emit()
+        self.historyChanged.emit()
+        return True
+
+    @Slot(str, str, result=bool)
+    def saveLibraryNote(self, owner: str, value: str) -> bool:
+        annotation_owner = self._detail_annotation_owner(owner)
+        if not annotation_owner:
+            return False
+        if len(value) > MAX_NOTE_CHARS:
+            self._status = f"Use up to {MAX_NOTE_CHARS:,} characters for your note."
+            self.statusChanged.emit()
+            return False
+        try:
+            self._annotations.replace(
+                annotation_owner,
+                replace(self._annotations.annotation_for(annotation_owner), note=value),
+            )
+        except LibraryAnnotationsError as exc:
+            self._status = str(exc)
+            self.statusChanged.emit()
+            return False
+        self._status = "Library note saved."
         self.statusChanged.emit()
         self.historyChanged.emit()
         return True
@@ -3475,6 +3582,7 @@ class Bridge(QObject):
             seek=self._request_playback_seek,
         )
         self._playback_url = QUrl.fromLocalFile(str(path))
+        self._playback_origin_selection = self._selection
         self._playback_generation += 1
         if queue_token is not None:
             self._watch_queue.attach(self, self._runtime.history[index], queue_token)
@@ -3513,6 +3621,7 @@ class Bridge(QObject):
         self.playbackUrlChanged.emit()
         self.playerSceneChanged.emit()
         self.historyChanged.emit()
+        self.select(self._playback_origin_selection)
 
     @Slot(str)
     def openLibraryFolder(self, owner: str) -> None:

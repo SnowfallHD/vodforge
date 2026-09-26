@@ -12,6 +12,7 @@ Item {
 
     ScrollView {
         id: viewport
+        objectName: "libraryDetailViewport"
         anchors.fill: parent
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -19,10 +20,10 @@ Item {
             width: viewport.availableWidth
             spacing: 16
             StoneButton {
-                label: detail.item.fromFolders ? "Back to folders" : "Back to Library"
+                label: "← Back"
                 width: 180
                 height: 40
-                onActivated: detail.appBridge.returnLibraryDetails()
+                onActivated: detail.appBridge.backLibrary()
             }
             Flow {
                 id: hero
@@ -38,6 +39,8 @@ Item {
                     ArtworkImage {
                         anchors.fill: parent
                         source: detail.item.artwork || ""
+                        cover: true
+                        inset: 0
                     }
                     StoneButton {
                         anchors.centerIn: parent
@@ -67,6 +70,11 @@ Item {
                         color: theme.muted
                         font.pixelSize: 15
                         wrapMode: Text.WordWrap
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: detail.annotationRequested(detail.item.owner)
+                        }
                     }
                     Text {
                         text: detail.item.description || "Saved in your Library."
@@ -179,7 +187,7 @@ Item {
                 }
                 StoneField {
                     width: detail.compact ? annotationRow.width : annotationRow.width - Math.round(annotationRow.width * 0.62) - 16
-                    height: Math.max(150, tagColumn.childrenRect.height + 32)
+                    height: Math.max(190, tagColumn.childrenRect.height + 32)
                     Column {
                         id: tagColumn
                         anchors.fill: parent
@@ -188,6 +196,7 @@ Item {
                         Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20 }
                         Flow {
                             width: parent.width
+                            height: childrenRect.height
                             spacing: 6
                             Repeater {
                                 model: detail.item.tags || []
@@ -225,8 +234,25 @@ Item {
                                 }
                             }
                         }
-                        Text { text: detail.item.note || ""; width: parent.width; color: theme.muted; font.pixelSize: 13; wrapMode: Text.WordWrap; maximumLineCount: 2; elide: Text.ElideRight }
-                        StoneButton { label: "Edit organization"; size: "inline"; width: 155; onActivated: detail.annotationRequested(detail.item.owner) }
+                        Text { text: "Your note"; color: theme.muted; font.pixelSize: 13 }
+                        StoneField {
+                            width: parent.width; height: 68
+                            TextArea {
+                                id: noteInput
+                                property string owner: detail.item.owner || ""
+                                onOwnerChanged: text = detail.item.note || ""
+                                anchors.fill: parent; anchors.margins: 8
+                                padding: 0; wrapMode: TextEdit.Wrap
+                                text: detail.item.note || ""
+                                placeholderText: "Add a note for yourself"
+                                color: theme.text; placeholderTextColor: theme.muted
+                                font.pixelSize: 13; background: Item {}
+                            }
+                        }
+                        StoneButton {
+                            label: "Save note"; size: "inline"; width: 92
+                            onActivated: detail.appBridge.saveLibraryNote(detail.item.owner, noteInput.text)
+                        }
                     }
                 }
             }
@@ -235,7 +261,17 @@ Item {
                 width: parent.width
                 height: childrenRect.height
                 spacing: 16
+                property real commonHeight: 0
+                function syncHeight() {
+                    const source = factRepeater.itemAt(0)
+                    const output = factRepeater.itemAt(1)
+                    commonHeight = Math.max(source ? source.contentHeight : 0,
+                                            output ? output.contentHeight : 0) + 34
+                }
                 Repeater {
+                    id: factRepeater
+                    onItemAdded: Qt.callLater(factsRow.syncHeight)
+                    onItemRemoved: Qt.callLater(factsRow.syncHeight)
                     model: [
                         { title: "Source Details", fields: detail.item.source || [] },
                         { title: "Output Details", fields: detail.item.output || [] }
@@ -243,9 +279,11 @@ Item {
                     StoneField {
                         id: factsPanel
                         required property var modelData
+                        readonly property real contentHeight: factsColumn.childrenRect.height
+                        onContentHeightChanged: Qt.callLater(factsRow.syncHeight)
                         readonly property string section: modelData.title === "Source Details" ? "source" : "output"
                         width: detail.compact ? factsRow.width : (factsRow.width - 16) / 2
-                        height: factsColumn.childrenRect.height + 34
+                        height: detail.compact ? factsColumn.childrenRect.height + 34 : factsRow.commonHeight
                         Column {
                             id: factsColumn
                             x: 17

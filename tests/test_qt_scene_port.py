@@ -22,11 +22,13 @@ from PySide6.QtCore import (
     QPoint,
     QPointF,
     QSize,
+    Qt,
     QTimer,
     QUrl,
 )
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication, QWheelEvent
 from PySide6.QtMultimedia import QMediaPlayer
+from PySide6.QtTest import QTest
 
 from tests.test_quality_e2e import _isolated_launch
 from tests.test_run_identity import make_job
@@ -79,6 +81,168 @@ def test_qt_library_group_card_counts_saved_variants_like_tk(tmp_path):
     assert group["summary"] == "2 items · 1 video · 1 audio"
     assert len(set(group["owners"])) == 2
     assert watch_scene(records, "home")["playlists"][0]["count"] == 1
+
+
+def test_unfiled_video_stays_in_videos_without_becoming_a_playlist(tmp_path):
+    named = saved(tmp_path, "Named", "MP4")
+    unfiled = {
+        **saved(tmp_path, "Star Wars export", "MP4"),
+        "playlist_id": None,
+        "playlist_title": None,
+    }
+    records = [named, unfiled]
+    playlists = library_scene(records, "playlists")
+    videos = library_scene(records, "videos")
+    watch = watch_scene(records, "videos")
+    assert playlists["counts"]["playlists"] == 1
+    assert [group["title"] for group in playlists["groups"]] == ["One playlist"]
+    assert {item["title"] for item in videos["media"]} == {"Named", "Star Wars export"}
+    assert {item["title"] for item in watch["videos"]} == {"Named", "Star Wars export"}
+
+
+def test_qt_navigation_returns_to_previous_route_and_top_tabs_open_home(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    bridge = qt_main.Bridge(None)
+    try:
+        bridge._runtime.history = [saved(tmp_path, "One", "MP4")]
+        bridge.selectHome("Library")
+        bridge.navigateLibrary("channels")
+        channel = bridge.libraryScene["groups"][0]
+        bridge.navigateLibraryGroup(channel["kind"], channel["key"])
+        bridge.backLibrary()
+        assert bridge.libraryScene["route"] == "channels"
+        bridge.backLibrary()
+        assert bridge.libraryScene["route"] == "home"
+        bridge.navigateLibrary("folders")
+        bridge.selectHome("Library")
+        assert bridge.libraryScene["route"] == "home"
+        bridge.selectHome("Watch")
+        bridge.navigateWatch("playlists")
+        playlist = bridge.watchScene["playlists"][0]
+        bridge.navigateWatchGroup(playlist["kind"], playlist["key"])
+        bridge.backWatch()
+        assert bridge.watchScene["route"] == "playlists"
+        assert bridge.openWatchDetails(playlist["owner"])
+        bridge.backLibrary()
+        assert bridge.selection == "Watch"
+        assert bridge.watchScene["route"] == "playlists"
+        bridge.selectHome("Watch")
+        assert bridge.watchScene["route"] == "home"
+    finally:
+        bridge.close()
+
+
+def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = []
+    for index in range(14):
+        item = saved(tmp_path, f"Video {index}", "MP4")
+        item["playlist_id"] = f"playlist-{index}"
+        item["playlist_title"] = f"Playlist {index}"
+        bridge._runtime.history.append(item)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.selectHome("Watch")
+        for _ in range(5):
+            app.processEvents()
+
+        def descendants(item):
+            for child in item.childItems():
+                yield child
+                yield from descendants(child)
+
+        rail = next(
+            item
+            for item in descendants(window.contentItem())
+            if item.objectName() == "watchHomeRail_playlists"
+        )
+        repeater = next(
+            item
+            for item in descendants(rail)
+            if item.objectName() == "watchHomeGroupRepeater"
+        )
+        assert rail.isVisible()
+        assert rail.width() > window.width() * 0.7
+        assert repeater.property("count") == 6
+        flickable = rail.property("contentItem")
+        assert flickable.setProperty("contentX", 600)
+        for _ in range(5):
+            app.processEvents()
+        assert 6 < repeater.property("count") < 14
+        viewport = window.findChild(QObject, "watchViewport")
+        before = viewport.property("contentItem").property("contentY")
+        point = rail.mapToScene(QPointF(25, 25))
+        wheel = QWheelEvent(
+            point,
+            point,
+            QPoint(),
+            QPoint(0, -120),
+            Qt.NoButton,
+            Qt.NoModifier,
+            Qt.ScrollUpdate,
+            False,
+        )
+        QGuiApplication.sendEvent(window, wheel)
+        for _ in range(5):
+            app.processEvents()
+        assert viewport.property("contentItem").property("contentY") > before
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_activity_opens_at_latest_and_tracks_new_lines(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._activity_log_text = "\n".join(f"event {i}" for i in range(200))
+    bridge.activityChanged.emit()
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        bridge.selectHome("Activity")
+        for _ in range(10):
+            app.processEvents()
+        viewport = window.findChild(QObject, "activityLogViewport")
+        log = window.findChild(QObject, "activityLogText")
+        flickable = viewport.property("contentItem")
+        assert log.property("text").endswith("event 199")
+        assert log.property("cursorPosition") == len(log.property("text"))
+        assert (
+            abs(
+                flickable.property("contentY")
+                - (flickable.property("contentHeight") - viewport.height())
+            )
+            <= 2
+        )
+        bridge._activity_log_text += "\nevent 200"
+        bridge.activityChanged.emit()
+        for _ in range(10):
+            app.processEvents()
+        assert log.property("text").endswith("event 200")
+        assert log.property("cursorPosition") == len(log.property("text"))
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
 
 
 def test_qt_library_group_menu_selects_every_saved_variant(tmp_path, monkeypatch):
@@ -152,11 +316,11 @@ def test_qt_library_group_cards_remain_visible_across_home_and_group_routes(
                 app.processEvents()
             slot = home_slot if route == "home" else route_slot
             assert slot.isVisible(), route
-            assert slot.height() >= 192, route
+            assert slot.height() >= 178, route
             assert flow.isVisible(), route
             assert any(
                 child.isVisible()
-                and child.height() == 192
+                and child.height() == 178
                 and child.property("accessibilityLabel")
                 for child in flow.childItems()
             ), route
@@ -365,9 +529,13 @@ def test_qt_library_description_uses_current_detail_owner_and_shared_annotations
         assert not bridge.editLibraryTag(owners[0], "x" * 81, False)
         assert bridge.editLibraryTag(owners[0], "TRAVEL", True)
         assert bridge.libraryDetail["tags"] == []
+        assert bridge.saveLibraryNote(owners[0], "A private note")
+        assert bridge.libraryDetail["note"] == "A private note"
+        assert not bridge.saveLibraryNote(owners[1], "Wrong subject")
         bridge.returnLibraryDetails()
         assert not bridge.saveLibraryDescription(owners[0], "Closed detail")
         assert not bridge.editLibraryTag(owners[0], "Closed detail", False)
+        assert not bridge.saveLibraryNote(owners[0], "Closed detail")
     finally:
         bridge.close()
 
@@ -451,6 +619,9 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
         assert window.findChild(QObject, "libraryFolderBrowser").property(
             "showInspector"
         )
+        assert not window.findChild(QObject, "libraryFolderDetailsPanel").property(
+            "visible"
+        )
         listing = window.findChild(QObject, "libraryFolderList")
         button = next(
             item
@@ -461,27 +632,23 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
         app.processEvents()
         inspector = window.findChild(QObject, "libraryFolderInspector")
         assert inspector.property("visible")
+        assert window.findChild(QObject, "libraryFolderDetailsPanel").property(
+            "visible"
+        )
         assert round(inspector.property("width")) == 380
         assert bridge.libraryFolders["selectedKey"] == media["key"]
-        assert (
-            round(
-                window.findChild(QObject, "libraryFolderDetailsPanel").property(
-                    "height"
-                )
-            )
-            == 360
-        )
         panel = window.findChild(QObject, "libraryFolderDetailsPanel")
-        folder_viewport = window.findChild(QObject, "libraryFolderViewport")
+        open_details = window.findChild(QObject, "libraryFolderOpenDetails")
+        assert 130 <= panel.height() <= 240
         assert (
-            abs(
-                panel.mapToItem(None, 0, panel.height()).y()
-                - folder_viewport.mapToItem(None, 0, folder_viewport.height()).y()
-            )
-            <= 2
+            0
+            < panel.mapToItem(None, 0, 0).y()
+            - open_details.mapToItem(None, 0, open_details.height()).y()
+            < 70
         )
         window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
         app.processEvents()
+        assert panel.height() == 360
         assert (
             window.findChild(QObject, "libraryFolderDescriptionText").property("text")
             == record["description"]
@@ -627,10 +794,16 @@ def test_qt_player_controls_share_video_surface_at_wide_and_compact_sizes(
         assert overlay.parentItem() is stage
         assert window.findChild(QObject, "playerTransportRow") is None
         for name in (
-            "playerOverlayPlay", "playerOverlayBack10", "playerOverlayForward10",
-            "playerOverlayMute", "playerOverlayVolume", "playerOverlaySeek",
-            "playerCaptionsButton", "playerOverlayOptions",
-            "playerOverlayFloating", "playerOverlayFullscreen",
+            "playerOverlayPlay",
+            "playerOverlayBack10",
+            "playerOverlayForward10",
+            "playerOverlayMute",
+            "playerOverlayVolume",
+            "playerOverlaySeek",
+            "playerCaptionsButton",
+            "playerOverlayOptions",
+            "playerOverlayFloating",
+            "playerOverlayFullscreen",
         ):
             assert window.findChild(QObject, name) is not None, name
         for width, height in ((1280, 800), (820, 560)):
@@ -650,9 +823,101 @@ def test_qt_player_controls_share_video_surface_at_wide_and_compact_sizes(
         app.processEvents()
         assert overlay.property("visible") is False
         stage_center = stage.mapToItem(window.contentItem(), QPointF(60, 60))
-        QTest.mouseMove(window, QPoint(round(stage_center.x()), round(stage_center.y())))
+        QTest.mouseMove(
+            window, QPoint(round(stage_center.x()), round(stage_center.y()))
+        )
         app.processEvents()
         assert overlay.property("visible") is True
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or shutil.which("ffmpeg") is None,
+    reason="macOS Qt multimedia fixture requires ffmpeg",
+)
+def test_qt_library_player_video_click_and_escape_change_real_playback(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtTest import QTest
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    media = saved(tmp_path, "Clickable", "MP4")
+    subprocess.run(
+        [
+            shutil.which("ffmpeg"),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=15",
+            "-t",
+            "8",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            str(tmp_path / "Clickable.mp4"),
+        ],
+        check=True,
+        timeout=30,
+    )
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [media]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    window.resize(1280, 800)
+    window.show()
+
+    def until(predicate, timeout=5.0):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            app.processEvents()
+            if predicate():
+                return True
+            time.sleep(0.01)
+        return False
+
+    try:
+        bridge.selectHome("Library")
+        assert bridge.openLibraryItem(0)
+        player = lambda: window.property("mediaPlayer")
+        assert until(
+            lambda: player().property("playbackState") == QMediaPlayer.PlayingState
+        )
+        stage = window.findChild(QObject, "playerMediaStage")
+        point = stage.mapToItem(window.contentItem(), QPointF(stage.width() / 2, 80))
+        click = QPoint(round(point.x()), round(point.y()))
+        QTest.mouseClick(window, Qt.LeftButton, pos=click)
+        assert until(
+            lambda: player().property("playbackState") == QMediaPlayer.PausedState
+        )
+        QTest.mouseClick(window, Qt.LeftButton, pos=click)
+        assert until(
+            lambda: player().property("playbackState") == QMediaPlayer.PlayingState
+        )
+
+        scene = window.findChild(QObject, "watchPlayerScene")
+        scene.setProperty("presentationMode", "fullscreen")
+        presentation = window.findChild(QObject, "watchPresentationWindow")
+        assert until(lambda: presentation.property("visible"))
+        QTest.keyClick(presentation, Qt.Key_Escape)
+        assert until(lambda: scene.property("presentationMode") == "embedded")
+        bridge.closePlayback()
+        assert bridge.selection == "Library"
     finally:
         window.close()
         engine.deleteLater()
@@ -683,7 +948,11 @@ def test_qt_player_related_side_and_recent_artwork_rail_follow_later_design(
         stage = window.findChild(QObject, "playerMediaStage")
         stage_column = window.findChild(QObject, "playerStageColumn")
         assert window.findChild(QObject, "watchMoments") is None
-        for width, height, side_visible in ((1280, 800, True), (1920, 1080, True), (820, 560, False)):
+        for width, height, side_visible in (
+            (1280, 800, True),
+            (1920, 1080, True),
+            (820, 560, False),
+        ):
             window.resize(width, height)
             for _ in range(5):
                 app.processEvents()
@@ -1931,7 +2200,7 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_activity(
         popup_bottom = content_item.mapToScene(
             QPointF(0, content_item.property("height") + popup.property("padding"))
         ).y()
-        assert abs(popup_bottom - button_top) <= 1
+        assert 8 <= popup_bottom - button_top <= 11
         popup_right = content_item.mapToScene(
             QPointF(content_item.property("width") + popup.property("padding"), 0)
         ).x()
@@ -2583,16 +2852,73 @@ def test_qt_library_compact_browse_controls_keep_import_with_other_actions(
         for _ in range(3):
             app.processEvents()
         toolbar = window.findChild(QObject, "libraryBrowseControls")
-        search = window.findChild(QObject, "libraryBrowseSearchField")
+        search = window.findChild(QObject, "headerSearchInput")
         buttons = {
             item.property("label"): item
             for item in toolbar.childItems()
             if item.property("label") is not None
         }
-        assert abs(search.width() - toolbar.width()) < 1
+        assert search.property("visible")
+        assert window.findChild(QObject, "libraryBrowseSearchField") is None
         assert buttons["Import Media"].y() == buttons["Select"].y()
         assert buttons["Import Media"].y() == buttons["Filter"].y()
-        assert buttons["Import Media"].y() > search.y()
+        assert (
+            search.mapToItem(None, 0, 0).y()
+            < buttons["Import Media"].mapToItem(None, 0, 0).y()
+        )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_header_search_follows_library_and_watch_without_secondary_fields(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "Ocean one", "MP4")]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        search = window.findChild(QObject, "headerSearchInput")
+        assert window.findChild(QObject, "watchSavedSearch") is None
+        assert window.findChild(QObject, "libraryBrowseSearchField") is None
+        bridge.selectHome("Library")
+        search.forceActiveFocus()
+        for key in (Qt.Key_O, Qt.Key_C, Qt.Key_E, Qt.Key_A, Qt.Key_N):
+            QTest.keyClick(window, key)
+        app.processEvents()
+        assert search.property("text") == "ocean"
+        assert bridge.librarySearch == "ocean"
+        assert bridge.libraryScene["route"] == "all"
+        bridge.select("Watch")
+        app.processEvents()
+        assert search.property("text") == ""
+        search.forceActiveFocus()
+        for key in (Qt.Key_O, Qt.Key_C, Qt.Key_E, Qt.Key_A, Qt.Key_N):
+            QTest.keyClick(window, key)
+        app.processEvents()
+        assert search.property("text") == "ocean"
+        assert bridge.watchScene["query"] == "ocean"
+        bridge.select("Library")
+        app.processEvents()
+        assert search.property("text") == "ocean"
+        assert bridge.librarySearch == "ocean"
+        bridge.selectHome("Library")
+        app.processEvents()
+        assert search.property("text") == ""
+        assert bridge.libraryScene["route"] == "home"
+        bridge.navigateLibrary("folders")
+        bridge.setActiveSearch("ocean")
+        assert bridge.libraryScene["route"] == "all"
+        bridge.backLibrary()
+        assert bridge.libraryScene["route"] == "folders"
     finally:
         window.close()
         engine.deleteLater()
@@ -3088,6 +3414,42 @@ def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypat
         bridge.close()
 
 
+def test_qt_folder_recent_export_card_fits_its_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "Recent export", "MP4")]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.resize(1100, 740)
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        for _ in range(3):
+            app.processEvents()
+        assert not window.grabWindow().isNull()
+        highlight = bridge.libraryFolders["highlights"][0]
+        listing = window.findChild(QObject, "libraryFolderList")
+        pending = list(listing.childItems())
+        card = None
+        while pending:
+            item = pending.pop()
+            if item.objectName() == "libraryRecentExportCard_" + highlight["key"]:
+                card = item
+                break
+            pending.extend(item.childItems())
+        assert card is not None
+        assert 76 <= card.height() < 100
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_forge_composer_matches_tk_control_bounds(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -3483,7 +3845,9 @@ def test_qt_visible_cards_show_resolved_local_artwork(
         ]
         assert images
         for image in images:
-            assert image.property("inset") == 4
+            assert image.property("inset") == 0
+            if not channel:
+                assert image.property("cover")
             if not channel:
                 assert image.x() == 0
                 assert image.y() == 0
@@ -3614,9 +3978,9 @@ def test_qt_library_group_routes_window_cards_and_artwork(
         card_positions = [
             card.mapToItem(viewport, 0, 0).y()
             for card in flow.childItems()
-            if card.width() == flow.property("cardWidth") and card.height() == 192
+            if card.width() == flow.property("cardWidth") and card.height() == 178
         ]
-        assert any(y < viewport.height() and y + 192 > 0 for y in card_positions), (
+        assert any(y < viewport.height() and y + 178 > 0 for y in card_positions), (
             f"route={route} contentY={flickable.property('contentY')} "
             f"flowY={flow.y()} firstRow={flow.property('firstRow')} "
             f"viewportH={viewport.height()} positions={card_positions[:30]}"

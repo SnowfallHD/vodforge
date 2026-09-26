@@ -5,11 +5,20 @@ import QtQuick.Layouts
 Item {
     id: scene
     property var appBridge
+    function showLatest() {
+        Qt.callLater(function() {
+            if (!scene.visible || !logViewport.contentItem) return
+            logText.cursorPosition = logText.length
+            logViewport.contentItem.contentY = Math.max(0,
+                logViewport.contentItem.contentHeight - logViewport.height)
+        })
+    }
+    onVisibleChanged: { if (visible) showLatest() }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.topMargin: 24
-        spacing: 18
+        anchors.topMargin: 12
+        spacing: 8
         RowLayout {
             Layout.fillWidth: true
             width: parent.width
@@ -26,18 +35,20 @@ Item {
                 onActivated: scene.appBridge.openActivityLogFolder()
             }
         }
-        Item { Layout.preferredHeight: 35 }
         ScrollView {
             id: logViewport
+            objectName: "activityLogViewport"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             TextArea {
                 id: logText
+                objectName: "activityLogText"
                 readOnly: true
                 selectByMouse: true
-                text: scene.appBridge.activityLog
+                text: scene.visible ? scene.appBridge.activityLog : ""
+                onTextChanged: scene.showLatest()
                 color: theme.muted
                 font.pixelSize: 14
                 font.family: monoFontFamily

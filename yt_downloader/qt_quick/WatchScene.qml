@@ -67,54 +67,23 @@ Item {
 
     RowLayout {
         id: browseHeader
+        visible: scene.route !== "home"
         width: parent.width
-        height: 46
+        height: visible ? 46 : 0
         spacing: 8
         StoneButton {
-            label: "Playlists"
+            objectName: "watchBackButton"
+            label: "← Back"
             size: "inline"
-            Layout.preferredWidth: 118
-            onActivated: scene.appBridge.navigateWatch("playlists")
-        }
-        StoneButton {
-            label: "Categories"
-            size: "inline"
-            Layout.preferredWidth: 126
-            onActivated: scene.appBridge.navigateWatch("collections")
-        }
-        StoneButton {
-            label: "Channels"
-            size: "inline"
-            Layout.preferredWidth: 112
-            onActivated: scene.appBridge.navigateWatch("channels")
-        }
-        Item { Layout.fillWidth: true }
-        TextField {
-            id: searchField
-            objectName: "watchSavedSearch"
-            Accessible.name: "Search saved videos"
-            Layout.preferredWidth: Math.min(240, Math.max(160, scene.width - 460))
-            Layout.preferredHeight: 40
-            placeholderText: "Search saved videos"
-            placeholderTextColor: theme.muted
-            color: theme.text
-            font.pixelSize: 15
-            background: StoneField {}
-            onTextEdited: scene.appBridge.setWatchSearch(text)
-        }
-    }
-    Connections {
-        target: scene.appBridge
-        function onHistoryChanged() {
-            if (searchField.text !== scene.projection.query)
-                searchField.text = scene.projection.query
+            Layout.preferredWidth: 104
+            onActivated: scene.back()
         }
     }
 
     ScrollView {
         id: viewport
         objectName: "watchViewport"
-        y: browseHeader.height + 12
+        y: browseHeader.visible ? browseHeader.height + 12 : 0
         width: parent.width
         height: parent.height - y
         clip: true
@@ -124,13 +93,6 @@ Item {
             width: viewport.availableWidth
             spacing: 13
 
-            StoneButton {
-                visible: scene.route !== "home"
-                label: scene.projection.backLabel || "Back to Watch"
-                width: 160
-                height: 40
-                onActivated: scene.back()
-            }
             RowLayout {
                 visible: scene.route !== "home" && scene.route !== "group"
                 width: parent.width
@@ -156,7 +118,7 @@ Item {
                 width: parent.width
                 readonly property bool channel: scene.projection.groupKind === "channel"
                 readonly property int textLeft: channel ? width >= 1000 ? 214 : width >= 680 ? 174 : 32 : 0
-                height: Math.max(channel ? 298 : 190, groupActions.y + groupActions.childrenRect.height + 25)
+                height: groupActions.y + groupActions.childrenRect.height + 16
                 clip: true
                 Image {
                     anchors.fill: parent
@@ -314,7 +276,7 @@ Item {
                 }
             }
 
-            Row {
+            Column {
                 width: parent.width
                 spacing: 18
             Repeater {
@@ -327,9 +289,10 @@ Item {
                 Column {
                     required property var modelData
                     visible: (scene.route === "home" && !scene.emptyHome && modelData.route !== "collections") || scene.route === modelData.route
-                    width: scene.route === "home" ? (parent.width - 18) / 2 : parent.width
+                    width: parent.width
                     spacing: 9
                     RowLayout {
+                        visible: scene.route === "home"
                         width: parent.width
                         height: 39
                         Text { text: modelData.title; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
@@ -341,25 +304,71 @@ Item {
                             onActivated: scene.appBridge.navigateWatch(modelData.route)
                         }
                     }
+                    ScrollView {
+                        id: homeRail
+                        objectName: "watchHomeRail_" + modelData.route
+                        visible: scene.route === "home" && modelData.route !== "collections"
+                        width: parent.width
+                        height: visible ? (modelData.route === "channels" ? 101 : 180) : 0
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                        ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                        property int loadedCount: 6
+                        onVisibleChanged: { if (visible) loadedCount = 6 }
+                        Connections {
+                            target: homeRail.contentItem
+                            function onContentXChanged() {
+                                if (!homeRail.visible || !homeRail.contentItem ||
+                                        homeRail.contentItem.contentX <= 0) return
+                                if (homeRail.contentItem.contentX + homeRail.width >=
+                                        homeRail.contentItem.contentWidth - 500)
+                                    homeRail.loadedCount = Math.min(modelData.items.length,
+                                                                    homeRail.loadedCount + 6)
+                            }
+                        }
+                Row {
+                    spacing: 12
+                    WheelHandler {
+                        target: null
+                        onWheel: function(wheel) {
+                            if (Math.abs(wheel.angleDelta.y) > Math.abs(wheel.angleDelta.x)) {
+                                viewport.contentItem.contentY = Math.max(0,
+                                    Math.min(viewport.contentItem.contentHeight - viewport.height,
+                                             viewport.contentItem.contentY - wheel.angleDelta.y))
+                                wheel.accepted = true
+                            } else wheel.accepted = false
+                        }
+                    }
+                            Repeater {
+                                objectName: "watchHomeGroupRepeater"
+                                model: homeRail.visible ? modelData.items.slice(0, homeRail.loadedCount) : []
+                                WatchGroupCard {
+                                    required property var modelData
+                                    width: modelData.kind === "channel" ? 260 : 225
+                                    group: modelData
+                                    appBridge: scene.appBridge
+                                    projection: scene.projection
+                                    onChosen: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
+                                }
+                            }
+                        }
+                    }
                     Flow {
                         id: groupFlow
                         objectName: "watchGroupFlow"
+                        visible: scene.route !== "home"
                         width: parent.width
                         spacing: 12
-                        readonly property var items: scene.route === "home" ?
-                            (modelData.route === "collections" ? [] : modelData.items.slice(0, 1)) :
-                            scene.route === modelData.route ? modelData.items : []
-                        readonly property real cardWidth: scene.route === "home" ? width : Math.max(164, (width - 36) / 4)
-                        readonly property real cardHeight: scene.route === "home" ? 136 : modelData.route === "channels" ? 80 : 136
+                        readonly property var items: scene.route === modelData.route ? modelData.items : []
+                        readonly property real cardWidth: Math.max(164, (width - 36) / 4)
+                        readonly property real cardHeight: modelData.route === "channels" ? 82 : 161
                         readonly property int columns: Math.max(1, Math.floor((width + spacing) / (cardWidth + spacing)))
                         readonly property real rowStride: cardHeight + spacing
                         readonly property int totalRows: Math.ceil(items.length / columns)
                         readonly property real scrollTop: viewport.contentItem.contentY -
                             (groupFlow.y + groupFlow.parent.y + groupFlow.parent.parent.y)
-                        readonly property int firstRow: scene.route === "home" ? 0 :
-                            Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
-                        readonly property int lastRow: scene.route === "home" ? totalRows :
-                            Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                        readonly property int firstRow: Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
+                        readonly property int lastRow: Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
                         Item {
                             visible: groupFlow.firstRow > 0
                             width: groupFlow.width
@@ -369,41 +378,13 @@ Item {
                             objectName: "watchGroupRepeater"
                             model: groupFlow.items.slice(groupFlow.firstRow * groupFlow.columns,
                                                          groupFlow.lastRow * groupFlow.columns)
-                            StoneButton {
+                            WatchGroupCard {
                                 required property var modelData
                                 width: groupFlow.cardWidth
-                                height: groupFlow.cardHeight
-                                label: ""
-                                accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
-                                onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
-                                ArtworkImage {
-                                    id: artworkFrame
-                                    x: modelData.kind === "channel" ? 16 : 0
-                                    y: modelData.kind === "channel" ? (parent.height - height) / 2 : 0
-                                    width: modelData.kind === "channel" ? Math.min(96, parent.height - 20) : parent.width
-                                    height: modelData.kind === "channel" ? width : 109
-                                    objectName: "watchGroupArtworkImage"
-                                    circular: modelData.kind === "channel"
-                                    source: scene.projection ?
-                                            scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind) : ""
-                                }
-                                Text {
-                                    x: modelData.kind === "channel" ? artworkFrame.x + artworkFrame.width + 18 : 12
-                                    y: modelData.kind === "channel" ? parent.height / 2 - 19 : 111
-                                    width: parent.width - x - 12
-                                    text: modelData.title
-                                    color: theme.text
-                                    font.pixelSize: 15
-                                    font.bold: true
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    x: modelData.kind === "channel" ? artworkFrame.x + artworkFrame.width + 18 : 12
-                                    y: modelData.kind === "channel" ? parent.height / 2 + 6 : 133
-                                    text: modelData.count + " saved"
-                                    color: theme.muted
-                                    font.pixelSize: 12
-                                }
+                                group: modelData
+                                appBridge: scene.appBridge
+                                projection: scene.projection
+                                onChosen: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
                             }
                         }
                         Item {
@@ -431,23 +412,20 @@ Item {
                     spacing: 12
                     Repeater {
                         model: (scene.projection.collections || []).slice(0, 4)
-                        StoneButton {
+                        WatchGroupCard {
                             required property var modelData
                             width: Math.max(164, (parent.width - 36) / 4)
-                            height: 145
-                            label: ""
-                            accessibilityLabel: modelData.title + ", " + modelData.count + " saved item(s)"
-                            onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
-                            ArtworkImage { x: 0; y: 0; width: parent.width; height: 104; source: scene.projection ? scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind) : "" }
-                            Text { x: 11; y: 106; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight }
-                            Text { x: 11; y: 128; text: modelData.count + " saved"; color: theme.muted; font.pixelSize: 12 }
+                            group: modelData
+                            appBridge: scene.appBridge
+                            projection: scene.projection
+                            onChosen: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
                         }
                     }
                 }
             }
 
             RowLayout {
-                visible: (scene.route === "home" && !scene.emptyHome) || scene.route === "videos" || scene.route === "group"
+                visible: (scene.route === "home" && !scene.emptyHome) || scene.route === "group"
                 width: parent.width
                 height: 42
                 Text { text: scene.route === "home" ? "Recently Added" : scene.route === "group" ? "Saved media" : "Videos"; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
@@ -468,7 +446,7 @@ Item {
                 spacing: 12
                 readonly property int columns: Math.max(1, Math.min(4, Math.floor((width + spacing) / 200)))
                 readonly property real cardWidth: Math.max(164, (width - spacing * (columns - 1)) / columns)
-                readonly property real rowStride: 190
+                readonly property real rowStride: 174
                 readonly property int displayCount: scene.route === "home" ? Math.min(scene.videos.length, columns) : scene.videos.length
                 readonly property int totalRows: Math.ceil(displayCount / columns)
                 readonly property real scrollTop: viewport.contentItem.contentY - y
@@ -488,13 +466,15 @@ Item {
                     StoneButton {
                         required property var modelData
                         width: mediaFlow.cardWidth
-                        height: 178
+                        height: 162
                         label: ""
                         accessibilityLabel: "Play " + modelData.title
                         onActivated: scene.appBridge.openLibraryOwner(modelData.owner)
                         ArtworkImage {
                             objectName: "watchMediaArtworkImage"
                             x: 0; y: 0; width: parent.width; height: 113
+                            cover: true
+                            inset: 0
                             source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
                         }
                         Text { x: 11; y: 115; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }

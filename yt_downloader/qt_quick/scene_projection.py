@@ -127,11 +127,12 @@ def library_scene(
     audio_indices = {index for index, _ in audio}
     channels = watch_channels(records, query=query)
     playlists = watch_rails(records, query=query)
+    named_playlists = tuple(rail for rail in playlists if rail.key.rsplit("\0", 1)[-1])
     collections = watch_rails(records, collection_mode=True, query=query)
     counts = {
         "all": len(saved),
         "channels": len(channels),
-        "playlists": len(playlists),
+        "playlists": len(named_playlists),
         "videos": len(saved) - len(audio),
         "audio": len(audio),
     }
@@ -144,9 +145,9 @@ def library_scene(
             if channel.videos
         ]
     elif route in {"playlists", "collections", "home"}:
-        chosen = collections if route == "collections" else playlists
+        chosen = collections if route == "collections" else named_playlists
         if route == "home":
-            chosen = collections or playlists
+            chosen = collections or named_playlists
         groups = [
             _library_group(
                 rail,
@@ -246,6 +247,7 @@ def watch_scene(
     effective_route = "videos" if query else route
     channels = watch_channels(records, query=query)
     playlists = watch_rails(records, query=query)
+    named_playlists = tuple(rail for rail in playlists if rail.key.rsplit("\0", 1)[-1])
     collections = watch_rails(records, collection_mode=True, query=query)
     selected = None
     if effective_route == "group":
@@ -304,7 +306,7 @@ def watch_scene(
             "duration": format_duration(hero_record.get("duration")),
             "kind": watch_media_kind(hero_record),
             "playlist": next(
-                (rail.title for rail in playlists if featured in rail.videos), ""
+                (rail.title for rail in named_playlists if featured in rail.videos), ""
             ),
             "resume": hero_resume,
             "progress": (
@@ -419,7 +421,7 @@ def watch_scene(
                 "playlist",
                 group_image,
             )
-            for rail in playlists
+            for rail in named_playlists
             if rail.videos
         ],
         "collections": [

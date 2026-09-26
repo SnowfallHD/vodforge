@@ -5,6 +5,7 @@ Item {
     property url source: ""
     // Avatar assets arrive as transparent circular PNGs from QtArtwork.
     property bool circular: false
+    property bool cover: false
     property int inset: 4
     readonly property bool hasArtwork: source.toString().length > 0
     visible: hasArtwork
@@ -24,7 +25,7 @@ Item {
         anchors.fill: parent
         anchors.margins: artwork.inset
         source: artwork.source
-        fillMode: Image.PreserveAspectFit
+        fillMode: artwork.cover ? Image.PreserveAspectCrop : Image.PreserveAspectFit
         smooth: true
         opacity: artwork.circular ? 1 : 0
         readonly property bool presentationPaintedReady: artwork.circular || roundedPicture.paintedReady
@@ -36,27 +37,35 @@ Item {
         property bool paintedReady: false
         anchors.fill: picture
         visible: !artwork.circular
+        Timer {
+            id: resizePaint
+            interval: 48
+            onTriggered: roundedPicture.requestPaint()
+        }
         onVisibleChanged: {
             if (visible && artwork.hasArtwork && !isImageLoaded(artwork.source) && !isImageLoading(artwork.source))
                 loadImage(artwork.source)
         }
         onImageLoaded: requestPaint()
-        onWidthChanged: { paintedReady = false; requestPaint() }
-        onHeightChanged: { paintedReady = false; requestPaint() }
+        onWidthChanged: { paintedReady = false; resizePaint.restart() }
+        onHeightChanged: { paintedReady = false; resizePaint.restart() }
         onPaint: {
             paintedReady = false
             const context = getContext("2d")
             context.clearRect(0, 0, width, height)
             if (!isImageLoaded(artwork.source) || picture.sourceSize.width <= 0 || picture.sourceSize.height <= 0)
                 return
-            const scale = Math.min(width / picture.sourceSize.width, height / picture.sourceSize.height)
+            const scale = artwork.cover
+                ? Math.max(width / picture.sourceSize.width, height / picture.sourceSize.height)
+                : Math.min(width / picture.sourceSize.width, height / picture.sourceSize.height)
             const paintedWidth = picture.sourceSize.width * scale
             const paintedHeight = picture.sourceSize.height * scale
             const left = (width - paintedWidth) / 2
             const top = (height - paintedHeight) / 2
             context.save()
             context.beginPath()
-            context.roundedRect(left, top, paintedWidth, paintedHeight, 7, 7)
+            if (artwork.cover) context.roundedRect(0, 0, width, height, 7, 7)
+            else context.roundedRect(left, top, paintedWidth, paintedHeight, 7, 7)
             context.clip()
             context.drawImage(artwork.source, left, top, paintedWidth, paintedHeight)
             context.restore()

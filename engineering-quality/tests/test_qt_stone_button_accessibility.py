@@ -198,7 +198,7 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
         bridge.navigateLibrary("folders")
         for _ in range(5):
             application.processEvents()
-        for name in ("Folders", "All media", "Runs & previews", "Back to Library"):
+        for name in ("Folders", "All media", "Run Deck", "← Back"):
             assert inside(visible_button(name)), name
         bridge.navigateLibrary("home")
         bridge.select("Forge")
@@ -233,7 +233,7 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
         assert player.mediaStatus() == QMediaPlayer.InvalidMedia
         for _ in range(5):
             application.processEvents()
-        assert inside(visible_button("Back to Watch"))
+        assert inside(visible_button("← Back"))
         assert inside(visible_button("Play"))
     finally:
         engine.deleteLater()

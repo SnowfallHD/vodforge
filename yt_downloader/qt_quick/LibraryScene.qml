@@ -150,6 +150,7 @@ Item {
                     }
                 }
             }
+            Item { Layout.fillHeight: true }
             StoneButton {
                 label: "Folders"
                 Layout.fillWidth: true
@@ -158,7 +159,6 @@ Item {
                 Layout.rightMargin: 15
                 onActivated: scene.appBridge.navigateLibrary("folders")
             }
-            Item { Layout.fillHeight: true }
             StoneField {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 124
@@ -167,7 +167,7 @@ Item {
                 Layout.bottomMargin: 17
                 interactive: true
                 accessibilityLabel: "Storage for " + scene.appBridge.storageSummary.label
-                onActivated: storagePopup.open()
+                onActivated: scene.appBridge.navigateLibrary("folders")
                 Text {
                     x: 15; y: 16
                     width: parent.width - 30
@@ -366,7 +366,7 @@ Item {
                     readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + spacing) / 200)))
                     readonly property real cardWidth: (width - spacing * (columns - 1)) / columns
                     readonly property var items: scene.route === "home" ? scene.groups.slice(0, columns) : scene.groups
-                    readonly property real rowStride: 192 + spacing
+                    readonly property real rowStride: 178 + spacing
                     readonly property int totalRows: Math.ceil(items.length / columns)
                     readonly property real scrollTop: viewport.contentItem.contentY - groupFlow.mapToItem(content, 0, 0).y
                     readonly property int firstRow: scene.route === "home" ? 0 :
@@ -386,7 +386,7 @@ Item {
                             id: groupCard
                             required property var modelData
                             width: groupFlow.cardWidth
-                            height: 192
+                            height: 178
                             label: ""
                             accessibilityLabel: modelData.title + ", " + modelData.count + " item(s)"
                             onActivated: {
@@ -404,6 +404,8 @@ Item {
                                 width: groupCard.modelData.kind === "channel" ? 96 : parent.width
                                 height: groupCard.modelData.kind === "channel" ? 96 : 125
                                 circular: groupCard.modelData.kind === "channel"
+                                cover: !circular
+                                inset: 0
                                 source: scene.projection ?
                                         scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind) : ""
                             }
@@ -448,7 +450,7 @@ Item {
                         visible: scene.route === "home"
                         objectName: "addLibraryCollectionCard"
                         width: groupFlow.cardWidth
-                        height: 192
+                        height: 178
                         label: ""
                         accessibilityLabel: "Add Collection"
                         onActivated: scene.collectionRequested()
@@ -507,10 +509,10 @@ Item {
                     }
                     StoneButton {
                         visible: scene.route !== "home"
-                        label: "Back"
+                        label: "← Back"
                         size: "inline"
                         Layout.preferredWidth: 72
-                        onActivated: scene.appBridge.navigateLibrary("home")
+                        onActivated: scene.appBridge.backLibrary()
                     }
                 }
                 Flow {
@@ -518,25 +520,6 @@ Item {
                     width: parent.width
                     height: childrenRect.height
                     spacing: 12
-                    StoneField {
-                        objectName: "libraryBrowseSearchField"
-                        width: parent.width < 760 ? parent.width :
-                            Math.min(200, Math.max(130, parent.width * 0.28))
-                        height: 40
-                        focused: localSearch.activeFocus
-                        TextField {
-                            id: localSearch
-                            anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
-                            text: scene.appBridge.librarySearch
-                            placeholderText: "Search media…"
-                            color: theme.text
-                            placeholderTextColor: theme.muted
-                            background: Item {}
-                            onTextEdited: scene.appBridge.setLibrarySearch(text)
-                        }
-                    }
                     StoneButton {
                         label: scene.appBridge.librarySort === "recent" ? "Newest first" : "Title A–Z"
                         width: 172
@@ -619,7 +602,7 @@ Item {
                     spacing: 14
                     readonly property int columns: Math.max(1, Math.min(5, Math.floor((width + 14) / 200)))
                     readonly property real cardWidth: (width - 14 * (columns - 1)) / columns
-                    readonly property real cardHeight: cardWidth * 9 / 16 + 170
+                    readonly property real cardHeight: cardWidth * 9 / 16 + 118
                     readonly property real rowStride: cardHeight + spacing
                     readonly property int totalRows: Math.ceil(scene.media.length / columns)
                     readonly property real scrollTop: viewport.contentItem.contentY - y
@@ -653,6 +636,8 @@ Item {
                                 x: 0; y: 0
                                 width: parent.width
                                 height: parent.width * 9 / 16
+                                cover: true
+                                inset: 0
                                 source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
                             }
                             StoneButton {
@@ -745,30 +730,6 @@ Item {
                     spacing: 5
                     StoneButton { label: "Recently Added"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("recent"); sortPopup.close() } }
                     StoneButton { label: "Title"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("title"); sortPopup.close() } }
-                }
-            }
-            Popup {
-                id: storagePopup
-                x: 0
-                y: Math.max(0, scene.height - height - 140)
-                width: 226
-                padding: 8
-                modal: true
-                background: StoneField {}
-                Column {
-                    width: parent.width
-                    spacing: 5
-                    Repeater {
-                        model: scene.appBridge.storageChoices
-                        StoneButton {
-                            required property var modelData
-                            label: modelData.label
-                            width: parent.width
-                            height: 38
-                            onActivated: { scene.appBridge.selectStorageVolume(modelData.path); storagePopup.close() }
-                        }
-                    }
-                    StoneButton { label: "Refresh storage"; width: parent.width; height: 38; onActivated: { scene.appBridge.refreshStorage(); storagePopup.close() } }
                 }
             }
         }

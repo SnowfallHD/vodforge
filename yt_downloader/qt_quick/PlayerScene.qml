@@ -101,11 +101,17 @@ Item {
         title: scene.projection.title || "VODForge Player"
         flags: scene.presentationMode === "floating" ? Qt.Window | Qt.WindowStaysOnTopHint : Qt.Window
         onClosing: scene.setPresentation("embedded")
+        Shortcut {
+            sequence: "Escape"
+            enabled: presentationWindow.visible
+            onActivated: scene.setPresentation("embedded")
+        }
         VideoOutput {
             id: presentationVideo
             objectName: "watchPresentationVideoSurface"
             anchors.fill: parent
             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
+            TapHandler { onTapped: scene.togglePlayback() }
         }
         HoverHandler { onPointChanged: presentationOverlay.reveal() }
         Text {
@@ -155,6 +161,7 @@ Item {
 
     ScrollView {
         id: viewport
+        objectName: "playerViewport"
         anchors.fill: parent
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -168,7 +175,7 @@ Item {
                 height: 65
                 spacing: 16
                 StoneButton {
-                    label: "Back to Watch"
+                    label: "← Back"
                     size: "inline"
                     Layout.preferredWidth: 145
                     onActivated: scene.closeRequested()
@@ -241,7 +248,10 @@ Item {
                             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
                         }
                         HoverHandler { onPointChanged: embeddedOverlay.reveal() }
-                        TapHandler { onTapped: scene.togglePlayback() }
+                        MouseArea {
+                            anchors.fill: videoSurface
+                            onClicked: scene.togglePlayback()
+                        }
                         Text {
                             objectName: "embeddedCaptionText"
                             anchors.horizontalCenter: parent.horizontalCenter
@@ -460,23 +470,27 @@ Item {
                     onActivated: scene.editDetailsRequested(scene.projection.owner)
                 }
             }
-            Repeater {
-                model: [
-                    { title: "SOURCE DETAILS", facts: scene.projection.source || [] },
-                    { title: "OUTPUT DETAILS", facts: scene.projection.output || [] }
-                ]
-                Column {
-                    required property var modelData
-                    width: scene.width
-                    spacing: 8
-                    Text { text: modelData.title; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                    Repeater {
-                        model: modelData.facts
-                        RowLayout {
-                            required property var modelData
-                            width: scene.width
-                            Text { text: modelData.label; color: theme.muted; font.pixelSize: 14; Layout.preferredWidth: 160 }
-                            Text { text: modelData.value; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
+            Row {
+                width: parent.width
+                spacing: 18
+                Repeater {
+                    model: [
+                        { title: "SOURCE DETAILS", facts: scene.projection.source || [] },
+                        { title: "OUTPUT DETAILS", facts: scene.projection.output || [] }
+                    ]
+                    Column {
+                        required property var modelData
+                        width: (parent.width - parent.spacing) / 2
+                        spacing: 8
+                        Text { text: modelData.title; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                        Repeater {
+                            model: modelData.facts
+                            RowLayout {
+                                required property var modelData
+                                width: parent.width
+                                Text { text: modelData.label; color: theme.muted; font.pixelSize: 14; Layout.preferredWidth: 160 }
+                                Text { text: modelData.value; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
+                            }
                         }
                     }
                 }

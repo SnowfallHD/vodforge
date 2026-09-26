@@ -631,7 +631,7 @@ Window {
             readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
             readonly property int searchWidth: compact ? 186 : 285
             readonly property int navWidth: navigationRow.implicitWidth
-            readonly property int utilityWidth: searchWidth + 28 + 8
+            readonly property int utilityWidth: (bridge.selection === "Library" || bridge.selection === "Watch" ? searchWidth + 8 : 0) + 28
             readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
 
             Row {
@@ -686,7 +686,7 @@ Window {
                             modelData === "Watch" ? "play.png" : "activity-20.png") + "/r" + bridge.themeRevision
                         width: Math.max(86, implicitWidth)
                         height: implicitHeight
-                        onActivated: bridge.select(modelData)
+                        onActivated: bridge.selectHome(modelData)
                     }
                 }
             }
@@ -698,21 +698,24 @@ Window {
                 spacing: 8
                 StoneField {
                     objectName: "globalSearchField"
+                    visible: bridge.selection === "Library" || bridge.selection === "Watch"
                     width: focusHeader.searchWidth
                     height: 40
                     focused: searchInput.activeFocus
                     TextField {
                         id: searchInput
+                        objectName: "headerSearchInput"
+                        Accessible.name: bridge.selection === "Watch" ? "Search saved videos" : "Search library"
                         anchors.fill: parent
                         anchors.leftMargin: 15
                         anchors.rightMargin: 12
-                        placeholderText: "Search your library…"
+                        placeholderText: bridge.selection === "Watch" ? "Search saved videos…" : "Search your library…"
+                        text: bridge.activeSearch
                         color: theme.text
                         placeholderTextColor: theme.muted
                         background: Item {}
                         font.pixelSize: 15
-                        onTextChanged: bridge.setLibrarySearch(text)
-                        onAccepted: bridge.select("Library")
+                        onTextEdited: bridge.setActiveSearch(text)
                     }
                 }
                 StoneButton {
