@@ -42,7 +42,7 @@ class PreviewOwner:
         self.release_first.set()
 
 
-def test_qt_preview_session_retires_replaced_media_and_publishes_five_moments(
+def test_qt_preview_session_retires_replaced_media_and_publishes_exact_hover_frame(
     tmp_path,
 ):
     owner = PreviewOwner()
@@ -51,19 +51,22 @@ def test_qt_preview_session_retires_replaced_media_and_publishes_five_moments(
     try:
         session.load(first)
         assert session.request(100)
+        assert session.records == []
+        assert session.hover(42.4)
         assert owner.first_started.wait(2)
         session.load(second)
         assert session.records == []
         assert session.request(200)
+        assert session.hover(151.2)
         owner.release_first.set()
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
             session.poll()
-            if all(row["image"] for row in session.records):
+            if session.records and session.records[0]["image"]:
                 break
             time.sleep(0.005)
-        assert [row["position"] for row in session.records] == [20, 60, 100, 140, 180]
-        assert len([path for path, _ in owner.positions if path == second]) == 5
+        assert [row["position"] for row in session.records] == [151.2]
+        assert [position for path, position in owner.positions if path == second] == [151.2]
         assert all(
             row["image"].startswith("image://vodforge-previews/")
             for row in session.records
@@ -73,6 +76,16 @@ def test_qt_preview_session_retires_replaced_media_and_publishes_five_moments(
         image = session.images.requestImage(image_id, size, QSize())
         assert not image.isNull() and (size.width(), size.height()) == (16, 9)
         assert not session.request(200)
+        assert not session.hover(151.3)
+        assert session.hover(180)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            session.poll()
+            if session.records and session.records[0]["image"]:
+                break
+            time.sleep(0.005)
+        assert session.records[0]["position"] == 180
+        assert session.records[0]["image"]
     finally:
         session.close()
     assert owner.closed

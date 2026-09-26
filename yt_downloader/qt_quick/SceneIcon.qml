@@ -65,6 +65,51 @@ Canvas {
             line([[0, .5], [1, .5]])
         } else if (name === "chevron") {
             line([[.35, .15], [.70, .5], [.35, .85]])
+        } else if (name === "play") {
+            line([[.25, .12], [.82, .5], [.25, .88], [.25, .12]])
+        } else if (name === "pause") {
+            line([[.28, .14], [.28, .86]])
+            line([[.72, .14], [.72, .86]])
+        } else if (name === "backward") {
+            line([[.30, .15], [.06, .15], [.06, .40]])
+            c.beginPath(); c.arc(.50 * s, .53 * s, .39 * s, 3.8, 7.8); c.stroke()
+            c.font = "bold " + Math.round(s * .38) + "px sans-serif"
+            c.textAlign = "center"; c.fillText("10", .51 * s, .66 * s)
+        } else if (name === "forward") {
+            line([[.70, .15], [.94, .15], [.94, .40]])
+            c.beginPath(); c.arc(.50 * s, .53 * s, .39 * s, 1.9, 6.2); c.stroke()
+            c.font = "bold " + Math.round(s * .38) + "px sans-serif"
+            c.textAlign = "center"; c.fillText("10", .51 * s, .66 * s)
+        } else if (name === "volume" || name === "muted") {
+            line([[.06, .37], [.27, .37], [.51, .14], [.51, .86], [.27, .63], [.06, .63], [.06, .37]])
+            if (name === "muted") {
+                line([[.67, .32], [.93, .68]])
+                line([[.93, .32], [.67, .68]])
+            } else {
+                c.beginPath(); c.arc(.50 * s, .50 * s, .35 * s, -.8, .8); c.stroke()
+            }
+        } else if (name === "captions") {
+            c.strokeRect(.08 * s, .18 * s, .84 * s, .64 * s)
+            line([[.40, .43], [.30, .39], [.22, .48], [.30, .59], [.40, .55]])
+            line([[.78, .43], [.68, .39], [.60, .48], [.68, .59], [.78, .55]])
+        } else if (name === "fullscreen") {
+            line([[.08, .37], [.08, .08], [.37, .08]])
+            line([[.63, .08], [.92, .08], [.92, .37]])
+            line([[.08, .63], [.08, .92], [.37, .92]])
+            line([[.63, .92], [.92, .92], [.92, .63]])
+        } else if (name === "floating") {
+            c.strokeRect(.08 * s, .15 * s, .84 * s, .70 * s)
+            c.fillRect(.47 * s, .49 * s, .37 * s, .28 * s)
+        } else if (name === "settings") {
+            oval(.16, .16, .68, .68, false)
+            oval(.40, .40, .20, .20, false)
+            for (const [x1, y1, x2, y2] of [[.5,0,.5,.15],[.5,.85,.5,1],[0,.5,.15,.5],[.85,.5,1,.5]])
+                line([[x1,y1],[x2,y2]])
+        } else if (name === "fit") {
+            line([[.08, .40], [.08, .08], [.40, .08]])
+            line([[.60, .08], [.92, .08], [.92, .40]])
+            line([[.08, .60], [.08, .92], [.40, .92]])
+            line([[.60, .92], [.92, .92], [.92, .60]])
         }
     }
 }

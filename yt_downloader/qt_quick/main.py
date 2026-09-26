@@ -3704,6 +3704,11 @@ class Bridge(QObject):
         self.playbackSeekRequested.emit(position)
         self._record_player_feature("seek")
 
+    @Slot(float)
+    def hoverPlaybackPreview(self, position: float) -> None:
+        if self._previews.hover(position):
+            self.playbackPreviewsChanged.emit()
+
     @Slot(int, result=bool)
     def seekPlaybackChapter(self, index: int) -> bool:
         if self._playback_binding is None or not 0 <= index < len(

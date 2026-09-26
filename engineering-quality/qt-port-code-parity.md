@@ -242,3 +242,6 @@ revision and hash. Screenshots `genesis-e16ee3e-smiley.png` and
 exited and its two scheduled tasks were removed. These are focused route
 checks; full native feature, telemetry, update and installed-app gates remain
 open.
+## Player correction — 2026-09-26
+
+The historical Player row below describes an earlier Qt candidate. The approved player now uses over-video shared controls, a hover preview frame on the seek line, a 16:9 stage with Fit by default, a More to Watch right column when wide (below when narrow), and a thumbnail-based Recently Added rail below. The five precomputed Moments grid was removed as directed. `tests/test_qt_scene_port.py` checks both widths, the overlay's render parent, the related rail, and reveal after auto-hide; `tests/test_qt_previews.py` checks latest hover ownership and replacement retirement. Native source captures are under `build/qt-player-final/`. Package/native Windows qualification remains separate.

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import QtMultimedia
 
 Item {
@@ -17,6 +18,7 @@ Item {
     readonly property string activeSurfaceName: activeVideoSurface.objectName
     readonly property var projection: appBridge.playerScene
     readonly property bool wide: width >= 1080
+    readonly property real videoAspect: 16 / 9
     signal closeRequested()
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
@@ -65,6 +67,15 @@ Item {
         if (!videoFill) restoreFillAfterCaptions = false
         appBridge.recordPresentation(videoFill ? "fill" : "fit")
     }
+    function togglePlayback() {
+        if (!player) return
+        if (player.playbackState === MediaPlayer.PlayingState) player.pause()
+        else player.play()
+    }
+    function seekTo(seconds) {
+        if (player) appBridge.manualPlaybackSeek(Math.max(0, Math.min(seconds, player.duration / 1000)))
+    }
+    function showOptions() { playerOptions.open() }
     onPlayerChanged: {
         requestedCaptionTrack = -2
         restoreFillAfterCaptions = false
@@ -95,6 +106,7 @@ Item {
             anchors.fill: parent
             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
         }
+        HoverHandler { onPointChanged: presentationOverlay.reveal() }
         Text {
             objectName: "presentationCaptionText"
             anchors.horizontalCenter: parent.horizontalCenter
@@ -110,41 +122,26 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
         }
-        Row {
+        PlayerOverlay {
+            id: presentationOverlay
             anchors.left: parent.left
+            anchors.right: parent.right
             anchors.bottom: parent.bottom
-            anchors.margins: 18
-            spacing: 8
-            StoneButton {
-                label: "Return to Watch"
-                transientMaterial: false
-                width: 150; height: 40
-                onActivated: scene.setPresentation("embedded")
-            }
-            StoneButton {
-                label: scene.player && scene.player.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
-                transientMaterial: false
-                width: 82; height: 40
-                onActivated: {
-                    if (!scene.player) return
-                    if (scene.player.playbackState === MediaPlayer.PlayingState) scene.player.pause()
-                    else scene.player.play()
-                }
-            }
-            StoneButton {
-                label: scene.videoFill ? "Fit" : "Fill"
-                transientMaterial: false
-                width: 68; height: 40
-                onActivated: scene.toggleFill()
-            }
-            StoneButton {
-                objectName: "presentationCaptionsButton"
-                label: "CC"
-                accessibilityLabel: "Captions"
-                transientMaterial: false
-                width: 44; height: 40
-                onActivated: presentationCaptionMenu.open()
-            }
+            controlPrefix: "presentation"
+            player: scene.player
+            volume: scene.volume
+            previews: scene.appBridge.playbackPreviews
+            heatmap: scene.appBridge.playbackHeatmap
+            fullscreen: scene.presentationMode === "fullscreen"
+            floating: scene.presentationMode === "floating"
+            onPlayPauseRequested: scene.togglePlayback()
+            onSeekRequested: function(seconds) { scene.seekTo(seconds) }
+            onVolumeRequested: function(value) { scene.volumeRequested(value) }
+            onFullscreenRequested: scene.setPresentation(scene.presentationMode === "fullscreen" ? "embedded" : "fullscreen")
+            onFloatingRequested: scene.setPresentation(scene.presentationMode === "floating" ? "embedded" : "floating")
+            onOptionsRequested: scene.showOptions()
+            onCaptionsRequested: presentationCaptionMenu.open()
+            onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
         }
         CaptionTracks {
             id: presentationCaptionMenu
@@ -218,8 +215,22 @@ Item {
                     Item {
                         id: mediaStage
                         objectName: "playerMediaStage"
-                        width: parent.width
-                        height: Math.max(180, Math.min(390, width * 9 / 16, scene.height - 205))
+                        height: Math.max(180, Math.min(390, parent.width / scene.videoAspect, scene.height - 205))
+                        width: Math.min(parent.width, height * scene.videoAspect)
+                        x: (parent.width - width) / 2
+                        clip: true
+                        layer.enabled: true
+                        layer.effect: MultiEffect {
+                            maskEnabled: true
+                            maskSource: ShaderEffectSource {
+                                sourceItem: Rectangle {
+                                    width: mediaStage.width
+                                    height: mediaStage.height
+                                    radius: 11
+                                    color: "white"
+                                }
+                            }
+                        }
                         Rectangle { anchors.fill: parent; color: "#09090d" }
                         VideoOutput {
                             id: videoSurface
@@ -227,11 +238,13 @@ Item {
                             anchors.fill: parent
                             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
                         }
+                        HoverHandler { onPointChanged: embeddedOverlay.reveal() }
+                        TapHandler { onTapped: scene.togglePlayback() }
                         Text {
                             objectName: "embeddedCaptionText"
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 14
+                            anchors.bottomMargin: 110
                             width: parent.width - 28
                             text: videoSurface.videoSink ? videoSurface.videoSink.subtitleText : ""
                             visible: text.length > 0 && scene.player && scene.player.activeSubtitleTrack >= 0
@@ -242,109 +255,37 @@ Item {
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.WordWrap
                         }
-                    }
-                    Item {
-                        id: heatmapTrack
-                        objectName: "watchHeatmap"
-                        visible: scene.appBridge.playbackHeatmap.length > 0 && scene.player && scene.player.duration > 0
-                        width: parent.width
-                        height: visible ? 18 : 0
-                        clip: true
-                        Repeater {
-                            model: scene.appBridge.playbackHeatmap
-                            Rectangle {
-                                required property var modelData
-                                x: Math.max(0, Math.min(heatmapTrack.width,
-                                    modelData.start_time * heatmapTrack.width * 1000 / Math.max(1, scene.player ? scene.player.duration : 0)))
-                                width: Math.max(1, (modelData.end_time - modelData.start_time) *
-                                    heatmapTrack.width * 1000 / Math.max(1, scene.player ? scene.player.duration : 0))
-                                height: Math.max(2, 16 * modelData.value)
-                                y: heatmapTrack.height - height
-                                color: theme.accent
-                                opacity: 0.72
-                            }
-                        }
-                    }
-                    Slider {
-                        Accessible.name: "Playback position"
-                        width: parent.width
-                        from: 0
-                        to: Math.max(1, scene.player ? scene.player.duration : 0)
-                        value: scene.player ? scene.player.position : 0
-                        onMoved: scene.appBridge.manualPlaybackSeek(value / 1000)
-                        background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                        handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
-                    }
-                    RowLayout {
-                        objectName: "playerTransportRow"
-                        width: parent.width
-                        StoneButton {
-                            label: scene.player && scene.player.playbackState === MediaPlayer.PlayingState ? "Pause" : "Play"
-                            transientMaterial: false
-                            Layout.preferredWidth: 95
-                            Layout.preferredHeight: 40
-                            onActivated: {
-                                if (!scene.player) return
-                                if (scene.player.playbackState === MediaPlayer.PlayingState) scene.player.pause()
-                                else scene.player.play()
-                            }
-                        }
-                        Text {
-                            text: Math.floor((scene.player ? scene.player.position : 0) / 1000) + "s / " +
-                                  Math.floor((scene.player ? scene.player.duration : 0) / 1000) + "s"
-                            color: theme.muted
-                            font.pixelSize: 14
-                        }
-                        StoneButton {
-                            label: "Full screen"
-                            transientMaterial: false
-                            Layout.preferredWidth: 118
-                            onActivated: scene.setPresentation("fullscreen")
-                        }
-                        StoneButton {
-                            label: "Floating"
-                            transientMaterial: false
-                            Layout.preferredWidth: 100
-                            onActivated: scene.setPresentation("floating")
-                        }
-                        StoneButton {
-                            objectName: "playerFillButton"
-                            label: scene.videoFill ? "Fit" : "Fill"
-                            transientMaterial: false
-                            Layout.preferredWidth: 68
-                            onActivated: scene.toggleFill()
-                        }
-                        StoneButton {
-                            objectName: "playerCaptionsButton"
-                            label: "CC"
-                            accessibilityLabel: "Captions"
-                            transientMaterial: false
-                            Layout.preferredWidth: 44
-                            Layout.preferredHeight: 40
-                            onActivated: captionsMenu.open()
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text { text: "Volume"; color: theme.muted; font.pixelSize: 14 }
-                        Slider {
-                            Accessible.name: "Volume"
-                            Layout.preferredWidth: 150
-                            from: 0; to: 1; value: scene.volume
-                            onMoved: scene.volumeRequested(value)
-                            background: StoneField { x: 0; y: parent.height / 2 - 5; width: parent.width; height: 10 }
-                            handle: StoneButton { x: parent.visualPosition * (parent.width - width); y: parent.height / 2 - height / 2; width: 22; height: 22; label: ""; interactive: false; transientMaterial: false }
+                        PlayerOverlay {
+                            id: embeddedOverlay
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            player: scene.player
+                            volume: scene.volume
+                            previews: scene.appBridge.playbackPreviews
+                            heatmap: scene.appBridge.playbackHeatmap
+                            onPlayPauseRequested: scene.togglePlayback()
+                            onSeekRequested: function(seconds) { scene.seekTo(seconds) }
+                            onVolumeRequested: function(value) { scene.volumeRequested(value) }
+                            onFullscreenRequested: scene.setPresentation("fullscreen")
+                            onFloatingRequested: scene.setPresentation("floating")
+                            onOptionsRequested: scene.showOptions()
+                            onCaptionsRequested: captionsMenu.open()
+                            onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
                         }
                     }
                     Text {
                         width: parent.width
-                        text: scene.player && scene.player.errorString.length ? scene.player.errorString : ""
+                        text: "This saved media could not be played. Check that the file is still available, then try again."
                         color: theme.muted
                         font.pixelSize: 14
-                        visible: text.length > 0
+                        visible: scene.player && scene.player.error !== MediaPlayer.NoError
                         wrapMode: Text.WordWrap
                     }
                 }
 
                 Column {
+                    objectName: "playerRelatedSide"
                     visible: scene.wide && (scene.projection.upNext || []).length > 0
                     Layout.preferredWidth: visible ? 310 : 0
                     Layout.alignment: Qt.AlignTop
@@ -398,6 +339,7 @@ Item {
             }
 
             Column {
+                objectName: "playerRelatedCompact"
                 visible: !scene.wide && (scene.projection.upNext || []).length > 0
                 width: parent.width
                 spacing: 8
@@ -441,75 +383,43 @@ Item {
             }
 
             Column {
-                objectName: "watchMoments"
-                visible: scene.appBridge.playbackPreviews.length > 0
-                width: parent.width
-                spacing: 8
-                Text { text: "MOMENTS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                Text {
-                    text: "Select a moment to jump there."
-                    color: theme.muted
-                    font.pixelSize: 13
-                }
-                Flow {
-                    width: parent.width
-                    spacing: 10
-                    Repeater {
-                        model: scene.appBridge.playbackPreviews
-                        StoneField {
-                            required property var modelData
-                            width: Math.min(192, Math.max(140, (scene.width - 40) / 5))
-                            height: 145
-                            Column {
-                                anchors.fill: parent
-                                anchors.margins: 7
-                                spacing: 5
-                                Item {
-                                    width: parent.width
-                                    height: 90
-                                    ArtworkImage {
-                                        anchors.fill: parent
-                                        source: modelData.image || ""
-                                        inset: 0
-                                    }
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: !modelData.image
-                                        text: modelData.status || ""
-                                        color: theme.muted
-                                        font.pixelSize: 12
-                                    }
-                                }
-                                StoneButton {
-                                    width: parent.width
-                                    height: 32
-                                    size: "inline"
-                                    label: Math.floor(modelData.position / 60) + ":" +
-                                        ("0" + Math.floor(modelData.position % 60)).slice(-2)
-                                    onActivated: scene.appBridge.manualPlaybackSeek(modelData.position)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Column {
+                objectName: "playerRecentRail"
                 visible: (scene.projection.recent || []).length > 1
                 width: parent.width
                 spacing: 8
                 Text { text: "RECENTLY ADDED"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                Row {
-                    spacing: 10
-                    Repeater {
-                        model: (scene.projection.recent || []).slice(0, 5)
-                        StoneButton {
-                            required property var modelData
-                            label: modelData.title
-                            width: Math.min(190, (scene.width - 40) / 5)
-                            height: 40
-                            size: "inline"
-                            onActivated: scene.appBridge.playPlayerRelated(modelData.owner)
+                ScrollView {
+                    width: parent.width
+                    height: 164
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                    ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                    Row {
+                        spacing: 12
+                        Repeater {
+                            model: (scene.projection.recent || []).slice(0, 8)
+                            StoneButton {
+                                required property var modelData
+                                width: 207; height: 142
+                                label: ""
+                                accessibilityLabel: "Play " + modelData.title
+                                transientMaterial: false
+                                onActivated: scene.appBridge.playPlayerRelated(modelData.owner)
+                                ArtworkImage {
+                                    x: 7; y: 7
+                                    width: parent.width - 14; height: 105
+                                    source: modelData.artwork || ""
+                                    inset: 0
+                                }
+                                Text {
+                                    x: 9; y: 117
+                                    width: parent.width - 18
+                                    text: modelData.title
+                                    color: theme.text
+                                    font.pixelSize: 13
+                                    elide: Text.ElideRight
+                                }
+                            }
                         }
                     }
                 }
@@ -577,5 +487,35 @@ Item {
         objectName: "playerCaptionsMenu"
         player: scene.player
         onTrackRequested: function(index) { scene.selectCaption(index) }
+    }
+    Popup {
+        id: playerOptions
+        objectName: "playerOptionsMenu"
+        parent: scene.presentationMode === "embedded" ? scene : presentationWindow.contentItem
+        x: Math.max(12, (parent.width - width) / 2)
+        y: Math.max(12, parent.height - height - 104)
+        width: 244
+        height: 102
+        padding: 5
+        background: StoneField {}
+        Column {
+            width: parent.width
+            spacing: 2
+            StoneButton {
+                objectName: "playerFitButton"
+                width: parent.width; height: 42
+                label: "Fit entire video"
+                selected: !scene.videoFill
+                onActivated: { if (scene.videoFill) scene.toggleFill(); playerOptions.close() }
+            }
+            StoneButton {
+                objectName: "playerFillButton"
+                width: parent.width; height: 42
+                label: "Fill frame (crop)"
+                selected: scene.videoFill
+                enabled: !scene.player || scene.player.activeSubtitleTrack < 0
+                onActivated: { if (!scene.videoFill) scene.toggleFill(); playerOptions.close() }
+            }
+        }
     }
 }

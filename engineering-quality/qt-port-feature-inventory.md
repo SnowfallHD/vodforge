@@ -49,3 +49,7 @@ Source: current Tk code at `d67b11c8297dff409b05944357f0b8b8bd46ebc0`, inspected
 Qt release status: **blocked on feature and visual parity plus packaged Mac/Windows journeys**. Source tests, screenshots, and runtime smoke do not by themselves qualify a release.
 
 The complete code-file source index is generated at `build/qt-port-package/source-index-current.json`. `qt-port-owner-review.md` lists every current Tk presentation file, including indirect scene mixins; a harness test requires new Tk presentation files to enter that review. This file coverage is an audit boundary, not completed feature parity.
+
+## Player correction — 2026-09-26
+
+The earlier player row below still describes the superseded Qt layout. The current source uses `PlayerOverlay.qml` inside the embedded video and the fullscreen/floating surface, with the shared stone controls, seek hover frame, captions, volume, and window actions. The separate five-frame Moments grid and below-video transport row are gone. `PlayerScene.qml` keeps a 16:9 video stage with Fit as default, places More to Watch at the right on wide windows and below on narrow windows, and puts an image-bearing Recently Added rail below. `QtPreviewSession` extracts only the latest hovered seek position through the existing media preview owner. Source QML geometry and latest-request tests pass; native source captures with a real generated video and three distinct saved items are in `build/qt-player-final/`. These are not signed or packaged release evidence.

@@ -605,6 +605,98 @@ def test_qt_player_presentation_rebinds_one_media_player_to_each_surface(
         bridge.close()
 
 
+def test_qt_player_controls_share_video_surface_at_wide_and_compact_sizes(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    media = saved(tmp_path, "Overlay", "MP4")
+    (tmp_path / "Overlay.mp4").write_bytes(b"geometry fixture")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [media]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        assert bridge.openLibraryItem(0)
+        stage = window.findChild(QObject, "playerMediaStage")
+        overlay = window.findChild(QObject, "embeddedPlayerOverlay")
+        assert overlay.parentItem() is stage
+        assert window.findChild(QObject, "playerTransportRow") is None
+        for name in (
+            "playerOverlayPlay", "playerOverlayBack10", "playerOverlayForward10",
+            "playerOverlayMute", "playerOverlayVolume", "playerOverlaySeek",
+            "playerCaptionsButton", "playerOverlayOptions",
+            "playerOverlayFloating", "playerOverlayFullscreen",
+        ):
+            assert window.findChild(QObject, name) is not None, name
+        for width, height in ((1280, 800), (820, 560)):
+            window.resize(width, height)
+            for _ in range(5):
+                app.processEvents()
+            assert stage.width() <= stage.parentItem().width()
+            assert abs(stage.width() / stage.height() - 16 / 9) < 0.02
+            assert 0 <= overlay.y() < stage.height()
+            assert overlay.y() + overlay.height() <= stage.height() + 1
+            assert overlay.width() == stage.width()
+        # Moving over the video must restore controls after their playback
+        # timeout; the hidden overlay cannot own that pointer event itself.
+        from PySide6.QtTest import QTest
+
+        overlay.setProperty("controlsShown", False)
+        app.processEvents()
+        assert overlay.property("visible") is False
+        stage_center = stage.mapToItem(window.contentItem(), QPointF(60, 60))
+        QTest.mouseMove(window, QPoint(round(stage_center.x()), round(stage_center.y())))
+        app.processEvents()
+        assert overlay.property("visible") is True
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_player_related_side_and_recent_artwork_rail_follow_later_design(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, str(index), "MP4") for index in range(3)]
+    for index in range(3):
+        (tmp_path / f"{index}.mp4").write_bytes(b"fixture")
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        assert bridge.openLibraryItem(0)
+        side = window.findChild(QObject, "playerRelatedSide")
+        compact = window.findChild(QObject, "playerRelatedCompact")
+        recent = window.findChild(QObject, "playerRecentRail")
+        assert window.findChild(QObject, "watchMoments") is None
+        for width, height, side_visible in ((1280, 800, True), (820, 560, False)):
+            window.resize(width, height)
+            for _ in range(5):
+                app.processEvents()
+            assert side.property("visible") is side_visible
+            assert compact.property("visible") is not side_visible
+            assert recent.property("visible") is True
+            assert len(bridge.playerScene["recent"]) == 3
+            assert len(bridge.playerScene["upNext"]) == 2
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
     tmp_path, monkeypatch
 ):

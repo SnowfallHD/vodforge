@@ -52,7 +52,7 @@ class PreviewImages(QQuickImageProvider):
 
 
 class QtPreviewSession:
-    """One current media identity, five bounded moments, no durable thumbnails."""
+    """One current media identity and one latest seek-hover frame."""
 
     def __init__(
         self,
@@ -105,14 +105,25 @@ class QtPreviewSession:
         self._generation += 1
         self._work.cancel()
         self.images.clear()
-        self._records = [
-            {
-                "position": rounded * ((index + 0.5) / 5),
-                "image": "",
-                "status": "Loading preview…",
-            }
-            for index in range(5)
-        ]
+        self._records = []
+        self._pending = False
+        return True
+
+    def hover(self, position: float) -> bool:
+        if (
+            self._closed
+            or self._path is None
+            or self._duration <= 0
+            or not math.isfinite(position)
+        ):
+            return False
+        position = round(min(max(0.0, position), self._duration), 1)
+        if self._records and abs(self._records[0]["position"] - position) < 0.25:
+            return False
+        self._generation += 1
+        self._work.cancel()
+        self.images.clear()
+        self._records = [{"position": position, "image": "", "status": "Loading preview…"}]
         self._pending = True
         self._start()
         return True

@@ -964,7 +964,9 @@ Window {
                                                       window.selectedForgeRun.progress)
                     color: runStatusTone.colorFor(window.selectedForgeRun.kind,
                                                   window.selectedForgeToneStatus, theme)
-                    font.pixelSize: window.compactHeight ? 28 : 34
+                    font.pixelSize: window.selectedForgeRun.kind === "terminal" ?
+                                        (window.compactHeight ? 18 : 22) :
+                                        (window.compactHeight ? 28 : 34)
                 }
             }
 
