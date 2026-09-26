@@ -101,7 +101,19 @@ def qt_presentation_case(directory: Path, telemetry, case: str):
                 time.sleep(0.005)
             else:
                 raise AssertionError("Qt Library artwork did not become visible")
-            probe.sample()
+
+            def wait_for_painted_artwork() -> dict:
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    app.processEvents()
+                    probe.sample()
+                    current = window.property("presentationDiagnosticSnapshot").toVariant()
+                    if current["artworkExpected"] >= 1 and current["artworkDisplayed"] >= 1:
+                        return current
+                    time.sleep(0.005)
+                raise AssertionError("Qt Library artwork did not finish painting")
+
+            wait_for_painted_artwork()
             if case == "qt_control_fault":
                 target = _image(window, role="control", source_part="/button/")
             elif case == "qt_artwork_fault":
@@ -117,12 +129,11 @@ def qt_presentation_case(directory: Path, telemetry, case: str):
                 probe.sample()
                 target.setProperty("source", original)
                 app.processEvents()
-                probe.sample()
+                wait_for_painted_artwork()
             if case == "qt_resize":
                 window.setWidth(930)
                 app.processEvents()
-                probe.sample()
-            snapshot = window.property("presentationDiagnosticSnapshot").toVariant()
+            snapshot = wait_for_painted_artwork()
             assert snapshot["visible"] is True
             assert snapshot["artworkExpected"] >= 1
             assert snapshot["artworkDisplayed"] >= 1
