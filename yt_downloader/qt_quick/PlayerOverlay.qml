@@ -214,8 +214,7 @@ Item {
             id: volumeSlider
             objectName: "playerOverlayVolume"
             Accessible.name: "Volume"
-            visible: !controls.compact
-            width: visible ? 86 : 0
+            width: controls.compact ? 50 : 86
             height: 36
             from: 0; to: 1; value: controls.volume
             onMoved: controls.volumeRequested(value)
