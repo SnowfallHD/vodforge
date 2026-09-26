@@ -3383,6 +3383,12 @@ def test_qt_visible_cards_show_resolved_local_artwork(
             if item.objectName() == image_name
         ]
         assert images
+        for image in images:
+            assert image.property("inset") == 4
+            if not channel:
+                assert image.x() == 0
+                assert image.y() == 0
+                assert image.width() == image.parentItem().width()
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
             if bridge._artwork.poll():
@@ -3404,6 +3410,34 @@ def test_qt_visible_cards_show_resolved_local_artwork(
             len(bridge._artwork._unavailable),
             [image.property("source").toString() for image in images],
         )
+        painted = False
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and not painted:
+            app.processEvents()
+            capture = window.grabWindow()
+            for image in images:
+                if not image.isVisible() or not image.property("source").toLocalFile():
+                    continue
+                point = image.mapToItem(
+                    window.contentItem(), image.width() / 2, image.height() / 2
+                )
+                x, y = round(point.x()), round(point.y())
+                if not (0 <= x < capture.width() and 0 <= y < capture.height()):
+                    continue
+                pixel = capture.pixelColor(x, y)
+                painted = all(
+                    abs(actual - expected) < 30
+                    for actual, expected in zip(
+                        (pixel.red(), pixel.green(), pixel.blue()),
+                        (113, 151, 184),
+                        strict=True,
+                    )
+                )
+                if painted:
+                    break
+            if not painted:
+                time.sleep(0.01)
+        assert painted, (surface, mode, image_name, channel)
         if channel:
             assert any(path.name.startswith("avatar-") for path in resolved)
             with Image.open(

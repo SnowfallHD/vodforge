@@ -10,7 +10,9 @@ from pathlib import Path
 from PIL import Image
 
 
-def render_probe(source: Path, avatar: Path, component: Path, output: Path) -> None:
+def render_probe(
+    source: Path, replacement: Path, avatar: Path, component: Path, output: Path
+) -> None:
     """Keep QQuickView teardown outside the repository's long pytest process."""
     from PySide6.QtCore import QEventLoop, QTimer, QUrl
     from PySide6.QtGui import QColor, QGuiApplication
@@ -39,6 +41,21 @@ def render_probe(source: Path, avatar: Path, component: Path, output: Path) -> N
         settled.exec()
         if not view.grabWindow().save(str(output / name)):
             raise RuntimeError("Artwork render capture failed")
+    artwork.setProperty("circular", False)
+    artwork.setProperty("source", QUrl.fromLocalFile(str(source)))
+    artwork.setHeight(72)
+    view.setHeight(72)
+    settled = QEventLoop()
+    QTimer.singleShot(100, settled.quit)
+    settled.exec()
+    if not view.grabWindow().save(str(output / "wide.png")):
+        raise RuntimeError("Wide artwork render capture failed")
+    artwork.setProperty("source", QUrl.fromLocalFile(str(replacement)))
+    settled = QEventLoop()
+    QTimer.singleShot(100, settled.quit)
+    settled.exec()
+    if not view.grabWindow().save(str(output / "replacement.png")):
+        raise RuntimeError("Replaced artwork render capture failed")
     view.close()
     app.quit()
 
@@ -47,7 +64,9 @@ def test_artwork_fits_with_even_margins_and_channel_is_circular(tmp_path):
     from yt_downloader.qt_quick.artwork import circular_avatar_asset
 
     source = tmp_path / "artwork.png"
+    replacement = tmp_path / "replacement.png"
     Image.new("RGB", (320, 180), "#4488cc").save(source)
+    Image.new("RGB", (320, 180), "#cc8844").save(replacement)
     avatar = circular_avatar_asset(source, tmp_path / "avatars", (120, 120))
     assert avatar is not None
     with Image.open(avatar) as prepared:
@@ -68,6 +87,7 @@ def test_artwork_fits_with_even_margins_and_channel_is_circular(tmp_path):
             __file__,
             "--probe",
             str(source),
+            str(replacement),
             str(avatar),
             str(component),
             str(tmp_path),
@@ -83,6 +103,20 @@ def test_artwork_fits_with_even_margins_and_channel_is_circular(tmp_path):
         assert image.getpixel((60, 60))[:3] == (68, 136, 204)
         assert image.getpixel((60, 4))[:3] == (34, 34, 34)
         assert image.getpixel((60, 115))[:3] == (34, 34, 34)
+        assert image.getpixel((4, 29))[:3] == (34, 34, 34)
+        assert image.getpixel((60, 29))[:3] == (68, 136, 204)
+        assert image.getpixel((115, 29))[:3] == (34, 34, 34)
+    with Image.open(tmp_path / "wide.png") as image:
+        assert image.getpixel((60, 3))[:3] == (34, 34, 34)
+        assert image.getpixel((60, 8))[:3] == (68, 136, 204)
+        assert image.getpixel((3, 36))[:3] == (34, 34, 34)
+        assert image.getpixel((8, 36))[:3] == (68, 136, 204)
+        assert image.getpixel((116, 36))[:3] == (34, 34, 34)
+        assert image.getpixel((111, 36))[:3] == (68, 136, 204)
+        assert image.getpixel((4, 4))[:3] == (34, 34, 34)
+    with Image.open(tmp_path / "replacement.png") as image:
+        assert image.getpixel((60, 36))[:3] == (204, 136, 68)
+        assert image.getpixel((4, 4))[:3] == (34, 34, 34)
     with Image.open(tmp_path / "circle.png") as image:
         assert image.getpixel((60, 60))[:3] == (68, 136, 204)
         assert image.getpixel((10, 10))[:3] == (34, 34, 34)
@@ -93,5 +127,9 @@ def test_artwork_fits_with_even_margins_and_channel_is_circular(tmp_path):
 
 if __name__ == "__main__":
     render_probe(
-        Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), Path(sys.argv[5])
+        Path(sys.argv[2]),
+        Path(sys.argv[3]),
+        Path(sys.argv[4]),
+        Path(sys.argv[5]),
+        Path(sys.argv[6]),
     )

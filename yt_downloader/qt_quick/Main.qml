@@ -65,7 +65,8 @@ Window {
                             : source.indexOf(assetUrl) === 0 ? "surface" : "artwork")
                     if (role === "artwork") counts.artworkExpected++
                     if (item.status === Image.Ready) {
-                        if (role === "artwork") counts.artworkDisplayed++
+                        if (role === "artwork" && item.presentationPaintedReady !== false)
+                            counts.artworkDisplayed++
                     } else if (item.status === Image.Error) {
                         counts.missing++
                         counts.missingRoles.push(role)
@@ -876,13 +877,11 @@ Window {
                     objectName: "forgeHeroArtwork"
                     Layout.preferredWidth: window.compactHeight ? 120 : 152
                     Layout.preferredHeight: window.compactHeight ? 68 : 86
-                    Image {
+                    ArtworkImage {
                         objectName: "forgeHeroMediaImage"
                         anchors.fill: parent
-                        visible: !!window.selectedForgeRun.artwork
                         source: window.selectedForgeRun.artwork || ""
-                        fillMode: Image.PreserveAspectCrop
-                        smooth: true
+                        inset: 0
                     }
                     Image {
                         anchors.centerIn: parent

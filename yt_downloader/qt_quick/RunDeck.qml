@@ -92,13 +92,11 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 6
                             spacing: 7
-                            Image {
+                            ArtworkImage {
                                 source: modelData.artwork
-                                visible: source.toString().length > 0
                                 Layout.preferredWidth: visible ? (deck.compact ? 48 : 61) : 0
                                 Layout.preferredHeight: deck.compact ? 36 : 48
-                                fillMode: Image.PreserveAspectCrop
-                                smooth: true
+                                inset: 0
                             }
                             ColumnLayout {
                                 Layout.fillWidth: true

@@ -365,12 +365,11 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 7
                                 spacing: 8
-                                Image {
+                                ArtworkImage {
                                     source: modelData.artwork || ""
                                     Layout.preferredWidth: 92
                                     Layout.preferredHeight: 58
-                                    fillMode: Image.PreserveAspectCrop
-                                    smooth: true
+                                    inset: 0
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
@@ -465,12 +464,14 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 7
                                 spacing: 5
-                                Image {
+                                Item {
                                     width: parent.width
                                     height: 90
-                                    source: modelData.image || ""
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
+                                    ArtworkImage {
+                                        anchors.fill: parent
+                                        source: modelData.image || ""
+                                        inset: 0
+                                    }
                                     Text {
                                         anchors.centerIn: parent
                                         visible: !modelData.image

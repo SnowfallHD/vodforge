@@ -378,13 +378,12 @@ Item {
                                 onActivated: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
                                 ArtworkImage {
                                     id: artworkFrame
-                                    x: modelData.kind === "channel" ? 16 : 4
-                                    y: modelData.kind === "channel" ? (parent.height - height) / 2 : 4
-                                    width: modelData.kind === "channel" ? Math.min(96, parent.height - 20) : parent.width - 8
-                                    height: modelData.kind === "channel" ? width : 101
+                                    x: modelData.kind === "channel" ? 16 : 0
+                                    y: modelData.kind === "channel" ? (parent.height - height) / 2 : 0
+                                    width: modelData.kind === "channel" ? Math.min(96, parent.height - 20) : parent.width
+                                    height: modelData.kind === "channel" ? width : 109
                                     objectName: "watchGroupArtworkImage"
                                     circular: modelData.kind === "channel"
-                                    inset: modelData.kind === "channel" ? 4 : 0
                                     source: scene.projection ?
                                             scene.appBridge.watchGroupArtwork(modelData.owner, modelData.kind) : ""
                                 }

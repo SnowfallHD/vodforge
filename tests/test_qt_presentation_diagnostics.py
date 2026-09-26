@@ -170,6 +170,11 @@ def test_qt_visible_library_artwork_fault_and_recovery(tmp_path, monkeypatch):
             for action, row in sink.events
         )
         assert any(action == "recovered" for action, _ in sink.events)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and sink.events[-1][0] != "settled":
+            app.processEvents()
+            probe.sample()
+            time.sleep(0.005)
         assert sink.events[-1][0] == "settled"
         fault = next(
             index for index, (action, _) in enumerate(sink.events) if action == "fault"
