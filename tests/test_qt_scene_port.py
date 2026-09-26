@@ -249,6 +249,10 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
         before = bridge._theme_materials.requestImage(
             "button/120/40/normal/0/r0", QSize(), QSize()
         )
+        before_icon = bridge._theme_materials.requestImage(
+            "icon/settings-20.png/r0", QSize(), QSize()
+        )
+        before_accent = qt_main.THEME["accent"]
         assert bridge.setAppearance("Cobalt", bridge.customAccent)
         for _ in range(5):
             app.processEvents()
@@ -257,7 +261,25 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
         after = bridge._theme_materials.requestImage(
             "button/120/40/normal/0/r1", QSize(), QSize()
         )
+        after_icon = bridge._theme_materials.requestImage(
+            "icon/settings-20.png/r1", QSize(), QSize()
+        )
         assert before != after
+        assert before_accent != qt_main.THEME["accent"]
+        assert before_icon != after_icon
+        for image, expected in (
+            (before_icon, before_accent),
+            (after_icon, qt_main.THEME["accent"]),
+        ):
+            pixels = (
+                image.pixelColor(x, y)
+                for y in range(image.height())
+                for x in range(image.width())
+            )
+            assert (
+                next(pixel.name() for pixel in pixels if pixel.alpha() == 255)
+                == expected
+            )
         assert not bridge.setAppearance("Custom accent", "unsafe")
         assert bridge.appearanceTheme == "Cobalt"
         bridge._save_preferences()

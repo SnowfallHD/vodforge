@@ -64,7 +64,7 @@ Item {
                     Math.max(8, (availableWidth - implicitWidth) / 2))
             width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
-            color: control.emphasized ? "#80d5ef" : theme.text
+            color: control.emphasized ? theme.action : theme.text
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels
             font.weight: Font.Normal

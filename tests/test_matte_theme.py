@@ -59,6 +59,7 @@ def test_matte_materials_single_hue_and_foreground_contrast(name):
                     surface,
                 )
         assert THEME["icon"] == THEME["action"]
+        assert THEME["icon"] == THEME["accent"]
         assert THEME["selection"] == THEME["progress"]
         assert (
             len(
