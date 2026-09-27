@@ -5,7 +5,22 @@ import QtQuick.Layouts
 Item {
     id: scene
     property var appBridge
-    readonly property var projection: appBridge.watchScene
+    property var projection: ({hero: ({}), videos: [], channels: [], playlists: [], collections: []})
+    property bool projectionDirty: true
+    function refreshProjection() {
+        if (visible && appBridge && projectionDirty) {
+            projection = appBridge.watchScene
+            projectionDirty = false
+        }
+    }
+    onVisibleChanged: refreshProjection()
+    Connections {
+        target: scene.appBridge
+        function onWatchSceneChanged() {
+            scene.projectionDirty = true
+            scene.refreshProjection()
+        }
+    }
     readonly property string route: projection.route || "home"
     readonly property var videos: projection.videos || []
     readonly property bool emptyHome: route === "home" && videos.length === 0
@@ -15,7 +30,10 @@ Item {
     property var scrollPositions: ({})
     property bool restoreOnNextRoute: false
     property string moreOwner: ""
-    Component.onCompleted: previousViewKey = viewKey
+    Component.onCompleted: {
+        refreshProjection()
+        previousViewKey = viewKey
+    }
     function back() {
         restoreOnNextRoute = true
         appBridge.backWatch()
@@ -127,7 +145,11 @@ Item {
                 Image {
                     anchors.fill: parent
                     visible: groupHeader.channel && source.toString().length > 0
-                    source: scene.projection.groupBanner || ""
+                    source: {
+                        const revision = scene.appBridge.artworkRevision
+                        return scene.projection.groupFirstOwner ?
+                            scene.appBridge.watchChannelBanner(scene.projection.groupFirstOwner) : ""
+                    }
                     fillMode: Image.PreserveAspectCrop
                     smooth: true
                     opacity: 0.24
@@ -138,7 +160,13 @@ Item {
                     y: 42
                     width: groupHeader.width >= 1000 ? 150 : 112
                     height: width
-                    source: scene.projection.groupAvatar || ""
+                    source: {
+                        const revision = scene.appBridge.artworkRevision
+                        return scene.projection.groupFirstOwner ?
+                            scene.appBridge.watchChannelAvatar(scene.projection.groupFirstOwner) : ""
+                    }
+                    pending: source.toString().length === 0 && scene.appBridge.artworkRevision >= 0 &&
+                        scene.appBridge.groupArtworkState(scene.projection.groupFirstOwner, "channel") === "pending"
                     circular: true
                     visible: groupHeader.channel && hasArtwork
                 }
@@ -216,7 +244,11 @@ Item {
                 clip: true
                 Image {
                     anchors.fill: parent
-                    source: scene.projection.hero.backdrop || ""
+                    source: {
+                        const revision = scene.appBridge.artworkRevision
+                        return scene.projection.hero.owner ?
+                            scene.appBridge.mediaArtwork(scene.projection.hero.owner) : ""
+                    }
                     visible: source.toString().length > 0
                     fillMode: Image.PreserveAspectCrop
                     smooth: true
@@ -323,7 +355,6 @@ Item {
                             verticalView: viewport
                         }
                         property int loadedCount: 6
-                        onVisibleChanged: { if (visible) loadedCount = 6 }
                         Connections {
                             target: homeRail.contentItem
                             function onContentXChanged() {
@@ -476,7 +507,12 @@ Item {
                             height: 113 - parent.artworkFaceInset
                             cover: true
                             inset: 0
-                            source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
+                            source: {
+                                const revision = scene.appBridge.artworkRevision
+                                return scene.appBridge.mediaArtwork(modelData.owner)
+                            }
+                            pending: source.toString().length === 0 && scene.appBridge.artworkRevision >= 0 &&
+                                scene.appBridge.mediaArtworkState(modelData.owner) === "pending"
                         }
                         Text { x: 11; y: 115; width: parent.width - 22; text: modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }
                         Text { x: 11; y: 139; width: parent.width - 22; text: modelData.creator; color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight }

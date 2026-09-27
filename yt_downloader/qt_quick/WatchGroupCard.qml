@@ -21,8 +21,13 @@ StoneButton {
         circular: card.channel
         cover: !card.channel
         inset: 0
-        source: card.projection && card.appBridge && card.group.owner ?
+        source: {
+            const revision = card.appBridge.artworkRevision
+            return card.projection && card.group.owner ?
                 card.appBridge.watchGroupArtwork(card.group.owner, card.group.kind) : ""
+        }
+        pending: source.toString().length === 0 && card.appBridge.artworkRevision >= 0 &&
+            card.appBridge.groupArtworkState(card.group.owner, card.group.kind) === "pending"
     }
     Text {
         x: card.channel ? 82 : 9

@@ -15,6 +15,8 @@ StoneButton {
         width: card.width - card.artworkFaceInset * 2
         height: 112 - card.artworkFaceInset
         source: card.modelData.artwork || ""
+        pending: source.toString().length === 0 && card.appBridge &&
+            card.appBridge.sizedMediaArtworkState(card.modelData.owner, 244, 138) === "pending"
         inset: 0
     }
     Text {

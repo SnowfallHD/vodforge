@@ -18,6 +18,7 @@ def test_all_scene_defect_classes_are_mandatory_in_normal_and_deep():
         "channel_membership",
         "channel_artwork",
         "artwork_fidelity",
+        "artwork_latency",
         "progress_lifetime",
         "volume_truth",
         "bounded_navigation",

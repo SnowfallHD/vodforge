@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 
 Item {
     id: artwork
@@ -6,10 +7,17 @@ Item {
     // Avatar assets arrive as transparent circular PNGs from QtArtwork.
     property bool circular: false
     property bool cover: false
+    property bool pending: false
     property int inset: 4
     readonly property bool hasArtwork: source.toString().length > 0
-    visible: hasArtwork
+    readonly property bool waitingForPaint: hasArtwork &&
+        (picture.status === Image.Loading ||
+         (picture.status === Image.Ready && !circular && !roundedPicture.paintedReady))
+    property bool showDelayedLoading: false
+    visible: hasArtwork || pending
+    onPendingChanged: { showDelayedLoading = false }
     onSourceChanged: {
+        showDelayedLoading = false
         roundedPicture.paintedReady = false
         if (roundedPicture.loadedSource.toString().length > 0 &&
                 (roundedPicture.isImageLoaded(roundedPicture.loadedSource) ||
@@ -19,12 +27,28 @@ Item {
         if (hasArtwork && !circular) roundedPicture.loadImage(source)
         roundedPicture.requestPaint()
     }
+    Timer {
+        interval: 300
+        running: artwork.pending || artwork.waitingForPaint
+        repeat: false
+        onTriggered: artwork.showDelayedLoading = true
+    }
+    BusyIndicator {
+        objectName: "delayedArtworkSpinner"
+        anchors.centerIn: parent
+        width: 28
+        height: 28
+        visible: artwork.showDelayedLoading && (artwork.pending || artwork.waitingForPaint)
+        running: visible
+        z: 2
+    }
 
     Image {
         id: picture
         anchors.fill: parent
         anchors.margins: artwork.inset
         source: artwork.source
+        asynchronous: true
         fillMode: artwork.cover ? Image.PreserveAspectCrop : Image.PreserveAspectFit
         smooth: true
         opacity: artwork.circular ? 1 : 0

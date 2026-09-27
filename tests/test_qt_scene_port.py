@@ -34,6 +34,7 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtMultimedia import QMediaPlayer
+from PySide6.QtQml import QQmlComponent
 from PySide6.QtTest import QTest
 
 from tests.test_quality_e2e import _isolated_launch
@@ -251,6 +252,12 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
             app.processEvents()
         assert viewport.property("contentItem").property("contentY") > page_before
         assert abs(flickable.property("contentX") - rail_before) <= 1
+        loaded_before_tab_change = repeater.property("count")
+        bridge.select("Activity")
+        app.processEvents()
+        bridge.select("Watch")
+        app.processEvents()
+        assert repeater.property("count") == loaded_before_tab_change
     finally:
         window.close()
         engine.deleteLater()
@@ -1404,7 +1411,8 @@ def test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork(tmp_path):
     assert scene["hero"]["resume"] is True
     assert scene["hero"]["progress"] == 0.3
     assert scene["hero"]["backdrop"] == "Second-media"
-    assert ("Second", (1100, 400), "media") in artwork_calls
+    assert ("Second", (320, 180), "media") in artwork_calls
+    assert ("Second", (1100, 400), "media") not in artwork_calls
     assert ("First", (160, 160), "avatar") in artwork_calls
     group = watch_scene(
         records, "group", artwork, scene["channels"][0]["key"], "channel"
@@ -1491,6 +1499,9 @@ def test_qt_private_cached_art_survives_blocked_artwork_lane(tmp_path, monkeypat
     assert path is not None
     path.parent.mkdir(parents=True)
     Image.new("RGB", (640, 360), "#7197b8").save(path)
+    from yt_downloader.qt_quick.artwork import circular_avatar_asset
+
+    assert circular_avatar_asset(path, owner._source.cache_dir / "avatars", (160, 160))
 
     def resolve(record, _size, _role, _cancelled):
         if record["id"] == first["id"]:
@@ -1519,6 +1530,231 @@ def test_qt_private_cached_art_survives_blocked_artwork_lane(tmp_path, monkeypat
     finally:
         owner.close()
         release.set()
+
+
+def test_qt_first_avatar_transform_runs_in_artwork_worker(tmp_path, monkeypatch):
+    from PIL import Image
+
+    owner = QtArtwork(tmp_path / "artwork")
+    record = saved(tmp_path, "New channel", "MP4")
+    image = tmp_path / "thumbnail.jpg"
+    Image.new("RGB", (640, 360), "#7197b8").save(image)
+    record["preview_thumbnail_path"] = str(image)
+    started = threading.Event()
+    release = threading.Event()
+    ui_thread = threading.get_ident()
+
+    def avatar(_source, _cache_dir, _size):
+        assert threading.get_ident() != ui_thread
+        started.set()
+        release.wait(timeout=2)
+
+    monkeypatch.setattr(
+        owner._source, "resolve_asset", lambda *_args: ArtworkAsset(image, "thumbnail")
+    )
+    monkeypatch.setattr("yt_downloader.qt_quick.artwork.circular_avatar_asset", avatar)
+    try:
+        assert owner.request(record, (160, 160), "avatar") == ""
+        assert started.wait(timeout=1)
+        assert (
+            owner.state(history_archive_owner(record), (160, 160), "avatar")
+            == "pending"
+        )
+        release.set()
+        deadline = time.monotonic() + 2
+        while owner._pending and time.monotonic() < deadline:
+            owner.poll()
+            time.sleep(0.005)
+        assert (
+            owner.state(history_archive_owner(record), (160, 160), "avatar")
+            == "unavailable"
+        )
+    finally:
+        release.set()
+        owner.close()
+
+
+def test_qt_recent_media_artwork_overtakes_queued_group_artwork(tmp_path, monkeypatch):
+    owner = QtArtwork(tmp_path / "artwork")
+    started = threading.Event()
+    release = threading.Event()
+    resolved = []
+
+    def resolve(record, _size, role, _cancelled):
+        resolved.append((record["title"], role))
+        if record["title"] == "First avatar":
+            started.set()
+            release.wait(timeout=2)
+
+    monkeypatch.setattr(owner._source, "resolve_asset", resolve)
+    try:
+        owner.request(saved(tmp_path, "First avatar", "MP4"), (160, 160), "avatar")
+        assert started.wait(timeout=1)
+        for index in range(1, 12):
+            owner.request(
+                saved(tmp_path, f"Avatar {index}", "MP4"), (160, 160), "avatar"
+            )
+        for index in range(4):
+            owner.request(saved(tmp_path, f"Recent {index}", "MP4"))
+        assert len(owner._pending) == 16
+        release.set()
+        deadline = time.monotonic() + 3
+        while owner._pending and time.monotonic() < deadline:
+            owner.poll()
+            time.sleep(0.005)
+        assert not owner._pending
+        assert [role for _, role in resolved[:5]] == [
+            "avatar",
+            "media",
+            "media",
+            "media",
+            "media",
+        ]
+    finally:
+        release.set()
+        owner.close()
+
+
+def test_qt_artwork_completion_does_not_rebuild_watch_media_projection(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "Saved", "MP4")]
+    bridge.select("Watch")
+    seen = []
+    bridge.historyChanged.connect(lambda: seen.append("history"))
+    bridge.watchSceneChanged.connect(lambda: seen.append("watch"))
+    bridge.artworkChanged.connect(lambda: seen.append("artwork"))
+    monkeypatch.setattr(bridge._artwork, "poll", lambda: True)
+    try:
+        bridge._pump()
+        assert seen == ["artwork"]
+        assert bridge.artworkRevision == 1
+    finally:
+        bridge.close()
+
+
+def test_qt_artwork_spinner_waits_for_a_slow_request(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    component = QQmlComponent(
+        engine,
+        QUrl.fromLocalFile(str(Path(qt_main.__file__).with_name("ArtworkImage.qml"))),
+    )
+    artwork = component.create()
+    try:
+        assert artwork is not None, component.errorString()
+        artwork.setParentItem(window.contentItem())
+        artwork.setWidth(160)
+        artwork.setHeight(90)
+        spinner = artwork.findChild(QObject, "delayedArtworkSpinner")
+        assert spinner is not None
+        artwork.setProperty("pending", True)
+        app.processEvents()
+        assert not spinner.isVisible()
+        QTest.qWait(340)
+        assert spinner.isVisible()
+        artwork.setProperty("pending", False)
+        app.processEvents()
+        assert not spinner.isVisible()
+    finally:
+        if artwork is not None:
+            artwork.deleteLater()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_inactive_tabs_skip_scene_projection_on_history_refresh(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "Saved", "MP4")]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    calls = {"library": 0, "watch": 0}
+    original_library = qt_main.library_scene
+    original_watch = qt_main.watch_scene
+
+    def library(*args, **kwargs):
+        calls["library"] += 1
+        return original_library(*args, **kwargs)
+
+    def watch(*args, **kwargs):
+        calls["watch"] += 1
+        return original_watch(*args, **kwargs)
+
+    monkeypatch.setattr(qt_main, "library_scene", library)
+    monkeypatch.setattr(qt_main, "watch_scene", watch)
+    try:
+        bridge.select("Library")
+        app.processEvents()
+        calls["library"] = calls["watch"] = 0
+        bridge.historyChanged.emit()
+        app.processEvents()
+        assert calls["library"] > 0
+        assert calls["watch"] == 0
+
+        bridge.select("Watch")
+        app.processEvents()
+        calls["library"] = calls["watch"] = 0
+        bridge.historyChanged.emit()
+        app.processEvents()
+        assert calls["watch"] > 0
+        assert calls["library"] == 0
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_artwork_owner_lookup_reuses_snapshot_until_history_changes(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    records = [saved(tmp_path, f"Video {index}", "MP4") for index in range(200)]
+    bridge._runtime.history = records
+    original = qt_main.history_archive_owner
+    owners = [original(record) for record in records[:40]]
+    owner_calls = []
+
+    def counted(record):
+        owner_calls.append(record)
+        return original(record)
+
+    monkeypatch.setattr(qt_main, "history_archive_owner", counted)
+    monkeypatch.setattr(bridge._artwork, "request", lambda *_args: "")
+    try:
+        for owner in owners:
+            bridge.mediaArtwork(owner)
+        assert len(owner_calls) == 200
+        records[0] = saved(tmp_path, "Replacement", "MP4")
+        bridge.historyChanged.emit()
+        assert bridge.mediaArtwork(owners[0]) == ""
+        assert len(owner_calls) == 400
+    finally:
+        bridge.close()
 
 
 def test_qt_artwork_reads_existing_shared_thumbnail_cache(tmp_path, monkeypatch):
@@ -3978,8 +4214,7 @@ def test_qt_visible_cards_show_resolved_local_artwork(
                 assert image.width() == image.parentItem().width() - 2 * inset
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
-            if bridge._artwork.poll():
-                bridge.historyChanged.emit()
+            bridge._pump()
             app.processEvents()
             if any(image.property("source").toLocalFile() for image in images):
                 break
@@ -4039,6 +4274,17 @@ def test_qt_visible_cards_show_resolved_local_artwork(
         else:
             assert image_path in resolved
         assert any(image.property("circular") is channel for image in images)
+        shown_sources = [image.property("source").toString() for image in images]
+        bridge.select("Activity")
+        app.processEvents()
+        assert [
+            image.property("source").toString() for image in images
+        ] == shown_sources
+        bridge.select(surface)
+        app.processEvents()
+        assert [
+            image.property("source").toString() for image in images
+        ] == shown_sources
     finally:
         window.close()
         engine.deleteLater()

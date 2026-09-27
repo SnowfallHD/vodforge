@@ -36,7 +36,23 @@ Item {
         if (viewport && viewport.contentItem) viewport.contentItem.contentY = 0
     }
 
-    readonly property var projection: appBridge.libraryScene
+    property var projection: ({counts: ({}), groups: [], media: []})
+    property bool projectionDirty: true
+    function refreshProjection() {
+        if (visible && appBridge && projectionDirty) {
+            projection = appBridge.libraryScene
+            projectionDirty = false
+        }
+    }
+    Component.onCompleted: refreshProjection()
+    onVisibleChanged: refreshProjection()
+    Connections {
+        target: scene.appBridge
+        function onLibrarySceneChanged() {
+            scene.projectionDirty = true
+            scene.refreshProjection()
+        }
+    }
     readonly property string route: projection.route || "home"
     readonly property var counts: projection.counts || ({})
     readonly property var groups: projection.groups || []
@@ -405,8 +421,12 @@ Item {
                                 circular: groupCard.modelData.kind === "channel"
                                 cover: !circular
                                 inset: 0
-                                source: scene.projection ?
-                                        scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind) : ""
+                                source: {
+                                    const revision = scene.appBridge.artworkRevision
+                                    return scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind)
+                                }
+                                pending: source.toString().length === 0 && scene.appBridge.artworkRevision >= 0 &&
+                                    scene.appBridge.groupArtworkState(modelData.owner, modelData.kind) === "pending"
                             }
                             Text {
                                 x: 14; y: 130
@@ -641,7 +661,12 @@ Item {
                                 height: parent.width * 9 / 16 - mediaCard.artworkFaceInset
                                 cover: true
                                 inset: 0
-                                source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
+                                source: {
+                                    const revision = scene.appBridge.artworkRevision
+                                    return scene.appBridge.mediaArtwork(modelData.owner)
+                                }
+                                pending: source.toString().length === 0 && scene.appBridge.artworkRevision >= 0 &&
+                                    scene.appBridge.mediaArtworkState(modelData.owner) === "pending"
                             }
                             StoneButton {
                                 visible: scene.selectionMode

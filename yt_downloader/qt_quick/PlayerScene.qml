@@ -320,6 +320,8 @@ Item {
                                 spacing: 8
                                 ArtworkImage {
                                     source: modelData.artwork || ""
+                                    pending: source.toString().length === 0 &&
+                                        scene.appBridge.sizedMediaArtworkState(modelData.owner, 244, 138) === "pending"
                                     Layout.preferredWidth: 92
                                     Layout.preferredHeight: 58
                                     inset: 0

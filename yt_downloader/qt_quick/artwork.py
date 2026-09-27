@@ -39,10 +39,9 @@ def thumbnail_path(
     return existing_cached_thumbnail_path(record, data_dir=data_dir)
 
 
-def circular_avatar_asset(
+def _avatar_cache_target(
     source: Path, cache_dir: Path, size: tuple[int, int]
-) -> Path | None:
-    """Cache an uncropped channel image inside a transparent circular avatar."""
+) -> tuple[Path, int] | None:
     try:
         stat = source.stat()
         if not source.is_file() or not 0 < stat.st_size <= 10 * 1024 * 1024:
@@ -51,6 +50,20 @@ def circular_avatar_asset(
         identity = (str(source.resolve()), stat.st_size, stat.st_mtime_ns, diameter)
         digest = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
         target = cache_dir / f"avatar-{digest}.png"
+        return target, diameter
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
+def circular_avatar_asset(
+    source: Path, cache_dir: Path, size: tuple[int, int]
+) -> Path | None:
+    """Cache an uncropped channel image inside a transparent circular avatar."""
+    try:
+        cached = _avatar_cache_target(source, cache_dir, size)
+        if cached is None:
+            return None
+        target, diameter = cached
         if target.is_file() and target.stat().st_size > 0:
             return target
         with Image.open(source) as opened:
@@ -76,6 +89,20 @@ def circular_avatar_asset(
         canvas.save(output, format="PNG")
         write_private_bytes(target, output.getvalue())
         return target
+    except (OSError, ValueError, OverflowError):
+        return None
+
+
+def existing_circular_avatar_asset(
+    source: Path, cache_dir: Path, size: tuple[int, int]
+) -> Path | None:
+    """Find a prepared avatar without decoding or resizing on the UI thread."""
+    try:
+        cached = _avatar_cache_target(source, cache_dir, size)
+        if cached is None:
+            return None
+        target, _diameter = cached
+        return target if target.is_file() and target.stat().st_size > 0 else None
     except (OSError, ValueError, OverflowError):
         return None
 
@@ -124,23 +151,28 @@ class QtArtwork:
         path = cached_thumbnail_path(record, data_dir=self._source.cache_dir.parent)
         if path is None:
             return ""
-        try:
-            # Keep first paint responsive; larger sources go through the worker.
-            if not path.is_file() or path.stat().st_size > 1_000_000:
-                return ""
-            with Image.open(path) as image:
-                if image.width * image.height > 1_000_000:
-                    return ""
-            avatar = circular_avatar_asset(
-                path, self._source.cache_dir / "avatars", size
-            )
-            if avatar is None:
-                return ""
-            url = QUrl.fromLocalFile(str(avatar)).toString()
-            self._cached_fallback[key] = url
-            return url
-        except (OSError, ValueError):
+        avatar = existing_circular_avatar_asset(
+            path, self._source.cache_dir / "avatars", size
+        )
+        if avatar is None:
             return ""
+        url = QUrl.fromLocalFile(str(avatar)).toString()
+        self._cached_fallback[key] = url
+        return url
+
+    @staticmethod
+    def _key(owner: str, size: tuple[int, int], role: str) -> str:
+        return f"{owner}\0{role}\0{size[0]}x{size[1]}"
+
+    def state(self, owner: str, size: tuple[int, int], role: str) -> str:
+        key = self._key(owner, size, role)
+        if key in self._ready or key in self._cached_fallback:
+            return "ready"
+        if key in self._pending:
+            return "pending"
+        if self._unavailable.get(key, 0) > time.monotonic():
+            return "unavailable"
+        return "idle"
 
     def request(
         self,
@@ -153,7 +185,7 @@ class QtArtwork:
         owner = history_archive_owner(record)
         if not owner:
             return ""
-        key = f"{owner}\0{role}\0{size[0]}x{size[1]}"
+        key = self._key(owner, size, role)
         if key in self._ready:
             return self._ready[key]
         fallback = (
@@ -164,7 +196,7 @@ class QtArtwork:
         if (
             self._unavailable.get(key, 0) > time.monotonic()
             or key in self._pending
-            or len(self._pending) >= 16
+            or len(self._pending) >= (16 if role == "media" else 12)
         ):
             return fallback
         self._unavailable.pop(key, None)
@@ -179,7 +211,12 @@ class QtArtwork:
             or self._cancelled.is_set()
         ):
             return
-        key, (record, size, role) = next(iter(self._pending.items()))
+        # Visible media cards take precedence over decorative group artwork.
+        # Keep a few queue slots for cards when a page has many channel avatars.
+        key, (record, size, role) = next(
+            ((key, task) for key, task in self._pending.items() if task[2] == "media"),
+            next(iter(self._pending.items())),
+        )
         if (
             self._owner.submit(
                 "qt_artwork",
@@ -236,12 +273,15 @@ class QtArtwork:
         key = self._active_key
         self._active_key = None
         self._pending.pop(key, None)
+        fallback = self._cached_fallback.get(key, "")
         if result.value and not result.error:
             self._ready[key] = result.value
         else:
             self._unavailable[key] = time.monotonic() + 60
         self._start_next()
-        return bool(result.value and not result.error)
+        # Repaint only when the presented URL changes. A failed acquisition
+        # without fallback must still retire its loading indicator.
+        return bool(result.value != fallback or not fallback)
 
     def close(self) -> None:
         self._cancelled.set()

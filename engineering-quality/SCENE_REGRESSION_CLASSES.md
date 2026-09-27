@@ -22,6 +22,7 @@ unrelated cases cannot replace a required invariant.
 | channel_membership | Provider-scoped membership, saved variants, truthful types and selected-playlist counts |
 | channel_artwork | Current identity, bounded lookup, network admission and retired results |
 | artwork_fidelity | Requested role/geometry, bounded decoding, source changes, eviction and visible rail images |
+| artwork_latency | Visible media priority, worker-only first avatar transforms, shared hero/card acquisition, delayed pending feedback and retained artwork across tabs |
 | progress_lifetime | Acknowledged position, durable writes, resume limits and retired-player isolation |
 | volume_truth | Discovered names/types, honest unknowns, canonical paths, duplicate labels and actual capacity |
 | bounded_navigation | Complete catalogs/rails, bounded drawing/cache, search scope and actual-origin return |
@@ -41,6 +42,7 @@ Identify generated Tk events and OS-injected input; neither certifies physical
 mouse/trackpad behavior.
 Qt's shared rail handler is exercised by `test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll`: wheel input over a thumbnail, horizontal pixel momentum, then a TouchPad device's diagonal vertical gesture and momentum must move only the page. The TouchPad case failed when `acceptedDevices` reverted to Qt's mouse-only default. Watch and both compact Player rails use this handler; installed-app scrolling over artwork remains a separate check of native event delivery.
 `test_saved_media_cards_embed_artwork_in_hover_face` drives the shared recessed face with selection and keyboard focus, then checks the artwork's inset against that face. Pointer hover uses the same `activeFace` binding; offscreen mouse delivery varies across Qt platform plugins, so actual pointer behavior is checked in the installed app.
+The artwork latency class is enrolled through `tests/test_qt_scene_port.py`. The prior fidelity tests proved eventual image output but missed main-thread avatar creation, decorative jobs preceding visible cards, duplicate hero extraction, full scene reprojection on every image completion, repeated full-history owner scans, and image unloading on tab return. Representative owner and rendered QML cases now cover each cause, including a spinner that stays hidden for the first 300 ms. The windowed 200-item Library and Watch cases bound card creation and artwork requests while scrolling. These source checks do not measure a physical trackpad or guarantee image decode time on every device; the exact packaged Mac app still needs a visual navigation check.
 
 Real media cases independently observe advancing rendered frames, transport and
 release across embedded, fullscreen, floating and return. A Playing state or

@@ -46,6 +46,7 @@ SCENE_CLASSES = {
             "tests/test_presentation_diagnostics.py::test_canvas_snapshot_includes_owned_horizontal_rail_images",
         ),
     ),
+    "artwork_latency": (20, ("tests/test_qt_scene_port.py",)),
     "progress_lifetime": (
         39,
         ("tests/test_watch_progress.py", "tests/test_playback_progress_binding.py"),
@@ -150,6 +151,18 @@ SCENE_REQUIRED_TESTS = {
     "artwork_fidelity": (
         "tests/test_archive_artwork.py::test_returning_to_evicted_artwork_reloads_without_waiting_for_retry_timer",
         "tests/test_presentation_diagnostics.py::test_canvas_snapshot_includes_owned_horizontal_rail_images",
+    ),
+    "artwork_latency": (
+        "tests/test_qt_scene_port.py::test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork",
+        "tests/test_qt_scene_port.py::test_qt_first_avatar_transform_runs_in_artwork_worker",
+        "tests/test_qt_scene_port.py::test_qt_recent_media_artwork_overtakes_queued_group_artwork",
+        "tests/test_qt_scene_port.py::test_qt_artwork_completion_does_not_rebuild_watch_media_projection",
+        "tests/test_qt_scene_port.py::test_qt_artwork_spinner_waits_for_a_slow_request",
+        "tests/test_qt_scene_port.py::test_qt_inactive_tabs_skip_scene_projection_on_history_refresh",
+        "tests/test_qt_scene_port.py::test_qt_artwork_owner_lookup_reuses_snapshot_until_history_changes",
+        "tests/test_qt_scene_port.py::test_qt_library_all_media_windows_rows_and_artwork_requests",
+        "tests/test_qt_scene_port.py::test_qt_watch_media_windows_cards_and_restores_back_scroll",
+        "tests/test_qt_scene_port.py::test_qt_visible_cards_show_resolved_local_artwork",
     ),
 }
 REQUIRED_SCENARIOS = frozenset("unit_static.scene_" + name for name in SCENE_CLASSES)

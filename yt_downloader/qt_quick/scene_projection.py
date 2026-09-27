@@ -312,6 +312,7 @@ def watch_scene(
     *,
     defer_media_artwork: bool = False,
     defer_group_artwork: bool = False,
+    defer_hero_artwork: bool = False,
     channel_profile: Callable[[dict[str, Any]], dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     query = query.strip()
@@ -340,6 +341,7 @@ def watch_scene(
     videos = unique_watch_videos(records, source_videos)
     media_image = _defer_artwork if defer_media_artwork else artwork
     group_image = _defer_artwork if defer_group_artwork else artwork
+    hero_image = _defer_artwork if defer_hero_artwork else artwork
     media = [
         {
             **_media(records[video.indices[0]], video.indices[0], media_image),
@@ -372,7 +374,7 @@ def watch_scene(
     )
     hero = (
         {
-            **_media(hero_record, featured.indices[0], artwork),
+            **_media(hero_record, featured.indices[0], hero_image),
             "description": str(hero_record.get("description") or ""),
             "duration": format_duration(hero_record.get("duration")),
             "kind": watch_media_kind(hero_record),
@@ -392,7 +394,9 @@ def watch_scene(
                 if hero_resume and hero_progress is not None
                 else ""
             ),
-            "backdrop": artwork(hero_record, (1100, 400), "media"),
+            # The dim backdrop can reuse the card asset. A second high-resolution
+            # request would sit ahead of visible cards in the serialized lane.
+            "backdrop": hero_image(hero_record, (320, 180), "media"),
         }
         if hero_record is not None and featured is not None
         else {}
@@ -461,10 +465,10 @@ def watch_scene(
             if selected is not None and group_kind == "channel"
             else ""
         ),
-        "groupAvatar": artwork(group_record, (150, 150), "avatar")
+        "groupAvatar": hero_image(group_record, (150, 150), "avatar")
         if group_record is not None and group_kind == "channel"
         else "",
-        "groupBanner": artwork(group_record, (1100, 350), "banner")
+        "groupBanner": hero_image(group_record, (1100, 350), "banner")
         if group_record is not None and group_kind == "channel"
         else "",
         "groupFirstOwner": history_archive_owner(group_record)

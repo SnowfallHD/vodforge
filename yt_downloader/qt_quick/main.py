@@ -336,6 +336,7 @@ class Bridge(QObject):
     playbackUrlChanged = Signal()
     playerSceneChanged = Signal()
     watchSceneChanged = Signal()
+    artworkChanged = Signal()
     playbackPreviewsChanged = Signal()
     playbackRequested = Signal(int)
     playbackSeekRequested = Signal(float)
@@ -379,11 +380,13 @@ class Bridge(QObject):
         self._run_menu_identity_token = ""  # nosec B105 - empty UI identity sentinel
         self._run_menu_admitted_job: Any | None = None
         self._selected_run_key = ""
+        self._artwork_records: dict[str, dict[str, Any] | None] = {}
+        self._artwork_history_id: int | None = None
+        self._artwork_history_count = -1
+        self.historyChanged.connect(self._clear_artwork_records)
         self.historyChanged.connect(self.playerSceneChanged.emit)
         self.historyChanged.connect(self.watchSceneChanged.emit)
-        self.selectionChanged.connect(self.watchSceneChanged.emit)
         self.historyChanged.connect(self.librarySceneChanged.emit)
-        self.selectionChanged.connect(self.librarySceneChanged.emit)
         self.librarySearchChanged.connect(self.activeSearchChanged.emit)
         self.historyChanged.connect(self.activeSearchChanged.emit)
         self.selectionChanged.connect(self.activeSearchChanged.emit)
@@ -435,6 +438,7 @@ class Bridge(QObject):
         self._storage = StorageCapacityOwner()
         self._storage_snapshot = self._storage.snapshot
         self._artwork = QtArtwork(self._runtime.history_path.parent / "artwork")
+        self._artwork_revision = 0
         self._files.refresh_recovery()
         self._file_action_busy = self._files.uncertain
         if self._files.uncertain and self._runtime.recovery_notice is None:
@@ -1374,35 +1378,77 @@ class Bridge(QObject):
             defer_group_artwork=True,
         )
 
+    def _clear_artwork_records(self) -> None:
+        self._artwork_records.clear()
+        self._artwork_history_id = None
+        self._artwork_history_count = -1
+
+    def _artwork_record_for_owner(self, owner: str) -> dict[str, Any] | None:
+        history = self._runtime.history
+        history_id = id(history)
+        if self._artwork_history_id != history_id or self._artwork_history_count != len(
+            history
+        ):
+            records: dict[str, dict[str, Any] | None] = {}
+            for record in history:
+                key = history_archive_owner(record)
+                records[key] = None if key in records else record
+            self._artwork_records = records
+            self._artwork_history_id = history_id
+            self._artwork_history_count = len(history)
+        return self._artwork_records.get(owner)
+
     @Slot(str, result=str)
     def mediaArtwork(self, owner: str) -> str:
-        if self._selection not in {"Library", "Watch"}:
+        record = self._artwork_record_for_owner(owner)
+        if not record or not record.get("vodforge_output_dir"):
             return ""
-        matches = [
-            row
-            for row in self._runtime.history
-            if row.get("vodforge_output_dir") and history_archive_owner(row) == owner
-        ]
-        if len(matches) != 1:
-            return ""
-        return self._artwork.request(matches[0], (320, 180), "media")
+        return self._artwork.request(record, (320, 180), "media")
+
+    @Property(int, notify=artworkChanged)
+    def artworkRevision(self) -> int:
+        return self._artwork_revision
+
+    @Slot(str, result=str)
+    def mediaArtworkState(self, owner: str) -> str:
+        return self._artwork.state(owner, (320, 180), "media")
+
+    @Slot(str, int, int, result=str)
+    def sizedMediaArtworkState(self, owner: str, width: int, height: int) -> str:
+        return self._artwork.state(owner, (width, height), "media")
 
     @Slot(str, str, result=str)
     def watchGroupArtwork(self, owner: str, kind: str) -> str:
-        if self._selection != "Watch":
-            return ""
         return self._group_artwork(owner, kind)
 
     @Slot(str, str, result=str)
+    def groupArtworkState(self, owner: str, kind: str) -> str:
+        if kind not in {"channel", "playlist", "collection"}:
+            return "idle"
+        return self._artwork.state(
+            owner,
+            (160, 160) if kind == "channel" else (480, 200),
+            "avatar" if kind == "channel" else "playlist",
+        )
+
+    @Slot(str, result=str)
+    def watchChannelBanner(self, owner: str) -> str:
+        item = self._artwork_record_for_owner(owner)
+        return self._artwork.request(item, (1100, 350), "banner") if item else ""
+
+    @Slot(str, result=str)
+    def watchChannelAvatar(self, owner: str) -> str:
+        item = self._artwork_record_for_owner(owner)
+        return self._artwork.request(item, (160, 160), "avatar") if item else ""
+
+    @Slot(str, str, result=str)
     def libraryGroupArtwork(self, owner: str, kind: str) -> str:
-        if self._selection != "Library":
-            return ""
         return self._group_artwork(owner, kind)
 
     def _group_artwork(self, owner: str, kind: str) -> str:
         if kind not in {"channel", "playlist", "collection"}:
             return ""
-        item = self._saved_item_for_owner(owner)
+        item = self._artwork_record_for_owner(owner)
         if item is None:
             return ""
         return self._artwork.request(
@@ -1471,6 +1517,7 @@ class Bridge(QObject):
             self._playback_progress.for_record,
             defer_media_artwork=True,
             defer_group_artwork=True,
+            defer_hero_artwork=True,
             channel_profile=self._artwork.channel_profile,
         )
         prior_route = self._watch_history[-1][0] if self._watch_history else "home"
@@ -2338,9 +2385,15 @@ class Bridge(QObject):
             self.closePlayback()
         if name == "Library":
             self.setLibrarySearch("")
-            self.navigateLibrary("home")
+            if self._library_scene_route != "home" or self._library_history:
+                self.navigateLibrary("home")
         elif name == "Watch":
-            self.navigateWatch("home")
+            if (
+                self._watch_scene_route != "home"
+                or self._watch_search
+                or self._watch_history
+            ):
+                self.navigateWatch("home")
         self.select(name)
 
     def _remember_library_route(self) -> None:
@@ -4229,8 +4282,17 @@ class Bridge(QObject):
             self._import_operation = None
             self.statusChanged.emit()
         if self._artwork.poll():
-            self.historyChanged.emit()
-            self.runDeckChanged.emit()
+            self._artwork_revision += 1
+            self.artworkChanged.emit()
+            if self._selection == "Library" and self._library_scene_route in {
+                "detail",
+                "folders",
+            }:
+                self.historyChanged.emit()
+            elif self._selection == "Watch" and not self._playback_url.isEmpty():
+                self.playerSceneChanged.emit()
+            elif self._selection == "Forge":
+                self.runDeckChanged.emit()
         if self._files.poll():
             self._file_action_busy = self._files.uncertain
             actual = self._files.latest_history
