@@ -36,7 +36,7 @@ Item {
         if (viewport && viewport.contentItem) viewport.contentItem.contentY = 0
     }
 
-    property var projection: ({counts: ({}), groups: [], media: []})
+    property var projection: ({route: "home", counts: ({}), groups: [], media: []})
     property bool projectionDirty: true
     function refreshProjection() {
         if (visible && appBridge && projectionDirty) {

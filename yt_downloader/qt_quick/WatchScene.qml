@@ -5,7 +5,9 @@ import QtQuick.Layouts
 Item {
     id: scene
     property var appBridge
-    property var projection: ({hero: ({}), videos: [], channels: [], playlists: [], collections: []})
+    property var projection: ({route: "home", query: "", groupKind: "", groupTitle: "",
+        groupSubtitle: "", groupDescription: "", groupCountLabel: "", groupFirstOwner: "",
+        hero: ({}), videos: [], channels: [], playlists: [], collections: []})
     property bool projectionDirty: true
     function refreshProjection() {
         if (visible && appBridge && projectionDirty) {
