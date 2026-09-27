@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from PySide6.QtCore import QCoreApplication, QEvent, QObject
@@ -288,7 +289,7 @@ def test_current_folder_opens_its_selected_location_and_explains_relink(
             ),
         )
         open_button.activated.emit()
-        assert opened == [bridge.libraryFolders["path"]]
+        assert [Path(path) for path in opened] == [Path(bridge.libraryFolders["path"])]
     finally:
         _close(bridge, engine, window)
 
