@@ -159,12 +159,26 @@ def test_qt_visible_library_artwork_fault_and_recovery(tmp_path, monkeypatch):
         probe.sample()
         original = image.property("source")
         image.setProperty("source", "file:///PRIVATE-missing-artwork.png")
-        app.processEvents()
-        probe.sample()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            app.processEvents()
+            window.grabWindow()
+            probe.sample()
+            if any(action == "fault" for action, _ in sink.events):
+                break
+            time.sleep(0.005)
+        else:
+            raise AssertionError("Asynchronous artwork fault was not observed")
         bridge.historyChanged.emit()
         image.setProperty("source", original)
-        app.processEvents()
-        probe.sample()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            app.processEvents()
+            window.grabWindow()
+            probe.sample()
+            if any(action == "recovered" for action, _ in sink.events):
+                break
+            time.sleep(0.005)
         assert any(
             action == "fault" and row["missing_image_role"] == "artwork"
             for action, row in sink.events
