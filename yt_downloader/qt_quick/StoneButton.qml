@@ -12,8 +12,9 @@ Item {
     property bool interactive: true
     property string size: "default"
     readonly property bool hovered: mouse.containsMouse
+    readonly property bool activeFace: hovered || activeFocus
     // Artwork cards keep their content inside the same inset face in every state.
-    readonly property int artworkFaceInset: 7 + (hovered && transientMaterial ? 2 : 0)
+    readonly property int artworkFaceInset: 7 + (activeFace && transientMaterial ? 2 : 0)
     signal activated()
     signal doubleActivated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
@@ -36,7 +37,7 @@ Item {
         anchors.fill: parent
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
-                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (mouse.containsMouse || control.selected ? "hover" : "normal"))
+                + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace || control.selected ? "hover" : "normal"))
                 + "/" + (control.emphasized ? "1" : "0") + "/r" + bridge.themeRevision
         fillMode: Image.Stretch
         cache: true

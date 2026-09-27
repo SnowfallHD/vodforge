@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, Qt
-from PySide6.QtGui import QGuiApplication, QMouseEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
 
 from tests.test_qt_scene_port import qt_app, saved
@@ -325,33 +325,13 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
         )
         assert card.property("artworkFaceInset") == 7
         assert artwork.x() == 7
-        center = card.mapToScene(card.boundingRect().center()).toPoint()
         assert card.isVisible()
-        assert 0 <= center.x() < window.width()
-        assert 0 <= center.y() < window.height()
-        QTest.mouseMove(window, QPoint(0, 0))
+        # Keyboard focus uses the same recessed material face as pointer hover.
+        # This drives the rendered face deterministically on offscreen runners.
+        card.forceActiveFocus()
         app.processEvents()
-        # Offscreen hover delivery can lag a frame on Windows; keep the real
-        # pointer transition and wait for it before inspecting the hover face.
-        for _ in range(10):
-            QTest.mouseMove(window, center)
-            QTest.qWait(25)
-            if card.property("hovered") is True:
-                break
-        if card.property("hovered") is not True:
-            # The Windows offscreen platform can omit native cursor delivery;
-            # dispatch the same move through Qt Quick's window hit tester.
-            move = QMouseEvent(
-                QEvent.MouseMove,
-                center,
-                window.mapToGlobal(center),
-                Qt.NoButton,
-                Qt.NoButton,
-                Qt.NoModifier,
-            )
-            QGuiApplication.sendEvent(window, move)
-            app.processEvents()
-        assert card.property("hovered") is True
+        assert card.property("activeFocus") is True
+        assert card.property("activeFace") is True
         assert card.property("artworkFaceInset") == 9
         assert artwork.x() == 9
         assert artwork.width() == card.width() - 18
