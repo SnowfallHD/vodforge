@@ -326,6 +326,15 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
         assert card.property("artworkFaceInset") == 7
         assert artwork.x() == 7
         assert card.isVisible()
+        # Bulk selection also uses the recessed face and must carry its artwork.
+        assert card.setProperty("selected", True)
+        app.processEvents()
+        assert card.property("activeFace") is True
+        assert card.property("artworkFaceInset") == 9
+        assert artwork.x() == 9
+        assert card.setProperty("selected", False)
+        app.processEvents()
+        assert card.property("artworkFaceInset") == 7
         # Keyboard focus uses the same recessed material face as pointer hover.
         # This drives the rendered face deterministically on offscreen runners.
         card.forceActiveFocus()
