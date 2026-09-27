@@ -101,12 +101,22 @@ Item {
                 }
                 StoneButton {
                     objectName: "libraryFolderRelinkButton"
-                    label: "Change folder location…"
+                    label: "Locate moved files…"
                     size: "inline"
                     Layout.preferredWidth: 175
+                    enabled: browser.model.relinkCount > 0
                     onActivated: browser.appBridge.requestFolderRelink(browser.model.path)
                 }
                 Item { Layout.fillWidth: true }
+            }
+            Text {
+                objectName: "libraryFolderRelinkExplanation"
+                visible: browser.model.mode === "folders" && !!browser.model.path
+                text: "Checks " + browser.model.relinkCount + " saved file(s) in this folder and its subfolders. Updates saved paths only; does not move files or change future downloads."
+                color: theme.muted
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
             }
             ScrollView {
                 id: viewport

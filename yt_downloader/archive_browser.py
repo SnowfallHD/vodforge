@@ -195,6 +195,17 @@ class ArchiveBrowserModel:
         self.path, self.mode, self.page = path, mode, 0
         self.reconcile()
 
+    def folder_relink_indices(self) -> tuple[int, ...]:
+        """All saved files whose recorded directory is under the current folder."""
+        if self.mode != "folders" or self.path is None:
+            return ()
+        return tuple(
+            index
+            for index in self.visible
+            if (directory := self._directories.get(index)) is not None
+            and directory.relative_to(self.path) is not None
+        )
+
     def reconcile(self) -> None:
         # All canonical records in this mode/scope, before search/category/type
         # filters. These are metadata-only paths; no filesystem work is added.

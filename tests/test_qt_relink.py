@@ -246,6 +246,87 @@ def test_qt_folder_relink_rejects_stale_scope_and_disk_history(tmp_path, monkeyp
         bridge.close()
 
 
+def test_qt_parent_folder_relink_maps_descendants_without_moving_files(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    source = tmp_path / "old"
+    (source / "channel").mkdir(parents=True)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    destination = tmp_path / "moved"
+    (destination / "channel").mkdir(parents=True)
+    (destination / "direct.mp4").write_bytes(b"direct media")
+    (destination / "channel" / "nested.mp4").write_bytes(b"nested media")
+    rows = [
+        {
+            "id": title,
+            "title": title,
+            "vodforge_output_type": "MP4",
+            "vodforge_output_dir": str(path.parent),
+            "vodforge_output_path": str(path),
+        }
+        for title, path in (
+            ("Direct", source / "direct.mp4"),
+            ("Nested", source / "channel" / "nested.mp4"),
+        )
+    ]
+    save_history(bridge._runtime.history_path, rows)
+    history_before = bridge._runtime.history_path.read_bytes()
+    bridge._runtime.history = load_history(bridge._runtime.history_path)
+    bridge.select("Library")
+    bridge.navigateLibrary("folders")
+    bridge.openLibraryFolderComponent(str(source.parent))
+    bridge.openLibraryFolderComponent(str(source))
+    try:
+        assert bridge.libraryFolders["relinkCount"] == 2
+        assert bridge.beginFolderRelink(str(source), QUrl.fromLocalFile(str(empty)))
+        for _ in range(200):
+            bridge._pump()
+            if bridge.relinkInfo["phase"] == "error":
+                break
+            time.sleep(0.01)
+        assert bridge.relinkInfo["phase"] == "error"
+        assert bridge.relinkInfo["source"] == str(source)
+        assert bridge.relinkInfo["selectedCount"] == 2
+        assert bridge.relinkInfo["readyCount"] == 0
+        assert "Nothing changed" in bridge.relinkInfo["status"]
+        assert bridge._runtime.history_path.read_bytes() == history_before
+        assert bridge.beginFolderRelink(
+            str(source), QUrl.fromLocalFile(str(destination))
+        )
+        for _ in range(200):
+            bridge._pump()
+            if bridge.relinkInfo["phase"] == "preview":
+                break
+            time.sleep(0.01)
+        assert bridge.relinkInfo["readyCount"] == 2
+        assert bridge.acceptRelink()
+        for _ in range(200):
+            bridge._pump()
+            if bridge.relinkInfo["phase"] == "done":
+                break
+            time.sleep(0.01)
+        assert bridge.relinkInfo["phase"] == "done"
+        paths = {
+            row["id"]: row["vodforge_output_path"]
+            for row in load_history(bridge._runtime.history_path)
+        }
+        assert paths == {
+            "Direct": str(destination / "direct.mp4"),
+            "Nested": str(destination / "channel" / "nested.mp4"),
+        }
+        assert not (source / "direct.mp4").exists()
+        assert (destination / "direct.mp4").read_bytes() == b"direct media"
+    finally:
+        bridge.close()
+
+
 def test_qt_missing_media_opens_review_and_serializes_history_writers(
     tmp_path, monkeypatch
 ):

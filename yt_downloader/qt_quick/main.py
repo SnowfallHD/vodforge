@@ -55,7 +55,6 @@ from yt_downloader.app import (
 from yt_downloader.archive_browser import (
     PAGE_SIZE,
     ArchiveBrowserModel,
-    archive_directory,
 )
 from yt_downloader.archive_observations import (
     bind_operation,
@@ -698,6 +697,7 @@ class Bridge(QObject):
             "phase": self._relink.phase,
             "status": self._relink.status,
             "owner": self._relink.owner,
+            "source": self._relink.source,
             "destination": self._relink.destination,
             "eligible": self._relink.eligible,
             "mode": self._relink.mode,
@@ -762,9 +762,7 @@ class Bridge(QObject):
             return False
         owners = tuple(
             history_archive_owner(dict(model.records[index]))
-            for index in model.visible
-            if (directory := archive_directory(model.records[index])) is not None
-            and directory.relative_to(model.path) is not None
+            for index in model.folder_relink_indices()
         )
         try:
             started = self._relink.begin_folder(
@@ -1452,6 +1450,7 @@ class Bridge(QObject):
             "page": model.page,
             "pages": max(1, (len(model.components) + PAGE_SIZE - 1) // PAGE_SIZE),
             "count": len(model.components),
+            "relinkCount": len(model.folder_relink_indices()),
         }
 
     def _reconcile_folder_browser(self) -> None:

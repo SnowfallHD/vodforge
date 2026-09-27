@@ -214,6 +214,26 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
             app.processEvents()
         assert abs(flickable.property("contentX") - rail_before - 114) <= 1
         assert viewport.property("contentItem").property("contentY") > before
+        page_before = viewport.property("contentItem").property("contentY")
+        rail_before = flickable.property("contentX")
+        for phase, dx, dy in (
+            (Qt.ScrollBegin, -15, -90),
+            (Qt.ScrollMomentum, -45, -12),
+        ):
+            swipe = QWheelEvent(
+                point,
+                point,
+                QPoint(dx, dy),
+                QPoint(),
+                Qt.NoButton,
+                Qt.NoModifier,
+                phase,
+                False,
+            )
+            QGuiApplication.sendEvent(window, swipe)
+            app.processEvents()
+        assert viewport.property("contentItem").property("contentY") > page_before
+        assert abs(flickable.property("contentX") - rail_before) <= 1
     finally:
         window.close()
         engine.deleteLater()

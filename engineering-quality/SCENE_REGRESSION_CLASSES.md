@@ -12,7 +12,7 @@ unrelated cases cannot replace a required invariant.
 | Class | Required behavior |
 | --- | --- |
 | file_action_integrity | Exact owners/files, verified Move publication before cleanup, Trash/permanent separation, late-event lineage, recovery and resource bounds |
-| shared_scroll_ownership | Fractional mouse/trackpad input, nested forwarding, independent targets and teardown |
+| shared_scroll_ownership | Fractional mouse/trackpad input, diagonal vertical motion over horizontal rails, momentum, nested forwarding, independent targets and teardown |
 | shared_keyboard_ownership | Nearest active scope, one action per key, editing keys and restored modal grabs |
 | shared_pointer_ownership | Captured press/release, drag rejection, replacement and retired gestures |
 | readable_descriptions | Full text, hanging indentation, bounded internal scrolling and complete copying; ellipsis fitting stops measuring after visible-line overflow while full-document counting remains exact |
@@ -39,6 +39,7 @@ source-native suite. Require a complete JUnit report without failures, skips or
 errors and record source/harness imports. Tests isolate app data and media.
 Identify generated Tk events and OS-injected input; neither certifies physical
 mouse/trackpad behavior.
+Qt's shared rail handler is exercised by `test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll`: vertical wheel, horizontal pixel momentum, then diagonal vertical momentum must move only the page. Watch and Player use this same handler for every horizontal rail. Physical trackpad acceptance remains a separate installed-app check.
 
 Real media cases independently observe advancing rendered frames, transport and
 release across embedded, fullscreen, floating and return. A Playing state or

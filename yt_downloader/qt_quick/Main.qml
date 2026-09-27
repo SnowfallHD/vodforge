@@ -581,7 +581,7 @@ Window {
     }
     FolderDialog {
         id: relinkFolderDialog
-        title: "Choose this folder's new location"
+        title: "Locate the folder containing the moved files"
         onAccepted: {
             if (bridge.beginFolderRelink(window.pendingRelinkFolderPath, selectedFolder))
                 relinkPopup.open()
@@ -1355,7 +1355,7 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(560, window.width - 30)
-        height: 290
+        height: 335
         padding: 18
         modal: true
         closePolicy: bridge.relinkInfo.phase === "working" ? Popup.NoAutoClose : Popup.CloseOnEscape
@@ -1365,9 +1365,11 @@ Window {
         background: StoneField {}
         ColumnLayout {
             anchors.fill: parent; spacing: 12
-            Text { text: bridge.relinkInfo.mode === "folder" ? "Review saved folder locations" : "Update saved file location"; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true }
-            Text { text: bridge.relinkInfo.destination; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideMiddle }
-            Text { visible: bridge.relinkInfo.mode === "folder"; text: bridge.relinkInfo.readyCount + " of " + bridge.relinkInfo.selectedCount + " selected files verified"; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true }
+            Text { text: bridge.relinkInfo.mode === "folder" ? "Locate moved files" : "Update saved file location"; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true }
+            Text { visible: bridge.relinkInfo.mode === "folder"; text: "Recorded folder: " + bridge.relinkInfo.source; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideMiddle }
+            Text { text: "Chosen location: " + bridge.relinkInfo.destination; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideMiddle }
+            Text { visible: bridge.relinkInfo.mode === "folder"; text: bridge.relinkInfo.readyCount + " of " + bridge.relinkInfo.selectedCount + " saved files found"; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true }
+            Text { visible: bridge.relinkInfo.mode === "folder"; text: "Files in subfolders keep the same relative path. This updates Library references only; no files are moved."; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.WordWrap }
             Text { text: bridge.relinkInfo.status; color: theme.text; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
             Item { Layout.fillHeight: true }
             RowLayout {

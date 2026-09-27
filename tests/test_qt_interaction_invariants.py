@@ -279,7 +279,15 @@ def test_current_folder_opens_its_selected_location_and_explains_relink(
         relink_button = window.findChild(QObject, "libraryFolderRelinkButton")
         assert open_button.property("visible") is True
         assert open_button.property("label") == "Open location"
-        assert relink_button.property("label") == "Change folder location…"
+        assert relink_button.property("label") == "Locate moved files…"
+        assert relink_button.property("enabled") is True
+        explanation = window.findChild(QObject, "libraryFolderRelinkExplanation")
+        assert explanation.property("visible") is True
+        assert "Updates saved paths only" in explanation.property("text")
+        assert "does not move files or change future downloads" in explanation.property(
+            "text"
+        )
+        assert bridge.libraryFolders["relinkCount"] == 1
         opened = []
         monkeypatch.setattr(
             qt_main,

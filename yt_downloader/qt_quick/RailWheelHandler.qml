@@ -15,14 +15,16 @@ WheelHandler {
         // Mouse wheels usually report only angle deltas.
         const dx = wheel.pixelDelta.x || wheel.angleDelta.x / 120 * 80
         const dy = wheel.pixelDelta.y || wheel.angleDelta.y / 120 * 80
-        if (Math.abs(dx) > Math.abs(dy)) {
-            const rail = horizontalView.contentItem
-            rail.contentX = Math.max(0, Math.min(rail.contentWidth - horizontalView.width,
-                                                rail.contentX - dx))
-        } else if (dy !== 0) {
+        // During a vertical trackpad swipe, sideways drift can briefly exceed
+        // the vertical delta. Keep that motion on the page, including momentum.
+        if (dy !== 0 && Math.abs(dy) >= Math.abs(dx) * 0.2) {
             const page = verticalView.contentItem
             page.contentY = Math.max(0, Math.min(page.contentHeight - verticalView.height,
                                                 page.contentY - dy))
+        } else if (dx !== 0) {
+            const rail = horizontalView.contentItem
+            rail.contentX = Math.max(0, Math.min(rail.contentWidth - horizontalView.width,
+                                                rail.contentX - dx))
         } else {
             wheel.accepted = false
             return

@@ -39,6 +39,7 @@ class QtRelinkSession:
         self.phase = "idle"
         self.status = ""
         self.owner = ""
+        self.source = ""
         self.destination = ""
         self.index = -1
         self.mode = "file"
@@ -117,7 +118,9 @@ class QtRelinkSession:
             (RootMapping(source, destination),),
             selected=selected,
         )
-        return self._begin_proposal("", str(destination), selected, snapshot, proposal)
+        return self._begin_proposal(
+            "", str(destination), selected, snapshot, proposal, source=str(source)
+        )
 
     def _begin_proposal(
         self,
@@ -126,6 +129,8 @@ class QtRelinkSession:
         selected: tuple[int, ...],
         snapshot: list[dict[str, Any]],
         proposal: RelinkPreview,
+        *,
+        source: str = "",
     ) -> bool:
 
         def verify(cancelled: Any) -> tuple[RelinkPreview, bytes]:
@@ -139,6 +144,7 @@ class QtRelinkSession:
         if generation is None:
             return False
         self.owner = owner
+        self.source = source
         self.destination = destination
         self.index = selected[0] if owner else -1
         self.mode = "file" if owner else "folder"
@@ -221,7 +227,14 @@ class QtRelinkSession:
                     if self.preview.entries
                     else "unavailable"
                 )
-                self.status = f"This file cannot be linked ({state})."
+                self.status = (
+                    "No saved files matched in the chosen folder. Nothing changed. "
+                    "Choose the folder containing the moved files."
+                    if self.mode == "folder" and state == "missing"
+                    else f"No saved locations changed ({state})."
+                    if self.mode == "folder"
+                    else f"This file cannot be linked ({state})."
+                )
             return True
         if result.kind == "commit" and self.phase == "working":
             if result.error or not isinstance(result.value, list):
