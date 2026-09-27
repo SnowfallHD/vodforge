@@ -308,9 +308,10 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
         tmp_path, monkeypatch, [saved(tmp_path, "Stored", "MP4")]
     )
     try:
+        assert QTest.qWaitForWindowExposed(window, 1000)
         bridge.selectHome("Library")
         bridge.navigateLibrary("all")
-        app.processEvents()
+        QTest.qWait(50)
         repeater = window.findChild(QObject, "libraryMediaRepeater")
         card = next(
             item
@@ -325,6 +326,9 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
         assert card.property("artworkFaceInset") == 7
         assert artwork.x() == 7
         center = card.mapToScene(card.boundingRect().center()).toPoint()
+        assert card.isVisible()
+        assert 0 <= center.x() < window.width()
+        assert 0 <= center.y() < window.height()
         QTest.mouseMove(window, QPoint(0, 0))
         app.processEvents()
         # Offscreen hover delivery can lag a frame on Windows; keep the real
