@@ -124,6 +124,8 @@ from yt_downloader.library_scene_facts import library_detail_facts
 from yt_downloader.library_search import (
     LIBRARY_ALL_CATEGORIES,
     LIBRARY_ALL_MEDIA,
+    LIBRARY_AUDIO_MEDIA,
+    LIBRARY_VIDEO_MEDIA,
     library_categories,
     library_visible_indices,
 )
@@ -169,7 +171,11 @@ from yt_downloader.qt_quick.presentation import QtPresentationProbe
 from yt_downloader.qt_quick.previews import QtPreviewSession
 from yt_downloader.qt_quick.relink import QtRelinkSession
 from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
-from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
+from yt_downloader.qt_quick.scene_projection import (
+    collection_picker,
+    library_scene,
+    watch_scene,
+)
 from yt_downloader.qt_quick.support import QtSupportSession
 from yt_downloader.qt_quick.update_session import QtUpdateSession
 from yt_downloader.quality_e2e import (
@@ -794,6 +800,17 @@ class Bridge(QObject):
             self.folderRelinkRequested.emit(path)
 
     @Slot(result=bool)
+    def openLibraryCurrentFolder(self) -> bool:
+        self._reconcile_folder_browser()
+        model = self._folder_browser
+        if self._selection != "Library" or model.mode != "folders":
+            return False
+        path = model.path
+        if path is None or not Path(str(path)).is_dir():
+            return False
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @Slot(result=bool)
     def acceptRelink(self) -> bool:
         if (
             self._runtime.active_job is not None
@@ -1252,6 +1269,7 @@ class Bridge(QObject):
         return {
             "owner": history_archive_owner(current),
             "title": str(current.get("title") or "Saved media"),
+            "artwork": self._artwork.request(current, (244, 138), "media"),
             "creator": str(
                 current.get("channel") or current.get("uploader") or "Unknown creator"
             ),
@@ -1353,6 +1371,7 @@ class Bridge(QObject):
             if self._library_category == LIBRARY_ALL_CATEGORIES
             else self._library_category,
             self._library_sort,
+            media_type=self._library_type,
             defer_media_artwork=True,
             defer_group_artwork=True,
         )
@@ -1591,15 +1610,12 @@ class Bridge(QObject):
         }
 
     @Property(_QVARIANT_LIST, notify=historyChanged)
-    def collectionCandidates(self) -> list[dict[str, str]]:
-        return [
-            {
-                "owner": history_annotation_owner(row),
-                "title": str(row.get("title") or "Saved media"),
-            }
-            for row in self._runtime.history
-            if row.get("vodforge_output_dir")
-        ]
+    def collectionCandidates(self) -> list[dict[str, Any]]:
+        return collection_picker(self._runtime.history)["videos"]
+
+    @Property(_QVARIANT_MAP, notify=historyChanged)
+    def collectionPicker(self) -> dict[str, list[dict[str, Any]]]:
+        return collection_picker(self._runtime.history)
 
     def _projected_library(self) -> list[dict[str, Any]]:
         projection = self._library_projection.reconcile(
@@ -2137,6 +2153,15 @@ class Bridge(QObject):
                     "artwork": self._artwork.request(item) if len(records) < 4 else "",
                 }
             )
+        records.sort(
+            key=lambda record: {
+                "preview": 0,
+                "active": 1,
+                "queued": 2,
+                "completed": 3,
+                "terminal": 4,
+            }.get(str(record["kind"]), 5)
+        )
         counts: dict[str, int] = {}
         for record in records:
             kind = record["kind"]
@@ -2301,11 +2326,16 @@ class Bridge(QObject):
         self._record("select", name)
 
     @Slot(str)
-    def selectHome(self, name: str) -> None:
+    @Slot(str, bool)
+    def selectHome(self, name: str, keep_playing: bool = False) -> None:
         """Top-level navigation always opens the destination's main screen."""
         if name not in {"Forge", "Library", "Watch", "Activity"}:
             return
-        if self._playback_url.isValid() and not self._playback_url.isEmpty():
+        if (
+            self._playback_url.isValid()
+            and not self._playback_url.isEmpty()
+            and not keep_playing
+        ):
             self.closePlayback()
         if name == "Library":
             self.setLibrarySearch("")
@@ -2948,6 +2978,14 @@ class Bridge(QObject):
         self.statusChanged.emit()
         return True
 
+    @Slot(str, "QVariantList", result=bool)
+    def addToCollection(self, name: str, owners: list[str]) -> bool:
+        if name not in self.libraryCategories[1:]:
+            self._status = "Choose an existing collection."
+            self.statusChanged.emit()
+            return False
+        return self.createCollection(name, owners)
+
     @Slot("QVariantList", result="QVariantList")
     def collectionOwnersForArchiveSelection(self, owners: list[str]) -> list[str]:
         """Resolve selected file owners to the stable annotation owners."""
@@ -2993,7 +3031,12 @@ class Bridge(QObject):
 
     @Slot(str)
     def setLibraryType(self, output_type: str) -> None:
-        if output_type not in {LIBRARY_ALL_MEDIA, *(item.value for item in OutputType)}:
+        if output_type not in {
+            LIBRARY_ALL_MEDIA,
+            LIBRARY_VIDEO_MEDIA,
+            LIBRARY_AUDIO_MEDIA,
+            *(item.value for item in OutputType),
+        }:
             return
         if output_type == self._library_type:
             return
@@ -3111,6 +3154,37 @@ class Bridge(QObject):
             return False
         clipboard.setText(value)
         self._status = "Copied Library detail."
+        self.statusChanged.emit()
+        return True
+
+    @Slot(str, str, result=bool)
+    def copyLibraryText(self, owner: str, field: str) -> bool:
+        if field not in {"description", "tags"}:
+            return False
+        playback_owner = (
+            history_archive_owner(self._playback_record)
+            if self._playback_record is not None
+            else ""
+        )
+        if owner not in {
+            self._library_detail_owner,
+            self._folder_inspector_owner,
+            playback_owner,
+        }:
+            return False
+        row = self._saved_item_for_owner(owner)
+        if row is None:
+            return False
+        value = (
+            str(row.get("vodforge_user_description", row.get("description")) or "")
+            if field == "description"
+            else ", ".join(str(tag) for tag in row.get("vodforge_user_tags") or ())
+        )
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is None:
+            return False
+        clipboard.setText(value)
+        self._status = f"Copied {field}."
         self.statusChanged.emit()
         return True
 
@@ -3608,7 +3682,8 @@ class Bridge(QObject):
         self.openLibraryItem(self._runtime.history.index(item))
 
     @Slot()
-    def closePlayback(self) -> None:
+    @Slot(bool)
+    def closePlayback(self, keep_selection: bool = False) -> None:
         self._watch_queue.cancel()
         if self._playback_binding is not None:
             self._playback_binding.close()
@@ -3621,7 +3696,8 @@ class Bridge(QObject):
         self.playbackUrlChanged.emit()
         self.playerSceneChanged.emit()
         self.historyChanged.emit()
-        self.select(self._playback_origin_selection)
+        if not keep_selection:
+            self.select(self._playback_origin_selection)
 
     @Slot(str)
     def openLibraryFolder(self, owner: str) -> None:
@@ -4238,6 +4314,8 @@ class Bridge(QObject):
             elif kind in {"history_record", "job_metadata", "item_terminal"}:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
+                if kind in {"done", "partial"}:
+                    self._selected_run_key = ""
                 if kind in {"partial", "error"} and active_job_before is not None:
                     try:
                         self._latest_failure = failure_context(

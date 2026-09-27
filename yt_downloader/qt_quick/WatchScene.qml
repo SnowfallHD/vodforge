@@ -36,15 +36,19 @@ Item {
     function showLibraryDetails(owner) {
         scene.appBridge.openWatchDetails(owner)
     }
-    function openMore(owner) {
+    function openMore(owner, anchor) {
         moreOwner = owner
+        morePopup.anchorItem = anchor
         morePopup.open()
     }
 
-    Popup {
+    AnchoredPopup {
         id: morePopup
-        x: Math.max(0, scene.width - width - 16)
-        y: Math.min(scene.height - height, 290)
+        objectName: "watchHeroMorePopup"
+        parent: scene
+        scrollViewport: viewport
+        preferAbove: true
+        alignRight: true
         width: 270
         height: 104
         padding: 3
@@ -272,7 +276,7 @@ Item {
                     height: 42
                     StoneButton { label: scene.projection.hero.resume ? "Resume" : "Play"; icon: "image://vodforge/icon/play.png/r" + scene.appBridge.themeRevision; width: 150; height: 42; onActivated: scene.appBridge.playWatchHero(scene.projection.hero.owner) }
                     StoneButton { label: "View in Library"; icon: "image://vodforge/icon/folder-20.png/r" + scene.appBridge.themeRevision; width: 181; height: 42; onActivated: scene.showLibraryDetails(scene.projection.hero.owner) }
-                    StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 54; height: 42; onActivated: scene.openMore(scene.projection.hero.owner) }
+                    StoneButton { id: heroMoreButton; objectName: "watchHeroMoreButton"; label: "⋯"; accessibilityLabel: "More actions"; width: 54; height: 42; onActivated: scene.openMore(scene.projection.hero.owner, heroMoreButton) }
                 }
             }
 
@@ -288,6 +292,7 @@ Item {
                 ]
                 Column {
                     required property var modelData
+                    readonly property var section: modelData
                     visible: (scene.route === "home" && !scene.emptyHome && modelData.route !== "collections") || scene.route === modelData.route
                     width: parent.width
                     spacing: 9
@@ -313,6 +318,10 @@ Item {
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                        RailWheelHandler {
+                            horizontalView: homeRail
+                            verticalView: viewport
+                        }
                         property int loadedCount: 6
                         onVisibleChanged: { if (visible) loadedCount = 6 }
                         Connections {
@@ -321,34 +330,24 @@ Item {
                                 if (!homeRail.visible || !homeRail.contentItem ||
                                         homeRail.contentItem.contentX <= 0) return
                                 if (homeRail.contentItem.contentX + homeRail.width >=
-                                        homeRail.contentItem.contentWidth - 500)
-                                    homeRail.loadedCount = Math.min(modelData.items.length,
+                                        homeRail.contentItem.contentWidth - homeRail.width)
+                                    homeRail.loadedCount = Math.min(section.items.length,
                                                                     homeRail.loadedCount + 6)
                             }
                         }
-                Row {
-                    spacing: 12
-                    WheelHandler {
-                        target: null
-                        onWheel: function(wheel) {
-                            if (Math.abs(wheel.angleDelta.y) > Math.abs(wheel.angleDelta.x)) {
-                                viewport.contentItem.contentY = Math.max(0,
-                                    Math.min(viewport.contentItem.contentHeight - viewport.height,
-                                             viewport.contentItem.contentY - wheel.angleDelta.y))
-                                wheel.accepted = true
-                            } else wheel.accepted = false
-                        }
-                    }
+                        Row {
+                            spacing: 12
                             Repeater {
                                 objectName: "watchHomeGroupRepeater"
-                                model: homeRail.visible ? modelData.items.slice(0, homeRail.loadedCount) : []
+                                model: homeRail.visible ? Math.min(section.items.length, homeRail.loadedCount) : 0
                                 WatchGroupCard {
-                                    required property var modelData
-                                    width: modelData.kind === "channel" ? 260 : 225
-                                    group: modelData
+                                    required property int index
+                                    readonly property var railGroup: section.items[index]
+                                    width: railGroup.kind === "channel" ? 260 : 225
+                                    group: railGroup
                                     appBridge: scene.appBridge
                                     projection: scene.projection
-                                    onChosen: scene.appBridge.navigateWatchGroup(modelData.kind, modelData.key)
+                                    onChosen: scene.appBridge.navigateWatchGroup(railGroup.kind, railGroup.key)
                                 }
                             }
                         }
@@ -472,7 +471,9 @@ Item {
                         onActivated: scene.appBridge.openLibraryOwner(modelData.owner)
                         ArtworkImage {
                             objectName: "watchMediaArtworkImage"
-                            x: 0; y: 0; width: parent.width; height: 113
+                            x: parent.artworkFaceInset; y: parent.artworkFaceInset
+                            width: parent.width - parent.artworkFaceInset * 2
+                            height: 113 - parent.artworkFaceInset
                             cover: true
                             inset: 0
                             source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""

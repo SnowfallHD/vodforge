@@ -90,7 +90,7 @@ Item {
             visible: ["output-settings", "ui-settings"].indexOf(preview.previewKey) >= 0
             label: preview.mode + "  ▾"
             Layout.fillWidth: true
-            onActivated: modePreview.open()
+            onActivated: { modePreview.anchorItem = this; modePreview.open() }
         }
         Text {
             visible: preview.previewKey === "output-settings"
@@ -143,7 +143,7 @@ Item {
             visible: ["youtube-access", "youtube-access-expanded"].indexOf(preview.previewKey) >= 0
             label: "Chrome  ▾"
             Layout.preferredWidth: 170
-            onActivated: browserPreview.open()
+            onActivated: { browserPreview.anchorItem = this; browserPreview.open() }
         }
         ColumnLayout {
             objectName: "featurePreviewLibraryFields"
@@ -156,7 +156,7 @@ Item {
                 label: "Travel  ▾"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 38
-                onActivated: categoryPreview.open()
+                onActivated: { categoryPreview.anchorItem = this; categoryPreview.open() }
             }
             Text { text: "YOUR TAGS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             TextField {
@@ -203,7 +203,7 @@ Item {
                 objectName: "featurePreviewLocalProfile"
                 label: preview.demoLocalProfile + "  ▾"
                 Layout.fillWidth: true; Layout.preferredHeight: 38
-                onActivated: localProfilePreview.open()
+                onActivated: { localProfilePreview.anchorItem = this; localProfilePreview.open() }
             }
         }
         RowLayout {
@@ -252,11 +252,10 @@ Item {
         }
         Item { Layout.fillHeight: true }
     }
-    Popup {
+    AnchoredPopup {
         id: categoryPreview
         objectName: "featurePreviewCategoryMenu"
-        x: Math.max(0, (preview.width - width) / 2)
-        y: Math.max(0, (preview.height - height) / 2)
+        preferAbove: false
         width: Math.min(300, preview.width - 12)
         height: 45; padding: 3
         background: StoneField {}
@@ -266,11 +265,10 @@ Item {
             onActivated: categoryPreview.close()
         }
     }
-    Popup {
+    AnchoredPopup {
         id: localProfilePreview
         objectName: "featurePreviewLocalProfileMenu"
-        x: Math.max(0, (preview.width - width) / 2)
-        y: Math.max(0, (preview.height - height) / 2)
+        preferAbove: true
         width: Math.min(300, preview.width - 12)
         height: localVideoProfiles.length * 39 + 6; padding: 3
         background: StoneField {}
@@ -288,10 +286,9 @@ Item {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: modePreview
-        x: Math.max(0, (preview.width - width) / 2)
-        y: Math.max(0, (preview.height - height) / 2)
+        preferAbove: false
         width: Math.min(300, preview.width - 12)
         height: 6 * 39 + 6
         padding: 3
@@ -312,10 +309,9 @@ Item {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: browserPreview
-        x: Math.max(0, (preview.width - width) / 2)
-        y: Math.max(0, (preview.height - height) / 2)
+        preferAbove: false
         width: 220; height: 136; padding: 3
         background: StoneField {}
         Column {

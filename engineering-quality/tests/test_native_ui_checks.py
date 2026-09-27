@@ -57,6 +57,7 @@ def test_qt_candidate_uses_rendered_qml_contract_instead_of_tk_native_suite(
         assert "tests/test_scene_inflight_native.py" not in command
         assert kwargs["env"]["VODFORGE_UI"] == "qt"
         assert kwargs["env"]["QT_QPA_PLATFORM"] == "offscreen"
+        assert kwargs["env"]["QT_QUICK_BACKEND"] == "software"
         Path(kwargs["env"]["VODFORGE_NATIVE_EVIDENCE_DIR"], "native.xml").write_text(
             "<testsuite><testcase /></testsuite>"
         )
@@ -69,6 +70,7 @@ def test_qt_candidate_uses_rendered_qml_contract_instead_of_tk_native_suite(
     assert "tests/test_qt_scene_port.py" in observed
     assert "tests/test_qt_terminal_item_events.py" in observed
     assert "tests/test_qt_artwork_image.py" in observed
+    assert "tests/test_qt_interaction_invariants.py" in observed
     assert len(observed) == len(set(observed))
 
 

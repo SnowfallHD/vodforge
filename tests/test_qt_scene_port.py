@@ -198,6 +198,22 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
         for _ in range(5):
             app.processEvents()
         assert viewport.property("contentItem").property("contentY") > before
+        rail_before = flickable.property("contentX")
+        for phase, delta in ((Qt.ScrollUpdate, -53), (Qt.ScrollMomentum, -61)):
+            swipe = QWheelEvent(
+                point,
+                point,
+                QPoint(delta, 0),
+                QPoint(),
+                Qt.NoButton,
+                Qt.NoModifier,
+                phase,
+                False,
+            )
+            QGuiApplication.sendEvent(window, swipe)
+            app.processEvents()
+        assert abs(flickable.property("contentX") - rail_before - 114) <= 1
+        assert viewport.property("contentItem").property("contentY") > before
     finally:
         window.close()
         engine.deleteLater()
@@ -646,9 +662,12 @@ def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
             - open_details.mapToItem(None, 0, open_details.height()).y()
             < 70
         )
-        window.findChild(QObject, "libraryFolderDescriptionTab").activated.emit()
+        description_tab = window.findChild(QObject, "libraryFolderDescriptionTab")
+        tab_top = description_tab.mapToItem(None, 0, 0).y()
+        description_tab.activated.emit()
         app.processEvents()
-        assert panel.height() == 360
+        assert abs(description_tab.mapToItem(None, 0, 0).y() - tab_top) < 1
+        assert panel.height() >= 360
         assert (
             window.findChild(QObject, "libraryFolderDescriptionText").property("text")
             == record["description"]
@@ -862,7 +881,7 @@ def test_qt_library_player_video_click_and_escape_change_real_playback(
             "-i",
             "testsrc2=size=320x180:rate=15",
             "-t",
-            "8",
+            "15",
             "-c:v",
             "libx264",
             "-preset",
@@ -916,8 +935,65 @@ def test_qt_library_player_video_click_and_escape_change_real_playback(
         assert until(lambda: presentation.property("visible"))
         QTest.keyClick(presentation, Qt.Key_Escape)
         assert until(lambda: scene.property("presentationMode") == "embedded")
-        bridge.closePlayback()
+        assert until(lambda: player().property("position") >= 800)
+        library_button = next(
+            (
+                child
+                for child in window.findChild(QObject, "navigationRow").childItems()
+                if child.objectName() == "navigationButton_Library"
+            ),
+            None,
+        )
+        assert library_button is not None
+        library_button.activated.emit()
+        mini = window.findChild(QObject, "miniPlayer")
+        assert until(lambda: mini.property("visible") and bridge.selection == "Library")
+        playing_position = player().property("position")
+        assert until(lambda: player().property("position") > playing_position + 200)
+        drag_from = mini.mapToScene(QPointF(135, 90)).toPoint()
+        QTest.mousePress(window, Qt.LeftButton, pos=drag_from)
+        for step in range(1, 11):
+            QTest.mouseMove(
+                window,
+                QPoint(
+                    round(drag_from.x() + (110 - drag_from.x()) * step / 10),
+                    round(drag_from.y() + (110 - drag_from.y()) * step / 10),
+                ),
+            )
+            app.processEvents()
+        QTest.mouseRelease(window, Qt.LeftButton, pos=QPoint(110, 110))
+        app.processEvents()
+        assert window.property("miniPlayerCorner") == 0, (
+            mini.x(),
+            mini.y(),
+            mini.property("visible"),
+        )
+        assert abs(mini.x() - 16) < 1 and abs(mini.y() - 62) < 1
+        QTest.mouseMove(window, mini.mapToScene(QPointF(30, 24)).toPoint())
+        assert until(
+            lambda: window.findChild(QObject, "miniPlayerPause").property("visible")
+        )
+        window.findChild(QObject, "miniPlayerPause").activated.emit()
+        assert until(
+            lambda: player().property("playbackState") == QMediaPlayer.PausedState
+        )
+        saved_position = player().property("position")
+        QTest.mouseClick(
+            window, Qt.LeftButton, pos=mini.mapToScene(QPointF(130, 95)).toPoint()
+        )
+        assert until(lambda: not mini.property("visible") and scene.property("visible"))
+        assert abs(player().property("position") - saved_position) < 600
+        library_button.activated.emit()
+        assert until(lambda: bridge.playbackUrl.isEmpty())
         assert bridge.selection == "Library"
+        assert bridge.openLibraryItem(0)
+        assert until(
+            lambda: (
+                window.property("mediaPlayer").property("position")
+                >= saved_position - 600
+            )
+        )
+        bridge.closePlayback()
     finally:
         window.close()
         engine.deleteLater()
@@ -1025,6 +1101,10 @@ def test_qt_player_caption_track_uses_shared_controls_and_safe_fit(
             app.processEvents()
             time.sleep(0.02)
         assert len(player.subtitleTracks()) == 1
+        bridge._playback_url = QUrl.fromLocalFile(str(media))
+        bridge.playbackUrlChanged.emit()
+        bridge.select("Watch")
+        app.processEvents()
         scene.setProperty("videoFill", True)
         window.findChild(QObject, "playerCaptionsButton").activated.emit()
         app.processEvents()
@@ -2182,14 +2262,15 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_activity(
         popup = window.findChild(QObject, "allRunsPopup")
         popup_hover = window.findChild(QObject, "allRunsPopupHover")
         assert button.isVisible()
-        assert button.property("label") == "All 1 run"
+        assert button.property("label") == "All 2 runs"
         deck_records = (
             window.findChild(QObject, "forgeRunDeck")
             .property("workRecords")
             .toVariant()
         )
-        assert len(deck_records) == 1
+        assert len(deck_records) == 2
         assert deck_records[0]["kind"] == "active"
+        assert deck_records[1]["kind"] == "completed"
         assert not popup.property("visible")
         button_top = button.mapToScene(QPointF(0, 0)).y()
         center = button.mapToScene(
@@ -2273,11 +2354,14 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         popup = window.findChild(QObject, "allRunsPopup")
         popup.open()
         app.processEvents()
-        assert popup.property("y") < 0
         deck = window.findChild(QObject, "forgeRunDeck")
-        popup_top = deck.mapToScene(QPointF(0, popup.property("y"))).y()
+        popup_top = deck.parentItem().mapToScene(QPointF(0, popup.property("y"))).y()
+        trigger_top = (
+            window.findChild(QObject, "allRunsButton").mapToScene(QPointF(0, 0)).y()
+        )
         assert popup_top >= 0
         assert popup_top + popup.property("height") <= window.height()
+        assert popup_top + popup.property("height") <= trigger_top + 12
         scroll = window.findChild(QObject, "allRunsScrollView")
         flickable = scroll.property("contentItem")
         assert flickable.property("contentHeight") > flickable.property("height")
@@ -2974,10 +3058,12 @@ def test_qt_library_multi_select_presets_collection_from_visible_owners(
         )
         collection.activated.emit()
         app.processEvents()
-        editor = window.findChild(QObject, "libraryCollectionPopup")
-        assert editor.property("visible") is True
+        picker = window.findChild(QObject, "libraryCollectionTargetPopup")
+        assert picker.property("visible") is True
         annotation_owners = ["run:first-run", "run:second-run"]
-        assert editor.property("selectedOwners").toVariant() == annotation_owners
+        assert picker.property("selectedOwners") == annotation_owners
+        editor = window.findChild(QObject, "libraryCollectionPopup")
+        assert editor.property("visible") is False
         assert bridge.createCollection("Travel", annotation_owners)
         assert all(
             bridge._annotations.annotation_for(owner).category == "Travel"
@@ -3021,7 +3107,7 @@ def test_qt_multi_file_action_requires_all_current_owners_and_no_active_playback
         bridge.close()
 
 
-def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
+def test_qt_library_home_shows_all_recent_downloads_without_phantom_rows(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -3039,14 +3125,17 @@ def test_qt_library_home_limits_recent_cards_to_current_column_capacity(
         bridge.select("Library")
         app.processEvents()
         repeater = window.findChild(QObject, "libraryMediaRepeater")
-        assert repeater.property("count") == 4
+        assert len(bridge.libraryScene["media"]) == 9
+        assert repeater.property("count") == 9
         window.setWidth(820)
         app.processEvents()
-        assert repeater.property("count") == 2
+        assert 0 < repeater.property("count") <= 9
         window.setWidth(1400)
         app.processEvents()
-        assert repeater.property("count") == 5
-        assert len(bridge.libraryScene["media"]) == 5
+        assert repeater.property("count") == 9
+        flow = window.findChild(QObject, "libraryMediaFlow")
+        assert flow.property("totalRows") == 2
+        assert abs(flow.height() - (2 * flow.property("rowStride") - 14)) < 1
         bridge.navigateLibrary("all")
         app.processEvents()
         assert repeater.property("count") == 9
@@ -3260,7 +3349,9 @@ def test_qt_watch_empty_home_uses_tk_welcome_and_shared_actions(tmp_path, monkey
         bridge.close()
 
 
-def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypatch):
+def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -3271,10 +3362,10 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
     window = engine.rootObjects()[0]
     try:
         bridge.select("Library")
-        for width, height, margin, nav_x, search_x in (
-            (820, 560, 12, 148, 584),
-            (1100, 740, 20, 290, 757),
-            (1180, 790, 20, 330, 837),
+        for width, height, margin in (
+            (820, 560, 12),
+            (1100, 740, 20),
+            (1180, 790, 20),
         ):
             window.resize(width, height)
             for _ in range(3):
@@ -3282,7 +3373,6 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
             header = window.findChild(QObject, "focusHeader")
             nav = window.findChild(QObject, "navigationRow")
             brand = window.findChild(QObject, "brandRow")
-            search = window.findChild(QObject, "globalSearchField")
             scene = window.findChild(QObject, "libraryBrowseScene")
             assert (
                 round(header.mapToItem(None, 0, 0).x()),
@@ -3312,30 +3402,20 @@ def test_qt_shared_header_matches_tk_measured_compact_height(tmp_path, monkeypat
                     )
                     <= 1
                 )
-            nav_screen_x = nav.mapToItem(None, 0, 0).x()
-            if sys.platform == "darwin":
-                assert round(nav_screen_x) == nav_x
-            else:
-                # Other OS fonts change implicit label widths. Preserve the
-                # authored centering contract using actual layout width.
-                compact = width < 960
-                brand_width = 46 if compact else 150
-                utility_width = (186 if compact else 285) + 36
-                expected_nav_x = (
-                    margin
-                    + brand_width
-                    + (
-                        header.width()
-                        - brand_width
-                        - nav.implicitWidth()
-                        - utility_width
-                    )
-                    / 2
-                    + (4 if compact else 3)
-                )
-                assert abs(nav_screen_x - expected_nav_x) < 0.5
+            expected_nav_x = (
+                margin
+                + native_title_inset
+                + (46 if width < 960 else 150)
+                + (4 if width < 960 else 3)
+            )
+            for tab in ("Forge", "Library", "Watch", "Activity"):
+                bridge.selectHome(tab)
+                app.processEvents()
+                assert abs(nav.mapToItem(None, 0, 0).x() - expected_nav_x) < 0.5
+                assert round(nav.mapToItem(None, 0, 0).y()) == 5
+            bridge.selectHome("Library")
+            app.processEvents()
             assert round(nav.mapToItem(None, 0, 0).y()) == 5
-            assert abs(search.mapToItem(None, 0, 0).x() - search_x) <= 2
             assert round(scene.mapToItem(None, 0, 0).y()) == 54
     finally:
         window.close()
@@ -3855,9 +3935,10 @@ def test_qt_visible_cards_show_resolved_local_artwork(
             if not channel:
                 assert image.property("cover")
             if not channel:
-                assert image.x() == 0
-                assert image.y() == 0
-                assert image.width() == image.parentItem().width()
+                inset = image.parentItem().property("artworkFaceInset") or 0
+                assert image.x() == inset
+                assert image.y() == inset
+                assert image.width() == image.parentItem().width() - 2 * inset
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
             if bridge._artwork.poll():

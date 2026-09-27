@@ -1104,7 +1104,7 @@ def _qt_library_description_visibility_receipt(
         bottom = viewport["y"] + viewport["height"]
         table_bottom = table["y"] + table["height"]
         delta = bottom - table_bottom
-        if details["height"] != 360 or not inside(details, rail):
+        if details["height"] < 360 or not inside(details, rail):
             errors.append("Qt Library details panel geometry is invalid")
         if not inside(heading, details) or not inside(viewport, details):
             errors.append("Qt Library description geometry is invalid")

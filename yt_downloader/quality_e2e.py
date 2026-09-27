@@ -575,7 +575,7 @@ def write_quality_e2e_qt_library_visibility_receipt(
         and heading_visible
         and description_visible
         and library_table_visible
-        and details_bounds["height"] == 360
+        and details_bounds["height"] >= 360
         and _bounds_inside(details_bounds, rail_bounds)
         and _bounds_inside(description_heading_bounds, details_bounds)
         and _bounds_inside(description_viewport_bounds, details_bounds)

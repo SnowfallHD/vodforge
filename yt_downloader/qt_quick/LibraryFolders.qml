@@ -79,14 +79,6 @@ Item {
                     Layout.fillWidth: true
                 }
                 StoneButton {
-                    objectName: "libraryFolderRelinkButton"
-                    visible: browser.model.mode === "folders" && !!browser.model.path
-                    label: "Find this folder…"
-                    size: "inline"
-                    Layout.preferredWidth: 160
-                    onActivated: browser.appBridge.requestFolderRelink(browser.model.path)
-                }
-                StoneButton {
                     objectName: "libraryFolderCompactDetails"
                     visible: !browser.showInspector
                     enabled: !!browser.appBridge.libraryFolderInspector.owner
@@ -95,6 +87,26 @@ Item {
                     Layout.preferredWidth: 145
                     onActivated: browser.appBridge.openSelectedLibraryFolderDetail()
                 }
+            }
+            RowLayout {
+                visible: browser.model.mode === "folders" && !!browser.model.path
+                Layout.fillWidth: true
+                spacing: 8
+                StoneButton {
+                    objectName: "libraryFolderOpenLocationButton"
+                    label: "Open location"
+                    size: "inline"
+                    Layout.preferredWidth: 132
+                    onActivated: browser.appBridge.openLibraryCurrentFolder()
+                }
+                StoneButton {
+                    objectName: "libraryFolderRelinkButton"
+                    label: "Change folder location…"
+                    size: "inline"
+                    Layout.preferredWidth: 175
+                    onActivated: browser.appBridge.requestFolderRelink(browser.model.path)
+                }
+                Item { Layout.fillWidth: true }
             }
             ScrollView {
                 id: viewport

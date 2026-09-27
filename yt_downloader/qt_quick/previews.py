@@ -34,6 +34,8 @@ class PreviewImages(QQuickImageProvider):
             return False
         with self._lock:
             self._images[key] = image
+            while len(self._images) > 4:
+                self._images.pop(next(iter(self._images)))
         return True
 
     def requestImage(self, image_id: str, size: QSize, requested_size: QSize) -> QImage:
@@ -66,7 +68,9 @@ class QtPreviewSession:
         self._path: Path | None = None
         self._generation = 0
         self._duration = 0.0
-        self._pending = False
+        self._desired_position: float | None = None
+        self._active_position: float | None = None
+        self._image_version = 0
         self._records: list[dict[str, Any]] = []
         self._closed = False
 
@@ -80,7 +84,8 @@ class QtPreviewSession:
         self.images.clear()
         self._path = None
         self._duration = 0.0
-        self._pending = False
+        self._desired_position = None
+        self._active_position = None
         self._records = []
         if self._closed or self._owner is None or path is None:
             return
@@ -106,7 +111,8 @@ class QtPreviewSession:
         self._work.cancel()
         self.images.clear()
         self._records = []
-        self._pending = False
+        self._desired_position = None
+        self._active_position = None
         return True
 
     def hover(self, position: float) -> bool:
@@ -118,40 +124,48 @@ class QtPreviewSession:
         ):
             return False
         position = round(min(max(0.0, position), self._duration), 1)
-        if self._records and abs(self._records[0]["position"] - position) < 0.25:
+        if (
+            self._desired_position is not None
+            and abs(self._desired_position - position) < 0.25
+        ):
             return False
-        self._generation += 1
-        self._work.cancel()
-        self.images.clear()
-        self._records = [{"position": position, "image": "", "status": "Loading preview…"}]
-        self._pending = True
+        if (
+            self._desired_position is None
+            and self._records
+            and abs(self._records[0]["position"] - position) < 0.25
+        ):
+            return False
+        self._desired_position = position
+        if not self._records:
+            self._records = [
+                {"position": position, "image": "", "status": "Loading preview…"}
+            ]
         self._start()
         return True
 
     def _start(self) -> None:
         owner = self._owner
         path = self._path
-        if not self._pending or owner is None or path is None or self._work.busy:
+        position = self._desired_position
+        if position is None or owner is None or path is None or self._work.busy:
             return
-        positions = [float(row["position"]) for row in self._records]
+        if (
+            self._records
+            and self._records[0]["image"]
+            and abs(self._records[0]["position"] - position) < 0.25
+        ):
+            return
 
-        def work(cancelled: threading.Event) -> list[bytes | None]:
-            result: list[bytes | None] = []
-            for position in positions:
-                if cancelled.is_set():
-                    break
-                try:
-                    result.append(
-                        owner.preview_png(
-                            position, cancel=cancelled, expected_path=path
-                        )
-                    )
-                except MediaPlayerError:
-                    result.append(None)
-            return result
+        def work(cancelled: threading.Event) -> bytes | None:
+            if cancelled.is_set():
+                return None
+            try:
+                return owner.preview_png(position, cancel=cancelled, expected_path=path)
+            except MediaPlayerError:
+                return None
 
         if self._work.submit("player_previews", work) is not None:
-            self._pending = False
+            self._active_position = position
 
     def poll(self) -> bool:
         if self._closed:
@@ -159,16 +173,28 @@ class QtPreviewSession:
         result = self._work.poll()
         changed = False
         if result is not None and result.kind == "player_previews":
-            images = result.value if isinstance(result.value, list) else []
-            for index, row in enumerate(self._records):
-                key = f"{self._generation}/{index}"
-                data = images[index] if index < len(images) else None
-                if isinstance(data, bytes) and self.images.put(key, data):
-                    row["image"] = f"image://vodforge-previews/{key}"
-                    row["status"] = ""
-                else:
-                    row["status"] = "No preview"
+            position = self._active_position
+            self._active_position = None
+            self._image_version += 1
+            key = f"{self._generation}/{self._image_version}"
+            if (
+                position is not None
+                and isinstance(result.value, bytes)
+                and self.images.put(key, result.value)
+            ):
+                self._records = [
+                    {
+                        "position": position,
+                        "image": f"image://vodforge-previews/{key}",
+                        "status": "",
+                    }
+                ]
                 changed = True
+            elif self._records and not self._records[0]["image"]:
+                self._records[0]["status"] = "No preview"
+                changed = True
+            if position is not None and self._desired_position == position:
+                self._desired_position = None
         self._start()
         return changed
 

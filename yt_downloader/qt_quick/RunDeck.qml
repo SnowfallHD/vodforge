@@ -8,14 +8,15 @@ Item {
     property var appBridge
     property bool compact: false
     readonly property var projection: appBridge.runDeck
-    // The deck is the work queue. Saved outputs and metadata previews live in Library.
+    // Keep the latest completed work in sight after the active slot finishes.
     readonly property var workRecords: (projection.records || []).filter(
-        record => ["active", "queued", "terminal"].indexOf(record.kind) >= 0)
+        record => ["active", "queued", "completed", "terminal"].indexOf(record.kind) >= 0)
     readonly property var visibleRecords: workRecords.slice(0, 4)
     readonly property string workSummary: {
         if (workRecords.length === 0) return "No runs in progress"
         const parts = []
         for (const [kind, label] of [["active", "active"], ["queued", "queued"],
+                                     ["completed", "completed"],
                                      ["terminal", "interrupted"]]) {
             const count = workRecords.filter(record => record.kind === kind).length
             if (count) parts.push(count + " " + label)
@@ -23,11 +24,12 @@ Item {
         return workRecords.length + " run" + (workRecords.length === 1 ? "" : "s") +
                "  •  " + parts.join("  •  ")
     }
-    function showActions(record) {
+    function showActions(record, anchor) {
         if (record.kind === "active" &&
                 !deck.appBridge.admitRunMenu(record.runId, record.executionToken || ""))
             return
         selectedRecord = record
+        actionsPopup.anchorItem = anchor || allRunsButton
         actionsPopup.open()
     }
     function openActiveActions() {
@@ -126,7 +128,7 @@ Item {
                                 accessibilityLabel: "Actions for " + modelData.title
                                 size: "inline"
                                 Layout.preferredWidth: 31
-                                onActivated: deck.showActions(modelData)
+                                onActivated: deck.showActions(modelData, this)
                             }
                         }
                     }
@@ -141,14 +143,16 @@ Item {
     }
 
     property var selectedRecord: ({})
-    Popup {
+    AnchoredPopup {
         id: actionsPopup
         objectName: "runActionsPopup"
-        x: Math.max(0, deck.width - width)
-        y: deck.height - height - 40
+        parent: deck.parent
+        preferAbove: true
+        alignRight: true
         width: 225
         padding: 10
-        modal: true
+        modal: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onClosed: deck.appBridge.retireRunMenu()
         background: StoneField {}
         ColumnLayout {
@@ -190,14 +194,14 @@ Item {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: allRunsPopup
         objectName: "allRunsPopup"
-        parent: deck
-        x: Math.max(0, Math.min(deck.width - width,
-                                deckHeader.x + allRunsButton.x + allRunsButton.width - width))
-        // Overlap the trigger so the pointer never crosses a non-hovered seam.
-        y: deckHeader.y + allRunsButton.y - height + 10
+        parent: deck.parent
+        anchorItem: allRunsButton
+        preferAbove: true
+        alignRight: true
+        overlap: 10
         width: Math.min(440, deck.width)
         height: Math.min(285, Math.max(80, deck.workRecords.length * 42 + 18))
         padding: 9

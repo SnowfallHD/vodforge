@@ -76,7 +76,7 @@ Item {
     function seekTo(seconds) {
         if (player) appBridge.manualPlaybackSeek(Math.max(0, Math.min(seconds, player.duration / 1000)))
     }
-    function showOptions() { playerOptions.open() }
+    function showOptions(anchor) { playerOptions.anchorItem = anchor; playerOptions.open() }
     onPlayerChanged: {
         requestedCaptionTrack = -2
         restoreFillAfterCaptions = false
@@ -138,7 +138,7 @@ Item {
             player: scene.player
             volume: scene.volume
             previews: scene.appBridge.playbackPreviews
-            heatmap: scene.appBridge.playbackHeatmap
+            fallbackArtwork: scene.projection.artwork || ""
             fullscreen: scene.presentationMode === "fullscreen"
             floating: scene.presentationMode === "floating"
             onPlayPauseRequested: scene.togglePlayback()
@@ -146,8 +146,8 @@ Item {
             onVolumeRequested: function(value) { scene.volumeRequested(value) }
             onFullscreenRequested: scene.setPresentation(scene.presentationMode === "fullscreen" ? "embedded" : "fullscreen")
             onFloatingRequested: scene.setPresentation(scene.presentationMode === "floating" ? "embedded" : "floating")
-            onOptionsRequested: scene.showOptions()
-            onCaptionsRequested: presentationCaptionMenu.open()
+            onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
+            onCaptionsRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.open() }
             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
         }
         CaptionTracks {
@@ -275,14 +275,14 @@ Item {
                             player: scene.player
                             volume: scene.volume
                             previews: scene.appBridge.playbackPreviews
-                            heatmap: scene.appBridge.playbackHeatmap
+                            fallbackArtwork: scene.projection.artwork || ""
                             onPlayPauseRequested: scene.togglePlayback()
                             onSeekRequested: function(seconds) { scene.seekTo(seconds) }
                             onVolumeRequested: function(value) { scene.volumeRequested(value) }
                             onFullscreenRequested: scene.setPresentation("fullscreen")
                             onFloatingRequested: scene.setPresentation("floating")
-                            onOptionsRequested: scene.showOptions()
-                            onCaptionsRequested: captionsMenu.open()
+                            onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
+                            onCaptionsRequested: function(anchor) { captionsMenu.anchorItem = anchor; captionsMenu.open() }
                             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
                         }
                     }
@@ -356,17 +356,20 @@ Item {
                 width: parent.width
                 spacing: 8
                 Text { text: scene.projection.queued ? "UP NEXT" : "MORE TO WATCH"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-                Row {
-                    spacing: 10
-                    Repeater {
-                        model: (scene.projection.upNext || []).slice(0, 3)
-                        StoneButton {
-                            required property var modelData
-                            label: modelData.title
-                            width: Math.min(220, (scene.width - 20) / 3)
-                            height: 40
-                            size: "inline"
-                            onActivated: scene.appBridge.playPlayerRelated(modelData.owner)
+                ScrollView {
+                    id: relatedRail
+                    objectName: "playerRelatedRail"
+                    width: parent.width
+                    height: 164
+                    clip: true
+                    ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                    ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                    RailWheelHandler { horizontalView: relatedRail; verticalView: viewport }
+                    Row {
+                        spacing: 12
+                        Repeater {
+                            model: scene.projection.upNext || []
+                            PlayerThumbnailCard { appBridge: scene.appBridge }
                         }
                     }
                 }
@@ -388,7 +391,6 @@ Item {
                         label: Math.floor(modelData.start_time / 60) + ":" +
                             ("0" + Math.floor(modelData.start_time % 60)).slice(-2) +
                             "  " + (modelData.title || "Untitled chapter")
-                        transientMaterial: false
                         onActivated: scene.appBridge.seekPlaybackChapter(index)
                     }
                 }
@@ -401,37 +403,21 @@ Item {
                 spacing: 8
                 Text { text: "RECENTLY ADDED"; color: theme.muted; font.pixelSize: 12; font.bold: true }
                 ScrollView {
+                    id: recentRail
                     width: parent.width
                     height: 164
                     clip: true
                     ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                     ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                    RailWheelHandler {
+                        horizontalView: recentRail
+                        verticalView: viewport
+                    }
                     Row {
                         spacing: 12
                         Repeater {
                             model: (scene.projection.recent || []).slice(0, 8)
-                            StoneButton {
-                                required property var modelData
-                                width: 207; height: 142
-                                label: ""
-                                accessibilityLabel: "Play " + modelData.title
-                                transientMaterial: false
-                                onActivated: scene.appBridge.playPlayerRelated(modelData.owner)
-                                ArtworkImage {
-                                    x: 7; y: 7
-                                    width: parent.width - 14; height: 105
-                                    source: modelData.artwork || ""
-                                    inset: 0
-                                }
-                                Text {
-                                    x: 9; y: 117
-                                    width: parent.width - 18
-                                    text: modelData.title
-                                    color: theme.text
-                                    font.pixelSize: 13
-                                    elide: Text.ElideRight
-                                }
-                            }
+                            PlayerThumbnailCard { appBridge: scene.appBridge }
                         }
                     }
                 }
@@ -440,7 +426,16 @@ Item {
             Column {
                 width: parent.width
                 spacing: 8
-                Text { text: "ABOUT THIS MEDIA"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                Row {
+                    width: parent.width
+                    Text { text: "ABOUT THIS MEDIA"; color: theme.muted; font.pixelSize: 12; font.bold: true; width: parent.width - 36 }
+                    StoneButton {
+                        objectName: "playerCopyDescriptionButton"
+                        label: "⧉"; accessibilityLabel: "Copy description"; size: "inline"
+                        width: 32; height: 24
+                        onActivated: scene.appBridge.copyLibraryText(scene.projection.owner, "description")
+                    }
+                }
                 Text {
                     text: scene.projection.description || "No description saved for this media."
                     color: theme.text
@@ -452,7 +447,16 @@ Item {
             Column {
                 width: parent.width
                 spacing: 8
-                Text { text: "YOUR DETAILS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                Row {
+                    width: parent.width
+                    Text { text: "YOUR DETAILS"; color: theme.muted; font.pixelSize: 12; font.bold: true; width: parent.width - 36 }
+                    StoneButton {
+                        objectName: "playerCopyTagsButton"
+                        label: "⧉"; accessibilityLabel: "Copy tags"; size: "inline"
+                        width: 32; height: 24
+                        onActivated: scene.appBridge.copyLibraryText(scene.projection.owner, "tags")
+                    }
+                }
                 Text {
                     text: (scene.projection.category ? "Collection: " + scene.projection.category + "\n" : "") +
                           ((scene.projection.tags || []).length ? "Tags: " + scene.projection.tags.join(", ") + "\n" : "") +
@@ -501,15 +505,18 @@ Item {
     CaptionTracks {
         id: captionsMenu
         objectName: "playerCaptionsMenu"
+        parent: scene
+        scrollViewport: viewport
         player: scene.player
         onTrackRequested: function(index) { scene.selectCaption(index) }
     }
-    Popup {
+    AnchoredPopup {
         id: playerOptions
         objectName: "playerOptionsMenu"
         parent: scene.presentationMode === "embedded" ? scene : presentationWindow.contentItem
-        x: Math.max(12, (parent.width - width) / 2)
-        y: Math.max(12, parent.height - height - 104)
+        scrollViewport: scene.presentationMode === "embedded" ? viewport : null
+        preferAbove: true
+        alignRight: true
         width: 244
         height: 102
         padding: 5

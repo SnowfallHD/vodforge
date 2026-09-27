@@ -14,10 +14,10 @@ StoneButton {
     ArtworkImage {
         id: artworkFrame
         objectName: "watchGroupArtworkImage"
-        x: card.channel ? 8 : 0
-        y: card.channel ? 9 : 0
-        width: card.channel ? 64 : parent.width
-        height: card.channel ? 64 : 108
+        x: card.channel ? card.artworkFaceInset + 1 : card.artworkFaceInset
+        y: card.channel ? card.artworkFaceInset + 2 : card.artworkFaceInset
+        width: card.channel ? 64 - (card.artworkFaceInset - 7) * 2 : parent.width - card.artworkFaceInset * 2
+        height: card.channel ? width : 108 - card.artworkFaceInset
         circular: card.channel
         cover: !card.channel
         inset: 0

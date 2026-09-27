@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-Popup {
+AnchoredPopup {
     id: menu
     required property var player
     signal trackRequested(int index)
@@ -12,8 +12,8 @@ Popup {
             ? language + " · Track " + (index + 1)
             : "Caption track " + (index + 1)
     }
-    x: Math.max(0, (parent.width - width) / 2)
-    y: Math.max(0, (parent.height - height) / 2)
+    preferAbove: true
+    alignRight: true
     width: Math.min(245, parent.width - 24)
     height: Math.min(250, 52 + (player ? player.subtitleTracks.length + 1 : 1) * 42)
     padding: 5

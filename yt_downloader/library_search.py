@@ -9,6 +9,8 @@ from .models import OutputType
 from .run_identity import metadata_output_profile
 
 LIBRARY_ALL_MEDIA = "All"
+LIBRARY_VIDEO_MEDIA = "Videos"
+LIBRARY_AUDIO_MEDIA = "Audio"
 LIBRARY_ALL_CATEGORIES = "All categories"
 
 
@@ -72,10 +74,17 @@ def library_visible_indices(
     terms = library_search_terms(query)
     result: list[int] = []
     for index, item in enumerate(items):
-        if (
-            selected != LIBRARY_ALL_MEDIA
-            and metadata_output_type(item).value != selected
-        ):
+        item_type = metadata_output_type(item).value
+        if selected == LIBRARY_VIDEO_MEDIA and item_type != OutputType.MP4.value:
+            continue
+        if selected == LIBRARY_AUDIO_MEDIA and item_type == OutputType.MP4.value:
+            continue
+        if selected not in {
+            LIBRARY_ALL_MEDIA,
+            LIBRARY_VIDEO_MEDIA,
+            LIBRARY_AUDIO_MEDIA,
+            item_type,
+        }:
             continue
         item_category = str(item.get("vodforge_user_category") or "").strip()
         if (

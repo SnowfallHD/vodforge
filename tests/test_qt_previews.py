@@ -66,7 +66,9 @@ def test_qt_preview_session_retires_replaced_media_and_publishes_exact_hover_fra
                 break
             time.sleep(0.005)
         assert [row["position"] for row in session.records] == [151.2]
-        assert [position for path, position in owner.positions if path == second] == [151.2]
+        assert [position for path, position in owner.positions if path == second] == [
+            151.2
+        ]
         assert all(
             row["image"].startswith("image://vodforge-previews/")
             for row in session.records
@@ -78,17 +80,47 @@ def test_qt_preview_session_retires_replaced_media_and_publishes_exact_hover_fra
         assert not session.request(200)
         assert not session.hover(151.3)
         assert session.hover(180)
+        previous_image = session.records[0]["image"]
+        assert previous_image
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
             session.poll()
-            if session.records and session.records[0]["image"]:
+            if session.records and session.records[0]["position"] == 180:
                 break
+            assert session.records[0]["image"] == previous_image
             time.sleep(0.005)
         assert session.records[0]["position"] == 180
         assert session.records[0]["image"]
     finally:
         session.close()
     assert owner.closed
+
+
+def test_qt_preview_fast_hover_keeps_last_frame_and_coalesces_latest_position(tmp_path):
+    owner = PreviewOwner()
+    session = QtPreviewSession("ffmpeg", owner=owner)
+    path = tmp_path / "second.mp4"
+    try:
+        session.load(path)
+        assert session.request(100)
+        assert session.hover(5)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline and not session.records[0]["image"]:
+            session.poll()
+            time.sleep(0.005)
+        first_image = session.records[0]["image"]
+        assert first_image
+        assert session.hover(20)
+        assert session.hover(30)
+        assert session.records[0]["image"] == first_image
+        while time.monotonic() < deadline and session.records[0]["position"] != 30:
+            session.poll()
+            time.sleep(0.005)
+        assert session.records[0]["position"] == 30
+        assert session.records[0]["image"]
+        assert owner.positions[-1] == (path, 30)
+    finally:
+        session.close()
 
 
 def test_qt_preview_images_reject_oversized_or_invalid_data():

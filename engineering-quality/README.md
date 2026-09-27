@@ -826,8 +826,15 @@ Normal adversarial run (generated local corpus, real pipeline, faults, short soa
 
 For a Qt Quick release candidate, pass `--ui qt` to `normal` and `deep`. The
 native-surface scenario then executes the rendered Qt scene, metadata,
-terminal, preview, and relink contracts and records `metrics.ui=qt`. The
-default `--ui tk` retains the legacy Tk contract for Tk builds. The separate
+terminal, preview, relink, and interaction-invariant contracts and records
+`metrics.ui=qt`. The interaction suite exercises collection item versus batch
+selection, nested Library filters, aligned detail panels and copy actions, and
+separate settings/help menus. The scene suite additionally checks momentum
+wheel deltas, menu anchors, header geometry across tabs, and mini-player
+continuity. The offscreen gate pins Qt Quick's software backend, matching the
+package-build source tests. Both scene and component groups must pass in
+separate processes; either failure fails the native-surface gate. The default
+`--ui tk` retains the legacy Tk contract for Tk builds. The separate
 signed packaged-app and preview-D1 journeys remain required; an offscreen QML
 source test cannot establish an installed desktop journey.
 

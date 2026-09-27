@@ -21,6 +21,12 @@ Window {
     property string missingAction: ""
     property string pendingRelinkFolderPath: ""
     property var mediaPlayer: playerLoader.item
+    property bool miniPlayerActive: false
+    property int miniPlayerCorner: 3
+    function expandMiniPlayer() {
+        miniPlayerActive = false
+        bridge.select("Watch")
+    }
     readonly property var selectedForgeRun: bridge.forgeSelection
     readonly property string selectedForgeToneStatus:
         window.showingForgePreview && bridge.forgePreview.phase === "failed" ?
@@ -101,7 +107,7 @@ Window {
             objectName: "watchMediaPlayer"
             property int generation: 0
             audioOutput: AudioOutput { volume: window.playerVolume }
-            videoOutput: playerScene.activeVideoSurface
+            videoOutput: window.miniPlayerActive ? miniVideoSurface : playerScene.activeVideoSurface
             function reportProgress() {
                 var status = "Ready"
                 if (error !== MediaPlayer.NoError) status = "Failed"
@@ -156,8 +162,16 @@ Window {
             // Retire the old provider object before a queued item opens. Any
             // late signal carries the old generation and cannot advance it.
             window.pendingPlaybackGeneration = generation
+            window.miniPlayerActive = false
             playerLoader.sourceComponent = null
             playerLoader.sourceComponent = mediaPlayerComponent
+        }
+        function onPlaybackUrlChanged() {
+            if (bridge.playbackUrl.toString().length > 0) return
+            window.miniPlayerActive = false
+            window.pendingPlaybackGeneration = -1
+            if (window.mediaPlayer) window.mediaPlayer.stop()
+            playerLoader.sourceComponent = null
         }
         function onPlaybackSeekRequested(position) {
             if (window.mediaPlayer) mediaPlayer.setPosition(position * 1000)
@@ -211,17 +225,18 @@ Window {
             !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
-            !collectionPopup.visible && !categoryPopup.visible &&
+            !collectionPopup.visible && !collectionTargetPopup.visible &&
             !annotationPopup.visible && !mp3OptionsPopup.visible && !settingsPopup.visible &&
             !updatePopup.visible && !accessPopup.visible &&
             !localConversionPopup.visible && !localProfilePopup.visible &&
-            !formatMenu.visible && !optionsMenu.visible)
+            !formatMenu.visible && !optionsMenu.visible &&
+            !settingsQualityMenu.visible && !settingsOutputModeMenu.visible)
     }
-    Popup {
+    AnchoredPopup {
         id: helpMenu
         objectName: "helpMenu"
-        x: Math.max(0, window.width - width - window.gutter)
-        y: window.gutter + 55
+        parent: window.contentItem
+        preferAbove: true
         width: 235
         height: 152
         padding: 3
@@ -232,17 +247,17 @@ Window {
             StoneButton {
                 width: parent.width; height: 46
                 label: "Support"
-                onActivated: { helpMenu.close(); bridge.openSupport("feedback") }
+                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openSupport("feedback") }
             }
             StoneButton {
                 width: parent.width; height: 46
                 label: "Write a review"
-                onActivated: { helpMenu.close(); bridge.openSupport("review") }
+                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openSupport("review") }
             }
             StoneButton {
                 width: parent.width; height: 46
                 label: "Welcome tour"
-                onActivated: { helpMenu.close(); bridge.openWelcomeTour() }
+                onActivated: { helpMenu.close(); settingsPopup.close(); bridge.openWelcomeTour() }
             }
         }
     }
@@ -292,7 +307,7 @@ Window {
                         label: supportPopup.reason + "  ▾"
                         Layout.fillWidth: true; Layout.preferredHeight: 40
                         enabled: !bridge.supportBusy && !bridge.supportSent
-                        onActivated: supportReasonMenu.open()
+                        onActivated: { supportReasonMenu.anchorItem = this; supportReasonMenu.open() }
                     }
                     RowLayout {
                         visible: bridge.supportKind === "review"
@@ -425,12 +440,12 @@ Window {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: supportReasonMenu
-        x: Math.max(0, (window.width - width) / 2)
-        y: Math.max(0, (window.height - height) / 2)
+        parent: window.contentItem
+        preferAbove: true
         width: 290; height: 238; padding: 3
-        modal: true
+        scrollViewport: supportBody
         background: StoneField {}
         Column {
             anchors.fill: parent; spacing: 2
@@ -631,7 +646,7 @@ Window {
             readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
             readonly property int searchWidth: compact ? 186 : 285
             readonly property int navWidth: navigationRow.implicitWidth
-            readonly property int utilityWidth: (bridge.selection === "Library" || bridge.selection === "Watch" ? searchWidth + 8 : 0) + 28
+            readonly property int utilityWidth: searchWidth + 8 + 28
             readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
 
             Row {
@@ -669,15 +684,14 @@ Window {
             Row {
                 id: navigationRow
                 objectName: "navigationRow"
-                x: focusHeader.stacked ? 0 : focusHeader.brandWidth
-                    + (focusHeader.width - focusHeader.brandWidth - focusHeader.navWidth - focusHeader.utilityWidth) / 2
-                    + (focusHeader.compact ? 4 : 3)
+                x: focusHeader.stacked ? 0 : focusHeader.brandWidth + (focusHeader.compact ? 4 : 3)
                 y: focusHeader.stacked ? 56 : 0
                 spacing: 10
                 Repeater {
                     model: ["Forge", "Library", "Watch", "Activity"]
                     StoneButton {
                         required property string modelData
+                        objectName: "navigationButton_" + modelData
                         label: modelData
                         selected: bridge.selection === modelData
                         icon: "image://vodforge/icon/" + (
@@ -686,7 +700,12 @@ Window {
                             modelData === "Watch" ? "play.png" : "activity-20.png") + "/r" + bridge.themeRevision
                         width: Math.max(86, implicitWidth)
                         height: implicitHeight
-                        onActivated: bridge.selectHome(modelData)
+                        onActivated: {
+                            const keepPlaying = window.miniPlayerActive ||
+                                (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState)
+                            window.miniPlayerActive = !!keepPlaying
+                            bridge.selectHome(modelData, !!keepPlaying)
+                        }
                     }
                 }
             }
@@ -789,7 +808,7 @@ Window {
                             label: window.outputFormat + "  ▾"
                             Layout.preferredWidth: 92
                             Layout.preferredHeight: 38
-                            onActivated: formatMenu.open()
+                            onActivated: { formatMenu.anchorItem = this; formatMenu.open() }
                         }
                     }
                 }
@@ -1137,8 +1156,10 @@ Window {
             onAnnotationOwnerRequested: function(owner) {
                 if (bridge.openAnnotationOwner(owner)) annotationPopup.open()
             }
-            onActionsRequested: function(owner) {
+            onActionsRequested: function(owner, anchor, scrollViewport) {
                 window.selectedSavedOwner = owner
+                libraryItemPopup.anchorItem = anchor
+                libraryItemPopup.scrollViewport = scrollViewport
                 libraryItemPopup.open()
             }
             onCollectionRequested: {
@@ -1150,8 +1171,8 @@ Window {
                 if (action === "collection") {
                     var annotationOwners = bridge.collectionOwnersForArchiveSelection(owners)
                     if (annotationOwners.length) {
-                        collectionPopup.selectionPreset = annotationOwners
-                        collectionPopup.open()
+                        collectionTargetPopup.selectedOwners = annotationOwners
+                        collectionTargetPopup.open()
                     }
                 } else if (action === "move") {
                     window.pendingFileOwners = owners.slice()
@@ -1161,13 +1182,13 @@ Window {
                         fileActionPopup.open()
                 }
             }
-            onCategoryRequested: categoryPopup.open()
             onImportRequested: libraryImportDialog.open()
         }
         WatchScene {
             id: watchBrowseScene
             objectName: "watchBrowseScene"
-            visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length === 0
+            visible: bridge.selection === "Watch" &&
+                     (bridge.playbackUrl.toString().length === 0 || window.miniPlayerActive)
             Layout.fillWidth: true
             Layout.fillHeight: true
             appBridge: bridge
@@ -1175,7 +1196,8 @@ Window {
         PlayerScene {
             id: playerScene
             objectName: "watchPlayerScene"
-            visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length > 0
+            visible: bridge.selection === "Watch" && bridge.playbackUrl.toString().length > 0 &&
+                     !window.miniPlayerActive
             Layout.fillWidth: true
             Layout.fillHeight: true
             appBridge: bridge
@@ -1183,8 +1205,13 @@ Window {
             volume: window.playerVolume
             onCloseRequested: {
                 playerScene.presentationMode = "embedded"
-                if (window.mediaPlayer) window.mediaPlayer.stop()
-                bridge.closePlayback()
+                if (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState) {
+                    window.miniPlayerActive = true
+                    bridge.navigateWatch("home")
+                } else {
+                    if (window.mediaPlayer) window.mediaPlayer.stop()
+                    bridge.closePlayback()
+                }
             }
             onVolumeRequested: function(value) { window.playerVolume = value }
             onEditDetailsRequested: function(owner) {
@@ -1196,6 +1223,81 @@ Window {
             Layout.fillWidth: true
             Layout.fillHeight: true
             appBridge: bridge
+        }
+    }
+
+    Item {
+        id: miniPlayer
+        objectName: "miniPlayer"
+        parent: window.contentItem
+        z: 100
+        width: 272
+        height: 182
+        visible: window.miniPlayerActive && bridge.playbackUrl.toString().length > 0
+        function snap() {
+            x = window.miniPlayerCorner % 2 ? window.width - width - 16 : 16
+            y = window.miniPlayerCorner >= 2 ? window.height - height - 16 : 62
+        }
+        onVisibleChanged: { if (visible) Qt.callLater(snap) }
+        Connections {
+            target: window
+            function onWidthChanged() { if (miniPlayer.visible) miniPlayer.snap() }
+            function onHeightChanged() { if (miniPlayer.visible) miniPlayer.snap() }
+        }
+        HoverHandler { id: miniHover }
+        StoneField { anchors.fill: parent }
+        VideoOutput {
+            id: miniVideoSurface
+            objectName: "miniVideoSurface"
+            x: 6; y: 6; width: parent.width - 12; height: 145
+            fillMode: VideoOutput.PreserveAspectFit
+        }
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.OpenHandCursor
+            drag.target: miniPlayer
+            drag.minimumX: 8
+            drag.maximumX: window.width - miniPlayer.width - 8
+            drag.minimumY: 56
+            drag.maximumY: window.height - miniPlayer.height - 8
+            onClicked: window.expandMiniPlayer()
+            onReleased: {
+                if (!miniPlayer.visible) return
+                window.miniPlayerCorner = (miniPlayer.y + miniPlayer.height / 2 < window.height / 2 ? 0 : 2) +
+                    (miniPlayer.x + miniPlayer.width / 2 < window.width / 2 ? 0 : 1)
+                miniPlayer.snap()
+            }
+        }
+        Text {
+            x: 10; y: 155; width: parent.width - 20
+            text: bridge.playerScene.title || "Playing video"
+            color: theme.text; font.pixelSize: 12; elide: Text.ElideRight
+        }
+        Row {
+            visible: miniHover.hovered
+            x: 10; y: 10; spacing: 5
+            StoneButton {
+                objectName: "miniPlayerPause"
+                label: window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState ? "Ⅱ" : "▶"
+                accessibilityLabel: label === "Ⅱ" ? "Pause mini player" : "Play mini player"
+                width: 32; height: 30
+                onActivated: {
+                    if (!window.mediaPlayer) return
+                    if (window.mediaPlayer.playbackState === MediaPlayer.PlayingState) window.mediaPlayer.pause()
+                    else window.mediaPlayer.play()
+                }
+            }
+        }
+        StoneButton {
+            objectName: "miniPlayerClose"
+            visible: miniHover.hovered
+            x: parent.width - width - 10; y: 10
+            label: "×"; accessibilityLabel: "Close mini player"
+            width: 32; height: 30
+            onActivated: {
+                if (window.mediaPlayer) window.mediaPlayer.stop()
+                bridge.closePlayback(true)
+            }
         }
     }
 
@@ -1289,19 +1391,20 @@ Window {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: libraryItemPopup
         objectName: "librarySavedActionsPopup"
-        x: Math.max(0, (window.width - width) / 2)
-        y: Math.max(0, (window.height - height) / 2)
+        parent: window.contentItem
+        preferAbove: true
+        alignRight: true
         width: 260
-        height: 418
-        padding: 14
-        modal: true
+        height: 342
+        padding: 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
-            spacing: 10
+            spacing: 5
             StoneButton {
                 label: "Open folder"
                 Layout.fillWidth: true
@@ -1481,14 +1584,28 @@ Window {
         objectName: "libraryCollectionPopup"
         property var selectionPreset: []
         property var selectedOwners: []
+        property string pickerMode: "videos"
+        property string pickerSearch: ""
+        function toggleOwners(owners) {
+            const next = selectedOwners.slice()
+            const allSelected = owners.every(owner => next.indexOf(owner) >= 0)
+            for (const owner of owners) {
+                const index = next.indexOf(owner)
+                if (allSelected && index >= 0) next.splice(index, 1)
+                else if (!allSelected && index < 0) next.push(owner)
+            }
+            selectedOwners = next
+        }
         onOpened: {
             selectedOwners = selectionPreset.slice()
+            pickerMode = "videos"
+            pickerSearch = ""
             collectionName.text = ""
         }
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(540, window.width - 40)
-        height: Math.min(480, window.height - 40)
+        width: Math.min(680, window.width - 40)
+        height: Math.min(620, window.height - 40)
         padding: 20
         modal: true
         background: StoneField {}
@@ -1497,7 +1614,7 @@ Window {
             spacing: 12
             Text { text: "Create a collection"; color: theme.text; font.pixelSize: 23; font.bold: true }
             Text {
-                text: "Choose a name, then click the media you want to include."
+                text: "Choose individual media or select every item in a playlist or channel."
                 color: theme.muted
                 font.pixelSize: 14
                 wrapMode: Text.WordWrap
@@ -1515,39 +1632,99 @@ Window {
                     background: Item {}
                 }
             }
-            ScrollView {
+            RowLayout {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                Column {
-                    width: parent.width
-                    spacing: 5
-                    Repeater {
-                        model: bridge.collectionCandidates
-                        StoneButton {
-                            required property var modelData
-                            width: parent.width
-                            height: 36
-                            label: modelData.title
-                            selected: collectionPopup.selectedOwners.indexOf(modelData.owner) >= 0
-                            onActivated: {
-                                var next = collectionPopup.selectedOwners.slice()
-                                var index = next.indexOf(modelData.owner)
-                                if (index >= 0) next.splice(index, 1)
-                                else next.push(modelData.owner)
-                                collectionPopup.selectedOwners = next
-                            }
-                        }
+                spacing: 8
+                Repeater {
+                    model: ["videos", "playlists", "channels"]
+                    StoneButton {
+                        required property string modelData
+                        label: modelData.charAt(0).toUpperCase() + modelData.slice(1)
+                        selected: collectionPopup.pickerMode === modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 36
+                        onActivated: collectionPopup.pickerMode = modelData
                     }
                 }
             }
-            Text { text: bridge.status; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true; elide: Text.ElideRight }
+            StoneField {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                TextField {
+                    objectName: "collectionPickerSearch"
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    placeholderText: "Search media or groups…"
+                    text: collectionPopup.pickerSearch
+                    onTextEdited: collectionPopup.pickerSearch = text
+                    color: theme.text
+                    background: Item {}
+                }
+            }
+            ListView {
+                id: collectionPickerList
+                objectName: "collectionPickerList"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 5
+                model: collectionPopup.visible ? (bridge.collectionPicker[collectionPopup.pickerMode] || []).filter(
+                    row => row.title.toLowerCase().indexOf(collectionPopup.pickerSearch.toLowerCase()) >= 0 ||
+                           (row.creator || "").toLowerCase().indexOf(collectionPopup.pickerSearch.toLowerCase()) >= 0
+                ) : []
+                delegate: StoneButton {
+                    id: pickerCard
+                    required property var modelData
+                    readonly property var owners: collectionPopup.pickerMode === "videos" ? [modelData.owner] : modelData.owners
+                    objectName: "collectionPickerCard"
+                    width: collectionPickerList.width
+                    height: 72
+                    label: ""
+                    accessibilityLabel: (collectionPopup.pickerMode === "videos" ? "Select media " : "Select all in ") + modelData.title
+                    selected: owners.every(owner => collectionPopup.selectedOwners.indexOf(owner) >= 0)
+                    onActivated: collectionPopup.toggleOwners(owners)
+                    ArtworkImage {
+                        objectName: "collectionPickerArtwork"
+                        x: pickerCard.artworkFaceInset
+                        y: pickerCard.artworkFaceInset
+                        width: 86
+                        height: pickerCard.height - 2 * pickerCard.artworkFaceInset
+                        cover: true
+                        inset: 0
+                        source: bridge.mediaArtwork(pickerCard.modelData.artworkOwner)
+                    }
+                    Column {
+                        x: 103
+                        y: 11
+                        width: parent.width - 150
+                        spacing: 5
+                        Text { width: parent.width; text: pickerCard.modelData.title; color: theme.text; font.pixelSize: 14; font.bold: true; elide: Text.ElideRight }
+                        Text {
+                            width: parent.width
+                            text: collectionPopup.pickerMode === "videos" ?
+                                pickerCard.modelData.creator + " · " + (pickerCard.modelData.playlist || "No playlist") +
+                                (pickerCard.modelData.exportCount > 1 ? " · " + pickerCard.modelData.exportCount + " exports" : "") :
+                                "Select all " + pickerCard.modelData.count + " saved item" + (pickerCard.modelData.count === 1 ? "" : "s")
+                            color: theme.muted; font.pixelSize: 12; elide: Text.ElideRight
+                        }
+                    }
+                    Text {
+                        x: parent.width - 38; y: 21; width: 25
+                        text: pickerCard.selected ? "✓" : "○"
+                        color: pickerCard.selected ? theme.accent : theme.muted
+                        font.pixelSize: 22
+                    }
+                }
+            }
+            Text { text: collectionPopup.selectedOwners.length + " selected"; color: theme.muted; font.pixelSize: 13; Layout.fillWidth: true }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "Cancel"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; onActivated: collectionPopup.close() }
                 StoneButton {
                     label: "Save"
+                    enabled: collectionName.text.trim().length > 0 && collectionPopup.selectedOwners.length > 0
                     Layout.preferredWidth: 95
                     Layout.preferredHeight: 40
                     onActivated: {
@@ -1559,32 +1736,61 @@ Window {
         }
     }
     Popup {
-        id: categoryPopup
-        objectName: "libraryCategoryPopup"
+        id: collectionTargetPopup
+        objectName: "libraryCollectionTargetPopup"
+        property var selectedOwners: []
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: 285
-        height: Math.min(370, bridge.libraryCategories.length * 43 + 12)
-        padding: 6
+        width: Math.min(420, window.width - 40)
+        height: Math.min(430, window.height - 40)
+        padding: 16
+        modal: true
         background: StoneField {}
-        ListView {
+        ColumnLayout {
             anchors.fill: parent
-            clip: true
-            spacing: 3
-            model: bridge.libraryCategories
-            delegate: StoneButton {
-                required property string modelData
-                width: ListView.view.width
-                height: 40
-                label: modelData
-                selected: bridge.libraryCategory === modelData
-                onActivated: { bridge.setLibraryCategory(modelData); categoryPopup.close() }
+            spacing: 10
+            Text { text: "Add to collection"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            Text { text: collectionTargetPopup.selectedOwners.length + " selected item(s)"; color: theme.muted; font.pixelSize: 13 }
+            ListView {
+                id: collectionTargetList
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 5
+                model: bridge.libraryCategories.slice(1)
+                delegate: StoneButton {
+                    required property string modelData
+                    width: collectionTargetList.width
+                    height: 44
+                    label: modelData
+                    onActivated: {
+                        if (bridge.addToCollection(modelData, collectionTargetPopup.selectedOwners))
+                            collectionTargetPopup.close()
+                    }
+                }
+            }
+            Text {
+                visible: collectionTargetList.count === 0
+                text: "No collections yet. Create one for these items."
+                color: theme.muted
+                font.pixelSize: 13
+            }
+            StoneButton {
+                label: "Create new collection…"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 42
+                onActivated: {
+                    collectionPopup.selectionPreset = collectionTargetPopup.selectedOwners.slice()
+                    collectionTargetPopup.close()
+                    collectionPopup.open()
+                }
             }
         }
     }
     Popup {
         id: annotationPopup
         objectName: "libraryAnnotationPopup"
+        onClosed: annotationCategoryMenu.close()
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(570, window.width - 40)
@@ -1602,12 +1808,25 @@ Window {
                 Layout.fillWidth: true; Layout.preferredHeight: 40
                 TextField {
                     id: categoryInput
-                    anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14
+                    objectName: "annotationCategoryInput"
+                    anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 46
                     padding: 0; verticalAlignment: TextInput.AlignVCenter
                     text: bridge.annotationValues.category
                     placeholderText: "Optional category"
                     color: theme.text; placeholderTextColor: theme.muted
                     font.pixelSize: 15; background: Item {}
+                    onActiveFocusChanged: {
+                        if (activeFocus && bridge.libraryCategories.length > 1) {
+                            annotationCategoryMenu.anchorItem = parent
+                            annotationCategoryMenu.open()
+                        }
+                    }
+                }
+                StoneButton {
+                    objectName: "annotationCategoryButton"
+                    x: parent.width - 40; y: 3; width: 36; height: 34
+                    label: "▾"; size: "inline"
+                    onActivated: { annotationCategoryMenu.anchorItem = parent; annotationCategoryMenu.open() }
                 }
             }
             Text { text: "Tags (comma separated)"; color: theme.muted; font.pixelSize: 13 }
@@ -1646,6 +1865,33 @@ Window {
                     emphasized: true
                     Layout.preferredWidth: 82; Layout.preferredHeight: 40
                     onActivated: { if (bridge.saveAnnotation(noteInput.text, tagsInput.text, categoryInput.text)) annotationPopup.close() }
+                }
+            }
+        }
+    }
+    AnchoredPopup {
+        id: annotationCategoryMenu
+        objectName: "annotationCategoryMenu"
+        parent: window.contentItem
+        width: Math.min(360, annotationPopup.width - 36)
+        height: Math.min(250, bridge.libraryCategories.slice(1).length * 41 + 8)
+        padding: 4
+        background: StoneField {}
+        ScrollView {
+            anchors.fill: parent
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Column {
+                width: parent.width
+                spacing: 1
+                Repeater {
+                    model: bridge.libraryCategories.slice(1)
+                    StoneButton {
+                        required property string modelData
+                        width: parent.width; height: 40
+                        label: modelData
+                        onActivated: { categoryInput.text = modelData; annotationCategoryMenu.close() }
+                    }
                 }
             }
         }
@@ -1713,6 +1959,7 @@ Window {
     Popup {
         id: settingsPopup
         objectName: "downloadSettingsPopup"
+        onClosed: { settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close() }
         function observeVisiblePro() {
             if (!opened || !proButton.visible) return
             const point = proButton.mapToItem(contentItem, 0, 0)
@@ -1821,8 +2068,20 @@ Window {
                     RowLayout {
                         visible: window.outputFormat === "MP4"
                         Layout.fillWidth: true
-                        StoneButton { label: "Quality: " + bridge.quality; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: optionsMenu.open() }
-                        StoneButton { label: "Output mode: " + bridge.exportModeLabel; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: optionsMenu.open() }
+                        StoneButton {
+                            id: settingsQualityButton
+                            objectName: "settingsQualityButton"
+                            label: "Quality: " + bridge.quality
+                            Layout.fillWidth: true; Layout.preferredHeight: 40
+                            onActivated: { settingsQualityMenu.anchorItem = this; settingsQualityMenu.open() }
+                        }
+                        StoneButton {
+                            id: settingsOutputModeButton
+                            objectName: "settingsOutputModeButton"
+                            label: "Output mode: " + bridge.exportModeLabel
+                            Layout.fillWidth: true; Layout.preferredHeight: 40
+                            onActivated: { settingsOutputModeMenu.anchorItem = this; settingsOutputModeMenu.open() }
+                        }
                     }
                     ManualMp4Settings {
                         objectName: "settingsManualMp4"
@@ -1932,7 +2191,7 @@ Window {
                         StoneButton {
                             label: bridge.appearanceTheme + "  ▾"
                             Layout.fillWidth: true; Layout.preferredHeight: 40
-                            onActivated: appearanceThemeMenu.open()
+                            onActivated: { appearanceThemeMenu.anchorItem = this; appearanceThemeMenu.open() }
                         }
                         Text { text: "Custom accent"; color: theme.muted; font.pixelSize: 13 }
                         StoneField {
@@ -1978,7 +2237,13 @@ Window {
                     }
                 }
                 StoneButton { label: "Support"; Layout.preferredWidth: 104; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); bridge.openSupport("feedback") } }
-                StoneButton { label: "Help menu"; accessibilityLabel: "Help"; Layout.preferredWidth: 100; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); helpMenu.open() } }
+                StoneButton {
+                    id: settingsHelpButton
+                    label: "Help"
+                    accessibilityLabel: "Help"
+                    Layout.preferredWidth: 100; Layout.preferredHeight: 40
+                    onActivated: { helpMenu.anchorItem = this; helpMenu.open() }
+                }
                 StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.open(); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
                 StoneButton {
@@ -1988,10 +2253,11 @@ Window {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: appearanceThemeMenu
-        x: Math.max(0, settingsPopup.x + 130)
-        y: Math.max(0, settingsPopup.y + settingsPopup.height - 270)
+        parent: window.contentItem
+        scrollViewport: settingsBody
+        preferAbove: true
         width: 230
         height: 260
         padding: 4
@@ -2168,6 +2434,7 @@ Window {
     Popup {
         id: localConversionPopup
         objectName: "localConversionPopup"
+        onClosed: localProfilePopup.close()
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(500, window.width - 40)
@@ -2184,7 +2451,10 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 StoneField {
+                    objectName: "localAudioPickerField"
                     Layout.fillWidth: true; Layout.preferredHeight: 42
+                    interactive: !bridge.localRunning
+                    onActivated: localAudioDialog.open()
                     Text { anchors.fill: parent; anchors.margins: 12; text: bridge.localAudio || "Choose MP3 audio"; color: theme.text; font.pixelSize: 14; elide: Text.ElideMiddle; verticalAlignment: Text.AlignVCenter }
                 }
                 StoneButton { label: "Browse"; Layout.preferredWidth: 85; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localAudioDialog.open() }
@@ -2192,7 +2462,10 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 StoneField {
+                    objectName: "localImagePickerField"
                     Layout.fillWidth: true; Layout.preferredHeight: 42
+                    interactive: !bridge.localRunning
+                    onActivated: localImageDialog.open()
                     Text { anchors.fill: parent; anchors.margins: 12; text: bridge.localImage || "Choose still image"; color: theme.text; font.pixelSize: 14; elide: Text.ElideMiddle; verticalAlignment: Text.AlignVCenter }
                 }
                 StoneButton { label: "Browse"; Layout.preferredWidth: 85; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localImageDialog.open() }
@@ -2201,22 +2474,24 @@ Window {
                 Layout.fillWidth: true
                 Text { text: "Profile"; color: theme.muted; font.pixelSize: 14 }
                 Item { Layout.fillWidth: true }
-                StoneButton { label: bridge.localProfile + "  ▾"; Layout.preferredWidth: 295; Layout.preferredHeight: 38; enabled: !bridge.localRunning; onActivated: localProfilePopup.open() }
+                StoneButton { label: bridge.localProfile + "  ▾"; Layout.preferredWidth: 295; Layout.preferredHeight: 38; enabled: !bridge.localRunning; onActivated: { localProfilePopup.anchorItem = this; localProfilePopup.open() } }
             }
             Text { text: bridge.localProgress || bridge.status; color: theme.muted; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
             Item { Layout.fillHeight: true }
             RowLayout {
                 Layout.fillWidth: true
+                Layout.rightMargin: 12
+                Layout.bottomMargin: 8
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "Close"; Layout.preferredWidth: 82; Layout.preferredHeight: 40; enabled: !bridge.localRunning; onActivated: localConversionPopup.close() }
                 StoneButton { label: bridge.localRunning ? "Stop" : "Create MP4"; emphasized: !bridge.localRunning; Layout.preferredWidth: 110; Layout.preferredHeight: 40; onActivated: bridge.localRunning ? bridge.cancelLocalConversion() : bridge.startLocalConversion() }
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: localProfilePopup
-        x: Math.max(0, (window.width - width) / 2)
-        y: Math.max(0, (window.height - height) / 2)
+        parent: window.contentItem
+        preferAbove: true
         width: 320
         height: 184
         padding: 3
@@ -2236,10 +2511,9 @@ Window {
             }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: formatMenu
-        x: Math.max(0, window.width - window.gutter - 375)
-        y: window.gutter + 112
+        parent: window.contentItem
         width: 170
         height: 150
         padding: 3
@@ -2319,6 +2593,56 @@ Window {
                         selected: bridge.quality === modelData
                         onActivated: { bridge.setQuality(modelData); optionsMenu.close() }
                     }
+                }
+            }
+        }
+    }
+    AnchoredPopup {
+        id: settingsOutputModeMenu
+        objectName: "settingsOutputModeMenu"
+        parent: window.contentItem
+        scrollViewport: settingsBody
+        width: 250
+        height: bridge.exportModeOptions.length * 41 + 8
+        padding: 4
+        background: StoneField {}
+        onOpened: settingsQualityMenu.close()
+        Column {
+            anchors.fill: parent
+            spacing: 1
+            Repeater {
+                model: bridge.exportModeOptions
+                StoneButton {
+                    required property var modelData
+                    width: parent.width; height: 40
+                    label: modelData.label
+                    selected: bridge.exportMode === modelData.value
+                    onActivated: { bridge.setExportMode(modelData.value); settingsOutputModeMenu.close() }
+                }
+            }
+        }
+    }
+    AnchoredPopup {
+        id: settingsQualityMenu
+        objectName: "settingsQualityMenu"
+        parent: window.contentItem
+        scrollViewport: settingsBody
+        width: 250
+        height: qualityOptions.length * 41 + 8
+        padding: 4
+        background: StoneField {}
+        onOpened: settingsOutputModeMenu.close()
+        Column {
+            anchors.fill: parent
+            spacing: 1
+            Repeater {
+                model: qualityOptions
+                StoneButton {
+                    required property string modelData
+                    width: parent.width; height: 40
+                    label: modelData
+                    selected: bridge.quality === modelData
+                    onActivated: { bridge.setQuality(modelData); settingsQualityMenu.close() }
                 }
             }
         }

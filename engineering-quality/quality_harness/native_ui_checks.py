@@ -34,6 +34,7 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         "tests/test_qt_artwork_image.py",
         "tests/test_qt_metadata_preview.py",
         "tests/test_qt_previews.py",
+        "tests/test_qt_interaction_invariants.py",
         "tests/test_qt_terminal_item_events.py",
         "tests/test_qt_relink.py",
         "tests/test_qt_presentation_diagnostics.py",
@@ -120,7 +121,11 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
         "VODFORGE_NATIVE_UI_TESTS": "1",
         "VODFORGE_NATIVE_PROFILE": profile,
         "VODFORGE_UI": ui,
-        **({"QT_QPA_PLATFORM": "offscreen"} if ui == "qt" else {}),
+        **(
+            {"QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"}
+            if ui == "qt"
+            else {}
+        ),
         "VODFORGE_NATIVE_FILE_QA": "1",
         "VODFORGE_ACTUAL_PLAYBACK_TESTS": "1",
         "VODFORGE_DISABLE_TELEMETRY": "1",
@@ -139,16 +144,20 @@ def native_surface_contract(repo_root, output_dir, *, profile="normal", ui="tk")
             group_dir.mkdir(parents=True, exist_ok=True)
             group_report = group_dir / "native.xml"
             group_report.unlink(missing_ok=True)
+            # Qt uses an offscreen QGuiApplication. The AppKit startup shim
+            # used by Tk changes process startup and can destabilize repeated
+            # Qt scene creation; match the direct package-build invocation.
             result = run_command(
-                native_pytest_command(
-                    [
-                        "-p",
-                        "quality_harness.native_reports",
-                        *tests,
-                        "-q",
-                        f"--junitxml={group_report}",
-                    ]
-                ),
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-p",
+                    "quality_harness.native_reports",
+                    *tests,
+                    "-q",
+                    f"--junitxml={group_report}",
+                ],
                 cwd=repo_root,
                 timeout=1800,
                 env={**native_env, "VODFORGE_NATIVE_EVIDENCE_DIR": str(group_dir)},

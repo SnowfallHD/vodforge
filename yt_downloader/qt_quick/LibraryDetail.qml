@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Item {
     id: detail
     property var appBridge
-    signal actionsRequested(string owner)
+    signal actionsRequested(string owner, var anchor, var scrollViewport)
     signal annotationRequested(string owner)
     readonly property var item: appBridge.libraryDetail
     readonly property bool compact: width < 1020
@@ -91,7 +91,7 @@ Item {
                         spacing: 12
                         StoneButton { label: "Play"; emphasized: true; width: 100; height: 40; onActivated: detail.appBridge.openLibraryOwner(detail.item.owner) }
                         StoneButton { label: "Show in Folder"; width: 166; height: 40; onActivated: detail.appBridge.openLibraryFolder(detail.item.owner) }
-                        StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 44; height: 40; onActivated: detail.actionsRequested(detail.item.owner) }
+                        StoneButton { label: "⋯"; accessibilityLabel: "More actions"; width: 44; height: 40; onActivated: detail.actionsRequested(detail.item.owner, this, viewport) }
                     }
                 }
             }
@@ -125,22 +125,31 @@ Item {
                     objectName: "libraryDescriptionPanel"
                     property bool editing: false
                     width: detail.compact ? annotationRow.width : Math.round(annotationRow.width * 0.62)
-                    height: editing ? 220 : 184
+                    height: Math.max(editing ? 220 : 184, tagColumn.childrenRect.height + 32)
                     Column {
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 8
-                        Text {
-                            objectName: "libraryDescriptionHeading"
-                            text: detail.item.userDescription ? "Your description" : "Source description"
-                            color: theme.text; font.pixelSize: 20
+                        Row {
+                            width: parent.width
+                            Text {
+                                objectName: "libraryDescriptionHeading"
+                                text: detail.item.userDescription ? "Your description" : "Source description"
+                                color: theme.text; font.pixelSize: 20
+                                width: parent.width - 44
+                            }
+                            StoneButton {
+                                label: "⧉"; accessibilityLabel: "Copy description"
+                                size: "inline"; width: 36; height: 28
+                                onActivated: detail.appBridge.copyLibraryText(detail.item.owner, "description")
+                            }
                         }
                         ScrollView {
                             id: descriptionScroll
                             objectName: "libraryDescriptionScroll"
                             visible: !descriptionPanel.editing
                             width: parent.width
-                            height: 78
+                            height: Math.max(78, descriptionPanel.height - 112)
                             clip: true
                             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                             Text {
@@ -186,14 +195,23 @@ Item {
                     }
                 }
                 StoneField {
+                    objectName: "libraryTagsNotesPanel"
                     width: detail.compact ? annotationRow.width : annotationRow.width - Math.round(annotationRow.width * 0.62) - 16
-                    height: Math.max(190, tagColumn.childrenRect.height + 32)
+                    height: descriptionPanel.height
                     Column {
                         id: tagColumn
                         anchors.fill: parent
                         anchors.margins: 16
                         spacing: 9
-                        Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20 }
+                        Row {
+                            width: parent.width
+                            Text { text: "Tags and notes"; color: theme.text; font.pixelSize: 20; width: parent.width - 44 }
+                            StoneButton {
+                                label: "⧉"; accessibilityLabel: "Copy tags"
+                                size: "inline"; width: 36; height: 28
+                                onActivated: detail.appBridge.copyLibraryText(detail.item.owner, "tags")
+                            }
+                        }
                         Flow {
                             width: parent.width
                             height: childrenRect.height

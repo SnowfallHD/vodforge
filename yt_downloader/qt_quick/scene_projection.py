@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from yt_downloader.history import history_archive_owner
+from yt_downloader.history import history_annotation_owner, history_archive_owner
 from yt_downloader.library_state import format_duration
 from yt_downloader.watch_library import (
     WatchChannel,
@@ -34,6 +34,63 @@ def _group_title(group: WatchChannel | WatchRail | None) -> str:
 
 def _defer_artwork(_record: dict[str, Any], _size: tuple[int, int], _role: str) -> str:
     return ""
+
+
+def collection_picker(
+    records: Sequence[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Expose explicit item and batch identities for the collection editor."""
+    videos: dict[str, dict[str, Any]] = {}
+    for row in records:
+        if not row.get("vodforge_output_dir"):
+            continue
+        owner = history_annotation_owner(row)
+        if owner in videos:
+            videos[owner]["exportCount"] += 1
+            continue
+        videos[owner] = {
+            "owner": owner,
+            "artworkOwner": history_archive_owner(row),
+            "title": str(row.get("title") or "Saved media"),
+            "creator": str(row.get("channel") or row.get("uploader") or "Local media"),
+            "playlist": str(row.get("playlist_title") or ""),
+            "type": str(row.get("vodforge_output_type") or "MP4"),
+            "exportCount": 1,
+        }
+
+    def groups(
+        source: Sequence[WatchRail | WatchChannel], kind: str
+    ) -> list[dict[str, Any]]:
+        result = []
+        for group in source:
+            if kind == "playlist" and not group.key.rsplit("\0", 1)[-1]:
+                continue
+            indices = (index for video in group.videos for index in video.indices)
+            owners = list(
+                dict.fromkeys(
+                    history_annotation_owner(records[index])
+                    for index in indices
+                    if history_annotation_owner(records[index]) in videos
+                )
+            )
+            if not owners:
+                continue
+            result.append(
+                {
+                    "title": group.name if kind == "channel" else group.title,
+                    "kind": kind,
+                    "owners": owners,
+                    "count": len(owners),
+                    "artworkOwner": videos[owners[0]]["artworkOwner"],
+                }
+            )
+        return result
+
+    return {
+        "videos": list(videos.values()),
+        "playlists": groups(watch_rails(records), "playlist"),
+        "channels": groups(watch_channels(records), "channel"),
+    }
 
 
 def _media(record: dict[str, Any], index: int, artwork: Artwork) -> dict[str, Any]:
@@ -111,6 +168,7 @@ def library_scene(
     *,
     defer_media_artwork: bool = False,
     defer_group_artwork: bool = False,
+    media_type: str = "All",
 ) -> dict[str, Any]:
     """Use the Tk scene's saved-item, channel, playlist and collection definitions."""
     saved = [
@@ -185,6 +243,23 @@ def library_scene(
         media = []
     else:
         media = saved
+    if media_type != "All":
+        audio_types = {"mp3", "m4a", "original audio"}
+        media = [
+            (index, record)
+            for index, record in media
+            if (
+                media_type == "Audio"
+                and str(record.get("vodforge_output_type") or "").casefold()
+                in audio_types
+            )
+            or (
+                media_type == "Videos"
+                and str(record.get("vodforge_output_type") or "").casefold()
+                not in audio_types
+            )
+            or str(record.get("vodforge_output_type") or "MP4") == media_type
+        ]
     if query:
         terms = query.casefold().split()
         media = [
@@ -215,10 +290,6 @@ def library_scene(
         ]
     if sort == "title":
         media.sort(key=lambda pair: str(pair[1].get("title") or "").casefold())
-    if route == "home":
-        # The home scene is one recent row; avoid acquiring artwork for rows
-        # that cannot appear there. QML applies the current column count.
-        media = media[:5]
     media_image = _defer_artwork if defer_media_artwork else artwork
     return {
         "route": route,

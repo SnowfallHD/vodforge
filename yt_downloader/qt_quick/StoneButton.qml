@@ -12,6 +12,8 @@ Item {
     property bool interactive: true
     property string size: "default"
     readonly property bool hovered: mouse.containsMouse
+    // Artwork cards keep their content inside the same inset face in every state.
+    readonly property int artworkFaceInset: 7 + (hovered && transientMaterial ? 2 : 0)
     signal activated()
     signal doubleActivated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth

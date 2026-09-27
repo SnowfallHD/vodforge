@@ -8,9 +8,8 @@ Item {
     property var appBridge
     signal annotationRequested(int index)
     signal annotationOwnerRequested(string owner)
-    signal actionsRequested(string owner)
+    signal actionsRequested(string owner, var anchor, var scrollViewport)
     signal collectionRequested()
-    signal categoryRequested()
     signal importRequested()
     signal selectionActionRequested(string action, var owners)
 
@@ -18,8 +17,7 @@ Item {
     property var selectedOwners: []
     property string groupMenuKind: ""
     property string groupMenuKey: ""
-    property real groupMenuX: 0
-    property real groupMenuY: 0
+    property alias browseViewport: viewport
     function currentMenuGroup() {
         return scene.groups.find(function(group) {
             return group.kind === groupMenuKind && group.key === groupMenuKey
@@ -62,13 +60,14 @@ Item {
         function onLibrarySearchChanged() { scene.resetViewport() }
         function onLibrarySortChanged() { scene.resetViewport() }
         function onLibraryCategoryChanged() { scene.resetViewport() }
+        function onLibraryTypeChanged() { scene.resetViewport() }
     }
 
     LibraryDetail {
         anchors.fill: parent
         visible: scene.route === "detail"
         appBridge: scene.appBridge
-        onActionsRequested: function(owner) { scene.actionsRequested(owner) }
+        onActionsRequested: function(owner, anchor, scrollViewport) { scene.actionsRequested(owner, anchor, scrollViewport) }
         onAnnotationRequested: function(owner) { scene.annotationOwnerRequested(owner) }
     }
 
@@ -399,10 +398,10 @@ Item {
                             }
                             ArtworkImage {
                                 objectName: "libraryGroupArtworkImage"
-                                x: groupCard.modelData.kind === "channel" ? (parent.width - 96) / 2 : 0
-                                y: groupCard.modelData.kind === "channel" ? 14 : 0
-                                width: groupCard.modelData.kind === "channel" ? 96 : parent.width
-                                height: groupCard.modelData.kind === "channel" ? 96 : 125
+                                x: groupCard.modelData.kind === "channel" ? (parent.width - 96) / 2 : groupCard.artworkFaceInset
+                                y: groupCard.modelData.kind === "channel" ? 14 + groupCard.artworkFaceInset - 7 : groupCard.artworkFaceInset
+                                width: groupCard.modelData.kind === "channel" ? 96 : parent.width - groupCard.artworkFaceInset * 2
+                                height: groupCard.modelData.kind === "channel" ? 96 : 125 - groupCard.artworkFaceInset
                                 circular: groupCard.modelData.kind === "channel"
                                 cover: !circular
                                 inset: 0
@@ -410,7 +409,7 @@ Item {
                                         scene.appBridge.libraryGroupArtwork(modelData.owner, modelData.kind) : ""
                             }
                             Text {
-                                x: 14; y: 136
+                                x: 14; y: 130
                                 width: parent.width - 52
                                 text: groupCard.modelData.title
                                 color: theme.text
@@ -419,7 +418,7 @@ Item {
                                 elide: Text.ElideRight
                             }
                             Text {
-                                x: 14; y: 164
+                                x: 14; y: 153
                                 width: parent.width - 28
                                 text: groupCard.modelData.summary
                                 color: theme.muted
@@ -438,9 +437,7 @@ Item {
                                 onActivated: {
                                     scene.groupMenuKind = groupCard.modelData.kind
                                     scene.groupMenuKey = groupCard.modelData.key
-                                    const point = groupCard.mapToItem(scene, groupCard.width - 20, 129)
-                                    scene.groupMenuX = Math.max(0, Math.min(scene.width - 200, point.x))
-                                    scene.groupMenuY = Math.max(0, Math.min(scene.height - 100, point.y))
+                                    groupMenu.anchorItem = this
                                     groupMenu.open()
                                 }
                             }
@@ -454,27 +451,31 @@ Item {
                         label: ""
                         accessibilityLabel: "Add Collection"
                         onActivated: scene.collectionRequested()
-                        Rectangle {
-                            x: (parent.width - 52) / 2
-                            y: 30
-                            width: 52; height: 52; radius: 26
-                            color: theme.accent_surface
-                            SceneIcon { anchors.centerIn: parent; name: "plus"; tone: theme.icon }
-                        }
-                        Text {
-                            x: 0; y: 100; width: parent.width
-                            text: "Add Collection"
-                            horizontalAlignment: Text.AlignHCenter
-                            color: theme.action
-                            font.pixelSize: 17
-                        }
-                        Text {
-                            x: 0; y: 130; width: parent.width
-                            text: "Group downloads\nfrom any source."
-                            horizontalAlignment: Text.AlignHCenter
-                            color: theme.muted
-                            font.pixelSize: 13
-                            lineHeight: 1.5
+                        Column {
+                            anchors.centerIn: parent
+                            width: parent.width - 16
+                            spacing: 9
+                            Rectangle {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                width: 52; height: 52; radius: 26
+                                color: theme.accent_surface
+                                SceneIcon { anchors.centerIn: parent; name: "plus"; tone: theme.icon }
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Add Collection"
+                                horizontalAlignment: Text.AlignHCenter
+                                color: theme.action
+                                font.pixelSize: 17
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Group downloads\nfrom any source."
+                                horizontalAlignment: Text.AlignHCenter
+                                color: theme.muted
+                                font.pixelSize: 13
+                                lineHeight: 1.5
+                            }
                         }
                     }
                 }
@@ -498,7 +499,7 @@ Item {
                     width: parent.width
                     height: 44
                     Text {
-                        text: scene.route === "home" ? "Recent Downloads" :
+                        text: scene.route === "home" ? "Downloads" :
                               scene.route === "group" ? scene.projection.groupTitle :
                               scene.route === "all" ? "All Media" :
                               scene.route.charAt(0).toUpperCase() + scene.route.slice(1)
@@ -524,13 +525,18 @@ Item {
                         label: scene.appBridge.librarySort === "recent" ? "Newest first" : "Title A–Z"
                         width: 172
                         height: 40
-                        onActivated: sortPopup.open()
+                        onActivated: { sortPopup.anchorItem = this; sortPopup.open() }
                     }
                     StoneButton {
+                        id: filterButton
+                        objectName: "libraryFilterButton"
                         label: "Filter"
                         width: 96
                         height: 40
-                        onActivated: scene.categoryRequested()
+                        onActivated: {
+                            filterPopup.anchorItem = this
+                            filterPopup.open()
+                        }
                     }
                     StoneButton {
                         objectName: "librarySelectButton"
@@ -576,7 +582,7 @@ Item {
                 Flow {
                     visible: scene.selectionMode
                     width: parent.width
-                    height: visible ? childrenRect.height : 0
+                    height: visible ? 40 : 0
                     spacing: 12
                     Text {
                         text: scene.selectedOwners.length ? scene.selectedOwners.length + " selected" : "Select items"
@@ -591,7 +597,7 @@ Item {
                         label: "Actions…"
                         width: 175
                         height: 40
-                        onActivated: selectionActions.open()
+                        onActivated: { selectionActions.anchorItem = this; selectionActions.open() }
                     }
                 }
                 Flow {
@@ -606,10 +612,8 @@ Item {
                     readonly property real rowStride: cardHeight + spacing
                     readonly property int totalRows: Math.ceil(scene.media.length / columns)
                     readonly property real scrollTop: viewport.contentItem.contentY - y
-                    readonly property int firstRow: scene.route === "home" ? 0 :
-                        Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
-                    readonly property int lastRow: scene.route === "home" ? totalRows :
-                        Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
+                    readonly property int firstRow: Math.max(0, Math.min(totalRows, Math.floor(scrollTop / rowStride) - 1))
+                    readonly property int lastRow: Math.min(totalRows, firstRow + Math.ceil(viewport.height / rowStride) + 3)
                     Item {
                         visible: mediaFlow.firstRow > 0
                         width: mediaFlow.width
@@ -617,15 +621,14 @@ Item {
                     }
                     Repeater {
                         objectName: "libraryMediaRepeater"
-                        model: scene.route === "home"
-                            ? scene.media.slice(0, mediaFlow.columns)
-                            : scene.media.slice(mediaFlow.firstRow * mediaFlow.columns,
+                        model: scene.media.slice(mediaFlow.firstRow * mediaFlow.columns,
                                                 mediaFlow.lastRow * mediaFlow.columns)
-                        StoneField {
+                        StoneButton {
+                            id: mediaCard
                             required property var modelData
                             width: mediaFlow.cardWidth
                             height: mediaFlow.cardHeight
-                            interactive: true
+                            label: ""
                             accessibilityLabel: "Details for " + modelData.title
                             onActivated: {
                                 if (scene.selectionMode) scene.toggleSelection(modelData.owner)
@@ -633,9 +636,9 @@ Item {
                             }
                             ArtworkImage {
                                 objectName: "libraryMediaArtworkImage"
-                                x: 0; y: 0
-                                width: parent.width
-                                height: parent.width * 9 / 16
+                                x: mediaCard.artworkFaceInset; y: mediaCard.artworkFaceInset
+                                width: parent.width - mediaCard.artworkFaceInset * 2
+                                height: parent.width * 9 / 16 - mediaCard.artworkFaceInset
                                 cover: true
                                 inset: 0
                                 source: scene.projection ? scene.appBridge.mediaArtwork(modelData.owner) : ""
@@ -659,7 +662,7 @@ Item {
                                 Row {
                                     spacing: 5
                                     StoneButton { label: "Play"; size: "inline"; width: 78; onActivated: scene.appBridge.openLibraryOwner(modelData.owner) }
-                                    StoneButton { label: "More"; size: "inline"; width: 72; onActivated: scene.actionsRequested(modelData.owner) }
+                                    StoneButton { label: "More"; size: "inline"; width: 72; onActivated: scene.actionsRequested(modelData.owner, this, viewport) }
                                 }
                             }
                         }
@@ -686,11 +689,11 @@ Item {
                 }
                 Item { width: 1; height: 20 }
             }
-            Popup {
+            AnchoredPopup {
                 id: selectionActions
                 objectName: "librarySelectionActionsPopup"
-                x: Math.max(0, (scene.width - width) / 2)
-                y: Math.max(0, (scene.height - height) / 2)
+                parent: scene
+                scrollViewport: viewport
                 width: Math.min(260, scene.width - 24)
                 height: 150
                 padding: 5
@@ -717,13 +720,13 @@ Item {
                     }
                 }
             }
-            Popup {
+            AnchoredPopup {
                 id: sortPopup
-                x: Math.max(0, scene.width - width - 180)
-                y: 180
+                parent: scene
+                scrollViewport: viewport
                 width: 190
                 padding: 8
-                modal: true
+                modal: false
                 background: StoneField {}
                 Column {
                     width: parent.width
@@ -732,13 +735,96 @@ Item {
                     StoneButton { label: "Title"; width: parent.width; height: 38; onActivated: { scene.appBridge.setLibrarySort("title"); sortPopup.close() } }
                 }
             }
+            AnchoredPopup {
+                id: filterPopup
+                objectName: "libraryFilterPopup"
+                parent: scene
+                scrollViewport: viewport
+                anchorItem: filterButton
+                width: 206
+                height: 164
+                padding: 4
+                background: StoneField {}
+                onClosed: collectionsSubmenu.close()
+                onXChanged: collectionsSubmenu.reposition()
+                onYChanged: collectionsSubmenu.reposition()
+                Column {
+                    anchors.fill: parent
+                    spacing: 2
+                    Repeater {
+                        model: [
+                            { label: "All media", type: "All" },
+                            { label: "Videos", type: "Videos" },
+                            { label: "Audio", type: "Audio" }
+                        ]
+                        StoneButton {
+                            required property var modelData
+                            width: parent.width; height: 38
+                            label: modelData.label
+                            selected: scene.appBridge.libraryType === modelData.type
+                            onActivated: {
+                                scene.appBridge.setLibraryType(modelData.type)
+                                filterPopup.close()
+                            }
+                        }
+                    }
+                    StoneButton {
+                        id: collectionsFilterButton
+                        objectName: "libraryCollectionsFilterButton"
+                        width: parent.width; height: 38
+                        label: "Collections  ›"
+                        selected: scene.appBridge.libraryCategory !== "All categories"
+                        onHoveredChanged: {
+                            if (hovered) {
+                                collectionsSubmenu.anchorItem = this
+                                collectionsSubmenu.open()
+                            }
+                        }
+                        onActivated: {
+                            collectionsSubmenu.anchorItem = this
+                            collectionsSubmenu.open()
+                        }
+                    }
+                }
+            }
+            AnchoredPopup {
+                id: collectionsSubmenu
+                objectName: "libraryCollectionsSubmenu"
+                parent: scene
+                openRight: true
+                anchorItem: collectionsFilterButton
+                width: 212
+                height: Math.min(280, scene.appBridge.libraryCategories.length * 40 + 8)
+                padding: 4
+                background: StoneField {}
+                ListView {
+                    objectName: "libraryCollectionsFilterList"
+                    anchors.fill: parent
+                    clip: true
+                    spacing: 2
+                    model: scene.appBridge.libraryCategories
+                    delegate: StoneButton {
+                        required property string modelData
+                        width: ListView.view.width; height: 38
+                        label: modelData
+                        selected: scene.appBridge.libraryCategory === modelData
+                        onActivated: {
+                            scene.appBridge.setLibraryCategory(modelData)
+                            collectionsSubmenu.close()
+                            filterPopup.close()
+                        }
+                    }
+                }
+            }
         }
     }
-    Popup {
+    AnchoredPopup {
         id: groupMenu
         objectName: "libraryGroupMenu"
-        x: scene.groupMenuX
-        y: scene.groupMenuY
+        parent: scene
+        scrollViewport: viewport
+        preferAbove: true
+        alignRight: true
         width: 200
         height: 100
         padding: 3

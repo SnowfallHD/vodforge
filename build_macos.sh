@@ -49,7 +49,8 @@ fi
     --ignore=tests/test_qt_quality_e2e.py \
     --ignore=tests/test_qt_relink.py \
     --ignore=tests/test_qt_terminal_item_events.py \
-    --ignore=tests/test_qt_scene_port.py
+    --ignore=tests/test_qt_scene_port.py \
+    --ignore=tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests/test_qt_artwork_image.py \
     tests/test_qt_metadata_preview.py \
@@ -57,7 +58,8 @@ fi
     tests/test_qt_previews.py \
     tests/test_qt_quality_e2e.py \
     tests/test_qt_relink.py \
-    tests/test_qt_terminal_item_events.py
+    tests/test_qt_terminal_item_events.py \
+    tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
 

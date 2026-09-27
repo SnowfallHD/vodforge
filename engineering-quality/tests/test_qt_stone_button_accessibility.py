@@ -219,7 +219,7 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
         bridge.runDeckChanged.emit()
         for _ in range(5):
             application.processEvents()
-        assert inside(visible_button("All 1 run"))
+        assert inside(visible_button("All 2 runs"))
         bridge._runtime.active_job = None
         bridge.runDeckChanged.emit()
         assert bridge.openLibraryItem(0)

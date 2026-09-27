@@ -71,12 +71,6 @@ Column {
         enabled: !!inspector.item.owner
         onActivated: inspector.appBridge.openSelectedLibraryFolderDetail()
     }
-    Item {
-        width: 1
-        height: inspector.section !== "Description" || !inspector.item.owner ? 0 :
-            Math.max(0, inspector.targetPanelBottom -
-                (eyebrow.height + overview.height + openDetails.height + tabs.height + detailsPanel.height + inspector.spacing * 5))
-    }
     Row {
         id: tabs
         visible: !!inspector.item.owner
@@ -104,7 +98,9 @@ Column {
         objectName: "libraryFolderDetailsPanel"
         visible: !!inspector.item.owner
         width: parent.width
-        height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 : 360
+        height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 :
+            Math.max(360, inspector.targetPanelBottom -
+                (eyebrow.height + overview.height + openDetails.height + tabs.height + inspector.spacing * 4))
         Item {
             anchors.fill: parent
             anchors.margins: 10
@@ -130,7 +126,15 @@ Column {
                         }
                     }
                 }
-                Text { text: "Tags"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+                Row {
+                    width: parent.width
+                    Text { text: "Tags"; color: theme.muted; font.pixelSize: 12; font.bold: true; width: parent.width - 36 }
+                    StoneButton {
+                        label: "⧉"; accessibilityLabel: "Copy tags"; size: "inline"
+                        width: 32; height: 24
+                        onActivated: inspector.appBridge.copyLibraryText(inspector.item.owner, "tags")
+                    }
+                }
                 ScrollView {
                     width: parent.width
                     height: Math.min(54, Math.max(18, tagsText.implicitHeight))
@@ -162,12 +166,19 @@ Column {
             anchors.margins: 10
             anchors.bottomMargin: 0
             visible: inspector.section === "Description"
-            Text {
-                objectName: "libraryFolderDescriptionHeading"
-                text: "DESCRIPTION"
-                color: theme.muted
-                font.pixelSize: 12
-                font.bold: true
+            Row {
+                width: parent.width
+                Text {
+                    objectName: "libraryFolderDescriptionHeading"
+                    text: "DESCRIPTION"
+                    color: theme.muted; font.pixelSize: 12; font.bold: true
+                    width: parent.width - 36
+                }
+                StoneButton {
+                    label: "⧉"; accessibilityLabel: "Copy description"; size: "inline"
+                    width: 32; height: 24
+                    onActivated: inspector.appBridge.copyLibraryText(inspector.item.owner, "description")
+                }
             }
             ScrollView {
                 id: descriptionScroll

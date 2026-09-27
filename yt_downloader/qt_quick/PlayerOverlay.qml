@@ -8,7 +8,8 @@ Item {
     required property var player
     required property real volume
     property var previews: []
-    property var heatmap: []
+    property url fallbackArtwork: ""
+    property url lastPreviewImage: ""
     property real hoverSeconds: 0
     property string controlPrefix: "player"
     property bool fullscreen: false
@@ -20,8 +21,8 @@ Item {
     signal volumeRequested(real value)
     signal fullscreenRequested()
     signal floatingRequested()
-    signal optionsRequested()
-    signal captionsRequested()
+    signal optionsRequested(var anchor)
+    signal captionsRequested(var anchor)
     signal previewRequested(real seconds)
 
     function reveal() {
@@ -33,7 +34,11 @@ Item {
     objectName: controlPrefix === "player" ? "embeddedPlayerOverlay" : "presentationPlayerOverlay"
     height: 104
     visible: controlsShown
-    onPlayerChanged: controlsShown = true
+    onPlayerChanged: { controlsShown = true; lastPreviewImage = "" }
+    onPreviewsChanged: {
+        if (previews.length && previews[0].image)
+            lastPreviewImage = previews[0].image
+    }
     HoverHandler {
         onHoveredChanged: {
             if (hovered) {
@@ -69,31 +74,6 @@ Item {
             GradientStop { position: 1; color: "#dd000000" }
         }
     }
-    Item {
-        id: heatmapTrack
-        objectName: "watchHeatmap"
-        visible: controls.heatmap.length > 0 && controls.player && controls.player.duration > 0
-        x: 23; y: 1
-        width: controls.width - 46
-        height: 14
-        clip: true
-        Repeater {
-            model: controls.heatmap
-            Rectangle {
-                required property var modelData
-                x: Math.max(0, Math.min(heatmapTrack.width,
-                    modelData.start_time * heatmapTrack.width * 1000 /
-                    Math.max(1, controls.player ? controls.player.duration : 0)))
-                width: Math.max(1, (modelData.end_time - modelData.start_time) *
-                    heatmapTrack.width * 1000 /
-                    Math.max(1, controls.player ? controls.player.duration : 0))
-                height: Math.max(2, 13 * modelData.value)
-                y: heatmapTrack.height - height
-                color: theme.accent
-                opacity: 0.72
-            }
-        }
-    }
     Basic.Slider {
         id: seek
         objectName: "playerOverlaySeek"
@@ -127,16 +107,11 @@ Item {
         function track(xPosition) {
             controls.hoverSeconds = Math.max(0, Math.min(1, xPosition / Math.max(1, width))) *
                                     ((controls.player ? controls.player.duration : 0) / 1000)
-            hoverDebounce.restart()
+            controls.previewRequested(controls.hoverSeconds)
         }
         onEntered: track(mouseX)
         onPositionChanged: function(mouse) { track(mouse.x) }
-        onExited: hoverDebounce.stop()
-    }
-    Timer {
-        id: hoverDebounce
-        interval: 120
-        onTriggered: controls.previewRequested(controls.hoverSeconds)
+        onExited: {}
     }
     Rectangle {
         id: hoverPreview
@@ -152,9 +127,7 @@ Item {
             anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
             anchors.margins: 4
             height: 85
-            source: controls.previews.length &&
-                    Math.abs(controls.previews[0].position - controls.hoverSeconds) < 1.5
-                    ? controls.previews[0].image : ""
+            source: controls.lastPreviewImage || controls.fallbackArtwork
             fillMode: Image.PreserveAspectFit
             smooth: true
         }
@@ -249,13 +222,13 @@ Item {
             objectName: controls.controlPrefix === "player" ? "playerCaptionsButton" : "presentationCaptionsButton"
             width: 38; height: 36; label: ""; sceneIcon: "captions"
             accessibilityLabel: "Captions"; transientMaterial: false
-            onActivated: controls.captionsRequested()
+            onActivated: controls.captionsRequested(this)
         }
         StoneButton {
             objectName: "playerOverlayOptions"
             width: 38; height: 36; label: ""; sceneIcon: "settings"
             accessibilityLabel: "Playback options"; transientMaterial: false
-            onActivated: controls.optionsRequested()
+            onActivated: controls.optionsRequested(this)
         }
         StoneButton {
             objectName: "playerOverlayFloating"
