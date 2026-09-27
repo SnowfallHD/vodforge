@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint, Qt
+from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtTest import QTest
 
 from tests.test_qt_scene_port import qt_app, saved
@@ -338,6 +338,19 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
             QTest.qWait(25)
             if card.property("hovered") is True:
                 break
+        if card.property("hovered") is not True:
+            # The Windows offscreen platform can omit native cursor delivery;
+            # dispatch the same move through Qt Quick's window hit tester.
+            move = QMouseEvent(
+                QEvent.MouseMove,
+                center,
+                window.mapToGlobal(center),
+                Qt.NoButton,
+                Qt.NoButton,
+                Qt.NoModifier,
+            )
+            QGuiApplication.sendEvent(window, move)
+            app.processEvents()
         assert card.property("hovered") is True
         assert card.property("artworkFaceInset") == 9
         assert artwork.x() == 9
