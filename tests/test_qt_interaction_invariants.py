@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
 
@@ -283,6 +283,7 @@ def test_current_folder_opens_its_selected_location_and_explains_relink(
         assert relink_button.property("enabled") is True
         explanation = window.findChild(QObject, "libraryFolderRelinkExplanation")
         assert explanation.property("visible") is True
+        assert "Checks 1 saved file" in explanation.property("text")
         assert "Updates saved paths only" in explanation.property("text")
         assert "does not move files or change future downloads" in explanation.property(
             "text"
@@ -323,8 +324,16 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
         )
         assert card.property("artworkFaceInset") == 7
         assert artwork.x() == 7
-        QTest.mouseMove(window, card.mapToScene(card.boundingRect().center()).toPoint())
+        center = card.mapToScene(card.boundingRect().center()).toPoint()
+        QTest.mouseMove(window, QPoint(0, 0))
         app.processEvents()
+        # Offscreen hover delivery can lag a frame on Windows; keep the real
+        # pointer transition and wait for it before inspecting the hover face.
+        for _ in range(10):
+            QTest.mouseMove(window, center)
+            QTest.qWait(25)
+            if card.property("hovered") is True:
+                break
         assert card.property("hovered") is True
         assert card.property("artworkFaceInset") == 9
         assert artwork.x() == 9

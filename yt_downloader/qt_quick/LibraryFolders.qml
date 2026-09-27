@@ -112,7 +112,9 @@ Item {
             Text {
                 objectName: "libraryFolderRelinkExplanation"
                 visible: browser.model.mode === "folders" && !!browser.model.path
-                text: "Checks " + browser.model.relinkCount + " saved file(s) in this folder and its subfolders. Updates saved paths only; does not move files or change future downloads."
+                text: "Checks " + browser.model.relinkCount + " saved "
+                    + (browser.model.relinkCount === 1 ? "file" : "files")
+                    + " in this folder and its subfolders. Updates saved paths only; does not move files or change future downloads."
                 color: theme.muted
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap

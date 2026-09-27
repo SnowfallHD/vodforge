@@ -39,7 +39,7 @@ source-native suite. Require a complete JUnit report without failures, skips or
 errors and record source/harness imports. Tests isolate app data and media.
 Identify generated Tk events and OS-injected input; neither certifies physical
 mouse/trackpad behavior.
-Qt's shared rail handler is exercised by `test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll`: vertical wheel, horizontal pixel momentum, then diagonal vertical momentum must move only the page. Watch and Player use this same handler for every horizontal rail. Physical trackpad acceptance remains a separate installed-app check.
+Qt's shared rail handler is exercised by `test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll`: wheel input over a thumbnail, horizontal pixel momentum, then a TouchPad device's diagonal vertical gesture and momentum must move only the page. The TouchPad case failed when `acceptedDevices` reverted to Qt's mouse-only default. Watch and both compact Player rails use this handler; installed-app scrolling over artwork remains a separate check of native event delivery.
 
 Real media cases independently observe advancing rendered frames, transport and
 release across embedded, fullscreen, floating and return. A Playing state or

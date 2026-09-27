@@ -26,7 +26,13 @@ from PySide6.QtCore import (
     QTimer,
     QUrl,
 )
-from PySide6.QtGui import QColor, QGuiApplication, QWheelEvent
+from PySide6.QtGui import (
+    QColor,
+    QGuiApplication,
+    QInputDevice,
+    QPointingDevice,
+    QWheelEvent,
+)
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 
@@ -183,7 +189,7 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
         assert 6 < repeater.property("count") < 14
         viewport = window.findChild(QObject, "watchViewport")
         before = viewport.property("contentItem").property("contentY")
-        point = rail.mapToScene(QPointF(25, 25))
+        point = rail.mapToScene(QPointF(120, 80))
         wheel = QWheelEvent(
             point,
             point,
@@ -216,6 +222,15 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
         assert viewport.property("contentItem").property("contentY") > before
         page_before = viewport.property("contentItem").property("contentY")
         rail_before = flickable.property("contentX")
+        touchpad = QPointingDevice(
+            "Regression trackpad",
+            47,
+            QInputDevice.DeviceType.TouchPad,
+            QPointingDevice.PointerType.Finger,
+            QInputDevice.Capability.Position,
+            1,
+            0,
+        )
         for phase, dx, dy in (
             (Qt.ScrollBegin, -15, -90),
             (Qt.ScrollMomentum, -45, -12),
@@ -229,6 +244,8 @@ def test_qt_watch_home_rails_show_groups_across_full_width_and_load_on_scroll(
                 Qt.NoModifier,
                 phase,
                 False,
+                Qt.MouseEventNotSynthesized,
+                touchpad,
             )
             QGuiApplication.sendEvent(window, swipe)
             app.processEvents()

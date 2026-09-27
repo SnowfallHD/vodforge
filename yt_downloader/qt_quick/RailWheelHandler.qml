@@ -5,6 +5,9 @@ WheelHandler {
     property var horizontalView
     property var verticalView
     target: null
+    // The default accepts mouse wheels only. macOS sends trackpad gestures
+    // as TouchPad events, so the rail must own those gestures explicitly.
+    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
     onWheel: function(wheel) {
         if (!horizontalView || !verticalView ||
                 !horizontalView.contentItem || !verticalView.contentItem) {
