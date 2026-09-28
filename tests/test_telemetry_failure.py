@@ -67,6 +67,24 @@ def test_unclassified_extractor_failure_has_typed_boundary_without_text():
     assert "private" not in str(detail)
 
 
+def test_specific_challenge_evidence_takes_precedence_over_generic_http_403():
+    from urllib.error import HTTPError
+
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    error = HTTPError(
+        "https://private.invalid/video",
+        403,
+        "Sign in to confirm you're not a bot",
+        None,
+        None,
+    )
+    detail = capture_failure(error, stage="download").payload()
+    assert detail["http_status"] == 403
+    assert detail["failure_code"] == "bot_challenge"
+    assert "private" not in str(detail).lower()
+
+
 def test_unapproved_detail_is_rejected():
     from yt_downloader.failure_diagnostics import validate_failure_detail
 
