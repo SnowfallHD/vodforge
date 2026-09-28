@@ -3733,6 +3733,75 @@ def test_qt_watch_empty_home_uses_tk_welcome_and_shared_actions(tmp_path, monkey
         bridge.close()
 
 
+def test_qt_watch_empty_sections_keep_fresh_placeholders_after_a_download(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+
+        def descendants(parent):
+            for child in parent.childItems():
+                yield child
+                yield from descendants(child)
+
+        def visual(name):
+            return next(
+                item
+                for item in descendants(window.contentItem())
+                if item.objectName() == name
+            )
+
+        def placeholder_count(item):
+            return sum(
+                child.objectName() == "watchPlaceholderCard"
+                for child in descendants(item)
+            )
+
+        bridge.select("Watch")
+        app.processEvents()
+        fresh = window.findChild(QObject, "watchEmptyScene")
+        fresh_placeholder_count = placeholder_count(fresh)
+        assert fresh_placeholder_count > 0
+        assert fresh_placeholder_count % 3 == 0
+
+        unfiled = saved(tmp_path, "Unfiled", "MP4")
+        unfiled.update(channel="", playlist_id=None, playlist_title=None)
+        bridge._runtime.history = [unfiled]
+        bridge.historyChanged.emit()
+        app.processEvents()
+        assert not fresh.property("visible")
+        assert len(bridge.watchScene["videos"]) == 1
+        assert not bridge.watchScene["playlists"]
+        rail = visual("watchHomeRail_playlists")
+        button = visual("watchHomeSeeAll_playlists")
+        assert rail.property("visible")
+        assert placeholder_count(rail) == fresh_placeholder_count // 3
+        assert not button.property("enabled")
+        assert bridge.watchScene["channels"]
+        assert visual("watchHomeSeeAll_channels").property("enabled")
+        assert visual("watchHomeSeeAll_videos").property("enabled")
+
+        filed = saved(tmp_path, "Filed", "MP4")
+        bridge._runtime.history.append(filed)
+        bridge.historyChanged.emit()
+        app.processEvents()
+        assert bridge.watchScene["playlists"]
+        assert placeholder_count(visual("watchHomeRail_playlists")) == 0
+        assert visual("watchHomeSeeAll_playlists").property("enabled")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
     tmp_path, monkeypatch
 ):

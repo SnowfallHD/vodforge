@@ -104,29 +104,10 @@ Column {
                 readonly property real tileWidth: (width - spacing * (columns - 1)) / columns
                 Repeater {
                     model: parent.columns
-                    Item {
+                    WatchPlaceholderCard {
                         width: parent.tileWidth
                         height: section.modelData.cardHeight
-                        StoneField { anchors.fill: parent }
-                        SceneIcon {
-                            name: section.modelData.title === "Channels" ? "channels" : section.modelData.title === "Playlists" ? "list" : "videos"
-                            tone: theme.border
-                            x: section.modelData.title === "Recently Added" ? (parent.width - 44) / 2 : 30
-                            y: section.modelData.title === "Recently Added" ? 35 : 28
-                            width: 44; height: 44
-                        }
-                        Rectangle {
-                            x: section.modelData.title === "Recently Added" ? 26 : 110
-                            y: section.modelData.title === "Recently Added" ? 92 : 39
-                            width: Math.max(20, parent.width - (section.modelData.title === "Recently Added" ? 96 : 196))
-                            height: 10; radius: 5; color: theme.border
-                        }
-                        Rectangle {
-                            x: section.modelData.title === "Recently Added" ? 26 : 110
-                            y: section.modelData.title === "Recently Added" ? 111 : 61
-                            width: Math.max(20, parent.width / 2 - 54)
-                            height: 10; radius: 5; color: theme.border
-                        }
+                        sectionTitle: section.modelData.title
                     }
                 }
             }

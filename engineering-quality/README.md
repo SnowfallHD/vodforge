@@ -2387,3 +2387,21 @@ the four measured header, Forge, sidebar and settings-column scene tests pass
 without weakening their geometry assertions. Windows CI now supplies that
 directory for its headless test process; packaged native visuals still require
 separate acceptance.
+
+### Watch empty sections remain visible after the first saved item
+
+The Watch welcome scene drew placeholder cards only when the whole library was
+empty. After an unfiled download, the home scene replaced that scene but drew
+no cards for its empty Playlists rail, leaving a large blank section and an
+active See All action with no destination content. The existing fresh-home
+test checked the welcome scene, while rail tests used populated playlists;
+neither covered the transition between them.
+
+The fresh and populated home scenes now use the same placeholder card. Each
+home rail shows those cards when its own projected items are empty, and its
+See All action is enabled only with at least one item. The Qt scene regression
+checks the actual rendered placeholders and action state across empty home,
+unfiled download, then a named playlist. It also checks that a populated
+Channels section stays active. The condition is per section, independent of
+whether other downloads exist. This covers the representative Watch home
+transition; packaged native presentation still needs inspection.

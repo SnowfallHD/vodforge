@@ -336,10 +336,12 @@ Item {
                         height: 39
                         Text { text: modelData.title; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
                         StoneButton {
+                            objectName: "watchHomeSeeAll_" + modelData.route
                             visible: scene.route === "home"
                             label: "See All"
                             size: "inline"
                             Layout.preferredWidth: 86
+                            enabled: section.items.length > 0
                             onActivated: scene.appBridge.navigateWatch(modelData.route)
                         }
                     }
@@ -348,7 +350,9 @@ Item {
                         objectName: "watchHomeRail_" + modelData.route
                         visible: scene.route === "home" && modelData.route !== "collections"
                         width: parent.width
-                        height: visible ? (modelData.route === "channels" ? 101 : 180) : 0
+                        height: visible ? (section.items.length === 0 ?
+                            (modelData.route === "channels" ? 96 : 100) :
+                            (modelData.route === "channels" ? 101 : 180)) : 0
                         clip: true
                         ScrollBar.vertical.policy: ScrollBar.AlwaysOff
                         ScrollBar.horizontal.policy: ScrollBar.AsNeeded
@@ -370,6 +374,8 @@ Item {
                         }
                         Row {
                             spacing: 12
+                            readonly property int placeholderColumns: Math.max(1, Math.min(4,
+                                Math.floor((homeRail.width + 14) / 280)))
                             Repeater {
                                 objectName: "watchHomeGroupRepeater"
                                 model: homeRail.visible ? Math.min(section.items.length, homeRail.loadedCount) : 0
@@ -381,6 +387,16 @@ Item {
                                     appBridge: scene.appBridge
                                     projection: scene.projection
                                     onChosen: scene.appBridge.navigateWatchGroup(railGroup.kind, railGroup.key)
+                                }
+                            }
+                            Repeater {
+                                model: section.items.length === 0 && homeRail.visible ?
+                                    parent.placeholderColumns : 0
+                                WatchPlaceholderCard {
+                                    width: (homeRail.width - 14 * (parent.placeholderColumns - 1)) /
+                                        parent.placeholderColumns
+                                    height: section.route === "channels" ? 96 : 100
+                                    sectionTitle: section.title
                                 }
                             }
                         }
@@ -462,10 +478,12 @@ Item {
                 height: 42
                 Text { text: scene.route === "home" ? "Recently Added" : scene.route === "group" ? "Saved media" : "Videos"; color: theme.text; font.pixelSize: 23; font.bold: true; Layout.fillWidth: true }
                 StoneButton {
+                    objectName: "watchHomeSeeAll_videos"
                     visible: scene.route === "home"
                     label: "See All"
                     size: "inline"
                     Layout.preferredWidth: 86
+                    enabled: scene.videos.length > 0
                     onActivated: scene.appBridge.navigateWatch("videos")
                 }
             }
