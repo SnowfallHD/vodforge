@@ -75,8 +75,9 @@ The two updater failures are separate feature events rather than part of those
 37 run failures. A future failure at either observed stage retains the typed
 exception across the Qt worker queue, including numeric HTTP status when present.
 
-For future attempts, a 403 has the closed `http_forbidden` code and numeric
-status. Media failures use the existing `provider_extraction` reason; an
+For future attempts, a generic 403 has the closed `http_forbidden` code and
+numeric status; a supported, more specific challenge code takes precedence.
+Media failures use the existing `provider_extraction` reason; an
 updater 403 retains `unknown` reason with the same typed denial facts because
 it is not a media extraction. Neither result claims to know whether the
 provider denied access for login, region, policy or another cause. An
