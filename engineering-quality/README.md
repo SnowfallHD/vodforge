@@ -1176,8 +1176,9 @@ fresh preview D1, blinded investigation, native consent-positive and denied/off
 signed artifacts, Update/Repair and full release gates remain required.
 
 Production D1 counterfactuals now seed three required diagnostic regression
-classes in the normal repository/backend/CRM harness: HTTP 403 with no invented
-login or region cause; playlist extraction failure or user stop before the first
+classes in the normal repository/backend/CRM harness: generic HTTP 403 with no
+invented login or region cause while a supported specific challenge takes precedence;
+playlist extraction failure or user stop before the first
 item; and updater check, repair download, and handoff failures whose exception
 facts survive the Qt event queue.
 The producer tests assert correlated operation steps and absence of private

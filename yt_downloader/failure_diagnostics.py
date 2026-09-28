@@ -176,10 +176,10 @@ def failure_code(error: BaseException) -> str | None:
         return "connection_refused"
     if isinstance(error, ConnectionResetError):
         return "connection_reset"
-    for attribute in ("status", "code"):
-        value = getattr(error, attribute, None)
-        if type(value) is int and value == 403:
-            return "http_forbidden"
+    forbidden = any(
+        type(value) is int and value == 403
+        for value in (getattr(error, "status", None), getattr(error, "code", None))
+    )
     text = str(error).lower()
     if "sslcertverificationerror" in text or "certificate_verify_failed" in text:
         return "tls_certificate"
@@ -226,7 +226,7 @@ def failure_code(error: BaseException) -> str | None:
     ):
         if any(needle in text for needle in needles):
             return code
-    return None
+    return "http_forbidden" if forbidden else None
 
 
 class SourceSelectionError(RuntimeError):
