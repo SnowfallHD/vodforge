@@ -466,6 +466,8 @@ class Bridge(QObject):
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions: list[dict[str, str]] = []
+        self._issue_run_id = ""
+        self._issue_settings: dict[str, Any] = {}
         self._library_detail_origin: tuple[str, str, str] | None = None
         self._pending_library_removal: tuple[str, str] | None = None
         self._annotation_values = {"note": "", "tags": "", "category": ""}
@@ -1610,6 +1612,34 @@ class Bridge(QObject):
     def libraryFolderInspector(self) -> dict[str, Any]:
         if self._library_scene_route != "folders":
             return {}
+        if self._folder_browser.mode == "issues" and self._issue_run_id:
+            row = next(
+                (
+                    row
+                    for row in self._projected_library()
+                    if str(row.get(PROJECTION_OWNER_KEY) or "")
+                    == self._folder_inspector_key
+                ),
+                None,
+            )
+            if row is not None:
+                return {
+                    "issue": True,
+                    "title": str(row.get("title") or "Interrupted download"),
+                    "artwork": self._artwork.request(row),
+                    "creator": str(row.get("channel") or row.get("uploader") or ""),
+                    "type": str(self._issue_settings.get("output_type") or ""),
+                    "status": str(
+                        row.get("vodforge_terminal_status")
+                        or row.get("vodforge_run_status")
+                        or ""
+                    ),
+                    "source": str(self._issue_settings.get("source") or ""),
+                    "modeLabel": export_mode_display_name(
+                        str(self._issue_settings.get("export_mode") or "Everyday")
+                    ),
+                    "settings": dict(self._issue_settings),
+                }
         return self._library_detail_projection(
             self._folder_inspector_owner, self._folder_inspector_versions, True
         )
@@ -2593,6 +2623,8 @@ class Bridge(QObject):
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions = []
+        self._issue_run_id = ""
+        self._issue_settings = {}
         self._library_scene_route = "folders"
         self.historyChanged.emit()
 
@@ -2624,9 +2656,220 @@ class Bridge(QObject):
             if rows[index].get("vodforge_output_dir")
         ]
 
+    def _issue_job(self, run_id: str) -> Any:
+        return next(
+            (
+                job
+                for job in [
+                    self._runtime.active_job,
+                    *self._runtime.queued,
+                    *self._runtime.recovered,
+                ]
+                if job is not None and job.run_id == run_id
+            ),
+            None,
+        )
+
+    @Slot(str, str)
+    def setIssueRetrySetting(self, key: str, value: str) -> None:
+        if not self._issue_run_id or self._folder_browser.mode != "issues":
+            return
+        options = {
+            "output_type": {item.value for item in OutputType},
+            "export_mode": {item.value for item in ExportMode},
+            "quality": set(QUALITY_OPTIONS),
+        }
+        if value not in options.get(key, set()):
+            return
+        self._issue_settings[key] = value
+        self.historyChanged.emit()
+
+    @Slot(str, str)
+    def setIssueManualValue(self, key: str, value: str) -> None:
+        if not self._issue_run_id or self._folder_browser.mode != "issues":
+            return
+        manual = self._issue_settings.get("manual")
+        if not isinstance(manual, dict) or key not in manual or len(value) > 32:
+            return
+        self._issue_settings["manual"] = {**manual, key: value}
+        self.historyChanged.emit()
+
+    @Slot(str)
+    def setIssueRetrySource(self, value: str) -> None:
+        if not self._issue_run_id or self._folder_browser.mode != "issues":
+            return
+        try:
+            self._runtime.terminal_retry_source(self._issue_run_id)
+        except ValueError:
+            self._issue_settings["source"] = value.strip()
+            self.historyChanged.emit()
+
+    @Slot(str, bool)
+    def setIssueRetryFlag(self, key: str, value: bool) -> None:
+        if not self._issue_run_id or self._folder_browser.mode != "issues":
+            return
+        if key not in {
+            "single_video_only",
+            "use_nvenc",
+            "embed_thumbnail",
+            "write_thumbnail",
+            "embed_metadata",
+            "write_info_json",
+        } or (key == "use_nvenc" and value and not self._nvenc_available):
+            return
+        self._issue_settings[key] = value
+        self.historyChanged.emit()
+
+    @Slot(QUrl)
+    def chooseIssueOutputUrl(self, value: QUrl) -> None:
+        if not self._issue_run_id or not value.isLocalFile():
+            return
+        path = Path(value.toLocalFile())
+        if not path.is_dir():
+            self._set_status("Select an existing output folder.")
+            return
+        self._issue_settings["output_dir"] = str(path)
+        self.historyChanged.emit()
+
+    @Slot(result=bool)
+    def downloadSelectedIssue(self) -> bool:
+        if (
+            self._library_scene_route != "folders"
+            or self._folder_browser.mode != "issues"
+        ):
+            return False
+        job = self._issue_job(self._issue_run_id)
+        if job is None or job.terminal_status not in {"Failed", "Stopped", "Skipped"}:
+            self._set_status("Select an interrupted run before downloading.")
+            return False
+        config = self._issue_settings
+        if not all(
+            config.get(key)
+            for key in ("source", "output_dir", "output_type", "export_mode", "quality")
+        ):
+            self._set_status("Choose the output folder and download settings first.")
+            return False
+        try:
+            try:
+                previous_source = self._runtime.terminal_retry_source(job.run_id)[1]
+            except ValueError:
+                previous_source = str(config["source"])
+            if config["source"] != previous_source:
+                raise ValueError("The source changed. Select this issue again.")
+            selected_type = OutputType(config["output_type"])
+            manual_settings = (
+                manual_export_settings(config["manual"])
+                if selected_type is OutputType.MP4
+                and config["export_mode"] == ExportMode.MANUAL_OVERRIDE.value
+                else job.manual_settings
+            )
+            access = (
+                CookieSource.FILE
+                if job.use_cookies and job.cookie_file is not None
+                else CookieSource.BROWSER
+                if job.use_cookies and job.cookie_browser
+                else CookieSource.PUBLIC
+            )
+            prepared = self._runtime.prepare_job(
+                previous_source,
+                Path(config["output_dir"]),
+                selected_type.value,
+                config["export_mode"],
+                config["quality"],
+                DownloadPreferences(
+                    **{
+                        key: bool(config[key])
+                        for key in (
+                            "single_video_only",
+                            "use_nvenc",
+                            "embed_thumbnail",
+                            "write_thumbnail",
+                            "embed_metadata",
+                            "write_info_json",
+                        )
+                    }
+                ),
+                manual_settings,
+                job.mp3_settings,
+                urls=[previous_source],
+                batch_mode=False,
+                cookie_source=access,
+                cookie_file=job.cookie_file,
+                cookie_browser=job.cookie_browser,
+                tags=job.tags,
+            )
+            prepared.preview_info = {"vodforge_issue_retry": True}
+        except (OSError, RuntimeError, ValueError) as exc:
+            self._set_status(str(exc))
+            return False
+        return self._admit_retry(job.run_id, current_job=prepared, stay_in_issues=True)
+
     @Slot(str, result=bool)
     def selectLibraryFolderComponent(self, key: str) -> bool:
         component = self._folder_component(key)
+        if (
+            component is not None
+            and component.kind == "activity"
+            and self._folder_browser.mode == "issues"
+            and component.indices
+        ):
+            row = self._folder_browser.records[component.indices[0]]
+            run_id = str(
+                row.get("vodforge_terminal_run_id")
+                or row.get("vodforge_active_run_id")
+                or row.get("vodforge_queued_run_id")
+                or ""
+            )
+            job = self._issue_job(run_id)
+            if job is None:
+                self._set_status(
+                    "Saved run settings are unavailable. Open the source in Forge."
+                )
+                return False
+            try:
+                _status, source = self._runtime.terminal_retry_source(run_id)
+            except ValueError:
+                source = ""
+            self._issue_run_id = run_id
+            self._folder_inspector_key = key
+            self._folder_inspector_owner = ""
+            self._folder_inspector_versions = []
+            self._issue_settings = {
+                "source": source,
+                "source_editable": not bool(source),
+                "output_dir": str(job.output_dir) if job.output_dir.is_dir() else "",
+                "output_type": job.output_type.value,
+                "export_mode": job.export_mode.value,
+                "quality": job.quality_label
+                if job.quality_label in QUALITY_OPTIONS
+                else "",
+                "manual": {
+                    "manual_rate_control": (
+                        "Quality"
+                        if job.manual_settings.video_crf is not None
+                        else "CBR"
+                    ),
+                    "manual_crf": str(job.manual_settings.video_crf or 21),
+                    "manual_video_bitrate": str(job.manual_settings.video_bitrate_kbps),
+                    "manual_audio_bitrate": str(job.manual_settings.audio_bitrate_kbps),
+                    "manual_audio_codec": job.manual_settings.audio_codec.value,
+                    "manual_sample_rate": job.manual_settings.audio_sample_rate,
+                    "manual_channels": (
+                        "Mono"
+                        if job.manual_settings.audio_channels == "1"
+                        else "Stereo"
+                    ),
+                    "manual_preset": job.manual_settings.x264_preset,
+                },
+                "single_video_only": job.single_video_only,
+                "use_nvenc": job.use_nvenc,
+                "embed_thumbnail": job.embed_thumbnail,
+                "write_thumbnail": job.write_thumbnail,
+                "embed_metadata": job.embed_metadata,
+                "write_info_json": job.write_info_json,
+            }
+            self.historyChanged.emit()
+            return True
         if component is None or component.kind != "media":
             return False
         versions = self._folder_versions(component)
@@ -2635,6 +2878,8 @@ class Bridge(QObject):
         self._folder_inspector_owner = versions[0]["owner"]
         self._folder_inspector_key = key
         self._folder_inspector_versions = versions
+        self._issue_run_id = ""
+        self._issue_settings = {}
         self.historyChanged.emit()
         return True
 
@@ -2737,15 +2982,26 @@ class Bridge(QObject):
             self._folder_inspector_owner = ""
             self._folder_inspector_key = ""
             self._folder_inspector_versions = []
+            self._issue_run_id = ""
+            self._issue_settings = {}
             self.historyChanged.emit()
             return True
         if component.kind == "activity":
+            if self._folder_browser.mode == "issues":
+                return self.selectLibraryFolderComponent(key)
             rows = self._folder_browser.records
             if not component.indices:
                 return False
             row = rows[component.indices[0]]
             if is_metadata_preview(row):
                 return self.openPreviewOwner(str(row.get(PROJECTION_OWNER_KEY) or ""))
+            if str(row.get("vodforge_terminal_status") or "") in {
+                "Failed",
+                "Stopped",
+                "Skipped",
+            } and not row.get("vodforge_output_dir"):
+                self.navigateLibraryFolders("issues")
+                return self.selectLibraryFolderComponent(key)
             self.select("Forge")
             return True
         if component.kind != "media":
@@ -2767,6 +3023,8 @@ class Bridge(QObject):
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions = []
+        self._issue_run_id = ""
+        self._issue_settings = {}
         self.historyChanged.emit()
 
     @Slot(int)
@@ -2782,6 +3040,8 @@ class Bridge(QObject):
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions = []
+        self._issue_run_id = ""
+        self._issue_settings = {}
         self.historyChanged.emit()
 
     @Slot(str, result=bool)
@@ -4075,6 +4335,15 @@ class Bridge(QObject):
 
     @Slot(str, result=bool)
     def retryTerminal(self, run_id: str) -> bool:
+        return self._admit_retry(run_id)
+
+    def _admit_retry(
+        self,
+        run_id: str,
+        *,
+        current_job: Any = None,
+        stay_in_issues: bool = False,
+    ) -> bool:
         try:
             if self._relink.active:
                 raise RuntimeError("Finish the saved-location review before retrying.")
@@ -4082,9 +4351,9 @@ class Bridge(QObject):
                 raise RuntimeError("Finish importing media before retrying.")
             if self._file_action_busy:
                 raise RuntimeError("Finish the Library file change before retrying.")
-            status, url = self._runtime.terminal_retry_source(run_id)
-            current_job = None
-            if status == "Failed":
+            if current_job is None:
+                status, url = self._runtime.terminal_retry_source(run_id)
+            if current_job is None and status == "Failed":
                 if not self._settings_writable:
                     raise SettingsError(
                         "Settings need attention before a retry can start."
@@ -4121,7 +4390,12 @@ class Bridge(QObject):
         self.activityChanged.emit()
         self.historyChanged.emit()
         self.runningChanged.emit()
-        self.select("Forge")
+        if stay_in_issues:
+            self._issue_run_id = retry.run_id
+            self._folder_inspector_key = f"run:{retry.run_id}"
+            self.historyChanged.emit()
+        else:
+            self.select("Forge")
         return True
 
     def _pump(self) -> None:
@@ -4377,6 +4651,18 @@ class Bridge(QObject):
             elif kind in {"done", "partial", "stopped", "error"}:
                 if kind in {"done", "partial"}:
                     self._selected_run_key = ""
+                    if (
+                        active_job_before is not None
+                        and self._issue_run_id == active_job_before.run_id
+                        and self._folder_browser.mode == "issues"
+                    ):
+                        self._reconcile_folder_browser()
+                        if self._folder_inspector_key not in {
+                            item.key for item in self._folder_browser.components
+                        }:
+                            self._issue_run_id = ""
+                            self._issue_settings = {}
+                            self._folder_inspector_key = ""
                 if kind in {"partial", "error"} and active_job_before is not None:
                     try:
                         self._latest_failure = failure_context(

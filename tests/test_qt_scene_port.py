@@ -691,6 +691,180 @@ def test_folder_issues_are_distinct_from_full_forge_run_deck(tmp_path, monkeypat
         bridge.close()
 
 
+def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    stopped = make_job(tmp_path)
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = {"title": "Interrupted sample"}
+    bridge._runtime.recovery.terminal_attempt(stopped, "Stopped", "Canceled")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    bridge._runtime._make_worker = lambda job: setattr(
+        bridge._runtime, "active_job", job
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        issue = bridge.libraryFolders["components"][0]
+        assert issue["kind"] == "activity"
+        assert bridge.selectLibraryFolderComponent(issue["key"])
+        assert bridge.selection == "Library"
+        assert bridge.libraryFolderInspector["settings"]["output_dir"] == str(tmp_path)
+        for name in (
+            "libraryIssueInspector",
+            "libraryIssueOutputFolder",
+            "libraryIssueFormat",
+            "libraryIssueMode",
+            "libraryIssueQuality",
+            "libraryIssueOptions",
+            "libraryIssueDownload",
+        ):
+            assert window.findChild(QObject, name) is not None
+        bridge.setIssueRetrySetting("quality", "720p HD")
+        bridge.setIssueRetrySetting("export_mode", "Manual Override")
+        app.processEvents()
+        manual_controls = window.findChild(QObject, "libraryIssueManualMp4")
+        assert manual_controls is not None and manual_controls.property("visible")
+        original_forge_manual = bridge.manualValues
+        bridge.setIssueManualValue("manual_rate_control", "Quality")
+        bridge.setIssueManualValue("manual_crf", "99")
+        assert not bridge.downloadSelectedIssue()
+        assert bridge._runtime.active_job is None
+        assert bridge.libraryFolders["count"] == 1
+        bridge.setIssueManualValue("manual_crf", "19")
+        assert bridge.manualValues == original_forge_manual
+        assert bridge.downloadSelectedIssue()
+        first = bridge._runtime.active_job
+        assert first is not None
+        assert first.quality_label == "720p HD"
+        assert first.export_mode.value == "Manual Override"
+        assert first.manual_settings.video_crf == 19
+        assert first.preview_info["vodforge_issue_retry"] is True
+        assert bridge.selection == "Library"
+        assert bridge.libraryFolders["count"] == 1
+        assert bridge.libraryFolderInspector["status"] == "Preparing"
+        fresh_metadata = {"id": "abc123", "title": "Refreshed metadata"}
+        bridge._runtime.recovery.metadata_observed(first, fresh_metadata)
+        bridge._runtime.events.put(
+            ("job_metadata", {"job": first, "info": fresh_metadata})
+        )
+        bridge._runtime.poll()
+        assert first.preview_info["vodforge_issue_retry"] is True
+        persisted = bridge._runtime.recovery.store.load()
+        assert persisted is not None
+        assert persisted["job"]["preview_info"]["vodforge_issue_retry"] is True
+        assert bridge.libraryFolders["count"] == 1
+        assert not bridge.downloadSelectedIssue()
+        bridge._runtime._finish("error", "Test failure")
+        bridge.historyChanged.emit()
+        assert bridge.libraryFolders["count"] == 1
+        assert bridge.libraryFolderInspector["status"] == "Failed"
+        assert bridge.downloadSelectedIssue()
+        completed = bridge._runtime.active_job
+        assert completed is not None and completed.run_id != first.run_id
+        bridge._runtime._finish("done", "Done")
+        bridge._runtime.history = [
+            {
+                **saved(tmp_path, "Interrupted sample", "MP4"),
+                "vodforge_run_id": completed.run_id,
+            }
+        ]
+        bridge.historyChanged.emit()
+        assert bridge.libraryFolders["count"] == 0
+        assert bridge.selection == "Library"
+        normal = make_job(tmp_path)
+        bridge._runtime.active_job = normal
+        bridge.historyChanged.emit()
+        assert bridge.libraryFolders["count"] == 0
+        app.processEvents()
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_issue_without_saved_source_requires_new_source_in_same_retry_path(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    stopped = make_job(tmp_path)
+    stopped.url = ""
+    stopped.urls = []
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = {"title": "Missing source"}
+    bridge._runtime.recovery.terminal_attempt(stopped, "Stopped", "Canceled")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    bridge._runtime._make_worker = lambda job: setattr(
+        bridge._runtime, "active_job", job
+    )
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        issue = bridge.libraryFolders["components"][0]
+        assert bridge.selectLibraryFolderComponent(issue["key"])
+        assert bridge.libraryFolderInspector["settings"]["source_editable"]
+        assert not bridge.downloadSelectedIssue()
+        assert bridge.libraryFolders["count"] == 1
+        bridge.setIssueRetrySource("https://www.youtube.com/watch?v=abc123")
+        assert bridge.downloadSelectedIssue()
+        assert bridge._runtime.active_job.url == (
+            "https://www.youtube.com/watch?v=abc123"
+        )
+        assert bridge.selection == "Library"
+        assert bridge.libraryFolders["count"] == 1
+    finally:
+        bridge.close()
+
+
+def test_removing_queued_issue_retry_removes_it_from_issues(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    stopped = make_job(tmp_path)
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = {"title": "Retry later"}
+    bridge._runtime.recovery.terminal_attempt(stopped, "Stopped", "Canceled")
+    bridge._runtime.recovered = bridge._runtime.recovery.store.load_terminal_jobs()
+    active = make_job(tmp_path)
+    active.url = "https://www.youtube.com/watch?v=another"
+    active.urls = [active.url]
+    bridge._runtime.recovery.begin(active)
+    bridge._runtime.active_job = active
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        assert bridge.selectLibraryFolderComponent(
+            bridge.libraryFolders["components"][0]["key"]
+        )
+        assert bridge.downloadSelectedIssue()
+        queued = bridge._runtime.queued[0]
+        assert bridge.libraryFolderInspector["status"] == "Queued"
+        assert bridge.removeQueued(queued.run_id)
+        assert bridge.libraryFolders["count"] == 0
+        assert bridge._runtime.recovered == []
+        assert bridge._runtime.recovery.store.load_queued_jobs() == []
+    finally:
+        bridge.close()
+
+
 def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
     tmp_path, monkeypatch
 ):
@@ -3231,7 +3405,7 @@ def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkey
             if item.property("label") is not None
         }
         buttons["ultrafast  ▾"].activated.emit()
-        assert bridge.manualValues["manual_preset"] == "superfast"
+        assert bridge.manualValues["manual_preset"] == "veryfast"
         window.setWidth(820)
         app.processEvents()
         assert columns.property("columns") == 1

@@ -1,5 +1,24 @@
 # VODForge engineering-quality harness
 
+## Issues retry keeps its configuration and durable place — 2026-09-28
+
+The Issues list previously sent a selected stopped run to Forge without
+carrying its saved source or output settings. The new inspector reuses the
+existing retry admission and manual MP4 settings controls. Its draft is scoped
+to that issue, validated before admission, and leaves Forge's defaults alone.
+The earlier route tests checked where a click navigated, but did not start a
+retry from the selected issue or verify its settings at the admitted job.
+
+The Qt scene journey now checks a stopped issue through Custom controls,
+invalid CRF refusal, successful admission, failed retry retention, completed
+retry removal, intentional queued retry removal, and ordinary active-run
+exclusion. Separate archive and durable state checks cover active and queued
+issue retries and restart persistence. Removing a queued retry removes it from
+Issues because the user removed that run rather than stopping an active one.
+These tests bound the shared run-state invariant; a new packaged Mac
+interaction remains necessary for visual and native picker proof, and Windows
+native parity remains open.
+
 ## Mini-player close preserves the visible page — 2026-09-28
 
 Closing the corner player used to broadcast `historyChanged` even though it

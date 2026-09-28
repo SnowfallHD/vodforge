@@ -6,12 +6,13 @@ ColumnLayout {
     id: manual
     required property var backend
     required property var colors
+    property int gridColumns: 2
     spacing: 7
 
     Text { text: "MANUAL MP4"; color: manual.colors.muted; font.pixelSize: 13; font.bold: true }
     GridLayout {
         Layout.fillWidth: true
-        columns: 2
+        columns: manual.gridColumns
         columnSpacing: 16
         rowSpacing: 7
 
@@ -102,7 +103,7 @@ ColumnLayout {
                 label: manual.backend.manualValues.manual_preset + "  ▾"
                 Layout.fillWidth: true; Layout.preferredHeight: 39
                 onActivated: {
-                    const choices = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"]
+                    const choices = ["ultrafast", "veryfast", "fast", "medium", "slow"]
                     const current = choices.indexOf(manual.backend.manualValues.manual_preset)
                     manual.backend.setManualValue("manual_preset", choices[(current + 1) % choices.length])
                 }

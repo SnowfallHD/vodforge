@@ -129,6 +129,18 @@ def test_issues_only_include_terminal_runs_without_exports():
         {"id": "preview", "title": "Preview", "vodforge_preview_complete": True},
         {"id": "active", "title": "Active", "vodforge_run_status": "Downloading"},
         {"id": "queued", "title": "Queued", "vodforge_run_status": "Queued"},
+        {
+            "id": "retry-active",
+            "title": "Retry active",
+            "vodforge_run_status": "Downloading",
+            "vodforge_issue_retry": True,
+        },
+        {
+            "id": "retry-queued",
+            "title": "Retry queued",
+            "vodforge_run_status": "Queued",
+            "vodforge_issue_retry": True,
+        },
         *(
             {"id": status.lower(), "title": status, "vodforge_terminal_status": status}
             for status in ("Failed", "Stopped", "Skipped")
@@ -138,8 +150,10 @@ def test_issues_only_include_terminal_runs_without_exports():
     model = ArchiveBrowserModel()
     model.replace(rows, range(len(rows)))
     model.navigate(None, mode="issues")
-    assert model.mode_eligible_count == 3
+    assert model.mode_eligible_count == 5
     assert [component.title for component in model.components] == [
+        "Retry active",
+        "Retry queued",
         "Failed",
         "Stopped",
         "Skipped",
@@ -149,6 +163,8 @@ def test_issues_only_include_terminal_runs_without_exports():
         "Preview",
         "Active",
         "Queued",
+        "Retry active",
+        "Retry queued",
         "Failed",
         "Stopped",
         "Skipped",

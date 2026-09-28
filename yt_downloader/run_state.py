@@ -109,6 +109,8 @@ def _safe_preview(info: Mapping[str, Any] | None) -> dict[str, Any]:
     best_thumbnail = sanitize_durable_thumbnail_record(info.get("best_thumbnail"))
     if best_thumbnail:
         result["best_thumbnail"] = best_thumbnail
+    if info.get("vodforge_issue_retry") is True:
+        result["vodforge_issue_retry"] = True
     result["vodforge_output_type"] = str(
         info.get("vodforge_output_type") or OutputType.MP4.value
     )
@@ -576,7 +578,10 @@ class ActiveRunStore:
             job = payload.get("job")
             if not isinstance(job, dict) or job.get("run_id") != run_id:
                 return
-            job["preview_info"] = _safe_preview(info)
+            preview = _safe_preview(info)
+            if (job.get("preview_info") or {}).get("vodforge_issue_retry") is True:
+                preview["vodforge_issue_retry"] = True
+            job["preview_info"] = preview
             self._write_unlocked(payload)
 
     def add_staging_dir(self, run_id: str, path: Path) -> None:

@@ -69,6 +69,18 @@ def test_job_recovery_contract_excludes_secrets_and_cookie_authority(
     assert recovered.cookie_browser is None
 
 
+def test_issue_retry_origin_survives_recovery_without_marking_ordinary_runs(
+    tmp_path: Path,
+) -> None:
+    ordinary = _job(tmp_path)
+    assert (
+        "vodforge_issue_retry" not in serialize_download_job(ordinary)["preview_info"]
+    )
+    ordinary.preview_info = {**ordinary.preview_info, "vodforge_issue_retry": True}
+    restored = deserialize_download_job(serialize_download_job(ordinary))
+    assert restored.preview_info["vodforge_issue_retry"] is True
+
+
 def test_job_recovery_preserves_output_profile_origin_and_local_cover_art(
     tmp_path: Path,
 ) -> None:

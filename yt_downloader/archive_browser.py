@@ -7,7 +7,11 @@ from urllib.parse import urlsplit
 
 from .archive_paths import ArchivePath
 from .history import history_archive_owner
-from .library_state import PROJECTION_OWNER_KEY, PROJECTION_OWNER_KIND_KEY
+from .library_state import (
+    PROJECTION_OWNER_KEY,
+    PROJECTION_OWNER_KIND_KEY,
+    TRANSIENT_LIBRARY_STATUSES,
+)
 from .run_identity import metadata_output_profile
 
 PAGE_SIZE = 48
@@ -53,14 +57,17 @@ def archive_directory(record: Mapping[str, Any]) -> ArchivePath | None:
 def _is_issue_without_export(
     record: Mapping[str, Any], directory: ArchivePath | None
 ) -> bool:
-    return (
-        str(
-            record.get("vodforge_terminal_status")
-            or record.get("vodforge_run_status")
-            or ""
+    status = str(
+        record.get("vodforge_terminal_status")
+        or record.get("vodforge_run_status")
+        or ""
+    )
+    return directory is None and (
+        status in ISSUE_STATUSES
+        or (
+            record.get("vodforge_issue_retry") is True
+            and status in TRANSIENT_LIBRARY_STATUSES
         )
-        in ISSUE_STATUSES
-        and directory is None
     )
 
 

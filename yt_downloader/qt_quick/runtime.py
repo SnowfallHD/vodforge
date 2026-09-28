@@ -281,7 +281,9 @@ class DownloadRuntime:
         url = retry_url_for_item(previous.preview_info or {}, previous.url)
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("This run has no usable source link. Paste it in Forge.")
+            raise ValueError(
+                "This run has no usable source link. Enter one before retrying."
+            )
         status = previous.terminal_status
         if status is None:
             raise ValueError("That saved run is no longer available to retry.")
@@ -295,19 +297,39 @@ class DownloadRuntime:
             raise RunStateError("Run recovery needs attention before retrying.")
         if self.active_job is None and self.busy:
             raise RuntimeError("The previous download is finishing.")
-        status, url = self.terminal_retry_source(run_id)
-        previous = next(job for job in self.recovered if job.run_id == run_id)
+        previous = next((job for job in self.recovered if job.run_id == run_id), None)
+        if previous is None:
+            raise ValueError("That saved run is no longer available to retry.")
+        try:
+            status, url = self.terminal_retry_source(run_id)
+        except ValueError:
+            if previous.terminal_status not in {"Failed", "Stopped", "Skipped"}:
+                raise
+            saved_url = retry_url_for_item(previous.preview_info or {}, previous.url)
+            parsed = urlparse(saved_url)
+            if current_job is None or (
+                parsed.scheme in {"http", "https"} and parsed.netloc
+            ):
+                raise
+            status = previous.terminal_status
+            url = current_job.url
         if status == "Failed":
             if (
                 current_job is None
                 or current_job.url != url
                 or current_job.urls != [url]
             ):
-                raise ValueError("Review current Forge settings before retrying.")
+                raise ValueError(
+                    "Review the selected download settings before retrying."
+                )
             settings_job = current_job
         else:
-            settings_job = previous
-            validate_output_directory_access(previous.output_dir)
+            if current_job is not None and (
+                current_job.url != url or current_job.urls != [url]
+            ):
+                raise ValueError("Review the selected run settings before retrying.")
+            settings_job = current_job or previous
+            validate_output_directory_access(settings_job.output_dir)
         preview = dict(previous.preview_info or {})
         for key in (
             "vodforge_active_run_id",
@@ -318,6 +340,12 @@ class DownloadRuntime:
             "vodforge_terminal_run_id",
         ):
             preview.pop(key, None)
+        # Only a retry admitted from Library Issues stays in that list while it
+        # is queued or running. Ordinary Forge downloads never acquire this flag.
+        if getattr(current_job, "preview_info", None) and current_job.preview_info.get(
+            "vodforge_issue_retry"
+        ):
+            preview["vodforge_issue_retry"] = True
         retry = replace(
             settings_job,
             url=url,
@@ -521,7 +549,10 @@ class DownloadRuntime:
                     and job is self.active_job
                     and isinstance(info, dict)
                 ):
-                    job.preview_info = info
+                    if (job.preview_info or {}).get("vodforge_issue_retry") is True:
+                        job.preview_info = {**info, "vodforge_issue_retry": True}
+                    else:
+                        job.preview_info = info
                     self._activity_upsert(job, "Running", "Processing media")
             elif kind == "item_terminal":
                 if not self._record_item_terminal(payload):

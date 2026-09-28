@@ -83,17 +83,20 @@ Item {
                 StoneButton {
                     objectName: "libraryFolderCompactDetails"
                     visible: !browser.showInspector
-                    enabled: !!browser.appBridge.libraryFolderInspector.owner
-                    label: "Selected details"
+                    enabled: !!browser.appBridge.libraryFolderInspector.owner || !!browser.appBridge.libraryFolderInspector.issue
+                    label: browser.model.mode === "issues" ? "Selected issue" : "Selected details"
                     size: "inline"
                     Layout.preferredWidth: 145
-                    onActivated: browser.appBridge.openSelectedLibraryFolderDetail()
+                    onActivated: {
+                        if (browser.model.mode === "issues") compactIssuePopup.open()
+                        else browser.appBridge.openSelectedLibraryFolderDetail()
+                    }
                 }
             }
             Text {
                 objectName: "libraryFolderActivityExplanation"
                 visible: browser.model.mode === "issues"
-                text: "Failed, stopped (including canceled), and skipped runs without a saved export. See every run in Forge's Run Deck."
+                text: "Failed, stopped (including canceled), and skipped runs without a saved export. Retries stay here while queued or downloading. See every run in Forge's Run Deck."
                 color: theme.muted
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
@@ -153,11 +156,15 @@ Item {
                             selected: modelData.key === browser.model.selectedKey
                             accessibilityLabel: modelData.title + ", " + modelData.detail
                             onActivated: {
-                                if (modelData.kind === "media")
+                                if (modelData.kind === "media" || browser.model.mode === "issues")
                                     browser.appBridge.selectLibraryFolderComponent(modelData.key)
                                 else browser.appBridge.openLibraryFolderComponent(modelData.key)
                             }
-                            onDoubleActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
+                            onDoubleActivated: {
+                                if (browser.model.mode === "issues")
+                                    browser.appBridge.selectLibraryFolderComponent(modelData.key)
+                                else browser.appBridge.openLibraryFolderComponent(modelData.key)
+                            }
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.margins: 13
@@ -243,6 +250,23 @@ Item {
             Layout.preferredWidth: visible ? (browser.width + 40 < 1000 ? 350 : 380) : 0
             Layout.fillHeight: true
             targetPanelBottom: viewport.mapToItem(selectedInspector, 0, viewport.height).y
+            appBridge: browser.appBridge
+        }
+    }
+    Popup {
+        id: compactIssuePopup
+        objectName: "libraryCompactIssuePopup"
+        parent: browser.Window.window ? browser.Window.window.contentItem : browser
+        width: Math.min(420, parent.width - 24)
+        height: Math.min(690, parent.height - 24)
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: StoneField {}
+        LibraryFolderInspector {
+            anchors.fill: parent
+            anchors.margins: 12
             appBridge: browser.appBridge
         }
     }
