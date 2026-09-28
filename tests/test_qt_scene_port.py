@@ -44,6 +44,7 @@ from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotationsError
 from yt_downloader.library_artwork_source import ArtworkAsset
+from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
@@ -653,6 +654,45 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
         bridge.close()
 
 
+def test_folder_runs_without_exports_is_distinct_from_full_forge_run_deck(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "Completed", "MP4")]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        bridge.navigateLibraryFolders("activity")
+        for _ in range(5):
+            app.processEvents()
+        assert bridge.runDeck["count"] == 1
+        assert bridge.libraryFolders["count"] == 0
+        assert (
+            window.findChild(QObject, "libraryFolderLocationHeading").property("text")
+            == "Runs without exports"
+        )
+        assert "full Run Deck in Forge" in window.findChild(
+            QObject, "libraryFolderActivityExplanation"
+        ).property("text")
+        assert (
+            window.findChild(QObject, "libraryFolderEmptyLabel").property("text")
+            == "Every run has a saved export location."
+        )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_folder_inspector_follows_tk_selection_and_compact_detail(
     tmp_path, monkeypatch
 ):
@@ -1037,7 +1077,78 @@ def test_qt_library_player_video_click_and_escape_change_real_playback(
                 >= saved_position - 600
             )
         )
-        bridge.closePlayback()
+        assert until(
+            lambda: player().property("playbackState") == QMediaPlayer.PlayingState
+        )
+        scene.closeRequested.emit()
+        assert until(
+            lambda: (
+                mini.property("visible")
+                and bridge.selection == "Watch"
+                and bridge.watchScene["route"] == "home"
+            )
+        )
+        window.findChild(QObject, "miniPlayerClose").activated.emit()
+        assert until(
+            lambda: bridge.playbackUrl.isEmpty() and not mini.property("visible")
+        )
+        assert bridge.selection == "Watch"
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_closing_mini_player_keeps_visible_watch_home_projection(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    first = saved(tmp_path, "A First", "MP4")
+    playing = saved(tmp_path, "Z Played", "MP4")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [first, playing]
+    progress = bridge._playback_progress
+    session = progress.begin(playing)
+    assert progress.observe(session, PlaybackSnapshot(None, "Playing", 2, 255, 50))
+    assert progress.retire(session)
+    bridge.selectHome("Watch")
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    bridge._window = window
+    try:
+        scene = window.findChild(QObject, "watchBrowseScene")
+        for _ in range(5):
+            app.processEvents()
+        assert scene.property("projection")["hero"]["title"] == "Z Played"
+
+        # Playback can advance after Watch's home projection was painted.
+        # Closing the mini player must not pick another hero from that new
+        # progress snapshot or reset the page the viewer is looking at.
+        bridge._playback_url = QUrl.fromLocalFile(str(tmp_path / "Z Played.mp4"))
+        bridge.playbackUrlChanged.emit()
+        window.setProperty("miniPlayerActive", True)
+        for _ in range(5):
+            app.processEvents()
+        assert window.findChild(QObject, "miniPlayer").property("visible")
+        session = progress.begin(playing)
+        assert progress.observe(session, PlaybackSnapshot(None, "Ended", 255, 255, 50))
+        assert progress.retire(session)
+        assert bridge.watchScene["hero"]["title"] == "A First"
+        assert scene.property("projection")["hero"]["title"] == "Z Played"
+
+        window.findChild(QObject, "miniPlayerClose").activated.emit()
+        for _ in range(5):
+            app.processEvents()
+        assert bridge.playbackUrl.isEmpty()
+        assert bridge.selection == "Watch"
+        assert scene.property("route") == "home"
+        assert scene.property("projection")["hero"]["title"] == "Z Played"
+        bridge.historyChanged.emit()
+        app.processEvents()
+        assert scene.property("projection")["hero"]["title"] == "A First"
     finally:
         window.close()
         engine.deleteLater()

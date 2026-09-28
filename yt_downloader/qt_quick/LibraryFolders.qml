@@ -24,7 +24,7 @@ Item {
                 model: [
                     { key: "folders", label: "Folders" },
                     { key: "all", label: "All media" },
-                    { key: "activity", label: "Run Deck" }
+                    { key: "activity", label: "Runs without exports" }
                 ]
                 StoneButton {
                     required property var modelData
@@ -74,7 +74,9 @@ Item {
                     onActivated: browser.appBridge.upLibraryFolder()
                 }
                 Text {
-                    text: browser.model.path || "All locations"
+                    objectName: "libraryFolderLocationHeading"
+                    text: browser.model.mode === "activity" ? "Runs without exports" :
+                          (browser.model.path || "All locations")
                     color: theme.text; font.pixelSize: 17; elide: Text.ElideMiddle
                     Layout.fillWidth: true
                 }
@@ -87,6 +89,15 @@ Item {
                     Layout.preferredWidth: 145
                     onActivated: browser.appBridge.openSelectedLibraryFolderDetail()
                 }
+            }
+            Text {
+                objectName: "libraryFolderActivityExplanation"
+                visible: browser.model.mode === "activity"
+                text: "Runs and previews with no saved export location. See the full Run Deck in Forge."
+                color: theme.muted
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
             }
             RowLayout {
                 visible: browser.model.mode === "folders" && !!browser.model.path
@@ -191,8 +202,11 @@ Item {
                         }
                     }
                     Text {
+                        objectName: "libraryFolderEmptyLabel"
                         visible: browser.model.count === 0
-                        text: "No saved media in this location."
+                        text: browser.model.mode === "activity" ?
+                              "Every run has a saved export location." :
+                              "No saved media in this location."
                         color: theme.muted; font.pixelSize: 15
                     }
                 }
@@ -200,7 +214,8 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Text {
-                    text: browser.model.count + " items · page " + (browser.model.page + 1) + " of " + browser.model.pages
+                    text: browser.model.count + (browser.model.count === 1 ? " item" : " items") +
+                          " · page " + (browser.model.page + 1) + " of " + browser.model.pages
                     color: theme.muted; font.pixelSize: 13
                     Layout.fillWidth: true
                 }

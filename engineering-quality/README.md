@@ -1,5 +1,32 @@
 # VODForge engineering-quality harness
 
+## Mini-player close preserves the visible page — 2026-09-28
+
+Closing the corner player used to broadcast `historyChanged` even though it
+changed no Library history. That broadcast rebuilt Watch's visible home scene;
+its progress-based featured-title selection could then replace the title the
+viewer was looking at. The existing mini-player regression covered moving,
+pausing, expanding, and resuming, but never the close action while Watch home
+was visible.
+
+The Qt scene test now exercises the actual mini-player close button with two
+saved titles. It establishes a visible featured title, changes playback
+progress so a fresh projection would choose the other title, and verifies
+close leaves the current Watch route and featured title intact. It also
+verifies that an explicit history invalidation still refreshes the scene. The
+test failed on the original close path and passed after the close path stopped
+sending an unrelated history invalidation. It runs in the existing Qt scene
+native-surface harness; a newly built desktop package still needs its own
+interaction check.
+
+The Folders browser's former "Run Deck" route showed only projected runs and
+previews with no export directory, while Forge's Run Deck included saved
+completed exports. The narrower route is now labeled "Runs without exports"
+with an explanation pointing to the full Forge deck. A rendered scene check
+holds a completed saved run in Forge, verifies that the Folders route is empty,
+and checks the route heading and empty state. The existing metadata-preview
+check covers a transient item that belongs in the narrower route.
+
 ## Missing-media recovery keeps the saved item until replacement — 2026-09-24
 
 The exact signed `761c878` Mac preview journey found a real failure: after a

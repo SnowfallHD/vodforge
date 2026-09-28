@@ -3747,8 +3747,8 @@ class Bridge(QObject):
         self._playback_url = QUrl()
         self.playbackUrlChanged.emit()
         self.playerSceneChanged.emit()
-        self.historyChanged.emit()
         if not keep_selection:
+            self.historyChanged.emit()
             self.select(self._playback_origin_selection)
 
     @Slot(str)
