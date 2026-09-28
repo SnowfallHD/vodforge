@@ -24,7 +24,7 @@ Item {
                 model: [
                     { key: "folders", label: "Folders" },
                     { key: "all", label: "All media" },
-                    { key: "activity", label: "Runs without exports" }
+                    { key: "issues", label: "Issues" }
                 ]
                 StoneButton {
                     required property var modelData
@@ -75,7 +75,7 @@ Item {
                 }
                 Text {
                     objectName: "libraryFolderLocationHeading"
-                    text: browser.model.mode === "activity" ? "Runs without exports" :
+                    text: browser.model.mode === "issues" ? "Issues" :
                           (browser.model.path || "All locations")
                     color: theme.text; font.pixelSize: 17; elide: Text.ElideMiddle
                     Layout.fillWidth: true
@@ -92,8 +92,8 @@ Item {
             }
             Text {
                 objectName: "libraryFolderActivityExplanation"
-                visible: browser.model.mode === "activity"
-                text: "Runs and previews with no saved export location. See the full Run Deck in Forge."
+                visible: browser.model.mode === "issues"
+                text: "Failed, stopped (including canceled), and skipped runs without a saved export. See every run in Forge's Run Deck."
                 color: theme.muted
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
@@ -204,8 +204,8 @@ Item {
                     Text {
                         objectName: "libraryFolderEmptyLabel"
                         visible: browser.model.count === 0
-                        text: browser.model.mode === "activity" ?
-                              "Every run has a saved export location." :
+                        text: browser.model.mode === "issues" ?
+                              "No failed, stopped, or skipped runs without an export." :
                               "No saved media in this location."
                         color: theme.muted; font.pixelSize: 15
                     }

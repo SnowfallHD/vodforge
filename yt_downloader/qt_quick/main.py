@@ -2583,12 +2583,12 @@ class Bridge(QObject):
 
     @Slot(str)
     def navigateLibraryFolders(self, mode: str) -> None:
-        if mode not in {"folders", "all", "activity"}:
+        if mode not in {"folders", "all", "activity", "issues"}:
             return
         if self._library_scene_route != "folders":
             self._remember_library_route()
         self._folder_browser.navigate(
-            None, mode=cast(Literal["folders", "all", "activity"], mode)
+            None, mode=cast(Literal["folders", "all", "activity", "issues"], mode)
         )
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""

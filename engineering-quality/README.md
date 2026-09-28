@@ -19,13 +19,16 @@ sending an unrelated history invalidation. It runs in the existing Qt scene
 native-surface harness; a newly built desktop package still needs its own
 interaction check.
 
-The Folders browser's former "Run Deck" route showed only projected runs and
-previews with no export directory, while Forge's Run Deck included saved
-completed exports. The narrower route is now labeled "Runs without exports"
-with an explanation pointing to the full Forge deck. A rendered scene check
-holds a completed saved run in Forge, verifies that the Folders route is empty,
-and checks the route heading and empty state. The existing metadata-preview
-check covers a transient item that belongs in the narrower route.
+The Folders browser's former "Run Deck" route showed projected runs and
+previews without an export directory, while Forge's Run Deck included saved
+completed exports. Its focused route is now "Issues": failed, stopped, or
+skipped runs without a saved export. A rendered scene check holds a completed
+saved run in Forge, verifies that Issues is empty, and checks its heading and
+empty state. A model-level class regression proves active, queued, and preview
+rows stay out while all three terminal issue statuses appear. The existing
+metadata-preview check continues to cover the broader internal activity mode
+used by the native browser. This distinction preserves a complete Forge deck
+without labeling work in progress as a failure.
 
 ## Missing-media recovery keeps the saved item until replacement — 2026-09-24
 

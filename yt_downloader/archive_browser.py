@@ -11,6 +11,7 @@ from .library_state import PROJECTION_OWNER_KEY, PROJECTION_OWNER_KIND_KEY
 from .run_identity import metadata_output_profile
 
 PAGE_SIZE = 48
+ISSUE_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +50,20 @@ def archive_directory(record: Mapping[str, Any]) -> ArchivePath | None:
         return None
 
 
+def _is_issue_without_export(
+    record: Mapping[str, Any], directory: ArchivePath | None
+) -> bool:
+    return (
+        str(
+            record.get("vodforge_terminal_status")
+            or record.get("vodforge_run_status")
+            or ""
+        )
+        in ISSUE_STATUSES
+        and directory is None
+    )
+
+
 def _media_folder(record: Mapping[str, Any], directory: ArchivePath) -> ArchivePath:
     variant = str(record.get("vodforge_output_variant") or "")
     return directory.parent if variant and directory.name == variant else directory
@@ -84,7 +99,7 @@ class ArchiveBrowserModel:
         self.records: tuple[Mapping[str, Any], ...] = ()
         self.visible: tuple[int, ...] = ()
         self.path: ArchivePath | None = None
-        self.mode: Literal["folders", "all", "activity"] = "folders"
+        self.mode: Literal["folders", "all", "activity", "issues"] = "folders"
         self.page = 0
         self.selected_owner = ""
         self._directories: dict[int, ArchivePath] = {}
@@ -190,7 +205,7 @@ class ArchiveBrowserModel:
         self,
         path: ArchivePath | None,
         *,
-        mode: Literal["folders", "all", "activity"] = "folders",
+        mode: Literal["folders", "all", "activity", "issues"] = "folders",
     ) -> None:
         self.path, self.mode, self.page = path, mode, 0
         self.reconcile()
@@ -212,6 +227,11 @@ class ArchiveBrowserModel:
         self.mode_eligible_count = (
             len(self.records)
             if self.mode == "all"
+            else sum(
+                _is_issue_without_export(record, self._all_directories[index])
+                for index, record in enumerate(self.records)
+            )
+            if self.mode == "issues"
             else sum(path is None for path in self._all_directories.values())
             if self.mode == "activity"
             else sum(
@@ -234,6 +254,10 @@ class ArchiveBrowserModel:
             for index in self.visible:
                 record = self.records[index]
                 directory = self._directories.get(index)
+                if self.mode == "issues" and not _is_issue_without_export(
+                    record, directory
+                ):
+                    continue
                 if self.mode == "activity" and directory is not None:
                     continue
                 if self.mode == "folders":

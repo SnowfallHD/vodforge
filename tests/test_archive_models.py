@@ -124,6 +124,37 @@ def test_runs_and_previews_retain_authoritative_order_and_distinct_owners():
     assert [component.indices for component in model.components] == [(0,), (1,)]
 
 
+def test_issues_only_include_terminal_runs_without_exports():
+    rows = [
+        {"id": "preview", "title": "Preview", "vodforge_preview_complete": True},
+        {"id": "active", "title": "Active", "vodforge_run_status": "Downloading"},
+        {"id": "queued", "title": "Queued", "vodforge_run_status": "Queued"},
+        *(
+            {"id": status.lower(), "title": status, "vodforge_terminal_status": status}
+            for status in ("Failed", "Stopped", "Skipped")
+        ),
+        saved("/archive/complete.mp4", video="complete"),
+    ]
+    model = ArchiveBrowserModel()
+    model.replace(rows, range(len(rows)))
+    model.navigate(None, mode="issues")
+    assert model.mode_eligible_count == 3
+    assert [component.title for component in model.components] == [
+        "Failed",
+        "Stopped",
+        "Skipped",
+    ]
+    model.navigate(None, mode="activity")
+    assert [component.title for component in model.components] == [
+        "Preview",
+        "Active",
+        "Queued",
+        "Failed",
+        "Stopped",
+        "Skipped",
+    ]
+
+
 def test_archive_folder_mapping_uses_components_and_keeps_innermost_export():
     rows = [
         saved("/archive/Series/Export/a.mp4"),

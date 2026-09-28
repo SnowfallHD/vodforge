@@ -654,9 +654,7 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
         bridge.close()
 
 
-def test_folder_runs_without_exports_is_distinct_from_full_forge_run_deck(
-    tmp_path, monkeypatch
-):
+def test_folder_issues_are_distinct_from_full_forge_run_deck(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -670,21 +668,21 @@ def test_folder_runs_without_exports_is_distinct_from_full_forge_run_deck(
     try:
         bridge.select("Library")
         bridge.navigateLibrary("folders")
-        bridge.navigateLibraryFolders("activity")
+        bridge.navigateLibraryFolders("issues")
         for _ in range(5):
             app.processEvents()
         assert bridge.runDeck["count"] == 1
         assert bridge.libraryFolders["count"] == 0
         assert (
             window.findChild(QObject, "libraryFolderLocationHeading").property("text")
-            == "Runs without exports"
+            == "Issues"
         )
-        assert "full Run Deck in Forge" in window.findChild(
+        assert "Failed, stopped" in window.findChild(
             QObject, "libraryFolderActivityExplanation"
         ).property("text")
         assert (
             window.findChild(QObject, "libraryFolderEmptyLabel").property("text")
-            == "Every run has a saved export location."
+            == "No failed, stopped, or skipped runs without an export."
         )
     finally:
         window.close()
