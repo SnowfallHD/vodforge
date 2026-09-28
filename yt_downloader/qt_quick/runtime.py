@@ -319,9 +319,7 @@ class DownloadRuntime:
                 or current_job.url != url
                 or current_job.urls != [url]
             ):
-                raise ValueError(
-                    "Review the selected download settings before retrying."
-                )
+                raise ValueError("Review current Forge settings before retrying.")
             settings_job = current_job
         else:
             if current_job is not None and (
