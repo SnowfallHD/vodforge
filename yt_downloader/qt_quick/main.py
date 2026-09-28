@@ -4426,8 +4426,8 @@ class Bridge(QObject):
             elif kind == "done" and isinstance(payload, LocalAudioVideoResult):
                 try:
                     self._runtime.record_local_conversion(payload)
-                except (HistoryError, OSError, ValueError):
-                    self._local.observe_history_failed(payload)
+                except (HistoryError, OSError, ValueError) as exc:
+                    self._local.observe_history_failed(payload, exc)
                     self._status = "Video saved, but Library history needs attention."
                 else:
                     self._local.observe_committed(payload)

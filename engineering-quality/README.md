@@ -1205,6 +1205,14 @@ preserved bytes, one observation, history-stage failure and cleaned staging.
 Earlier conversion tests stopped at commit failures or fully successful results,
 so they missed the committed-file/later-history boundary. This complements the
 download sidecar-partial case; neither proof infers an absent event means zero.
+The Qt bridge then exposed another part of that boundary: when Library history
+rejected an already saved MP4, its terminal event reported a failure without
+the caught exception facts. The bridge now passes that exception to the existing
+closed diagnostic extractor at the history stage. A focused bridge test forces
+a HistoryError with private title and path text, verifies the saved-video status
+and typed history failure, and checks that neither private string enters the
+telemetry event. The earlier Qt telemetry test covered converter failures before
+the Library write; it did not drive the post-save history catch.
 
 Native support testing also found reply-enabled Feedback at bounded small window
 sizes collapsed the message field to 17px. Existing modal layout ownership now
