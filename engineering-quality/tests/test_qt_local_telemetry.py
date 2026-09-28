@@ -9,6 +9,7 @@ from typing import Any
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QGuiApplication
 
+from yt_downloader.history import HistoryError
 from yt_downloader.local_audio_video import (
     LOCAL_VIDEO_PROFILE_OPTIONS,
     LocalAudioVideoError,
@@ -158,6 +159,49 @@ def test_qt_local_failure_keeps_encoder_text_private_and_sends_bounded_reason(
     assert runtime.close()
 
 
+def test_qt_saved_video_history_failure_preserves_bounded_exception_facts(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    QGuiApplication.instance() or QGuiApplication([])
+    bridge = qt_main.Bridge(None)
+    events: list[tuple[str, dict[str, Any]]] = []
+
+    class Telemetry:
+        def record(self, name: str, **fields: Any) -> bool:
+            events.append((name, fields))
+            return True
+
+    try:
+        bridge._local.product_telemetry = Telemetry()
+        result = LocalAudioVideoResult(
+            output_path=tmp_path / "private-result.mp4",
+            image_path=tmp_path / "private-cover.png",
+            history_metadata={"vodforge_run_id": "history-run"},
+            telemetry_dimensions={},
+        )
+
+        def fail_history(_result: LocalAudioVideoResult) -> None:
+            raise HistoryError("Private title at /Users/example/private-result.mp4")
+
+        monkeypatch.setattr(bridge._runtime, "record_local_conversion", fail_history)
+        bridge._local.events.put(("done", result))
+        bridge._pump()
+        assert bridge.status == "Video saved, but Library history needs attention."
+        assert [name for name, _fields in events] == ["local_conversion_failed"]
+        fields = events[0][1]
+        assert fields["failure_reason"] == "unknown"
+        assert fields["failure_detail"]["stage"] == "history"
+        assert fields["failure_detail"]["error_type"] == "HistoryError"
+        assert "private-result" not in str(events)
+        assert "Private title" not in str(events)
+    finally:
+        bridge.close()
+
+
 def test_qt_local_admission_failure_keeps_component_error_out_of_status(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -199,7 +243,10 @@ def test_qt_local_worker_failure_replaces_progress_with_friendly_message(
         )
         bridge._pump()
         assert not bridge.localRunning
-        assert bridge.localProgress == "That audio file could not be read. Choose another MP3."
+        assert (
+            bridge.localProgress
+            == "That audio file could not be read. Choose another MP3."
+        )
         assert bridge.status == "That audio file could not be read. Choose another MP3."
     finally:
         bridge.close()

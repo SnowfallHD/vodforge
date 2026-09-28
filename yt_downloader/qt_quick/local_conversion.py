@@ -120,10 +120,16 @@ class LocalConversionRuntime:
                 dimensions=dict(result.telemetry_dimensions),
             )
 
-    def observe_history_failed(self, result: LocalAudioVideoResult) -> None:
+    def observe_history_failed(
+        self, result: LocalAudioVideoResult, error: Exception
+    ) -> None:
         run_id = str(result.history_metadata.get("vodforge_run_id") or "")
         if run_id:
-            self._observe("local_conversion_failed", run_id)
+            self._observe(
+                "local_conversion_failed",
+                run_id,
+                failure_detail=capture_failure(error, stage="history"),
+            )
 
     def cancel(self) -> None:
         self._owner.cancel()

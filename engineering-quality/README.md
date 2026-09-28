@@ -1205,6 +1205,28 @@ actual observation, never again in completion summaries. These are source checks
 fresh preview D1, blinded investigation, native consent-positive and denied/off
 signed artifacts, Update/Repair and full release gates remain required.
 
+Production D1 counterfactuals now seed three required diagnostic regression
+classes in the normal repository/backend/CRM harness: generic HTTP 403 with no
+invented login or region cause while a supported specific challenge takes precedence;
+playlist extraction failure or user stop before the first
+item; and updater check, repair download, and handoff failures whose exception
+facts survive the Qt event queue.
+The producer tests assert correlated operation steps and absence of private
+text, the enrolled Worker test asserts accepted D1 facts and rejection of an
+extra URL field, and the CRM test distinguishes an observed denial from its
+unknown cause. Existing generic failure tests checked serialization and item
+operations, so they missed the earlier playlist boundary and the updater's
+exception-to-display-string conversion. RuntimeError still requires the
+recorded operation stage and source frame; this class does not claim a typed
+root cause from RuntimeError alone.
+The six-platform PR matrix first failed because its real export/reuse oracle
+counted only item completions and its updater queue oracle expected two-field
+observations. The export oracle now asserts two complete source-expansion
+operations and two item completions with distinct IDs and preserved commit/reuse
+counts. The updater oracle asserts the new optional diagnostic field is `None`
+for an injected legacy string event. These checks keep the independent media
+outcome and privacy assertions while covering the expanded contract.
+
 The local converter also observes the successful physical commit before later
 metadata construction, using its existing worker event queue. A prior-source
 case produces an independently verified file but no commit observation when
@@ -1213,6 +1235,14 @@ preserved bytes, one observation, history-stage failure and cleaned staging.
 Earlier conversion tests stopped at commit failures or fully successful results,
 so they missed the committed-file/later-history boundary. This complements the
 download sidecar-partial case; neither proof infers an absent event means zero.
+The Qt bridge then exposed another part of that boundary: when Library history
+rejected an already saved MP4, its terminal event reported a failure without
+the caught exception facts. The bridge now passes that exception to the existing
+closed diagnostic extractor at the history stage. A focused bridge test forces
+a HistoryError with private title and path text, verifies the saved-video status
+and typed history failure, and checks that neither private string enters the
+telemetry event. The earlier Qt telemetry test covered converter failures before
+the Library write; it did not drive the post-save history catch.
 
 Native support testing also found reply-enabled Feedback at bounded small window
 sizes collapsed the message field to 17px. Existing modal layout ownership now

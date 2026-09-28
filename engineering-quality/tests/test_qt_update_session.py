@@ -110,7 +110,9 @@ def test_update_outcomes_are_bounded_and_consumed_once() -> None:
     session.events.put(("error", "private installer path and provider detail"))
     assert session.poll() and session.recovery
     assert "private installer path" not in session.status
-    assert session.take_observations() == [("failed", {"update_stage": "download"})]
+    assert session.take_observations() == [
+        ("failed", {"update_stage": "download"}, None)
+    ]
     assert session.take_observations() == []
 
 

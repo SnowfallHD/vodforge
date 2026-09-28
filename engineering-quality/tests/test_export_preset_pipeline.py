@@ -215,8 +215,22 @@ def test_preset_commits_and_reuses_real_valid_media(
         ]
         == "variant"
     )
-    assert actions.count("completed") == 2
-    assert len({event.dimensions["operation_id"] for event in observations}) == 2
+    completions = [event for event in observations if event.action == "completed"]
+    source_completions = [
+        event for event in completions if "item_count" in event.dimensions
+    ]
+    item_completions = [
+        event for event in completions if "item_count" not in event.dimensions
+    ]
+    assert len(source_completions) == len(item_completions) == 2
+    assert all(event.dimensions["item_count"] == "1" for event in source_completions)
+    assert len({event.dimensions["operation_id"] for event in observations}) == 4
+    for event in source_completions:
+        assert [
+            step.action
+            for step in observations
+            if step.dimensions["operation_id"] == event.dimensions["operation_id"]
+        ] == ["started", "completed"]
     assert (
         next(event for event in observations if event.action == "committed").dimensions[
             "committed_count"

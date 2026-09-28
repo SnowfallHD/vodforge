@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from yt_downloader.failure_diagnostics import FailureDiagnostic, capture_failure
 from yt_downloader.history import application_data_dir
 from yt_downloader.platform_services import is_macos, is_windows
 from yt_downloader.updates import (
@@ -42,7 +43,9 @@ class QtUpdateSession:
         self.recovery = False
         self.busy = False
         self.stage = "check"
-        self.observations: list[tuple[str, dict[str, str] | None]] = []
+        self.observations: list[
+            tuple[str, dict[str, str] | None, FailureDiagnostic | None]
+        ] = []
 
     def _start(self, target: Any, name: str) -> bool:
         if self.busy:
@@ -68,7 +71,15 @@ class QtUpdateSession:
         try:
             self.events.put(("checked", fetch_latest_release()))
         except Exception as exc:  # noqa: BLE001 - release provider errors are user-visible
-            self.events.put(("error", str(exc)))
+            self.events.put(
+                (
+                    "error",
+                    (
+                        str(exc),
+                        capture_failure(exc, stage="preparation", context="updater"),
+                    ),
+                )
+            )
 
     def download(self, *, repair: bool = False) -> bool:
         release = self.release
@@ -107,7 +118,15 @@ class QtUpdateSession:
                 verify_windows_authenticode(path)
             self.events.put(("ready", payload))
         except Exception as exc:  # noqa: BLE001 - verified update failures retain app
-            self.events.put(("error", str(exc)))
+            self.events.put(
+                (
+                    "error",
+                    (
+                        str(exc),
+                        capture_failure(exc, stage="processing", context="updater"),
+                    ),
+                )
+            )
 
     def poll(self) -> bool:
         """Apply the latest worker result on Qt's UI thread."""
@@ -136,17 +155,28 @@ class QtUpdateSession:
             elif kind == "ready" and isinstance(payload, (Path, MacUpdatePlan)):
                 self.ready = payload
                 self.status = "Verified installer ready."
-                self.observations.append(("download_completed", None))
+                self.observations.append(("download_completed", None, None))
             else:
                 self.ready = None
                 self.recovery = True
                 self.status = (
                     "Update needs attention. Try Repair or open the download page."
                 )
-                self.observations.append(("failed", {"update_stage": self.stage}))
+                detail = (
+                    payload[1]
+                    if isinstance(payload, tuple)
+                    and len(payload) == 2
+                    and isinstance(payload[1], FailureDiagnostic)
+                    else None
+                )
+                self.observations.append(
+                    ("failed", {"update_stage": self.stage}, detail)
+                )
         return changed
 
-    def take_observations(self) -> list[tuple[str, dict[str, str] | None]]:
+    def take_observations(
+        self,
+    ) -> list[tuple[str, dict[str, str] | None, FailureDiagnostic | None]]:
         observations = self.observations
         self.observations = []
         return observations
@@ -180,12 +210,18 @@ class QtUpdateSession:
                 )
             else:
                 raise RuntimeError("This verified installer cannot be handed off here.")
-        except Exception:  # noqa: BLE001 - retain the app and offer recovery
+        except Exception as exc:  # noqa: BLE001 - retain the app and offer recovery
             self.recovery = True
             self.status = (
                 "Update needs attention. Try Repair or open the download page."
             )
-            self.observations.append(("failed", {"update_stage": "handoff"}))
+            self.observations.append(
+                (
+                    "failed",
+                    {"update_stage": "handoff"},
+                    capture_failure(exc, stage="dispatch", context="updater"),
+                )
+            )
             return False
         self.ready = None
         self.status = "Installing update… VODForge will reopen afterward."

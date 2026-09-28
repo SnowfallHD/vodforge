@@ -1045,13 +1045,26 @@ class Bridge(QObject):
             self.updateChanged.emit()
 
     def _record_update_feature(
-        self, feature: str, action: str, dimensions: dict[str, str] | None = None
+        self,
+        feature: str,
+        action: str,
+        dimensions: dict[str, str] | None = None,
+        failure_detail: FailureDiagnostic | None = None,
     ) -> None:
         telemetry = self._analytics.telemetry
         if telemetry is None:
             return
         try:
-            telemetry.record_feature(feature, action, dimensions=dimensions)
+            if failure_detail is not None:
+                telemetry.record(
+                    "feature_used",
+                    feature=feature,
+                    action=action,
+                    dimensions=dimensions,
+                    failure_detail=failure_detail.payload(),
+                )
+            else:
+                telemetry.record_feature(feature, action, dimensions=dimensions)
         except (OSError, ValueError):
             pass
 
@@ -1093,8 +1106,8 @@ class Bridge(QObject):
         if accepted:
             self._record_update_feature("updater", "handoff")
             QTimer.singleShot(250, QCoreApplication.quit)
-        for action, dimensions in self._updates.take_observations():
-            self._record_update_feature("updater", action, dimensions)
+        for action, dimensions, failure_detail in self._updates.take_observations():
+            self._record_update_feature("updater", action, dimensions, failure_detail)
 
     @Slot()
     def startSession(self) -> None:
@@ -4319,8 +4332,8 @@ class Bridge(QObject):
             self.fileActionChanged.emit()
         if self._updates.poll():
             self.updateChanged.emit()
-        for action, dimensions in self._updates.take_observations():
-            self._record_update_feature("updater", action, dimensions)
+        for action, dimensions, failure_detail in self._updates.take_observations():
+            self._record_update_feature("updater", action, dimensions, failure_detail)
         if not self._analytics.settled:
             if self._analytics.poll():
                 self.analyticsPromptRequested.emit()
@@ -4413,8 +4426,8 @@ class Bridge(QObject):
             elif kind == "done" and isinstance(payload, LocalAudioVideoResult):
                 try:
                     self._runtime.record_local_conversion(payload)
-                except (HistoryError, OSError, ValueError):
-                    self._local.observe_history_failed(payload)
+                except (HistoryError, OSError, ValueError) as exc:
+                    self._local.observe_history_failed(payload, exc)
                     self._status = "Video saved, but Library history needs attention."
                 else:
                     self._local.observe_committed(payload)

@@ -54,6 +54,45 @@ labeled separately from actual native/package producers.
 Full positive/denied/off native packaged release gates remain mandatory after the
 final signed artifact freeze. Source diagnostics and this plan are not release proof.
 
+## Production failure counterfactual, 2026-09-27
+
+Read-only production D1 had 50 `run_failed` rows, 37 labeled `unknown`. Nine
+Windows 0.2.2 rows recorded HTTP 403 at a generic processing stage; six had
+`RuntimeError` at that stage, seven Windows/macOS rows had `ExtractorError`
+at preparation, and older rows had still less detail. Two updater failures
+recorded only `check` and `downloading_repair`. These historical rows cannot be
+enriched or assigned an exact root cause.
+
+| Existing `unknown` cohort | Rows | Future diagnostic outcome |
+| --- | ---: | --- |
+| Windows 0.2.2 HTTP 403 during processing | 9 | Provider extraction, HTTP 403 code, item operation and stage; denial cause remains unknown. |
+| Windows 0.2.2 `RuntimeError` during processing | 6 | Operation stage and first-party call site; opaque provider cause may remain unknown. |
+| Windows 0.2.2 / macOS 0.2.2 / macOS 0.2.1 `ExtractorError` during preparation | 2 / 3 / 2 | Provider extraction and correlated source-expansion operation before the first item. |
+| Windows 0.1.9 `RuntimeError` during preparation | 2 | Source-expansion operation, error type and first-party call site if the failure recurs. |
+| Version 0.1.8 with no recorded detail | 13 | New attempts carry bounded diagnostics; the old rows have no recoverable cause. |
+
+The two updater failures are separate feature events rather than part of those
+37 run failures. A future failure at either observed stage retains the typed
+exception across the Qt worker queue, including numeric HTTP status when present.
+
+For future attempts, a generic 403 has the closed `http_forbidden` code and
+numeric status; a supported, more specific challenge code takes precedence.
+Media failures use the existing `provider_extraction` reason; an
+updater 403 retains `unknown` reason with the same typed denial facts because
+it is not a media extraction. Neither result claims to know whether the
+provider denied access for login, region, policy or another cause. An
+unclassified `ExtractorError` has the existing `provider_extraction` reason.
+Playlist expansion now opens and terminates its own correlated download
+operation before any item analysis. Qt updater errors retain a bounded type,
+status and first-party frame through the UI handoff. Processing `RuntimeError`
+still needs its operation stage and first-party frame for localization; an
+arbitrary runtime error cannot be root-caused from type alone.
+
+The representative preflight and updater producer tests, enrolled Worker/D1
+test, and CRM interpretation test exercise these classes and reject private
+URLs/messages. Exact preview D1, packaged client, consent states and native
+release gates remain open.
+
 
 ## Current implementation and limits
 
