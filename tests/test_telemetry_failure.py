@@ -49,7 +49,22 @@ def test_http_failure_preserves_status_not_url_or_message():
     error = HTTPError("https://private.invalid/video", 403, "Private title", None, None)
     detail = capture_failure(error).payload()
     assert detail["http_status"] == 403
+    assert detail["failure_code"] == "http_forbidden"
+    assert detail["reason"] == "provider_extraction"
     assert "private" not in str(detail).lower()
+
+
+def test_unclassified_extractor_failure_has_typed_boundary_without_text():
+    from yt_downloader.failure_diagnostics import capture_failure
+
+    ExtractorError = type("ExtractorError", (RuntimeError,), {})
+    detail = capture_failure(
+        ExtractorError("https://private.invalid/a?token=secret"),
+        stage="preparation",
+    ).payload()
+    assert detail["reason"] == "provider_extraction"
+    assert detail["error_type"] == "ExtractorError"
+    assert "private" not in str(detail)
 
 
 def test_unapproved_detail_is_rejected():

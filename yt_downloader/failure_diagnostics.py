@@ -7,6 +7,7 @@ import ssl
 # Used only to classify exceptions, never to execute a process.
 import subprocess  # nosec B404
 from dataclasses import asdict, dataclass
+from typing import Literal
 
 from .safe_output import UnsafeOutputPathError
 
@@ -152,6 +153,7 @@ FAILURE_CODES = frozenset(
         "connection_refused",
         "connection_reset",
         "http_error",
+        "http_forbidden",
         "encoder_unavailable",
         "disk_full",
     }
@@ -174,6 +176,10 @@ def failure_code(error: BaseException) -> str | None:
         return "connection_refused"
     if isinstance(error, ConnectionResetError):
         return "connection_reset"
+    for attribute in ("status", "code"):
+        value = getattr(error, attribute, None)
+        if type(value) is int and value == 403:
+            return "http_forbidden"
     text = str(error).lower()
     if "sslcertverificationerror" in text or "certificate_verify_failed" in text:
         return "tls_certificate"
@@ -316,7 +322,11 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
 
 
 def capture_failure(
-    error: BaseException, *, stage: str = "unknown", inspect_text: bool = True
+    error: BaseException,
+    *,
+    stage: str = "unknown",
+    inspect_text: bool = True,
+    context: Literal["media", "updater"] = "media",
 ) -> FailureDiagnostic:
     """Extract scalar machine facts; never serialize args, commands or messages."""
     facts: dict = {
@@ -326,6 +336,7 @@ def capture_failure(
     pending = [error]
     seen: set[int] = set()
     text_reason = "unknown"
+    extractor_seen = False
     while pending and len(seen) < 8:
         current = pending.pop(0)
         if id(current) in seen:
@@ -351,6 +362,7 @@ def capture_failure(
             facts["error_type"] = "UnsafeOutputPathError"
         elif name in ERROR_TYPES and name != "UnsafeOutputPathError":
             facts["error_type"] = name
+            extractor_seen |= name == "ExtractorError"
         if isinstance(current, TimeoutError):
             facts["reason"] = "network"
         elif isinstance(current, PermissionError):
@@ -408,6 +420,7 @@ def capture_failure(
     }.get(facts.get("os_error", -1))
     http_reason = {
         401: "authentication_required",
+        403: "provider_extraction" if context == "media" else None,
         404: "source_unavailable",
         410: "source_unavailable",
         429: "rate_limited",
@@ -416,13 +429,14 @@ def capture_failure(
         503: "network",
         504: "network",
     }.get(facts.get("http_status", -1))
-    # A 403 alone does not establish whether login, geography, or policy blocked
-    # access. Preserve the actual code without inventing a more precise cause.
+    # A 403 proves the provider denied the request, not why it did so.
     facts["reason"] = (
         os_reason
         or http_reason
         or (facts["reason"] if facts["reason"] != "unknown" else text_reason)
     )
+    if facts["reason"] == "unknown" and extractor_seen:
+        facts["reason"] = "provider_extraction"
     if not inspect_text and facts.get("os_error") == errno.ENOSPC:
         facts["failure_code"] = "disk_full"
     return FailureDiagnostic(**facts)

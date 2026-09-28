@@ -15,6 +15,143 @@ from yt_downloader.telemetry_features import (
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
+def test_playlist_preflight_failure_has_an_operation_before_any_item(
+    tmp_path, monkeypatch
+):
+    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+    from yt_downloader import app as app_module
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    app = _worker_test_app()
+    app.product_telemetry = telemetry
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    ExtractorError = type("ExtractorError", (RuntimeError,), {})
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        ExtractorError("private playlist title https://private.invalid")
+    )
+    job = _worker_test_job(tmp_path)
+    app._download_worker_single(job)
+    assert telemetry.shutdown(2)
+    observations = [
+        row for row in _load_outbox(state) if row.feature == "download_operation"
+    ]
+    assert [row.action for row in observations] == ["started", "failed"]
+    assert (
+        observations[0].dimensions["operation_id"]
+        == observations[1].dimensions["operation_id"]
+    )
+    assert observations[1].failure_detail.stage == "preparation"
+    assert observations[1].failure_detail.reason == "provider_extraction"
+    assert "private" not in str(observations[1].failure_detail.payload())
+
+
+def test_playlist_preflight_user_stop_closes_its_operation(tmp_path, monkeypatch):
+    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+    from yt_downloader import app as app_module
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    app = _worker_test_app()
+    app.product_telemetry = telemetry
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        app_module._DownloadControlRequestError(
+            app_module._DownloadControlKind.CANCEL_RUN
+        )
+    )
+    job = _worker_test_job(tmp_path)
+    app._download_worker_single(job)
+    assert telemetry.shutdown(2)
+    observations = [
+        row for row in _load_outbox(state) if row.feature == "download_operation"
+    ]
+    assert [row.action for row in observations] == ["started", "cancelled"]
+    assert (
+        observations[0].dimensions["operation_id"]
+        == observations[1].dimensions["operation_id"]
+    )
+
+
+@pytest.mark.parametrize("phase", ["check", "downloading_repair", "handoff"])
+def test_qt_updater_preserves_typed_failure_for_telemetry(monkeypatch, tmp_path, phase):
+    from urllib.error import HTTPError
+
+    from yt_downloader.qt_quick import update_session
+
+    session = update_session.QtUpdateSession("0.2.3")
+    error = HTTPError("https://private.invalid/installer", 403, "secret", None, None)
+    if phase == "check":
+        monkeypatch.setattr(
+            update_session, "fetch_latest_release", lambda: (_ for _ in ()).throw(error)
+        )
+        session._check_worker()
+        session.poll()
+    elif phase == "downloading_repair":
+        session.stage = phase
+        monkeypatch.setattr(
+            update_session, "fetch_latest_release", lambda: (_ for _ in ()).throw(error)
+        )
+        session._download_worker(None)
+        session.poll()
+    else:
+        from pathlib import Path
+
+        session.ready = Path("update.exe")
+        monkeypatch.setattr(update_session, "is_windows", lambda: True)
+        monkeypatch.setattr(
+            update_session,
+            "launch_windows_update",
+            lambda *_a, **_kw: (_ for _ in ()).throw(error),
+        )
+        assert not session.install(downloads_busy=False, telemetry_permitted=True)
+    [(action, dimensions, detail)] = session.take_observations()
+    assert action == "failed"
+    assert dimensions["update_stage"] == phase
+    assert detail.reason == "unknown"
+    assert detail.http_status == 403
+    assert "private" not in str(detail.payload())
+    from types import SimpleNamespace
+
+    from yt_downloader.qt_quick.main import Bridge
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+        heycatch_recorder=lambda *_args, **_kwargs: False,
+    )
+    bridge = SimpleNamespace(_analytics=SimpleNamespace(telemetry=telemetry))
+    Bridge._record_update_feature(bridge, "updater", action, dimensions, detail)
+    assert telemetry.shutdown(2)
+    [saved] = _load_outbox(state)
+    assert saved.feature == "updater"
+    assert saved.failure_reason == "unknown"
+    assert saved.failure_detail.failure_code == "http_forbidden"
+
+
 @pytest.mark.parametrize(
     "field,value,action",
     [

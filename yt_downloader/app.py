@@ -6781,6 +6781,17 @@ class DownloadWorkerCore:
     ) -> DownloadOutcome:
         result = _DownloadItemResult(outcome=DownloadOutcome())
         provider_network = self._provider_network_coordinator()
+        # Source expansion is a distinct provider boundary. Previously a playlist
+        # extractor could fail before the first item operation existed.
+        job.telemetry_operation_id = str(uuid.uuid4())
+        source_expansion_open = True
+        DownloadWorkerCore._observe_download_operation(
+            self,
+            job,
+            "started",
+            stage="preparation",
+            dimensions=job_intent_dimensions(job),
+        )
 
         try:
             ytdlp_module = load_yt_dlp()
@@ -6796,6 +6807,17 @@ class DownloadWorkerCore:
                 control_check=self._raise_for_download_control_requests,
                 blocking_step_cancelled=self._playlist_blocking_step_cancelled,
             )
+            DownloadWorkerCore._observe_download_operation(
+                self,
+                job,
+                "completed",
+                stage="preparation",
+                dimensions={
+                    "item_count": str(min(len(expanded_source.entries), 10000))
+                },
+            )
+            source_expansion_open = False
+            job.telemetry_operation_id = None
             result = replace(
                 result,
                 session_cookies=expanded_source.session_cookies,
@@ -6851,6 +6873,11 @@ class DownloadWorkerCore:
             self._active_progress_context = None
             if control_request.result is not None:
                 result = control_request.result
+            if source_expansion_open:
+                DownloadWorkerCore._observe_download_operation(
+                    self, job, "cancelled", stage="preparation"
+                )
+                job.telemetry_operation_id = None
             write_diagnostic(
                 f"download worker control request: {control_request.kind.value}"
             )
@@ -6871,6 +6898,15 @@ class DownloadWorkerCore:
             return result.outcome
         except Exception as exc:  # noqa: BLE001 - source parent converts provider failures into one terminal outcome
             result, source_error = _download_source_failure_context(exc, result)
+            if source_expansion_open:
+                DownloadWorkerCore._observe_download_operation(
+                    self,
+                    job,
+                    "failed",
+                    stage="preparation",
+                    dimensions={"failed_count": "1"},
+                    failure_detail=capture_failure(source_error, stage="preparation"),
+                )
             return self._finish_download_source_failure(
                 job,
                 result,

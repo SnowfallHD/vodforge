@@ -1175,6 +1175,20 @@ actual observation, never again in completion summaries. These are source checks
 fresh preview D1, blinded investigation, native consent-positive and denied/off
 signed artifacts, Update/Repair and full release gates remain required.
 
+Production D1 counterfactuals now seed three required diagnostic regression
+classes in the normal repository/backend/CRM harness: HTTP 403 with no invented
+login or region cause; playlist extraction failure or user stop before the first
+item; and updater check, repair download, and handoff failures whose exception
+facts survive the Qt event queue.
+The producer tests assert correlated operation steps and absence of private
+text, the enrolled Worker test asserts accepted D1 facts and rejection of an
+extra URL field, and the CRM test distinguishes an observed denial from its
+unknown cause. Existing generic failure tests checked serialization and item
+operations, so they missed the earlier playlist boundary and the updater's
+exception-to-display-string conversion. RuntimeError still requires the
+recorded operation stage and source frame; this class does not claim a typed
+root cause from RuntimeError alone.
+
 The local converter also observes the successful physical commit before later
 metadata construction, using its existing worker event queue. A prior-source
 case produces an independently verified file but no commit observation when
