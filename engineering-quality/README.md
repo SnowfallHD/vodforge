@@ -1189,6 +1189,13 @@ operations, so they missed the earlier playlist boundary and the updater's
 exception-to-display-string conversion. RuntimeError still requires the
 recorded operation stage and source frame; this class does not claim a typed
 root cause from RuntimeError alone.
+The six-platform PR matrix first failed because its real export/reuse oracle
+counted only item completions and its updater queue oracle expected two-field
+observations. The export oracle now asserts two complete source-expansion
+operations and two item completions with distinct IDs and preserved commit/reuse
+counts. The updater oracle asserts the new optional diagnostic field is `None`
+for an injected legacy string event. These checks keep the independent media
+outcome and privacy assertions while covering the expanded contract.
 
 The local converter also observes the successful physical commit before later
 metadata construction, using its existing worker event queue. A prior-source
