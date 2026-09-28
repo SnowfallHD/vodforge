@@ -157,6 +157,7 @@ class QtUpdateSession:
                 if self.stage in {"download", "downloading_repair"}
                 else "dispatch",
                 inspect_text=False,
+                context="updater",
             )
             if error
             else None,
@@ -220,6 +221,7 @@ class QtUpdateSession:
                             exc,
                             stage="analysis" if self.stage == "check" else "download",
                             inspect_text=False,
+                            context="updater",
                         ),
                     ),
                 )
@@ -346,6 +348,7 @@ class QtUpdateSession:
                             exc,
                             stage="analysis" if self.stage == "check" else "download",
                             inspect_text=False,
+                            context="updater",
                         ),
                     ),
                 )

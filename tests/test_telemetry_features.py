@@ -15,6 +15,115 @@ from yt_downloader.telemetry_features import (
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
 
 
+def test_playlist_preflight_failure_has_an_operation_before_any_item(
+    tmp_path, monkeypatch
+):
+    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+    from yt_downloader import download_service as app_module
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+    )
+    app = _worker_test_app()
+    app.product_telemetry = telemetry
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    ExtractorError = type("ExtractorError", (RuntimeError,), {})
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        ExtractorError("private playlist title https://private.invalid")
+    )
+    job = _worker_test_job(tmp_path)
+    app._download_worker_single(job)
+    assert telemetry.shutdown(2)
+    observations = [
+        row for row in _load_outbox(state) if row.feature == "download_operation"
+    ]
+    assert [row.action for row in observations] == ["started", "failed"]
+    assert (
+        observations[0].dimensions["operation_id"]
+        == observations[1].dimensions["operation_id"]
+    )
+    assert observations[1].failure_detail.stage == "preparation"
+    assert observations[1].failure_detail.reason == "provider_extraction"
+    assert "private" not in str(observations[1].failure_detail.payload())
+
+
+def test_playlist_preflight_user_stop_closes_its_operation(tmp_path, monkeypatch):
+    from tests.test_metadata_helpers import _worker_test_app, _worker_test_job
+    from yt_downloader import download_service as app_module
+
+    installation = tmp_path / "installation.json"
+    _permitted_installation(installation)
+    state = tmp_path / "events.json"
+    telemetry = ProductTelemetryOwner(
+        state_path=state,
+        installation_state_path=installation,
+        app_version="0.2.3",
+        d1_recorder=lambda _event: False,
+    )
+    app = _worker_test_app()
+    app.product_telemetry = telemetry
+    monkeypatch.setattr(app_module, "load_yt_dlp", lambda: object())
+    monkeypatch.setattr(app_module, "write_diagnostic", lambda _message: None)
+    app._expand_download_source = lambda *_a, **_kw: (_ for _ in ()).throw(
+        app_module._DownloadControlRequestError(
+            app_module._DownloadControlKind.CANCEL_RUN
+        )
+    )
+    job = _worker_test_job(tmp_path)
+    app._download_worker_single(job)
+    assert telemetry.shutdown(2)
+    observations = [
+        row for row in _load_outbox(state) if row.feature == "download_operation"
+    ]
+    assert [row.action for row in observations] == ["started", "cancelled"]
+    assert (
+        observations[0].dimensions["operation_id"]
+        == observations[1].dimensions["operation_id"]
+    )
+
+
+@pytest.mark.parametrize("phase", ["check", "downloading_repair"])
+def test_qt_updater_failures_are_not_classified_as_media_extraction(monkeypatch, phase):
+    """A 403 from GitHub or the installer host is not a provider extraction."""
+    from urllib.error import HTTPError
+
+    from yt_downloader import failure_diagnostics
+    from yt_downloader.qt_quick import update_session
+
+    captured = []
+    real = failure_diagnostics.capture_failure
+
+    def recording(error, **kwargs):
+        detail = real(error, **kwargs)
+        captured.append((kwargs, detail))
+        return detail
+
+    monkeypatch.setattr(update_session, "capture_failure", recording)
+    error = HTTPError("https://private.invalid/installer", 403, "secret", None, None)
+    monkeypatch.setattr(
+        update_session, "fetch_latest_release", lambda: (_ for _ in ()).throw(error)
+    )
+    session = update_session.QtUpdateSession("0.2.3")
+    if phase == "check":
+        session._check_worker()
+    else:
+        session.stage = phase
+        session._download_worker(None)
+    session.poll()
+    assert captured
+    for kwargs, detail in captured:
+        assert kwargs.get("context") == "updater"
+        assert detail.http_status == 403
+        assert detail.reason != "provider_extraction"
+        assert "private" not in str(detail.payload())
+
 def test_attempts_link_across_restart_without_exposing_local_identity(tmp_path):
     installation = tmp_path / "installation.json"
     install_id = _permitted_installation(installation)
