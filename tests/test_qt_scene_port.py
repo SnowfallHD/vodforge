@@ -3798,7 +3798,8 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
         app.processEvents()
         assert activity.property("technical") is True
         bridge._forge_technical = "\n".join(
-            f"technical step {index}" for index in range(50)
+            ["https://example.invalid/watch?token=" + "a" * 500]
+            + [f"technical step {index}" for index in range(50)]
         )
         bridge.activityChanged.emit()
         settled = QEventLoop()
@@ -3807,6 +3808,8 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
         assert "technical step 49" in activity.property("activityText")
         viewport = window.findChild(QObject, "forgeActivityViewport")
         assert viewport.property("contentHeight") > viewport.property("height")
+        assert viewport.property("contentWidth") <= viewport.property("availableWidth") + 1
+        assert viewport.property("contentItem").property("contentX") == 0
         window.setWidth(850)
         app.processEvents()
         assert details.isVisible() is False

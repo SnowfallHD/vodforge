@@ -48,7 +48,7 @@ ColumnLayout {
                 color: error ? theme.danger : warning ? theme.warning : theme.muted
                 font.pixelSize: 14
                 font.family: activity.technical ? monoFontFamily : buttonFontFamily
-                wrapMode: Text.WordWrap
+                wrapMode: activity.technical ? Text.WrapAnywhere : Text.WordWrap
                 Layout.fillWidth: true
             }
         }

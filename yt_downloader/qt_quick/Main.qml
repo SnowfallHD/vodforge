@@ -1081,6 +1081,7 @@ Window {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
+                            contentWidth: availableWidth
                             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                             ActivityLines {
                                 objectName: "forgeActivityLines"
