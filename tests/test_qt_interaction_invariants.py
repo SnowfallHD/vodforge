@@ -263,7 +263,7 @@ def test_settings_quality_output_and_help_have_own_button_menus(tmp_path, monkey
         _close(bridge, engine, window)
 
 
-def test_current_folder_opens_its_selected_location_and_explains_relink(
+def test_current_folder_opens_its_selected_location_without_relink_controls(
     tmp_path, monkeypatch
 ):
     app, bridge, engine, window = _launch(
@@ -278,17 +278,10 @@ def test_current_folder_opens_its_selected_location_and_explains_relink(
         open_button = window.findChild(QObject, "libraryFolderOpenLocationButton")
         relink_button = window.findChild(QObject, "libraryFolderRelinkButton")
         assert open_button.property("visible") is True
-        assert open_button.property("label") == "Open location"
-        assert relink_button.property("label") == "Locate moved files…"
-        assert relink_button.property("enabled") is True
+        assert open_button.property("label") == "Open this folder"
+        assert relink_button is None
         explanation = window.findChild(QObject, "libraryFolderRelinkExplanation")
-        assert explanation.property("visible") is True
-        assert "Checks 1 saved file" in explanation.property("text")
-        assert "Updates saved paths only" in explanation.property("text")
-        assert "does not move files or change future downloads" in explanation.property(
-            "text"
-        )
-        assert bridge.libraryFolders["relinkCount"] == 1
+        assert explanation is None
         opened = []
         monkeypatch.setattr(
             qt_main,

@@ -215,9 +215,7 @@ def test_qt_folder_relink_rejects_stale_scope_and_disk_history(tmp_path, monkeyp
         bridge.requestFolderRelink(str(source))
         assert requested == [str(source)]
         button = window.findChild(QObject, "libraryFolderRelinkButton")
-        assert button is not None and button.property("visible")
-        button.activated.emit()
-        assert requested == [str(source), str(source)]
+        assert button is None
         assert not bridge.beginFolderRelink(
             str(source / "other"), QUrl.fromLocalFile(str(destination))
         )
