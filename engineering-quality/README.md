@@ -503,6 +503,22 @@ repair, not a performance fix, new latency threshold or release-gate promotion.
 
 ## When and how to strengthen the harness
 
+September 29 file navigation design follow-up: the location trail must stay on
+one line while keeping every parent reachable at narrow and wide widths. The
+existing shared StoneButton now supports quiet breadcrumb links; the current
+folder has stronger text, long names elide, and hidden ancestors use the existing
+anchored popup. Back follows below the trail and uses the same compact treatment
+across Library detail, Watch, and Player. Earlier column geometry checks missed
+multi-line path growth and gave every breadcrumb the weight of a primary action.
+Four rendered cases exercise root and deep paths at 1,025 and 1,600 pixels,
+including opening a hidden parent and root Back. All four fail against the prior
+layout (`build/file-navigation-design-proof/prior-path-layout.log`); the complete
+interaction suite passes 26 cases. The first narrow-layout receipt caught a real
+overflow: ancestor rows now shrink within the available width and the compact
+trail reserves space for the current folder. Native screenshots must verify the
+packaged material and navigation; these source cases do not establish native
+transition timing or Windows packaged parity.
+
 September 29 folder loading and player return follow-up: pending filesystem work
 must not be published as verified empty content, and Back must preserve the
 originating browse route regardless of playback state. The folder scan retains

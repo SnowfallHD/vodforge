@@ -21,8 +21,9 @@ Item {
             spacing: 16
             StoneButton {
                 label: "← Back"
-                width: 180
-                height: 40
+                size: "inline"
+                width: 72
+                height: implicitHeight
                 onActivated: detail.appBridge.backLibrary()
             }
             Flow {

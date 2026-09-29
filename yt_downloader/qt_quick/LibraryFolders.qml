@@ -90,6 +90,75 @@ Item {
             Layout.fillHeight: true
             spacing: 10
             RowLayout {
+                id: pathTrail
+                objectName: "libraryFolderBreadcrumbs"
+                visible: browser.model.mode === "folders" && (browser.model.breadcrumbs || []).length > 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredHeight: 32
+                spacing: 2
+                readonly property var crumbs: browser.model.breadcrumbs || []
+                readonly property bool compact: width < 380
+                readonly property bool collapsed: crumbs.length > (compact ? 2 : 3)
+                readonly property var shown: !collapsed ? crumbs : compact ?
+                                             [crumbs[0], crumbs[crumbs.length - 1]] :
+                                             [crumbs[0], crumbs[crumbs.length - 2], crumbs[crumbs.length - 1]]
+                onCompactChanged: ancestorsPopup.close()
+                Repeater {
+                    model: pathTrail.shown
+                    RowLayout {
+                        required property var modelData
+                        required property int index
+                        Layout.minimumWidth: modelData.current ? 60 : 0
+                        Layout.preferredWidth: Math.min(140, crumb.implicitWidth)
+                                               + (index > 0 ? 14 : 0)
+                                               + (pathTrail.collapsed && index === 1 ? 54 : 0)
+                        Layout.fillWidth: true
+                        Layout.maximumWidth: modelData.current && pathTrail.crumbs.length > 1 ? 10000 : Layout.preferredWidth
+                        spacing: 2
+                        Text {
+                            visible: index > 0
+                            text: "›"; color: theme.muted; font.pixelSize: 13
+                        }
+                        StoneButton {
+                            id: ancestorsButton
+                            objectName: visible ? "libraryFolderAncestorsButton" : ""
+                            visible: pathTrail.collapsed && index === 1
+                            label: "…"
+                            accessibilityLabel: "Show parent folders"
+                            quiet: true
+                            size: "inline"
+                            Layout.preferredWidth: 36
+                            onActivated: {
+                                ancestorsPopup.anchorItem = ancestorsButton
+                                ancestorsPopup.open()
+                            }
+                        }
+                        Text {
+                            visible: ancestorsButton.visible
+                            text: "›"; color: theme.muted; font.pixelSize: 13
+                        }
+                        StoneButton {
+                            id: crumb
+                            objectName: "libraryFolderCrumb_" + modelData.key
+                            label: modelData.label
+                            accessibilityLabel: (modelData.current ? "Current folder: " : "Open ") + modelData.label + (modelData.current ? "" : " folder")
+                            quiet: true
+                            size: "inline"
+                            selected: modelData.current
+                            interactive: !modelData.current
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.maximumWidth: modelData.current ? 10000 : 140
+                            onActivated: browser.appBridge.openLibraryBreadcrumb(modelData.key)
+                            ToolTip.visible: hovered
+                            ToolTip.text: modelData.key
+                        }
+                    }
+                }
+                Item { Layout.fillWidth: true; visible: pathTrail.crumbs.length === 1 }
+            }
+            RowLayout {
                 objectName: "libraryFolderTopRow"
                 Layout.fillWidth: true
                 StoneButton {
@@ -132,35 +201,13 @@ Item {
                     }
                 }
             }
-            Flow {
-                objectName: "libraryFolderBreadcrumbs"
-                visible: browser.model.mode === "folders" && browser.model.breadcrumbs.length > 0
+            Rectangle {
+                visible: browser.model.mode === "folders"
                 Layout.fillWidth: true
-                Layout.preferredHeight: implicitHeight
-                spacing: 4
-                Repeater {
-                    model: browser.model.breadcrumbs || []
-                    Row {
-                        required property var modelData
-                        spacing: 4
-                        Text {
-                            visible: modelData.key !== browser.model.breadcrumbs[0].key
-                            text: "›"
-                            color: theme.muted
-                            font.pixelSize: 16
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        StoneButton {
-                            objectName: "libraryFolderCrumb_" + modelData.key
-                            label: modelData.label
-                            accessibilityLabel: "Open " + modelData.label + " folder"
-                            size: "inline"
-                            selected: modelData.current
-                            width: Math.min(160, implicitWidth)
-                            onActivated: browser.appBridge.openLibraryBreadcrumb(modelData.key)
-                        }
-                    }
-                }
+                Layout.preferredHeight: 1
+                Layout.topMargin: 4
+                Layout.bottomMargin: 6
+                color: theme.border
             }
             Text {
                 objectName: "libraryFolderActivityExplanation"
@@ -268,6 +315,46 @@ Item {
             Layout.fillHeight: true
             targetPanelBottom: viewport.mapToItem(selectedInspector, 0, viewport.height).y
             appBridge: browser.appBridge
+        }
+    }
+    AnchoredPopup {
+        id: ancestorsPopup
+        objectName: "libraryFolderAncestorsPopup"
+        parent: browser.Window.window ? browser.Window.window.contentItem : browser
+        width: Math.min(320, browser.width - 24)
+        height: Math.min(300, ancestorList.implicitHeight + 16)
+        padding: 8
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: StoneField {}
+        ScrollView {
+            anchors.fill: parent
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            Column {
+                id: ancestorList
+                width: ancestorsPopup.availableWidth
+                spacing: 4
+                Repeater {
+                    model: pathTrail.crumbs.slice(1, pathTrail.compact ? -1 : -2)
+                    StoneButton {
+                        required property var modelData
+                        objectName: "libraryFolderAncestor_" + modelData.key
+                        label: modelData.label
+                        accessibilityLabel: "Open " + modelData.label + " folder"
+                        width: ancestorList.width
+                        size: "inline"
+                        onActivated: {
+                            ancestorsPopup.close()
+                            browser.appBridge.openLibraryBreadcrumb(modelData.key)
+                        }
+                    }
+                }
+            }
+        }
+        Connections {
+            target: browser
+            function onNavigationKeyChanged() { ancestorsPopup.close() }
         }
     }
     Popup {

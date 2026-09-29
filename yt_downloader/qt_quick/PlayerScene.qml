@@ -177,7 +177,7 @@ Item {
                 StoneButton {
                     label: "← Back"
                     size: "inline"
-                    Layout.preferredWidth: 145
+                    Layout.preferredWidth: 72
                     onActivated: scene.closeRequested()
                 }
                 ColumnLayout {

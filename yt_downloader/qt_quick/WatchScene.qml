@@ -99,7 +99,7 @@ Item {
             objectName: "watchBackButton"
             label: "← Back"
             size: "inline"
-            Layout.preferredWidth: 104
+            Layout.preferredWidth: 72
             onActivated: scene.back()
         }
     }

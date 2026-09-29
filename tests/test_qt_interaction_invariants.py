@@ -705,3 +705,72 @@ def test_watch_organization_category_offers_existing_and_accepts_new(
         assert bridge._annotations.annotation_for(owner).category == "New collection"
     finally:
         _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("width", [1025, 1600])
+@pytest.mark.parametrize("depth", [0, 8])
+def test_file_path_trail_is_one_line_with_reachable_hidden_parents(
+    tmp_path, monkeypatch, width, depth
+):
+    from tests.test_qt_scene_port import visual_item
+
+    root = tmp_path / "My saved media"
+    nested = root
+    for index in range(depth):
+        nested /= f"Long descriptive folder name number {index}"
+    nested.mkdir(parents=True)
+    record = saved(nested, "Video", "MP4")
+    record["vodforge_retry_job"] = {"output_dir": str(root)}
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        window.resize(width, 800)
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(nested)))
+        bridge._queue_folder_listing()
+        bridge.historyChanged.emit()
+        QTest.qWait(80)
+        trail = window.findChild(QObject, "libraryFolderBreadcrumbs")
+        back = window.findChild(QObject, "libraryFolderBackButton")
+        assert trail.height() == 32
+        assert trail.y() + trail.height() <= back.parentItem().y()
+        assert trail.width() <= trail.parentItem().width()
+        crumbs = bridge.libraryFolders["breadcrumbs"]
+        current = visual_item(
+            window.contentItem(), "libraryFolderCrumb_" + crumbs[-1]["key"]
+        )
+        assert current.property("selected")
+        assert current.property("quiet")
+        assert not current.property("interactive")
+        assert current.width() >= 44
+        for item in _visual_descendants(trail):
+            if item.objectName().startswith("libraryFolderCrumb_") and item.isVisible():
+                assert item.mapToItem(trail, 0, 0).x() >= -1
+                assert item.mapToItem(trail, item.width(), 0).x() <= trail.width() + 1
+        if depth:
+            button = visual_item(window.contentItem(), "libraryFolderAncestorsButton")
+            assert button.isVisible()
+            button.activated.emit()
+            QTest.qWait(40)
+            popup = window.findChild(QObject, "libraryFolderAncestorsPopup")
+            assert popup.property("visible")
+            hidden = crumbs[1]
+            ancestor = visual_item(
+                window.contentItem(), "libraryFolderAncestor_" + hidden["key"]
+            )
+            # Popup delegates belong to the overlay's visual tree.
+            if ancestor is None:
+                ancestor = window.findChild(
+                    QObject, "libraryFolderAncestor_" + hidden["key"]
+                )
+            assert ancestor is not None
+            ancestor.activated.emit()
+            app.processEvents()
+            assert bridge.libraryFolders["path"] == hidden["key"]
+            assert not popup.property("visible")
+        else:
+            back.activated.emit()
+            app.processEvents()
+            assert bridge.libraryScene["route"] == "home"
+    finally:
+        _close(bridge, engine, window)

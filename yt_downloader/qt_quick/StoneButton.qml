@@ -10,6 +10,7 @@ Item {
     property bool emphasized: false
     property bool transientMaterial: true
     property bool interactive: true
+    property bool quiet: false
     property string size: "default"
     readonly property bool hovered: mouse.containsMouse
     readonly property bool activeFace: hovered || activeFocus || selected
@@ -35,6 +36,7 @@ Item {
     Image {
         property string presentationRole: "control"
         anchors.fill: parent
+        visible: !control.quiet || mouse.pressed || mouse.containsMouse || control.activeFocus
         source: "image://vodforge/button/" + Math.max(1, Math.round(control.width))
                 + "/" + Math.max(1, Math.round(control.height)) + "/"
                 + (!control.transientMaterial || !control.enabled ? "normal" : mouse.pressed ? "pressed" : (control.activeFace ? "hover" : "normal"))
@@ -44,7 +46,10 @@ Item {
         smooth: true
     }
     Row {
-        anchors.centerIn: parent
+        anchors.centerIn: control.quiet ? undefined : parent
+        anchors.left: control.quiet ? parent.left : undefined
+        anchors.leftMargin: control.quiet ? 8 : 0
+        anchors.verticalCenter: parent.verticalCenter
         spacing: 8
         Image {
             objectName: "stoneButtonIcon"
@@ -76,10 +81,11 @@ Item {
                     Math.max(8, (availableWidth - implicitWidth) / 2))
             width: Math.min(implicitWidth, Math.max(0, availableWidth - 2 * sidePadding))
             elide: Text.ElideRight
-            color: control.emphasized ? theme.action : theme.text
+            color: control.emphasized ? theme.action :
+                   control.quiet && !control.selected && !control.hovered && !control.activeFocus ? theme.muted : theme.text
             font.family: buttonFontFamily
             font.pixelSize: buttonMetrics[control.size].fontPixels
-            font.weight: Font.Normal
+            font.weight: control.quiet && control.selected ? Font.DemiBold : Font.Normal
             anchors.verticalCenter: parent.verticalCenter
         }
     }
