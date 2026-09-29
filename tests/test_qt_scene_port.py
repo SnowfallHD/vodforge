@@ -4516,6 +4516,11 @@ def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypat
             assert top.mapToItem(None, 0, 0).y() >= browser_y + 12
             assert browser.property("showInspector") == (width >= 920 and height >= 740)
             assert inspector.property("visible") == (width >= 920 and height >= 740)
+        back = window.findChild(QObject, "libraryFolderBackButton")
+        assert back.property("visible") is True
+        assert back.width() == 72
+        back.activated.emit()
+        assert bridge.libraryScene["route"] == "home"
     finally:
         window.close()
         engine.deleteLater()
