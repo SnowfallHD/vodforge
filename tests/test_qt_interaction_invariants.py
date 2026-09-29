@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import Property, QCoreApplication, QEvent, QObject, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
 
@@ -438,6 +438,193 @@ def test_folder_navigation_keeps_columns_fixed_while_async_contents_change(
             assert not bridge.libraryFolders["checkingFolder"]
         assert navigation.width() == 184
         assert inspector.width() == 380
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_folder_scan_preserves_known_routes_until_a_verified_result(
+    tmp_path, monkeypatch
+):
+    from yt_downloader.archive_work import ArchiveWorkResult
+
+    nested = tmp_path / "Documents" / "Saved video"
+    nested.mkdir(parents=True)
+    record = saved(nested, "Video", "MP4")
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        monkeypatch.setattr(bridge, "_start_availability_scan", lambda: None)
+        monkeypatch.setattr(bridge._availability_work, "poll", lambda: None)
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(tmp_path)))
+        expected = bridge.libraryFolders["components"]
+        assert expected
+        bridge._queue_folder_listing()
+        app.processEvents()
+        assert bridge.libraryFolders["components"] == expected
+        label = window.findChild(QObject, "libraryFolderEmptyLabel")
+        assert not label.property("visible")
+        result = ArchiveWorkResult(
+            1, "folder_list", {"path": str(tmp_path), "entries": []}
+        )
+        monkeypatch.setattr(bridge._availability_work, "poll", lambda: result)
+        bridge._pump()
+        app.processEvents()
+        assert not bridge.libraryFolders["checkingFolder"]
+        assert bridge.libraryFolders["components"] == []
+        assert label.property("visible")
+        assert label.property("text") == "This folder is empty."
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("outcome", ["empty", "file", "error"])
+def test_folder_loading_feedback_only_appears_for_a_slow_current_navigation(
+    tmp_path, monkeypatch, outcome
+):
+    from yt_downloader.archive_work import ArchiveWorkResult
+
+    nested = tmp_path / "Saved video"
+    nested.mkdir()
+    record = saved(nested, "Video", "MP4")
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        monkeypatch.setattr(bridge, "_start_availability_scan", lambda: None)
+        monkeypatch.setattr(bridge._availability_work, "poll", lambda: None)
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        app.processEvents()
+        QTest.qWait(60)
+        target = nested / "Empty child"
+        bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(target)))
+        bridge._queue_folder_listing()
+        app.processEvents()
+        label = window.findChild(QObject, "libraryFolderEmptyLabel")
+        QTest.qWait(40)
+        assert bridge.libraryFolders["checkingFolder"]
+        assert not label.property("visible"), (
+            window.findChild(QObject, "libraryFolderBrowser").property(
+                "checkingFolder"
+            ),
+            window.findChild(QObject, "libraryFolderBrowser").property(
+                "showFolderOpening"
+            ),
+            label.property("text"),
+        )
+        QTest.qWait(320)
+        assert label.property("visible")
+        assert label.property("text") == "Opening folder…"
+
+        # A second navigation must get its own delay, not inherit the first's.
+        target = nested / "Next child"
+        bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(target)))
+        bridge._queue_folder_listing()
+        app.processEvents()
+        QTest.qWait(40)
+        assert not label.property("visible")
+        result = ArchiveWorkResult(
+            2,
+            "folder_list",
+            {"path": str(target), "entries": [("note.txt", "file", 10)]}
+            if outcome == "file"
+            else {"path": str(target), "entries": []},
+            error="PermissionError" if outcome == "error" else "",
+        )
+        monkeypatch.setattr(bridge._availability_work, "poll", lambda: result)
+        bridge._pump()
+        app.processEvents()
+        QTest.qWait(330)
+        assert not bridge.libraryFolders["checkingFolder"]
+        if outcome == "file":
+            assert not label.property("visible")
+            assert bridge.libraryFolders["components"][0]["title"] == "note.txt"
+        else:
+            assert label.property("visible")
+            assert label.property("text") == (
+                "This folder could not be opened."
+                if outcome == "error"
+                else "This folder is empty."
+            )
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("origin", ["library_detail", "folders", "watch_group"])
+@pytest.mark.parametrize("playing", [True, False])
+def test_player_back_restores_origin_and_mini_close_keeps_that_route(
+    tmp_path, monkeypatch, origin, playing
+):
+    from PySide6.QtMultimedia import QMediaPlayer
+
+    from yt_downloader.app import history_archive_owner
+
+    class Provider(QObject):
+        # Keep provider timing independent from the navigation owner under test.
+        @Property(int, constant=True)
+        def playbackState(self):
+            return (
+                QMediaPlayer.PlayingState.value
+                if playing
+                else QMediaPlayer.PausedState.value
+            )
+
+        @Slot()
+        def stop(self):
+            pass
+
+    record = saved(tmp_path, "Return to this item", "MP4")
+    Path(record["vodforge_output_path"]).write_bytes(b"media")
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        owner = history_archive_owner(record)
+        if origin == "watch_group":
+            bridge.select("Watch")
+            bridge.navigateWatchGroup("channel", "Creator")
+            bridge.setWatchSearch("Return")
+        else:
+            bridge.select("Library")
+            bridge.navigateLibrary("folders")
+            bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(tmp_path)))
+            if origin == "library_detail":
+                assert bridge.openLibraryDetails(owner)
+        before = (
+            bridge.selection,
+            bridge._library_scene_route,
+            bridge._library_detail_owner,
+            str(bridge._folder_browser.path),
+            bridge._watch_scene_route,
+            bridge._watch_group_kind,
+            bridge._watch_group_key,
+            bridge._watch_search,
+        )
+        assert bridge.openLibraryItem(0)
+        app.processEvents()
+        assert bridge.selection == "Watch"
+        provider = Provider(window)
+        window.setProperty("mediaPlayer", provider)
+        scene = window.findChild(QObject, "watchPlayerScene")
+        scene.closeRequested.emit()
+        app.processEvents()
+        assert (
+            bridge.selection,
+            bridge._library_scene_route,
+            bridge._library_detail_owner,
+            str(bridge._folder_browser.path),
+            bridge._watch_scene_route,
+            bridge._watch_group_kind,
+            bridge._watch_group_key,
+            bridge._watch_search,
+        ) == before
+        assert window.property("miniPlayerActive") is playing
+        if playing:
+            assert not bridge.playbackUrl.isEmpty()
+            window.findChild(QObject, "miniPlayerClose").activated.emit()
+            app.processEvents()
+            assert bridge.selection == before[0]
+            assert bridge._library_detail_owner == before[2]
+            assert bridge._watch_scene_route == before[4]
+            assert bridge._watch_search == before[7]
+        assert bridge.playbackUrl.isEmpty()
     finally:
         _close(bridge, engine, window)
 

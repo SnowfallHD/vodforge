@@ -1232,7 +1232,7 @@ Window {
                 playerScene.presentationMode = "embedded"
                 if (window.mediaPlayer && window.mediaPlayer.playbackState === MediaPlayer.PlayingState) {
                     window.miniPlayerActive = true
-                    bridge.navigateWatch("home")
+                    bridge.returnToPlaybackOrigin()
                 } else {
                     if (window.mediaPlayer) window.mediaPlayer.stop()
                     bridge.closePlayback()

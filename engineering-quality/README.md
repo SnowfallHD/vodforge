@@ -503,6 +503,24 @@ repair, not a performance fix, new latency threshold or release-gate promotion.
 
 ## When and how to strengthen the harness
 
+September 29 folder loading and player return follow-up: pending filesystem work
+must not be published as verified empty content, and Back must preserve the
+originating browse route regardless of playback state. The folder scan retains
+known routes or the last same-folder listing until a result arrives; empty/error
+results still replace that content. Loading copy waits 300 ms and resets for each
+navigation, including a second path while the prior delayed message was visible.
+The player reuses its retained origin when Back creates the corner player,
+matching its paused-player return behavior. Earlier geometry tests verified
+column boundaries but missed disappearing rows; earlier player tests asserted
+the old hardcoded Watch return rather than the user's actual Library origin.
+The new rendered cases cover known routes, fast and slow empty/file/error results,
+playing and paused Library detail/folder and Watch group origins, and mini-player
+closure after return. Against the prior runtime, seven of ten cases failed
+(`build/folder-player-return-proof/prior-behavior.log`). The existing real Mac
+playback test also now checks return to Library and continued corner playback.
+The short-delay test warms initial scene rendering before timing navigation;
+the retained first attempt includes the cold scene exceeding that delay.
+
 September 29 Run Deck, terminal activity, folder geometry, and path follow-up:
 the invariant is that a change in content or terminal state must preserve the
 user's context and the evidence of work already performed. The shared visible

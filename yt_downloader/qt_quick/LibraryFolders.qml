@@ -10,8 +10,23 @@ Item {
     readonly property var model: appBridge.libraryFolders
     readonly property bool showInspector: Window.window && Window.window.width >= 920 && Window.window.height >= 740
     readonly property string navigationKey: model.mode + ":" + model.path
+    property bool showFolderOpening: false
+    readonly property bool checkingFolder: !!model.checkingFolder
+    onCheckingFolderChanged: {
+        showFolderOpening = false
+        folderOpeningDelay.restart()
+        if (!checkingFolder) folderOpeningDelay.stop()
+    }
     onNavigationKeyChanged: {
+        showFolderOpening = false
+        folderOpeningDelay.restart()
+        if (!checkingFolder) folderOpeningDelay.stop()
         if (viewport.contentItem) viewport.contentItem.contentY = 0
+    }
+    Timer {
+        id: folderOpeningDelay
+        interval: 300
+        onTriggered: browser.showFolderOpening = browser.checkingFolder
     }
 
     RowLayout {
@@ -216,6 +231,7 @@ Item {
                     Text {
                         objectName: "libraryFolderEmptyLabel"
                         visible: browser.model.count === 0
+                                 && (!browser.checkingFolder || browser.showFolderOpening)
                         text: browser.model.mode === "issues" ?
                               browser.model.checkingAvailability ? "Checking saved files…" :
                               browser.model.availabilityError ? "Could not check saved files. Open Issues & Recovery again to retry." :

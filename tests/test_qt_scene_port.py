@@ -1612,15 +1612,15 @@ def test_qt_library_player_video_click_and_escape_change_real_playback(
         assert until(
             lambda: (
                 mini.property("visible")
-                and bridge.selection == "Watch"
-                and bridge.watchScene["route"] == "home"
+                and bridge.selection == "Library"
+                and bridge.libraryScene["route"] == "home"
             )
         )
         window.findChild(QObject, "miniPlayerClose").activated.emit()
         assert until(
             lambda: bridge.playbackUrl.isEmpty() and not mini.property("visible")
         )
-        assert bridge.selection == "Watch"
+        assert bridge.selection == "Library"
     finally:
         window.close()
         engine.deleteLater()

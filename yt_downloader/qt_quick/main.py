@@ -1682,7 +1682,8 @@ class Bridge(QObject):
         self._folder_listing_error = False
         self._folder_listing_pending = str(model.path) if model.path is not None else ""
         if model.mode == "folders" and model.path is not None:
-            model.set_folder_entries(model.path, ())
+            # A pending scan is not an authoritative empty directory. Keep the
+            # known routes (or this folder's last listing) until its result arrives.
             self._availability_requests.append(("folder_list", str(model.path)))
             self._start_availability_scan()
         self.historyChanged.emit()
@@ -4742,6 +4743,11 @@ class Bridge(QObject):
         self.openLibraryItem(self._runtime.history.index(item))
 
     @Slot()
+    def returnToPlaybackOrigin(self) -> None:
+        """Return from the player without resetting the retained browse route."""
+        self.select(self._playback_origin_selection)
+
+    @Slot()
     @Slot(bool)
     def closePlayback(self, keep_selection: bool = False) -> None:
         self._watch_queue.cancel()
@@ -4757,7 +4763,7 @@ class Bridge(QObject):
         self.playerSceneChanged.emit()
         if not keep_selection:
             self.historyChanged.emit()
-            self.select(self._playback_origin_selection)
+            self.returnToPlaybackOrigin()
 
     @Slot(str)
     def openLibraryFolder(self, owner: str) -> None:
@@ -5199,6 +5205,8 @@ class Bridge(QObject):
                             )
                         )
                     self._folder_browser.set_folder_entries(current_path, entries)
+                elif availability.error:
+                    self._folder_browser.set_folder_entries(current_path, ())
                 self.historyChanged.emit()
         elif availability is not None and availability.kind.startswith("availability_"):
             current = {
