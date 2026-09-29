@@ -117,6 +117,7 @@ class ArchiveBrowserModel:
         self.missing_owners: frozenset[str] = frozenset()
         self.folder_entries: tuple[ArchiveComponent, ...] = ()
         self.folder_entries_path: ArchivePath | None = None
+        self.unavailable_indices: tuple[int, ...] = ()
 
     def set_folder_entries(
         self, path: ArchivePath, entries: Sequence[ArchiveComponent]
@@ -267,6 +268,7 @@ class ArchiveBrowserModel:
         )
 
     def reconcile(self) -> None:
+        self.unavailable_indices = ()
         # All canonical records in this mode/scope, before search/category/type
         # filters. These are metadata-only paths; no filesystem work is added.
         self.mode_eligible_count = (
@@ -428,10 +430,13 @@ class ArchiveBrowserModel:
                     if item.path is not None
                 }
                 physical = []
+                unavailable = []
                 for item in ordered:
                     if item.kind == "folder":
                         if item.path is not None and item.path.key in present:
                             physical.append(item)
+                        else:
+                            unavailable.extend(item.indices)
                     elif item.kind == "media":
                         indices = []
                         for index in item.indices:
@@ -446,8 +451,11 @@ class ArchiveBrowserModel:
                                 continue
                             if output.key in present:
                                 indices.append(index)
+                            else:
+                                unavailable.append(index)
                         if indices:
                             physical.append(replace(item, indices=tuple(indices)))
+                self.unavailable_indices = tuple(dict.fromkeys(unavailable))
                 ordered = tuple(physical)
                 folder_paths = {
                     item.path.key

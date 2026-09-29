@@ -268,6 +268,18 @@ def test_my_files_uses_physical_entries_and_hides_missing_saved_file():
         ("present", "media"),
         ("thumbnail.jpg", "file"),
     ]
+    assert model.unavailable_indices == (1,)
+
+
+def test_my_files_identifies_missing_saved_child_folder_from_physical_listing():
+    rows = [saved("/archive/Artist/album/track.mp4", video="track")]
+    model = ArchiveBrowserModel()
+    model.replace(rows, [0])
+    parent = ArchivePath.parse("/archive/Artist")
+    model.navigate(parent)
+    model.set_folder_entries(parent, ())
+    assert model.components == ()
+    assert model.unavailable_indices == (0,)
 
 
 def test_my_files_only_exposes_known_routes_until_a_media_folder():

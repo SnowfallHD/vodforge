@@ -4582,6 +4582,56 @@ def test_qt_my_files_starts_at_saved_path_without_recent_export_cards(
         bridge.close()
 
 
+def test_qt_my_files_empty_saved_location_links_to_existing_recovery(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    output = tmp_path / "Downloads" / "Artist"
+    output.mkdir(parents=True)
+    record = saved(output, "Missing song", "MP4")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.resize(1100, 740)
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("folders")
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["checkingFolder"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        app.processEvents()
+        assert bridge.libraryFolders["count"] == 0
+        assert bridge.libraryFolders["unavailableCount"] == 1
+        assert bridge.libraryFolderInspector["unavailableCount"] == 1
+        button = window.findChild(QObject, "libraryFolderReviewMissingButton")
+        assert button.property("visible")
+        button.activated.emit()
+        assert bridge.libraryFolders["mode"] == "issues"
+        deadline = time.monotonic() + 2
+        while (
+            bridge.libraryFolders["checkingAvailability"]
+            and time.monotonic() < deadline
+        ):
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        assert any(
+            item["kind"] == "missing" for item in bridge.libraryFolders["components"]
+        )
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
 def test_qt_my_files_selects_video_thumbnail_and_metadata(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "home"))

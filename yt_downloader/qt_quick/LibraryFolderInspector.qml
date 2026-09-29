@@ -115,9 +115,19 @@ Column {
                 width: parent.width; wrapMode: Text.WordWrap
             }
             Text {
-                text: "Choose a folder to browse it, or select a file to see its details."
+                text: inspector.item.unavailableCount > 0 ?
+                      inspector.item.unavailableCount +
+                      (inspector.item.unavailableCount === 1 ? " saved file is missing from this folder." : " saved files are missing from this folder.") :
+                      "Choose a folder to browse it, or select a file to see its details."
                 color: theme.muted; font.pixelSize: 12
                 width: parent.width; wrapMode: Text.WordWrap
+            }
+            StoneButton {
+                objectName: "libraryFolderReviewMissingButton"
+                visible: inspector.item.unavailableCount > 0
+                label: "Review in Issues & Recovery"
+                width: parent.width; height: 40
+                onActivated: inspector.appBridge.navigateLibraryFolders("issues")
             }
         }
     }

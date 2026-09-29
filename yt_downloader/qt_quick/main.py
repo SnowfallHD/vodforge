@@ -1594,6 +1594,11 @@ class Bridge(QObject):
             "page": model.page,
             "pages": max(1, (len(model.components) + PAGE_SIZE - 1) // PAGE_SIZE),
             "count": len(model.components),
+            "unavailableCount": len(model.unavailable_indices)
+            if model.mode == "folders"
+            and not self._folder_listing_pending
+            and not self._folder_listing_error
+            else 0,
             "relinkCount": len(model.folder_relink_indices()),
             "checkingAvailability": model.mode == "issues"
             and not self._availability_checked,
@@ -1964,6 +1969,9 @@ class Bridge(QObject):
                 "title": path.name,
                 "location": str(path),
                 "count": len(self._folder_browser.components),
+                "unavailableCount": len(self._folder_browser.unavailable_indices)
+                if not self._folder_listing_pending and not self._folder_listing_error
+                else 0,
             }
         return self._library_detail_projection(
             self._folder_inspector_owner, self._folder_inspector_versions, True
