@@ -796,10 +796,26 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
             bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(nested)))
             bridge._queue_folder_listing()
             bridge.historyChanged.emit()
-        QTest.qWait(100)
+        # Folder results can change navigationKey and close an open ancestor
+        # menu; admit the settled route before comparing consecutive frames.
+        for _ in range(100):
+            app.processEvents()
+            if not bridge._folder_listing_pending:
+                break
+            QTest.qWait(20)
+        assert not bridge._folder_listing_pending
+        QTest.qWait(350)
         popup = window.findChild(QObject, popup_name)
-        popup.open()
-        QTest.qWait(100)
+        if popup_name == "libraryFolderAncestorsPopup":
+            from tests.test_qt_scene_port import visual_item
+
+            visual_item(
+                window.contentItem(), "libraryFolderAncestorsButton"
+            ).activated.emit()
+        else:
+            popup.open()
+        QTest.qWait(150)
+        assert popup.property("visible")
         background = popup.property("background")
         shadow = background.findChild(QObject, "popupElevationShadow")
         assert shadow is not None
@@ -813,6 +829,7 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
         shadow.setProperty("visible", False)
         QTest.qWait(50)
         flat = window.grabWindow()
+        assert popup.property("visible")
         assert elevated.pixelColor(x, y).lightness() < flat.pixelColor(x, y).lightness()
         assert bounds == (popup.property("width"), popup.property("height"))
         shadow.setProperty("visible", True)
