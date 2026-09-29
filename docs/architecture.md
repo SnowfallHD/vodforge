@@ -2,6 +2,27 @@
 
 This document describes ownership and security boundaries in the desktop application. It is intentionally about runtime contracts, not a class-by-class inventory.
 
+## Current Qt Quick presentation
+
+The new design is composed by `qt_quick/main.py` (`Bridge`, `create_engine`) and
+`qt_quick/Main.qml`. `DownloadRuntime` adapts the existing serialized production
+worker, history, and run recovery owners; screens never create their own download
+pipeline. Qt Quick scenes share `StoneButton`, `StoneCheckBox`, `StoneField`,
+`StonePopup`, `SceneIcon`, and `ArtworkImage`. The normative component and layout
+contract is [Current Qt design standard](ui-components.md#current-design-standard-for-every-new-ui-feature).
+
+Forge presents a selected run and its full activity, with equal activity/output
+panes. Library separates collections and saved media from My Files (physical
+filesystem browsing), All media (catalog browsing), and Issues & Recovery
+(interrupted runs and missing files). Recovery reuses Forge configuration and
+submission, preserving selection and reporting actual run state until success.
+Watch uses section-specific empty states and Qt Multimedia playback; player Back
+restores the originating route. Source and packaged native evidence are separate.
+
+The sections below document the retained Tk implementation and the shared domain
+owners. Tk/libVLC evidence does not qualify Qt Multimedia rendering, and a new
+Qt screenshot does not change the currently published release.
+
 ## Composition and state ownership
 
 `DownloaderApp` is the Tk composition root. It creates the views, owns application-lifetime services, and connects UI actions to one canonical `DownloadJob` execution path. View helpers may render or mutate widgets, but they do not create a second download implementation.

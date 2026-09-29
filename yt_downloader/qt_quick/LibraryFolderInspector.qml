@@ -42,34 +42,40 @@ Column {
         font.pixelSize: 12
         font.bold: true
     }
-    Row {
+    Item {
         id: overview
         objectName: "libraryFolderOverview"
         width: parent.width
-        height: 81
-        spacing: 12
+        height: inspector.item.folder ? 214 : 81
         StoneField {
+            objectName: "libraryFolderArtworkFrame"
+            visible: !inspector.item.folder
             width: 124; height: 70
             ArtworkImage {
                 anchors.fill: parent
                 source: inspector.item.artwork || ""
             }
-            SceneIcon {
-                objectName: "libraryFolderOverviewFallbackIcon"
-                anchors.centerIn: parent
-                width: 34; height: 34
-                name: inspector.item.file ? "file" : "folder"
-                visible: !(inspector.item.artwork || "")
-            }
+        }
+        SceneIcon {
+            objectName: "libraryFolderOverviewFallbackIcon"
+            x: inspector.item.folder ? (parent.width - width) / 2 : 45
+            y: inspector.item.folder ? 12 : 18
+            width: inspector.item.folder ? 112 : 34
+            height: width
+            name: inspector.item.file ? "file" : inspector.item.folder ? "folder-solid" : "folder"
+            visible: !(inspector.item.artwork || "")
         }
         Column {
-            width: Math.max(130, inspector.width - 136)
+            x: inspector.item.folder ? 0 : 136
+            y: inspector.item.folder ? 136 : 0
+            width: inspector.item.folder ? parent.width : Math.max(130, inspector.width - 136)
             spacing: 4
             Text {
                 objectName: "libraryFolderSelectedTitle"
                 text: inspector.item.title || "Choose a saved item to inspect its metadata."
                 color: theme.text
-                font.pixelSize: 15
+                font.pixelSize: inspector.item.folder ? 20 : 15
+                horizontalAlignment: inspector.item.folder ? Text.AlignHCenter : Text.AlignLeft
                 font.bold: true
                 width: parent.width
                 wrapMode: Text.WordWrap
@@ -77,6 +83,7 @@ Column {
                 elide: Text.ElideRight
             }
             Text {
+                visible: !inspector.item.folder
                 text: [inspector.item.creator, inspector.item.type].filter(Boolean).join("  ·  ")
                 color: theme.muted
                 font.pixelSize: 12
@@ -85,6 +92,7 @@ Column {
             }
             Text {
                 objectName: "libraryFolderSelectedLocation"
+                horizontalAlignment: inspector.item.folder ? Text.AlignHCenter : Text.AlignLeft
                 text: inspector.item.location || ""
                 color: theme.muted
                 font.pixelSize: 12

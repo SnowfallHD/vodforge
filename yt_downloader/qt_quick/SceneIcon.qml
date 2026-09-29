@@ -8,6 +8,8 @@ Canvas {
     height: 22
     onNameChanged: requestPaint()
     onToneChanged: requestPaint()
+    onWidthChanged: requestPaint()
+    onHeightChanged: requestPaint()
 
     onPaint: {
         const c = getContext("2d")
@@ -34,6 +36,32 @@ Canvas {
             c.strokeRect(.1 * s, .1 * s, .8 * s, .8 * s)
             if (name === "checkbox-checked")
                 line([[.25, .49], [.43, .68], [.76, .32]])
+        } else if (name === "x") {
+            c.beginPath()
+            for (const [i, p] of [[.08,.08],[.31,.08],[.92,.92],[.69,.92],[.08,.08]].entries()) {
+                if (i === 0) c.moveTo(p[0]*s,p[1]*s); else c.lineTo(p[0]*s,p[1]*s)
+            }
+            c.closePath(); c.stroke()
+            line([[.86,.08],[.08,.92]])
+        } else if (name === "folder-solid") {
+            const back = c.createLinearGradient(0, .12*s, 0, .82*s)
+            back.addColorStop(0, Qt.lighter(tone, 1.14)); back.addColorStop(1, tone)
+            c.fillStyle = back
+            c.beginPath()
+            c.moveTo(.05*s,.25*s); c.lineTo(.05*s,.15*s)
+            c.quadraticCurveTo(.05*s,.09*s,.11*s,.09*s)
+            c.lineTo(.36*s,.09*s); c.lineTo(.48*s,.23*s)
+            c.lineTo(.89*s,.23*s); c.quadraticCurveTo(.95*s,.23*s,.95*s,.29*s)
+            c.lineTo(.95*s,.83*s); c.lineTo(.05*s,.83*s); c.closePath(); c.fill()
+            const front = c.createLinearGradient(0,.30*s,0,.90*s)
+            front.addColorStop(0, Qt.lighter(tone,1.24)); front.addColorStop(1,Qt.darker(tone,1.16))
+            c.fillStyle = front
+            c.beginPath(); c.moveTo(.10*s,.31*s); c.lineTo(.90*s,.31*s)
+            c.quadraticCurveTo(.96*s,.31*s,.96*s,.37*s)
+            c.lineTo(.96*s,.84*s); c.quadraticCurveTo(.96*s,.90*s,.90*s,.90*s)
+            c.lineTo(.10*s,.90*s); c.quadraticCurveTo(.04*s,.90*s,.04*s,.84*s)
+            c.lineTo(.04*s,.37*s); c.quadraticCurveTo(.04*s,.31*s,.10*s,.31*s)
+            c.closePath(); c.fill()
         } else if (name === "folder") {
             line([[0, .22], [.35, .22], [.48, .38], [1, .38], [1, .94], [0, .94], [0, .22]])
         } else if (name === "file") {

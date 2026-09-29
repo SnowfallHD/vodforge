@@ -1,5 +1,12 @@
 # Welcome, feedback, and ratings
 
+The current Qt Support form uses plain checkbox-and-label consent for reply,
+recent diagnostics, and the public source URL. Diagnostics remains visible but
+disabled with an explanation when no recent failure context exists. The form fits
+its content and protects the action footer; no consent control has a button face.
+Automatic editorial prompts wait while a user is editing text.
+
+
 Introduced for the 0.2.0 release; not part of the published 0.1.9 app.
 
 ## User journeys

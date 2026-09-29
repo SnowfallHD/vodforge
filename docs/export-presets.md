@@ -1,5 +1,11 @@
 # Task-based MP4 export presets
 
+> In the current Qt design these presets appear under **Output mode**. Selecting
+> **Custom** reveals the existing manual controls immediately beneath that selector.
+> Issues & Recovery reuses those same controls and the production submission path.
+> The retained Tk label **Optimize for** below describes the published UI.
+
+
 The output selector is now **Optimize for**: Everyday, Streaming, Editing, Sharing, CTV, Custom. Everyday is the default for a fresh profile. Existing Auto CBR preferences continue as CTV; existing manual preferences continue as Custom. These settings are included in VODForge 0.2.1.
 
 ## Final policy

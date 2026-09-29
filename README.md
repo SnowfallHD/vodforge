@@ -65,7 +65,7 @@ UI, testing and release guides used by human contributors.
 - Keeps each Forge run's format and output details stable while the output dropdown and Settings configure only the next run.
 - Reflects the latest Library items in Run Deck as playlist items finish, without waiting for the entire playlist. Skipping an item follows the next playlist item when one remains.
 - Introduces new users with a native welcome tour. Optional release-selected **Did you know?** tips and **What's new** highlights share once-seen tracking; this checkout disables both automatic showcases.
-- The **All N runs** button opens Library on click and a scrollable run list on hover. Failed-run retries use current settings; redownloading previously successful media uses its saved output profile when available, with the Everyday preset as the legacy fallback.
+- The **All N runs** button shows a scrollable list of artwork/status cards on hover; clicking toggles that popup. Failed-run retries use current settings; redownloading previously successful media uses its saved output profile when available, with the Everyday preset as the legacy fallback.
 - Lets preview items start downloads directly, failed items retry, skipped or stopped items restart as fresh runs, and Library removal stop only the exact active or queued run it owns without deleting downloaded media.
 - Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
 
@@ -121,7 +121,7 @@ FFmpeg is required. Deno is strongly recommended because current YouTube extract
 
 For local audio, use **MP3 + image → MP4** beneath the Forge URL field. Choose one MP3 and one JPG, PNG, or WebP still; VODForge renders the image as the video for the full length of the audio. The original files are unchanged, and the finished MP4 is written directly to the selected output folder—no channel or item parent folder is added—then appears in Library's MP4 view.
 
-The dialog reserves its full Image preview frame before selection. **Choose folder** changes the shared save directory, and **All N runs** opens Library. The composer’s format dropdown is inline after a divider.
+The dialog reserves its full Image preview frame before selection. **Choose folder** changes the shared save directory, and **All N runs** toggles the scrollable run-card list. The composer’s format dropdown is inline after a divider.
 
 This converter has its own saved output profile, independent of the YouTube download settings: **1080p Standard** uses efficient still-image compression, **2160p 4K** renders at 3840×2160, **720p Compact** reduces resolution, and **1080p Strict 2 Mbps CBR** provides a fixed-rate option. Each uses 30 fps H.264 with two-second keyframes and AAC audio. Increasing resolution cannot restore detail absent from the selected image.
 
@@ -383,7 +383,11 @@ opt-in and separate from ordinary source tests; see the
 A passing source suite does not certify an installed application.
 
 For a UI change, start with the [component catalog](docs/ui-components.md) and
-[architecture](docs/architecture.md). Extend an existing owner, preserve a concrete
+[architecture](docs/architecture.md). The catalog's current design standard is
+required for new features: choose controls by meaning, follow the shared owners
+and composition rules, and complete its whole-view/state review. Checkboxes have
+plain indicators and labels; action buttons never become checkbox containers.
+Extend an existing owner, preserve a concrete
 reproducer for confirmed bugs, and update the relevant mandatory harness class.
 Test current-owner actions, cancellation, navigation, resize, and empty/small/large
 content states. Keep technical details behind the action or view that needs them.

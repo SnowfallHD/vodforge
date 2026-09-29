@@ -4081,8 +4081,15 @@ def test_qt_header_search_follows_library_and_watch_without_secondary_fields(
         assert window.findChild(QObject, "libraryBrowseSearchField") is None
         bridge.selectHome("Library")
         search.forceActiveFocus()
-        for key in (Qt.Key_O, Qt.Key_C, Qt.Key_E, Qt.Key_A, Qt.Key_N):
+        for index, key in enumerate((Qt.Key_O, Qt.Key_C, Qt.Key_E, Qt.Key_A, Qt.Key_N)):
             QTest.keyClick(window, key)
+            if index == 1:
+                # The delayed welcome prompt must not take an editor's focus.
+                QTest.qWait(800)
+                assert window.property("editingText")
+                assert not window.findChild(QObject, "editorialPopup").property(
+                    "visible"
+                )
         app.processEvents()
         assert search.property("text") == "ocean"
         assert bridge.librarySearch == "ocean"
@@ -4729,7 +4736,11 @@ def test_qt_my_files_starts_at_saved_path_without_recent_export_cards(
         )
         fallback = window.findChild(QObject, "libraryFolderOverviewFallbackIcon")
         assert fallback.property("visible")
-        assert fallback.property("name") == "folder"
+        assert fallback.property("name") == "folder-solid"
+        assert fallback.property("width") >= 100
+        assert not window.findChild(QObject, "libraryFolderArtworkFrame").property(
+            "visible"
+        )
     finally:
         window.close()
         engine.deleteLater()

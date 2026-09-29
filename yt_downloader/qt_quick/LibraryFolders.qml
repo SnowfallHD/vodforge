@@ -263,8 +263,16 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: 13
                                 spacing: 13
+                                SceneIcon {
+                                    visible: modelData.kind === "folder" || modelData.kind === "file"
+                                    name: modelData.kind === "folder" ? "folder-solid" : "file"
+                                    width: 28; height: 28
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 28
+                                }
                                 Text {
-                                    text: modelData.kind === "folder" ? "▣" : modelData.kind === "file" ? "▤" : modelData.kind === "missing" ? "!" : modelData.kind === "activity" ? "◷" : "▶"
+                                    visible: modelData.kind !== "folder" && modelData.kind !== "file"
+                                    text: modelData.kind === "missing" ? "!" : modelData.kind === "activity" ? "◷" : "▶"
                                     color: theme.accent; font.pixelSize: 24
                                 }
                                 ColumnLayout {

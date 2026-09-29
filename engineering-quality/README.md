@@ -2556,10 +2556,24 @@ unrelated delayed tour had overlaid folder clicks and shadow comparison frames.
 That original failure is retained alongside the corrected focused receipts.
 
 Support's existing bounded diagnostic consent was invisible without a current
-failed-run context, while a fixed-height body left an empty lower region. Shared
-StoneButton now renders actual vector checkboxes and accessible checked state;
+failed-run context, while a fixed-height body left an empty lower region. A shared
+StoneCheckBox uses native checkbox semantics, a vector indicator and plain label
+without a button face; StoneButton remains solely a button.
 Support always shows diagnostic consent, disabled with an explanation when no
 context exists, and sizes its scroll body to the visible fields. Context/no-context
 rendered cases verify visibility, opt-in defaults and contents-based sizing.
 The existing sanitized failure-context payload and explicit URL consent remain
 the data boundary; this change does not collect or send arbitrary raw logs.
+
+### Popup focus and pointer trajectory follow-up (2026-09-29)
+
+The Basic-controls CI journey revealed two gaps: a synthetic outside click had
+teleported without the hover exit that a real pointer produces, and the delayed
+welcome popup could claim focus while a user typed into search. The fixture now
+moves the pointer outside before dismissal; the runtime gates editorial admission
+while a TextInput/TextEdit has focus. The search regression deliberately waits
+through the 700 ms editorial timer between keystrokes and still requires the full
+query. Consent uses the native plain CheckBox owner, with pointer and Space-key
+toggling and a null button background. Prior failed CI logs remain under the
+private popup-elevation proof directory. These checks cover representative shared
+popup/input owners, not every platform interleaving.

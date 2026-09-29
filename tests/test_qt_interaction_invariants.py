@@ -926,6 +926,10 @@ def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, men
         QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
         QTest.qWait(50)
         assert popup.property("visible")
+        # Model a real outside-click trajectory. Synthetic clicks can teleport
+        # without sending the hover exit that precedes a physical press.
+        QTest.mouseMove(window, QPoint(2, 2))
+        QTest.qWait(30)
         QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
         QTest.qWait(50)
         assert not popup.property("visible")
@@ -942,6 +946,8 @@ def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, men
 def test_support_consent_is_visible_and_form_fits_its_contents(
     tmp_path, monkeypatch, diagnostics
 ):
+    from PySide6.QtCore import QPoint, Qt
+
     from yt_downloader.support_diagnostics import FailureContext
 
     _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
@@ -958,13 +964,46 @@ def test_support_consent_is_visible_and_form_fits_its_contents(
         assert consent.property("visible")
         assert consent.property("enabled") is diagnostics
         assert consent.property("checkable")
-        assert not consent.property("selected")
+        assert not consent.property("checked")
+        assert consent.property("background") is None
+        reply = window.findChild(QObject, "supportReplyConsent")
+        assert reply.property("background") is None
+        assert not reply.property("checked")
+        reply.forceActiveFocus()
+        QTest.keyClick(window, Qt.Key.Key_Space)
+        assert popup.property("reply")
+        QTest.keyClick(window, Qt.Key.Key_Space)
+        assert not popup.property("reply")
         assert body.height() <= fields.height() + 1
         if diagnostics:
-            consent.activated.emit()
+            point = consent.mapToItem(
+                window.contentItem(), consent.width() / 2, consent.height() / 2
+            )
+            position = QPoint(round(point.x()), round(point.y()))
+            QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
             assert popup.property("includeDiagnostics")
-            consent.activated.emit()
+            QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
             assert not popup.property("includeDiagnostics")
         assert not bridge.supportBusy
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_social_utility_opens_only_the_public_account(tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(
+        qt_main.QDesktopServices,
+        "openUrl",
+        lambda url: opened.append(url.toString()) or True,
+    )
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        button = window.findChild(QObject, "headerXButton")
+        assert button.property("visible")
+        assert button.property("accessibilityLabel") == "VODForge on X"
+        assert button.property("quiet")
+        button.activated.emit()
+        app.processEvents()
+        assert opened == ["https://x.com/VODForge"]
     finally:
         _close(bridge, engine, window)

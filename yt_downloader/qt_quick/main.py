@@ -1271,6 +1271,10 @@ class Bridge(QObject):
     def openPrivacy(self) -> None:
         QDesktopServices.openUrl(QUrl(f"{telemetry_site_origin()}/privacy/"))
 
+    @Slot()
+    def openSocialAccount(self) -> None:
+        QDesktopServices.openUrl(QUrl("https://x.com/VODForge"))
+
     @Property(str, notify=outputPathChanged)
     def outputPath(self) -> str:
         if self._recovery_source_url:

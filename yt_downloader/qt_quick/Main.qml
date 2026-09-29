@@ -17,6 +17,8 @@ Window {
     title: "VODForge"
     color: theme.bg
     property real playerVolume: 0.8
+    readonly property bool editingText: activeFocusItem instanceof TextInput ||
+                                       activeFocusItem instanceof TextEdit
     property string pendingRelinkOwner: ""
     property string missingAction: ""
     property string pendingRelinkFolderPath: ""
@@ -224,7 +226,7 @@ Window {
         running: true
         repeat: true
         onTriggered: bridge.checkEditorial(
-            window.active && !analyticsPopup.visible && !editorialPopup.visible &&
+            window.active && !window.editingText && !analyticsPopup.visible && !editorialPopup.visible &&
             !helpMenu.visible && !supportPopup.visible && !supportReasonMenu.visible &&
             !supportDiagnostics.visible && !libraryItemPopup.visible &&
             !fileActionPopup.visible && !libraryRemovalPopup.visible &&
@@ -350,14 +352,14 @@ Window {
                         color: theme.muted; font.pixelSize: 12
                         Layout.alignment: Qt.AlignRight
                     }
-                    StoneButton {
+                    StoneCheckBox {
+                        objectName: "supportReplyConsent"
                         visible: bridge.supportKind === "feedback"
-                        checkable: true
-                        label: "I’d like a reply"
-                        selected: supportPopup.reply
-                        Layout.preferredWidth: 190; Layout.preferredHeight: 38
+                        text: "I’d like a reply"
+                        checked: supportPopup.reply
+                        Layout.preferredWidth: 190; Layout.preferredHeight: 32
                         enabled: !bridge.supportBusy && !bridge.supportSent
-                        onActivated: supportPopup.reply = !supportPopup.reply
+                        onToggled: supportPopup.reply = checked
                     }
                     TextField {
                         id: supportEmail
@@ -388,15 +390,14 @@ Window {
                         color: theme.muted; font.pixelSize: 13
                         Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
-                    StoneButton {
+                    StoneCheckBox {
                         objectName: "supportDiagnosticsConsent"
                         visible: bridge.supportKind === "feedback"
-                        checkable: true
-                        label: "Include recent diagnostics"
-                        selected: supportPopup.includeDiagnostics
-                        Layout.fillWidth: true; Layout.preferredHeight: 38
+                        text: "Include recent diagnostics"
+                        checked: supportPopup.includeDiagnostics
+                        Layout.fillWidth: true; Layout.preferredHeight: 32
                         enabled: !!bridge.supportContext.diagnostics && !bridge.supportBusy && !bridge.supportSent
-                        onActivated: supportPopup.includeDiagnostics = !supportPopup.includeDiagnostics
+                        onToggled: supportPopup.includeDiagnostics = checked
                     }
                     Text {
                         visible: bridge.supportKind === "feedback" && !bridge.supportContext.diagnostics
@@ -411,14 +412,13 @@ Window {
                         Layout.preferredWidth: 165
                         onActivated: supportDiagnostics.toggleFrom(this)
                     }
-                    StoneButton {
+                    StoneCheckBox {
                         visible: bridge.supportKind === "feedback" && !!bridge.supportContext.videoUrl
-                        checkable: true
-                        label: "Include the public video URL"
-                        selected: supportPopup.includeVideoUrl
-                        Layout.preferredWidth: 245; Layout.preferredHeight: 38
+                        text: "Include the public video URL"
+                        checked: supportPopup.includeVideoUrl
+                        Layout.preferredWidth: 245; Layout.preferredHeight: 32
                         enabled: !bridge.supportBusy && !bridge.supportSent
-                        onActivated: supportPopup.includeVideoUrl = !supportPopup.includeVideoUrl
+                        onToggled: supportPopup.includeVideoUrl = checked
                     }
                 }
             }
@@ -658,13 +658,13 @@ Window {
             readonly property bool compact: window.width < 960
             readonly property int nativeHeaderInset: Qt.platform.os === "osx" ? 82 : 0
             readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
-            readonly property int searchWidth: Math.max(compact ? 160 : 185,
+            readonly property int searchWidth: Math.max(compact ? 124 : 185,
                 Math.min(compact ? 186 : 285,
-                    width - brandWidth - navWidth - 52))
+                    width - brandWidth - navWidth - 88))
             readonly property int navWidth: navigationRow.implicitWidth
             readonly property int utilityWidth:
                 (bridge.selection === "Library" || bridge.selection === "Watch"
-                    ? searchWidth + 8 : 0) + 28
+                    ? searchWidth + 8 : 0) + 64
             readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
 
             MouseArea {
@@ -761,6 +761,16 @@ Window {
                         font.pixelSize: 15
                         onTextEdited: bridge.setActiveSearch(text)
                     }
+                }
+                StoneButton {
+                    objectName: "headerXButton"
+                    sceneIcon: "x"
+                    quiet: true
+                    accessibilityLabel: "VODForge on X"
+                    width: 28; height: 40
+                    onActivated: bridge.openSocialAccount()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "VODForge on X"
                 }
                 StoneButton {
                     objectName: "headerSettingsButton"
