@@ -55,6 +55,8 @@ from yt_downloader.app import (
 from yt_downloader.archive_browser import (
     PAGE_SIZE,
     ArchiveBrowserModel,
+    ArchiveComponent,
+    archive_directory,
 )
 from yt_downloader.archive_observations import (
     bind_operation,
@@ -95,11 +97,13 @@ from yt_downloader.export_planning import (
 from yt_downloader.failure_diagnostics import FailureDiagnostic
 from yt_downloader.forge_activity import ForgeActivityProjection
 from yt_downloader.history import (
+    HISTORY_MEDIA_MISSING,
     HistoryError,
     application_data_dir,
     history_annotation_owner,
     history_archive_owner,
     history_identity,
+    history_media_file_state,
     history_output_path,
     sanitize_chapters,
     sanitize_heatmap,
@@ -131,6 +135,7 @@ from yt_downloader.library_search import (
 from yt_downloader.library_state import (
     ANNOTATION_OWNER_KEY,
     PROJECTION_OWNER_KEY,
+    PROJECTION_OWNER_KIND_KEY,
     RUN_STATUS_KEY,
     LibraryProjectionOwner,
     format_duration,
@@ -356,6 +361,7 @@ class Bridge(QObject):
     sourcePrepared = Signal(str)
     relinkChanged = Signal()
     folderRelinkRequested = Signal(str)
+    fileRelinkRequested = Signal(str)
     batchListChanged = Signal()
     sourceAccepted = Signal()
     cookieAccessChanged = Signal()
@@ -428,6 +434,13 @@ class Bridge(QObject):
         self._relink = QtRelinkSession(self._runtime.history_path)
         self._presentation_probe: QtPresentationProbe | None = None
         self._relink_operation: Any | None = None
+        self._availability_work = ArchiveWorkOwner()
+        self._availability_requests: list[tuple[str, Any]] = []
+        self._folder_listing_pending = ""
+        self._folder_listing_error = False
+        self._missing_files: dict[str, str] = {}
+        self._availability_checked = False
+        self._availability_error = False
         self._media_recovery = LibraryMediaRecoveryOwner()
         self._missing_media: dict[str, str] = {}
         self._missing_plan: LibraryMediaRecoveryPlan | None = None
@@ -468,7 +481,13 @@ class Bridge(QObject):
         self._folder_inspector_owner = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions: list[dict[str, str]] = []
+        self._folder_file_path = ""
+        self._folder_file_owner = ""
+        self._folder_file_detail_text = ""
         self._issue_run_id = ""
+        self._missing_issue_owner = ""
+        self._missing_retry_run_id = ""
+        self._issue_live_phase = ""
         self._issue_settings: dict[str, Any] = {}
         self._library_detail_origin: tuple[str, str, str] | None = None
         self._pending_library_removal: tuple[str, str] | None = None
@@ -815,6 +834,63 @@ class Bridge(QObject):
         if path is None or not Path(str(path)).is_dir():
             return False
         return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @Slot(result=bool)
+    def openSelectedFolderFileLocation(self) -> bool:
+        if self._selection != "Library" or self._folder_browser.mode != "folders":
+            return False
+        path = Path(self._folder_file_path)
+        if not self._folder_file_path or not path.parent.is_dir():
+            return False
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+
+    @Slot(str, str, str, result=bool)
+    def saveSelectedFolderMetadata(
+        self, owner: str, description: str, tags_text: str
+    ) -> bool:
+        if (
+            self._folder_browser.mode != "folders"
+            or owner != self._folder_file_owner
+            or Path(self._folder_file_path).name != "metadata.json"
+            or not self._annotations_writable
+        ):
+            return False
+        row = next(
+            (
+                item
+                for item in self._projected_library()
+                if history_archive_owner(item) == owner
+            ),
+            None,
+        )
+        if row is None or len(description) > MAX_NOTE_CHARS:
+            return False
+        tags = tuple(part.strip() for part in tags_text.split(",") if part.strip())
+        if (
+            len(tags) > MAX_TAGS
+            or any(len(tag) > MAX_TAG_CHARS for tag in tags)
+            or len({tag.casefold() for tag in tags}) != len(tags)
+        ):
+            self._set_status("Check the tags and try again.")
+            return False
+        annotation_owner = str(row.get(ANNOTATION_OWNER_KEY) or "")
+        if not annotation_owner:
+            return False
+        try:
+            self._annotations.replace(
+                annotation_owner,
+                replace(
+                    self._annotations.annotation_for(annotation_owner),
+                    description=description,
+                    tags=tags,
+                ),
+            )
+        except LibraryAnnotationsError as exc:
+            self._set_status(str(exc))
+            return False
+        self._set_status("Tags and description saved.")
+        self.historyChanged.emit()
+        return True
 
     @Slot(result=bool)
     def acceptRelink(self) -> bool:
@@ -1469,6 +1545,21 @@ class Bridge(QObject):
             "mode": model.mode,
             "selectedKey": self._folder_inspector_key,
             "path": str(model.path) if model.path is not None else "",
+            "folderName": model.path.name if model.path is not None else "",
+            "parentName": (
+                model.parent_path.name
+                if model.parent_path is not None
+                else "Locations"
+                if model.path is not None and len(model.locations) > 1
+                else ""
+            ),
+            "canGoUp": model.parent_path is not None
+            or model.path is not None
+            and len(model.locations) > 1,
+            "breadcrumbs": [
+                {"key": str(path), "label": path.name, "current": path == model.path}
+                for path in model.breadcrumbs
+            ],
             "locations": [
                 {
                     "key": component.key,
@@ -1482,30 +1573,179 @@ class Bridge(QObject):
                     "key": component.key,
                     "kind": component.kind,
                     "title": component.title,
-                    "detail": component.detail,
+                    "detail": (
+                        self._issue_live_phase
+                        if model.mode == "issues"
+                        and self._issue_live_phase
+                        and component.key == self._folder_inspector_key
+                        and self._runtime.active_job is not None
+                        and (
+                            self._issue_job(self._issue_run_id)
+                            is self._runtime.active_job
+                            or self._issue_job(self._missing_retry_run_id)
+                            is self._runtime.active_job
+                        )
+                        else component.detail
+                    ),
                     "count": len(component.indices),
                 }
                 for component in model.page_components
             ],
-            "highlights": [
-                {
-                    "key": component.key,
-                    "title": component.title,
-                    "detail": component.detail,
-                }
-                for component in model.saved_media[:5]
-            ]
-            if model.mode == "folders" and model.path is None and model.page == 0
-            else [],
             "page": model.page,
             "pages": max(1, (len(model.components) + PAGE_SIZE - 1) // PAGE_SIZE),
             "count": len(model.components),
             "relinkCount": len(model.folder_relink_indices()),
+            "checkingAvailability": model.mode == "issues"
+            and not self._availability_checked,
+            "availabilityError": model.mode == "issues" and self._availability_error,
+            "checkingFolder": model.mode == "folders"
+            and bool(self._folder_listing_pending),
+            "folderError": model.mode == "folders" and self._folder_listing_error,
         }
 
     def _reconcile_folder_browser(self) -> None:
-        records = self._projected_library()
-        self._folder_browser.replace(records, range(len(records)))
+        projected = self._projected_library()
+        projected_history = {
+            history_archive_owner(row): row
+            for row in projected
+            if row.get(PROJECTION_OWNER_KIND_KEY) == "history"
+        }
+        records = [
+            dict(projected_history.get(history_archive_owner(row), row))
+            for row in self._runtime.history
+            if archive_directory(row) is not None
+        ]
+        recovery_run_ids = {
+            job.run_id
+            for job in [
+                self._runtime.active_job,
+                *self._runtime.queued,
+                *self._runtime.recovered,
+            ]
+            if job is not None and job.recovery_reason == "missing_media"
+        }
+        for row in projected:
+            if row.get(PROJECTION_OWNER_KIND_KEY) == "history":
+                continue
+            run_id = str(
+                row.get("vodforge_terminal_run_id")
+                or row.get("vodforge_active_run_id")
+                or row.get("vodforge_queued_run_id")
+                or ""
+            )
+            if run_id in recovery_run_ids:
+                continue
+            attempt = dict(row)
+            attempt.pop("vodforge_output_dir", None)
+            attempt.pop("vodforge_output_path", None)
+            records.append(attempt)
+        missing = frozenset(
+            owner
+            for row in self._runtime.history
+            if (owner := history_archive_owner(row)) in self._missing_files
+            and self._missing_files[owner] == record_fingerprint(row)
+        )
+        self._folder_browser.replace(
+            records, range(len(records)), missing_owners=missing
+        )
+
+    def _queue_availability_scan(
+        self, records: list[dict[str, Any]], *, full: bool
+    ) -> None:
+        if full:
+            self._availability_work.cancel()
+            self._availability_requests.clear()
+            self._availability_checked = False
+            self._availability_error = False
+            self._missing_files.clear()
+        self._availability_requests.append(
+            ("availability_full" if full else "availability_one", records)
+        )
+        self._start_availability_scan()
+        self.historyChanged.emit()
+
+    def _queue_folder_listing(self) -> None:
+        model = self._folder_browser
+        self._availability_work.cancel()
+        self._availability_requests.clear()
+        self._folder_listing_error = False
+        self._folder_listing_pending = str(model.path) if model.path is not None else ""
+        if model.mode == "folders" and model.path is not None:
+            model.set_folder_entries(model.path, ())
+            self._availability_requests.append(("folder_list", str(model.path)))
+            self._start_availability_scan()
+        self.historyChanged.emit()
+
+    @staticmethod
+    def _folder_file_detail(name: str, size: int) -> str:
+        extension = Path(name).suffix.casefold()
+        kind = (
+            "Image"
+            if extension in {".jpg", ".jpeg", ".png", ".webp"}
+            else "Metadata"
+            if extension == ".json"
+            else "Video"
+            if extension in {".mp4", ".mkv", ".mov", ".webm"}
+            else "Audio"
+            if extension in {".mp3", ".m4a", ".opus", ".flac", ".wav"}
+            else "File"
+        )
+        return (
+            f"{kind} · {size / 1024 / 1024:.1f} MB"
+            if size >= 1024 * 1024
+            else f"{kind} · {size:,} bytes"
+        )
+
+    def _start_availability_scan(self) -> None:
+        if self._availability_work.busy or not self._availability_requests:
+            return
+        kind, payload = self._availability_requests.pop(0)
+
+        if kind == "folder_list":
+
+            def list_folder(cancelled: threading.Event) -> dict[str, Any]:
+                entries: list[tuple[str, str, int]] = []
+                with os.scandir(str(payload)) as iterator:
+                    for entry in iterator:
+                        if cancelled.is_set() or len(entries) >= 5000:
+                            break
+                        try:
+                            if entry.is_symlink():
+                                continue
+                            if entry.is_dir(follow_symlinks=False):
+                                entries.append((entry.name, "folder", 0))
+                            elif entry.is_file(follow_symlinks=False):
+                                entries.append(
+                                    (
+                                        entry.name,
+                                        "file",
+                                        entry.stat(follow_symlinks=False).st_size,
+                                    )
+                                )
+                        except OSError:
+                            continue
+                entries.sort(key=lambda item: (item[1] != "folder", item[0].casefold()))
+                return {"path": str(payload), "entries": entries}
+
+            if self._availability_work.submit(kind, list_folder) is None:
+                self._availability_requests.insert(0, (kind, payload))
+            return
+
+        rows = payload
+
+        def check(cancelled: threading.Event) -> dict[str, tuple[str, str]]:
+            result: dict[str, tuple[str, str]] = {}
+            for row in rows:
+                if cancelled.is_set():
+                    break
+                result[history_archive_owner(row)] = (
+                    record_fingerprint(row),
+                    history_media_file_state(row),
+                )
+            return result
+
+        if self._availability_work.submit(kind, check) is None:
+            self._availability_requests.insert(0, (kind, rows))
 
     @Property(_QVARIANT_MAP, notify=watchSceneChanged)
     def watchScene(self) -> dict[str, Any]:
@@ -1631,10 +1871,17 @@ class Bridge(QObject):
                     "artwork": self._artwork.request(row),
                     "creator": str(row.get("channel") or row.get("uploader") or ""),
                     "type": str(self._issue_settings.get("output_type") or ""),
-                    "status": str(
-                        row.get("vodforge_terminal_status")
-                        or row.get("vodforge_run_status")
-                        or ""
+                    "status": (
+                        self._issue_live_phase
+                        if self._issue_live_phase
+                        and self._runtime.active_job is not None
+                        and self._issue_job(self._issue_run_id)
+                        is self._runtime.active_job
+                        else str(
+                            row.get("vodforge_terminal_status")
+                            or row.get("vodforge_run_status")
+                            or ""
+                        )
                     ),
                     "source": str(self._issue_settings.get("source") or ""),
                     "modeLabel": export_mode_display_name(
@@ -1642,9 +1889,93 @@ class Bridge(QObject):
                     ),
                     "settings": dict(self._issue_settings),
                 }
+        if self._folder_browser.mode == "issues" and self._missing_issue_owner:
+            row = self._saved_item_for_owner(self._missing_issue_owner)
+            if row is not None and self._missing_issue_owner in self._missing_files:
+                status = "Saved file missing"
+                retry = self._issue_job(self._missing_retry_run_id)
+                if retry is not None:
+                    if retry in self._runtime.queued:
+                        status = "Queued"
+                    elif retry is self._runtime.active_job:
+                        status = self._recovery_progress_label()
+                    elif retry.terminal_status:
+                        status = retry.terminal_status
+                return {
+                    "issue": True,
+                    "missing": True,
+                    "title": str(row.get("title") or "Saved media"),
+                    "artwork": self._artwork.request(row),
+                    "creator": str(row.get("channel") or row.get("uploader") or ""),
+                    "type": str(self._issue_settings.get("output_type") or ""),
+                    "status": status,
+                    "source": str(self._issue_settings.get("source") or ""),
+                    "location": str(history_output_path(row) or ""),
+                    "modeLabel": export_mode_display_name(
+                        str(self._issue_settings.get("export_mode") or "Everyday")
+                    ),
+                    "settings": dict(self._issue_settings),
+                    "canRedownload": self._missing_plan is not None,
+                }
+        if self._folder_browser.mode == "folders" and self._folder_file_path:
+            path = Path(self._folder_file_path)
+            if self._folder_browser.path == ArchivePath.parse(str(path.parent)):
+                extension = path.suffix.casefold()
+                is_image = extension in {".jpg", ".jpeg", ".png", ".webp"}
+                is_metadata = path.name == "metadata.json"
+                row = next(
+                    (
+                        item
+                        for item in self._projected_library()
+                        if history_archive_owner(item) == self._folder_file_owner
+                    ),
+                    None,
+                )
+                return {
+                    "file": True,
+                    "title": path.name,
+                    "location": str(path),
+                    "type": self._folder_file_detail_text,
+                    "artwork": QUrl.fromLocalFile(str(path)).toString()
+                    if is_image
+                    else "",
+                    "isMetadata": is_metadata and row is not None,
+                    "associatedOwner": self._folder_file_owner
+                    if row is not None
+                    else "",
+                    "description": str(
+                        row.get("vodforge_user_description", row.get("description"))
+                        or ""
+                    )
+                    if row is not None
+                    else "",
+                    "tags": list(row.get("vodforge_user_tags") or ())
+                    if row is not None
+                    else [],
+                }
+        if (
+            self._folder_browser.mode == "folders"
+            and self._folder_browser.path is not None
+            and not self._folder_inspector_owner
+        ):
+            path = self._folder_browser.path
+            return {
+                "folder": True,
+                "title": path.name,
+                "location": str(path),
+                "count": len(self._folder_browser.components),
+            }
         return self._library_detail_projection(
             self._folder_inspector_owner, self._folder_inspector_versions, True
         )
+
+    def _recovery_progress_label(self) -> str:
+        message = self._status.casefold()
+        if "transcod" in message or "convert" in message:
+            return "Transcoding"
+        if "download" in message:
+            return "Downloading"
+        return "Preparing"
 
     def _library_detail_projection(
         self, owner: str, versions: list[dict[str, str]], from_folders: bool
@@ -2554,10 +2885,16 @@ class Bridge(QObject):
             self._remember_library_route()
         self._library_detail_from_watch = False
         if route == "folders":
+            self._reconcile_folder_browser()
             self._folder_browser.navigate(None, mode="folders")
+            self._queue_folder_listing()
             self._folder_inspector_owner = ""
+            self._folder_file_path = ""
             self._folder_inspector_key = ""
             self._folder_inspector_versions = []
+            self._issue_run_id = ""
+            self._missing_issue_owner = ""
+            self._issue_live_phase = ""
         self._library_scene_route = route
         self._library_group_key = ""
         self._library_group_kind = ""
@@ -2565,6 +2902,27 @@ class Bridge(QObject):
         self._detail_versions = []
         self._library_detail_origin = None
         self.historyChanged.emit()
+
+    @Slot()
+    def openLibraryStorage(self) -> None:
+        """Open saved-file paths on the drive represented by the storage tile."""
+        self.navigateLibrary("folders")
+        capacity = self._storage_snapshot.capacity
+        if capacity is None:
+            return
+        try:
+            drive = ArchivePath.parse(capacity.volume.path)
+        except ValueError:
+            return
+        matches = [
+            item
+            for item in self._folder_browser.locations
+            if item.path is not None and item.path.relative_to(drive) is not None
+        ]
+        if len(matches) == 1:
+            self._folder_browser.navigate(matches[0].path)
+            self._queue_folder_listing()
+            self.historyChanged.emit()
 
     @Slot(str, str)
     def navigateLibraryGroup(self, kind: str, key: str) -> None:
@@ -2621,16 +2979,34 @@ class Bridge(QObject):
             return
         if self._library_scene_route != "folders":
             self._remember_library_route()
+        self._reconcile_folder_browser()
         self._folder_browser.navigate(
             None, mode=cast(Literal["folders", "all", "activity", "issues"], mode)
         )
         self._folder_inspector_owner = ""
+        self._folder_file_path = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions = []
         self._issue_run_id = ""
+        self._missing_issue_owner = ""
         self._issue_settings = {}
         self._library_scene_route = "folders"
-        self.historyChanged.emit()
+        if mode == "issues":
+            self._queue_availability_scan(
+                [
+                    dict(row)
+                    for row in self._runtime.history
+                    if archive_directory(row) is not None
+                ],
+                full=True,
+            )
+        else:
+            if mode == "folders":
+                self._queue_folder_listing()
+            else:
+                self._availability_work.cancel()
+                self._availability_requests.clear()
+                self.historyChanged.emit()
 
     def _folder_component(self, key: str) -> Any:
         if self._library_scene_route != "folders":
@@ -2642,7 +3018,6 @@ class Bridge(QObject):
                 for item in (
                     *self._folder_browser.page_components,
                     *self._folder_browser.locations,
-                    *self._folder_browser.saved_media,
                 )
                 if item.key == key
             ),
@@ -2674,9 +3049,46 @@ class Bridge(QObject):
             None,
         )
 
+    def _retry_settings_for_job(
+        self, job: Any, source: str, output_dir: str
+    ) -> dict[str, Any]:
+        return {
+            "source": source,
+            "source_editable": not bool(source),
+            "output_dir": output_dir,
+            "output_type": job.output_type.value,
+            "export_mode": job.export_mode.value,
+            "quality": job.quality_label
+            if job.quality_label in QUALITY_OPTIONS
+            else "",
+            "manual": {
+                "manual_rate_control": (
+                    "Quality" if job.manual_settings.video_crf is not None else "CBR"
+                ),
+                "manual_crf": str(job.manual_settings.video_crf or 21),
+                "manual_video_bitrate": str(job.manual_settings.video_bitrate_kbps),
+                "manual_audio_bitrate": str(job.manual_settings.audio_bitrate_kbps),
+                "manual_audio_codec": job.manual_settings.audio_codec.value,
+                "manual_sample_rate": job.manual_settings.audio_sample_rate,
+                "manual_channels": (
+                    "Mono" if job.manual_settings.audio_channels == "1" else "Stereo"
+                ),
+                "manual_preset": job.manual_settings.x264_preset,
+            },
+            "single_video_only": job.single_video_only,
+            "use_nvenc": job.use_nvenc,
+            "embed_thumbnail": job.embed_thumbnail,
+            "write_thumbnail": job.write_thumbnail,
+            "embed_metadata": job.embed_metadata,
+            "write_info_json": job.write_info_json,
+        }
+
     @Slot(str, str)
     def setIssueRetrySetting(self, key: str, value: str) -> None:
-        if not self._issue_run_id or self._folder_browser.mode != "issues":
+        if (
+            not (self._issue_run_id or self._missing_issue_owner)
+            or self._folder_browser.mode != "issues"
+        ):
             return
         options = {
             "output_type": {item.value for item in OutputType},
@@ -2690,7 +3102,10 @@ class Bridge(QObject):
 
     @Slot(str, str)
     def setIssueManualValue(self, key: str, value: str) -> None:
-        if not self._issue_run_id or self._folder_browser.mode != "issues":
+        if (
+            not (self._issue_run_id or self._missing_issue_owner)
+            or self._folder_browser.mode != "issues"
+        ):
             return
         manual = self._issue_settings.get("manual")
         if not isinstance(manual, dict) or key not in manual or len(value) > 32:
@@ -2700,6 +3115,17 @@ class Bridge(QObject):
 
     @Slot(str)
     def setIssueRetrySource(self, value: str) -> None:
+        if (
+            self._missing_issue_owner
+            and self._folder_browser.mode == "issues"
+            and self._missing_plan is not None
+            and self._missing_plan.job is None
+        ):
+            self._issue_settings["source"] = value.strip()
+            self.historyChanged.emit()
+            return
+        if self._missing_issue_owner and self._folder_browser.mode == "issues":
+            return
         if not self._issue_run_id or self._folder_browser.mode != "issues":
             return
         try:
@@ -2710,7 +3136,10 @@ class Bridge(QObject):
 
     @Slot(str, bool)
     def setIssueRetryFlag(self, key: str, value: bool) -> None:
-        if not self._issue_run_id or self._folder_browser.mode != "issues":
+        if (
+            not (self._issue_run_id or self._missing_issue_owner)
+            or self._folder_browser.mode != "issues"
+        ):
             return
         if key not in {
             "single_video_only",
@@ -2726,7 +3155,10 @@ class Bridge(QObject):
 
     @Slot(QUrl)
     def chooseIssueOutputUrl(self, value: QUrl) -> None:
-        if not self._issue_run_id or not value.isLocalFile():
+        if (
+            not (self._issue_run_id or self._missing_issue_owner)
+            or not value.isLocalFile()
+        ):
             return
         path = Path(value.toLocalFile())
         if not path.is_dir():
@@ -2742,6 +3174,8 @@ class Bridge(QObject):
             or self._folder_browser.mode != "issues"
         ):
             return False
+        if self._missing_issue_owner:
+            return self._download_missing_issue()
         job = self._issue_job(self._issue_run_id)
         if job is None or job.terminal_status not in {"Failed", "Stopped", "Skipped"}:
             self._set_status("Select an interrupted run before downloading.")
@@ -2808,9 +3242,221 @@ class Bridge(QObject):
             return False
         return self._admit_retry(job.run_id, current_job=prepared, stay_in_issues=True)
 
+    def _download_missing_issue(self) -> bool:
+        plan = self._missing_plan
+        row = self._current_missing_record()
+        existing = self._issue_job(self._missing_retry_run_id)
+        if (
+            existing is not None
+            and existing.terminal_status in {"Failed", "Stopped", "Skipped"}
+            and row is not None
+        ):
+            plan = self._media_recovery.plan(
+                row, completed_jobs=self._runtime.recovered
+            )
+            self._missing_plan = plan
+            self._missing_retry_run_id = ""
+        if (
+            plan is None
+            or row is None
+            or self._missing_retry_run_id
+            or self._relink.active
+            or self._file_action_busy
+            or self._import_pending
+        ):
+            return False
+        config = self._issue_settings
+        job = plan.job
+        if not all(
+            config.get(key)
+            for key in ("source", "output_dir", "output_type", "export_mode", "quality")
+        ):
+            self._set_status("Choose an output folder and download settings first.")
+            return False
+        if job is not None and (
+            config.get("source") != job.url
+            or config.get("output_type") != job.output_type.value
+        ):
+            self._set_status(
+                "This recovery must keep the saved source and file format."
+            )
+            return False
+        try:
+            output_dir = Path(str(config["output_dir"]))
+            if not output_dir.is_dir():
+                raise ValueError("Choose an existing output folder.")
+            selected_type = OutputType(str(config["output_type"]))
+            manual = (
+                manual_export_settings(config["manual"])
+                if selected_type is OutputType.MP4
+                and config["export_mode"] == ExportMode.MANUAL_OVERRIDE.value
+                else job.manual_settings
+                if job is not None
+                else None
+            )
+            flags = {
+                key: bool(config[key])
+                for key in (
+                    "single_video_only",
+                    "use_nvenc",
+                    "embed_thumbnail",
+                    "write_thumbnail",
+                    "embed_metadata",
+                    "write_info_json",
+                )
+            }
+            flags["single_video_only"] = True
+            if job is not None:
+                prepared = replace(
+                    job,
+                    output_dir=output_dir,
+                    export_mode=ExportMode(str(config["export_mode"])),
+                    quality_label=str(config["quality"]),
+                    manual_settings=manual,
+                    **flags,
+                )
+            else:
+                prepared = self._runtime.prepare_job(
+                    str(config["source"]),
+                    output_dir,
+                    selected_type.value,
+                    str(config["export_mode"]),
+                    str(config["quality"]),
+                    DownloadPreferences(**flags),
+                    manual,
+                    urls=[str(config["source"])],
+                    batch_mode=False,
+                )
+            prepared.preview_info = annotate_job_metadata(
+                prepared, dict(prepared.preview_info or {})
+            )
+            prepared.recovery_reason = "missing_media"
+            prepared.annotation_source_owner = (
+                plan.previous_annotation_owner or history_annotation_owner(row)
+            )
+            self._runtime.start_job(prepared)
+        except (OSError, RuntimeError, RunStateError, ValueError) as exc:
+            self._set_status(str(exc))
+            return False
+        self._missing_retry_run_id = prepared.run_id
+        self._issue_live_phase = "Preparing"
+        self._set_status(
+            "Recovery queued."
+            if prepared in self._runtime.queued
+            else "Preparing recovery."
+        )
+        self.historyChanged.emit()
+        self.runningChanged.emit()
+        self.activityChanged.emit()
+        return True
+
+    @Slot()
+    def requestMissingFileRelink(self) -> None:
+        owner = self._missing_issue_owner
+        if (
+            self._library_scene_route == "folders"
+            and self._folder_browser.mode == "issues"
+            and owner
+            and self._saved_item_for_owner(owner) is not None
+        ):
+            self.fileRelinkRequested.emit(owner)
+
     @Slot(str, result=bool)
     def selectLibraryFolderComponent(self, key: str) -> bool:
         component = self._folder_component(key)
+        if (
+            component is not None
+            and component.kind == "file"
+            and component.path is not None
+            and self._folder_browser.mode == "folders"
+        ):
+            path = component.path
+            parents = [
+                row
+                for row in self._runtime.history
+                if archive_directory(row) == path.parent
+            ]
+            related = (
+                parents[0]
+                if len(parents) == 1
+                and path.name
+                in {
+                    "metadata.json",
+                    "thumbnail.jpg",
+                    "thumbnail.jpeg",
+                    "thumbnail.png",
+                    "thumbnail.webp",
+                }
+                else None
+            )
+            self._folder_file_path = str(path)
+            self._folder_file_detail_text = component.detail
+            self._folder_file_owner = (
+                history_archive_owner(related) if related is not None else ""
+            )
+            self._folder_inspector_key = key
+            self._folder_inspector_owner = ""
+            self._folder_inspector_versions = []
+            self.historyChanged.emit()
+            return True
+        if (
+            component is not None
+            and component.kind == "missing"
+            and self._folder_browser.mode == "issues"
+            and component.indices
+        ):
+            owner = history_archive_owner(
+                self._folder_browser.records[component.indices[0]]
+            )
+            row = self._saved_item_for_owner(owner)
+            if row is None or self._missing_files.get(owner) != record_fingerprint(row):
+                return False
+            plan = self._media_recovery.plan(
+                row, completed_jobs=self._runtime.recovered
+            )
+            if plan.kind in {"available", "unavailable", "ambiguous"}:
+                self._missing_files.pop(owner, None)
+                self.historyChanged.emit()
+                return False
+            self._missing_issue_owner = owner
+            self._folder_file_path = ""
+            self._missing_retry_run_id = ""
+            self._issue_live_phase = ""
+            self._missing_plan = plan
+            self._missing_fingerprint = record_fingerprint(row)
+            self._missing_media = {"owner": owner}
+            self._issue_run_id = ""
+            self._folder_inspector_key = key
+            self._folder_inspector_owner = ""
+            self._folder_inspector_versions = []
+            job = plan.job
+            self._issue_settings = (
+                self._retry_settings_for_job(
+                    job,
+                    job.url,
+                    str(plan.destination)
+                    if plan.destination is not None and plan.destination.is_dir()
+                    else "",
+                )
+                if job is not None
+                else {
+                    "source": canonical_youtube_url(row) or "",
+                    "source_editable": True,
+                    "output_dir": "",
+                    "output_type": metadata_output_type(row).value,
+                    "export_mode": "",
+                    "quality": "",
+                    "manual": dict(self._manual_values),
+                    "single_video_only": True,
+                    "use_nvenc": False,
+                    "embed_thumbnail": True,
+                    "write_thumbnail": False,
+                    "embed_metadata": True,
+                    "write_info_json": False,
+                }
+            )
+            self.historyChanged.emit()
+            return True
         if (
             component is not None
             and component.kind == "activity"
@@ -2835,43 +3481,19 @@ class Bridge(QObject):
             except ValueError:
                 source = ""
             self._issue_run_id = run_id
+            self._folder_file_path = ""
+            self._missing_issue_owner = ""
+            self._issue_live_phase = (
+                self._recovery_progress_label()
+                if job is self._runtime.active_job
+                else ""
+            )
             self._folder_inspector_key = key
             self._folder_inspector_owner = ""
             self._folder_inspector_versions = []
-            self._issue_settings = {
-                "source": source,
-                "source_editable": not bool(source),
-                "output_dir": str(job.output_dir) if job.output_dir.is_dir() else "",
-                "output_type": job.output_type.value,
-                "export_mode": job.export_mode.value,
-                "quality": job.quality_label
-                if job.quality_label in QUALITY_OPTIONS
-                else "",
-                "manual": {
-                    "manual_rate_control": (
-                        "Quality"
-                        if job.manual_settings.video_crf is not None
-                        else "CBR"
-                    ),
-                    "manual_crf": str(job.manual_settings.video_crf or 21),
-                    "manual_video_bitrate": str(job.manual_settings.video_bitrate_kbps),
-                    "manual_audio_bitrate": str(job.manual_settings.audio_bitrate_kbps),
-                    "manual_audio_codec": job.manual_settings.audio_codec.value,
-                    "manual_sample_rate": job.manual_settings.audio_sample_rate,
-                    "manual_channels": (
-                        "Mono"
-                        if job.manual_settings.audio_channels == "1"
-                        else "Stereo"
-                    ),
-                    "manual_preset": job.manual_settings.x264_preset,
-                },
-                "single_video_only": job.single_video_only,
-                "use_nvenc": job.use_nvenc,
-                "embed_thumbnail": job.embed_thumbnail,
-                "write_thumbnail": job.write_thumbnail,
-                "embed_metadata": job.embed_metadata,
-                "write_info_json": job.write_info_json,
-            }
+            self._issue_settings = self._retry_settings_for_job(
+                job, source, str(job.output_dir) if job.output_dir.is_dir() else ""
+            )
             self.historyChanged.emit()
             return True
         if component is None or component.kind != "media":
@@ -2880,9 +3502,12 @@ class Bridge(QObject):
         if not versions:
             return False
         self._folder_inspector_owner = versions[0]["owner"]
+        self._folder_file_path = ""
         self._folder_inspector_key = key
         self._folder_inspector_versions = versions
         self._issue_run_id = ""
+        self._missing_issue_owner = ""
+        self._issue_live_phase = ""
         self._issue_settings = {}
         self.historyChanged.emit()
         return True
@@ -2983,7 +3608,9 @@ class Bridge(QObject):
             return False
         if component.kind == "folder" and component.path is not None:
             self._folder_browser.navigate(component.path)
+            self._queue_folder_listing()
             self._folder_inspector_owner = ""
+            self._folder_file_path = ""
             self._folder_inspector_key = ""
             self._folder_inspector_versions = []
             self._issue_run_id = ""
@@ -3020,16 +3647,44 @@ class Bridge(QObject):
     def upLibraryFolder(self) -> None:
         if self._library_scene_route != "folders":
             return
-        path = self._folder_browser.path
-        self._folder_browser.navigate(
-            path.parent if path is not None and path.parent != path else None
-        )
+        self._reconcile_folder_browser()
+        model = self._folder_browser
+        if model.parent_path is None and not (
+            model.path is not None and len(model.locations) > 1
+        ):
+            return
+        model.navigate(model.parent_path)
+        self._queue_folder_listing()
         self._folder_inspector_owner = ""
+        self._folder_file_path = ""
         self._folder_inspector_key = ""
         self._folder_inspector_versions = []
         self._issue_run_id = ""
         self._issue_settings = {}
         self.historyChanged.emit()
+
+    @Slot(str, result=bool)
+    def openLibraryBreadcrumb(self, path: str) -> bool:
+        if self._library_scene_route != "folders":
+            return False
+        self._reconcile_folder_browser()
+        target = next(
+            (item for item in self._folder_browser.breadcrumbs if str(item) == path),
+            None,
+        )
+        if target is None:
+            return False
+        self._folder_browser.navigate(target)
+        self._queue_folder_listing()
+        self._folder_inspector_owner = ""
+        self._folder_file_path = ""
+        self._folder_inspector_key = ""
+        self._folder_inspector_versions = []
+        self._issue_run_id = ""
+        self._missing_issue_owner = ""
+        self._issue_settings = {}
+        self.historyChanged.emit()
+        return True
 
     @Slot(int)
     def pageLibraryFolder(self, delta: int) -> None:
@@ -4405,6 +5060,77 @@ class Bridge(QObject):
     def _pump(self) -> None:
         if self._closed:
             return
+        availability = self._availability_work.poll()
+        if availability is not None and availability.kind == "folder_list":
+            current_path = self._folder_browser.path
+            if (
+                self._folder_browser.mode == "folders"
+                and current_path is not None
+                and self._folder_listing_pending == str(current_path)
+            ):
+                self._folder_listing_pending = ""
+                self._folder_listing_error = bool(availability.error)
+                value = availability.value
+                if isinstance(value, dict) and value.get("path") == str(current_path):
+                    entries = []
+                    for name, kind, size in value.get(
+                        "entries", ()
+                    ):  # bounded worker result
+                        try:
+                            path = current_path.join((name,))
+                        except ValueError:
+                            continue
+                        entries.append(
+                            ArchiveComponent(
+                                str(path),
+                                "folder" if kind == "folder" else "file",
+                                name,
+                                "Folder"
+                                if kind == "folder"
+                                else self._folder_file_detail(name, size),
+                                (),
+                                path,
+                            )
+                        )
+                    self._folder_browser.set_folder_entries(current_path, entries)
+                self.historyChanged.emit()
+        elif availability is not None and availability.kind.startswith("availability_"):
+            current = {
+                history_archive_owner(row): record_fingerprint(row)
+                for row in self._runtime.history
+            }
+            if self._folder_browser.mode == "issues" and availability.error:
+                self._availability_checked = True
+                self._availability_error = True
+                self.historyChanged.emit()
+            elif self._folder_browser.mode == "issues" and isinstance(
+                availability.value, dict
+            ):
+                if availability.kind == "availability_full":
+                    self._missing_files.clear()
+                    self._availability_checked = True
+                for owner, observation in availability.value.items():
+                    if not isinstance(observation, tuple) or len(observation) != 2:
+                        continue
+                    fingerprint, state = observation
+                    if current.get(owner) != fingerprint:
+                        continue
+                    if state == HISTORY_MEDIA_MISSING:
+                        self._missing_files[owner] = fingerprint
+                        if owner == self._missing_issue_owner:
+                            retry = self._issue_job(self._missing_retry_run_id)
+                            if retry is not None and retry.terminal_status in {
+                                "Completed",
+                                "Partial",
+                            }:
+                                self._missing_retry_run_id = ""
+                    else:
+                        self._missing_files.pop(owner, None)
+                        if owner == self._missing_issue_owner:
+                            self._missing_issue_owner = ""
+                            self._folder_inspector_key = ""
+                self.historyChanged.emit()
+        self._start_availability_scan()
         cloud_result = self._cloud_work.poll()
         if cloud_result is not None and cloud_result.value is True:
             try:
@@ -4499,6 +5225,14 @@ class Bridge(QObject):
                     next_owner = history_archive_owner(actual[self._relink.index])
                     if self._library_detail_owner == previous_owner:
                         self._library_detail_owner = next_owner
+                    if previous_owner:
+                        self._missing_files.pop(previous_owner, None)
+                        if self._missing_issue_owner == previous_owner:
+                            self._missing_issue_owner = ""
+                            self._folder_inspector_key = ""
+                        self._queue_availability_scan(
+                            [dict(actual[self._relink.index])], full=False
+                        )
                 self.historyChanged.emit()
             self.relinkChanged.emit()
         if self._previews.poll():
@@ -4644,6 +5378,14 @@ class Bridge(QObject):
                 self._forge_activity.observe(self._forge_run_id, self._status)
                 self.statusChanged.emit()
                 active = self._runtime.active_job
+                if active is not None and active.run_id in {
+                    self._issue_run_id,
+                    self._missing_retry_run_id,
+                }:
+                    next_phase = self._recovery_progress_label()
+                    if next_phase != self._issue_live_phase:
+                        self._issue_live_phase = next_phase
+                        self.historyChanged.emit()
                 phase = library_phase_from_status(self._status)
                 if (
                     active is not None
@@ -4661,6 +5403,19 @@ class Bridge(QObject):
             elif kind in {"history_record", "job_metadata", "item_terminal"}:
                 self.historyChanged.emit()
             elif kind in {"done", "partial", "stopped", "error"}:
+                if (
+                    kind in {"done", "partial"}
+                    and active_job_before is not None
+                    and active_job_before.run_id == self._missing_retry_run_id
+                ):
+                    old_owner = self._missing_issue_owner
+                    old_row = self._saved_item_for_owner(old_owner)
+                    if old_row is None:
+                        self._missing_files.pop(old_owner, None)
+                        self._missing_issue_owner = ""
+                        self._folder_inspector_key = ""
+                    else:
+                        self._queue_availability_scan([dict(old_row)], full=False)
                 if kind in {"done", "partial"}:
                     self._selected_run_key = ""
                     self._recent_interrupted_run_id = ""
@@ -4758,6 +5513,7 @@ class Bridge(QObject):
                 self._import_operation,
             )
         self._import_work.close()
+        self._availability_work.close()
         self._cloud_work.close()
         self._relink.close()
         self._storage.close()

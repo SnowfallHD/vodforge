@@ -6,8 +6,13 @@ from pathlib import Path
 import pytest
 
 from tests.test_archive_relink import record
-from yt_downloader.archive_browser import PAGE_SIZE, ArchiveBrowserModel
+from yt_downloader.archive_browser import (
+    PAGE_SIZE,
+    ArchiveBrowserModel,
+    ArchiveComponent,
+)
 from yt_downloader.archive_paths import ArchivePath
+from yt_downloader.history import history_archive_owner
 from yt_downloader.watch_library import watch_rails
 
 
@@ -184,7 +189,7 @@ def test_archive_folder_mapping_uses_components_and_keeps_innermost_export():
     assert str(model.path) == "/archive/Series/Export"
 
 
-def test_overview_saved_media_preserves_owner_grouping_and_filters(tmp_path):
+def test_my_files_opens_single_saved_location_and_all_media_excludes_previews(tmp_path):
     from yt_downloader.archive_browser import ArchiveBrowserModel
 
     rows = [
@@ -194,8 +199,72 @@ def test_overview_saved_media_preserves_owner_grouping_and_filters(tmp_path):
     ]
     model = ArchiveBrowserModel()
     model.replace(rows, [0, 1, 2])
-    assert [item.indices for item in model.saved_media] == [(0,), (1,)]
-    assert all(item.kind == "media" for item in model.saved_media)
-    assert model.components == model.locations
+    assert len(model.locations) == 1
+    assert model.path == model.locations[0].path
+    assert {item.title for item in model.components} == {"one", "two"}
+    assert model.parent_path is None
+    model.navigate(ArchivePath.parse(str(tmp_path / "one")))
+    assert [str(path) for path in model.breadcrumbs] == [
+        str(tmp_path),
+        str(tmp_path / "one"),
+    ]
+    assert model.parent_path == ArchivePath.parse(str(tmp_path))
+    model.navigate(None, mode="all")
+    assert model.path is None
+    assert [item.indices for item in model.components] == [(0,), (1,)]
+    assert all(item.kind == "media" for item in model.components)
     model.replace(rows, [1, 2])
-    assert [item.indices for item in model.saved_media] == [(1,)]
+    assert [item.indices for item in model.components] == [(1,)]
+
+
+def test_issues_include_only_observed_missing_saved_files_and_interrupted_runs():
+    rows = [
+        saved("/archive/one/ready.mp4", video="ready"),
+        saved("/archive/two/missing.mp4", video="missing"),
+        {"id": "stopped", "title": "Stopped", "vodforge_terminal_status": "Stopped"},
+    ]
+    model = ArchiveBrowserModel()
+    model.replace(rows, range(len(rows)))
+    model.navigate(None, mode="issues")
+    assert [item.title for item in model.components] == ["Stopped"]
+    missing_owner = history_archive_owner(rows[1])
+    model.replace(rows, range(len(rows)), missing_owners=frozenset({missing_owner}))
+    assert {(item.title, item.kind) for item in model.components} == {
+        ("missing", "missing"),
+        ("Stopped", "activity"),
+    }
+
+
+def test_my_files_uses_physical_entries_and_hides_missing_saved_file():
+    rows = [
+        saved("/archive/present.mp4", video="present"),
+        saved("/archive/missing.mp4", video="missing"),
+    ]
+    model = ArchiveBrowserModel()
+    model.replace(rows, range(len(rows)))
+    model.navigate(ArchivePath.parse("/archive"))
+    model.set_folder_entries(
+        ArchivePath.parse("/archive"),
+        [
+            ArchiveComponent(
+                "/archive/present.mp4",
+                "file",
+                "present.mp4",
+                "Video",
+                (),
+                ArchivePath.parse("/archive/present.mp4"),
+            ),
+            ArchiveComponent(
+                "/archive/thumbnail.jpg",
+                "file",
+                "thumbnail.jpg",
+                "Image",
+                (),
+                ArchivePath.parse("/archive/thumbnail.jpg"),
+            ),
+        ],
+    )
+    assert [(item.title, item.kind) for item in model.components] == [
+        ("present", "media"),
+        ("thumbnail.jpg", "file"),
+    ]

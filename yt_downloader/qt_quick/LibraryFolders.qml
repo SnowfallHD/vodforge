@@ -22,9 +22,9 @@ Item {
             Text { objectName: "libraryFolderBrowseHeading"; text: "BROWSE"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             Repeater {
                 model: [
-                    { key: "folders", label: "Folders" },
+                    { key: "folders", label: "My Files" },
                     { key: "all", label: "All media" },
-                    { key: "issues", label: "Issues" }
+                    { key: "issues", label: "Issues & Recovery" }
                 ]
                 StoneButton {
                     required property var modelData
@@ -36,12 +36,13 @@ Item {
                 }
             }
             Text {
-                text: "LOCATIONS"
+                text: "SAVED LOCATIONS"
+                visible: (browser.model.locations || []).length > 1
                 color: theme.muted; font.pixelSize: 12; font.bold: true
                 Layout.topMargin: 18
             }
             Repeater {
-                model: browser.model.locations || []
+                model: (browser.model.locations || []).length > 1 ? browser.model.locations : []
                 StoneButton {
                     required property var modelData
                     label: modelData.title
@@ -53,7 +54,8 @@ Item {
             }
             Item { Layout.fillHeight: true }
             StoneButton {
-                label: "← Back"
+                label: "← Library"
+                visible: browser.model.mode !== "folders" || !browser.model.canGoUp
                 Layout.fillWidth: true
                 onActivated: browser.appBridge.backLibrary()
             }
@@ -67,36 +69,73 @@ Item {
                 objectName: "libraryFolderTopRow"
                 Layout.fillWidth: true
                 StoneButton {
-                    label: "Up one folder"
-                    Layout.preferredWidth: 150
-                    visible: browser.model.mode === "folders" && browser.model.path.length > 0
+                    label: "← Back"
+                    Layout.preferredWidth: 104
+                    visible: browser.model.mode === "folders" && browser.model.canGoUp
                     enabled: visible
                     onActivated: browser.appBridge.upLibraryFolder()
                 }
                 Text {
                     objectName: "libraryFolderLocationHeading"
-                    text: browser.model.mode === "issues" ? "Issues" :
-                          (browser.model.path || "All locations")
+                    text: browser.model.mode === "issues" ? "Issues & Recovery" :
+                          browser.model.mode === "all" ? "All media" : "My Files"
+                    visible: browser.model.mode !== "folders" || !browser.model.canGoUp
                     color: theme.text; font.pixelSize: 17; elide: Text.ElideMiddle
                     Layout.fillWidth: true
                 }
                 StoneButton {
                     objectName: "libraryFolderCompactDetails"
                     visible: !browser.showInspector
-                    enabled: !!browser.appBridge.libraryFolderInspector.owner || !!browser.appBridge.libraryFolderInspector.issue
+                    enabled: !!browser.appBridge.libraryFolderInspector.owner
+                             || !!browser.appBridge.libraryFolderInspector.issue
+                             || !!browser.appBridge.libraryFolderInspector.file
+                             || !!browser.appBridge.libraryFolderInspector.folder
                     label: browser.model.mode === "issues" ? "Selected issue" : "Selected details"
                     size: "inline"
                     Layout.preferredWidth: 145
                     onActivated: {
-                        if (browser.model.mode === "issues") compactIssuePopup.open()
+                        if (browser.model.mode === "issues"
+                                || browser.appBridge.libraryFolderInspector.file
+                                || browser.appBridge.libraryFolderInspector.folder)
+                            compactIssuePopup.open()
                         else browser.appBridge.openSelectedLibraryFolderDetail()
+                    }
+                }
+            }
+            Flow {
+                objectName: "libraryFolderBreadcrumbs"
+                visible: browser.model.mode === "folders" && browser.model.breadcrumbs.length > 0
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                spacing: 4
+                Repeater {
+                    model: browser.model.breadcrumbs || []
+                    Row {
+                        required property var modelData
+                        spacing: 4
+                        Text {
+                            visible: modelData.key !== browser.model.breadcrumbs[0].key
+                            text: "›"
+                            color: theme.muted
+                            font.pixelSize: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        StoneButton {
+                            objectName: "libraryFolderCrumb_" + modelData.key
+                            label: modelData.label
+                            accessibilityLabel: "Open " + modelData.label + " folder"
+                            size: "inline"
+                            selected: modelData.current
+                            width: Math.min(160, implicitWidth)
+                            onActivated: browser.appBridge.openLibraryBreadcrumb(modelData.key)
+                        }
                     }
                 }
             }
             Text {
                 objectName: "libraryFolderActivityExplanation"
                 visible: browser.model.mode === "issues"
-                text: "Failed, stopped (including canceled), and skipped runs without a saved export. Retries stay here while queued or downloading. See every run in Forge's Run Deck."
+                text: "Missing saved files and failed, stopped, or skipped runs are ready to recover here. Active retries stay until they finish. See every run in Forge's Run Deck."
                 color: theme.muted
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
@@ -108,31 +147,12 @@ Item {
                 spacing: 8
                 StoneButton {
                     objectName: "libraryFolderOpenLocationButton"
-                    label: "Open location"
+                    label: "Open this folder"
                     size: "inline"
                     Layout.preferredWidth: 132
                     onActivated: browser.appBridge.openLibraryCurrentFolder()
                 }
-                StoneButton {
-                    objectName: "libraryFolderRelinkButton"
-                    label: "Locate moved files…"
-                    size: "inline"
-                    Layout.preferredWidth: 175
-                    enabled: browser.model.relinkCount > 0
-                    onActivated: browser.appBridge.requestFolderRelink(browser.model.path)
-                }
                 Item { Layout.fillWidth: true }
-            }
-            Text {
-                objectName: "libraryFolderRelinkExplanation"
-                visible: browser.model.mode === "folders" && !!browser.model.path
-                text: "Checks " + browser.model.relinkCount + " saved "
-                    + (browser.model.relinkCount === 1 ? "file" : "files")
-                    + " in this folder and its subfolders. Updates saved paths only; does not move files or change future downloads."
-                color: theme.muted
-                font.pixelSize: 12
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
             }
             ScrollView {
                 id: viewport
@@ -156,12 +176,12 @@ Item {
                             selected: modelData.key === browser.model.selectedKey
                             accessibilityLabel: modelData.title + ", " + modelData.detail
                             onActivated: {
-                                if (modelData.kind === "media" || browser.model.mode === "issues")
+                                if (modelData.kind !== "folder")
                                     browser.appBridge.selectLibraryFolderComponent(modelData.key)
                                 else browser.appBridge.openLibraryFolderComponent(modelData.key)
                             }
                             onDoubleActivated: {
-                                if (browser.model.mode === "issues")
+                                if (browser.model.mode === "issues" || modelData.kind === "file")
                                     browser.appBridge.selectLibraryFolderComponent(modelData.key)
                                 else browser.appBridge.openLibraryFolderComponent(modelData.key)
                             }
@@ -170,7 +190,7 @@ Item {
                                 anchors.margins: 13
                                 spacing: 13
                                 Text {
-                                    text: modelData.kind === "folder" ? "▣" : modelData.kind === "activity" ? "◷" : "▶"
+                                    text: modelData.kind === "folder" ? "▣" : modelData.kind === "file" ? "▤" : modelData.kind === "missing" ? "!" : modelData.kind === "activity" ? "◷" : "▶"
                                     color: theme.accent; font.pixelSize: 24
                                 }
                                 ColumnLayout {
@@ -182,38 +202,16 @@ Item {
                         }
                     }
                     Text {
-                        visible: (browser.model.highlights || []).length > 0
-                        text: "RECENT EXPORTS"
-                        color: theme.muted; font.pixelSize: 12; font.bold: true
-                    }
-                    Flow {
-                        width: parent.width; spacing: 12
-                        Repeater {
-                            model: browser.model.highlights || []
-                            StoneButton {
-                                required property var modelData
-                                objectName: "libraryRecentExportCard_" + modelData.key
-                                width: Math.min(220, Math.max(150, (viewport.availableWidth - 36) / 4))
-                                height: Math.max(76, cardContent.implicitHeight + 24)
-                                label: ""
-                                accessibilityLabel: modelData.title + ", " + modelData.detail
-                                onActivated: browser.appBridge.selectLibraryFolderComponent(modelData.key)
-                                onDoubleActivated: browser.appBridge.openLibraryFolderComponent(modelData.key)
-                                Column {
-                                    id: cardContent
-                                    anchors.fill: parent; anchors.margins: 12; spacing: 9
-                                    Text { text: modelData.title; color: theme.text; font.pixelSize: 15; font.bold: true; width: parent.width; elide: Text.ElideRight }
-                                    Text { text: modelData.detail; color: theme.muted; font.pixelSize: 13; width: parent.width; wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight }
-                                }
-                            }
-                        }
-                    }
-                    Text {
                         objectName: "libraryFolderEmptyLabel"
                         visible: browser.model.count === 0
                         text: browser.model.mode === "issues" ?
-                              "No failed, stopped, or skipped runs without an export." :
-                              "No saved media in this location."
+                              browser.model.checkingAvailability ? "Checking saved files…" :
+                              browser.model.availabilityError ? "Could not check saved files. Open Issues & Recovery again to retry." :
+                              "Nothing needs recovery." :
+                              browser.model.mode === "all" ? "No saved media yet." :
+                              browser.model.checkingFolder ? "Opening folder…" :
+                              browser.model.folderError ? "This folder could not be opened." :
+                              "This folder is empty."
                         color: theme.muted; font.pixelSize: 15
                     }
                 }

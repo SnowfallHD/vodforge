@@ -167,7 +167,7 @@ Item {
             }
             Item { Layout.fillHeight: true }
             StoneButton {
-                label: "Folders"
+                label: "My Files"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 45
                 Layout.leftMargin: 8
@@ -182,7 +182,7 @@ Item {
                 Layout.bottomMargin: 17
                 interactive: true
                 accessibilityLabel: "Storage for " + scene.appBridge.storageSummary.label
-                onActivated: scene.appBridge.navigateLibrary("folders")
+                onActivated: scene.appBridge.openLibraryStorage()
                 Text {
                     x: 15; y: 16
                     width: parent.width - 30

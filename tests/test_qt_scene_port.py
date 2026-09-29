@@ -37,6 +37,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQml import QQmlComponent
 from PySide6.QtTest import QTest
 
+from tests.test_library_media_recovery import _job, _missing_record
 from tests.test_quality_e2e import _isolated_launch
 from tests.test_run_identity import make_job
 from yt_downloader.app import cached_thumbnail_path
@@ -44,6 +45,7 @@ from yt_downloader.export_planning import EXPORT_MODES
 from yt_downloader.history import history_archive_owner
 from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotationsError
 from yt_downloader.library_artwork_source import ArtworkAsset
+from yt_downloader.models import ExportMode
 from yt_downloader.playback_backend import PlaybackSnapshot
 from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.qt_quick import main as qt_main
@@ -618,19 +620,25 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    qt_app()
+    app = qt_app()
     video = saved(tmp_path, "Same source", "MP4")
     audio = saved(tmp_path, "Same source", "MP3")
+    Path(video["vodforge_output_path"]).write_bytes(b"video")
+    Path(audio["vodforge_output_path"]).write_bytes(b"audio")
     video["webpage_url"] = audio["webpage_url"] = "https://example.com/same"
     bridge = qt_main.Bridge(None)
     try:
         bridge._runtime.history = [video, audio]
         bridge.navigateLibrary("folders")
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["checkingFolder"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
         root = bridge.libraryFolders
         assert root["mode"] == "folders"
         assert len(root["locations"]) == 1
-        assert len(root["highlights"]) == 1
-        assert bridge.openLibraryFolderComponent(root["locations"][0]["key"])
+        assert root["path"] == root["locations"][0]["key"]
         folder = bridge.libraryFolders
         assert folder["path"]
         media = next(item for item in folder["components"] if item["kind"] == "media")
@@ -657,9 +665,53 @@ def test_qt_folder_browser_uses_shared_model_and_preserves_version_context(
         assert bridge.libraryScene["route"] == "folders"
         assert bridge.libraryFolders["path"] == folder["path"]
         bridge.upLibraryFolder()
-        assert bridge.libraryFolders["path"] != folder["path"]
+        assert bridge.libraryFolders["path"] == folder["path"]
         bridge.navigateLibraryFolders("all")
         assert bridge.libraryFolders["mode"] == "all"
+        assert bridge.libraryFolders["path"] == ""
+        assert all(
+            row["kind"] == "media" for row in bridge.libraryFolders["components"]
+        )
+    finally:
+        bridge.close()
+
+
+def test_my_files_breadcrumbs_only_navigate_saved_ancestors(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path / "channel-a", "One", "MP4"),
+        saved(tmp_path / "channel-b", "Two", "MP4"),
+    ]
+    for row in bridge._runtime.history:
+        Path(row["vodforge_output_path"]).parent.mkdir(parents=True)
+        Path(row["vodforge_output_path"]).write_bytes(b"video")
+    try:
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["checkingFolder"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        root = bridge.libraryFolders
+        assert root["path"] == str(tmp_path)
+        assert [crumb["label"] for crumb in root["breadcrumbs"]] == [tmp_path.name]
+        folder = next(
+            item for item in root["components"] if item["title"] == "channel-a"
+        )
+        assert bridge.openLibraryFolderComponent(folder["key"])
+        assert [crumb["label"] for crumb in bridge.libraryFolders["breadcrumbs"]] == [
+            tmp_path.name,
+            "channel-a",
+        ]
+        assert not bridge.openLibraryBreadcrumb(str(tmp_path.parent))
+        assert bridge.openLibraryBreadcrumb(str(tmp_path))
+        assert bridge.libraryFolders["path"] == str(tmp_path)
     finally:
         bridge.close()
 
@@ -672,6 +724,7 @@ def test_folder_issues_are_distinct_from_full_forge_run_deck(tmp_path, monkeypat
     app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [saved(tmp_path, "Completed", "MP4")]
+    (tmp_path / "Completed.mp4").write_bytes(b"saved")
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     bridge._window = window
@@ -685,19 +738,213 @@ def test_folder_issues_are_distinct_from_full_forge_run_deck(tmp_path, monkeypat
         assert bridge.libraryFolders["count"] == 0
         assert (
             window.findChild(QObject, "libraryFolderLocationHeading").property("text")
-            == "Issues"
+            == "Issues & Recovery"
         )
-        assert "Failed, stopped" in window.findChild(
+        assert "Missing saved files" in window.findChild(
             QObject, "libraryFolderActivityExplanation"
         ).property("text")
         assert (
             window.findChild(QObject, "libraryFolderEmptyLabel").property("text")
-            == "No failed, stopped, or skipped runs without an export."
+            == "Nothing needs recovery."
         )
     finally:
         window.close()
         engine.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_missing_saved_media_scans_on_entry_and_refreshes_one_item(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    original = _job(tmp_path)
+    original.output_dir.mkdir()
+    first = _missing_record(original)
+    second = {
+        **first,
+        "id": "second",
+        "title": "Second missing",
+        "vodforge_output_path": str(original.output_dir / "Second missing.mp3"),
+    }
+    bridge._runtime.history = [first, second]
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        deadline = time.monotonic() + 2
+        while (
+            bridge.libraryFolders["checkingAvailability"]
+            and time.monotonic() < deadline
+        ):
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        issues = bridge.libraryFolders
+        assert not issues["checkingAvailability"]
+        assert {row["title"] for row in issues["components"]} == {
+            "Missing media",
+            "Second missing",
+        }
+        assert all(row["kind"] == "missing" for row in issues["components"])
+        first_issue = next(
+            row for row in issues["components"] if row["title"] == "Missing media"
+        )
+        assert bridge.selectLibraryFolderComponent(first_issue["key"])
+        assert bridge.libraryFolderInspector["canRedownload"]
+        assert bridge.libraryFolderInspector["settings"]["source"] == original.url
+        Path(first["vodforge_output_path"]).write_bytes(b"restored")
+        bridge._queue_availability_scan([dict(first)], full=False)
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["count"] != 1 and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        assert [row["title"] for row in bridge.libraryFolders["components"]] == [
+            "Second missing"
+        ]
+        assert bridge.libraryFolderInspector.get("missing") is not True
+    finally:
+        bridge.close()
+
+
+def test_missing_file_retry_stays_in_issues_until_saved_file_is_present(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    original = _job(tmp_path)
+    original.output_dir.mkdir()
+    row = _missing_record(original)
+    bridge._runtime.history = [row]
+    bridge._runtime._make_worker = lambda job: setattr(
+        bridge._runtime, "active_job", job
+    )
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        deadline = time.monotonic() + 2
+        while (
+            bridge.libraryFolders["checkingAvailability"]
+            and time.monotonic() < deadline
+        ):
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        issue = bridge.libraryFolders["components"][0]
+        assert bridge.selectLibraryFolderComponent(issue["key"])
+        assert bridge.downloadSelectedIssue()
+        active = bridge._runtime.active_job
+        assert active is not None and active.run_id != original.run_id
+        assert active.recovery_reason == "missing_media"
+        assert bridge.selection == "Library"
+        assert bridge.libraryFolderInspector["status"] == "Preparing"
+        bridge._runtime.events.put(("status", "Downloading media — 2.3 MB/s"))
+        bridge._pump()
+        assert bridge.libraryFolderInspector["status"] == "Downloading"
+        assert bridge.libraryFolders["count"] == 1
+        assert (
+            sum(
+                path is not None
+                for path in bridge._folder_browser._all_directories.values()
+            )
+            == 1
+        )
+        bridge._runtime.events.put(("error", "Test failure"))
+        bridge._pump()
+        assert bridge.libraryFolders["count"] == 1
+        assert bridge.libraryFolderInspector["status"] == "Failed"
+        assert bridge.downloadSelectedIssue()
+        Path(row["vodforge_output_path"]).write_bytes(b"recovered")
+        bridge._runtime.events.put(("done", "Complete"))
+        bridge._pump()
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["count"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        assert bridge.libraryFolders["count"] == 0
+        assert bridge.selection == "Library"
+    finally:
+        bridge.close()
+
+
+def test_missing_legacy_file_can_choose_settings_in_issues(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    original = _job(tmp_path)
+    original.output_dir.mkdir()
+    row = _missing_record(original)
+    row.pop("vodforge_retry_job")
+    bridge._runtime.history = [row]
+    bridge._runtime._make_worker = lambda job: setattr(
+        bridge._runtime, "active_job", job
+    )
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        deadline = time.monotonic() + 2
+        while (
+            bridge.libraryFolders["checkingAvailability"]
+            and time.monotonic() < deadline
+        ):
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        issue = bridge.libraryFolders["components"][0]
+        assert bridge.selectLibraryFolderComponent(issue["key"])
+        settings = bridge.libraryFolderInspector["settings"]
+        assert settings["source_editable"]
+        assert not bridge.downloadSelectedIssue()
+        bridge.chooseIssueOutputUrl(QUrl.fromLocalFile(str(original.output_dir)))
+        bridge.setIssueRetrySetting("export_mode", ExportMode.EVERYDAY.value)
+        bridge.setIssueRetrySetting("quality", "1080p Full HD")
+        assert bridge.downloadSelectedIssue()
+        assert bridge._runtime.active_job.recovery_reason == "missing_media"
+        assert bridge._runtime.active_job.single_video_only
+        assert bridge.selection == "Library"
+        assert bridge.libraryFolders["count"] == 1
+    finally:
+        bridge.close()
+
+
+def test_unavailable_saved_location_is_not_reported_as_a_missing_file(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    monkeypatch.setattr(qt_main, "history_media_file_state", lambda _row: "unavailable")
+    app = qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [saved(tmp_path, "Offline", "MP4")]
+    try:
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("issues")
+        deadline = time.monotonic() + 2
+        while (
+            bridge.libraryFolders["checkingAvailability"]
+            and time.monotonic() < deadline
+        ):
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        assert bridge.libraryFolders["count"] == 0
+        assert not bridge.libraryFolders["availabilityError"]
+    finally:
         bridge.close()
 
 
@@ -4267,8 +4514,8 @@ def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypat
             assert abs(columns.mapToItem(None, 0, 0).y() - browser_y - 12) <= 1
             assert browse.mapToItem(None, 0, 0).y() >= browser_y + 12
             assert top.mapToItem(None, 0, 0).y() >= browser_y + 12
-            if width >= 920 and height >= 740:
-                assert inspector.mapToItem(None, 0, 0).y() >= browser_y + 12
+            assert browser.property("showInspector") == (width >= 920 and height >= 740)
+            assert inspector.property("visible") == (width >= 920 and height >= 740)
     finally:
         window.close()
         engine.deleteLater()
@@ -4276,35 +4523,108 @@ def test_qt_library_folders_columns_clear_the_header_divider(tmp_path, monkeypat
         bridge.close()
 
 
-def test_qt_folder_recent_export_card_fits_its_content(tmp_path, monkeypatch):
+def test_qt_my_files_starts_at_saved_path_without_recent_export_cards(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
     app = qt_app()
     bridge = qt_main.Bridge(None)
-    bridge._runtime.history = [saved(tmp_path, "Recent export", "MP4")]
+    record = saved(tmp_path, "Recent export", "MP4")
+    Path(record["vodforge_output_path"]).write_bytes(b"video")
+    bridge._runtime.history = [record]
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     try:
         window.resize(1100, 740)
         bridge.select("Library")
         bridge.navigateLibrary("folders")
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["checkingFolder"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
         for _ in range(3):
             app.processEvents()
         assert not window.grabWindow().isNull()
-        highlight = bridge.libraryFolders["highlights"][0]
+        folders = bridge.libraryFolders
+        assert folders["path"] == str(tmp_path)
+        assert sum(item["kind"] == "media" for item in folders["components"]) == 1
         listing = window.findChild(QObject, "libraryFolderList")
         pending = list(listing.childItems())
-        card = None
         while pending:
             item = pending.pop()
-            if item.objectName() == "libraryRecentExportCard_" + highlight["key"]:
-                card = item
-                break
+            assert not item.objectName().startswith("libraryRecentExportCard_")
             pending.extend(item.childItems())
-        assert card is not None
-        assert 76 <= card.height() < 100
+        assert window.findChild(QObject, "libraryFolderOpenLocationButton").property(
+            "visible"
+        )
+        assert window.findChild(QObject, "libraryFolderInspector").property("visible")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_qt_my_files_selects_video_thumbnail_and_metadata(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "home"))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    output = tmp_path / "Downloads" / "Artist"
+    output.mkdir(parents=True)
+    record = saved(output, "Song", "MP4")
+    Path(record["vodforge_output_path"]).write_bytes(b"video")
+    (output / "thumbnail.jpg").write_bytes(b"image")
+    (output / "metadata.json").write_text("{}", encoding="utf-8")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.resize(1100, 740)
+        bridge.select("Library")
+        bridge.navigateLibraryFolders("folders")
+        deadline = time.monotonic() + 2
+        while bridge.libraryFolders["checkingFolder"] and time.monotonic() < deadline:
+            bridge._pump()
+            app.processEvents()
+            QTest.qWait(10)
+        components = bridge.libraryFolders["components"]
+        assert not bridge.libraryFolders["checkingFolder"]
+        assert {row["title"] for row in components} >= {
+            "Song",
+            "thumbnail.jpg",
+            "metadata.json",
+        }
+        assert not any(row["title"] == "Song.mp4" for row in components)
+
+        video = next(row for row in components if row["kind"] == "media")
+        assert bridge.selectLibraryFolderComponent(video["key"])
+        assert bridge.libraryFolderInspector["owner"]
+        assert window.findChild(QObject, "libraryFolderOpenDetails").property("visible")
+
+        thumbnail = next(row for row in components if row["title"] == "thumbnail.jpg")
+        assert bridge.selectLibraryFolderComponent(thumbnail["key"])
+        assert bridge.libraryFolderInspector["file"]
+        assert bridge.libraryFolderInspector["artwork"].startswith("file:")
+        assert window.findChild(QObject, "libraryFolderFileOpenLocation").property(
+            "visible"
+        )
+
+        metadata = next(row for row in components if row["title"] == "metadata.json")
+        assert bridge.selectLibraryFolderComponent(metadata["key"])
+        inspector = bridge.libraryFolderInspector
+        assert inspector["isMetadata"]
+        assert bridge.saveSelectedFolderMetadata(
+            inspector["associatedOwner"], "Edited description", "sea, music"
+        )
+        assert bridge.libraryFolderInspector["description"] == "Edited description"
+        assert bridge.libraryFolderInspector["tags"] == ["sea", "music"]
     finally:
         window.close()
         engine.deleteLater()

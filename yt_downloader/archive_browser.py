@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -21,7 +21,7 @@ ISSUE_STATUSES = frozenset({"Failed", "Stopped", "Skipped"})
 @dataclass(frozen=True, slots=True)
 class ArchiveComponent:
     key: str
-    kind: Literal["folder", "media", "activity"]
+    kind: Literal["folder", "media", "activity", "missing", "file"]
     title: str
     detail: str
     indices: tuple[int, ...]
@@ -114,10 +114,25 @@ class ArchiveBrowserModel:
         self.mode_eligible_count = 0
         self.locations: tuple[ArchiveComponent, ...] = ()
         self.components: tuple[ArchiveComponent, ...] = ()
-        self.saved_media: tuple[ArchiveComponent, ...] = ()
+        self.missing_owners: frozenset[str] = frozenset()
+        self.folder_entries: tuple[ArchiveComponent, ...] = ()
+        self.folder_entries_path: ArchivePath | None = None
+
+    def set_folder_entries(
+        self, path: ArchivePath, entries: Sequence[ArchiveComponent]
+    ) -> None:
+        if self.mode != "folders" or self.path != path:
+            return
+        self.folder_entries_path = path
+        self.folder_entries = tuple(entries)
+        self.reconcile()
 
     def replace(
-        self, records: Sequence[Mapping[str, Any]], visible: Sequence[int]
+        self,
+        records: Sequence[Mapping[str, Any]],
+        visible: Sequence[int],
+        *,
+        missing_owners: frozenset[str] = frozenset(),
     ) -> None:
         incoming = tuple(records)
         if incoming != self.records:
@@ -127,37 +142,54 @@ class ArchiveBrowserModel:
             }
         self.records = incoming
         self.visible = tuple(visible)
+        self.missing_owners = missing_owners
         self._directories = {
             index: directory
             for index in self.visible
             if (directory := self._all_directories.get(index)) is not None
         }
         self.locations = self._locations()
-        groups: dict[tuple[Any, ...], list[int]] = {}
-        for index, directory in self._directories.items():
-            record = self.records[index]
-            key = (
-                *_source_key(record, index),
-                directory.storage[1].key,
-                str(_media_folder(record, directory)),
-            )
-            groups.setdefault(key, []).append(index)
-        self.saved_media = tuple(
-            ArchiveComponent(
-                archive_row_owner(self.records[indices[0]]),
-                "media",
-                str(
-                    self.records[indices[0]].get("title")
-                    or self.records[indices[0]].get("id")
-                    or "Untitled media"
-                ),
-                metadata_output_profile(dict(self.records[indices[0]])),
-                tuple(indices),
-                self._directories[indices[0]],
-            )
-            for indices in list(groups.values())[:8]
-        )
+        if self.mode == "folders" and self.path is None and len(self.locations) == 1:
+            self.path = self.locations[0].path
         self.reconcile()
+
+    @property
+    def parent_path(self) -> ArchivePath | None:
+        if self.mode != "folders" or self.path is None:
+            return None
+        location = next(
+            (
+                item.path
+                for item in self.locations
+                if item.path is not None
+                and self.path.relative_to(item.path) is not None
+            ),
+            None,
+        )
+        return (
+            self.path.parent if location is not None and self.path != location else None
+        )
+
+    @property
+    def breadcrumbs(self) -> tuple[ArchivePath, ...]:
+        if self.mode != "folders" or self.path is None:
+            return ()
+        location = next(
+            (
+                item.path
+                for item in self.locations
+                if item.path is not None
+                and self.path.relative_to(item.path) is not None
+            ),
+            None,
+        )
+        if location is None:
+            return ()
+        relative = self.path.relative_to(location) or ()
+        return (
+            location,
+            *(location.join(relative[:index]) for index in range(1, len(relative) + 1)),
+        )
 
     def _locations(self) -> tuple[ArchiveComponent, ...]:
         groups: dict[tuple[str, ...], list[int]] = {}
@@ -182,8 +214,6 @@ class ArchiveBrowserModel:
                 path.relative_to(root) is not None for path in paths
             ):
                 shared = root
-            elif len(indices) == 1:
-                shared = shared.parent
             kind, storage = shared.storage
             label = (
                 shared.name
@@ -214,7 +244,15 @@ class ArchiveBrowserModel:
         *,
         mode: Literal["folders", "all", "activity", "issues"] = "folders",
     ) -> None:
-        self.path, self.mode, self.page = path, mode, 0
+        self.path = (
+            self.locations[0].path
+            if mode == "folders" and path is None and len(self.locations) == 1
+            else path
+        )
+        if self.path != self.folder_entries_path or mode != "folders":
+            self.folder_entries = ()
+            self.folder_entries_path = None
+        self.mode, self.page = mode, 0
         self.reconcile()
 
     def folder_relink_indices(self) -> tuple[int, ...]:
@@ -232,10 +270,14 @@ class ArchiveBrowserModel:
         # All canonical records in this mode/scope, before search/category/type
         # filters. These are metadata-only paths; no filesystem work is added.
         self.mode_eligible_count = (
-            len(self.records)
+            sum(path is not None for path in self._all_directories.values())
             if self.mode == "all"
             else sum(
                 _is_issue_without_export(record, self._all_directories[index])
+                or (
+                    self._all_directories[index] is not None
+                    and history_archive_owner(dict(record)) in self.missing_owners
+                )
                 for index, record in enumerate(self.records)
             )
             if self.mode == "issues"
@@ -261,17 +303,22 @@ class ArchiveBrowserModel:
             for index in self.visible:
                 record = self.records[index]
                 directory = self._directories.get(index)
-                if self.mode == "issues" and not _is_issue_without_export(
-                    record, directory
+                missing = (
+                    directory is not None
+                    and history_archive_owner(dict(record)) in self.missing_owners
+                )
+                if self.mode == "issues" and not (
+                    _is_issue_without_export(record, directory) or missing
                 ):
                     continue
                 if self.mode == "activity" and directory is not None:
                     continue
+                if self.mode == "all" and directory is None:
+                    continue
                 if self.mode == "folders":
                     if directory is None or self.path is None:
                         continue
-                    media_folder = _media_folder(record, directory)
-                    relative = media_folder.relative_to(self.path)
+                    relative = directory.relative_to(self.path)
                     if relative is None:
                         continue
                     if relative:
@@ -279,11 +326,15 @@ class ArchiveBrowserModel:
                         folders.setdefault(child.key, (child, []))[1].append(index)
                         continue
                 key = (
-                    *_source_key(record, index),
-                    self._directories[index].storage[1].key if directory else (),
-                    str(_media_folder(record, directory))
-                    if directory
-                    else archive_row_owner(record),
+                    ("missing", history_archive_owner(dict(record)))
+                    if self.mode == "issues" and missing
+                    else (
+                        *_source_key(record, index),
+                        self._directories[index].storage[1].key if directory else (),
+                        str(_media_folder(record, directory))
+                        if directory
+                        else archive_row_owner(record),
+                    )
                 )
                 media.setdefault(key, []).append(index)
             result = [
@@ -299,8 +350,14 @@ class ArchiveBrowserModel:
             ]
             for indices in media.values():
                 first = self.records[indices[0]]
-                kind: Literal["media", "activity"] = (
-                    "media"
+                first_missing = (
+                    self._directories.get(indices[0]) is not None
+                    and history_archive_owner(dict(first)) in self.missing_owners
+                )
+                kind: Literal["media", "activity", "missing"] = (
+                    "missing"
+                    if self.mode == "issues" and first_missing
+                    else "media"
                     if self._directories.get(indices[0]) is not None
                     else "activity"
                 )
@@ -329,11 +386,15 @@ class ArchiveBrowserModel:
                         )
                     )
                     if kind == "media"
+                    else "Saved file missing"
+                    if kind == "missing"
                     else status
                 )
                 result.append(
                     ArchiveComponent(
-                        archive_row_owner(first),
+                        history_archive_owner(dict(first))
+                        if kind == "missing"
+                        else archive_row_owner(first),
                         kind,
                         str(first.get("title") or first.get("id") or "Untitled media"),
                         detail,
@@ -344,22 +405,79 @@ class ArchiveBrowserModel:
             # Run ordering belongs to the shared projection (active, queued,
             # terminal, preview). Folder/media labels may be alphabetized.
             positions = {index: order for order, index in enumerate(self.visible)}
-            self.components = tuple(
+            ordered = tuple(
                 sorted(
                     result,
                     key=lambda item: (
                         0
-                        if item.kind == "activity"
+                        if item.kind in {"activity", "missing"}
                         else 1
                         if item.kind == "folder"
                         else 2,
                         positions[item.indices[0]]
-                        if item.kind == "activity"
+                        if item.kind in {"activity", "missing"}
                         else item.title.casefold(),
                         item.key,
                     ),
                 )
             )
+            if self.mode == "folders" and self.folder_entries_path == self.path:
+                present = {
+                    item.path.key
+                    for item in self.folder_entries
+                    if item.path is not None
+                }
+                physical = []
+                for item in ordered:
+                    if item.kind == "folder":
+                        if item.path is not None and item.path.key in present:
+                            physical.append(item)
+                    elif item.kind == "media":
+                        indices = []
+                        for index in item.indices:
+                            try:
+                                output = ArchivePath.parse(
+                                    str(
+                                        self.records[index].get("vodforge_output_path")
+                                        or ""
+                                    )
+                                )
+                            except ValueError:
+                                continue
+                            if output.key in present:
+                                indices.append(index)
+                        if indices:
+                            physical.append(replace(item, indices=tuple(indices)))
+                ordered = tuple(physical)
+                folder_paths = {
+                    item.path.key
+                    for item in ordered
+                    if item.kind == "folder" and item.path is not None
+                }
+                media_paths = set()
+                for item in ordered:
+                    if item.kind != "media":
+                        continue
+                    for index in item.indices:
+                        try:
+                            media_paths.add(
+                                ArchivePath.parse(
+                                    str(
+                                        self.records[index].get("vodforge_output_path")
+                                        or ""
+                                    )
+                                ).key
+                            )
+                        except ValueError:
+                            pass
+                ordered += tuple(
+                    item
+                    for item in self.folder_entries
+                    if item.path is not None
+                    and item.path.key
+                    not in (folder_paths if item.kind == "folder" else media_paths)
+                )
+            self.components = ordered
         self.page = min(
             max(0, self.page), max(0, (len(self.components) - 1) // PAGE_SIZE)
         )

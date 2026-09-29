@@ -158,6 +158,10 @@ Window {
             window.pendingRelinkFolderPath = path
             relinkFolderDialog.open()
         }
+        function onFileRelinkRequested(owner) {
+            window.pendingRelinkOwner = owner
+            relinkFileDialog.open()
+        }
         function onPlaybackRequested(generation) {
             // Retire the old provider object before a queued item opens. Any
             // late signal carries the old generation and cannot advance it.

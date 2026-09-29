@@ -37,7 +37,7 @@ Column {
     Text {
         id: eyebrow
         objectName: "libraryFolderInspectorHeading"
-        text: "SELECTED ITEM"
+        text: inspector.item.folder ? "CURRENT FOLDER" : "SELECTED ITEM"
         color: theme.muted
         font.pixelSize: 12
         font.bold: true
@@ -86,6 +86,110 @@ Column {
             }
         }
     }
+    StoneField {
+        visible: !!inspector.item.folder
+        width: parent.width
+        height: folderContents.implicitHeight + 24
+        Column {
+            id: folderContents
+            x: 12; y: 12; width: parent.width - 24; spacing: 10
+            Text {
+                text: inspector.item.count + (inspector.item.count === 1 ? " item" : " items") + " in this folder"
+                color: theme.text; font.pixelSize: 13
+                width: parent.width; wrapMode: Text.WordWrap
+            }
+            Text {
+                text: "Choose a folder to browse it, or select a file to see its details."
+                color: theme.muted; font.pixelSize: 12
+                width: parent.width; wrapMode: Text.WordWrap
+            }
+        }
+    }
+    ScrollView {
+        id: filePanel
+        objectName: "libraryFolderFileInspector"
+        visible: !!inspector.item.file
+        width: parent.width
+        height: Math.max(0, inspector.height - eyebrow.height - overview.height - inspector.spacing * 3)
+        contentHeight: fileContents.implicitHeight + 24
+        clip: true
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        background: StoneField {}
+        Column {
+            id: fileContents
+            x: 12; y: 12; width: filePanel.availableWidth - 24; spacing: 12
+            Text {
+                text: inspector.item.type || "File"
+                color: theme.accent; font.pixelSize: 14; font.bold: true
+            }
+            Text {
+                text: inspector.item.location || ""
+                color: theme.muted; font.pixelSize: 12
+                width: parent.width; wrapMode: Text.WrapAnywhere
+            }
+            StoneButton {
+                objectName: "libraryFolderFileOpenLocation"
+                label: "Open this location"
+                width: parent.width; height: 40
+                onActivated: inspector.appBridge.openSelectedFolderFileLocation()
+            }
+            Text {
+                visible: !!inspector.item.isMetadata
+                text: "LIBRARY TAGS & DESCRIPTION"
+                color: theme.accent; font.pixelSize: 12; font.bold: true
+            }
+            Text {
+                visible: !!inspector.item.isMetadata
+                text: "These edits are saved with this Library item."
+                color: theme.muted; font.pixelSize: 12
+                width: parent.width; wrapMode: Text.WordWrap
+            }
+            Text {
+                visible: !!inspector.item.isMetadata
+                text: "Tags"
+                color: theme.muted; font.pixelSize: 12
+            }
+            StoneField {
+                visible: !!inspector.item.isMetadata
+                width: parent.width; height: 42
+                TextField {
+                    id: fileTags
+                    objectName: "libraryFolderFileTags"
+                    anchors.fill: parent; anchors.margins: 8
+                    text: (inspector.item.tags || []).join(", ")
+                    placeholderText: "Separate tags with commas"
+                    color: theme.text; placeholderTextColor: theme.muted
+                    background: Item {}
+                }
+            }
+            Text {
+                visible: !!inspector.item.isMetadata
+                text: "Description"
+                color: theme.muted; font.pixelSize: 12
+            }
+            StoneField {
+                visible: !!inspector.item.isMetadata
+                width: parent.width; height: 140
+                TextArea {
+                    id: fileDescription
+                    objectName: "libraryFolderFileDescription"
+                    anchors.fill: parent; anchors.margins: 8
+                    text: inspector.item.description || ""
+                    wrapMode: TextEdit.Wrap
+                    color: theme.text
+                    background: Item {}
+                }
+            }
+            StoneButton {
+                objectName: "libraryFolderFileSaveMetadata"
+                visible: !!inspector.item.isMetadata
+                label: "Save tags and description"
+                width: parent.width; height: 40
+                onActivated: inspector.appBridge.saveSelectedFolderMetadata(
+                    inspector.item.associatedOwner, fileDescription.text, fileTags.text)
+            }
+        }
+    }
     ScrollView {
         id: issuePanel
         objectName: "libraryIssueInspector"
@@ -105,7 +209,7 @@ Column {
                 width: parent.width
                 spacing: 10
                 Text {
-                    text: "RUN STATUS"
+                    text: inspector.item.missing ? "FILE STATUS" : "RUN STATUS"
                     color: theme.muted
                     font.pixelSize: 12
                     font.bold: true
@@ -118,9 +222,31 @@ Column {
                     font.bold: true
                 }
             }
-            Text { text: "SOURCE VIDEO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             Text {
-                visible: !inspector.issueSettings.source_editable
+                visible: !!inspector.item.missing
+                text: inspector.issueSettings.source_editable
+                      ? "The saved file was not found. Choose its source and download settings, or find the moved file."
+                      : "The saved file was not found at its recorded location. Find the moved file or download it again."
+                color: theme.muted; font.pixelSize: 12
+                width: parent.width; wrapMode: Text.WordWrap
+            }
+            Text {
+                visible: !!inspector.item.missing
+                text: inspector.item.location || ""
+                color: theme.muted; font.pixelSize: 12
+                width: parent.width; wrapMode: Text.WrapAnywhere
+            }
+            StoneButton {
+                objectName: "libraryIssueFindMovedFile"
+                visible: !!inspector.item.missing
+                width: parent.width; height: 40
+                label: "Find moved file…"
+                onActivated: inspector.appBridge.requestMissingFileRelink()
+            }
+            Text { visible: !inspector.item.missing || inspector.item.canRedownload; text: "SOURCE VIDEO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            Text {
+                visible: (!inspector.item.missing || inspector.item.canRedownload)
+                         && !inspector.issueSettings.source_editable
                 text: inspector.item.source || "Source link unavailable"
                 color: theme.muted
                 width: parent.width
@@ -128,7 +254,8 @@ Column {
                 elide: Text.ElideMiddle
             }
             StoneField {
-                visible: !!inspector.issueSettings.source_editable
+                visible: (!inspector.item.missing || inspector.item.canRedownload)
+                         && !!inspector.issueSettings.source_editable
                 width: parent.width; height: 40
                 TextField {
                     anchors.fill: parent; anchors.margins: 9
@@ -141,27 +268,32 @@ Column {
                 }
             }
             Rectangle {
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 1
                 color: theme.muted; opacity: 0.3
             }
             Text {
                 objectName: "libraryIssueRetrySettingsHeading"
                 text: "RETRY SETTINGS"
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 color: theme.accent
                 font.pixelSize: 12
                 font.bold: true
             }
-            Text { text: "Save to"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            Text { text: "Save to"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             StoneButton {
                 objectName: "libraryIssueOutputFolder"
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 40
                 label: inspector.issueSettings.output_dir || "Choose output folder…"
                 accessibilityLabel: "Choose output folder for this retry"
                 onActivated: issueFolderDialog.open()
             }
-            Text { text: "Output"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            Text { text: "Output"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
                 objectName: "libraryIssueFormatSelector"
+                visible: !inspector.item.missing || inspector.item.canRedownload
+                enabled: !inspector.item.missing || !!inspector.issueSettings.source_editable
                 buttonObjectName: "libraryIssueFormat"
                 width: parent.width
                 currentValue: inspector.issueSettings.output_type || ""
@@ -173,9 +305,10 @@ Column {
                 ]
                 onChosen: value => inspector.appBridge.setIssueRetrySetting("output_type", value)
             }
-            Text { text: "Output mode"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            Text { text: "Output mode"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
                 objectName: "libraryIssueModeSelector"
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 buttonObjectName: "libraryIssueMode"
                 width: parent.width
                 currentValue: inspector.issueSettings.export_mode || ""
@@ -189,7 +322,8 @@ Column {
             }
             StoneField {
                 id: issueManualSettings
-                visible: inspector.issueSettings.output_type === "MP4"
+                visible: (!inspector.item.missing || inspector.item.canRedownload)
+                         && inspector.issueSettings.output_type === "MP4"
                          && inspector.issueSettings.export_mode === "Manual Override"
                 width: parent.width
                 height: manualControls.implicitHeight + 24
@@ -210,9 +344,10 @@ Column {
                     colors: theme
                 }
             }
-            Text { text: "Quality ceiling"; color: theme.muted; font.pixelSize: 12; font.bold: true }
+            Text { text: "Quality ceiling"; visible: !inspector.item.missing || inspector.item.canRedownload; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
                 objectName: "libraryIssueQualitySelector"
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 buttonObjectName: "libraryIssueQuality"
                 width: parent.width
                 currentValue: inspector.issueSettings.quality || ""
@@ -226,6 +361,7 @@ Column {
             }
             Column {
                 id: issueOptionsSection
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width
                 property bool expanded: false
                 spacing: 4
@@ -255,8 +391,9 @@ Column {
                                 required property var modelData
                                 width: parent.width; height: 36
                                 label: (inspector.issueSettings[modelData.key] ? "✓  " : "    ") + modelData.label
-                                enabled: modelData.key !== "use_nvenc" || inspector.appBridge.nvencAvailable
-                                         || !!inspector.issueSettings.use_nvenc
+                                enabled: (!inspector.item.missing || modelData.key !== "single_video_only")
+                                         && (modelData.key !== "use_nvenc" || inspector.appBridge.nvencAvailable
+                                             || !!inspector.issueSettings.use_nvenc)
                                 onActivated: inspector.appBridge.setIssueRetryFlag(modelData.key, !inspector.issueSettings[modelData.key])
                             }
                         }
@@ -264,24 +401,30 @@ Column {
                 }
             }
             Rectangle {
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 1
                 color: theme.muted; opacity: 0.3
             }
             Text {
                 text: "This retry uses the saved MP3 and YouTube access settings where available."
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; wrapMode: Text.WordWrap
                 color: theme.muted; font.pixelSize: 12
             }
             StoneButton {
                 objectName: "libraryIssueDownload"
+                visible: !inspector.item.missing || inspector.item.canRedownload
                 width: parent.width; height: 42
                 label: "Download"
                 emphasized: true
-                enabled: ["Failed", "Stopped", "Skipped"].indexOf(inspector.item.status) >= 0
+                enabled: inspector.item.missing ?
+                         inspector.item.canRedownload && ["Queued", "Preparing", "Downloading", "Transcoding"].indexOf(inspector.item.status) < 0 :
+                         ["Failed", "Stopped", "Skipped"].indexOf(inspector.item.status) >= 0
                 onActivated: inspector.appBridge.downloadSelectedIssue()
             }
             Text {
-                text: inspector.appBridge.status || ""
+                text: inspector.appBridge.status !== "Ready" ? inspector.appBridge.status : ""
+                visible: text.length > 0
                 color: theme.muted; font.pixelSize: 12
                 width: parent.width; wrapMode: Text.WordWrap
             }
