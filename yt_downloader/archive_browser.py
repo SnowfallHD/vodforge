@@ -470,13 +470,25 @@ class ArchiveBrowserModel:
                             )
                         except ValueError:
                             pass
-                ordered += tuple(
-                    item
-                    for item in self.folder_entries
-                    if item.path is not None
-                    and item.path.key
-                    not in (folder_paths if item.kind == "folder" else media_paths)
+                # Above a saved media folder, My Files is a route through known
+                # locations, not a browser for the user's entire home directory.
+                # Once there, include real sidecars and child folders as well.
+                in_media_folder = any(
+                    (directory := self._directories.get(index)) is not None
+                    and self.path.relative_to(
+                        _media_folder(self.records[index], directory)
+                    )
+                    is not None
+                    for index in self.visible
                 )
+                if in_media_folder:
+                    ordered += tuple(
+                        item
+                        for item in self.folder_entries
+                        if item.path is not None
+                        and item.path.key
+                        not in (folder_paths if item.kind == "folder" else media_paths)
+                    )
             self.components = ordered
         self.page = min(
             max(0, self.page), max(0, (len(self.components) - 1) // PAGE_SIZE)

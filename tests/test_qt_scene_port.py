@@ -4566,7 +4566,15 @@ def test_qt_my_files_starts_at_saved_path_without_recent_export_cards(
         assert window.findChild(QObject, "libraryFolderOpenLocationButton").property(
             "visible"
         )
-        assert window.findChild(QObject, "libraryFolderInspector").property("visible")
+        inspector = window.findChild(QObject, "libraryFolderInspector")
+        assert inspector.property("visible")
+        open_button = window.findChild(QObject, "libraryFolderOpenLocationButton")
+        assert (
+            open_button.mapToItem(None, 0, 0).x() >= inspector.mapToItem(None, 0, 0).x()
+        )
+        fallback = window.findChild(QObject, "libraryFolderOverviewFallbackIcon")
+        assert fallback.property("visible")
+        assert fallback.property("name") == "folder"
     finally:
         window.close()
         engine.deleteLater()
@@ -4612,11 +4620,16 @@ def test_qt_my_files_selects_video_thumbnail_and_metadata(tmp_path, monkeypatch)
         assert bridge.selectLibraryFolderComponent(video["key"])
         assert bridge.libraryFolderInspector["owner"]
         assert window.findChild(QObject, "libraryFolderOpenDetails").property("visible")
+        assert window.findChild(QObject, "libraryFolderOpenLocationButton").property(
+            "visible"
+        )
 
         thumbnail = next(row for row in components if row["title"] == "thumbnail.jpg")
         assert bridge.selectLibraryFolderComponent(thumbnail["key"])
         assert bridge.libraryFolderInspector["file"]
         assert bridge.libraryFolderInspector["artwork"].startswith("file:")
+        fallback = window.findChild(QObject, "libraryFolderOverviewFallbackIcon")
+        assert not fallback.property("visible")
         assert window.findChild(QObject, "libraryFolderFileOpenLocation").property(
             "visible"
         )
@@ -4625,6 +4638,8 @@ def test_qt_my_files_selects_video_thumbnail_and_metadata(tmp_path, monkeypatch)
         assert bridge.selectLibraryFolderComponent(metadata["key"])
         inspector = bridge.libraryFolderInspector
         assert inspector["isMetadata"]
+        assert fallback.property("visible")
+        assert fallback.property("name") == "file"
         assert bridge.saveSelectedFolderMetadata(
             inspector["associatedOwner"], "Edited description", "sea, music"
         )

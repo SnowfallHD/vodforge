@@ -147,19 +147,6 @@ Item {
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
-            RowLayout {
-                visible: browser.model.mode === "folders" && !!browser.model.path
-                Layout.fillWidth: true
-                spacing: 8
-                StoneButton {
-                    objectName: "libraryFolderOpenLocationButton"
-                    label: "Open this folder"
-                    size: "inline"
-                    Layout.preferredWidth: 132
-                    onActivated: browser.appBridge.openLibraryCurrentFolder()
-                }
-                Item { Layout.fillWidth: true }
-            }
             ScrollView {
                 id: viewport
                 objectName: "libraryFolderViewport"

@@ -268,3 +268,71 @@ def test_my_files_uses_physical_entries_and_hides_missing_saved_file():
         ("present", "media"),
         ("thumbnail.jpg", "file"),
     ]
+
+
+def test_my_files_only_exposes_known_routes_until_a_media_folder():
+    rows = [
+        saved("/archive/Artist/song.mp4", video="song"),
+        saved("/archive/Other/clip.mp4", video="clip"),
+    ]
+    model = ArchiveBrowserModel()
+    model.replace(rows, range(len(rows)))
+    root = ArchivePath.parse("/archive")
+    model.navigate(root)
+    model.set_folder_entries(
+        root,
+        [
+            ArchiveComponent(
+                str(root.join((name,))), "folder", name, "", (), root.join((name,))
+            )
+            for name in ("Artist", "Other", "Unrelated")
+        ]
+        + [
+            ArchiveComponent(
+                "/archive/notes.txt",
+                "file",
+                "notes.txt",
+                "",
+                (),
+                ArchivePath.parse("/archive/notes.txt"),
+            )
+        ],
+    )
+    assert {item.title for item in model.components} == {"Artist", "Other"}
+
+    artist = ArchivePath.parse("/archive/Artist")
+    model.navigate(artist)
+    model.set_folder_entries(
+        artist,
+        [
+            ArchiveComponent(
+                "/archive/Artist/song.mp4",
+                "file",
+                "song.mp4",
+                "",
+                (),
+                ArchivePath.parse("/archive/Artist/song.mp4"),
+            ),
+            ArchiveComponent(
+                "/archive/Artist/metadata.json",
+                "file",
+                "metadata.json",
+                "",
+                (),
+                ArchivePath.parse("/archive/Artist/metadata.json"),
+            ),
+            ArchiveComponent(
+                "/archive/Artist/extras",
+                "folder",
+                "extras",
+                "",
+                (),
+                ArchivePath.parse("/archive/Artist/extras"),
+            ),
+        ],
+    )
+    assert {item.title for item in model.components} == {
+        "song",
+        "metadata.json",
+        "extras",
+    }

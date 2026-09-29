@@ -54,6 +54,13 @@ Column {
                 anchors.fill: parent
                 source: inspector.item.artwork || ""
             }
+            SceneIcon {
+                objectName: "libraryFolderOverviewFallbackIcon"
+                anchors.centerIn: parent
+                width: 34; height: 34
+                name: inspector.item.file ? "file" : "folder"
+                visible: !(inspector.item.artwork || "")
+            }
         }
         Column {
             width: Math.max(130, inspector.width - 136)
@@ -86,6 +93,15 @@ Column {
             }
         }
     }
+    StoneButton {
+        id: openCurrentFolder
+        objectName: "libraryFolderOpenLocationButton"
+        visible: inspector.appBridge.libraryFolders.mode === "folders"
+                 && !!inspector.appBridge.libraryFolders.path
+        label: "Open this folder"
+        width: parent.width; height: 40
+        onActivated: inspector.appBridge.openLibraryCurrentFolder()
+    }
     StoneField {
         visible: !!inspector.item.folder
         width: parent.width
@@ -110,7 +126,8 @@ Column {
         objectName: "libraryFolderFileInspector"
         visible: !!inspector.item.file
         width: parent.width
-        height: Math.max(0, inspector.height - eyebrow.height - overview.height - inspector.spacing * 3)
+        height: Math.max(0, inspector.height - eyebrow.height - overview.height
+                         - openCurrentFolder.height - inspector.spacing * 4)
         contentHeight: fileContents.implicitHeight + 24
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -473,7 +490,9 @@ Column {
         width: parent.width
         height: inspector.section === "Item" ? itemColumn.childrenRect.height + 20 :
             Math.max(360, inspector.targetPanelBottom -
-                (eyebrow.height + overview.height + openDetails.height + tabs.height + inspector.spacing * 4))
+                (eyebrow.height + overview.height + openDetails.height + tabs.height
+                 + (openCurrentFolder.visible ? openCurrentFolder.height + inspector.spacing : 0)
+                 + inspector.spacing * 4))
         Item {
             anchors.fill: parent
             anchors.margins: 10
