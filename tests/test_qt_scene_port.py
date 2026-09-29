@@ -4611,6 +4611,12 @@ def test_qt_my_files_empty_saved_location_links_to_existing_recovery(
         assert bridge.libraryFolders["unavailableCount"] == 1
         assert bridge.libraryFolderInspector["unavailableCount"] == 1
         button = window.findChild(QObject, "libraryFolderReviewMissingButton")
+        deadline = time.monotonic() + 2
+        while button is None and time.monotonic() < deadline:
+            app.processEvents()
+            QTest.qWait(10)
+            button = window.findChild(QObject, "libraryFolderReviewMissingButton")
+        assert button is not None
         assert button.property("visible")
         button.activated.emit()
         assert bridge.libraryFolders["mode"] == "issues"
@@ -4624,6 +4630,12 @@ def test_qt_my_files_empty_saved_location_links_to_existing_recovery(
             QTest.qWait(10)
         assert any(
             item["kind"] == "missing" for item in bridge.libraryFolders["components"]
+        )
+        assert bridge.libraryFolderInspector["issue"]
+        assert bridge.libraryFolderInspector["missing"]
+        assert bridge.libraryFolderInspector["title"] == "Missing song"
+        assert window.findChild(QObject, "libraryIssueFindMovedFile").property(
+            "visible"
         )
     finally:
         window.close()

@@ -124,8 +124,14 @@ Column {
             }
             StoneButton {
                 objectName: "libraryFolderReviewMissingButton"
-                visible: inspector.item.unavailableCount > 0
-                label: "Review in Issues & Recovery"
+                visible: (inspector.item.unavailableItems || []).length > 0
+                label: "Recover: " + ((inspector.item.unavailableItems || [])[0] || {}).title
+                width: parent.width; height: 40
+                onActivated: inspector.appBridge.openFolderMissingIssue(inspector.item.unavailableItems[0].owner)
+            }
+            StoneButton {
+                visible: inspector.item.unavailableCount > 1
+                label: "See all in Issues & Recovery"
                 width: parent.width; height: 40
                 onActivated: inspector.appBridge.navigateLibraryFolders("issues")
             }

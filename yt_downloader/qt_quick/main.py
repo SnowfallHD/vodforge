@@ -487,6 +487,7 @@ class Bridge(QObject):
         self._issue_run_id = ""
         self._missing_issue_owner = ""
         self._missing_retry_run_id = ""
+        self._pending_folder_missing_owner = ""
         self._issue_live_phase = ""
         self._issue_settings: dict[str, Any] = {}
         self._library_detail_origin: tuple[str, str, str] | None = None
@@ -1964,14 +1965,29 @@ class Bridge(QObject):
             and not self._folder_inspector_owner
         ):
             path = self._folder_browser.path
+            unavailable = (
+                self._folder_browser.unavailable_indices
+                if not self._folder_listing_pending and not self._folder_listing_error
+                else ()
+            )
             return {
                 "folder": True,
                 "title": path.name,
                 "location": str(path),
                 "count": len(self._folder_browser.components),
-                "unavailableCount": len(self._folder_browser.unavailable_indices)
-                if not self._folder_listing_pending and not self._folder_listing_error
-                else 0,
+                "unavailableCount": len(unavailable),
+                "unavailableItems": [
+                    {
+                        "owner": history_archive_owner(
+                            dict(self._folder_browser.records[index])
+                        ),
+                        "title": str(
+                            self._folder_browser.records[index].get("title")
+                            or "Saved media"
+                        ),
+                    }
+                    for index in unavailable[:1]
+                ],
             }
         return self._library_detail_projection(
             self._folder_inspector_owner, self._folder_inspector_versions, True
@@ -2985,6 +3001,7 @@ class Bridge(QObject):
     def navigateLibraryFolders(self, mode: str) -> None:
         if mode not in {"folders", "all", "activity", "issues"}:
             return
+        self._pending_folder_missing_owner = ""
         if self._library_scene_route != "folders":
             self._remember_library_route()
         self._reconcile_folder_browser()
@@ -3015,6 +3032,26 @@ class Bridge(QObject):
                 self._availability_work.cancel()
                 self._availability_requests.clear()
                 self.historyChanged.emit()
+
+    @Slot(str, result=bool)
+    def openFolderMissingIssue(self, owner: str) -> bool:
+        model = self._folder_browser
+        if (
+            self._selection != "Library"
+            or self._library_scene_route != "folders"
+            or model.mode != "folders"
+            or self._folder_listing_pending
+            or self._folder_listing_error
+            or owner
+            not in {
+                history_archive_owner(dict(model.records[index]))
+                for index in model.unavailable_indices
+            }
+        ):
+            return False
+        self.navigateLibraryFolders("issues")
+        self._pending_folder_missing_owner = owner
+        return True
 
     def _folder_component(self, key: str) -> Any:
         if self._library_scene_route != "folders":
@@ -5110,6 +5147,7 @@ class Bridge(QObject):
             if self._folder_browser.mode == "issues" and availability.error:
                 self._availability_checked = True
                 self._availability_error = True
+                self._pending_folder_missing_owner = ""
                 self.historyChanged.emit()
             elif self._folder_browser.mode == "issues" and isinstance(
                 availability.value, dict
@@ -5137,6 +5175,21 @@ class Bridge(QObject):
                         if owner == self._missing_issue_owner:
                             self._missing_issue_owner = ""
                             self._folder_inspector_key = ""
+                if (
+                    availability.kind == "availability_full"
+                    and self._pending_folder_missing_owner
+                ):
+                    owner = self._pending_folder_missing_owner
+                    self._pending_folder_missing_owner = ""
+                    if owner in self._missing_files:
+                        self._reconcile_folder_browser()
+                        for position, component in enumerate(
+                            self._folder_browser.components
+                        ):
+                            if component.key == owner:
+                                self._folder_browser.page = position // PAGE_SIZE
+                                break
+                        self.selectLibraryFolderComponent(owner)
                 self.historyChanged.emit()
         self._start_availability_scan()
         cloud_result = self._cloud_work.poll()
