@@ -754,6 +754,7 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         assert mode_option is not None
         mode_option.activated.emit()
         app.processEvents()
+        QTest.qWait(100)
         assert bridge.libraryFolderInspector["settings"]["export_mode"] == (
             "Manual Override"
         )
@@ -763,6 +764,12 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         quality_selector = window.findChild(QObject, "libraryIssueQualitySelector")
         assert manual_controls is not None and manual_controls.property("visible")
         assert quality_selector is not None
+        manual_top = manual_controls.mapToItem(issue_panel, QPointF(0, 0)).y()
+        assert manual_top < issue_panel.height() * 0.55, (
+            issue_panel.property("contentItem").property("contentY"),
+            issue_panel.property("contentItem").property("contentHeight"),
+            manual_controls.y(),
+        )
         assert (
             mode_option.mapToItem(issue_panel, QPointF(0, mode_option.height())).y()
             <= manual_controls.mapToItem(issue_panel, QPointF(0, 0)).y()

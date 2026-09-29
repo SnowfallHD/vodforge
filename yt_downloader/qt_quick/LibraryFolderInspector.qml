@@ -20,6 +20,19 @@ Column {
             inspector.appBridge.setIssueManualValue(key, value)
         }
     }
+    Timer {
+        id: revealManualTimer
+        interval: 50
+        onTriggered: {
+            if (!issueManualSettings.visible)
+                return
+            const viewport = issuePanel.contentItem
+            const manualTop = issueManualSettings.y + issueContent.y
+            const target = manualTop - viewport.height * 0.45
+            viewport.contentY = Math.max(0, Math.min(target,
+                viewport.contentHeight - viewport.height))
+        }
+    }
 
     Text {
         id: eyebrow
@@ -145,9 +158,14 @@ Column {
                 currentValue: inspector.issueSettings.export_mode || ""
                 buttonText: currentValue ? inspector.item.modeLabel : "Choose output mode…"
                 options: inspector.appBridge.exportModeOptions
-                onChosen: value => inspector.appBridge.setIssueRetrySetting("export_mode", value)
+                onChosen: value => {
+                    inspector.appBridge.setIssueRetrySetting("export_mode", value)
+                    if (value === "Manual Override")
+                        revealManualTimer.restart()
+                }
             }
             ManualMp4Settings {
+                id: issueManualSettings
                 objectName: "libraryIssueManualMp4"
                 visible: inspector.issueSettings.output_type === "MP4"
                          && inspector.issueSettings.export_mode === "Manual Override"
