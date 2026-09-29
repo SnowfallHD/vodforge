@@ -277,27 +277,46 @@ Column {
                 onActivated: inspector.appBridge.requestMissingFileRelink()
             }
             Text { visible: !inspector.item.missing || inspector.item.canRedownload; text: "SOURCE VIDEO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-            Text {
+            Row {
                 visible: (!inspector.item.missing || inspector.item.canRedownload)
                          && !inspector.issueSettings.source_editable
-                text: inspector.item.source || "Source link unavailable"
-                color: theme.muted
                 width: parent.width
-                font.pixelSize: 12
-                elide: Text.ElideMiddle
+                spacing: 8
+                Text {
+                    text: inspector.item.source || "Source link unavailable"
+                    color: theme.muted
+                    width: parent.width - (copyIssueUrl.visible ? 42 : 0)
+                    font.pixelSize: 12
+                    elide: Text.ElideMiddle
+                }
+                StoneButton {
+                    id: copyIssueUrl
+                    visible: !!inspector.item.source
+                    label: "⧉"; accessibilityLabel: "Copy source URL"; size: "inline"
+                    width: visible ? 34 : 0; height: 30
+                    onActivated: inspector.appBridge.copyIssueSource()
+                }
             }
             StoneField {
                 visible: (!inspector.item.missing || inspector.item.canRedownload)
                          && !!inspector.issueSettings.source_editable
                 width: parent.width; height: 40
                 TextField {
-                    anchors.fill: parent; anchors.margins: 9
+                    anchors.fill: parent; anchors.margins: 9; anchors.rightMargin: 47
                     placeholderText: "Paste source video URL"
                     text: inspector.item.source || ""
                     color: theme.text; placeholderTextColor: theme.muted
                     background: Item {}
                     onTextEdited: inspector.appBridge.setIssueRetrySource(text)
                     onAccepted: inspector.appBridge.setIssueRetrySource(text)
+                }
+                StoneButton {
+                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    anchors.rightMargin: 6
+                    visible: !!inspector.item.source
+                    label: "⧉"; accessibilityLabel: "Copy source URL"; size: "inline"
+                    width: 34; height: 30
+                    onActivated: inspector.appBridge.copyIssueSource()
                 }
             }
             Rectangle {

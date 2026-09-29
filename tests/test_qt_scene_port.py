@@ -2712,6 +2712,10 @@ def test_qt_saved_owner_actions_remain_in_library_after_work_deck_filter(
         assert QGuiApplication.clipboard().text() == qt_main.canonical_youtube_url(
             second
         )
+        bridge._playback_record = first
+        assert bridge.copyPlayerSourceUrl(owners[0])
+        assert QGuiApplication.clipboard().text() == first["webpage_url"]
+        assert not bridge.copyPlayerSourceUrl(owners[1])
         assert bridge.prepareLibraryRemoval(owners[0])
         assert bridge._pending_library_removal[0] == owners[0]
         bridge.cancelLibraryRemoval()
@@ -2751,6 +2755,34 @@ def test_run_deck_keeps_interrupted_run_visible_ahead_of_completed_exports(
         assert visible[0]["kind"] == "terminal"
         assert visible[0]["status"] == "Stopped"
         assert visible[0]["title"] == "Canceled retry"
+    finally:
+        bridge.close()
+
+
+def test_run_deck_requests_artwork_for_each_visible_card_after_sorting(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, f"Completed {index}", "MP4") for index in range(5)
+    ]
+    requests = []
+
+    def artwork(record):
+        requests.append(record["title"])
+        return "file:///visible-artwork.png"
+
+    monkeypatch.setattr(bridge._artwork, "request", artwork)
+    try:
+        records = bridge.runDeck["records"]
+        assert len(records) == 5
+        assert len(requests) == 4
+        assert all(record["artwork"] for record in records[:4])
+        assert records[4]["artwork"] == ""
     finally:
         bridge.close()
 
@@ -4593,6 +4625,7 @@ def test_qt_my_files_empty_saved_location_links_to_existing_recovery(
     output = tmp_path / "Downloads" / "Artist"
     output.mkdir(parents=True)
     record = saved(output, "Missing song", "MP4")
+    record["webpage_url"] = "https://www.youtube.com/watch?v=abcdefghijk"
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = [record]
     engine = qt_main.create_engine(bridge)
@@ -4636,6 +4669,10 @@ def test_qt_my_files_empty_saved_location_links_to_existing_recovery(
         assert bridge.libraryFolderInspector["title"] == "Missing song"
         assert window.findChild(QObject, "libraryIssueFindMovedFile").property(
             "visible"
+        )
+        assert bridge.copyIssueSource()
+        assert QGuiApplication.clipboard().text() == qt_main.canonical_youtube_url(
+            record
         )
     finally:
         window.close()

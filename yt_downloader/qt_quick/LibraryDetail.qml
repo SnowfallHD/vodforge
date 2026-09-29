@@ -319,7 +319,8 @@ Item {
                                     Text { text: modelData.label; width: Math.min(138, parent.width * 0.29); color: theme.muted; font.pixelSize: 14; wrapMode: Text.WordWrap }
                                     Text {
                                         text: modelData.value
-                                        width: parent.width - Math.min(138, parent.width * 0.29) - 12 - (modelData.label === "Saved Location" ? 46 : 0)
+                                        width: parent.width - Math.min(138, parent.width * 0.29) - 12 -
+                                               (modelData.label === "Saved Location" || modelData.label === "Source URL" ? 46 : 0)
                                         color: modelData.label === "Source URL" ? theme.accent : theme.text
                                         font.pixelSize: 14; wrapMode: Text.WrapAnywhere
                                         MouseArea {
@@ -335,13 +336,16 @@ Item {
                                         }
                                     }
                                     StoneButton {
-                                        visible: modelData.label === "Saved Location"
+                                        visible: modelData.label === "Saved Location" || modelData.label === "Source URL"
                                         label: "⧉"
-                                        accessibilityLabel: "Copy saved location"
+                                        accessibilityLabel: modelData.label === "Source URL" ? "Copy source URL" : "Copy saved location"
                                         size: "inline"
                                         width: visible ? 34 : 0
                                         height: 30
-                                        onActivated: detail.appBridge.copyLibraryFact(detail.item.owner, "output", "Saved Location")
+                                        onActivated: detail.appBridge.copyLibraryFact(
+                                            detail.item.owner,
+                                            modelData.label === "Source URL" ? "source" : "output",
+                                            modelData.label)
                                     }
                                 }
                             }

@@ -289,6 +289,7 @@ class Materials(QQuickImageProvider):
                 if parts[1] not in {
                     "download-20.png",
                     "folder-20.png",
+                    "link-2-20.png",
                     "play.png",
                     "activity-20.png",
                     "settings-20.png",
@@ -2521,11 +2522,7 @@ class Bridge(QObject):
                     "type": active.output_type.value,
                     "progress": self._progress,
                     "duration": format_duration(preview.get("duration")),
-                    "artwork": (
-                        self._artwork.request(preview)
-                        if preview and len(records) < 4
-                        else ""
-                    ),
+                    "_artwork_info": preview,
                 }
             )
         for kind, jobs in (
@@ -2552,11 +2549,7 @@ class Bridge(QObject):
                         "type": job.output_type.value,
                         "progress": 0,
                         "duration": format_duration(preview.get("duration")),
-                        "artwork": (
-                            self._artwork.request(preview)
-                            if preview and len(records) < 4
-                            else ""
-                        ),
+                        "_artwork_info": preview,
                     }
                 )
         projected = self._projected_library()
@@ -2583,7 +2576,7 @@ class Bridge(QObject):
                     "type": str(record["output_type"]),
                     "progress": 100,
                     "duration": format_duration(item.get("duration")),
-                    "artwork": self._artwork.request(item) if len(records) < 4 else "",
+                    "_artwork_info": item,
                 }
             )
         records.sort(
@@ -2597,6 +2590,15 @@ class Bridge(QObject):
                 else 5,
             }.get(str(record["kind"]), 5)
         )
+        visible_work = 0
+        for record in records:
+            info = record.pop("_artwork_info", None)
+            if info is not None:
+                record["artwork"] = (
+                    self._artwork.request(info) if visible_work < 4 and info else ""
+                )
+            if record["kind"] != "preview":
+                visible_work += 1
         counts: dict[str, int] = {}
         for record in records:
             kind = record["kind"]
@@ -3178,6 +3180,21 @@ class Bridge(QObject):
         except ValueError:
             self._issue_settings["source"] = value.strip()
             self.historyChanged.emit()
+
+    @Slot(result=bool)
+    def copyIssueSource(self) -> bool:
+        if self._folder_browser.mode != "issues" or not (
+            self._issue_run_id or self._missing_issue_owner
+        ):
+            return False
+        source = str(self._issue_settings.get("source") or "").strip()
+        clipboard = QGuiApplication.clipboard()
+        if not source or clipboard is None:
+            return False
+        clipboard.setText(source)
+        self._status = "Copied source URL."
+        self.statusChanged.emit()
+        return True
 
     @Slot(str, bool)
     def setIssueRetryFlag(self, key: str, value: bool) -> None:
@@ -4740,6 +4757,23 @@ class Bridge(QObject):
         self._status = "Copied YouTube URL to clipboard."
         self.statusChanged.emit()
         self._record_update_feature("library", "youtube_url_copied")
+        return True
+
+    @Slot(str, result=bool)
+    def copyPlayerSourceUrl(self, owner: str) -> bool:
+        record = self._playback_record
+        if record is None or history_archive_owner(record) != owner:
+            return False
+        source, _output = library_detail_facts(record)
+        value = next(
+            (text for label, text, _icon in source if label == "Source URL"), ""
+        )
+        clipboard = QGuiApplication.clipboard()
+        if not value or clipboard is None:
+            return False
+        clipboard.setText(value)
+        self._status = "Copied source URL."
+        self.statusChanged.emit()
         return True
 
     @Slot(str)

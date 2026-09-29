@@ -786,11 +786,11 @@ Window {
                         anchors.fill: parent
                         anchors.leftMargin: 16
                         anchors.rightMargin: 9
-                        Text {
-                            text: "🔗"
-                            color: theme.action
-                            font.pixelSize: 17
+                        Image {
+                            source: "image://vodforge/icon/link-2-20.png/r" + bridge.themeRevision
                             Layout.preferredWidth: 25
+                            Layout.preferredHeight: 20
+                            fillMode: Image.PreserveAspectFit
                         }
                         TextField {
                             id: urlInput

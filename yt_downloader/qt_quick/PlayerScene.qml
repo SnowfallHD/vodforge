@@ -496,6 +496,15 @@ Item {
                                 width: parent.width
                                 Text { text: modelData.label; color: theme.muted; font.pixelSize: 14; Layout.preferredWidth: 160 }
                                 Text { text: modelData.value; color: theme.text; font.pixelSize: 14; wrapMode: Text.WrapAnywhere; Layout.fillWidth: true }
+                                StoneButton {
+                                    visible: modelData.label === "Source URL" && !!modelData.value
+                                    label: "⧉"
+                                    accessibilityLabel: "Copy source URL"
+                                    size: "inline"
+                                    Layout.preferredWidth: visible ? 34 : 0
+                                    Layout.preferredHeight: 30
+                                    onActivated: scene.appBridge.copyPlayerSourceUrl(scene.projection.owner)
+                                }
                             }
                         }
                     }
