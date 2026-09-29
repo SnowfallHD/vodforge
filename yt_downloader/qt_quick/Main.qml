@@ -1037,11 +1037,12 @@ Window {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: window.compactHeight ? 116 : 185
-                spacing: 22
+                spacing: 16
                 ColumnLayout {
                     id: forgeLivePane
+                    objectName: "forgeLivePane"
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 3
+                    Layout.preferredWidth: 1
                     Layout.fillHeight: true
                     spacing: 9
                     property bool technical: false
@@ -1115,12 +1116,20 @@ Window {
                         onActivated: bridge.clearBatchList()
                     }
                 }
+                Rectangle {
+                    id: forgeDetailsDivider
+                    objectName: "forgeDetailsDivider"
+                    visible: window.forgeDensity !== "compact"
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                    color: theme.border
+                }
                 ScrollView {
                     id: forgeSourceDetailsViewport
                     objectName: "forgeSourceDetailsViewport"
                     visible: window.forgeDensity !== "compact"
                     Layout.fillWidth: true
-                    Layout.preferredWidth: 2
+                    Layout.preferredWidth: 1
                     Layout.fillHeight: true
                     clip: true
                     contentWidth: availableWidth

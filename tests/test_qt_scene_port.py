@@ -3764,7 +3764,21 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
             if item.isVisible()
         )
         assert details.property("appBridge") is not None
-        assert 0.58 < details.mapToScene(QPointF()).x() / window.width() < 0.64
+        live_pane = window.findChild(QObject, "forgeLivePane")
+        source_viewport = window.findChild(QObject, "forgeSourceDetailsViewport")
+        divider = window.findChild(QObject, "forgeDetailsDivider")
+        assert abs(live_pane.property("width") - source_viewport.property("width")) <= 1
+        assert divider.isVisible()
+        assert divider.property("width") == 1
+        assert divider.property("height") >= 100
+        live_right = live_pane.mapToScene(QPointF(live_pane.property("width"), 0)).x()
+        divider_left = divider.mapToScene(QPointF()).x()
+        source_left = source_viewport.mapToScene(QPointF()).x()
+        assert divider_left - live_right >= 12
+        assert source_left - (divider_left + divider.property("width")) >= 12
+        window.setWidth(1600)
+        app.processEvents()
+        assert abs(live_pane.property("width") - source_viewport.property("width")) <= 1
         assert details.property("preview") is False
         assert any(
             "Save to" == row.property("modelData").get("label")
@@ -3781,7 +3795,6 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
             },
         )
         app.processEvents()
-        source_viewport = window.findChild(QObject, "forgeSourceDetailsViewport")
         assert (
             source_viewport.property("contentWidth")
             <= source_viewport.property("availableWidth") + 1
@@ -3813,6 +3826,7 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
         window.setWidth(850)
         app.processEvents()
         assert details.isVisible() is False
+        assert divider.isVisible() is False
         action = next(
             item
             for item in window.findChildren(QObject)
