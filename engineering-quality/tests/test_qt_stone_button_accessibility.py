@@ -198,7 +198,7 @@ def test_compact_header_and_player_transport_stay_inside_minimum_window(
         bridge.navigateLibrary("folders")
         for _ in range(5):
             application.processEvents()
-        for name in ("Folders", "All media", "Issues", "← Back"):
+        for name in ("My Files", "All media", "Issues & Recovery", "← Library"):
             assert inside(visible_button(name)), name
         bridge.navigateLibrary("home")
         bridge.select("Forge")
