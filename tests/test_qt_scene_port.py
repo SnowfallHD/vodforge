@@ -2658,6 +2658,9 @@ def test_qt_rendered_run_menu_uses_admitted_execution(tmp_path, monkeypatch):
         assert popup.property("visible") is True
         action = visual_item(deck, "runDeckAction_0")
         assert action is not None
+        for option in popup.findChildren(QObject):
+            if option.property("label") and option.property("visible"):
+                assert option.width() == pytest.approx(popup.property("availableWidth"))
         for progress in (10, 22, 35):
             bridge._progress = progress
             bridge._status = f"Downloading media — {progress}%"

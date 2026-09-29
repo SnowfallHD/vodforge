@@ -2526,3 +2526,12 @@ in build/popup-elevation-proof/prior-flat-failure.log. The source-wide contract
 prevents raw Popup instances bypassing this shared owner. Native packaged Mac
 appearance/interaction remains separate from this source proof; Windows native
 rendering and arbitrary display scaling are not established by offscreen tests.
+The native run-action inspection also exposed a ColumnLayout using its implicit
+width inside the wider popup. Its options now occupy the popup's available width;
+the existing rendered execution-menu test checks every visible option fills that
+width before exercising progress updates and execution admission. That geometry
+oracle rejects the previous layout (prior-menu-width.log). The first CI elevation
+case raced asynchronous folder navigation and its menu closure; the corrected
+fixture admits the completed folder listing, opens through the actual ancestor
+trigger, and requires visibility in both compared frames. Runtime elevation is
+unchanged by that test correction; the first failure remains preserved.

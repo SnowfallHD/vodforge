@@ -127,6 +127,7 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onClosed: deck.appBridge.retireRunMenu()
         ColumnLayout {
+            width: actionsPopup.availableWidth
             spacing: 6
             StoneButton {
                 visible: deck.selectedRecord.kind === "active"
