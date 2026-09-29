@@ -76,7 +76,7 @@ Item {
     function seekTo(seconds) {
         if (player) appBridge.manualPlaybackSeek(Math.max(0, Math.min(seconds, player.duration / 1000)))
     }
-    function showOptions(anchor) { playerOptions.anchorItem = anchor; playerOptions.open() }
+    function showOptions(anchor) { playerOptions.anchorItem = anchor; playerOptions.toggleFrom(anchor) }
     onPlayerChanged: {
         requestedCaptionTrack = -2
         restoreFillAfterCaptions = false
@@ -147,7 +147,7 @@ Item {
             onFullscreenRequested: scene.setPresentation(scene.presentationMode === "fullscreen" ? "embedded" : "fullscreen")
             onFloatingRequested: scene.setPresentation(scene.presentationMode === "floating" ? "embedded" : "floating")
             onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
-            onCaptionsRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.open() }
+            onCaptionsRequested: function(anchor) { presentationCaptionMenu.anchorItem = anchor; presentationCaptionMenu.toggleFrom(anchor) }
             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
         }
         CaptionTracks {
@@ -282,7 +282,7 @@ Item {
                             onFullscreenRequested: scene.setPresentation("fullscreen")
                             onFloatingRequested: scene.setPresentation("floating")
                             onOptionsRequested: function(anchor) { scene.showOptions(anchor) }
-                            onCaptionsRequested: function(anchor) { captionsMenu.anchorItem = anchor; captionsMenu.open() }
+                            onCaptionsRequested: function(anchor) { captionsMenu.anchorItem = anchor; captionsMenu.toggleFrom(anchor) }
                             onPreviewRequested: function(seconds) { scene.appBridge.hoverPlaybackPreview(seconds) }
                         }
                     }

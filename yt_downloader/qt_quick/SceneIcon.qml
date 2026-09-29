@@ -30,7 +30,11 @@ Canvas {
             c.ellipse(x * s, y * s, w * s, h * s, 0, 0, 2 * Math.PI)
             if (filled) c.fill(); else c.stroke()
         }
-        if (name === "folder") {
+        if (name === "checkbox" || name === "checkbox-checked") {
+            c.strokeRect(.1 * s, .1 * s, .8 * s, .8 * s)
+            if (name === "checkbox-checked")
+                line([[.25, .49], [.43, .68], [.76, .32]])
+        } else if (name === "folder") {
             line([[0, .22], [.35, .22], [.48, .38], [1, .38], [1, .94], [0, .94], [0, .22]])
         } else if (name === "file") {
             line([[.18, .06], [.65, .06], [.88, .29], [.88, .94], [.18, .94], [.18, .06]])

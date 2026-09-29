@@ -59,7 +59,7 @@ Item {
     function openMore(owner, anchor) {
         moreOwner = owner
         morePopup.anchorItem = anchor
-        morePopup.open()
+        morePopup.toggleFrom(anchor)
     }
 
     AnchoredPopup {

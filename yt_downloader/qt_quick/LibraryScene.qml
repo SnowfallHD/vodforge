@@ -458,7 +458,7 @@ Item {
                                     scene.groupMenuKind = groupCard.modelData.kind
                                     scene.groupMenuKey = groupCard.modelData.key
                                     groupMenu.anchorItem = this
-                                    groupMenu.open()
+                                    groupMenu.toggleFrom(this)
                                 }
                             }
                         }
@@ -545,7 +545,7 @@ Item {
                         label: scene.appBridge.librarySort === "recent" ? "Newest first" : "Title A–Z"
                         width: 172
                         height: 40
-                        onActivated: { sortPopup.anchorItem = this; sortPopup.open() }
+                        onActivated: { sortPopup.anchorItem = this; sortPopup.toggleFrom(this) }
                     }
                     StoneButton {
                         id: filterButton
@@ -555,7 +555,7 @@ Item {
                         height: 40
                         onActivated: {
                             filterPopup.anchorItem = this
-                            filterPopup.open()
+                            filterPopup.toggleFrom(this)
                         }
                     }
                     StoneButton {
@@ -617,7 +617,7 @@ Item {
                         label: "Actions…"
                         width: 175
                         height: 40
-                        onActivated: { selectionActions.anchorItem = this; selectionActions.open() }
+                        onActivated: { selectionActions.anchorItem = this; selectionActions.toggleFrom(this) }
                     }
                 }
                 Flow {
@@ -799,12 +799,13 @@ Item {
                         onHoveredChanged: {
                             if (hovered) {
                                 collectionsSubmenu.anchorItem = this
+                                collectionsSubmenu.triggerItem = this
                                 collectionsSubmenu.open()
                             }
                         }
                         onActivated: {
                             collectionsSubmenu.anchorItem = this
-                            collectionsSubmenu.open()
+                            collectionsSubmenu.toggleFrom(this)
                         }
                     }
                 }

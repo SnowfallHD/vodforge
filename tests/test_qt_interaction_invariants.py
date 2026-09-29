@@ -23,6 +23,8 @@ def _launch(tmp_path, monkeypatch, records):
     app = qt_app()
     bridge = qt_main.Bridge(None)
     bridge._runtime.history = records
+    # These interaction journeys start after the separate first-run tour.
+    bridge._engagement.presented_welcome()
     engine = qt_main.create_engine(bridge)
     window = engine.rootObjects()[0]
     window.show()
@@ -836,5 +838,133 @@ def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
         popup.close()
         app.processEvents()
         assert not popup.property("visible")
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize(
+    "menu", ["format", "options", "run", "active", "allruns", "folders"]
+)
+def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, menu):
+    from PySide6.QtCore import QPoint, Qt
+
+    from tests.test_qt_scene_port import visual_item
+
+    root = tmp_path / "Media"
+    nested = root / "Channel" / "Playlist" / "Video"
+    nested.mkdir(parents=True)
+    record = saved(nested, "Video", "MP4")
+    record["vodforge_retry_job"] = {"output_dir": str(root)}
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        window.resize(1600, 1000)
+        if menu == "active":
+            bridge._runtime.active_job = make_job(root)
+            bridge.historyChanged.emit()
+        if menu == "folders":
+            bridge.select("Library")
+            bridge.navigateLibrary("folders")
+            bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(nested)))
+            bridge._queue_folder_listing()
+            bridge.historyChanged.emit()
+            for _ in range(100):
+                app.processEvents()
+                if not bridge._folder_listing_pending:
+                    break
+                QTest.qWait(20)
+        QTest.qWait(350)
+        trigger_name, popup_name = {
+            "format": ("forgeUrlField", "forgeFormatPopup"),
+            "options": ("forgeOptionsButton", "optionsMenu"),
+            "run": ("runDeckAction_0", "runActionsPopup"),
+            "active": ("runDeckAction_0", "runActionsPopup"),
+            "allruns": ("allRunsButton", "allRunsPopup"),
+            "folders": ("libraryFolderAncestorsButton", "libraryFolderAncestorsPopup"),
+        }[menu]
+        trigger = visual_item(window.contentItem(), trigger_name)
+        if menu == "format":
+            trigger = next(
+                item
+                for item in _visual_descendants(trigger)
+                if item.property("label") == "MP4  ▾"
+            )
+        popup = window.findChild(QObject, popup_name)
+        point = trigger.mapToItem(
+            window.contentItem(), trigger.width() / 2, trigger.height() / 2
+        )
+        position = QPoint(round(point.x()), round(point.y()))
+        QTest.mouseMove(window, position)
+        QTest.qWait(30)
+        states = (
+            (False, True, False, True, False)
+            if menu == "allruns"
+            else (True, False, True, False)
+        )
+        for click, expected in enumerate(states):
+            QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
+            QTest.qWait(50)
+            assert popup.property("visible") is expected, (
+                click,
+                expected,
+                position,
+                trigger.isVisible(),
+                trigger.property("hovered"),
+                popup.property("dismissedByTriggerPress"),
+            )
+            if menu == "active":
+                assert (
+                    bridge._run_menu_admitted_job is bridge._runtime.active_job
+                ) is expected
+        # Dismissal elsewhere must allow a new trigger click, rather than leave
+        # behind a consumed-click flag from an unrelated outside press.
+        QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
+        QTest.qWait(50)
+        assert popup.property("visible")
+        QTest.keyClick(window, Qt.Key.Key_Escape)
+        QTest.qWait(50)
+        assert not popup.property("visible")
+        QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
+        QTest.qWait(50)
+        assert popup.property("visible")
+        QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+        QTest.qWait(50)
+        assert not popup.property("visible")
+        QTest.mouseMove(window, position)
+        if menu != "allruns":
+            QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
+        QTest.qWait(50)
+        assert popup.property("visible")
+    finally:
+        _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_support_consent_is_visible_and_form_fits_its_contents(
+    tmp_path, monkeypatch, diagnostics
+):
+    from yt_downloader.support_diagnostics import FailureContext
+
+    _app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        window.resize(1600, 1000)
+        if diagnostics:
+            bridge._latest_failure = FailureContext("Bounded sanitized diagnostic")
+        assert bridge.openSupport("feedback")
+        QTest.qWait(150)
+        popup = window.findChild(QObject, "supportPopup")
+        consent = window.findChild(QObject, "supportDiagnosticsConsent")
+        body = window.findChild(QObject, "supportBody")
+        fields = window.findChild(QObject, "supportFields")
+        assert consent.property("visible")
+        assert consent.property("enabled") is diagnostics
+        assert consent.property("checkable")
+        assert not consent.property("selected")
+        assert body.height() <= fields.height() + 1
+        if diagnostics:
+            consent.activated.emit()
+            assert popup.property("includeDiagnostics")
+            consent.activated.emit()
+            assert not popup.property("includeDiagnostics")
+        assert not bridge.supportBusy
     finally:
         _close(bridge, engine, window)

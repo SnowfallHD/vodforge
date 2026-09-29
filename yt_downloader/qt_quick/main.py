@@ -29,6 +29,7 @@ from PySide6.QtCore import (
     QPointF,
     QProcess,
     QSize,
+    Qt,
     QTimer,
     QUrl,
     Signal,
@@ -3904,6 +3905,10 @@ class Bridge(QObject):
             self._watch_scene_route = "home"
             self._watch_group_kind = self._watch_group_key = self._watch_search = ""
         self.historyChanged.emit()
+
+    @Slot(result=bool)
+    def isPointerPressed(self) -> bool:
+        return QGuiApplication.mouseButtons() != Qt.MouseButton.NoButton
 
     @Slot(str, result=bool)
     def openSupport(self, kind: str) -> bool:

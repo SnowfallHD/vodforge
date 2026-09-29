@@ -274,12 +274,13 @@ Window {
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(580, window.width - 18)
-        height: Math.min(bridge.supportKind === "feedback" && reply ? 580 : bridge.supportKind === "feedback" ? 510 : 480, window.height - 18)
+        height: Math.min(supportLayout.implicitHeight + 2 * padding, window.height - 18)
         padding: 18
         modal: true
         closePolicy: bridge.supportBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
         onClosed: bridge.closeSupport()
         ColumnLayout {
+            id: supportLayout
             anchors.fill: parent
             spacing: 9
             Text {
@@ -296,11 +297,16 @@ Window {
             }
             ScrollView {
                 id: supportBody
+                objectName: "supportBody"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.preferredHeight: supportFields.implicitHeight
+                Layout.minimumHeight: Math.min(160, supportFields.implicitHeight)
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                 ColumnLayout {
+                    id: supportFields
+                    objectName: "supportFields"
                     width: supportBody.availableWidth
                     spacing: 8
                     StoneButton {
@@ -308,7 +314,7 @@ Window {
                         label: supportPopup.reason + "  ▾"
                         Layout.fillWidth: true; Layout.preferredHeight: 40
                         enabled: !bridge.supportBusy && !bridge.supportSent
-                        onActivated: { supportReasonMenu.anchorItem = this; supportReasonMenu.open() }
+                        onActivated: { supportReasonMenu.anchorItem = this; supportReasonMenu.toggleFrom(this) }
                     }
                     RowLayout {
                         visible: bridge.supportKind === "review"
@@ -346,9 +352,10 @@ Window {
                     }
                     StoneButton {
                         visible: bridge.supportKind === "feedback"
+                        checkable: true
                         label: "I’d like a reply"
                         selected: supportPopup.reply
-                        Layout.preferredWidth: 170; Layout.preferredHeight: 38
+                        Layout.preferredWidth: 190; Layout.preferredHeight: 38
                         enabled: !bridge.supportBusy && !bridge.supportSent
                         onActivated: supportPopup.reply = !supportPopup.reply
                     }
@@ -382,22 +389,31 @@ Window {
                         Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
                     StoneButton {
-                        visible: bridge.supportKind === "feedback" && !!bridge.supportContext.diagnostics
+                        objectName: "supportDiagnosticsConsent"
+                        visible: bridge.supportKind === "feedback"
+                        checkable: true
                         label: "Include recent diagnostics"
                         selected: supportPopup.includeDiagnostics
-                        Layout.preferredWidth: 225; Layout.preferredHeight: 38
-                        enabled: !bridge.supportBusy && !bridge.supportSent
+                        Layout.fillWidth: true; Layout.preferredHeight: 38
+                        enabled: !!bridge.supportContext.diagnostics && !bridge.supportBusy && !bridge.supportSent
                         onActivated: supportPopup.includeDiagnostics = !supportPopup.includeDiagnostics
+                    }
+                    Text {
+                        visible: bridge.supportKind === "feedback" && !bridge.supportContext.diagnostics
+                        text: "No recent failed-run diagnostics available."
+                        color: theme.muted; font.pixelSize: 12
+                        Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
                     StoneButton {
                         visible: bridge.supportKind === "feedback" && !!bridge.supportContext.diagnostics
                         label: "Review diagnostics"
                         size: "inline"
                         Layout.preferredWidth: 165
-                        onActivated: supportDiagnostics.open()
+                        onActivated: supportDiagnostics.toggleFrom(this)
                     }
                     StoneButton {
                         visible: bridge.supportKind === "feedback" && !!bridge.supportContext.videoUrl
+                        checkable: true
                         label: "Include the public video URL"
                         selected: supportPopup.includeVideoUrl
                         Layout.preferredWidth: 245; Layout.preferredHeight: 38
@@ -751,7 +767,7 @@ Window {
                     icon: "image://vodforge/icon/settings.png/r" + bridge.themeRevision
                     accessibilityLabel: "Settings"
                     width: 28; height: 40
-                    onActivated: settingsPopup.open()
+                    onActivated: settingsPopup.toggleFrom(this)
                 }
             }
         }
@@ -817,7 +833,7 @@ Window {
                             label: window.outputFormat + "  ▾"
                             Layout.preferredWidth: 92
                             Layout.preferredHeight: 38
-                            onActivated: { formatMenu.anchorItem = this; formatMenu.open() }
+                            onActivated: { formatMenu.anchorItem = this; formatMenu.toggleFrom(this) }
                         }
                     }
                 }
@@ -826,7 +842,7 @@ Window {
                     label: "Options"
                     Layout.preferredWidth: 106
                     Layout.preferredHeight: 46
-                    onActivated: window.outputFormat === "MP3" ? mp3OptionsPopup.open() : optionsMenu.open()
+                    onActivated: window.outputFormat === "MP3" ? mp3OptionsPopup.toggleFrom(this) : optionsMenu.toggleFrom(this)
                 }
                 StoneButton {
                     objectName: "forgeDownloadButton"
@@ -895,7 +911,7 @@ Window {
                     label: "Create video"
                     Layout.preferredWidth: 131
                     Layout.preferredHeight: 44
-                    onActivated: localConversionPopup.open()
+                    onActivated: localConversionPopup.toggleFrom(this)
                 }
             }
 
@@ -1064,7 +1080,7 @@ Window {
                             label: "Output details"
                             size: "inline"
                             Layout.preferredWidth: 116
-                            onActivated: outputDetailsPopup.open()
+                            onActivated: outputDetailsPopup.toggleFrom(this)
                         }
                     }
                     RowLayout {
@@ -1179,7 +1195,7 @@ Window {
                 window.selectedSavedOwner = owner
                 libraryItemPopup.anchorItem = anchor
                 libraryItemPopup.scrollViewport = scrollViewport
-                libraryItemPopup.open()
+                libraryItemPopup.toggleFrom(anchor)
             }
             onCollectionRequested: {
                 collectionPopup.selectionPreset = []
@@ -1839,7 +1855,7 @@ Window {
                     objectName: "annotationCategoryButton"
                     x: parent.width - 40; y: 3; width: 36; height: 34
                     label: "▾"; size: "inline"
-                    onActivated: { annotationCategoryMenu.anchorItem = parent; annotationCategoryMenu.open() }
+                    onActivated: { annotationCategoryMenu.anchorItem = parent; annotationCategoryMenu.toggleFrom(this) }
                 }
             }
             Text { text: "Tags (comma separated)"; color: theme.muted; font.pixelSize: 13 }
@@ -2049,7 +2065,7 @@ Window {
                         }
                     }
                     Text { text: "YOUTUBE ACCESS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
-                    StoneButton { label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { accessPopup.returnToSettings = true; settingsPopup.close(); accessPopup.open() } }
+                    StoneButton { label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { accessPopup.returnToSettings = true; settingsPopup.close(); accessPopup.toggleFrom(this) } }
                     Text { text: "METADATA"; color: theme.muted; font.pixelSize: 13; font.bold: true }
                     Text { text: "Extra tags (comma-separated)"; color: theme.muted; font.pixelSize: 13 }
                     StoneField {
@@ -2083,14 +2099,14 @@ Window {
                             objectName: "settingsQualityButton"
                             label: "Quality: " + bridge.quality
                             Layout.fillWidth: true; Layout.preferredHeight: 40
-                            onActivated: { settingsQualityMenu.anchorItem = this; settingsQualityMenu.open() }
+                            onActivated: { settingsQualityMenu.anchorItem = this; settingsQualityMenu.toggleFrom(this) }
                         }
                         StoneButton {
                             id: settingsOutputModeButton
                             objectName: "settingsOutputModeButton"
                             label: "Output mode: " + bridge.exportModeLabel
                             Layout.fillWidth: true; Layout.preferredHeight: 40
-                            onActivated: { settingsOutputModeMenu.anchorItem = this; settingsOutputModeMenu.open() }
+                            onActivated: { settingsOutputModeMenu.anchorItem = this; settingsOutputModeMenu.toggleFrom(this) }
                         }
                     }
                     ManualMp4Settings {
@@ -2201,7 +2217,7 @@ Window {
                         StoneButton {
                             label: bridge.appearanceTheme + "  ▾"
                             Layout.fillWidth: true; Layout.preferredHeight: 40
-                            onActivated: { appearanceThemeMenu.anchorItem = this; appearanceThemeMenu.open() }
+                            onActivated: { appearanceThemeMenu.anchorItem = this; appearanceThemeMenu.toggleFrom(this) }
                         }
                         Text { text: "Custom accent"; color: theme.muted; font.pixelSize: 13 }
                         StoneField {
@@ -2252,9 +2268,9 @@ Window {
                     label: "Help"
                     accessibilityLabel: "Help"
                     Layout.preferredWidth: 100; Layout.preferredHeight: 40
-                    onActivated: { helpMenu.anchorItem = this; helpMenu.open() }
+                    onActivated: { helpMenu.anchorItem = this; helpMenu.toggleFrom(this) }
                 }
-                StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.open(); bridge.checkForUpdates() } }
+                StoneButton { label: "Check for updates"; Layout.preferredWidth: 165; Layout.preferredHeight: 40; onActivated: { settingsPopup.close(); updatePopup.toggleFrom(this); bridge.checkForUpdates() } }
                 Item { Layout.fillWidth: true }
                 StoneButton {
                     label: "Done"; Layout.preferredWidth: 86; Layout.preferredHeight: 40
@@ -2480,7 +2496,7 @@ Window {
                 Layout.fillWidth: true
                 Text { text: "Profile"; color: theme.muted; font.pixelSize: 14 }
                 Item { Layout.fillWidth: true }
-                StoneButton { label: bridge.localProfile + "  ▾"; Layout.preferredWidth: 295; Layout.preferredHeight: 38; enabled: !bridge.localRunning; onActivated: { localProfilePopup.anchorItem = this; localProfilePopup.open() } }
+                StoneButton { label: bridge.localProfile + "  ▾"; Layout.preferredWidth: 295; Layout.preferredHeight: 38; enabled: !bridge.localRunning; onActivated: { localProfilePopup.anchorItem = this; localProfilePopup.toggleFrom(this) } }
             }
             Text { text: bridge.localProgress || bridge.status; color: theme.muted; font.pixelSize: 14; elide: Text.ElideRight; Layout.fillWidth: true }
             Item { Layout.fillHeight: true }
@@ -2518,6 +2534,7 @@ Window {
     }
     AnchoredPopup {
         id: formatMenu
+        objectName: "forgeFormatPopup"
         parent: window.contentItem
         width: 170
         height: 150

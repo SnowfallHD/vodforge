@@ -3301,7 +3301,7 @@ def test_qt_help_form_exposes_only_explicit_recent_failure_context(
         bridge.close()
 
 
-def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_activity(
+def test_qt_all_runs_hover_shows_work_above_button_and_click_toggles(
     tmp_path, monkeypatch
 ):
     from PySide6.QtQuickControls2 import QQuickStyle
@@ -3368,7 +3368,10 @@ def test_qt_all_runs_hover_shows_work_above_button_and_click_opens_activity(
         assert not popup.property("visible")
         button.activated.emit()
         app.processEvents()
-        assert bridge.selection == "Activity"
+        assert bridge.selection == "Forge"
+        assert popup.property("visible")
+        button.activated.emit()
+        app.processEvents()
         assert not popup.property("visible")
     finally:
         window.close()

@@ -90,7 +90,7 @@ Item {
             visible: ["output-settings", "ui-settings"].indexOf(preview.previewKey) >= 0
             label: preview.mode + "  ▾"
             Layout.fillWidth: true
-            onActivated: { modePreview.anchorItem = this; modePreview.open() }
+            onActivated: { modePreview.anchorItem = this; modePreview.toggleFrom(this) }
         }
         Text {
             visible: preview.previewKey === "output-settings"
@@ -143,7 +143,7 @@ Item {
             visible: ["youtube-access", "youtube-access-expanded"].indexOf(preview.previewKey) >= 0
             label: "Chrome  ▾"
             Layout.preferredWidth: 170
-            onActivated: { browserPreview.anchorItem = this; browserPreview.open() }
+            onActivated: { browserPreview.anchorItem = this; browserPreview.toggleFrom(this) }
         }
         ColumnLayout {
             objectName: "featurePreviewLibraryFields"
@@ -156,7 +156,7 @@ Item {
                 label: "Travel  ▾"
                 Layout.fillWidth: true
                 Layout.preferredHeight: 38
-                onActivated: { categoryPreview.anchorItem = this; categoryPreview.open() }
+                onActivated: { categoryPreview.anchorItem = this; categoryPreview.toggleFrom(this) }
             }
             Text { text: "YOUR TAGS"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             TextField {
@@ -203,7 +203,7 @@ Item {
                 objectName: "featurePreviewLocalProfile"
                 label: preview.demoLocalProfile + "  ▾"
                 Layout.fillWidth: true; Layout.preferredHeight: 38
-                onActivated: { localProfilePreview.anchorItem = this; localProfilePreview.open() }
+                onActivated: { localProfilePreview.anchorItem = this; localProfilePreview.toggleFrom(this) }
             }
         }
         RowLayout {

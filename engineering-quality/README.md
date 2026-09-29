@@ -2535,3 +2535,31 @@ case raced asynchronous folder navigation and its menu closure; the corrected
 fixture admits the completed folder listing, opens through the actual ancestor
 trigger, and requires visibility in both compared frames. Runtime elevation is
 unchanged by that test correction; the first failure remains preserved.
+
+### Popup trigger intent and support form geometry — 2026-09-29
+
+Qt closes an outside-press popup before its trigger emits clicked; unconditional
+open in that later handler reopened the popup. Existing signal-only menu tests
+missed the press/release ordering. StonePopup now owns trigger toggling and consumes
+that same dismissal click, while separate outside clicks and Escape permit a
+fresh open. Popup focus also makes its advertised Escape policy effective.
+All trigger paths reuse that owner, including saved-media actions and nested
+menus. The All N runs hover list now toggles on click as requested; Activity remains
+available in run actions and top navigation. Active-run menu admission happens
+only when opening, and closing retires the execution lease.
+
+Real pointer journeys cover format, modal options, terminal and active Run Deck
+actions, its hover list, and folder ancestors. They check repeated clicks,
+Escape, outside dismissal and reopening, plus active-run lease retirement.
+Interaction fixtures mark the separate welcome tour as already presented; an
+unrelated delayed tour had overlaid folder clicks and shadow comparison frames.
+That original failure is retained alongside the corrected focused receipts.
+
+Support's existing bounded diagnostic consent was invisible without a current
+failed-run context, while a fixed-height body left an empty lower region. Shared
+StoneButton now renders actual vector checkboxes and accessible checked state;
+Support always shows diagnostic consent, disabled with an explanation when no
+context exists, and sizes its scroll body to the visible fields. Context/no-context
+rendered cases verify visibility, opt-in defaults and contents-based sizing.
+The existing sanitized failure-context payload and explicit URL consent remain
+the data boundary; this change does not collect or send arbitrary raw logs.

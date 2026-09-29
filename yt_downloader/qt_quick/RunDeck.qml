@@ -28,12 +28,18 @@ Item {
                "  •  " + parts.join("  •  ")
     }
     function showActions(record, anchor) {
+        const trigger = anchor || allRunsButton
+        if (actionsPopup.visible ||
+                (actionsPopup.triggerItem === trigger && actionsPopup.dismissedByTriggerPress)) {
+            actionsPopup.toggleFrom(trigger)
+            return
+        }
         if (record.kind === "active" &&
                 !deck.appBridge.admitRunMenu(record.runId, record.executionToken || ""))
             return
         selectedRecord = record
-        actionsPopup.anchorItem = anchor || allRunsButton
-        actionsPopup.open()
+        actionsPopup.anchorItem = trigger
+        actionsPopup.toggleFrom(actionsPopup.anchorItem)
     }
     function openActiveActions() {
         for (let record of projection.records || []) {
@@ -62,12 +68,12 @@ Item {
                 onHoveredChanged: {
                     if (hovered) {
                         hoverClose.stop()
-                        allRunsPopup.open()
+                        allRunsPopup.triggerItem = allRunsButton; allRunsPopup.open()
                     } else if (allRunsPopup.visible) hoverClose.restart()
                 }
                 onActivated: {
-                    allRunsPopup.close()
-                    deck.appBridge.select("Activity")
+                    hoverClose.stop()
+                    allRunsPopup.toggleFrom(allRunsButton)
                 }
                 onVisibleChanged: { if (!visible) allRunsPopup.close() }
             }

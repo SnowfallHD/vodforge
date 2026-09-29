@@ -131,7 +131,7 @@ Item {
                             Layout.preferredWidth: 36
                             onActivated: {
                                 ancestorsPopup.anchorItem = ancestorsButton
-                                ancestorsPopup.open()
+                                ancestorsPopup.toggleFrom(ancestorsButton)
                             }
                         }
                         Text {
@@ -196,7 +196,7 @@ Item {
                         if (browser.model.mode === "issues"
                                 || browser.appBridge.libraryFolderInspector.file
                                 || browser.appBridge.libraryFolderInspector.folder)
-                            compactIssuePopup.open()
+                            compactIssuePopup.toggleFrom(this)
                         else browser.appBridge.openSelectedLibraryFolderDetail()
                     }
                 }

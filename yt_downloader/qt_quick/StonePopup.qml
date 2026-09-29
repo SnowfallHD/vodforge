@@ -2,6 +2,36 @@ import QtQuick
 import QtQuick.Controls
 
 Popup {
+    id: popup
+    focus: true
+    property Item triggerItem
+    property bool dismissedByTriggerPress: false
+
+    function toggleFrom(trigger) {
+        if (triggerItem !== trigger) dismissedByTriggerPress = false
+        triggerItem = trigger
+        if (visible) {
+            close()
+            return false
+        }
+        // Qt dismisses on pointer press outside before the trigger's click.
+        // Consume that same click instead of treating it as a new open request.
+        if (dismissedByTriggerPress) {
+            dismissedByTriggerPress = false
+            return false
+        }
+        open()
+        return true
+    }
+    onAboutToHide: dismissedByTriggerPress = !!triggerItem &&
+                  !!triggerItem.hovered && bridge.isPointerPressed()
+    Connections {
+        target: popup.triggerItem
+        ignoreUnknownSignals: true
+        function onHoveredChanged() {
+            if (!popup.triggerItem.hovered) popup.dismissedByTriggerPress = false
+        }
+    }
     background: StoneField {
         id: surface
         Image {

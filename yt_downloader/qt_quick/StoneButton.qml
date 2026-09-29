@@ -6,6 +6,7 @@ Item {
     property string accessibilityLabel: label
     property string icon: ""
     property string sceneIcon: ""
+    property bool checkable: false
     property bool selected: false
     property bool emphasized: false
     property bool transientMaterial: true
@@ -19,16 +20,17 @@ Item {
     signal activated()
     signal doubleActivated()
     implicitWidth: Math.max(2 * buttonMetrics[size].horizontalPadding + caption.implicitWidth
-                            + ((icon.length || sceneIcon.length) ? buttonMetrics[size].iconPixels + (label.length ? 8 : 0) : 0), 44)
+                            + ((icon.length || sceneIcon.length || checkable) ? buttonMetrics[size].iconPixels + (label.length ? 8 : 0) : 0), 44)
     implicitHeight: buttonMetrics[size].height
     opacity: control.enabled ? 1 : 0.5
     activeFocusOnTab: control.interactive && control.enabled
-    Accessible.role: control.interactive ? Accessible.Button : Accessible.StaticText
+    Accessible.role: control.checkable ? Accessible.CheckBox : control.interactive ? Accessible.Button : Accessible.StaticText
     Accessible.name: control.accessibilityLabel
     Accessible.ignored: !control.interactive && control.accessibilityLabel.length === 0
     Accessible.focusable: control.interactive && control.enabled
     Accessible.focused: control.activeFocus
     Accessible.selected: control.selected
+    Accessible.checked: control.checkable && control.selected
     Accessible.onPressAction: {
         if (control.interactive && control.enabled) control.activated()
     }
@@ -63,10 +65,10 @@ Item {
         }
         SceneIcon {
             property string presentationRole: "control"
-            visible: control.sceneIcon.length > 0
+            visible: control.checkable || control.sceneIcon.length > 0
             width: visible ? buttonMetrics[control.size].iconPixels : 0
             height: width
-            name: control.sceneIcon
+            name: control.checkable ? (control.selected ? "checkbox-checked" : "checkbox") : control.sceneIcon
             tone: control.emphasized ? theme.action : theme.icon
         }
         Text {
@@ -75,7 +77,7 @@ Item {
             visible: control.label.length > 0
             text: control.label
             readonly property real availableWidth: Math.max(0, control.width
-                    - ((control.icon.length || control.sceneIcon.length) ? buttonMetrics[control.size].iconPixels + (control.label.length ? 8 : 0) : 0))
+                    - ((control.icon.length || control.sceneIcon.length || control.checkable) ? buttonMetrics[control.size].iconPixels + (control.label.length ? 8 : 0) : 0))
             readonly property real sidePadding: Math.min(
                     buttonMetrics[control.size].horizontalPadding,
                     Math.max(8, (availableWidth - implicitWidth) / 2))
