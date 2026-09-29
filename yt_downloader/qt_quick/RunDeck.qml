@@ -94,6 +94,8 @@ Item {
                     RunDeckCard {
                         required property int index
                         record: deck.visibleRecords[index] || ({})
+                        artworkSource: record.artwork ||
+                            deck.appBridge.runDeckArtwork(record.selectionKey || "")
                         slotIndex: index
                         compact: deck.compact
                         visible: index < deck.visibleRecords.length

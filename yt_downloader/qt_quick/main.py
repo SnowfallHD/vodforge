@@ -2632,7 +2632,7 @@ class Bridge(QObject):
 
     @Slot(str, result=str)
     def runDeckArtwork(self, selection_key: str) -> str:
-        """Request artwork only for a run card instantiated by the scrolled list."""
+        """Request artwork only for an instantiated visible or scrolled run card."""
         kind, separator, identity = selection_key.partition(":")
         if not separator or not identity:
             return ""

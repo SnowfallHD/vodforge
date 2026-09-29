@@ -346,10 +346,25 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
 def test_interrupted_download_stays_visible_when_newer_downloads_complete(
     tmp_path, monkeypatch, status
 ):
+    from PIL import Image
+
     app, bridge, engine, window = _launch(
-        tmp_path, monkeypatch, [saved(tmp_path, "Just finished", "MP4")]
+        tmp_path,
+        monkeypatch,
+        [saved(tmp_path, "Just finished", "MP4")]
+        + [saved(tmp_path, f"Earlier {index}", "MP4") for index in range(4)],
     )
     try:
+        requested = []
+
+        def artwork(record, *args):
+            requested.append(record["title"])
+            path = tmp_path / (record["title"] + ".png")
+            if not path.exists():
+                Image.new("RGB", (160, 90), "#7197b8").save(path)
+            return path.as_uri()
+
+        monkeypatch.setattr(bridge._artwork, "request", artwork)
         stopped = make_job(tmp_path)
         stopped.preview_info = {"title": "Old stopped run"}
         stopped.terminal_status = status
@@ -358,11 +373,22 @@ def test_interrupted_download_stays_visible_when_newer_downloads_complete(
         bridge.selectHome("Forge")
         app.processEvents()
         records = bridge.runDeck["records"]
-        assert [item["kind"] for item in records[:2]] == ["completed", "terminal"]
+        assert records[0]["kind"] == "completed"
+        assert records[-1]["kind"] == "terminal"
+        assert not records[-1]["artwork"]
         deck = window.findChild(QObject, "forgeRunDeck")
         assert [
             item["kind"] for item in deck.property("allRunsRecords").toVariant()[:2]
         ] == ["terminal", "completed"]
+        assert "Old stopped run" in requested
+        artwork_item = next(
+            item
+            for item in _visual_descendants(deck)
+            if item.objectName() == "runDeckArtwork_0"
+        )
+        assert artwork_item.property("source").toLocalFile() == str(
+            tmp_path / "Old stopped run.png"
+        )
         assert [
             item["kind"] for item in deck.property("visibleRecords").toVariant()[:2]
         ] == ["terminal", "completed"]

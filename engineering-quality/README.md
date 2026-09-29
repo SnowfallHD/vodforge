@@ -519,6 +519,13 @@ The prior implementation plus a bounded removal of the fixed column widths
 failed 12 of 14 selected cases; the corrected focused four-file suite passed 358.
 The initial geometry test passed a native Path where ArchivePath was required;
 that fixture error was corrected before recording the prior-behavior result.
+Native packaged inspection then exposed an artwork boundary: visible cards use
+interrupted-first order while hero selection and eager artwork use history order.
+Visible cards now reuse the existing on-demand artwork slot, as the all-runs list
+already does. The three terminal-state cases include more completed records than
+visible slots and verify the visible interrupted card's actual local artwork URL.
+They fail against the prior QML binding (`artwork-prior.log`). Existing artwork
+coverage tested completed-only ordering and therefore missed this disagreement.
 
 The path invariant is shared by MP4, MP3, and original-audio naming: generated
 names respect both Windows UTF-16 path budgets and UTF-8 component budgets,
