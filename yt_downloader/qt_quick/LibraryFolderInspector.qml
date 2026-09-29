@@ -79,10 +79,12 @@ Column {
         visible: !!inspector.item.issue
         width: parent.width
         height: Math.max(0, inspector.height - eyebrow.height - overview.height - inspector.spacing * 3)
+        contentHeight: issueContent.implicitHeight + 20
         clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         background: StoneField {}
         Column {
+            id: issueContent
             width: issuePanel.availableWidth - 20
             x: 10; y: 10
             spacing: 9
@@ -145,6 +147,16 @@ Column {
                 options: inspector.appBridge.exportModeOptions
                 onChosen: value => inspector.appBridge.setIssueRetrySetting("export_mode", value)
             }
+            ManualMp4Settings {
+                objectName: "libraryIssueManualMp4"
+                visible: inspector.issueSettings.output_type === "MP4"
+                         && inspector.issueSettings.export_mode === "Manual Override"
+                width: parent.width
+                height: implicitHeight
+                gridColumns: 1
+                backend: issueManualAdapter
+                colors: theme
+            }
             Text { text: "Quality ceiling"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
                 objectName: "libraryIssueQualitySelector"
@@ -154,15 +166,6 @@ Column {
                 buttonText: currentValue || "Choose quality…"
                 options: qualityOptions.map(function(value) { return {label: value, value: value} })
                 onChosen: value => inspector.appBridge.setIssueRetrySetting("quality", value)
-            }
-            ManualMp4Settings {
-                objectName: "libraryIssueManualMp4"
-                visible: inspector.issueSettings.output_type === "MP4"
-                         && inspector.issueSettings.export_mode === "Manual Override"
-                width: parent.width
-                gridColumns: 1
-                backend: issueManualAdapter
-                colors: theme
             }
             Column {
                 id: issueOptionsSection
