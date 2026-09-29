@@ -511,7 +511,13 @@ def test_folder_loading_feedback_only_appears_for_a_slow_current_navigation(
             ),
             label.property("text"),
         )
-        QTest.qWait(320)
+        # Qt timers run on rendered frames, so CI may deliver the timeout later
+        # than its 300 ms interval. Retain the no-flash assertion above and wait
+        # boundedly for the delayed feedback's actual visible outcome.
+        for _ in range(20):
+            if label.property("visible"):
+                break
+            QTest.qWait(50)
         assert label.property("visible")
         assert label.property("text") == "Opening folder…"
 

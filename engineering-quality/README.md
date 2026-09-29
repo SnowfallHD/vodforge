@@ -520,6 +520,10 @@ closure after return. Against the prior runtime, seven of ten cases failed
 playback test also now checks return to Library and continued corner playback.
 The short-delay test warms initial scene rendering before timing navigation;
 the retained first attempt includes the cold scene exceeding that delay.
+The Mac Python 3.11 CI receipt also preserves delayed Qt timer delivery past a
+fixed 320 ms wait. The test retains its fast-navigation no-flash assertion and
+waits up to one second for the slow-navigation visible outcome; the product's
+300 ms delay is unchanged.
 
 September 29 Run Deck, terminal activity, folder geometry, and path follow-up:
 the invariant is that a change in content or terminal state must preserve the
