@@ -309,7 +309,7 @@ Item {
                     spacing: 16
                     height: 42
                     StoneButton { label: scene.projection.hero.resume ? "Resume" : "Play"; icon: "image://vodforge/icon/play.png/r" + scene.appBridge.themeRevision; width: 150; height: 42; onActivated: scene.appBridge.playWatchHero(scene.projection.hero.owner) }
-                    StoneButton { label: "View in Library"; icon: "image://vodforge/icon/folder-20.png/r" + scene.appBridge.themeRevision; width: 181; height: 42; onActivated: scene.showLibraryDetails(scene.projection.hero.owner) }
+                    StoneButton { label: "View in Library"; icon: "image://vodforge/icon/folder.png/r" + scene.appBridge.themeRevision; width: 181; height: 42; onActivated: scene.showLibraryDetails(scene.projection.hero.owner) }
                     StoneButton { id: heroMoreButton; objectName: "watchHeroMoreButton"; label: "⋯"; accessibilityLabel: "More actions"; width: 54; height: 42; onActivated: scene.openMore(scene.projection.hero.owner, heroMoreButton) }
                 }
             }

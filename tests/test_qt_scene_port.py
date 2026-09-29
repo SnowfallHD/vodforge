@@ -487,7 +487,7 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
             "button/120/40/normal/0/r0", QSize(), QSize()
         )
         before_icon = bridge._theme_materials.requestImage(
-            "icon/settings-20.png/r0", QSize(), QSize()
+            "icon/settings.png/r0", QSize(), QSize()
         )
         before_accent = qt_main.THEME["accent"]
         assert bridge.setAppearance("Cobalt", bridge.customAccent)
@@ -499,7 +499,7 @@ def test_qt_appearance_refreshes_shared_material_and_saved_palette(
             "button/120/40/normal/0/r1", QSize(), QSize()
         )
         after_icon = bridge._theme_materials.requestImage(
-            "icon/settings-20.png/r1", QSize(), QSize()
+            "icon/settings.png/r1", QSize(), QSize()
         )
         assert before != after
         assert before_accent != qt_main.THEME["accent"]
@@ -2787,6 +2787,78 @@ def test_run_deck_requests_artwork_for_each_visible_card_after_sorting(
         bridge.close()
 
 
+def test_run_deck_visible_artwork_paints_from_a_saved_thumbnail(tmp_path, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    thumbnail = tmp_path / "thumbnail.png"
+    Image.new("RGB", (160, 90), "#40b0dc").save(thumbnail)
+    record = saved(tmp_path, "Saved thumbnail", "MP4")
+    record["preview_thumbnail_path"] = str(thumbnail)
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [record]
+    monkeypatch.setattr(
+        bridge._artwork,
+        "request",
+        lambda *_args, **_kwargs: QUrl.fromLocalFile(str(thumbnail)).toString(),
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        deck = window.findChild(QObject, "forgeRunDeck")
+        assert deck is not None
+        deadline = time.monotonic() + 3
+        artwork = visual_item(deck, "runDeckArtwork_0")
+        while artwork is None and time.monotonic() < deadline:
+            QTest.qWait(30)
+            app.processEvents()
+            artwork = visual_item(deck, "runDeckArtwork_0")
+        assert artwork is not None
+        deadline = time.monotonic() + 3
+        while artwork.property("waitingForPaint") and time.monotonic() < deadline:
+            QTest.qWait(30)
+            app.processEvents()
+        assert artwork.property("hasArtwork")
+        assert not artwork.property("waitingForPaint")
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+def test_forge_simple_activity_shows_saved_steps_after_completion(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    completed = saved(tmp_path, "Completed video", "MP4")
+    completed["vodforge_run_activity"] = [
+        "Video 1 of 1: selected format 231+251",
+        "Video 1 of 1: downloading",
+        "Video 1 of 1: FFmpeg command started (1/1) using CPU libx264",
+        "Video 1 of 1: validated output.mp4 before atomic commit",
+    ]
+    bridge._runtime.history = [completed]
+    try:
+        friendly = bridge.forgeActivity["friendly"]
+        assert "Getting video information" in friendly
+        assert "Downloading media" in friendly
+        assert "Converting media" in friendly
+        assert "Checking the output" in friendly
+        assert "Download complete" in friendly
+        assert "selected format" not in friendly
+    finally:
+        bridge.close()
+
+
 def test_qt_run_selection_drives_forge_snapshot_and_retires_missing_record(
     tmp_path, monkeypatch
 ):
@@ -4499,7 +4571,7 @@ def test_qt_header_settings_uses_centered_shared_icon(tmp_path, monkeypatch):
             assert button.property("accessibilityLabel") == "Settings"
             assert not button.property("label")
             assert not caption.property("visible")
-            assert "icon/settings-20.png" in str(icon.property("source"))
+            assert "icon/settings.png" in str(icon.property("source"))
             assert (
                 abs(
                     icon.mapToItem(button, icon.width() / 2, icon.height() / 2).x()

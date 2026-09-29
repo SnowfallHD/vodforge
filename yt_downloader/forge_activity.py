@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from .library_state import library_phase_from_status
 
@@ -32,6 +33,54 @@ def friendly_phase(status: str) -> str | None:
         return None
     item = re.match(r"(?:Video|Batch URL) \d+ of (\d+)", status)
     return f"{item[0]} · {label}" if item and int(item[1]) > 1 else label
+
+
+def friendly_saved_activity(status: str, lines: Sequence[str]) -> str:
+    """Reconstruct the steps evidenced by a saved run's bounded activity log."""
+    stages: set[str] = set()
+    warning = False
+    error = False
+    for line in lines:
+        detail = str(line).strip().lower()
+        if detail.startswith("warning:"):
+            warning = True
+            continue
+        if detail.startswith("error:"):
+            error = True
+            continue
+        if (
+            "selected format" in detail
+            or "single video detected" in detail
+            or "playlist detected" in detail
+        ):
+            stages.add("Preparing")
+        if re.search(r": downloading(?:\s|$)", detail):
+            stages.add("Downloading")
+        if "ffmpeg command started" in detail or "transcoded staged" in detail:
+            stages.add("Transcoding")
+        if re.search(r": validated\s", detail):
+            stages.add("Validating")
+        if "packaged media file" in detail or "atomic commit" in detail:
+            stages.add("Finalizing")
+    rows = [
+        label
+        for phase, label in (
+            ("Preparing", "Getting video information"),
+            ("Downloading", "Downloading media"),
+            ("Transcoding", "Converting media"),
+            ("Validating", "Checking the output"),
+            ("Finalizing", "Finishing the download"),
+        )
+        if phase in stages
+    ]
+    terminal = friendly_phase(status)
+    if terminal:
+        rows.append(terminal)
+    if warning:
+        rows.append("WARNING: A warning was reported. See Technical details.")
+    if error:
+        rows.append("ERROR: An error was reported. See Technical details.")
+    return "\n".join(row for row in rows if row) or status or "No run selected."
 
 
 class ForgeActivityProjection:

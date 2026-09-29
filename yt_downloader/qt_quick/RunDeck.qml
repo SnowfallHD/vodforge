@@ -99,11 +99,16 @@ Item {
                             anchors.fill: parent
                             anchors.margins: 6
                             spacing: 7
-                            ArtworkImage {
-                                source: record.artwork || ""
+                            Item {
+                                visible: !!record.artwork
                                 Layout.preferredWidth: visible ? (deck.compact ? 48 : 61) : 0
                                 Layout.preferredHeight: deck.compact ? 36 : 48
-                                inset: 0
+                                ArtworkImage {
+                                    objectName: "runDeckArtwork_" + index
+                                    anchors.fill: parent
+                                    source: record.artwork || ""
+                                    inset: 0
+                                }
                             }
                             ColumnLayout {
                                 Layout.fillWidth: true

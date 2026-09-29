@@ -699,9 +699,9 @@ Window {
                         label: modelData
                         selected: bridge.selection === modelData
                         icon: "image://vodforge/icon/" + (
-                            modelData === "Forge" ? "download-20.png" :
-                            modelData === "Library" ? "folder-20.png" :
-                            modelData === "Watch" ? "play.png" : "activity-20.png") + "/r" + bridge.themeRevision
+                            modelData === "Forge" ? "download.png" :
+                            modelData === "Library" ? "folder.png" :
+                            modelData === "Watch" ? "play.png" : "activity.png") + "/r" + bridge.themeRevision
                         width: Math.max(86, implicitWidth)
                         height: implicitHeight
                         onActivated: {
@@ -743,7 +743,7 @@ Window {
                 }
                 StoneButton {
                     objectName: "headerSettingsButton"
-                    icon: "image://vodforge/icon/settings-20.png/r" + bridge.themeRevision
+                    icon: "image://vodforge/icon/settings.png/r" + bridge.themeRevision
                     accessibilityLabel: "Settings"
                     width: 28; height: 40
                     onActivated: settingsPopup.open()
@@ -787,7 +787,7 @@ Window {
                         anchors.leftMargin: 16
                         anchors.rightMargin: 9
                         Image {
-                            source: "image://vodforge/icon/link-2-20.png/r" + bridge.themeRevision
+                            source: "image://vodforge/icon/link-2.png/r" + bridge.themeRevision
                             Layout.preferredWidth: 25
                             Layout.preferredHeight: 20
                             fillMode: Image.PreserveAspectFit
@@ -868,7 +868,7 @@ Window {
                             anchors.rightMargin: 12
                             spacing: 8
                             Image {
-                                source: "image://vodforge/icon/folder-20.png/r" + bridge.themeRevision
+                                source: "image://vodforge/icon/folder.png/r" + bridge.themeRevision
                                 Layout.preferredWidth: 18
                                 Layout.preferredHeight: 18
                                 fillMode: Image.PreserveAspectFit

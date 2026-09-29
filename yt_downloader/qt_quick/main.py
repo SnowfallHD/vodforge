@@ -95,7 +95,10 @@ from yt_downloader.export_planning import (
     export_mode_from_display_name,
 )
 from yt_downloader.failure_diagnostics import FailureDiagnostic
-from yt_downloader.forge_activity import ForgeActivityProjection
+from yt_downloader.forge_activity import (
+    ForgeActivityProjection,
+    friendly_saved_activity,
+)
 from yt_downloader.history import (
     HISTORY_MEDIA_MISSING,
     HistoryError,
@@ -287,19 +290,22 @@ class Materials(QQuickImageProvider):
                 source = field_border_image(width, height, focused=parts[3] == "focus")
             elif parts[0] == "icon" and len(parts) == 2:
                 if parts[1] not in {
-                    "download-20.png",
-                    "folder-20.png",
-                    "link-2-20.png",
+                    "download.png",
+                    "folder.png",
+                    "link-2.png",
                     "play.png",
-                    "activity-20.png",
-                    "settings-20.png",
+                    "activity.png",
+                    "settings.png",
                 }:
                     raise ValueError("unknown icon")
                 with Image.open(
                     SOURCE / "assets" / "icons" / "lucide" / parts[1]
                 ) as original:
-                    source = Image.new("RGBA", original.size, THEME["icon"])
-                    source.putalpha(original.getchannel("A"))
+                    alpha = original.getchannel("A")
+                    if max(original.size) > 64:
+                        alpha = alpha.resize((64, 64), Image.Resampling.LANCZOS)
+                    source = Image.new("RGBA", alpha.size, THEME["icon"])
+                    source.putalpha(alpha)
             elif parts[0] == "activity-icon" and len(parts) == 2:
                 tone = {
                     "circle-dashed": THEME["accent"],
@@ -2425,8 +2431,13 @@ class Bridge(QObject):
             else:
                 lines = []
             technical = "\n".join(lines)[-50_000:]
+            status = (
+                "Completed"
+                if selection.get("kind") == "completed"
+                else str(selection.get("status") or "")
+            )
             return {
-                "friendly": str(selection.get("status") or "No run selected."),
+                "friendly": friendly_saved_activity(status, lines),
                 "technical": technical or "No technical activity for this run yet.",
             }
         return {
