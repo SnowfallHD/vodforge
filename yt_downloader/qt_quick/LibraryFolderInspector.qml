@@ -100,13 +100,25 @@ Column {
             id: issueContent
             width: issuePanel.availableWidth - 20
             x: 10; y: 10
-            spacing: 9
-            Text {
-                text: inspector.item.status || "Interrupted"
-                color: theme.accent
-                font.pixelSize: 15
-                font.bold: true
+            spacing: 10
+            Row {
+                width: parent.width
+                spacing: 10
+                Text {
+                    text: "RUN STATUS"
+                    color: theme.muted
+                    font.pixelSize: 12
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: inspector.item.status || "Interrupted"
+                    color: theme.accent
+                    font.pixelSize: 15
+                    font.bold: true
+                }
             }
+            Text { text: "SOURCE VIDEO"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             Text {
                 visible: !inspector.issueSettings.source_editable
                 text: inspector.item.source || "Source link unavailable"
@@ -127,6 +139,17 @@ Column {
                     onTextEdited: inspector.appBridge.setIssueRetrySource(text)
                     onAccepted: inspector.appBridge.setIssueRetrySource(text)
                 }
+            }
+            Rectangle {
+                width: parent.width; height: 1
+                color: theme.muted; opacity: 0.3
+            }
+            Text {
+                objectName: "libraryIssueRetrySettingsHeading"
+                text: "RETRY SETTINGS"
+                color: theme.accent
+                font.pixelSize: 12
+                font.bold: true
             }
             Text { text: "Save to"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             StoneButton {
@@ -164,16 +187,28 @@ Column {
                         revealManualTimer.restart()
                 }
             }
-            ManualMp4Settings {
+            StoneField {
                 id: issueManualSettings
-                objectName: "libraryIssueManualMp4"
                 visible: inspector.issueSettings.output_type === "MP4"
                          && inspector.issueSettings.export_mode === "Manual Override"
                 width: parent.width
-                height: implicitHeight
-                gridColumns: 1
-                backend: issueManualAdapter
-                colors: theme
+                height: manualControls.implicitHeight + 24
+                Rectangle {
+                    x: 10; y: 10
+                    width: 3; height: parent.height - 20
+                    radius: 1
+                    color: theme.accent
+                    opacity: 0.8
+                }
+                ManualMp4Settings {
+                    id: manualControls
+                    objectName: "libraryIssueManualMp4"
+                    x: 22; y: 12
+                    width: parent.width - 34
+                    gridColumns: 1
+                    backend: issueManualAdapter
+                    colors: theme
+                }
             }
             Text { text: "Quality ceiling"; color: theme.muted; font.pixelSize: 12; font.bold: true }
             InlineSelector {
@@ -184,6 +219,10 @@ Column {
                 buttonText: currentValue || "Choose quality…"
                 options: qualityOptions.map(function(value) { return {label: value, value: value} })
                 onChosen: value => inspector.appBridge.setIssueRetrySetting("quality", value)
+            }
+            Rectangle {
+                width: parent.width; height: 1
+                color: theme.muted; opacity: 0.3
             }
             Column {
                 id: issueOptionsSection
@@ -223,6 +262,10 @@ Column {
                         }
                     }
                 }
+            }
+            Rectangle {
+                width: parent.width; height: 1
+                color: theme.muted; opacity: 0.3
             }
             Text {
                 text: "This retry uses the saved MP3 and YouTube access settings where available."
