@@ -192,7 +192,7 @@ Window {
             if (tryIt) settingsPopup.open()
         }
     }
-    Popup {
+    StonePopup {
         id: outputDetailsPopup
         objectName: "forgeOutputDetailsPopup"
         parent: window.contentItem
@@ -203,7 +203,6 @@ Window {
         padding: 20
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: StoneField {}
         ScrollView {
             objectName: "forgeOutputDetailsScroll"
             anchors.fill: parent
@@ -244,7 +243,6 @@ Window {
         width: 235
         height: 152
         padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 3
@@ -265,7 +263,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: supportPopup
         objectName: "supportPopup"
         property string reason: "Select one…"
@@ -280,7 +278,6 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.supportBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        background: StoneField {}
         onClosed: bridge.closeSupport()
         ColumnLayout {
             anchors.fill: parent
@@ -450,7 +447,6 @@ Window {
         preferAbove: true
         width: 290; height: 238; padding: 3
         scrollViewport: supportBody
-        background: StoneField {}
         Column {
             anchors.fill: parent; spacing: 2
             Repeater {
@@ -465,14 +461,13 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: supportDiagnostics
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(580, window.width - 24)
         height: Math.min(430, window.height - 24)
         padding: 16; modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             Text { text: "Review diagnostics"; color: theme.text; font.pixelSize: 22; font.bold: true }
@@ -488,7 +483,7 @@ Window {
             StoneButton { label: "Done"; Layout.alignment: Qt.AlignRight; Layout.preferredWidth: 82; onActivated: supportDiagnostics.close() }
         }
     }
-    Popup {
+    StonePopup {
         id: analyticsPopup
         objectName: "analyticsConsentPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -498,7 +493,6 @@ Window {
         padding: 20
         modal: true
         closePolicy: Popup.NoAutoClose
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -1326,7 +1320,7 @@ Window {
         }
     }
 
-    Popup {
+    StonePopup {
         id: missingMediaPopup
         objectName: "missingMediaPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -1335,7 +1329,6 @@ Window {
         height: 280
         padding: 18
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent; spacing: 12
             Text { text: bridge.missingMedia.heading || ""; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true; wrapMode: Text.WordWrap }
@@ -1374,7 +1367,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: relinkPopup
         objectName: "relinkPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -1387,7 +1380,6 @@ Window {
         onClosed: {
             if (bridge.relinkInfo.phase === "checking" || bridge.relinkInfo.phase === "preview") bridge.cancelRelink()
         }
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent; spacing: 12
             Text { text: bridge.relinkInfo.mode === "folder" ? "Locate moved files" : "Update saved file location"; color: theme.text; font.pixelSize: 22; font.bold: true; Layout.fillWidth: true }
@@ -1428,7 +1420,6 @@ Window {
         height: 342
         padding: 8
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 5
@@ -1499,7 +1490,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: fileActionPopup
         objectName: "libraryFileActionPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -1509,7 +1500,6 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.fileActionBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -1562,7 +1552,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: libraryRemovalPopup
         objectName: "libraryRemovalConfirmation"
         x: Math.max(0, (window.width - width) / 2)
@@ -1573,7 +1563,6 @@ Window {
         modal: true
         closePolicy: Popup.CloseOnEscape
         onClosed: bridge.cancelLibraryRemoval()
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -1606,7 +1595,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: collectionPopup
         objectName: "libraryCollectionPopup"
         property var selectionPreset: []
@@ -1635,7 +1624,6 @@ Window {
         height: Math.min(620, window.height - 40)
         padding: 20
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -1762,7 +1750,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: collectionTargetPopup
         objectName: "libraryCollectionTargetPopup"
         property var selectedOwners: []
@@ -1772,7 +1760,6 @@ Window {
         height: Math.min(430, window.height - 40)
         padding: 16
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
@@ -1814,7 +1801,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: annotationPopup
         objectName: "libraryAnnotationPopup"
         onClosed: annotationCategoryMenu.close()
@@ -1824,7 +1811,6 @@ Window {
         height: 450
         padding: 18
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 9
@@ -1903,7 +1889,6 @@ Window {
         width: Math.min(360, annotationPopup.width - 36)
         height: Math.min(250, bridge.libraryCategories.slice(1).length * 41 + 8)
         padding: 4
-        background: StoneField {}
         ScrollView {
             anchors.fill: parent
             clip: true
@@ -1923,7 +1908,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: mp3OptionsPopup
         objectName: "mp3OptionsPopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -1932,7 +1917,6 @@ Window {
         height: 420
         padding: 18
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 9
@@ -1983,7 +1967,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: settingsPopup
         objectName: "downloadSettingsPopup"
         onClosed: { settingsQualityMenu.close(); settingsOutputModeMenu.close(); appearanceThemeMenu.close(); helpMenu.close() }
@@ -2002,7 +1986,6 @@ Window {
         height: Math.min(752, window.height - y - 12)
         padding: 18
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 7
@@ -2288,7 +2271,6 @@ Window {
         width: 230
         height: 260
         padding: 4
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 2
@@ -2307,7 +2289,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: updatePopup
         objectName: "updatePopup"
         x: Math.max(0, (window.width - width) / 2)
@@ -2317,7 +2299,6 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.updateBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 12
@@ -2384,7 +2365,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: accessPopup
         objectName: "youtubeAccessPopup"
         property bool returnToSettings: false
@@ -2400,7 +2381,6 @@ Window {
         height: 410
         padding: 18
         modal: true
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
@@ -2458,7 +2438,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: localConversionPopup
         objectName: "localConversionPopup"
         onClosed: localProfilePopup.close()
@@ -2469,7 +2449,6 @@ Window {
         padding: 18
         modal: true
         closePolicy: bridge.localRunning ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: StoneField {}
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
@@ -2522,7 +2501,6 @@ Window {
         width: 320
         height: 184
         padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 2
@@ -2544,7 +2522,6 @@ Window {
         width: 170
         height: 150
         padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 3
@@ -2565,7 +2542,7 @@ Window {
             }
         }
     }
-    Popup {
+    StonePopup {
         id: optionsMenu
         objectName: "optionsMenu"
         x: Math.max(0, (window.width - width) / 2)
@@ -2576,7 +2553,6 @@ Window {
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         Overlay.modal: Rectangle { color: "#9915151c" }
-        background: StoneField {}
         Row {
             anchors.fill: parent
             spacing: 8
@@ -2632,7 +2608,6 @@ Window {
         width: 250
         height: bridge.exportModeOptions.length * 41 + 8
         padding: 4
-        background: StoneField {}
         onOpened: settingsQualityMenu.close()
         Column {
             anchors.fill: parent
@@ -2657,7 +2632,6 @@ Window {
         width: 250
         height: qualityOptions.length * 41 + 8
         padding: 4
-        background: StoneField {}
         onOpened: settingsOutputModeMenu.close()
         Column {
             anchors.fill: parent

@@ -3045,6 +3045,9 @@ def test_qt_popup_and_navigation_materials_use_shared_renderer():
         not re.search(r"(?<!Stone)\b(?:ToolButton|RoundButton|Button)\s*\{", source)
         for source in qml_sources
     )
+    for path in qml_root.glob("*.qml"):
+        if path.name != "StonePopup.qml":
+            assert not re.search(r"(?<!\w)Popup\s*\{", path.read_text(encoding="utf-8"))
     image = qt_main.Materials().requestImage("field/600/600/normal", QSize(), QSize())
     assert (image.width(), image.height()) == (600, 600)
 

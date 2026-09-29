@@ -72,7 +72,6 @@ Item {
         width: 270
         height: 104
         padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 3

@@ -126,7 +126,6 @@ Item {
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onClosed: deck.appBridge.retireRunMenu()
-        background: StoneField {}
         ColumnLayout {
             spacing: 6
             StoneButton {
@@ -179,7 +178,6 @@ Item {
         padding: 9
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: StoneField {}
         HoverHandler {
             id: popupHover
             objectName: "allRunsPopupHover"

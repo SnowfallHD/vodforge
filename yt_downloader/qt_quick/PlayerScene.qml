@@ -531,7 +531,6 @@ Item {
         width: 244
         height: 102
         padding: 5
-        background: StoneField {}
         Column {
             width: parent.width
             spacing: 2

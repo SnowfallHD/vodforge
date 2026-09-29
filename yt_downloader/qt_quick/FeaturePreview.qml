@@ -258,7 +258,6 @@ Item {
         preferAbove: false
         width: Math.min(300, preview.width - 12)
         height: 45; padding: 3
-        background: StoneField {}
         StoneButton {
             anchors.fill: parent
             label: "Travel"; selected: true
@@ -271,7 +270,6 @@ Item {
         preferAbove: true
         width: Math.min(300, preview.width - 12)
         height: localVideoProfiles.length * 39 + 6; padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             Repeater {
@@ -292,7 +290,6 @@ Item {
         width: Math.min(300, preview.width - 12)
         height: 6 * 39 + 6
         padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 0
@@ -313,7 +310,6 @@ Item {
         id: browserPreview
         preferAbove: false
         width: 220; height: 136; padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent; spacing: 2
             Repeater {

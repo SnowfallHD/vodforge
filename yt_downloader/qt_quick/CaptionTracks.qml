@@ -17,7 +17,6 @@ AnchoredPopup {
     width: Math.min(245, parent.width - 24)
     height: Math.min(250, 52 + (player ? player.subtitleTracks.length + 1 : 1) * 42)
     padding: 5
-    background: StoneField {}
     ScrollView {
         anchors.fill: parent
         clip: true

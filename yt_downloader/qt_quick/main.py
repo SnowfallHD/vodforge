@@ -204,7 +204,11 @@ from yt_downloader.support_diagnostics import FailureContext, failure_context
 from yt_downloader.telemetry_features import settings_dimensions, time_bucket
 from yt_downloader.telemetry_policy import telemetry_site_origin
 from yt_downloader.ui_button_contract import BUTTON_METRICS
-from yt_downloader.ui_chrome import action_button_image, field_border_image
+from yt_downloader.ui_chrome import (
+    action_button_image,
+    field_border_image,
+    popup_shadow_image,
+)
 from yt_downloader.ui_materials import backdrop_pixels
 from yt_downloader.ui_theme import (
     CUSTOM_THEME_NAME,
@@ -288,6 +292,11 @@ class Materials(QQuickImageProvider):
                 if not (1 <= width <= 4096 and 1 <= height <= 2048):
                     raise ValueError("field image dimensions out of bounds")
                 source = field_border_image(width, height, focused=parts[3] == "focus")
+            elif parts[0] == "popup-shadow" and len(parts) == 3:
+                width, height = int(parts[1]), int(parts[2])
+                if not (1 <= width <= 4096 and 1 <= height <= 2048):
+                    raise ValueError("popup shadow dimensions out of bounds")
+                source = popup_shadow_image(width, height)
             elif parts[0] == "icon" and len(parts) == 2:
                 if parts[1] not in {
                     "download.png",

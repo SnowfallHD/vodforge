@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Popup {
+StonePopup {
     id: editorial
     objectName: "editorialPopup"
     property var slides: []
@@ -26,7 +26,6 @@ Popup {
     padding: 20
     modal: true
     closePolicy: Popup.CloseOnEscape
-    background: StoneField {}
 
     ColumnLayout {
         anchors.fill: parent

@@ -722,7 +722,6 @@ Item {
                 width: Math.min(260, scene.width - 24)
                 height: 150
                 padding: 5
-                background: StoneField {}
                 Column {
                     anchors.fill: parent
                     spacing: 2
@@ -752,7 +751,6 @@ Item {
                 width: 190
                 padding: 8
                 modal: false
-                background: StoneField {}
                 Column {
                     width: parent.width
                     spacing: 5
@@ -769,7 +767,6 @@ Item {
                 width: 206
                 height: 164
                 padding: 4
-                background: StoneField {}
                 onClosed: collectionsSubmenu.close()
                 onXChanged: collectionsSubmenu.reposition()
                 onYChanged: collectionsSubmenu.reposition()
@@ -821,7 +818,6 @@ Item {
                 width: 212
                 height: Math.min(280, scene.appBridge.libraryCategories.length * 40 + 8)
                 padding: 4
-                background: StoneField {}
                 ListView {
                     objectName: "libraryCollectionsFilterList"
                     anchors.fill: parent
@@ -853,7 +849,6 @@ Item {
         width: 200
         height: 100
         padding: 3
-        background: StoneField {}
         Column {
             anchors.fill: parent
             spacing: 3

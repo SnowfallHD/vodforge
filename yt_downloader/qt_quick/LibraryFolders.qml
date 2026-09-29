@@ -325,7 +325,6 @@ Item {
         height: Math.min(300, ancestorList.implicitHeight + 16)
         padding: 8
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: StoneField {}
         ScrollView {
             anchors.fill: parent
             clip: true
@@ -357,7 +356,7 @@ Item {
             function onNavigationKeyChanged() { ancestorsPopup.close() }
         }
     }
-    Popup {
+    StonePopup {
         id: compactIssuePopup
         objectName: "libraryCompactIssuePopup"
         parent: browser.Window.window ? browser.Window.window.contentItem : browser
@@ -367,7 +366,6 @@ Item {
         y: (parent.height - height) / 2
         modal: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: StoneField {}
         LibraryFolderInspector {
             anchors.fill: parent
             anchors.margins: 12

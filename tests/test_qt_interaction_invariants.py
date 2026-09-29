@@ -774,3 +774,50 @@ def test_file_path_trail_is_one_line_with_reachable_hidden_parents(
             assert bridge.libraryScene["route"] == "home"
     finally:
         _close(bridge, engine, window)
+
+
+@pytest.mark.parametrize(
+    "popup_name", ["libraryFolderAncestorsPopup", "allRunsPopup", "optionsMenu"]
+)
+def test_floating_surfaces_cast_shadow_outside_unchanged_input_bounds(
+    tmp_path, monkeypatch, popup_name
+):
+    root = tmp_path / "Media"
+    nested = root / "Channel" / "Playlist" / "Video"
+    nested.mkdir(parents=True)
+    record = saved(nested, "Video", "MP4")
+    record["vodforge_retry_job"] = {"output_dir": str(root)}
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        window.resize(1600, 1000)
+        if popup_name == "libraryFolderAncestorsPopup":
+            bridge.select("Library")
+            bridge.navigateLibrary("folders")
+            bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(nested)))
+            bridge._queue_folder_listing()
+            bridge.historyChanged.emit()
+        QTest.qWait(100)
+        popup = window.findChild(QObject, popup_name)
+        popup.open()
+        QTest.qWait(100)
+        background = popup.property("background")
+        shadow = background.findChild(QObject, "popupElevationShadow")
+        assert shadow is not None
+        assert shadow.property("sourceSize").width() > 0
+        bounds = (popup.property("width"), popup.property("height"))
+        origin = background.mapToItem(window.contentItem(), 0, 0)
+        x = round(origin.x() + background.width() + 6)
+        y = round(origin.y() + background.height() / 2)
+        elevated = window.grabWindow()
+        assert 0 <= x < elevated.width() and 0 <= y < elevated.height()
+        shadow.setProperty("visible", False)
+        QTest.qWait(50)
+        flat = window.grabWindow()
+        assert elevated.pixelColor(x, y).lightness() < flat.pixelColor(x, y).lightness()
+        assert bounds == (popup.property("width"), popup.property("height"))
+        shadow.setProperty("visible", True)
+        popup.close()
+        app.processEvents()
+        assert not popup.property("visible")
+    finally:
+        _close(bridge, engine, window)

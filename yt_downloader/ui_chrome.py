@@ -319,6 +319,28 @@ def layered_surface_image(
     return _matte_rim(surface, fill, edge, radius, depth=0.48)
 
 
+def popup_shadow_image(width: int, height: int) -> Image.Image:
+    """Soft rounded elevation outside the shared popup face, with 24px support."""
+    extent = 24
+    size = (width + extent * 2, height + extent * 2)
+    mask = Image.new("L", size)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (extent, extent, extent + width - 1, extent + height - 1),
+        radius=min(9, width // 2, height // 2),
+        fill=255,
+    )
+    image = Image.new("RGBA", size)
+    for offset, blur, opacity in ((5, 8, 0.34), (2, 2, 0.22)):
+        shadow = Image.new("RGBA", size, "#000000")
+        shadow.putalpha(
+            _shift_mask(mask, 0, offset)
+            .filter(ImageFilter.GaussianBlur(blur))
+            .point(lambda alpha, opacity=opacity: round(alpha * opacity))
+        )
+        image = Image.alpha_composite(image, shadow)
+    return image
+
+
 def field_border_image(
     width: int,
     height: int,

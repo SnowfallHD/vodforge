@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-Popup {
+StonePopup {
     id: popup
     property Item anchorItem
     property Item scrollViewport

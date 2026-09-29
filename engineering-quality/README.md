@@ -2510,3 +2510,19 @@ unfiled download, then a named playlist. It also checks that a populated
 Channels section stays active. The condition is per section, independent of
 whether other downloads exist. This covers the representative Watch home
 transition; packaged native presentation still needs inspection.
+
+### Floating surface elevation — 2026-09-29
+
+The shared field-material contract covered popup faces but did not measure their
+outer silhouette. Reusing the recessed field for a floating menu therefore passed
+existing material and interaction checks while visually cutting into the page.
+All custom popups now inherit StonePopup, directly or through AnchoredPopup and
+EditorialPopup; embedded fields retain their existing material. One bounded
+shadow renderer supplies the common elevation without changing input bounds.
+The rendered regression compares pixels outside folder-ancestor, Run Deck and
+modal-options surfaces with their shadows present and hidden, and checks stable
+popup geometry and closure. All three reject the prior flat surface; receipts are
+in build/popup-elevation-proof/prior-flat-failure.log. The source-wide contract
+prevents raw Popup instances bypassing this shared owner. Native packaged Mac
+appearance/interaction remains separate from this source proof; Windows native
+rendering and arbitrary display scaling are not established by offscreen tests.
