@@ -754,12 +754,15 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         assert mode_option is not None
         mode_option.activated.emit()
         app.processEvents()
-        QTest.qWait(100)
+        issue_panel = window.findChild(QObject, "libraryIssueInspector")
+        scroll_content = issue_panel.property("contentItem")
+        deadline = time.monotonic() + 2
+        while scroll_content.property("contentY") <= 0 and time.monotonic() < deadline:
+            QTest.qWait(20)
         assert bridge.libraryFolderInspector["settings"]["export_mode"] == (
             "Manual Override"
         )
         assert mode_selector.property("expanded")
-        issue_panel = window.findChild(QObject, "libraryIssueInspector")
         manual_controls = window.findChild(QObject, "libraryIssueManualMp4")
         quality_selector = window.findChild(QObject, "libraryIssueQualitySelector")
         assert manual_controls is not None and manual_controls.property("visible")
@@ -775,7 +778,6 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
             <= manual_controls.mapToItem(issue_panel, QPointF(0, 0)).y()
             < quality_selector.mapToItem(issue_panel, QPointF(0, 0)).y()
         )
-        scroll_content = issue_panel.property("contentItem")
         quality_button = window.findChild(QObject, "libraryIssueQuality")
         options_button = window.findChild(QObject, "libraryIssueOptions")
         quality_button.activated.emit()
