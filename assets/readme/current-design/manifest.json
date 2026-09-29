@@ -1,0 +1,63 @@
+{
+  "captured": "2026-09-29",
+  "interface": "actual Qt Quick app",
+  "screenshots": [
+    {
+      "file": "recovery.png",
+      "sha256": "57ce09c5a9d8be9b971a9188fa348665372db506c4fed573b8e644bb7f44c1ab",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    },
+    {
+      "file": "watch.png",
+      "sha256": "7de1edf5cbf91453cb21d4c773b3fef5090db6ca2edde62bd797dbdd08eeca7e",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    },
+    {
+      "file": "library-detail.png",
+      "sha256": "ea9a38a7948a629e17090c9a7f9431da554d4300dd6265249cf30b852bf3341b",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    },
+    {
+      "file": "library.png",
+      "sha256": "9c6442aa389c0f148b9b3302f0f4558bbf53949bcdd111ff28e9a6eaf38cbe49",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    },
+    {
+      "file": "my-files.png",
+      "sha256": "d146b69aa747534e7652fab838489f5c91e94b89e287e2c57de4ab3efd494211",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    },
+    {
+      "file": "forge.png",
+      "sha256": "6a37a1b4d809fab7fcdbab5f2297f940e6a2ae6544bf084422cd93c08d2e816f",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    },
+    {
+      "file": "player.png",
+      "sha256": "18500beaa5858e6a0deeb44bd7d93374070ad1b9fe69d8355190456516162fd0",
+      "kind": "native-macos-app-screenshot",
+      "sourceCommit": "0ea952f",
+      "sampleMedia": "fictional nature fixture",
+      "designStatus": "development preview, not public release 0.2.2"
+    }
+  ],
+  "notes": "Unmodified native screenshots. Generated nature artwork is sample media. Fictional source links and activity are illustrative. No private user library is included."
+}

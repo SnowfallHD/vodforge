@@ -1,5 +1,10 @@
 # Output ownership and deferred native Help commands
 
+For the current Qt Quick screen and control contract, use [current design](current-design.md)
+and [shared UI components](ui-components.md). Retained implementation and showcase
+history below applies to its named owner; it does not override current Qt navigation.
+
+
 This source patch addresses two user-reported regressions and an adjacent confirmed
 output-preservation defect. Release qualification is still pending. Source-native,
 headless, and signed packaged evidence are separate tiers.

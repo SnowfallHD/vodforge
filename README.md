@@ -15,11 +15,12 @@ Turn YouTube videos and playlists into organized **MP4 video**, **MP3 audio**, o
 **Original audio**. Choose your quality, follow clear progress, and keep everything
 in a searchable Library with built-in playback.
 
-![VODForge Forge workspace with progress, output details, and Run Deck](assets/readme/forge.png)
+![Actual VODForge Watch workspace with fictional nature media](assets/readme/current-design/watch.png)
 
-> This README describes this source checkout. Screenshots are illustrative captures
-> of the native UI with sample content; newer changes may not yet be pictured or in the
-> [latest public download](https://github.com/SnowfallHD/vodforge/releases/latest).
+> These are native screenshots of the current Qt Quick development build with a
+> fictional nature library. They preview the new design; the current public release
+> is **0.2.2** and may look different. No personal media appears in these assets.
+> [Screenshot provenance](assets/readme/current-design/manifest.json) · [Press assets](https://getvodforge.com/press/)
 
 [Install](#install-a-packaged-release) · [Using VODForge](#using-vodforge) ·
 [Privacy](#privacy-and-usage-analytics) · [Welcome & feedback](docs/welcome-feedback-reviews.md) · [Development](#development) ·
@@ -29,45 +30,78 @@ in a searchable Library with built-in playback.
 
 Start with install and usage below. For development, follow [Development](#development),
 [architecture and repository map](docs/architecture.md), the
-[shared UI catalog](docs/ui-components.md), and
+[shared UI catalog](docs/ui-components.md) and [current product guide](docs/current-design.md), and
 [harness operating and maintenance guide](engineering-quality/HARNESS_GUIDE.md), with
 [testing setup and commands](engineering-quality/README.md).
 The [release gate](engineering-quality/RELEASE_GATE.md) defines required evidence.
 The [Mac/Windows owner map](docs/architecture.md#shared-product-and-native-implementations)
 separates native implementations while keeping one shared product UI and behavior contract.
 
-## For AI agents
+## The current app
 
-Read [AGENTS.md](AGENTS.md) for operational navigation. It points into the same architecture,
-UI, testing and release guides used by human contributors.
+### Forge: save and follow every run
 
-## What it does
+Paste a video URL or load a list, choose **MP4**, **MP3**, or **Original audio**, and
+choose where to save it. **Options** holds output modes, quality ceilings and access
+settings. Custom reveals its controls directly below the choice. Use **Create video**
+to turn local audio and a still image into an MP4.
 
-- Downloads individual videos, playlists, or a batch of URLs.
-- Supports quality caps from 360p through 4K when the source provides them.
-- Offers task-based MP4 settings: **Everyday** (default), **Streaming**, **Editing**, **Sharing**, and **CTV**, plus **Custom** controls.
-- Tunes automatic presets separately for CPU x264 and optional Windows NVIDIA NVENC; existing Auto CBR preferences retain the CTV delivery intent.
-- Keeps exact video bitrate or explicit x264 CRF, encoding speed, sample rate, channels, and AAC or MP3 settings available through Custom.
-- Embeds useful metadata and thumbnails in the MP4 when supported.
-- Creates MP3 audio at 320 kbps CBR by default, with optional 256, 192, and 128 kbps profiles plus source, 48 kHz, or 44.1 kHz sample-rate and source, stereo, or mono channel settings.
-- Preserves the best available supported audio stream with **Original audio**: Opus becomes `.opus`, AAC becomes `.m4a`, without another lossy encoding step. It does not force either codec or make the source lossless.
-- Embeds standard ID3 title/artist metadata by default. Cover art defaults to **No Art**, with explicit choices for the YouTube thumbnail or a custom image; MP3 mode still leaves one final audio file rather than a separate cover image.
-- Turns a local MP3 plus a selected still image into an offline H.264/AAC MP4, with dedicated 720p, 1080p, 4K, and strict 2 Mbps profiles. Results go directly into the selected output folder.
-- Searches the Library and organizes saved items with private notes, tags, and reusable categories.
-- Plays saved MP4, MP3, and Original audio inside VODForge using bundled libVLC, with one synchronized audio/video clock, custom controls, chapters, heatmaps, and preview moments where available.
-- Offers live theme and accent-color choices while preserving the familiar Forge, Library, and Settings layout.
-- Writes a compact, readable `metadata.json` beside each video.
-- Keeps playlist and non-playlist downloads organized in collision-safe, path-length-aware folders that retain recognizable channel, playlist, and video titles.
-- Ignores playlist expansion by default so a copied watch link downloads only that video or audio item; turn **Ignore playlists** off when you intentionally want every item in a playlist.
-- Keeps YouTube access explicit: **Public** uses no cookies, while `cookies.txt` and **Browser** are separate opt-in methods for content you are authorized to access.
-- Shows friendly progress stages in Forge, with a vertical smile/frown control to switch to the styled technical log. Activity retains the full technical view.
-- Combines private local download history across app restarts with current-session metadata previews, visual Library browsing, search and output-type filters.
-- Keeps each Forge run's format and output details stable while the output dropdown and Settings configure only the next run.
-- Reflects the latest Library items in Run Deck as playlist items finish, without waiting for the entire playlist. Skipping an item follows the next playlist item when one remains.
-- Introduces new users with a native welcome tour. Optional release-selected **Did you know?** tips and **What's new** highlights share once-seen tracking; this checkout disables both automatic showcases.
-- The **All N runs** button shows a scrollable list of artwork/status cards on hover; clicking toggles that popup. Failed-run retries use current settings; redownloading previously successful media uses its saved output profile when available, with the Everyday preset as the legacy fallback.
-- Lets preview items start downloads directly, failed items retry, skipped or stopped items restart as fresh runs, and Library removal stop only the exact active or queued run it owns without deleting downloaded media.
-- Checks versioned, stable GitHub Releases automatically after startup and every six hours; it never installs code directly from the repository's `main` branch.
+The activity view keeps the steps that actually happened, including completed and
+interrupted runs. Switch to Technical for the detailed, vertically scrolling log.
+The Run Deck shows artwork, state and progress; **All N runs** opens the full scrollable
+card list. Active and queued work, stopped/canceled, failed and skipped runs remain
+visible alongside completed exports. Removing a queued item removes that item.
+
+![Actual Forge activity, output facts and Run Deck](assets/readme/current-design/forge.png)
+
+### Library: find it and keep the details
+
+Browse saved video and audio, channels, playlists and personal collections. Search is
+scoped to Library. Item details keep source descriptions, tags, private notes, saved
+versions and output facts together. Copy controls preserve full source URLs and text.
+Local description edits retain the original provider information.
+
+![Actual Library with nature playlists and channels](assets/readme/current-design/library.png)
+
+![Actual Library item details](assets/readme/current-design/library-detail.png)
+
+### Watch: a place for your saved media
+
+Continue a video, browse playlists and channels, or play something from your library.
+Each empty section keeps its own placeholders, even when other sections contain media.
+**See All** becomes available when that section has at least one real item.
+
+The internal player preserves the full picture in Fit mode, supports playback controls
+and local previews, and returns to the route that opened it. More to Watch and source
+and output information remain accessible around the player.
+
+![Actual native player with fictional nature footage](assets/readme/current-design/player.png)
+
+### My Files: browse locations on your computer
+
+Open local storage from Library to browse My Files. Folder navigation replaces the
+current listing without moving neighboring panes. The one-line path exposes hidden
+ancestors through its overflow menu; compact **Back** sits below it. The right side
+shows the current folder or selected file and **Open this folder** opens that exact
+location. Select a video, thumbnail or metadata file for its relevant details.
+
+![Actual My Files with recognizable folder symbols](assets/readme/current-design/my-files.png)
+
+### Issues & Recovery: resolve interrupted runs and missing files
+
+The recovery list surfaces failed, stopped/canceled and skipped attempts without a
+saved export, plus missing saved media. Select an issue
+to locate moved media or retry using its recorded configuration. The same output and
+Custom controls used by Forge appear here. A retry stays in this view, updates its
+state as work advances, and leaves the list only after success. Ordinary new downloads
+are not added to recovery just because they are running.
+
+![Actual Issues and Recovery with a fictional stopped run](assets/readme/current-design/recovery.png)
+
+The app uses shared vector symbols, floating popup shadows and native control
+semantics. Support offers separate, plain checkboxes for a reply and optional deeper
+diagnostics; submitting feedback is an explicit action. The quiet X emblem beside
+Settings opens [@VODForge](https://x.com/VODForge).
 
 ## Install a packaged release
 
@@ -83,17 +117,19 @@ The macOS release is a normal `VODForge.app`; its bundled runtime is inside the 
 
 ## Run from source
 
-You need Python 3.11 or newer with Tk support.
+You need Python 3.11 or newer. The current interface uses PySide6 / Qt Quick.
+`qt_main.py` launches it explicitly. The retained `main.py` Tk entrypoint supports
+older release workflows; it does not render the screenshots above.
 
 ### macOS
 
-Homebrew is used to install a Tk-enabled Python, FFmpeg, and Deno. The application remains a lightweight Python/Tk desktop app; it does not require Electron.
+Homebrew is used to install a Tk-enabled Python, FFmpeg, and Deno. The application is a native Python/Qt desktop app; it does not require Electron.
 
 ```bash
 git clone https://github.com/SnowfallHD/vodforge.git
 cd vodforge
 ./install_macos_dependencies.sh
-.venv/bin/python main.py
+.venv/bin/python qt_main.py
 ```
 
 ### Windows
@@ -107,56 +143,31 @@ python -m pip install -r requirements.txt
 .\install_ffmpeg_windows.ps1
 .\install_deno_windows.ps1
 .\install_vlc_windows.ps1
-python main.py
+python qt_main.py
 ```
 
 FFmpeg is required. Deno is strongly recommended because current YouTube extraction increasingly relies on a JavaScript runtime.
 
 ## Using VODForge
 
-1. Paste one YouTube URL, choose a playlist URL, or load a text file containing one URL per line.
-2. Choose **MP4**, **MP3**, or **Original audio** from the dropdown at the right edge of the URL field.
-3. Pick an output folder. For MP4, choose a quality cap and export mode. For MP3, the default is 320 kbps; sample-rate and channel controls are in Settings. Original audio preserves the selected stream and has no re-encoding controls.
-4. Start or queue the run.
+1. Paste a YouTube URL or load a text file with one URL per line.
+2. Choose the output format and save location.
+3. Open **Options**, review the output mode and quality ceiling, and use Custom
+   for explicit bitrate, codec, channel, sample-rate and encoding controls.
+4. Choose **Download**, or queue the run while another is active.
+5. Find the result in Library, play it in Watch, or browse its files in My Files.
 
-For local audio, use **MP3 + image → MP4** beneath the Forge URL field. Choose one MP3 and one JPG, PNG, or WebP still; VODForge renders the image as the video for the full length of the audio. The original files are unchanged, and the finished MP4 is written directly to the selected output folder—no channel or item parent folder is added—then appears in Library's MP4 view.
+Quality ceilings preserve aspect ratio and accept the source's named tier. A source
+labeled 1080p can have a frame height below 1080; VODForge does not add pixels merely
+to match a tier name. A 4K ceiling does not upscale smaller footage.
 
-The dialog reserves its full Image preview frame before selection. **Choose folder** changes the shared save directory, and **All N runs** toggles the scrollable run-card list. The composer’s format dropdown is inline after a divider.
-
-This converter has its own saved output profile, independent of the YouTube download settings: **1080p Standard** uses efficient still-image compression, **2160p 4K** renders at 3840×2160, **720p Compact** reduces resolution, and **1080p Strict 2 Mbps CBR** provides a fixed-rate option. Each uses 30 fps H.264 with two-second keyframes and AAC audio. Increasing resolution cannot restore detail absent from the selected image.
-
-Forge keeps active, queued, completed, previewed, stopped, and failed attempts under separate run identities. Selecting an older card does not overwrite the current run, and changing the output type or settings does not rewrite the selected card's recorded format. Preview, retry, and restart actions always enter the normal sequential run queue as fresh attempts.
-
-Quality caps use the provider's named tier when available, rather than requiring
-an exact frame height. For example, a wide `1920×1012` stream labeled **1080p**
-by YouTube is eligible at 1080p. VODForge preserves aspect ratio; it does not add
-pixels just to make the height read 1080.
-
-### Your Library and Watch
-
-Use **Library** to find and organize saved media. Browse videos, audio, channels,
-playlists, or your own collections. Open an item for its description and tags;
-the overflow menu holds file and management actions. Editing a description saves
-a local override and keeps the original provider information intact.
-
-Use **Watch** to choose something to play. A featured item leads the page,
-followed by Recently Added, your Collections, Playlists, and Channels. Scroll a
-row horizontally or choose **See All** for its complete catalog. Channels open
-their playlists and saved media. A playlist with one saved video gets a focused
-feature view instead of an almost-empty row.
-
-Playback defaults to **Fit**, so the whole source picture remains visible without
-cropping or stretching. Click the picture to pause or resume. Recommendations sit
-beside the player when there is room and below it on narrower windows. Description,
-chapters, notes, moments, tags, and source/output facts remain available below.
-Missing measurements are shown as unknown.
-
-The gear menu opens **Help and feedback**, **Rate VODForge**, and **Welcome tour**
-directly. Rating and feedback submissions remain explicit actions.
+For local audio, choose **Create video**. Its own saved profile is independent of
+YouTube output settings. It renders the still image for the audio's full duration
+and writes the result directly to the selected folder. Source files remain intact.
 
 ### MP4 output settings
 
-In **Settings → Optimize for**, choose the task you need:
+In **Forge → Options → Output mode**, choose the task you need:
 
 | Setting | Use it for | CPU video policy |
 | --- | --- | --- |
@@ -200,20 +211,13 @@ route. See [updater recovery](docs/update-handoff.md).
 
 ### A Library that stays yours
 
-![VODForge Library with search, categories, and source and output details](assets/readme/library.png)
-
-Library combines saved history and metadata-only previews in visual browsing and detail views. Open an item to see its description, personal tags, source and output information. Its vertical three-dot menu and right-click menu provide the same actions for that item. Use **Folders and storage** to browse saved locations and inspect their media; opening details returns to the same folder context. Use **Delete** to remove saved files and their Library entries, with a confirmation first. **File options → Remove Library entry only** keeps the files and removes their VODForge history; only that row's exact active or queued run is stopped or dequeued.
-
-In Library, choose **Select**, select media, then **Actions** to add a collection,
-move files, or delete them. Move carries your saved details and playback progress to
-the chosen folder. Delete normally uses system Trash; missing files remove only their
-Library entries. An interrupted change offers a review before another file change.
-
-Use Library search and collections to find items. Personal notes, tags, collections and edited descriptions are saved locally; provider metadata remains intact. Description editing exposes Save and Cancel only while editing, and Copy includes the full displayed description.
-
-**Play** opens the saved media in the internal player. Click the video to pause or resume. Playback works offline with no separately installed player. Chapters, heatmaps, and preview moments appear when their metadata or local media supports them. If a file was moved or deleted, the recovery prompt can send it back to Forge using its saved export settings and original base output folder. Existing channel/playlist/item folders are reused instead of nesting the same hierarchy again; older records without a usable saved profile require review.
-
-Theme presets and custom accents apply immediately in Settings. Trackpad scrolling works throughout the Settings body, with the action footer kept visible.
+Notes, tags, collections and edited descriptions are saved locally. Library's file
+and management actions remain scoped to the captured item. Moving carries saved
+annotations and playback progress; deleting uses system Trash where available and
+requires confirmation. Removing a Library entry alone preserves its files. Missing
+media is handled through Issues & Recovery, with saved configuration available for
+redownload when recorded. An unavailable external drive is distinguished from a
+confirmed missing file.
 
 ## Privacy and usage analytics
 
@@ -284,6 +288,7 @@ Install the portable dependencies, then build and smoke-test:
 .\install_ffmpeg_windows.ps1
 .\install_deno_windows.ps1
 .\install_vlc_windows.ps1
+$env:VODFORGE_UI = "qt"
 .\build_windows.ps1
 .\smoke_launch.ps1
 ```
@@ -308,7 +313,7 @@ Install dependencies, build the `.app`, and run its offline runtime smoke test:
 
 ```bash
 ./install_macos_dependencies.sh
-./build_macos.sh
+VODFORGE_UI=qt ./build_macos.sh
 ```
 
 Local/source builds disable production telemetry regardless of their version string.
@@ -332,7 +337,9 @@ To package an unsigned ZIP for internal testing:
 ./build_and_package_macos.sh 0.1.0
 ```
 
-The build bundles FFmpeg, ffprobe, Deno, and the pinned libVLC runtime so downloads and synchronized in-app playback do not depend on shell `PATH` configuration or an installed external player. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
+The Qt build bundles FFmpeg, ffprobe, Deno, and Qt Multimedia playback dependencies.
+The retained Tk build bundles libVLC. Neither requires an external player or shell
+`PATH` configuration for packaged playback. Public distribution still requires an Apple Developer ID signature and notarization; the build scripts do not claim or perform those steps.
 
 ## Release workflow
 

@@ -1,6 +1,12 @@
 # Embedded playback backend evaluation
 
-## Decision
+## Applicability
+
+This records the retained Tk playback decision. The current Qt Quick interface
+uses Qt Multimedia; see [current design](current-design.md) and
+[architecture](architecture.md). Historical prototype receipts below remain unchanged.
+
+## Retained Tk decision
 
 VODForge uses libVLC 3.0.23 behind the provider-neutral `PlaybackBackend`
 contract. The engine renders into a VODForge-owned native child surface while

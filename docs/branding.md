@@ -52,3 +52,14 @@ establish installed Dock acceptance.
 September 19: theme-specific app and site derivatives are now explicitly authorized.
 They preserve approved geometry/alpha and material luminance, with monochrome
 palette tint. This does not change canonical raster masters or platform icon exports.
+
+## Current app and public product imagery
+
+Public imagery uses native captures from an isolated fictional nature library.
+See [current design](current-design.md) and the [UI contract](ui-components.md).
+ImageGen supplies composition references only; it cannot stand in for an app screen.
+The README's seven captures are in `assets/readme/current-design/`, with source
+identity and SHA-256 in its manifest. The website uses the same original captures
+and provides full-size editorial downloads at `/press/`. Do not use personal
+library records, screenshots containing other apps, or generated UI as product proof.
+The current-folder emblem is a semantic UI symbol, not a redesign of the VF brand.

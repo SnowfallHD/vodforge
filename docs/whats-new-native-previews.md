@@ -1,5 +1,10 @@
 # Native What’s New previews
 
+For the current Qt Quick screen and control contract, use [current design](current-design.md)
+and [shared UI components](ui-components.md). Retained implementation and showcase
+history below applies to its named owner; it does not override current Qt navigation.
+
+
 Release editorial selection: `SHOWCASE_MODE` in `whats_new.py` selects
 `whats-new` or `did-you-know`. Only change it when requested for a release;
 assign a new `SHOWCASE_ID` when enabling that release's announcement. The tip

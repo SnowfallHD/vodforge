@@ -1,5 +1,9 @@
 # VODForge application architecture
 
+The current screen map and public screenshot workflow are in [current design](current-design.md).
+New UI work follows the normative [shared UI contract](ui-components.md).
+
+
 This document describes ownership and security boundaries in the desktop application. It is intentionally about runtime contracts, not a class-by-class inventory.
 
 ## Current Qt Quick presentation

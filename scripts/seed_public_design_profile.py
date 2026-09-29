@@ -132,7 +132,19 @@ def main() -> None:
                 "tags": ["nature", "sample"],
                 "vodforge_output_type": "MP4",
                 "vodforge_output_path": str(video),
-                "vodforge_encoding_summary": "720p HD · H.264 · AAC",
+                "vodforge_encoding_summary": {
+                    "source": {
+                        "Source resolution": "1280x720",
+                        "Video codec": "H.264",
+                        "Audio codec": "AAC",
+                    },
+                    "output": {
+                        "Output resolution": "1280x720",
+                        "Output container": "MP4",
+                        "Output file size": f"{video.stat().st_size / 1024 / 1024:.1f} MB",
+                        "Output file path": str(video),
+                    },
+                },
                 "vodforge_run_activity": [
                     "INFO: selected format demo — video 720p h264; audio AAC",
                     "INFO: downloading media",

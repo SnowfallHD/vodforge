@@ -153,8 +153,9 @@ squares, a source link uses the chain emblem, overflow uses the shared dots. Eve
 icon-only action has an accessible name and tooltip where useful.
 
 Artwork has explicit layout bounds before loading. Preserve actual media colors
-and the approved fit/crop rules. Empty folder preview wells show the folder emblem
-centered in the concave container; metadata shows a file emblem. A delayed image
+and the approved fit/crop rules. The current-folder overview uses a large unframed
+folder emblem, centered with its label below. Other intentionally empty preview wells retain their centered emblem;
+metadata shows a file emblem inside its concave preview container. A delayed image
 cannot become a permanent busy indicator after the run has finished. Loading,
 unavailable and intentionally empty artwork are different states.
 
