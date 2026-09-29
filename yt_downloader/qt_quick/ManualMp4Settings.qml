@@ -19,10 +19,14 @@ ColumnLayout {
         ColumnLayout {
             Layout.fillWidth: true
             Text { text: "Video rate control"; color: manual.colors.muted; font.pixelSize: 13 }
-            StoneButton {
-                label: manual.backend.manualValues.manual_rate_control + "  ▾"
-                Layout.fillWidth: true; Layout.preferredHeight: 39
-                onActivated: manual.backend.setManualValue("manual_rate_control", manual.backend.manualValues.manual_rate_control === "CBR" ? "Quality" : "CBR")
+            InlineSelector {
+                objectName: "manualRateControlSelector"
+                buttonObjectName: "manualRateControlButton"
+                Layout.fillWidth: true
+                currentValue: manual.backend.manualValues.manual_rate_control
+                buttonText: currentValue
+                options: [{label: "CBR", value: "CBR"}, {label: "Quality", value: "Quality"}]
+                onChosen: value => manual.backend.setManualValue("manual_rate_control", value)
             }
         }
         ColumnLayout {
@@ -72,41 +76,59 @@ ColumnLayout {
         ColumnLayout {
             Layout.fillWidth: true
             Text { text: "Audio codec"; color: manual.colors.muted; font.pixelSize: 13 }
-            StoneButton {
-                label: manual.backend.manualValues.manual_audio_codec + "  ▾"
-                Layout.fillWidth: true; Layout.preferredHeight: 39
-                onActivated: manual.backend.setManualValue("manual_audio_codec", manual.backend.manualValues.manual_audio_codec === "AAC" ? "MP3" : "AAC")
+            InlineSelector {
+                objectName: "manualAudioCodecSelector"
+                buttonObjectName: "manualAudioCodecButton"
+                Layout.fillWidth: true
+                currentValue: manual.backend.manualValues.manual_audio_codec
+                buttonText: currentValue
+                options: [{label: "AAC", value: "AAC"}, {label: "MP3", value: "MP3"}]
+                onChosen: value => manual.backend.setManualValue("manual_audio_codec", value)
             }
         }
         ColumnLayout {
             Layout.fillWidth: true
             Text { text: "Sample rate"; color: manual.colors.muted; font.pixelSize: 13 }
-            StoneButton {
-                label: manual.backend.manualValues.manual_sample_rate === "48000" ? "48 kHz" : "44.1 kHz"
-                Layout.fillWidth: true; Layout.preferredHeight: 39
-                onActivated: manual.backend.setManualValue("manual_sample_rate", manual.backend.manualValues.manual_sample_rate === "48000" ? "44100" : "48000")
+            InlineSelector {
+                objectName: "manualSampleRateSelector"
+                buttonObjectName: "manualSampleRateButton"
+                Layout.fillWidth: true
+                currentValue: manual.backend.manualValues.manual_sample_rate
+                buttonText: currentValue === "48000" ? "48 kHz" : "44.1 kHz"
+                options: [{label: "48 kHz", value: "48000"}, {label: "44.1 kHz", value: "44100"}]
+                onChosen: value => manual.backend.setManualValue("manual_sample_rate", value)
             }
         }
         ColumnLayout {
             Layout.fillWidth: true
             Text { text: "Channels"; color: manual.colors.muted; font.pixelSize: 13 }
-            StoneButton {
-                label: manual.backend.manualValues.manual_channels + "  ▾"
-                Layout.fillWidth: true; Layout.preferredHeight: 39
-                onActivated: manual.backend.setManualValue("manual_channels", manual.backend.manualValues.manual_channels === "Stereo" ? "Mono" : "Stereo")
+            InlineSelector {
+                objectName: "manualChannelsSelector"
+                buttonObjectName: "manualChannelsButton"
+                Layout.fillWidth: true
+                currentValue: manual.backend.manualValues.manual_channels
+                buttonText: currentValue
+                options: [{label: "Stereo", value: "Stereo"}, {label: "Mono", value: "Mono"}]
+                onChosen: value => manual.backend.setManualValue("manual_channels", value)
             }
         }
         ColumnLayout {
             Layout.fillWidth: true
             Text { text: "Encoding speed"; color: manual.colors.muted; font.pixelSize: 13 }
-            StoneButton {
-                label: manual.backend.manualValues.manual_preset + "  ▾"
-                Layout.fillWidth: true; Layout.preferredHeight: 39
-                onActivated: {
-                    const choices = ["ultrafast", "veryfast", "fast", "medium", "slow"]
-                    const current = choices.indexOf(manual.backend.manualValues.manual_preset)
-                    manual.backend.setManualValue("manual_preset", choices[(current + 1) % choices.length])
-                }
+            InlineSelector {
+                objectName: "manualPresetSelector"
+                buttonObjectName: "manualPresetButton"
+                Layout.fillWidth: true
+                currentValue: manual.backend.manualValues.manual_preset
+                buttonText: currentValue
+                options: [
+                    {label: "ultrafast", value: "ultrafast"},
+                    {label: "veryfast", value: "veryfast"},
+                    {label: "fast", value: "fast"},
+                    {label: "medium", value: "medium"},
+                    {label: "slow", value: "slow"}
+                ]
+                onChosen: value => manual.backend.setManualValue("manual_preset", value)
             }
         }
     }

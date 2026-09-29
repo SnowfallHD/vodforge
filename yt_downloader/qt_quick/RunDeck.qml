@@ -84,18 +84,23 @@ Item {
                     Layout.fillWidth: true
                 }
                 Repeater {
-                    model: deck.visibleRecords
+                    // Keep the four visual slots alive while progress changes. A
+                    // variant-list model replaces its delegates on every update,
+                    // which also destroys an open menu's anchor.
+                    model: Math.min(4, deck.workRecords.length)
                     StoneField {
-                        required property var modelData
+                        required property int index
+                        readonly property var record: deck.visibleRecords[index] || ({})
+                        visible: index < deck.visibleRecords.length
                         Layout.fillWidth: true
                         Layout.preferredHeight: deck.compact ? 50 : 68
-                        TapHandler { onTapped: deck.appBridge.selectRunRecord(modelData.selectionKey) }
+                        TapHandler { onTapped: deck.appBridge.selectRunRecord(record.selectionKey) }
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 6
                             spacing: 7
                             ArtworkImage {
-                                source: modelData.artwork
+                                source: record.artwork || ""
                                 Layout.preferredWidth: visible ? (deck.compact ? 48 : 61) : 0
                                 Layout.preferredHeight: deck.compact ? 36 : 48
                                 inset: 0
@@ -103,32 +108,33 @@ Item {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 spacing: 3
-                                Text { text: modelData.title; color: theme.text; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: record.title || ""; color: theme.text; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                                 Text {
                                     objectName: "runDeckStatus"
-                                    text: modelData.status
-                                    color: runStatusTone.colorFor(modelData.kind,
-                                                                  modelData.phase === "failed" ? "Failed" : modelData.status,
+                                    text: record.status || ""
+                                    color: runStatusTone.colorFor(record.kind,
+                                                                  record.phase === "failed" ? "Failed" : record.status,
                                                                   theme)
                                     font.pixelSize: 12
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
                                 RunProgress {
-                                    visible: modelData.kind === "active"
+                                    visible: record.kind === "active"
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: visible ? 3 : 0
-                                    kind: modelData.kind
-                                    status: modelData.status
-                                    progress: modelData.progress
+                                    kind: record.kind || ""
+                                    status: record.status || ""
+                                    progress: record.progress || 0
                                 }
                             }
                             StoneButton {
+                                objectName: "runDeckAction_" + index
                                 label: "⋯"
-                                accessibilityLabel: "Actions for " + modelData.title
+                                accessibilityLabel: "Actions for " + (record.title || "")
                                 size: "inline"
                                 Layout.preferredWidth: 31
-                                onActivated: deck.showActions(modelData, this)
+                                onActivated: deck.showActions(record, this)
                             }
                         }
                     }

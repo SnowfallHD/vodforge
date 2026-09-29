@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
-import QtQuick.Window
 
 Column {
     id: inspector
@@ -123,28 +122,38 @@ Column {
                 onActivated: issueFolderDialog.open()
             }
             Text { text: "Output"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-            StoneButton {
-                id: issueFormatButton
-                objectName: "libraryIssueFormat"
-                width: parent.width; height: 38
-                label: inspector.issueSettings.output_type || "Choose output type…"
-                onActivated: { issueFormatMenu.anchorItem = issueFormatButton; issueFormatMenu.open() }
+            InlineSelector {
+                objectName: "libraryIssueFormatSelector"
+                buttonObjectName: "libraryIssueFormat"
+                width: parent.width
+                currentValue: inspector.issueSettings.output_type || ""
+                buttonText: currentValue || "Choose output type…"
+                options: [
+                    {label: "MP4", value: "MP4"},
+                    {label: "MP3", value: "MP3"},
+                    {label: "Original audio", value: "Original audio"}
+                ]
+                onChosen: value => inspector.appBridge.setIssueRetrySetting("output_type", value)
             }
             Text { text: "Output mode"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-            StoneButton {
-                id: issueModeButton
-                objectName: "libraryIssueMode"
-                width: parent.width; height: 38
-                label: inspector.issueSettings.export_mode ? inspector.item.modeLabel : "Choose output mode…"
-                onActivated: { issueModeMenu.anchorItem = issueModeButton; issueModeMenu.open() }
+            InlineSelector {
+                objectName: "libraryIssueModeSelector"
+                buttonObjectName: "libraryIssueMode"
+                width: parent.width
+                currentValue: inspector.issueSettings.export_mode || ""
+                buttonText: currentValue ? inspector.item.modeLabel : "Choose output mode…"
+                options: inspector.appBridge.exportModeOptions
+                onChosen: value => inspector.appBridge.setIssueRetrySetting("export_mode", value)
             }
             Text { text: "Quality ceiling"; color: theme.muted; font.pixelSize: 12; font.bold: true }
-            StoneButton {
-                id: issueQualityButton
-                objectName: "libraryIssueQuality"
-                width: parent.width; height: 38
-                label: inspector.issueSettings.quality || "Choose quality…"
-                onActivated: { issueQualityMenu.anchorItem = issueQualityButton; issueQualityMenu.open() }
+            InlineSelector {
+                objectName: "libraryIssueQualitySelector"
+                buttonObjectName: "libraryIssueQuality"
+                width: parent.width
+                currentValue: inspector.issueSettings.quality || ""
+                buttonText: currentValue || "Choose quality…"
+                options: qualityOptions.map(function(value) { return {label: value, value: value} })
+                onChosen: value => inspector.appBridge.setIssueRetrySetting("quality", value)
             }
             ManualMp4Settings {
                 objectName: "libraryIssueManualMp4"
@@ -155,12 +164,44 @@ Column {
                 backend: issueManualAdapter
                 colors: theme
             }
-            StoneButton {
-                id: issueOptionsButton
-                objectName: "libraryIssueOptions"
-                width: parent.width; height: 38
-                label: "Download options…"
-                onActivated: { issueOptionsMenu.anchorItem = issueOptionsButton; issueOptionsMenu.open() }
+            Column {
+                id: issueOptionsSection
+                width: parent.width
+                property bool expanded: false
+                spacing: 4
+                StoneButton {
+                    objectName: "libraryIssueOptions"
+                    width: parent.width; height: 38
+                    label: issueOptionsSection.expanded ? "Download options  ▴" : "Download options  ▾"
+                    onActivated: issueOptionsSection.expanded = !issueOptionsSection.expanded
+                }
+                StoneField {
+                    visible: issueOptionsSection.expanded
+                    width: parent.width
+                    height: optionRows.implicitHeight + 8
+                    Column {
+                        id: optionRows
+                        x: 4; y: 4; width: parent.width - 8; spacing: 2
+                        Repeater {
+                            model: [
+                                { key: "single_video_only", label: "Single video only" },
+                                { key: "use_nvenc", label: "NVIDIA encoder" },
+                                { key: "embed_thumbnail", label: "Embed thumbnail" },
+                                { key: "write_thumbnail", label: "Save thumbnail" },
+                                { key: "embed_metadata", label: "Embed metadata" },
+                                { key: "write_info_json", label: "Save metadata file" }
+                            ]
+                            StoneButton {
+                                required property var modelData
+                                width: parent.width; height: 36
+                                label: (inspector.issueSettings[modelData.key] ? "✓  " : "    ") + modelData.label
+                                enabled: modelData.key !== "use_nvenc" || inspector.appBridge.nvencAvailable
+                                         || !!inspector.issueSettings.use_nvenc
+                                onActivated: inspector.appBridge.setIssueRetryFlag(modelData.key, !inspector.issueSettings[modelData.key])
+                            }
+                        }
+                    }
+                }
             }
             Text {
                 text: "This retry uses the saved MP3 and YouTube access settings where available."
@@ -186,87 +227,6 @@ Column {
         id: issueFolderDialog
         title: "Choose output folder for this retry"
         onAccepted: inspector.appBridge.chooseIssueOutputUrl(selectedFolder)
-    }
-    AnchoredPopup {
-        id: issueFormatMenu
-        parent: inspector.Window.window ? inspector.Window.window.contentItem : inspector
-        width: 215; height: 3 * 42 + 8; padding: 4
-        background: StoneField {}
-        Column {
-            anchors.fill: parent; spacing: 2
-            Repeater {
-                model: ["MP4", "MP3", "Original audio"]
-                StoneButton {
-                    required property string modelData
-                    width: parent.width; height: 40; label: modelData
-                    selected: inspector.issueSettings.output_type === modelData
-                    onActivated: { inspector.appBridge.setIssueRetrySetting("output_type", modelData); issueFormatMenu.close() }
-                }
-            }
-        }
-    }
-    AnchoredPopup {
-        id: issueModeMenu
-        parent: inspector.Window.window ? inspector.Window.window.contentItem : inspector
-        width: 230; height: inspector.appBridge.exportModeOptions.length * 42 + 8; padding: 4
-        background: StoneField {}
-        Column {
-            anchors.fill: parent; spacing: 2
-            Repeater {
-                model: inspector.appBridge.exportModeOptions
-                StoneButton {
-                    required property var modelData
-                    width: parent.width; height: 40; label: modelData.label
-                    selected: inspector.issueSettings.export_mode === modelData.value
-                    onActivated: { inspector.appBridge.setIssueRetrySetting("export_mode", modelData.value); issueModeMenu.close() }
-                }
-            }
-        }
-    }
-    AnchoredPopup {
-        id: issueQualityMenu
-        parent: inspector.Window.window ? inspector.Window.window.contentItem : inspector
-        width: 230; height: qualityOptions.length * 42 + 8; padding: 4
-        background: StoneField {}
-        Column {
-            anchors.fill: parent; spacing: 2
-            Repeater {
-                model: qualityOptions
-                StoneButton {
-                    required property string modelData
-                    width: parent.width; height: 40; label: modelData
-                    selected: inspector.issueSettings.quality === modelData
-                    onActivated: { inspector.appBridge.setIssueRetrySetting("quality", modelData); issueQualityMenu.close() }
-                }
-            }
-        }
-    }
-    AnchoredPopup {
-        id: issueOptionsMenu
-        parent: inspector.Window.window ? inspector.Window.window.contentItem : inspector
-        width: 245; height: 6 * 42 + 8; padding: 4
-        background: StoneField {}
-        Column {
-            anchors.fill: parent; spacing: 2
-            Repeater {
-                model: [
-                    { key: "single_video_only", label: "Single video only" },
-                    { key: "use_nvenc", label: "NVIDIA encoder" },
-                    { key: "embed_thumbnail", label: "Embed thumbnail" },
-                    { key: "write_thumbnail", label: "Save thumbnail" },
-                    { key: "embed_metadata", label: "Embed metadata" },
-                    { key: "write_info_json", label: "Save metadata file" }
-                ]
-                StoneButton {
-                    required property var modelData
-                    width: parent.width; height: 40
-                    label: (inspector.issueSettings[modelData.key] ? "✓  " : "    ") + modelData.label
-                    enabled: modelData.key !== "use_nvenc" || inspector.appBridge.nvencAvailable
-                             || !!inspector.issueSettings.use_nvenc
-                    onActivated: inspector.appBridge.setIssueRetryFlag(modelData.key, !inspector.issueSettings[modelData.key])
-                }
-            }
-        }
     }
     StoneButton {
         id: openDetails

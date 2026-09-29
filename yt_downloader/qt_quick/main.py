@@ -135,6 +135,7 @@ from yt_downloader.library_state import (
     LibraryProjectionOwner,
     format_duration,
     is_metadata_preview,
+    library_phase_from_status,
     metadata_output_type,
     metadata_run_key,
     persisted_run_deck_records,
@@ -380,6 +381,7 @@ class Bridge(QObject):
         self._run_menu_identity_token = ""  # nosec B105 - empty UI identity sentinel
         self._run_menu_admitted_job: Any | None = None
         self._selected_run_key = ""
+        self._recent_interrupted_run_id = ""
         self._artwork_records: dict[str, dict[str, Any] | None] = {}
         self._artwork_history_id: int | None = None
         self._artwork_history_count = -1
@@ -2234,8 +2236,10 @@ class Bridge(QObject):
                 "preview": 0,
                 "active": 1,
                 "queued": 2,
-                "completed": 3,
-                "terminal": 4,
+                "completed": 4,
+                "terminal": 3
+                if record.get("runId") == self._recent_interrupted_run_id
+                else 5,
             }.get(str(record["kind"]), 5)
         )
         counts: dict[str, int] = {}
@@ -4639,6 +4643,14 @@ class Bridge(QObject):
                 self._status = str(payload)
                 self._forge_activity.observe(self._forge_run_id, self._status)
                 self.statusChanged.emit()
+                active = self._runtime.active_job
+                phase = library_phase_from_status(self._status)
+                if (
+                    active is not None
+                    and phase is not None
+                    and self._library_projection.observe_phase(active.run_id, phase)
+                ):
+                    self.historyChanged.emit()
             elif kind == "log":
                 self._append_activity_line(str(payload))
                 self._forge_technical = (
@@ -4651,6 +4663,7 @@ class Bridge(QObject):
             elif kind in {"done", "partial", "stopped", "error"}:
                 if kind in {"done", "partial"}:
                     self._selected_run_key = ""
+                    self._recent_interrupted_run_id = ""
                     if (
                         active_job_before is not None
                         and self._issue_run_id == active_job_before.run_id
@@ -4670,6 +4683,8 @@ class Bridge(QObject):
                         )
                     except (OSError, ValueError):
                         self._latest_failure = None
+                if kind in {"stopped", "error"} and active_job_before is not None:
+                    self._recent_interrupted_run_id = active_job_before.run_id
                 if kind == "done" and active_job_before is not None:
                     try:
                         self._engagement.completed_download(active_job_before.run_id)

@@ -65,6 +65,16 @@ def qt_app() -> QGuiApplication:
     return _QT_TEST_APP
 
 
+def visual_item(root, name: str):
+    """Find a Repeater delegate through its visual parent hierarchy."""
+    if root.objectName() == name:
+        return root
+    for child in root.childItems():
+        if found := visual_item(child, name):
+            return found
+    return None
+
+
 def saved(path: Path, name: str, kind: str, *, category: str = "") -> dict:
     return {
         "id": name,
@@ -729,12 +739,66 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
             "libraryIssueDownload",
         ):
             assert window.findChild(QObject, name) is not None
+        mode_selector = window.findChild(QObject, "libraryIssueModeSelector")
+        mode_button = window.findChild(QObject, "libraryIssueMode")
+        closed_height = mode_selector.property("height")
+        saved_mode = bridge.libraryFolderInspector["settings"]["export_mode"]
+        mode_button.activated.emit()
+        app.processEvents()
+        assert mode_selector.property("expanded")
+        assert mode_selector.property("height") > closed_height
+        assert bridge.libraryFolderInspector["settings"]["export_mode"] == saved_mode
+        mode_option = visual_item(
+            mode_selector, "libraryIssueModeSelector_option_Manual Override"
+        )
+        assert mode_option is not None
+        mode_option.activated.emit()
+        app.processEvents()
+        assert bridge.libraryFolderInspector["settings"]["export_mode"] == (
+            "Manual Override"
+        )
+        assert mode_selector.property("expanded")
+        issue_panel = window.findChild(QObject, "libraryIssueInspector")
+        scroll_content = issue_panel.property("contentItem")
+        before_scroll = mode_selector.mapToItem(issue_panel, QPointF(0, 0)).y()
+        scroll_content.setProperty("contentY", 180)
+        app.processEvents()
+        assert mode_selector.property("expanded")
+        assert mode_selector.mapToItem(issue_panel, QPointF(0, 0)).y() < before_scroll
+        assert issue_panel.property("clip") is True
+        scroll_content.setProperty("contentY", 0)
+        mode_button.activated.emit()
+        app.processEvents()
+        assert not mode_selector.property("expanded")
         bridge.setIssueRetrySetting("quality", "720p HD")
-        bridge.setIssueRetrySetting("export_mode", "Manual Override")
         app.processEvents()
         manual_controls = window.findChild(QObject, "libraryIssueManualMp4")
         assert manual_controls is not None and manual_controls.property("visible")
         original_forge_manual = bridge.manualValues
+        preset_selector = manual_controls.findChild(QObject, "manualPresetSelector")
+        preset_button = manual_controls.findChild(QObject, "manualPresetButton")
+        old_preset = bridge.libraryFolderInspector["settings"]["manual"][
+            "manual_preset"
+        ]
+        preset_button.activated.emit()
+        app.processEvents()
+        assert preset_selector.property("expanded")
+        assert (
+            bridge.libraryFolderInspector["settings"]["manual"]["manual_preset"]
+            == old_preset
+        )
+        preset_option = visual_item(preset_selector, "manualPresetSelector_option_slow")
+        assert preset_option is not None
+        preset_option.activated.emit()
+        app.processEvents()
+        assert (
+            bridge.libraryFolderInspector["settings"]["manual"]["manual_preset"]
+            == "slow"
+        )
+        assert preset_selector.property("expanded")
+        preset_button.activated.emit()
+        app.processEvents()
+        assert not preset_selector.property("expanded")
         bridge.setIssueManualValue("manual_rate_control", "Quality")
         bridge.setIssueManualValue("manual_crf", "99")
         assert not bridge.downloadSelectedIssue()
@@ -752,6 +816,15 @@ def test_issue_inspector_retries_with_selected_settings_and_stays_until_success(
         assert bridge.selection == "Library"
         assert bridge.libraryFolders["count"] == 1
         assert bridge.libraryFolderInspector["status"] == "Preparing"
+        bridge._runtime.events.put(("status", "Downloading media — 2.3 MB/s"))
+        bridge._pump()
+        app.processEvents()
+        assert bridge.libraryFolderInspector["status"] == "Downloading"
+        assert bridge.libraryFolders["components"][0]["detail"] == "Downloading"
+        bridge._runtime.events.put(("status", "Video 1 of 1 — transcoding"))
+        bridge._pump()
+        app.processEvents()
+        assert bridge.libraryFolderInspector["status"] == "Transcoding"
         fresh_metadata = {"id": "abc123", "title": "Refreshed metadata"}
         bridge._runtime.recovery.metadata_observed(first, fresh_metadata)
         bridge._runtime.events.put(
@@ -2300,6 +2373,15 @@ def test_qt_rendered_run_menu_uses_admitted_execution(tmp_path, monkeypatch):
         deck.openActiveActions()
         app.processEvents()
         assert popup.property("visible") is True
+        action = visual_item(deck, "runDeckAction_0")
+        assert action is not None
+        for progress in (10, 22, 35):
+            bridge._progress = progress
+            bridge._status = f"Downloading media — {progress}%"
+            bridge.runDeckChanged.emit()
+            app.processEvents()
+            assert popup.property("visible") is True
+            assert visual_item(deck, "runDeckAction_0") == action
         cancel = next(
             item
             for item in popup.findChildren(QObject)
@@ -2354,6 +2436,38 @@ def test_qt_saved_owner_actions_remain_in_library_after_work_deck_filter(
         assert not bridge.openLibraryDetails(owners[0])
         assert not bridge.copySavedYoutubeUrl(owners[0])
         assert owners[1] == history_archive_owner(second)
+    finally:
+        bridge.close()
+
+
+def test_run_deck_keeps_interrupted_run_visible_ahead_of_completed_exports(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [
+        saved(tmp_path, f"Completed {index}", "MP4") for index in range(5)
+    ]
+    stopped = make_job(tmp_path)
+    stopped.terminal_status = "Stopped"
+    stopped.preview_info = {"title": "Canceled retry"}
+    bridge._runtime.recovered = [stopped]
+    try:
+        bridge._runtime.active_job = stopped
+
+        def finish_cancellation():
+            bridge._runtime.active_job = None
+            return [("stopped", "Stopped")]
+
+        monkeypatch.setattr(bridge._runtime, "poll", finish_cancellation)
+        bridge._pump()
+        visible = bridge.runDeck["visible"]
+        assert visible[0]["kind"] == "terminal"
+        assert visible[0]["status"] == "Stopped"
+        assert visible[0]["title"] == "Canceled retry"
     finally:
         bridge.close()
 
@@ -3390,22 +3504,23 @@ def test_qt_manual_mp4_fields_stay_in_adaptive_settings_columns(tmp_path, monkey
         manual = window.findChild(QObject, "settingsManualMp4")
         assert columns.property("columns") == 2
         assert manual.property("visible")
-        buttons = {
-            item.property("label"): item
-            for item in manual.findChildren(QObject)
-            if item.property("label") is not None
-        }
-        assert "medium  ▾" in buttons
-        buttons["medium  ▾"].activated.emit()
+        preset = manual.findChild(QObject, "manualPresetSelector")
+        preset_button = manual.findChild(QObject, "manualPresetButton")
+        initial_height = preset.property("height")
+        preset_button.activated.emit()
+        app.processEvents()
+        assert preset.property("expanded")
+        assert preset.property("height") > initial_height
+        assert bridge.manualValues["manual_preset"] == "medium"
+        slow = visual_item(preset, "manualPresetSelector_option_slow")
+        assert slow is not None
+        slow.activated.emit()
+        app.processEvents()
         assert bridge.manualValues["manual_preset"] == "slow"
-        bridge.setManualValue("manual_preset", "ultrafast")
-        buttons = {
-            item.property("label"): item
-            for item in manual.findChildren(QObject)
-            if item.property("label") is not None
-        }
-        buttons["ultrafast  ▾"].activated.emit()
-        assert bridge.manualValues["manual_preset"] == "veryfast"
+        assert preset.property("expanded")
+        preset_button.activated.emit()
+        app.processEvents()
+        assert not preset.property("expanded")
         window.setWidth(820)
         app.processEvents()
         assert columns.property("columns") == 1
