@@ -1966,7 +1966,9 @@ def _clean_windows_component_text(value: Any, fallback: str) -> str:
     return "".join(ch for ch in text if unicodedata.category(ch) not in {"Cc", "Cf"})
 
 
-def _windows_safe_component(value: Any, fallback: str, max_len: int = 80) -> str:
+def _windows_safe_component(
+    value: Any, fallback: str, max_len: int = 80, *, max_bytes: int = 240
+) -> str:
     text = _clean_windows_component_text(value, fallback)
     safe = "".join(ch if ch not in '<>:"/\\|?*\0' else "_" for ch in text).strip(" .")
     safe = " ".join(safe.split())
@@ -1980,15 +1982,23 @@ def _windows_safe_component(value: Any, fallback: str, max_len: int = 80) -> str
     }
     if safe.partition(".")[0].upper() in reserved:
         safe = f"_{safe}"
-    if len(safe.encode("utf-16-le")) // 2 > max_len:
+    if (
+        len(safe.encode("utf-16-le")) // 2 > max_len
+        or len(safe.encode("utf-8")) > max_bytes
+    ):
         kept: list[str] = []
         used_units = 0
+        used_bytes = 0
         for character in safe:
             units = len(character.encode("utf-16-le")) // 2
-            if used_units + units > max(1, max_len - 1):
+            byte_count = len(character.encode("utf-8"))
+            if used_units + units > max(
+                0, max_len - 1
+            ) or used_bytes + byte_count > max(0, max_bytes - 3):
                 break
             kept.append(character)
             used_units += units
+            used_bytes += byte_count
         safe = "".join(kept).rstrip(" ._-…") + "…"
     return safe or fallback
 
@@ -2209,8 +2219,13 @@ def video_folder_name(info: dict[str, Any]) -> str:
         suffix += f" - {variant}"
     # _windows_safe_component appends an ellipsis after truncating, so reserve
     # one extra character to keep the final user-facing folder within 96 chars.
-    title_max_len = max(1, 95 - len(suffix))
-    title = _windows_safe_component(info.get("title"), "video", max_len=title_max_len)
+    title_max_len = max(1, 95 - len(suffix.encode("utf-16-le")) // 2)
+    title = _windows_safe_component(
+        info.get("title"),
+        "video",
+        max_len=title_max_len,
+        max_bytes=255 - len(suffix.encode("utf-8")),
+    )
     return f"{title}{suffix}"
 
 
@@ -2239,24 +2254,12 @@ def compact_video_folder_name(
     suffix = f" [{video_id}]" if video_id else ""
     if variant := metadata_output_variant(info, compact=compact_variant):
         suffix += f" - {variant}"
-    title_text = _clean_windows_component_text(info.get("title"), "video")
-    title_safe = "".join(
-        ch if ch not in '<>:"/\\|?*\0' else "_" for ch in title_text
-    ).strip(" .")
-    title_safe = " ".join(title_safe.split()) or "video"
-    if len(title_safe) > max_title_len:
-        words: list[str] = []
-        used = 0
-        for word in title_safe.split():
-            next_used = used + len(word) + (1 if words else 0)
-            if words and next_used > max_title_len:
-                break
-            if not words and len(word) > max_title_len:
-                words.append(word[: max(1, max_title_len)].rstrip(" ._-…"))
-                break
-            words.append(word)
-            used = next_used
-        title_safe = " ".join(words).rstrip(" ._-…") + "…"
+    title_safe = _windows_safe_component(
+        info.get("title"),
+        "video",
+        max_len=max_title_len,
+        max_bytes=255 - len(suffix.encode("utf-8")),
+    )
     return f"{title_safe}{suffix}"
 
 
@@ -2859,7 +2862,12 @@ def _find_staged_media_file(
 
 
 def video_file_name(info: dict[str, Any], ext: str, *, max_title_len: int = 120) -> str:
-    title = _windows_safe_component(info.get("title"), "video", max_len=max_title_len)
+    title = _windows_safe_component(
+        info.get("title"),
+        "video",
+        max_len=max_title_len,
+        max_bytes=255 - len(ext.encode("utf-8")),
+    )
     return f"{title}{ext}"
 
 

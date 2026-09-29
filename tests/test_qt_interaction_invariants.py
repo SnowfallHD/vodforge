@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QObject
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtTest import QTest
@@ -341,8 +342,9 @@ def test_saved_media_cards_embed_artwork_in_hover_face(tmp_path, monkeypatch):
         _close(bridge, engine, window)
 
 
-def test_completed_download_remains_in_run_deck_ahead_of_old_stopped_run(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("status", ["Stopped", "Failed", "Skipped"])
+def test_interrupted_download_stays_visible_when_newer_downloads_complete(
+    tmp_path, monkeypatch, status
 ):
     app, bridge, engine, window = _launch(
         tmp_path, monkeypatch, [saved(tmp_path, "Just finished", "MP4")]
@@ -350,7 +352,7 @@ def test_completed_download_remains_in_run_deck_ahead_of_old_stopped_run(
     try:
         stopped = make_job(tmp_path)
         stopped.preview_info = {"title": "Old stopped run"}
-        stopped.terminal_status = "Stopped"
+        stopped.terminal_status = status
         bridge._runtime.recovered = [stopped]
         bridge.runDeckChanged.emit()
         bridge.selectHome("Forge")
@@ -361,8 +363,89 @@ def test_completed_download_remains_in_run_deck_ahead_of_old_stopped_run(
         assert [
             item["kind"] for item in deck.property("allRunsRecords").toVariant()[:2]
         ] == ["terminal", "completed"]
+        assert [
+            item["kind"] for item in deck.property("visibleRecords").toVariant()[:2]
+        ] == ["terminal", "completed"]
         assert bridge.forgeSelection["title"] == "Just finished"
         assert bridge.forgeSelection["status"].startswith("Completed")
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_folder_navigation_keeps_columns_fixed_while_async_contents_change(
+    tmp_path, monkeypatch
+):
+    import time
+
+    nested = tmp_path / ("A long readable directory name " * 5).strip()
+    nested.mkdir()
+    record = saved(nested, "Video", "MP4")
+    Path(record["vodforge_output_path"]).write_bytes(b"video")
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [record])
+    try:
+        window.resize(1180, 800)
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        app.processEvents()
+        navigation = window.findChild(QObject, "libraryFolderNavigationColumn")
+        content = window.findChild(QObject, "libraryFolderContentColumn")
+        inspector = window.findChild(QObject, "libraryFolderInspector")
+
+        def geometry():
+            return tuple(
+                (item.x(), item.width()) for item in (navigation, content, inspector)
+            )
+
+        baseline = geometry()
+        for target in (nested, tmp_path, nested):
+            bridge._folder_browser.navigate(qt_main.ArchivePath.parse(str(target)))
+            bridge._queue_folder_listing()
+            bridge.historyChanged.emit()
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                bridge._pump()
+                app.processEvents()
+                assert geometry() == baseline
+                if not bridge.libraryFolders["checkingFolder"]:
+                    break
+                QTest.qWait(10)
+            assert not bridge.libraryFolders["checkingFolder"]
+        assert navigation.width() == 184
+        assert inspector.width() == 380
+    finally:
+        _close(bridge, engine, window)
+
+
+def test_all_media_loads_more_by_scrolling_without_losing_selected_item(
+    tmp_path, monkeypatch
+):
+    records = [saved(tmp_path, f"Video {index:03}", "MP4") for index in range(100)]
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, records)
+    try:
+        window.resize(1180, 800)
+        bridge.select("Library")
+        bridge.navigateLibrary("folders")
+        bridge.navigateLibraryFolders("all")
+        app.processEvents()
+        assert len(bridge.libraryFolders["components"]) == 48
+        owner = bridge.libraryFolders["components"][0]["key"]
+        bridge.selectLibraryFolderComponent(owner)
+        app.processEvents()
+        viewport = window.findChild(QObject, "libraryFolderViewport")
+        flickable = viewport.property("contentItem")
+        for count in (96, 100):
+            flickable.setProperty(
+                "contentY", flickable.property("contentHeight") - flickable.height()
+            )
+            app.processEvents()
+            assert len(bridge.libraryFolders["components"]) == count
+            assert bridge.libraryFolders["selectedKey"] == owner
+            assert bridge._folder_component(owner) is not None
+        assert not any(
+            item.property("label") in {"Previous", "Next"}
+            for item in _visual_descendants(window.contentItem())
+            if item.isVisible()
+        )
     finally:
         _close(bridge, engine, window)
 

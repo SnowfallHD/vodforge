@@ -409,3 +409,38 @@ def test_terminal_cause_and_next_step_survive_reopen(tmp_path, child):
     assert "No space left on device" in "\n".join(restored.activity_lines)
     assert "Free space" in "\n".join(restored.activity_lines)
     assert "old progress" not in "\n".join(restored.activity_lines)
+
+
+@pytest.mark.parametrize("child", [False, True])
+@pytest.mark.parametrize("status", ["Failed", "Stopped", "Skipped"])
+def test_terminal_runs_retain_reached_steps_after_reopen(tmp_path, child, status):
+    from yt_downloader.forge_activity import friendly_saved_activity
+
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    job = _job(tmp_path)
+    store.begin(job)
+    lines = [
+        "Video 1 of 1: selected format 231+251",
+        "Video 1 of 1: downloading",
+        *(f"Downloading progress {index}%" for index in range(100)),
+        "Video 1 of 1: downloading",
+        "Video 1 of 1: FFmpeg command started (1/1) using CPU libx264",
+    ]
+    message = f"Download {status.lower()}"
+    job.activity_lines = lines
+    if child:
+        job.run_id = "terminal-child"
+        store.record_terminal_attempt(job, status, message)
+    else:
+        store.mark_terminal(status, message, activity_lines=lines)
+    restored = ActiveRunStore(store.path).load_terminal_jobs()[0]
+    activity = friendly_saved_activity(status, restored.activity_lines).splitlines()
+    assert activity[:3] == [
+        "Getting video information",
+        "Downloading media",
+        "Converting media",
+    ]
+    assert "Checking the output" not in activity
+    assert "Finishing the download" not in activity
+    assert len(restored.activity_lines) == 4
+    assert not any("progress" in line for line in restored.activity_lines)

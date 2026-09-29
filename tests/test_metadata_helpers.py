@@ -2160,6 +2160,39 @@ def test_windows_reserved_device_names_are_never_used_as_raw_directories(
     assert output.name.startswith("_NUL")
 
 
+@pytest.mark.parametrize(
+    "root", ["C:/Users/Viewer/Downloads", "/Users/Viewer/Downloads"]
+)
+@pytest.mark.parametrize("text", ["🎬" * 120, "長い動画のタイトル" * 30])
+@pytest.mark.parametrize("extension", [".mp4", ".mp3", ".m4a"])
+def test_unicode_output_paths_keep_one_hierarchy_with_bounded_components(
+    tmp_path, root, text, extension
+):
+    info = {
+        "title": text,
+        "id": "abc123",
+        "channel": text,
+        "playlist_title": text,
+    }
+    target_dir, filename = resolved_video_output_target(Path(root), info, extension)
+    assert target_dir.parts[-3] == "playlists"
+    assert target_dir.name.endswith("[abc123]")
+    assert "path-safe videos" not in target_dir.parts
+    assert "…" in str(target_dir / filename)
+    assert len(str(target_dir / filename).encode("utf-16-le")) // 2 <= 240
+    assert all(
+        len(part.encode("utf-8")) <= 255 for part in (target_dir / filename).parts
+    )
+    # The same names are valid before the overall path needs compacting too.
+    ordinary = video_output_dir(Path(root), info)
+    assert all(len(part.encode("utf-8")) <= 255 for part in ordinary.parts)
+    local_dir, local_name = resolved_video_output_target(tmp_path, info, extension)
+    local_dir.mkdir(parents=True)
+    local_file = local_dir / local_name
+    local_file.write_bytes(b"path allocation fixture")
+    assert local_file.read_bytes() == b"path allocation fixture"
+
+
 def test_package_downloaded_media_from_staging_only_moves_current_job_files(
     tmp_path: Path,
 ):

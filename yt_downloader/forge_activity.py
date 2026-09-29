@@ -35,6 +35,38 @@ def friendly_phase(status: str) -> str | None:
     return f"{item[0]} · {label}" if item and int(item[1]) > 1 else label
 
 
+def _activity_stage_tags(line: str) -> set[str]:
+    detail = str(line).strip().lower()
+    stages: set[str] = set()
+    if (
+        "selected format" in detail
+        or "single video detected" in detail
+        or "playlist detected" in detail
+    ):
+        stages.add("Preparing")
+    if re.search(r": downloading(?:\s|$)", detail):
+        stages.add("Downloading")
+    if "ffmpeg command started" in detail or "transcoded staged" in detail:
+        stages.add("Transcoding")
+    if re.search(r": validated\s", detail):
+        stages.add("Validating")
+    if "packaged media file" in detail or "atomic commit" in detail:
+        stages.add("Finalizing")
+    return stages
+
+
+def terminal_activity_evidence(lines: Sequence[str]) -> list[str]:
+    """Retain one technical witness per reached step without a progress log dump."""
+    stages: set[str] = set()
+    evidence: list[str] = []
+    for line in lines:
+        newly_reached = _activity_stage_tags(line) - stages
+        if newly_reached:
+            evidence.append(str(line))
+            stages.update(newly_reached)
+    return evidence
+
+
 def friendly_saved_activity(status: str, lines: Sequence[str]) -> str:
     """Reconstruct the steps evidenced by a saved run's bounded activity log."""
     stages: set[str] = set()
@@ -48,20 +80,7 @@ def friendly_saved_activity(status: str, lines: Sequence[str]) -> str:
         if detail.startswith("error:"):
             error = True
             continue
-        if (
-            "selected format" in detail
-            or "single video detected" in detail
-            or "playlist detected" in detail
-        ):
-            stages.add("Preparing")
-        if re.search(r": downloading(?:\s|$)", detail):
-            stages.add("Downloading")
-        if "ffmpeg command started" in detail or "transcoded staged" in detail:
-            stages.add("Transcoding")
-        if re.search(r": validated\s", detail):
-            stages.add("Validating")
-        if "packaged media file" in detail or "atomic commit" in detail:
-            stages.add("Finalizing")
+        stages.update(_activity_stage_tags(line))
     rows = [
         label
         for phase, label in (

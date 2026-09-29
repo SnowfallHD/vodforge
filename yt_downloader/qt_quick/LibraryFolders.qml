@@ -9,6 +9,10 @@ Item {
     property var appBridge
     readonly property var model: appBridge.libraryFolders
     readonly property bool showInspector: Window.window && Window.window.width >= 920 && Window.window.height >= 740
+    readonly property string navigationKey: model.mode + ":" + model.path
+    onNavigationKeyChanged: {
+        if (viewport.contentItem) viewport.contentItem.contentY = 0
+    }
 
     RowLayout {
         objectName: "libraryFolderColumns"
@@ -16,7 +20,10 @@ Item {
         anchors.topMargin: 12
         spacing: 20
         ColumnLayout {
+            objectName: "libraryFolderNavigationColumn"
+            Layout.minimumWidth: 184
             Layout.preferredWidth: 184
+            Layout.maximumWidth: 184
             Layout.fillHeight: true
             spacing: 6
             Text { objectName: "libraryFolderBrowseHeading"; text: "BROWSE"; color: theme.muted; font.pixelSize: 12; font.bold: true }
@@ -62,6 +69,8 @@ Item {
         }
         Rectangle { Layout.fillHeight: true; Layout.preferredWidth: 1; color: theme.border }
         ColumnLayout {
+            objectName: "libraryFolderContentColumn"
+            Layout.minimumWidth: 0
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 10
@@ -154,6 +163,16 @@ Item {
                 Layout.fillHeight: true
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                Connections {
+                    target: viewport.contentItem
+                    function onContentYChanged() {
+                        const view = viewport.contentItem
+                        if (view.contentHeight > view.height
+                                && view.contentY + view.height >= view.contentHeight - 170
+                                && (browser.model.components || []).length < browser.model.count)
+                            browser.appBridge.loadMoreLibraryFolder()
+                    }
+                }
                 Column {
                     objectName: "libraryFolderList"
                     width: viewport.availableWidth
@@ -212,20 +231,9 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Text {
-                    text: browser.model.count + (browser.model.count === 1 ? " item" : " items") +
-                          " · page " + (browser.model.page + 1) + " of " + browser.model.pages
+                    text: browser.model.count + (browser.model.count === 1 ? " item" : " items")
                     color: theme.muted; font.pixelSize: 13
                     Layout.fillWidth: true
-                }
-                StoneButton {
-                    label: "Previous"; size: "inline"; Layout.preferredWidth: 95
-                    enabled: browser.model.page > 0
-                    onActivated: browser.appBridge.pageLibraryFolder(-1)
-                }
-                StoneButton {
-                    label: "Next"; size: "inline"; Layout.preferredWidth: 70
-                    enabled: browser.model.page + 1 < browser.model.pages
-                    onActivated: browser.appBridge.pageLibraryFolder(1)
                 }
             }
         }
@@ -238,7 +246,9 @@ Item {
         LibraryFolderInspector {
             id: selectedInspector
             visible: browser.showInspector
+            Layout.minimumWidth: Layout.preferredWidth
             Layout.preferredWidth: visible ? (browser.width + 40 < 1000 ? 350 : 380) : 0
+            Layout.maximumWidth: Layout.preferredWidth
             Layout.fillHeight: true
             targetPanelBottom: viewport.mapToItem(selectedInspector, 0, viewport.height).y
             appBridge: browser.appBridge

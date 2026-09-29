@@ -503,6 +503,35 @@ repair, not a performance fix, new latency threshold or release-gate promotion.
 
 ## When and how to strengthen the harness
 
+September 29 Run Deck, terminal activity, folder geometry, and path follow-up:
+the invariant is that a change in content or terminal state must preserve the
+user's context and the evidence of work already performed. The shared visible
+Run Deck now applies the all-runs priority to interrupted records; the bounded
+terminal journal retains one witness for each reached activity step. Earlier
+deck coverage checked backend order and the expanded popup, but omitted the
+four visible slots. Earlier journal coverage verified the failure cause after
+restart, but did not verify reached steps. The expanded cases in
+`tests/test_qt_interaction_invariants.py` and `tests/test_run_state.py` check
+failed/stopped/skipped outcomes, child and parent attempts, durable reopen,
+omission of unreached steps, stable columns throughout asynchronous folder
+scans, and retained selection as scrolling grows the Library list from 48 to 100.
+The prior implementation plus a bounded removal of the fixed column widths
+failed 12 of 14 selected cases; the corrected focused four-file suite passed 358.
+The initial geometry test passed a native Path where ArchivePath was required;
+that fixture error was corrected before recording the prior-behavior result.
+
+The path invariant is shared by MP4, MP3, and original-audio naming: generated
+names respect both Windows UTF-16 path budgets and UTF-8 component budgets,
+retain the channel/playlist/title hierarchy and provider identity, and never
+create a path-safe fallback destination. Unicode cases exercise both path
+styles, three media extensions, and actual filesystem writes/readback. Existing
+ASCII path-budget and legacy-output discovery cases missed multibyte component
+limits; both remain in the focused suite. Legacy paths remain read candidates
+for older downloads. These checks establish local filesystem and source/Qt
+behavior; they do not prove Windows packaged exports or recover steps absent
+from an older terminal journal. Native packaged Mac visual proof is recorded in
+the repository's ignored continuity record.
+
 Every confirmed product bug is an input to harness improvement, whether discovered
 by a user, telemetry, support, development, or a release run. Do this as part of the
 same fix, before describing that work as complete. A specific regression test and

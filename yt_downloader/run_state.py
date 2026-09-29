@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from .forge_activity import terminal_activity_evidence
 from .history import (
     application_data_dir,
     sanitize_durable_text,
@@ -320,13 +321,15 @@ def deserialize_download_job(
 
 
 def _terminal_activity(activity_lines: list[str] | None, message: str) -> list[str]:
-    """Keep the latest bounded cause with the terminal summary, not the whole log."""
+    """Keep reached steps and the latest bounded cause with the terminal summary."""
+    lines = list(activity_lines or [])
     details = [
         line
-        for line in (activity_lines or [])
+        for line in lines
         if line.startswith(("Failure category:", "Failure details:"))
     ]
-    return sanitize_run_activity(details[-1:] + [message])
+    evidence = terminal_activity_evidence(lines)
+    return sanitize_run_activity(evidence + details[-1:] + [message])
 
 
 def _serialize_executable_job(job: DownloadJob) -> dict[str, Any]:

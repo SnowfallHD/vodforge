@@ -7,14 +7,14 @@ Item {
     property var appBridge
     property bool compact: false
     readonly property var projection: appBridge.runDeck
-    // Keep the latest completed work in sight after the active slot finishes.
+    // Keep interrupted work visible even after newer runs complete.
     readonly property var workRecords: (projection.records || []).filter(
         record => ["active", "queued", "completed", "terminal"].indexOf(record.kind) >= 0)
-    readonly property var visibleRecords: workRecords.slice(0, 4)
     readonly property var allRunsRecords: workRecords.slice().sort((left, right) => {
         const priority = {active: 0, queued: 1, terminal: 2, completed: 3}
         return (priority[left.kind] ?? 4) - (priority[right.kind] ?? 4)
     })
+    readonly property var visibleRecords: allRunsRecords.slice(0, 4)
     readonly property string workSummary: {
         if (workRecords.length === 0) return "No runs in progress"
         const parts = []

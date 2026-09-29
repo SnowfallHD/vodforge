@@ -1597,10 +1597,8 @@ class Bridge(QObject):
                     ),
                     "count": len(component.indices),
                 }
-                for component in model.page_components
+                for component in model.components[: (model.page + 1) * PAGE_SIZE]
             ],
-            "page": model.page,
-            "pages": max(1, (len(model.components) + PAGE_SIZE - 1) // PAGE_SIZE),
             "count": len(model.components),
             "unavailableCount": len(model.unavailable_indices)
             if model.mode == "folders"
@@ -3095,7 +3093,9 @@ class Bridge(QObject):
             (
                 item
                 for item in (
-                    *self._folder_browser.page_components,
+                    *self._folder_browser.components[
+                        : (self._folder_browser.page + 1) * PAGE_SIZE
+                    ],
                     *self._folder_browser.locations,
                 )
                 if item.key == key
@@ -3780,21 +3780,16 @@ class Bridge(QObject):
         self.historyChanged.emit()
         return True
 
-    @Slot(int)
-    def pageLibraryFolder(self, delta: int) -> None:
-        if self._library_scene_route != "folders" or delta not in {-1, 1}:
+    @Slot()
+    def loadMoreLibraryFolder(self) -> None:
+        if self._library_scene_route != "folders":
             return
         self._reconcile_folder_browser()
         model = self._folder_browser
-        model.page = min(
-            max(0, model.page + delta),
-            max(0, (len(model.components) - 1) // PAGE_SIZE),
-        )
-        self._folder_inspector_owner = ""
-        self._folder_inspector_key = ""
-        self._folder_inspector_versions = []
-        self._issue_run_id = ""
-        self._issue_settings = {}
+        last_page = max(0, (len(model.components) - 1) // PAGE_SIZE)
+        if model.page >= last_page:
+            return
+        model.page += 1
         self.historyChanged.emit()
 
     @Slot(str, result=bool)
