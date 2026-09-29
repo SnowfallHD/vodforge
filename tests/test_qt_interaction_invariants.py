@@ -386,7 +386,7 @@ def test_interrupted_download_stays_visible_when_newer_downloads_complete(
             for item in _visual_descendants(deck)
             if item.objectName() == "runDeckArtwork_0"
         )
-        assert artwork_item.property("source").toLocalFile() == str(
+        assert Path(artwork_item.property("source").toLocalFile()) == (
             tmp_path / "Old stopped run.png"
         )
         assert [

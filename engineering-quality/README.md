@@ -526,6 +526,10 @@ already does. The three terminal-state cases include more completed records than
 visible slots and verify the visible interrupted card's actual local artwork URL.
 They fail against the prior QML binding (`artwork-prior.log`). Existing artwork
 coverage tested completed-only ordering and therefore missed this disagreement.
+Both Windows CI jobs then caught the new assertion comparing Qt's forward-slash
+local-file spelling to native backslashes. The assertion now compares Path
+objects for the same exact file; the application code and missing-artwork oracle
+are unchanged. The failed CI log is retained (`ci-500b05f-failed.log`).
 
 The path invariant is shared by MP4, MP3, and original-audio naming: generated
 names respect both Windows UTF-16 path budgets and UTF-8 component budgets,
