@@ -2145,6 +2145,10 @@ def test_path_budget_keeps_channel_playlist_and_truncated_title_instead_of_an_id
     assert "path-safe videos" not in target_dir.parts
     assert target_dir.name.endswith("[Hi4j2pF4AAM]")
     assert target_dir.name != "Hi4j2pF4AAM"
+    folder_title = target_dir.name.split(" [", 1)[0]
+    file_title = Path(target_name).stem
+    assert len(folder_title) >= 16
+    assert abs(len(folder_title) - len(file_title)) <= 8
     assert (
         len(str(target_dir / target_name).encode("utf-16-le")) // 2
         <= app_module.WINDOWS_SAFE_PATH_LIMIT

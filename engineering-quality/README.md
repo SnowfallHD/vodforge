@@ -526,8 +526,13 @@ retain the channel/playlist/title hierarchy and provider identity, and never
 create a path-safe fallback destination. Unicode cases exercise both path
 styles, three media extensions, and actual filesystem writes/readback. Existing
 ASCII path-budget and legacy-output discovery cases missed multibyte component
-limits; both remain in the focused suite. Legacy paths remain read candidates
-for older downloads. These checks establish local filesystem and source/Qt
+limits; both remain in the focused suite. A representative long Windows path
+also exposed title-first allocation reducing the folder title to four characters
+while keeping a long filename. New output allocation now shortens the longest
+editable names first; the readable-name assertion fails against that prior
+allocator (`balanced-prior.log`). Fixed-filename discovery retains its existing
+allocation order, and legacy paths remain read candidates for older downloads.
+These checks establish local filesystem and source/Qt
 behavior; they do not prove Windows packaged exports or recover steps absent
 from an older terminal journal. Native packaged Mac visual proof is recorded in
 the repository's ignored continuity record.

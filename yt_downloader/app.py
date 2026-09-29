@@ -2269,60 +2269,112 @@ def legacy_shallow_video_output_dir(output_dir: Path, info: dict[str, Any]) -> P
     return output_dir / channel_folder_name(info) / "path-safe videos" / video_id
 
 
-def compact_video_output_dir(
-    output_dir: Path, info: dict[str, Any], target_file_name: str
-) -> Path:
+def _allocate_video_output_target(
+    output_dir: Path,
+    info: dict[str, Any],
+    ext: str,
+    *,
+    fixed_file_name: str | None = None,
+) -> tuple[Path, str]:
+    """Share one portable path budget among editable names, preserving identity."""
     has_playlist = bool(info.get("playlist_title") or info.get("playlist_id"))
-    channel_limit = 80
-    playlist_limit = 80
-    title_limit = 80
+    variant = metadata_output_variant(info)
+    video_id = _windows_safe_component(info.get("id"), "", max_len=32)
+    identity = f" [{video_id}]" if video_id else ""
+    full_suffix = identity + (f" - {variant}" if variant else "")
+    limits = {
+        "channel": 80,
+        "playlist": 80,
+        "title": 80
+        if fixed_file_name is not None
+        else max(1, 95 - len(full_suffix.encode("utf-16-le")) // 2),
+        "file": 120,
+    }
+    component_minimum = 8 if variant else 16
+    minimums = {
+        "channel": component_minimum,
+        "playlist": component_minimum,
+        "title": min(4, limits["title"]),
+        "file": 3 if variant else 23,
+    }
     compact_variant = False
-    component_minimum = 8 if metadata_output_variant(info) else 16
     while True:
         channel = _windows_safe_component(
-            info.get("channel")
-            or info.get("uploader")
-            or info.get("channel_id")
-            or "Unknown Channel",
+            info.get("channel") or info.get("uploader") or info.get("channel_id"),
             "Unknown Channel",
-            max_len=channel_limit,
+            max_len=limits["channel"],
         )
         parent = output_dir / channel
+        playlist = ""
         if has_playlist:
             playlist = _windows_safe_component(
-                info.get("playlist_title") or info.get("playlist_id") or "Playlist",
+                info.get("playlist_title") or info.get("playlist_id"),
                 "Playlist",
-                max_len=playlist_limit,
+                max_len=limits["playlist"],
             )
             parent = parent / "playlists" / playlist
         else:
             parent = parent / "videos - no playlist"
-        candidate = parent / compact_video_folder_name(
-            info, title_limit, compact_variant=compact_variant
+        folder_name = compact_video_folder_name(
+            info, limits["title"], compact_variant=compact_variant
         )
-        if not _path_would_exceed_windows_safe_limit(candidate / target_file_name):
-            return candidate
-        if title_limit > 4:
-            name, current, minimum = "title", title_limit, 4
-        elif has_playlist and playlist_limit > component_minimum:
-            name, current, minimum = "playlist", playlist_limit, component_minimum
-        elif channel_limit > component_minimum:
-            name, current, minimum = "channel", channel_limit, component_minimum
-        elif metadata_output_variant(info) and not compact_variant:
+        filename = fixed_file_name or video_file_name(
+            info, ext, max_title_len=limits["file"]
+        )
+        candidate = parent / folder_name
+        if not _path_would_exceed_windows_safe_limit(candidate / filename):
+            return candidate, filename
+        suffix = identity + (
+            f" - {metadata_output_variant(info, compact=compact_variant)}"
+            if variant
+            else ""
+        )
+        text_parts = {
+            "title": folder_name.removesuffix(suffix) if suffix else folder_name,
+            "playlist": playlist,
+            "channel": channel,
+        }
+        if fixed_file_name is None:
+            text_parts["file"] = filename.removesuffix(ext) if ext else filename
+        adjustable = [
+            name
+            for name in text_parts
+            if (name != "playlist" or has_playlist) and limits[name] > minimums[name]
+        ]
+        if adjustable:
+            # Fixed-name lookups preserve their historical title-first allocation.
+            # New outputs shorten the longest editable text before shorter names.
+            name = (
+                max(
+                    adjustable,
+                    key=lambda key: len(text_parts[key].encode("utf-16-le")) // 2,
+                )
+                if fixed_file_name is None
+                else adjustable[0]
+            )
+            actual_units = len(text_parts[name].encode("utf-16-le")) // 2
+            current = (
+                limits[name]
+                if fixed_file_name is not None
+                else min(limits[name], actual_units)
+            )
+            limits[name] = max(minimums[name], current - 4)
+        elif variant and not compact_variant:
             compact_variant = True
-            continue
         else:
             raise ValueError(
                 "The selected output folder is too deep for a Windows-compatible media path. "
                 "Choose a shorter output folder and try again."
             )
-        updated = max(minimum, current - 4)
-        if name == "title":
-            title_limit = updated
-        elif name == "playlist":
-            playlist_limit = updated
-        else:
-            channel_limit = updated
+
+
+def compact_video_output_dir(
+    output_dir: Path, info: dict[str, Any], target_file_name: str
+) -> Path:
+    folder, _ = _allocate_video_output_target(
+        output_dir, info, "", fixed_file_name=target_file_name
+    )
+    return folder
 
 
 def resolved_video_output_dir(
@@ -2875,24 +2927,7 @@ def resolved_video_output_target(
     output_dir: Path, info: dict[str, Any], ext: str
 ) -> tuple[Path, str]:
     """Allocate one path budget while preserving the canonical hierarchy."""
-    primary = video_output_dir(output_dir, info)
-    minimum_title = 3 if metadata_output_variant(info) else 23
-    for title_limit in range(120, minimum_title, -4):
-        target_file_name = video_file_name(info, ext, max_title_len=title_limit)
-        if not _path_would_exceed_windows_safe_limit(primary / target_file_name):
-            return primary, target_file_name
-    for title_limit in range(120, minimum_title, -4):
-        target_file_name = video_file_name(info, ext, max_title_len=title_limit)
-        try:
-            compact = compact_video_output_dir(output_dir, info, target_file_name)
-        except ValueError:
-            continue
-        if not _path_would_exceed_windows_safe_limit(compact / target_file_name):
-            return compact, target_file_name
-    raise ValueError(
-        "The selected output folder is too deep for a Windows-compatible media path. "
-        "Choose a shorter output folder and try again."
-    )
+    return _allocate_video_output_target(output_dir, info, ext)
 
 
 def collect_staged_media_files(
