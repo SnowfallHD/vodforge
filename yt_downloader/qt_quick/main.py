@@ -2632,6 +2632,27 @@ class Bridge(QObject):
             "summary": summary,
         }
 
+    @Slot(str, result=str)
+    def runDeckArtwork(self, selection_key: str) -> str:
+        """Request artwork only for a run card instantiated by the scrolled list."""
+        kind, separator, identity = selection_key.partition(":")
+        if not separator or not identity:
+            return ""
+        if kind == "saved":
+            record = self._artwork_record_for_owner(identity)
+        elif kind == "active":
+            job = self._runtime.active_job
+            record = job.preview_info if job and job.run_id == identity else None
+        elif kind in {"queued", "terminal"}:
+            jobs = self._runtime.queued if kind == "queued" else self._runtime.recovered
+            job = next(
+                (candidate for candidate in jobs if candidate.run_id == identity), None
+            )
+            record = job.preview_info if job else None
+        else:
+            return ""
+        return self._artwork.request(record) if record else ""
+
     @Property(_QVARIANT_MAP, notify=runDeckChanged)
     def forgeSelection(self) -> dict[str, Any]:
         records = self.runDeck["records"]

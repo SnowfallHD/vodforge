@@ -352,10 +352,15 @@ def test_completed_download_remains_in_run_deck_ahead_of_old_stopped_run(
         stopped.preview_info = {"title": "Old stopped run"}
         stopped.terminal_status = "Stopped"
         bridge._runtime.recovered = [stopped]
+        bridge.runDeckChanged.emit()
         bridge.selectHome("Forge")
         app.processEvents()
         records = bridge.runDeck["records"]
         assert [item["kind"] for item in records[:2]] == ["completed", "terminal"]
+        deck = window.findChild(QObject, "forgeRunDeck")
+        assert [
+            item["kind"] for item in deck.property("allRunsRecords").toVariant()[:2]
+        ] == ["terminal", "completed"]
         assert bridge.forgeSelection["title"] == "Just finished"
         assert bridge.forgeSelection["status"].startswith("Completed")
     finally:

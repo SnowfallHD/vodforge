@@ -4,7 +4,6 @@ import QtQuick.Layouts
 
 Item {
     id: deck
-    RunStatusTone { id: runStatusTone }
     property var appBridge
     property bool compact: false
     readonly property var projection: appBridge.runDeck
@@ -12,6 +11,10 @@ Item {
     readonly property var workRecords: (projection.records || []).filter(
         record => ["active", "queued", "completed", "terminal"].indexOf(record.kind) >= 0)
     readonly property var visibleRecords: workRecords.slice(0, 4)
+    readonly property var allRunsRecords: workRecords.slice().sort((left, right) => {
+        const priority = {active: 0, queued: 1, terminal: 2, completed: 3}
+        return (priority[left.kind] ?? 4) - (priority[right.kind] ?? 4)
+    })
     readonly property string workSummary: {
         if (workRecords.length === 0) return "No runs in progress"
         const parts = []
@@ -88,60 +91,16 @@ Item {
                     // variant-list model replaces its delegates on every update,
                     // which also destroys an open menu's anchor.
                     model: Math.min(4, deck.workRecords.length)
-                    StoneField {
+                    RunDeckCard {
                         required property int index
-                        readonly property var record: deck.visibleRecords[index] || ({})
+                        record: deck.visibleRecords[index] || ({})
+                        slotIndex: index
+                        compact: deck.compact
                         visible: index < deck.visibleRecords.length
                         Layout.fillWidth: true
                         Layout.preferredHeight: deck.compact ? 50 : 68
-                        TapHandler { onTapped: deck.appBridge.selectRunRecord(record.selectionKey) }
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 7
-                            Item {
-                                visible: !!record.artwork
-                                Layout.preferredWidth: visible ? (deck.compact ? 48 : 61) : 0
-                                Layout.preferredHeight: deck.compact ? 36 : 48
-                                ArtworkImage {
-                                    objectName: "runDeckArtwork_" + index
-                                    anchors.fill: parent
-                                    source: record.artwork || ""
-                                    inset: 0
-                                }
-                            }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 3
-                                Text { text: record.title || ""; color: theme.text; font.pixelSize: 13; font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text {
-                                    objectName: "runDeckStatus"
-                                    text: record.status || ""
-                                    color: runStatusTone.colorFor(record.kind,
-                                                                  record.phase === "failed" ? "Failed" : record.status,
-                                                                  theme)
-                                    font.pixelSize: 12
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                                RunProgress {
-                                    visible: record.kind === "active"
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: visible ? 3 : 0
-                                    kind: record.kind || ""
-                                    status: record.status || ""
-                                    progress: record.progress || 0
-                                }
-                            }
-                            StoneButton {
-                                objectName: "runDeckAction_" + index
-                                label: "⋯"
-                                accessibilityLabel: "Actions for " + (record.title || "")
-                                size: "inline"
-                                Layout.preferredWidth: 31
-                                onActivated: deck.showActions(record, this)
-                            }
-                        }
+                        onChosen: deck.appBridge.selectRunRecord(record.selectionKey)
+                        onActionsRequested: function(anchor) { deck.showActions(record, anchor) }
                     }
                 }
             }
@@ -213,8 +172,8 @@ Item {
         preferAbove: true
         alignRight: true
         overlap: 10
-        width: Math.min(440, deck.width)
-        height: Math.min(285, Math.max(80, deck.workRecords.length * 42 + 18))
+        width: Math.min(480, deck.width)
+        height: Math.min(380, Math.max(84, deck.workRecords.length * 73 + 18))
         padding: 9
         modal: false
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -228,27 +187,28 @@ Item {
                 else if (allRunsPopup.visible) hoverClose.restart()
             }
         }
-        ScrollView {
+        ListView {
+            id: allRunsList
             objectName: "allRunsScrollView"
             anchors.fill: parent
             clip: true
-            ScrollBar.vertical.policy: ScrollBar.AsNeeded
-            Column {
-                width: parent.width
-                spacing: 3
-                Repeater {
-                    model: deck.workRecords
-                    StoneButton {
-                        required property var modelData
-                        label: modelData.title + "  —  " + modelData.status
-                        width: parent.width
-                        height: 36
-                        size: "inline"
-                        onActivated: {
-                            deck.appBridge.selectRunRecord(modelData.selectionKey)
-                            allRunsPopup.close()
-                        }
-                    }
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: 5
+            model: deck.allRunsRecords.length
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            delegate: RunDeckCard {
+                required property int index
+                objectName: "allRunsCard_" + index
+                readonly property var displayedRecord: deck.allRunsRecords[index] || ({})
+                record: displayedRecord
+                artworkSource: displayedRecord.artwork ||
+                    deck.appBridge.runDeckArtwork(displayedRecord.selectionKey || "")
+                showActions: false
+                width: allRunsList.width - 8
+                height: 68
+                onChosen: {
+                    deck.appBridge.selectRunRecord(record.selectionKey)
+                    allRunsPopup.close()
                 }
             }
         }

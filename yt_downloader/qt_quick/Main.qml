@@ -648,10 +648,21 @@ Window {
             readonly property bool compact: window.width < 960
             readonly property int nativeHeaderInset: Qt.platform.os === "osx" ? 82 : 0
             readonly property int brandWidth: nativeHeaderInset + (compact ? 46 : 150)
-            readonly property int searchWidth: compact ? 186 : 285
+            readonly property int searchWidth: Math.max(compact ? 160 : 185,
+                Math.min(compact ? 186 : 285,
+                    width - brandWidth - navWidth - 52))
             readonly property int navWidth: navigationRow.implicitWidth
-            readonly property int utilityWidth: searchWidth + 8 + 28
+            readonly property int utilityWidth:
+                (bridge.selection === "Library" || bridge.selection === "Watch"
+                    ? searchWidth + 8 : 0) + 28
             readonly property bool stacked: brandWidth + navWidth + utilityWidth + 8 > width
+
+            MouseArea {
+                objectName: "headerDragArea"
+                anchors.fill: parent
+                z: -1
+                onPressed: window.startSystemMove()
+            }
 
             Row {
                 id: brandRow

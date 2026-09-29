@@ -3420,11 +3420,12 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         assert popup_top + popup.property("height") <= window.height()
         assert popup_top + popup.property("height") <= trigger_top + 12
         scroll = window.findChild(QObject, "allRunsScrollView")
-        flickable = scroll.property("contentItem")
-        assert flickable.property("contentHeight") > flickable.property("height")
-        assert flickable.setProperty("contentY", 70)
+        assert scroll.property("contentHeight") > scroll.property("height")
+        assert scroll.setProperty(
+            "contentY", scroll.property("contentHeight") - scroll.property("height")
+        )
         app.processEvents()
-        assert flickable.property("contentY") > 0
+        assert scroll.property("contentY") > 0
 
         def visual_children(item):
             for child in item.childItems():
@@ -3434,16 +3435,29 @@ def test_qt_selected_run_beyond_visible_deck_renders_its_hero_artwork(
         choices = [
             item
             for item in visual_children(window.contentItem())
-            if isinstance(item.property("modelData"), dict)
-            and item.property("modelData").get("selectionKey")
+            if isinstance(item.property("displayedRecord"), dict)
+            and item.property("displayedRecord").get("selectionKey")
             == selection["selectionKey"]
         ]
         assert len(choices) == 1
-        caption = choices[0].findChild(QObject, "stoneButtonCaption")
+        caption = choices[0].findChild(QObject, "runDeckCardTitle")
         assert caption is not None
         assert caption.property("width") <= choices[0].property("width")
         assert caption.property("truncated") is True
-        choices[0].activated.emit()
+        assert (
+            choices[0].findChild(QObject, "runDeckStatus").property("text") == "Failed"
+        )
+        deadline = time.monotonic() + 2
+        artwork = choices[0].findChild(QObject, "allRunsArtwork")
+        while not artwork.property("source").toString() and time.monotonic() < deadline:
+            bridge._artwork.poll()
+            bridge.runDeckChanged.emit()
+            app.processEvents()
+            time.sleep(0.005)
+        assert artwork.property("source").toString()
+        assert popup.property("visible")
+        assert scroll.property("contentY") > 0
+        choices[0].chosen.emit()
         app.processEvents()
         assert bridge.forgeSelection["selectionKey"] == selection["selectionKey"]
         title = window.findChild(QObject, "forgeSelectedTitle")
@@ -3821,7 +3835,9 @@ def test_qt_forge_activity_and_source_details_keep_shared_layout(tmp_path, monke
         assert "technical step 49" in activity.property("activityText")
         viewport = window.findChild(QObject, "forgeActivityViewport")
         assert viewport.property("contentHeight") > viewport.property("height")
-        assert viewport.property("contentWidth") <= viewport.property("availableWidth") + 1
+        assert (
+            viewport.property("contentWidth") <= viewport.property("availableWidth") + 1
+        )
         assert viewport.property("contentItem").property("contentX") == 0
         window.setWidth(850)
         app.processEvents()
@@ -4508,6 +4524,7 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
         bridge.select("Library")
         for width, height, margin in (
             (820, 560, 12),
+            (1025, 700, 20),
             (1100, 740, 20),
             (1180, 790, 20),
         ):
@@ -4517,12 +4534,16 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
             header = window.findChild(QObject, "focusHeader")
             nav = window.findChild(QObject, "navigationRow")
             brand = window.findChild(QObject, "brandRow")
+            search = window.findChild(QObject, "globalSearchField")
+            drag_area = window.findChild(QObject, "headerDragArea")
             scene = window.findChild(QObject, "libraryBrowseScene")
             assert (
                 round(header.mapToItem(None, 0, 0).x()),
                 round(header.mapToItem(None, 0, 0).y()),
             ) == (margin, 5)
             assert round(header.height()) == 44
+            assert drag_area.property("width") == pytest.approx(header.width())
+            assert drag_area.property("height") == pytest.approx(header.height())
             native_title_inset = 82 if sys.platform == "darwin" else 0
             assert round(brand.mapToItem(None, 0, 0).x()) == margin + native_title_inset
             assert (
@@ -4560,6 +4581,10 @@ def test_qt_shared_header_keeps_navigation_next_to_brand_on_every_tab(
             bridge.selectHome("Library")
             app.processEvents()
             assert round(nav.mapToItem(None, 0, 0).y()) == 5
+            assert (
+                search.mapToScene(QPointF(0, 0)).x()
+                >= nav.mapToScene(QPointF(nav.width(), 0)).x() + 8
+            )
             assert round(scene.mapToItem(None, 0, 0).y()) == 54
     finally:
         window.close()
