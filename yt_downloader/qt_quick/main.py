@@ -184,6 +184,7 @@ from yt_downloader.qt_quick.runtime import DownloadPreferences, DownloadRuntime
 from yt_downloader.qt_quick.scene_projection import (
     collection_picker,
     library_scene,
+    watch_progress,
     watch_scene,
 )
 from yt_downloader.qt_quick.support import QtSupportSession
@@ -366,6 +367,7 @@ class Bridge(QObject):
     playbackUrlChanged = Signal()
     playerSceneChanged = Signal()
     watchSceneChanged = Signal()
+    watchProgressChanged = Signal(str)
     artworkChanged = Signal()
     playbackPreviewsChanged = Signal()
     playbackRequested = Signal(int)
@@ -1861,6 +1863,13 @@ class Bridge(QObject):
                 "watch", "hero_shown", {"watch_mode": self._watch_mode()}
             )
         return scene
+
+    @Slot(str, result=_QVARIANT_MAP)
+    def watchHeroProgress(self, owner: str) -> dict[str, Any]:
+        record = self._saved_item_for_owner(owner)
+        return watch_progress(
+            self._playback_progress.for_record(record) if record is not None else None
+        )
 
     @Property(str, notify=supportChanged)
     def supportKind(self) -> str:
@@ -5180,7 +5189,15 @@ class Bridge(QObject):
                     )
                 except (OSError, ValueError):
                     pass
+        record = self._playback_record
+        previous = self._playback_progress.for_record(record) if record else None
         self._playback_binding.present(self._playback_snapshot())
+        if record and watch_progress(previous) != watch_progress(
+            self._playback_progress.for_record(record)
+        ):
+            # Refresh only this retained hero's progress. Rebuilding Watch's
+            # catalog can replace its hero and rail delegates during playback.
+            self.watchProgressChanged.emit(history_archive_owner(record))
         if self._previews.request(duration):
             self.playbackPreviewsChanged.emit()
         self._watch_queue.present(self, status)

@@ -29,6 +29,9 @@ Forge activity and output facts are equal-width peers separated by padding and a
 fixed hairline. Keep the steps that actually happened after any terminal outcome;
 never substitute only a final status or invent stages absent from the record.
 Run cards retain identity, artwork and open menus while progress changes.
+Watch also retains its featured item and rails during playback, while its progress
+label and Resume/Play state follow the current saved playback position, including
+replay and backwards seeks. Progress updates must not rebuild the browse page.
 
 The folder inspector uses a large recognizable folder emblem without a frame,
 centered with the folder label below. Selected media and thumbnails use artwork;

@@ -613,6 +613,34 @@ presentation before hiding, allowing Cocoa to retire its fullscreen Space.
 No native replay, new window owner, timers or platform-specific polling was added
 to product code. Native Windows presentation remains a separate evidence tier.
 
+September 30 retained-progress follow-up: a retained browse projection must keep
+its item/rail identity while reflecting changes accepted by its existing progress
+owner. The prior hero test read a newly computed projection, and the mini-player
+test deliberately retained the old hero; neither checked its painted progress.
+The new visible/hidden scene cases fail on prior source after natural end, replay
+and a backwards position. They check actual label text, completion/resume state,
+stable projection/rail identity, retired-generation refusal, and a reopened durable
+ledger. The Bridge publishes only accepted progress changes for that owner; Watch
+updates its small progress projection without rebuilding catalog delegates.
+Existing player binding/ledger tests retain provider-readiness, wrong-path and
+failed-persistence coverage. Native packaged replay/Back remains a separate proof
+from controlled provider snapshots. Captions placement was withdrawn as a defect;
+the transient fullscreen white strip has not been reproduced and receives no
+speculative runtime patch.
+
+The real native replay case caught a second owner boundary the synthetic sequence
+missed: Qt stop() emits a transient zero position while still paused. Both paused
+Back and mini Close previously stopped the provider before retiring the progress
+binding, saving that zero as resume progress. Both now use the existing Bridge
+close path, which flushes/retires progress before its URL notification stops the
+provider. Two real-decoder Cocoa cases verify natural end, actual Play replay,
+fullscreen/floating/Back transitions and reopened ledger position; the prior
+mini-close implementation fails the durable readback. Transport emblems have a
+separate rendered topology check: ignoring the central numeral, the arc and its
+arrowhead must be one connected silhouette. Both old directions fail at enlarged
+inspection size. This is targeted coverage of a reported aesthetic defect, not
+general automatic discovery of unknown visual defects.
+
 1. Preserve the concrete reproducer and add a regression for the reported failure.
 2. Identify the invariant that failed, independently of the affected screen or tool.
    Examples: accepted intent survives delayed readiness; only the current owner may

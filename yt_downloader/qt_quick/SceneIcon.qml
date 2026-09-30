@@ -107,16 +107,21 @@ Canvas {
         } else if (name === "pause") {
             line([[.28, .14], [.28, .86]])
             line([[.72, .14], [.72, .86]])
-        } else if (name === "backward") {
-            line([[.30, .15], [.06, .15], [.06, .40]])
-            c.beginPath(); c.arc(.50 * s, .53 * s, .39 * s, 3.8, 7.8); c.stroke()
+        } else if (name === "backward" || name === "forward") {
+            // Both directions share a continuous arc/arrow junction; mirror
+            // only the arrow, keeping the number upright and centered.
+            c.save()
+            if (name === "forward") { c.translate(s, 0); c.scale(-1, 1) }
+            c.beginPath()
+            c.moveTo(.66 * s, .06 * s)
+            c.lineTo(.50 * s, .19 * s)
+            c.lineTo(.66 * s, .32 * s)
+            c.moveTo(.50 * s, .19 * s)
+            c.arc(.50 * s, .55 * s, .36 * s, -Math.PI / 2, Math.PI)
+            c.stroke()
+            c.restore()
             c.font = "bold " + Math.round(s * .38) + "px sans-serif"
-            c.textAlign = "center"; c.fillText("10", .51 * s, .66 * s)
-        } else if (name === "forward") {
-            line([[.70, .15], [.94, .15], [.94, .40]])
-            c.beginPath(); c.arc(.50 * s, .53 * s, .39 * s, 1.9, 6.2); c.stroke()
-            c.font = "bold " + Math.round(s * .38) + "px sans-serif"
-            c.textAlign = "center"; c.fillText("10", .51 * s, .66 * s)
+            c.textAlign = "center"; c.fillText("10", .50 * s, .68 * s)
         } else if (name === "volume" || name === "muted") {
             line([[.06, .37], [.27, .37], [.51, .14], [.51, .86], [.27, .63], [.06, .63], [.06, .37]])
             if (name === "muted") {

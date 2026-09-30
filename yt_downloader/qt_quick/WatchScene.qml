@@ -9,18 +9,30 @@ Item {
         groupSubtitle: "", groupDescription: "", groupCountLabel: "", groupFirstOwner: "",
         hero: ({}), videos: [], channels: [], playlists: [], collections: []})
     property bool projectionDirty: true
+    property var heroProgress: ({})
+    function refreshHeroProgress() {
+        if (appBridge)
+            heroProgress = appBridge.watchHeroProgress(projection.hero.owner || "")
+    }
+    onProjectionChanged: refreshHeroProgress()
     function refreshProjection() {
         if (visible && appBridge && projectionDirty) {
             projection = appBridge.watchScene
             projectionDirty = false
         }
     }
-    onVisibleChanged: refreshProjection()
+    onVisibleChanged: {
+        refreshProjection()
+        if (visible) refreshHeroProgress()
+    }
     Connections {
         target: scene.appBridge
         function onWatchSceneChanged() {
             scene.projectionDirty = true
             scene.refreshProjection()
+        }
+        function onWatchProgressChanged(owner) {
+            if (owner === scene.projection.hero.owner) scene.refreshHeroProgress()
         }
     }
     readonly property string route: projection.route || "home"
@@ -257,7 +269,7 @@ Item {
                 }
                 Text {
                     x: 36; y: 44
-                    text: scene.projection.hero.resume ?
+                    text: scene.heroProgress.resume ?
                           (scene.projection.hero.kind === "audio" ? "CONTINUE LISTENING" : "CONTINUE WATCHING") :
                           (scene.projection.hero.kind === "video" ? "READY TO WATCH" : "READY TO PLAY")
                     color: theme.muted; font.pixelSize: 12; font.bold: true
@@ -288,26 +300,27 @@ Item {
                 }
                 Rectangle {
                     id: heroProgressTrack
-                    visible: !!scene.projection.hero.resume
+                    visible: !!scene.heroProgress.resume
                     x: 40; y: Math.max(242, heroDescription.y + heroDescription.implicitHeight + 28)
                     width: Math.min(400, heroTitle.width - 130)
                     height: 8; radius: 4; color: theme.border
-                    Rectangle { width: parent.width * (scene.projection.hero.progress || 0); height: parent.height; radius: 4; color: theme.progress }
+                    Rectangle { width: parent.width * (scene.heroProgress.progress || 0); height: parent.height; radius: 4; color: theme.progress }
                 }
                 Text {
+                    objectName: "watchHeroProgressLabel"
                     visible: heroProgressTrack.visible
                     x: heroProgressTrack.x + heroProgressTrack.width + 16
                     y: heroProgressTrack.y - 8
-                    text: scene.projection.hero.progressLabel || ""
+                    text: scene.heroProgress.progressLabel || ""
                     color: theme.text; font.pixelSize: 15
                 }
                 Row {
                     id: heroActions
                     x: 36
-                    y: scene.projection.hero.resume ? heroProgressTrack.y + 30 : Math.max(272, heroDescription.y + heroDescription.implicitHeight + 32)
+                    y: scene.heroProgress.resume ? heroProgressTrack.y + 30 : Math.max(272, heroDescription.y + heroDescription.implicitHeight + 32)
                     spacing: 16
                     height: 42
-                    StoneButton { label: scene.projection.hero.resume ? "Resume" : "Play"; icon: "image://vodforge/icon/play.png/r" + scene.appBridge.themeRevision; width: 150; height: 42; onActivated: scene.appBridge.playWatchHero(scene.projection.hero.owner) }
+                    StoneButton { label: scene.heroProgress.resume ? "Resume" : "Play"; icon: "image://vodforge/icon/play.png/r" + scene.appBridge.themeRevision; width: 150; height: 42; onActivated: scene.appBridge.playWatchHero(scene.projection.hero.owner) }
                     StoneButton { label: "View in Library"; icon: "image://vodforge/icon/folder.png/r" + scene.appBridge.themeRevision; width: 181; height: 42; onActivated: scene.showLibraryDetails(scene.projection.hero.owner) }
                     StoneButton { id: heroMoreButton; objectName: "watchHeroMoreButton"; label: "⋯"; accessibilityLabel: "More actions"; width: 54; height: 42; onActivated: scene.openMore(scene.projection.hero.owner, heroMoreButton) }
                 }

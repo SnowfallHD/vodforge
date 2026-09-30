@@ -1301,7 +1301,6 @@ Window {
                     window.miniPlayerActive = true
                     bridge.returnToPlaybackOrigin()
                 } else {
-                    if (window.mediaPlayer) window.mediaPlayer.stop()
                     bridge.closePlayback()
                 }
             }
@@ -1387,7 +1386,6 @@ Window {
             label: "×"; accessibilityLabel: "Close mini player"
             width: 32; height: 30
             onActivated: {
-                if (window.mediaPlayer) window.mediaPlayer.stop()
                 bridge.closePlayback(true)
             }
         }

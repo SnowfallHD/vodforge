@@ -47,7 +47,8 @@ from yt_downloader.library_annotations import LibraryAnnotation, LibraryAnnotati
 from yt_downloader.library_artwork_source import ArtworkAsset
 from yt_downloader.models import ExportMode
 from yt_downloader.playback_backend import PlaybackSnapshot
-from yt_downloader.playback_progress import WatchedProgress
+from yt_downloader.playback_progress import PlaybackProgressOwner, WatchedProgress
+from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.qt_quick import main as qt_main
 from yt_downloader.qt_quick.artwork import QtArtwork, thumbnail_path
 from yt_downloader.qt_quick.scene_projection import library_scene, watch_scene
@@ -2058,6 +2059,147 @@ def test_qt_watch_hero_uses_saved_progress_and_role_specific_artwork(tmp_path):
     )
     assert group["groupAvatar"] == "First-avatar"
     assert group["groupBanner"] == "First-banner"
+
+
+@pytest.mark.parametrize("direction", ["backward", "forward"])
+def test_transport_arrow_and_arc_have_one_connected_silhouette(
+    tmp_path, monkeypatch, direction
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    component = QQmlComponent(engine)
+    component.setData(
+        b'import QtQuick\nRectangle { width: 96; height: 96; color: "black"; '
+        b'SceneIcon { objectName: "transportIcon"; anchors.fill: parent; tone: "white" } }',
+        QUrl.fromLocalFile(str(Path(qt_main.__file__).with_name("TransportProbe.qml"))),
+    )
+    probe = component.create()
+    try:
+        assert probe is not None, component.errorString()
+        probe.setParentItem(window.contentItem())
+        icon = probe.findChild(QObject, "transportIcon")
+        icon.setProperty("name", direction)
+        QTest.qWait(150)
+        frame = window.grabWindow()
+        scale = frame.devicePixelRatio()
+        side = round(96 * scale)
+        # Ignore the readable central numeral. Every remaining stroke must
+        # belong to the same arrow/arc silhouette, not a detached corner.
+        pixels = {
+            (x, y)
+            for x in range(side)
+            for y in range(side)
+            if frame.pixelColor(x, y).lightness() > 180
+            and not (0.28 * side < x < 0.72 * side and 0.38 * side < y < 0.77 * side)
+        }
+        assert pixels
+        components = []
+        while pixels:
+            pending = [pixels.pop()]
+            connected = set(pending)
+            while pending:
+                x, y = pending.pop()
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        neighbour = (x + dx, y + dy)
+                        if neighbour in pixels:
+                            pixels.remove(neighbour)
+                            connected.add(neighbour)
+                            pending.append(neighbour)
+            components.append(connected)
+        assert len(components) == 1, [len(part) for part in components]
+        shape = components[0]
+        assert max(x for x, _y in shape) - min(x for x, _y in shape) > side * 0.65
+        assert max(y for _x, y in shape) - min(y for _x, y in shape) > side * 0.8
+    finally:
+        if probe is not None:
+            probe.deleteLater()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+def test_retained_watch_hero_tracks_observed_replay_without_rebuilding_rails(
+    tmp_path, monkeypatch, hidden
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    first = saved(tmp_path, "A First", "MP4")
+    record = saved(tmp_path, "Z Played", "MP4")
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [first, record]
+    progress = bridge._playback_progress
+    session = progress.begin(record)
+    assert progress.observe(session, PlaybackSnapshot(None, "Paused", 246, 255, 80))
+    assert progress.retire(session)
+    bridge.selectHome("Watch")
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        scene = window.findChild(QObject, "watchBrowseScene")
+        app.processEvents()
+        projection = scene.property("projection")
+        assert projection["hero"]["title"] == "Z Played"
+        rail = window.findChild(QObject, "watchHomeRail_playlists")
+        label = window.findChild(QObject, "watchHeroProgressLabel")
+        assert label is not None
+        assert label.property("text") == "4:06 / 4:15"
+        bridge._playback_path = tmp_path / "Z Played.mp4"
+        bridge._playback_record = record
+        bridge._playback_generation = 7
+        bridge._playback_binding = PlaybackProgressBinding(
+            progress,
+            record,
+            snapshot=bridge._playback_snapshot(),
+            seek=bridge._request_playback_seek,
+        )
+        if hidden:
+            scene.setProperty("visible", False)
+        # A provider-confirmed resume, natural end and deliberate replay must
+        # update the retained hero, without choosing a different item/rail.
+        bridge.observePlayback(0, 255, "Playing", bridge._playback_generation)
+        bridge.observePlayback(246, 255, "Playing", bridge._playback_generation)
+        bridge.observePlayback(255, 255, "Ended", bridge._playback_generation)
+        app.processEvents()
+        assert not scene.property("heroProgress")["resume"]
+        assert label.property("text") == ""
+        bridge.manualPlaybackSeek(0)
+        bridge.observePlayback(0, 255, "Playing", bridge._playback_generation)
+        assert label.property("text") == ""
+        bridge.observePlayback(14, 255, "Playing", bridge._playback_generation)
+        bridge.observePlayback(14, 255, "Paused", bridge._playback_generation)
+        if hidden:
+            scene.setProperty("visible", True)
+        app.processEvents()
+        assert label.property("text") == "0:14 / 4:15"
+        assert scene.property("projection") == projection
+        assert window.findChild(QObject, "watchHomeRail_playlists") is rail
+        # Retired generations cannot overwrite a later replay position.
+        bridge.observePlayback(246, 255, "Playing", bridge._playback_generation - 1)
+        app.processEvents()
+        assert label.property("text") == "0:14 / 4:15"
+        bridge.closePlayback(True)
+        reopened = PlaybackProgressOwner(progress.path)
+        reopened.load()
+        assert reopened.for_record(record).position == 14
+        assert not reopened.for_record(record).completed
+        assert scene.property("projection") == projection
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
 
 
 def test_qt_artwork_reuses_shared_owner_and_publishes_only_completed_local_asset(

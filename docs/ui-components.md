@@ -176,6 +176,10 @@ Do not use emoji for interface symbols. Match stroke weight, tone and size acros
 navigation and compose controls; preserve brand artwork. Copy uses two overlapping
 squares, a source link uses the chain emblem, overflow uses the shared dots. Every
 icon-only action has an accessible name and tooltip where useful.
+Directional emblems must form a coherent silhouette: attach each arrowhead to
+its arc at the correct tangent, preserve mirrored directions, and keep numerals
+upright and legible. Inspect both the actual control size and an enlarged render;
+separate floating corners do not satisfy the icon contract.
 
 Artwork has explicit layout bounds before loading. Preserve actual media colors
 and the approved fit/crop rules. The current-folder overview uses a large unframed

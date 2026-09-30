@@ -11,6 +11,7 @@ from typing import Any
 
 from yt_downloader.history import history_annotation_owner, history_archive_owner
 from yt_downloader.library_state import format_duration
+from yt_downloader.playback_progress import WatchedProgress
 from yt_downloader.watch_library import (
     WatchChannel,
     WatchRail,
@@ -301,6 +302,22 @@ def library_scene(
     }
 
 
+def watch_progress(progress: WatchedProgress | None) -> dict[str, Any]:
+    """Project the ledger's observed position without selecting a new hero."""
+    resume = bool(progress and not progress.completed and progress.position >= 1)
+    return {
+        "resume": resume,
+        "progress": progress.fraction if resume and progress else 0.0,
+        "progressLabel": (
+            format_duration(progress.position)
+            + " / "
+            + format_duration(progress.duration)
+            if resume and progress
+            else ""
+        ),
+    }
+
+
 def watch_scene(
     records: Sequence[dict[str, Any]],
     route: str,
@@ -367,11 +384,6 @@ def watch_scene(
         if hero_record is not None and progress_for is not None
         else None
     )
-    hero_resume = bool(
-        hero_progress is not None
-        and not hero_progress.completed
-        and hero_progress.position >= 1
-    )
     hero = (
         {
             **_media(hero_record, featured.indices[0], hero_image),
@@ -381,19 +393,7 @@ def watch_scene(
             "playlist": next(
                 (rail.title for rail in named_playlists if featured in rail.videos), ""
             ),
-            "resume": hero_resume,
-            "progress": (
-                hero_progress.fraction
-                if hero_resume and hero_progress is not None
-                else 0.0
-            ),
-            "progressLabel": (
-                format_duration(hero_progress.position)
-                + " / "
-                + format_duration(hero_progress.duration)
-                if hero_resume and hero_progress is not None
-                else ""
-            ),
+            **watch_progress(hero_progress),
             # The dim backdrop can reuse the card asset. A second high-resolution
             # request would sit ahead of visible cards in the serialized lane.
             "backdrop": hero_image(hero_record, (320, 180), "media"),
