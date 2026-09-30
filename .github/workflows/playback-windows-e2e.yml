@@ -66,10 +66,18 @@ jobs:
           .\build_windows_installer.ps1 -Version "0.1.8-dev"
           $installer = Resolve-Path .\dist\release\VODForge-Windows-Setup-v0.1.8-dev.exe
           $installRoot = "$PWD\build\installed\VODForge"
+          Write-Host "Installing without ordinary application launch"
+          $installLog = "$PWD\build\playback-install.log"
           $install = Start-Process $installer -ArgumentList @(
-            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$installRoot"
-          ) -Wait -PassThru
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/VODFORGEHANDOFF=1", "/DIR=$installRoot", "/LOG=$installLog"
+          ) -PassThru
+          if (-not $install.WaitForExit(120000)) {
+            Stop-Process -Id $install.Id -Force -ErrorAction SilentlyContinue
+            Get-Content $installLog -ErrorAction Continue
+            throw "Installer process timed out."
+          }
           if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)." }
+          Write-Host "Installer exited; starting controlled playback"
           $fixtures = Get-ChildItem .\build\playback-fixtures\* | Sort-Object Name
           $env:VODFORGE_PLAYBACK_SMOKE_RECEIPT = "$PWD\build\playback-installer.json"
           $arguments = @("--playback-smoke") + @($fixtures.FullName)
@@ -100,5 +108,7 @@ jobs:
         if: always()
         with:
           name: windows-playback-evidence
-          path: build/playback-*.json
+          path: |
+            build/playback-*.json
+            build/playback-install.log
           if-no-files-found: error
