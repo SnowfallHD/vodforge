@@ -4,9 +4,9 @@ import argparse
 import importlib.metadata
 import json
 import os
-import secrets
 import shlex
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -502,6 +502,22 @@ def run_release_receipt_gate(args: argparse.Namespace) -> int:
     return 0 if args.no_fail or receipt["release_eligible"] else 1
 
 
+def _create_quality_workspace(report_dir: Path, run_id: str) -> Path:
+    """Retain one private short workspace and an external receipt for later cleanup."""
+    workspace_parent = Path(
+        os.environ.get("VODFORGE_QUALITY_WORKSPACE_ROOT", tempfile.gettempdir())
+    )
+    if not workspace_parent.is_absolute():
+        raise ValueError("VODFORGE_QUALITY_WORKSPACE_ROOT must be absolute")
+    run_root = Path(tempfile.mkdtemp(prefix="vfq-", dir=workspace_parent)).resolve()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    json_dump(
+        report_dir / "workspace.json",
+        {"run_id": run_id, "run_root": str(run_root), "retained_for_evidence": True},
+    )
+    return run_root
+
+
 def run_profile(
     args: argparse.Namespace, *, repo_root: Path, harness_root: Path
 ) -> int:
@@ -511,9 +527,7 @@ def run_profile(
     report_dir = (args.output_dir or (harness_root / "reports" / run_id)).resolve()
     # Keep the isolated output path short enough for the production
     # Windows-compatible media path limit, even from a named worktree.
-    run_root = (harness_root / ".runs" / secrets.token_hex(8)).resolve()
-    run_root.mkdir(parents=True, exist_ok=True)
-    report_dir.mkdir(parents=True, exist_ok=True)
+    run_root = _create_quality_workspace(report_dir, run_id)
     from .telemetry_checks import install_telemetry_guard
 
     install_telemetry_guard()
@@ -588,6 +602,7 @@ def run_profile(
         "repository": repository,
         "tool_versions": _tool_versions(),
         "isolation": {
+            "run_root": str(run_root),
             "home": str(isolated_home),
             "tmp": str(isolated_tmp),
             "production_state": production_state,

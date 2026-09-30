@@ -768,6 +768,71 @@ def reliability_duplicate_artifact_transitions(
     return scenario, findings
 
 
+def _recover_with_owned_child(
+    store: Any, child_command: list[str], stage: Path, partial: Path
+) -> tuple[list[Any], str | None, bool, list[dict[str, Any]]]:
+    """Retain a direct child handle solely for fixture cleanup on blocked recovery."""
+    from yt_downloader.process_lifecycle import process_command
+    from yt_downloader.run_state import recover_interrupted_run
+
+    child = subprocess.Popen(
+        child_command,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    trace = []
+    recovered = []
+    error = None
+    recovery_reaped_child = False
+    try:
+        store.child_started(child.pid, child_command)
+        trace.append(
+            {
+                "phase": "active_before_restart_recovery",
+                "stage_exists": stage.is_dir(),
+                "partial_size": partial.stat().st_size,
+                "child_pid": child.pid,
+                "child_command": process_command(child.pid),
+                "run_state": store.load(),
+            }
+        )
+        recovered = recover_interrupted_run(store)
+        recovery_reaped_child = child.poll() is not None
+    except Exception as exc:  # noqa: BLE001 - blocked production recovery remains a failure
+        error = f"{type(exc).__name__}: {exc}"
+    finally:
+        # This handle comes directly from our Popen, never a discovered PID.
+        # Cleanup does not substitute a different process identity probe.
+        try:
+            if child.poll() is None:
+                child.terminate()
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=5)
+        except Exception as exc:  # noqa: BLE001 - retain cleanup failure alongside the original
+            cleanup_error = f"Owned child cleanup failed: {type(exc).__name__}: {exc}"
+            error = f"{error}; {cleanup_error}" if error else cleanup_error
+    child_reaped = child.poll() is not None
+    trace.append(
+        {
+            "phase": "after_restart_recovery",
+            "stage_exists": stage.exists(),
+            "staging_root_exists": (stage.parent).exists(),
+            "run_state": store.load(),
+            "child_alive": not child_reaped,
+            "recovery_error": error,
+            "recovery_reaped_child": recovery_reaped_child,
+            "owned_fixture_child_reaped": child_reaped,
+            "child_ownership": "direct_popen_handle",
+        }
+    )
+    return recovered, error, recovery_reaped_child, trace
+
+
 def lifecycle_quit_restart_recovery(
     runner: HeadlessPipelineRunner,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -781,11 +846,9 @@ def lifecycle_quit_restart_recovery(
         LibraryProjectionOwner,
         library_status_or_location,
     )
-    from yt_downloader.process_lifecycle import process_command, terminate_pid
     from yt_downloader.run_state import (
         ActiveRunStore,
         RunRecoveryOwner,
-        recover_interrupted_run,
     )
     from yt_downloader.safe_output import create_private_staging_directory
     from yt_downloader.settings_store import load_settings, save_settings
@@ -836,54 +899,34 @@ def lifecycle_quit_restart_recovery(
         if tail.is_file()
         else [sys.executable, "-c", "import time; time.sleep(120)", str(partial)]
     )
-    orphan_launcher = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import subprocess,sys; "
-                "p=subprocess.Popen(sys.argv[1:], start_new_session=True, "
-                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, "
-                "stderr=subprocess.DEVNULL); print(p.pid)"
-            ),
-            *child_command,
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+    recovered, recovery_error, child_reaped, trace = _recover_with_owned_child(
+        store, child_command, stage, partial
     )
-    child_pid = int(orphan_launcher.stdout.strip())
-    store.child_started(child_pid, child_command)
-    trace = [
-        {
-            "phase": "active_before_restart_recovery",
-            "stage_exists": stage.is_dir(),
-            "partial_size": partial.stat().st_size,
-            "child_pid": child_pid,
-            "child_command": process_command(child_pid),
-            "run_state": store.load(),
-        }
-    ]
-    recovered = []
-    recovery_error: str | None = None
-    try:
-        recovered = recover_interrupted_run(store)
-    except Exception as exc:  # noqa: BLE001 - retain cleanup evidence
-        recovery_error = f"{type(exc).__name__}: {exc}"
-    finally:
-        if process_command(child_pid) is not None:
-            terminate_pid(child_pid)
-    child_reaped = process_command(child_pid) is None
-    trace.append(
-        {
-            "phase": "after_restart_recovery",
-            "stage_exists": stage.exists(),
-            "staging_root_exists": (output_dir / ".vfstage").exists(),
-            "child_alive": not child_reaped,
-            "run_state": store.load(),
-            "recovery_error": recovery_error,
-        }
-    )
+    if recovery_error is not None:
+        trace_path = case_root / "quit-restart-trace.json"
+        trace_path.write_text(
+            json.dumps({"snapshots": trace}, indent=2) + "\n", encoding="utf-8"
+        )
+        return {
+            "id": "lifecycle.quit_restart_recovery",
+            "evidence_tier": "headless_production_pipeline",
+            "category": "lifecycle",
+            "status": "failed",
+            "duration_seconds": 0.0,
+            "metrics": {
+                "recovery_blocked": True,
+                "owned_fixture_child_reaped": trace[-1]["owned_fixture_child_reaped"],
+            },
+            "error": recovery_error,
+            "evidence": [
+                (
+                    "Production recovery was blocked; direct owned-child fixture cleanup "
+                    "does not establish recovery success."
+                ),
+                recovery_error,
+            ],
+            "artifacts": [str(trace_path)],
+        }, []
     queued_after_restart = store.load_queued_jobs()
     projection_owner = LibraryProjectionOwner()
     queued_projection = projection_owner.reconcile(
@@ -1093,7 +1136,8 @@ def lifecycle_quit_restart_recovery(
             "jobs_cancelled": 0,
             "settings_persisted": settings_preserved,
             "settings_private": settings_private,
-            "orphan_child_reaped": child_reaped,
+            "recovery_child_reaped": child_reaped,
+            "child_ownership": "direct_popen_handle",
             "recorded_stage_cleaned": stage_cleaned,
             "failed_state_durable_until_removal": failed_preserved,
             "queued_runs_preserved_in_order": queue_preserved,
