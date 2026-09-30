@@ -14,7 +14,10 @@ from yt_downloader.models import (
     Mp3ExportSettings,
     OutputType,
 )
-from yt_downloader.process_lifecycle import terminate_recorded_children
+from yt_downloader.process_lifecycle import (
+    ProcessOwnershipError,
+    terminate_recorded_children,
+)
 from yt_downloader.run_state import (
     INTERRUPTED_FAILURE_MESSAGE,
     ActiveRunStore,
@@ -227,6 +230,59 @@ def test_recovery_refuses_to_touch_a_run_owned_by_a_live_app(
         )
 
     assert stage.exists()
+
+
+def test_unreadable_owner_blocks_all_recovery_effects(tmp_path, monkeypatch):
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    original = store.path.read_bytes()
+    monkeypatch.setattr(run_state_module.os, "getpid", lambda: 999_999)
+
+    def unreadable(_pid):
+        raise ProcessOwnershipError("Unavailable identity")
+
+    with pytest.raises(RunStateError) as failure:
+        recover_interrupted_run(
+            store,
+            owner_command_reader=unreadable,
+            terminate_children=lambda *_: pytest.fail("must not terminate"),
+            cleanup_staging=lambda *_: pytest.fail("must not clean staging"),
+        )
+    assert failure.value.cause == "read_failed"
+    assert failure.value.stage == "owner_check"
+    assert store.path.read_bytes() == original
+
+
+def test_unreadable_child_preserves_journal_and_staging(tmp_path):
+    stage = tmp_path / ".vfstage" / "deadbeef"
+    stage.mkdir(parents=True)
+    media = stage / "source.mp4"
+    media.write_bytes(b"partial")
+    store = ActiveRunStore(tmp_path / "active-run.json")
+    store.begin(_job(tmp_path))
+    store.add_staging_dir("run-1", stage)
+    store.child_started(4321, ["/bundle/ffmpeg", str(media)])
+    original = store.path.read_bytes()
+
+    def unreadable(_pid):
+        raise ProcessOwnershipError("Unavailable child identity")
+
+    with pytest.raises(RunStateError) as failure:
+        recover_interrupted_run(
+            store,
+            owner_command_reader=lambda _pid: None,
+            terminate_children=lambda children, paths: terminate_recorded_children(
+                children,
+                paths,
+                command_reader=unreadable,
+                pid_terminator=lambda _pid: pytest.fail("must not terminate"),
+            ),
+            cleanup_staging=lambda *_: pytest.fail("must not clean staging"),
+        )
+    assert failure.value.cause == "child_ownership"
+    assert failure.value.stage == "child_cleanup"
+    assert store.path.read_bytes() == original
+    assert media.read_bytes() == b"partial"
 
 
 def test_recovery_rejects_staging_outside_the_recorded_output_root(

@@ -820,7 +820,17 @@ def recover_interrupted_run(
     owner_pid = payload.get("owner_pid")
     if not isinstance(owner_pid, int) or owner_pid <= 1:
         raise RunStateError("The active-run owner record is invalid.")
-    if owner_pid != os.getpid() and owner_command_reader(owner_pid) is not None:
+    try:
+        other_owner = (
+            owner_pid != os.getpid() and owner_command_reader(owner_pid) is not None
+        )
+    except ProcessOwnershipError as exc:
+        raise RunStateError(
+            "VODForge could not verify the active run owner; recovery was not attempted.",
+            cause="read_failed",
+            stage="owner_check",
+        ) from exc
+    if other_owner:
         raise RunStateError(
             "Another live process still owns the active VODForge run; recovery was not attempted.",
             cause="live_owner",

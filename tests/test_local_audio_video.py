@@ -38,6 +38,7 @@ from yt_downloader.local_audio_video_ui import (
     compact_dialog_path,
 )
 from yt_downloader.models import OutputType
+from yt_downloader.process_lifecycle import ProcessOwnershipError
 
 
 def _input_probe(*, title: str = "Quiet hours", artist: str = "Local artist"):
@@ -679,6 +680,31 @@ def test_restart_fails_closed_when_prior_owner_is_still_live(tmp_path: Path) -> 
     assert owner.recover_interrupted() is False
     assert staging.exists()
     assert state.exists()
+
+
+def test_local_recovery_preserves_files_when_owner_is_unreadable(tmp_path: Path):
+    output_root = tmp_path / "exports"
+    staging = output_root / ".vfstage" / "owned-transaction"
+    staging.mkdir(parents=True)
+    media = staging / "partial.mp4"
+    media.write_bytes(b"partial")
+    state = tmp_path / "local-conversion-state.json"
+    writer = LocalConversionRecoveryOwner(state)
+    writer.begin(output_root=output_root, staging_dir=staging, run_id="private-run")
+    payload = json.loads(state.read_text(encoding="utf-8"))
+    payload["owner_pid"] = os.getpid() + 100_000
+    state.write_text(json.dumps(payload), encoding="utf-8")
+    original = state.read_bytes()
+
+    def unreadable(_pid):
+        raise ProcessOwnershipError("Unavailable owner identity")
+
+    owner = LocalConversionRecoveryOwner(state, owner_command_reader=unreadable)
+    assert owner.recover_interrupted() is False
+    assert state.read_bytes() == original
+    assert media.read_bytes() == b"partial"
+    with pytest.raises(LocalAudioVideoError, match="could not be recovered safely"):
+        owner.begin(output_root=output_root, staging_dir=staging, run_id="next-run")
 
 
 @pytest.mark.parametrize(

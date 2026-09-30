@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,26 @@ from yt_downloader.analytics_consent import AnalyticsConsentOwner
 from yt_downloader.product_telemetry import ProductTelemetryOwner, _load_outbox
 
 pytestmark = pytest.mark.usefixtures("production_telemetry_contract")
+
+
+@pytest.fixture(scope="module")
+def live_owner_process():
+    # Own the liveness oracle; CI's launching shell may disappear or be protected.
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('ready', flush=True); sys.stdin.read()",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert process.stdout.readline().strip() == "ready"
+        yield process
+    finally:
+        process.communicate(timeout=10)
 
 
 def telemetry(tmp_path, *, enabled=True, sink=lambda event: False):
@@ -42,7 +64,7 @@ def telemetry(tmp_path, *, enabled=True, sink=lambda event: False):
     ],
 )
 def test_real_failure_retains_exact_cause_and_blocks_start(
-    tmp_path, monkeypatch, case, cause, stage
+    tmp_path, monkeypatch, case, cause, stage, live_owner_process
 ):
     monkeypatch = pytest.MonkeyPatch()
     path = tmp_path / "active-run.json"
@@ -57,7 +79,7 @@ def test_real_failure_retains_exact_cause_and_blocks_start(
         payload["schema_version"] = 999
         path.write_text(json.dumps(payload))
     elif case == "live":
-        payload["owner_pid"] = os.getppid()
+        payload["owner_pid"] = live_owner_process.pid
         path.write_text(json.dumps(payload))
     elif case == "staging":
         payload["staging_dirs"] = ["/PRIVATE/outside"]

@@ -2823,3 +2823,24 @@ veryfast and medium across both modes. Both ultrafast cases fail before the fix
 and pass after it; receipts are under `build/watch-progress-proof/custom-profile-*`.
 This representative matrix does not establish physical GPU behavior or every
 encoder build. Native packaged retry requires a new candidate containing the fix.
+
+### Unreadable process ownership is not confirmed process exit
+
+Windows CI exposed the recovery test's reliance on an unrelated launching shell.
+The default command reader also returned `None` for failed or empty process
+queries, allowing recovery to treat an unreadable live owner or child as absent.
+The existing process lifecycle owner now uses the already required psutil native
+query: only confirmed absence or zombie status means exited. Access failures and
+empty live command identities fail closed. Run recovery retains its existing
+`read_failed` / `owner_check` and `child_ownership` / `child_cleanup` diagnostics;
+no process argv is sent to telemetry.
+
+Earlier tests covered live readable owners, PID reuse and matching child identity,
+but did not distinguish failed inspection from absence. Two unreadable-query
+cases fail against the prior implementation. The bounded boundary matrix plus
+owner and child recovery tests verify unchanged journals and staging bytes and
+no termination or cleanup on uncertain ownership. The real liveness telemetry
+test now owns a child Python process instead of assuming the CI parent shell is
+readable. This keeps the actual production query and the live-owner assertion.
+Receipts are under `build/watch-progress-proof/process-inspection-*`; local
+results do not substitute for Windows CI or packaged platform qualification.

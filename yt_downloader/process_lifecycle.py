@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 import signal
-import subprocess  # nosec B404 - fixed local process-inspection argv only
-import sys
+import subprocess  # nosec B404 - owned child process lifecycle only
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 
 class ProcessOwnershipError(RuntimeError):
@@ -155,30 +156,26 @@ ACTIVE_CHILD_PROCESS_REGISTRY = ActiveChildProcessRegistry()
 
 
 def process_command(pid: int) -> str | None:
+    """Only a confirmed absent process returns None; unreadable is not dead."""
     if pid <= 1:
         return None
-    if sys.platform.startswith("win"):
-        command = [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
-        ]
-    else:
-        command = ["/bin/ps", "-p", str(pid), "-o", "command="]
     try:
-        completed = subprocess.run(  # nosec B603 - fixed local process inspection
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
+        process = psutil.Process(pid)
+        if not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+            return None
+        argv = process.cmdline()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
         return None
-    value = completed.stdout.strip()
-    return value or None
+    except (psutil.Error, OSError) as exc:
+        raise ProcessOwnershipError(
+            "The process identity could not be read safely."
+        ) from exc
+    if not argv:
+        raise ProcessOwnershipError(
+            "The live process has no readable command identity."
+        )
+    # Inspection only. This string is never executed or transmitted.
+    return " ".join(argv)
 
 
 def terminate_pid(pid: int, *, timeout_seconds: float = 5.0) -> bool:
