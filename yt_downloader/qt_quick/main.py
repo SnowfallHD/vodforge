@@ -256,6 +256,7 @@ class _SubmitJobOptions(TypedDict):
     cookie_source: CookieSource
     cookie_file: Path | None
     cookie_browser: str | None
+    nvenc_applicable: bool | None
     tags: list[str] | None
 
 
@@ -2857,7 +2858,7 @@ class Bridge(QObject):
                 from .output_config_facts import chosen_config_facts, job_config
 
                 rows = chosen_config_facts(
-                    job_config(job), nvenc_available=self.nvencAvailable
+                    job_config(job), nvenc_available=job.nvenc_applicable
                 )
                 if kind != "active":
                     rows.append(
@@ -2890,9 +2891,9 @@ class Bridge(QObject):
                 chosen = (
                     chosen_config_facts(
                         config,
-                        nvenc_available=self.nvencAvailable
+                        nvenc_available=retained.nvenc_applicable
                         if retained is not None
-                        else None,
+                        else config.get("nvenc_applicable"),
                     )
                     if config is not None
                     else [
@@ -3516,6 +3517,7 @@ class Bridge(QObject):
                 cookie_file=job.cookie_file,
                 cookie_browser=job.cookie_browser,
                 tags=job.tags,
+                nvenc_applicable=self.nvencAvailable,
             )
             prepared.preview_info = {"vodforge_issue_retry": True}
         except (OSError, RuntimeError, ValueError) as exc:
@@ -3602,6 +3604,7 @@ class Bridge(QObject):
                     write_thumbnail=flags["write_thumbnail"],
                     embed_metadata=flags["embed_metadata"],
                     write_info_json=flags["write_info_json"],
+                    nvenc_applicable=self.nvencAvailable,
                 )
             else:
                 prepared = self._runtime.prepare_job(
@@ -3614,6 +3617,7 @@ class Bridge(QObject):
                     manual,
                     urls=[str(config["source"])],
                     batch_mode=False,
+                    nvenc_applicable=self.nvencAvailable,
                 )
             prepared.preview_info = annotate_job_metadata(
                 prepared, dict(prepared.preview_info or {})
@@ -5482,6 +5486,7 @@ class Bridge(QObject):
                     cookie_file=self._cookie_file,
                     cookie_browser=self._cookie_browser,
                     tags=self._current_extra_tags(),
+                    nvenc_applicable=self.nvencAvailable,
                 )
             retry = self._runtime.retry_terminal(run_id, current_job=current_job)
         except (OSError, RuntimeError, ValueError) as exc:
@@ -6167,6 +6172,7 @@ class Bridge(QObject):
                 "cookie_file": self._cookie_file,
                 "cookie_browser": self._cookie_browser,
                 "tags": self._current_extra_tags(),
+                "nvenc_applicable": self.nvencAvailable,
             }
             preview = self._preview_download_info
             if (

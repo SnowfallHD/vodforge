@@ -190,6 +190,8 @@ class DownloadJob:
     # Ephemeral observations follow the existing serialized worker, never own files.
     telemetry_operation_id: str | None = None
     failure_stage: str = "preparation"
+    # Display provenance only; never selects an encoder or restores authentication.
+    nvenc_applicable: bool | None = None
 
 
 @dataclass(frozen=True)

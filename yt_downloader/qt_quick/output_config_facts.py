@@ -170,4 +170,12 @@ def recorded_config(record: Mapping[str, Any]) -> dict[str, Any] | None:
     config = job_config(job)
     config["access"] = "Not recorded"
     config["browser"] = ""
+    from yt_downloader.output_config_snapshot import (
+        OUTPUT_CONFIG_DISPLAY_KEY,
+        sanitize_output_config_display,
+    )
+
+    display = sanitize_output_config_display(record.get(OUTPUT_CONFIG_DISPLAY_KEY))
+    if display is not None:
+        config.update(display)
     return config

@@ -122,6 +122,7 @@ class DownloadRuntime:
         cookie_file: Path | None = None,
         cookie_browser: str | None = None,
         tags: list[str] | None = None,
+        nvenc_applicable: bool | None = None,
     ) -> DownloadJob:
         if self._closing:
             raise RuntimeError("VODForge is closing.")
@@ -146,6 +147,7 @@ class DownloadRuntime:
             cookie_file=cookie_file,
             cookie_browser=cookie_browser,
             tags=tags,
+            nvenc_applicable=nvenc_applicable,
         )
         return self.start_job(job)
 
@@ -193,6 +195,7 @@ class DownloadRuntime:
         cookie_file: Path | None = None,
         cookie_browser: str | None = None,
         tags: list[str] | None = None,
+        nvenc_applicable: bool | None = None,
     ) -> DownloadJob:
         """Validate current Forge inputs without admitting a run."""
         preferences = preferences or DownloadPreferences()
@@ -259,6 +262,9 @@ class DownloadRuntime:
             if selected_type == OutputType.MP4
             else False,
             tags=list(tags or []),
+            nvenc_applicable=nvenc_applicable
+            if selected_type == OutputType.MP4
+            else False,
         )
         return job
 
@@ -638,6 +644,12 @@ class DownloadRuntime:
         record_info["vodforge_run_id"] = job.run_id
         record_info["vodforge_run_activity"] = sanitize_run_activity(job.activity_lines)
         record_info[RETRY_JOB_METADATA_KEY] = serialize_download_job(job)
+        from yt_downloader.output_config_snapshot import (
+            OUTPUT_CONFIG_DISPLAY_KEY,
+            output_config_display,
+        )
+
+        record_info[OUTPUT_CONFIG_DISPLAY_KEY] = output_config_display(job)
         from yt_downloader.archive_file_operations import reconcile_file_record_delta
 
         target = Path(output_dir)

@@ -67,6 +67,7 @@ HISTORY_METADATA_KEYS = (
     "vodforge_progress_key",
     "vodforge_relinked",
     RETRY_JOB_METADATA_KEY,
+    "vodforge_output_config_display",
 )
 
 MAX_CHAPTERS = 500
@@ -583,6 +584,10 @@ def sanitize_history_record(
                 if (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value))
                 else None
             )
+        elif key == "vodforge_output_config_display":
+            from .output_config_snapshot import sanitize_output_config_display
+
+            value = sanitize_output_config_display(value)
         elif key == RETRY_JOB_METADATA_KEY:
             value = _json_safe(dict(value)) if isinstance(value, dict) else None
         elif key in {"webpage_url", "original_url"}:
