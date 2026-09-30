@@ -40,6 +40,7 @@ from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickImageProvider
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from yt_downloader.analytics_consent import ANALYTICS_BENEFITS
 from yt_downloader.app import (
     DIAGNOSTICS_LOG_PATH,
     DownloaderApp,
@@ -2325,6 +2326,10 @@ class Bridge(QObject):
     @Property(_QVARIANT_MAP, notify=exportSettingsChanged)
     def mp3Values(self) -> dict[str, str | bool]:
         return dict(self._mp3_values)
+
+    @Property(_QVARIANT_LIST, constant=True)
+    def analyticsBenefits(self) -> list[dict[str, str]]:
+        return [{"icon": icon, "label": label} for icon, label in ANALYTICS_BENEFITS]
 
     @Property(_QVARIANT_LIST, constant=True)
     def mp3QualityOptions(self) -> list[str]:

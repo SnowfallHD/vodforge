@@ -8,6 +8,7 @@ from functools import partial
 from tkinter import ttk
 from typing import TypedDict, cast
 
+from .analytics_consent import ANALYTICS_BENEFITS
 from .modal_backdrop import ModalBackdrop
 from .ui_button_contract import ProductButton
 from .ui_layout import window_logical_metrics
@@ -69,14 +70,7 @@ class AnalyticsConsentPanel:
         self.benefit_labels = []
         self._benefit_icons = []
         self._benefit_columns = 4
-        for index, text in enumerate(
-            (
-                "No personal information",
-                "Fix errors without support",
-                "Improve the platform",
-                "Turn off anytime in Settings",
-            )
-        ):
+        for index, (_symbol, text) in enumerate(ANALYTICS_BENEFITS):
             benefits.columnconfigure(index, weight=1, uniform="benefit")
             icon = tk.Canvas(
                 benefits,

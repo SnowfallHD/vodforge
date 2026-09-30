@@ -942,6 +942,50 @@ def test_popup_trigger_click_closes_without_reopening(tmp_path, monkeypatch, men
         _close(bridge, engine, window)
 
 
+def test_explicit_popup_close_does_not_consume_the_next_pointer_activation(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtCore import QPoint, Qt
+
+    from tests.test_qt_scene_port import visual_item
+
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    try:
+        QTest.qWait(100)
+        trigger = visual_item(window.contentItem(), "forgeOptionsButton")
+        popup = window.findChild(QObject, "optionsMenu")
+        point = trigger.mapToItem(
+            window.contentItem(), trigger.width() / 2, trigger.height() / 2
+        )
+        position = QPoint(round(point.x()), round(point.y()))
+        QTest.mouseMove(window, position)
+        QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
+        QTest.qWait(30)
+        assert popup.property("visible")
+        # Hold a press across explicit activation, independently of Qt's
+        # outside-press dismissal. Both close origins must remain distinct.
+        popup.setProperty("closePolicy", 0)
+        popup.setProperty("modal", False)
+        popup.setProperty("x", 0)
+        popup.setProperty("y", window.height() - popup.property("height"))
+        QTest.mouseMove(window, QPoint(2, 2))
+        QTest.mouseMove(window, position)
+        QTest.qWait(30)
+        QTest.mousePress(window, Qt.MouseButton.LeftButton, pos=position)
+        assert bridge.isPointerPressed() and trigger.property("hovered")
+        trigger.activated.emit()
+        app.processEvents()
+        assert not popup.property("visible")
+        assert not popup.property("dismissedByTriggerPress")
+        QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+        QTest.mouseMove(window, position)
+        QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=position)
+        QTest.qWait(30)
+        assert popup.property("visible")
+    finally:
+        _close(bridge, engine, window)
+
+
 @pytest.mark.parametrize("diagnostics", [False, True])
 def test_support_consent_is_visible_and_form_fits_its_contents(
     tmp_path, monkeypatch, diagnostics

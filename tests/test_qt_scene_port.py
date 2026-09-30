@@ -5514,3 +5514,62 @@ def test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces(
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
         bridge.close()
+
+
+@pytest.mark.parametrize("width", [1100, 860])
+def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
+    tmp_path, monkeypatch, width
+):
+    from yt_downloader.analytics_consent import ANALYTICS_BENEFITS
+
+    qt_app()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    bridge = qt_main.Bridge(None)
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    window.setWidth(width)
+    window.show()
+    bridge.analyticsPromptRequested.emit()
+    try:
+        QTest.qWait(150)
+        popup = window.findChild(QObject, "analyticsConsentPopup")
+        content = popup.property("contentItem")
+        grid = visual_item(content, "analyticsBenefits")
+        assert grid is not None and grid.property("columns") == 4
+        for index, (symbol, label) in enumerate(ANALYTICS_BENEFITS):
+            icon = visual_item(content, f"analyticsBenefitIcon_{index}")
+            text = visual_item(content, f"analyticsBenefitLabel_{index}")
+            assert icon.property("name") == symbol and icon.isVisible()
+            assert icon.width() == 36 and icon.height() == 36
+            assert text.property("text") == label and text.isVisible()
+            assert text.property("lineCount") == 1
+            for item in (icon, text):
+                position = item.mapToItem(content, QPointF(0, 0))
+                assert position.x() >= 0 and position.y() >= 0
+                assert position.x() + item.width() <= content.width() + 1
+                assert position.y() + item.height() <= content.height() + 1
+
+        def descendants(item):
+            yield item
+            for child in item.childItems():
+                yield from descendants(child)
+
+        actions = [
+            item
+            for item in descendants(content)
+            if item.property("label")
+            in {"Privacy details", "No thanks", "Share analytics"}
+        ]
+        assert len(actions) == 3
+        for item in actions:
+            assert item.isVisible()
+            position = item.mapToItem(content, QPointF(0, 0))
+            assert position.y() + item.height() <= content.height() + 1
+        assert popup.property("height") < 310
+    finally:
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()

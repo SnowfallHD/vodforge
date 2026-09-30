@@ -6,11 +6,14 @@ Popup {
     focus: true
     property Item triggerItem
     property bool dismissedByTriggerPress: false
+    property bool closingFromTrigger: false
 
     function toggleFrom(trigger) {
         if (triggerItem !== trigger) dismissedByTriggerPress = false
         triggerItem = trigger
         if (visible) {
+            closingFromTrigger = true
+            dismissedByTriggerPress = false
             close()
             return false
         }
@@ -23,8 +26,11 @@ Popup {
         open()
         return true
     }
-    onAboutToHide: dismissedByTriggerPress = !!triggerItem &&
-                  !!triggerItem.hovered && bridge.isPointerPressed()
+    onAboutToHide: {
+        dismissedByTriggerPress = !closingFromTrigger && !!triggerItem &&
+                                  !!triggerItem.hovered && bridge.isPointerPressed()
+        closingFromTrigger = false
+    }
     Connections {
         target: popup.triggerItem
         ignoreUnknownSignals: true

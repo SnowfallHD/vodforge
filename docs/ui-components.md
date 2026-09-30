@@ -146,6 +146,19 @@ keep their inset material. Elevation must extend beyond the face without changin
 its hit area or clipping against the surrounding content. Never add an individual
 menu shadow or wrap the popup in another visual system.
 
+The analytics consent surface retains four passive privacy summaries from
+`ANALYTICS_BENEFITS`: violet vector emblems above short, single-line labels.
+Use four columns when the available content width permits and two otherwise.
+These summaries are informational, not buttons or checkboxes. Fit the surface to
+its content and keep Privacy details and both consent actions visible.
+
+`StonePopup` distinguishes an explicit trigger close from Qt's automatic outside
+press dismissal. Only automatic dismissal over the trigger consumes that same
+press's subsequent click. An explicit close must leave the next deliberate
+activation available, even while Qt still reports the pointer button held. The
+existing six-menu click journeys missed this held-press ordering; retain the
+separate held-press regression alongside those representative shared consumers.
+
 Use vector SceneIcon glyphs or approved assets with sufficient backing density.
 Do not use emoji for interface symbols. Match stroke weight, tone and size across
 navigation and compose controls; preserve brand artwork. Copy uses two overlapping

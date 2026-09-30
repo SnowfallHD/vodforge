@@ -137,6 +137,22 @@ Canvas {
         } else if (name === "floating") {
             c.strokeRect(.08 * s, .15 * s, .84 * s, .70 * s)
             c.fillRect(.47 * s, .49 * s, .37 * s, .28 * s)
+        } else if (name === "shield-check") {
+            line([[.5,.08],[.83,.22],[.78,.64],[.5,.89],[.22,.64],[.17,.22],[.5,.08]])
+            line([[.33,.47],[.44,.58],[.67,.36]])
+        } else if (name === "activity") {
+            line([[.08,.53],[.28,.53],[.39,.22],[.58,.81],[.72,.47],[.92,.47]])
+        } else if (name === "trending-up") {
+            line([[.17,.81],[.17,.61]])
+            line([[.44,.81],[.44,.44]])
+            line([[.72,.81],[.72,.22]])
+            line([[.14,.39],[.72,.08],[.72,.22]])
+        } else if (name === "sliders") {
+            for (const [y, x] of [[.25,.33],[.50,.67],[.75,.44]]) {
+                line([[.11,y],[x-.09,y]])
+                line([[x+.09,y],[.89,y]])
+                oval(x-.08,y-.08,.16,.16,false)
+            }
         } else if (name === "settings") {
             oval(.16, .16, .68, .68, false)
             oval(.40, .40, .20, .20, false)

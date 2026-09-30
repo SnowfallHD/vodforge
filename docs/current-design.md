@@ -51,6 +51,9 @@ Actions use verb labels. Dropdown choices must open a real list, not cycle value
 Persistent inline choices expand beneath their trigger and collapse on a repeat
 activation. Floating menus have one shared outer shadow, content-fitting height,
 and captured trigger intent: a repeat click closes without immediate reopening.
+The analytics prompt preserves its four violet emblems and single-line privacy
+summaries in a shared responsive grid, with content-fitting height and visible
+privacy and consent actions. Informational summaries are passive, not controls.
 
 Support separates reply consent from optional deeper diagnostics. Diagnostics
 remain explicit and default off; unavailable diagnostics explain their disabled

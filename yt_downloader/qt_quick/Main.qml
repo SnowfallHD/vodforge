@@ -504,26 +504,54 @@ Window {
         objectName: "analyticsConsentPopup"
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(440, window.width - 40)
-        height: 265
+        width: Math.min(840, window.width - 40)
+        height: analyticsContent.implicitHeight + topPadding + bottomPadding
         padding: 20
         modal: true
         closePolicy: Popup.NoAutoClose
         ColumnLayout {
+            id: analyticsContent
             anchors.fill: parent
-            spacing: 12
-            Text { text: "Help improve VODForge"; color: theme.text; font.pixelSize: 21; font.bold: true }
+            spacing: 20
+            Text { text: "Help improve VODForge"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.alignment: Qt.AlignHCenter }
             Text {
                 text: "Share private, anonymous usage events to help us fix errors and improve the app. You can change this in Settings."
                 color: theme.text
                 font.pixelSize: 15
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
             }
-            StoneButton { label: "Privacy details"; Layout.preferredWidth: 160; Layout.preferredHeight: 38; onActivated: bridge.openPrivacy() }
-            Item { Layout.fillHeight: true }
+            GridLayout {
+                objectName: "analyticsBenefits"
+                Layout.fillWidth: true
+                columns: analyticsPopup.availableWidth >= 760 ? 4 : 2
+                columnSpacing: 16; rowSpacing: 20
+                Repeater {
+                    model: bridge.analyticsBenefits
+                    delegate: ColumnLayout {
+                        required property var modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        spacing: 9
+                        SceneIcon {
+                            objectName: "analyticsBenefitIcon_" + index
+                            name: modelData.icon; tone: theme.accent
+                            Layout.preferredWidth: 36; Layout.preferredHeight: 36
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                        Text {
+                            objectName: "analyticsBenefitLabel_" + index
+                            text: modelData.label; color: theme.muted
+                            font.pixelSize: 13
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                    }
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
+                StoneButton { label: "Privacy details"; Layout.preferredWidth: 160; Layout.preferredHeight: 38; onActivated: bridge.openPrivacy() }
                 Item { Layout.fillWidth: true }
                 StoneButton { label: "No thanks"; Layout.preferredWidth: 115; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(false)) analyticsPopup.close() } }
                 StoneButton { label: "Share analytics"; Layout.preferredWidth: 150; Layout.preferredHeight: 40; onActivated: { if (bridge.chooseAnalytics(true)) analyticsPopup.close() } }

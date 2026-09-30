@@ -24,6 +24,12 @@ POLICY_URL = "https://getvodforge.com/api/analytics/policy"
 _LOCK = threading.RLock()
 _ONBOARDING_KEYS = ("mode", "region_checked", "prompted", "welcome_attempted")
 REGION_POLICY_VERSION = 1
+ANALYTICS_BENEFITS = (
+    ("shield-check", "No personal information"),
+    ("activity", "Fix errors without support"),
+    ("trending-up", "Improve the platform"),
+    ("sliders", "Turn off anytime in Settings"),
+)
 
 
 class AnalyticsConsentOwner:
