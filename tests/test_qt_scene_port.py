@@ -35,7 +35,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtQml import QQmlComponent
-from PySide6.QtTest import QTest
+from PySide6.QtTest import QSignalSpy, QTest
 
 from tests.test_library_media_recovery import _job, _missing_record
 from tests.test_quality_e2e import _isolated_launch
@@ -2084,21 +2084,31 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
         assert probe is not None, component.errorString()
         probe.setParentItem(window.contentItem())
         icon = probe.findChild(QObject, "transportIcon")
+        painted = QSignalSpy(icon.painted)
         icon.setProperty("name", direction)
-        QTest.qWait(150)
-        frame = window.grabWindow()
-        scale = frame.devicePixelRatio()
-        side = round(96 * scale)
-        # Ignore the readable central numeral. Every remaining stroke must
-        # belong to the same arrow/arc silhouette, not a detached corner.
-        pixels = {
-            (x, y)
-            for x in range(side)
-            for y in range(side)
-            if frame.pixelColor(x, y).lightness() > 180
-            and not (0.28 * side < x < 0.72 * side and 0.38 * side < y < 0.77 * side)
-        }
-        assert pixels
+        # Canvas paint and scene composition are asynchronous. A fixed delay
+        # can capture the blank surface in the longer scene-suite process.
+        deadline = time.monotonic() + 2
+        pixels = set()
+        while time.monotonic() < deadline and not pixels:
+            QTest.qWait(10)
+            if not painted.count():
+                continue
+            frame = window.grabWindow()
+            scale = frame.devicePixelRatio()
+            side = round(96 * scale)
+            # Ignore the readable central numeral. Every remaining stroke must
+            # belong to the same arrow/arc silhouette, not a detached corner.
+            pixels = {
+                (x, y)
+                for x in range(side)
+                for y in range(side)
+                if frame.pixelColor(x, y).lightness() > 180
+                and not (
+                    0.28 * side < x < 0.72 * side and 0.38 * side < y < 0.77 * side
+                )
+            }
+        assert painted.count() and pixels, "Transport icon did not paint and compose"
         components = []
         while pixels:
             pending = [pixels.pop()]

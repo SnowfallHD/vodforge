@@ -648,6 +648,10 @@ scrolling. Prior zero/one-track cases measure 94/136px rather than the required
 the retained cap. Placement and close behavior stay with AnchoredPopup. The first
 full build also caught the analytics test's synthetic playback context missing
 the newly required record field; its denied-once event assertion is preserved.
+The next full scene process captured an unpainted transport Canvas after a fixed
+150ms delay. The visual test now waits for its actual painted signal and composited
+pixels within two seconds, retaining the connected-silhouette and extent assertions.
+The original failed build receipt remains under build/watch-progress-proof.
 
 1. Preserve the concrete reproducer and add a regression for the reported failure.
 2. Identify the invariant that failed, independently of the affected screen or tool.
