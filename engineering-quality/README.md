@@ -3004,3 +3004,15 @@ CI. The explicit artifacts_only dispatch input retains signed Windows and review
 Mac artifacts while skipping the entire release-mutating job. A workflow contract
 asserts that no release mutation lives in the artifact jobs and that the default
 draft behavior remains review-only. No existing release/tag/assets are altered.
+
+### Final updater animation evidence across Mac CI — 2026-09-30
+
+Two Mac source CI jobs exposed a test's 60 ms single-sample assumption: a live
+indeterminate animation need not advance in that sampling interval on a loaded
+runner. Scene test application startup now selects Basic before loading QML,
+matching production. The busy-state assertion still requires observed phase
+movement; it requests a frame and pumps events within a bounded one-second wait.
+It does not accept a merely configured animation or suppress a frozen phase.
+All sixteen state/size combinations passed the isolated correction probe; retained
+CI failures establish the missed scheduling boundary. Native visible motion and
+exact signed package acceptance remain independent of these source assertions.

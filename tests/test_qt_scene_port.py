@@ -64,6 +64,9 @@ def qt_app() -> QGuiApplication:
     """Keep Qt's application wrapper alive across scene tests and worker teardown."""
     global _QT_TEST_APP
     if _QT_TEST_APP is None:
+        from PySide6.QtQuickControls2 import QQuickStyle
+
+        QQuickStyle.setStyle("Basic")
         _QT_TEST_APP = QGuiApplication.instance() or QGuiApplication([])
     return _QT_TEST_APP
 
@@ -6176,7 +6179,11 @@ def test_qt_update_popup_content_fit_state_actions_and_progress(
         if updates.busy:
             assert progress.property("indeterminate")
             phase = progress.property("phase")
-            QTest.qWait(60)
+            deadline = time.monotonic() + 1.0
+            while progress.property("phase") == phase and time.monotonic() < deadline:
+                window.requestUpdate()
+                QTest.qWait(20)
+                app.processEvents()
             assert progress.property("phase") != phase
         elif primary.property("visible"):
             assert (
