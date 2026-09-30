@@ -715,6 +715,14 @@ class Bridge(QObject):
         return self._updates.busy
 
     @Property(bool, notify=updateChanged)
+    def updateRestartPending(self) -> bool:
+        return self._updates.pending_install or self._updates.handoff_started
+
+    @Property(str, notify=updateChanged)
+    def updateStage(self) -> str:
+        return self._updates.stage
+
+    @Property(bool, notify=updateChanged)
     def updateAvailable(self) -> bool:
         return self._updates.available
 
@@ -1155,14 +1163,14 @@ class Bridge(QObject):
     @Slot()
     def downloadUpdate(self) -> None:
         self._updates.telemetry = self._analytics.telemetry
-        if self._updates.download():
+        if self._updates.download(install_when_ready=True):
             self._record_update_feature("updater", "download_started")
             self.updateChanged.emit()
 
     @Slot()
     def repairUpdate(self) -> None:
         self._updates.telemetry = self._analytics.telemetry
-        if self._updates.download(repair=True):
+        if self._updates.download(repair=True, install_when_ready=True):
             self._record_update_feature("guidance", "recovery_selected")
             self._record_update_feature("updater", "repair_started")
             self.updateChanged.emit()
@@ -5923,6 +5931,19 @@ class Bridge(QObject):
                 self._local_running = False
                 self.statusChanged.emit()
             self.localChanged.emit()
+        if self._updates.pending_install and self._updates.ready is not None:
+            if (
+                self._runtime.active_job is not None
+                or self._runtime.busy
+                or bool(self._runtime.queued)
+                or self._local_running
+            ):
+                status = "Update downloaded. Finish active and queued work; VODForge will restart when it is idle."
+                if self._updates.status != status:
+                    self._updates.status = status
+                    self.updateChanged.emit()
+            elif not self._updates.busy:
+                self.installUpdate()
 
     def close(self) -> None:
         if self._input_application is not None:

@@ -55,6 +55,8 @@ class QtUpdateSession:
         self.recovery = False
         self.busy = False
         self.stage = "check"
+        self.pending_install = False
+        self.handoff_started = False
         self.observations: list[tuple[str, dict[str, str] | None]] = []
 
     @staticmethod
@@ -124,7 +126,7 @@ class QtUpdateSession:
         return True
 
     def check(self, *, automatic: bool = False) -> bool:
-        if self.busy:
+        if self.busy or self.pending_install or self.handoff_started:
             return False
         self._begin_observation("automatic" if automatic else "manual")
         self.stage = "check"
@@ -160,11 +162,13 @@ class QtUpdateSession:
                 )
             )
 
-    def download(self, *, repair: bool = False) -> bool:
+    def download(
+        self, *, repair: bool = False, install_when_ready: bool = False
+    ) -> bool:
         release = self.release
         if not repair and (release is None or not self.available):
             return False
-        if self.busy:
+        if self.busy or self.pending_install or self.handoff_started:
             return False
         if repair:
             self._begin_observation("repair")
@@ -177,6 +181,7 @@ class QtUpdateSession:
         ):
             return False
         self.repair = repair
+        self.pending_install = install_when_ready
         self.ready = None
         self.stage = "downloading_repair" if repair else "download"
         self.status = "Downloading and verifying the installer…"
@@ -260,6 +265,7 @@ class QtUpdateSession:
                 self.observations.append(("download_completed", None))
             else:
                 self.ready = None
+                self.pending_install = False
                 self.recovery = True
                 self.status = (
                     "Update needs attention. Try Repair or open the download page."
@@ -346,6 +352,7 @@ class QtUpdateSession:
                 raise RuntimeError("This verified installer cannot be handed off here.")
         except Exception as exc:  # noqa: BLE001 - retain the app and offer recovery
             self.observe("failed", error=exc)
+            self.pending_install = False
             self.recovery = True
             self.status = (
                 "Update needs attention. Try Repair or open the download page."
@@ -353,6 +360,8 @@ class QtUpdateSession:
             self.observations.append(("failed", {"update_stage": "handoff"}))
             return False
         self.observe("handoff")
+        self.pending_install = False
+        self.handoff_started = True
         self.ready = None
         self.status = "Installing update… VODForge will reopen afterward."
         return True

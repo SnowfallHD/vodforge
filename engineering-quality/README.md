@@ -2923,3 +2923,44 @@ settings persistence remain with their existing owners. app.py gains no new
 responsibility from the recovery hookup. Coupling stays bounded to the existing
 app/presenter seam (lazy typed-error lookup avoids import initialization cycles).
 No new architectural debt is deferred by this integration.
+
+### One-click Qt update intent and complete dialog review — 2026-09-30
+
+Previous tests proved verified helper handoff and bounded text, but neither drove
+the user's Download update click through verification into guarded installation,
+nor reviewed the complete busy dialog. The fixed-height shell could pass those
+gates while presenting an empty spacer, disabled discovery actions, two footer
+rows and no progress. That was a missing acceptance gate, not visual approval.
+
+Invariant: explicit update intent continues through verified completion without
+requiring another install click, while never ending active, queued or local work.
+QtUpdateSession owns the pending intent and successful-handoff latch; Bridge only
+composes the existing verified install transaction once work is idle. The helper
+still owns signature/integrity, durable receipts, data preservation and relaunch.
+Failure clears automatic intent, retains the running app and offers recovery.
+Repair remains independent of newer-version availability: fetch latest, reject
+downgrade, download/verify and use the same guarded replacement. It requires a
+running packaged app; it is not a promise to resurrect an app that cannot launch.
+
+The same popup now fits its content, uses existing app artwork/theme surface,
+shows stage hierarchy and an indeterminate bar when processing, and has one
+footer. Hide closes only the popup; processing and pending idle installation
+continue. No cancellation control or percentage is invented. Check/download
+choices disappear during processing; recovery retains Repair VODForge and the
+manual download page. A settings auto-update checkbox is not introduced.
+
+Three representative new popup/click regressions fail against exact predecessor
+94d0256. Current source checks normal/minimum layout across checking, downloading,
+Repair, available, waiting, error, current and manual states; Mac/Windows causal
+cases preserve verification, safe idle waiting, duplicate-click idempotency,
+failure retention and successful helper-before-quit ordering. Existing Qt update
+telemetry tests retain consent/revocation and receipt deduplication. Offscreen
+before/after renders use isolated HOME, create_engine/processEvents/grabWindow
+as in the maintained scene workflow; they are controlled source-state previews,
+not native package/update or production telemetry evidence. Final qualification
+still needs exact signed packaged Mac/Windows Download→progress→automatic safe
+relaunch and Repair with receipts, preserved data and native visual review.
+
+No platform wrapper or updates.py transaction change. App.py is unchanged. Intent
+ownership remains within the existing update session, with bounded Bridge
+composition coupling. No broad architecture debt is introduced or deferred.

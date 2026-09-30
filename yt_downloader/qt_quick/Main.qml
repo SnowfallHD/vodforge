@@ -2457,6 +2457,12 @@ Window {
         id: updatePopup
         objectName: "updatePopup"
         property bool explicitDeferral: false
+        readonly property bool inProgress: bridge.updateBusy || bridge.updateRestartPending
+        readonly property string heading: bridge.updateRecovery ? "Update needs attention" :
+            bridge.updateBusy ? (bridge.updateStage === "check" ? "Checking for updates" :
+                bridge.updateStage === "downloading_repair" ? "Repairing VODForge" : "Downloading update") :
+            bridge.updateRestartPending ? (bridge.updateReady ? "Waiting to restart" : "Restarting VODForge") :
+            bridge.updateAvailable ? "Update available" : "VODForge updates"
         onOpened: { explicitDeferral = false; bridge.updateOfferShown() }
         onClosed: bridge.updateOfferClosed(explicitDeferral)
         Connections {
@@ -2465,73 +2471,124 @@ Window {
         }
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
-        width: Math.min(480, window.width - 40)
-        height: 265
-        padding: 18
+        width: Math.min(500, window.width - 40)
+        height: updateContent.implicitHeight + topPadding + bottomPadding
+        padding: 22
         modal: true
-        closePolicy: bridge.updateBusy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        closePolicy: Popup.CloseOnEscape
         ColumnLayout {
+            id: updateContent
             anchors.fill: parent
-            spacing: 12
-            Text { text: "VODForge updates"; color: theme.text; font.pixelSize: 21; font.bold: true }
-            Text {
-                text: bridge.updateStatus
-                color: theme.muted
-                font.pixelSize: 15
-                wrapMode: Text.WordWrap
-                Layout.fillWidth: true
-            }
-            Item { Layout.fillHeight: true }
+            spacing: 20
             RowLayout {
                 Layout.fillWidth: true
-                StoneButton {
-                    label: "Check again"
-                    enabled: !bridge.updateBusy
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    onActivated: bridge.checkForUpdates()
+                spacing: 16
+                Image {
+                    objectName: "updateAppIcon"
+                    source: assetUrl + "brand/icon-180.png"
+                    Layout.preferredWidth: 48
+                    Layout.preferredHeight: 48
+                    Layout.alignment: Qt.AlignTop
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
                 }
-                StoneButton {
-                    visible: bridge.updateAvailable && !bridge.updateReady && !bridge.updateRecovery
-                    label: "Download update"
-                    enabled: !bridge.updateBusy
+                ColumnLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    onActivated: bridge.downloadUpdate()
-                }
-                StoneButton {
-                    visible: bridge.updateReady
-                    label: "Install update"
-                    enabled: !bridge.updateBusy
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    onActivated: bridge.installUpdate()
+                    spacing: 7
+                    Text {
+                        objectName: "updateHeading"
+                        text: updatePopup.heading
+                        color: theme.text
+                        font.pixelSize: 20
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        objectName: "updateBody"
+                        text: bridge.updateRecovery ?
+                            "Try Repair to download a fresh verified copy, or open the download page." :
+                            bridge.updateBusy && bridge.updateStage === "check" ?
+                            "Looking for the latest VODForge release." : bridge.updateStatus
+                        color: theme.muted
+                        font.pixelSize: 14
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        visible: bridge.updateBusy && bridge.updateStage !== "check"
+                        text: "VODForge will restart after verification, once active work is idle."
+                        color: theme.muted
+                        font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
                 }
             }
-            RowLayout {
+            ProgressBar {
+                id: updateProgress
+                objectName: "updateProgress"
+                visible: bridge.updateBusy
+                indeterminate: true
                 Layout.fillWidth: true
-                StoneButton {
-                    visible: bridge.updateRecovery
-                    label: "Repair VODForge"
-                    enabled: !bridge.updateBusy
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 40
-                    onActivated: bridge.repairUpdate()
+                Layout.preferredHeight: 5
+                padding: 0
+                background: Rectangle { radius: 2.5; color: theme.border }
+                contentItem: Item {
+                    clip: true
+                    Rectangle {
+                        width: parent.width * 0.3
+                        height: parent.height
+                        radius: 2.5
+                        color: theme.accent
+                        x: -width + (parent.width + width) * updateProgress.phase
+                    }
                 }
+                property real phase: 0
+                NumberAnimation on phase {
+                    from: 0; to: 1; duration: 1300
+                    loops: Animation.Infinite
+                    running: updateProgress.visible
+                }
+                Accessible.name: "Update in progress"
+            }
+            RowLayout {
+                objectName: "updateFooter"
+                Layout.fillWidth: true
+                spacing: 10
                 StoneButton {
-                    visible: bridge.updateRecovery || bridge.updateManualAvailable
+                    objectName: "updateDownloadPage"
+                    visible: !updatePopup.inProgress && (bridge.updateRecovery || bridge.updateManualAvailable)
                     label: "Download page"
-                    Layout.fillWidth: true
+                    Layout.preferredWidth: 140
                     Layout.preferredHeight: 40
                     onActivated: bridge.openDownloadPage()
                 }
                 Item { Layout.fillWidth: true }
                 StoneButton {
-                    label: bridge.updateAvailable || bridge.updateReady || bridge.updateManualAvailable ? "Later" : "Close"
-                    enabled: !bridge.updateBusy
-                    Layout.preferredWidth: 90
+                    objectName: "updateDismiss"
+                    label: updatePopup.inProgress ? "Hide" :
+                        bridge.updateAvailable || bridge.updateManualAvailable || bridge.updateRecovery ? "Later" : "Close"
+                    Layout.preferredWidth: 84
                     Layout.preferredHeight: 40
-                    onActivated: { updatePopup.explicitDeferral = true; updatePopup.close() }
+                    onActivated: {
+                        updatePopup.explicitDeferral = !updatePopup.inProgress
+                        updatePopup.close()
+                    }
+                }
+                StoneButton {
+                    objectName: "updatePrimary"
+                    visible: !updatePopup.inProgress && !bridge.updateManualAvailable
+                    label: bridge.updateRecovery ? "Repair VODForge" :
+                        bridge.updateAvailable ? "Download update" : "Check again"
+                    emphasized: true
+                    Layout.preferredWidth: 155
+                    Layout.preferredHeight: 40
+                    onActivated: {
+                        if (bridge.updateRecovery) bridge.repairUpdate()
+                        else if (bridge.updateAvailable) bridge.downloadUpdate()
+                        else bridge.checkForUpdates()
+                    }
                 }
             }
         }

@@ -369,3 +369,76 @@ def test_update_revocation_then_regrant_does_not_resume_old_observation(
         for e in _stored(owner, tmp_path / "telemetry")
         if e["action"] != "check_started"
     ]
+
+
+def test_single_click_intent_is_idempotent_and_survives_active_work(
+    tmp_path, monkeypatch
+):
+    session = qt_updates.QtUpdateSession("0.2.2")
+    session.release = _release("0.2.3")
+    session.available = True
+    starts = []
+
+    def start(target, name):
+        starts.append(name)
+        session.busy = True
+        return True
+
+    monkeypatch.setattr(session, "_start", start)
+    assert session.download(install_when_ready=True)
+    assert session.pending_install and session.busy
+    assert not session.download(install_when_ready=True)
+    assert not session.check()
+    plan = MacUpdatePlan(tmp_path / "archive", tmp_path / "target", tmp_path / "stage")
+    session.events.put(("ready", plan))
+    assert session.poll() and session.pending_install
+    handoffs = []
+    monkeypatch.setattr(
+        qt_updates, "launch_macos_update", lambda *a, **kw: handoffs.append(kw)
+    )
+    assert not session.install(downloads_busy=True, telemetry_permitted=False)
+    assert session.pending_install and session.ready == plan and not handoffs
+    assert session.install(downloads_busy=False, telemetry_permitted=False)
+    assert session.handoff_started and not session.pending_install
+    assert not session.download(install_when_ready=True)
+    assert not session.check()
+    assert len(handoffs) == len(starts) == 1
+
+
+def test_single_click_failure_clears_intent_but_repair_keeps_verified_latest_path(
+    tmp_path, monkeypatch
+):
+    session = qt_updates.QtUpdateSession("0.2.3")
+    session.release = _release("0.2.3")
+    session.available = True
+    monkeypatch.setattr(
+        session, "_start", lambda *_: setattr(session, "busy", True) or True
+    )
+    assert session.download(install_when_ready=True)
+    monkeypatch.setattr(
+        qt_updates,
+        "download_verified_update",
+        lambda *_: (_ for _ in ()).throw(RuntimeError("signature rejected")),
+    )
+    session._download_worker(session.release)
+    assert session.poll() and session.recovery
+    assert not session.pending_install and session.ready is None
+    # Repair does not depend on an available newer-version offer.
+    session.available = False
+    fetched = []
+    monkeypatch.setattr(
+        qt_updates,
+        "fetch_latest_release",
+        lambda: fetched.append(True) or _release("0.2.3"),
+    )
+    archive = tmp_path / "archive"
+    plan = MacUpdatePlan(archive, tmp_path / "target", tmp_path / "stage")
+    monkeypatch.setattr(qt_updates, "download_verified_update", lambda *_: archive)
+    monkeypatch.setattr(qt_updates, "is_macos", lambda: True)
+    monkeypatch.setattr(qt_updates, "running_macos_app", lambda: plan.target_app)
+    monkeypatch.setattr(qt_updates, "cleanup_stale_macos_updates", lambda *_: None)
+    monkeypatch.setattr(qt_updates, "prepare_macos_update", lambda *_: plan)
+    assert session.download(repair=True, install_when_ready=True)
+    session._download_worker(None)
+    assert session.poll() and session.ready == plan and session.pending_install
+    assert fetched == [True] and session.repair

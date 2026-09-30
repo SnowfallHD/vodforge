@@ -6085,3 +6085,227 @@ def test_qt_everyday_default_and_saved_preset_survive_restart(tmp_path, monkeypa
         assert restored.exportModeLabel == "Streaming"
     finally:
         restored.close()
+
+
+@pytest.mark.parametrize("size", [(1100, 740), (820, 560)])
+@pytest.mark.parametrize(
+    "state",
+    [
+        "check",
+        "download",
+        "repair",
+        "available",
+        "waiting",
+        "error",
+        "current",
+        "manual",
+    ],
+)
+def test_qt_update_popup_content_fit_state_actions_and_progress(
+    tmp_path, monkeypatch, size, state
+):
+    from PySide6.QtQuickControls2 import QQuickStyle
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    QQuickStyle.setStyle("Basic")
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    updates = bridge._updates
+    updates.busy = state in {"check", "download", "repair"}
+    updates.stage = (
+        "check"
+        if state == "check"
+        else "downloading_repair"
+        if state == "repair"
+        else "download"
+    )
+    updates.available = state in {"available", "download"}
+    updates.recovery = state == "error"
+    updates.manual = state == "manual"
+    updates.pending_install = state == "waiting"
+    updates.ready = tmp_path / "verified" if state == "waiting" else None
+    updates.status = (
+        "Update downloaded. Finish active and queued work; VODForge will restart when it is idle."
+        if state == "waiting"
+        else "Update needs attention. Try Repair or open the download page."
+        if state == "error"
+        else "Downloading and verifying the installer…"
+        if updates.busy
+        else "VODForge v0.2.3 is available."
+        if updates.available
+        else "VODForge is up to date."
+    )
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    try:
+        window.setWidth(size[0])
+        window.setHeight(size[1])
+        popup = window.findChild(QObject, "updatePopup")
+        popup.open()
+        QTest.qWait(180)
+        app.processEvents()
+        assert 0 < popup.property("height") < 300
+        assert popup.property("y") + popup.property("height") <= size[1]
+        body = window.findChild(QObject, "updateBody")
+        footer = window.findChild(QObject, "updateFooter")
+        primary = window.findChild(QObject, "updatePrimary")
+        dismiss = window.findChild(QObject, "updateDismiss")
+        progress = window.findChild(QObject, "updateProgress")
+        assert not body.property("truncated")
+        assert footer.mapToScene(QPointF()).y() >= body.mapToScene(
+            QPointF()
+        ).y() + body.property("height")
+        assert dismiss.property("enabled") and dismiss.property("height") == 40
+        assert dismiss.mapToScene(QPointF()).y() + 40 <= popup.property(
+            "y"
+        ) + popup.property("height")
+        assert progress.property("visible") == updates.busy
+        assert primary.property("visible") == (
+            not updates.busy and state not in {"waiting", "manual"}
+        )
+        assert dismiss.property("label") == (
+            "Hide"
+            if updates.busy or state == "waiting"
+            else "Later"
+            if state in {"available", "manual", "error"}
+            else "Close"
+        )
+        if updates.busy:
+            assert progress.property("indeterminate")
+            phase = progress.property("phase")
+            QTest.qWait(60)
+            assert progress.property("phase") != phase
+        elif primary.property("visible"):
+            assert (
+                primary.property("label")
+                == {
+                    "available": "Download update",
+                    "error": "Repair VODForge",
+                    "current": "Check again",
+                }[state]
+            )
+        assert window.findChild(QObject, "updateDownloadPage").property("visible") == (
+            state in {"error", "manual"}
+        )
+        dismiss.activated.emit()
+        app.processEvents()
+        assert not popup.property("visible")
+        assert updates.pending_install == (state == "waiting")
+    finally:
+        window.close()
+        bridge.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+@pytest.mark.parametrize(
+    "blocker",
+    ["none", "active", "queued", "local", "helper_failure", "verification_failure"],
+)
+@pytest.mark.parametrize("platform", ["mac", "windows"])
+def test_qt_one_click_update_verifies_waits_then_handoffs_once(
+    tmp_path, monkeypatch, blocker, platform
+):
+    from yt_downloader.qt_quick import update_session
+    from yt_downloader.updates import MacUpdatePlan, ReleaseInfo
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    qt_app()
+    bridge = qt_main.Bridge(None)
+    bridge._timer.stop()
+    release = ReleaseInfo("0.2.3", "v0.2.3", "VODForge", "https://example.com", "", ())
+    session = bridge._updates
+    session.release = release
+    session.available = True
+    starts, verified, signatures, handoffs, quits = [], [], [], [], []
+
+    def start(target, name):
+        starts.append(name)
+        session.busy = True
+        return True
+
+    def verify(*args):
+        verified.append(args)
+        if blocker == "verification_failure":
+            raise RuntimeError("signature refused")
+        return tmp_path / ("verified.zip" if platform == "mac" else "verified.exe")
+
+    def handoff(*args, **kwargs):
+        handoffs.append((args, kwargs))
+        if blocker == "helper_failure":
+            raise RuntimeError("helper refused")
+
+    plan = MacUpdatePlan(
+        tmp_path / "verified.zip", tmp_path / "VODForge.app", tmp_path / "stage"
+    )
+    monkeypatch.setattr(session, "_start", start)
+    monkeypatch.setattr(update_session, "download_verified_update", verify)
+    monkeypatch.setattr(update_session, "is_macos", lambda: platform == "mac")
+    monkeypatch.setattr(update_session, "is_windows", lambda: platform == "windows")
+    monkeypatch.setattr(
+        update_session, "verify_windows_authenticode", signatures.append
+    )
+    monkeypatch.setattr(update_session, "running_macos_app", lambda: plan.target_app)
+    monkeypatch.setattr(update_session, "cleanup_stale_macos_updates", lambda *_: None)
+    monkeypatch.setattr(update_session, "prepare_macos_update", lambda *_: plan)
+    monkeypatch.setattr(update_session, "launch_macos_update", handoff)
+    monkeypatch.setattr(update_session, "launch_windows_update", handoff)
+    monkeypatch.setattr(
+        qt_main.QTimer,
+        "singleShot",
+        lambda delay, callback: quits.append((delay, callback)),
+    )
+    monkeypatch.setattr(bridge._runtime, "poll", list)
+    try:
+        bridge.downloadUpdate()
+        bridge.downloadUpdate()
+        assert len(starts) == 1 and session.busy and session.pending_install
+        session._download_worker(release)
+        if blocker == "active":
+            bridge._runtime.active_job = make_job(tmp_path)
+        elif blocker == "queued":
+            bridge._runtime.queued = [make_job(tmp_path)]
+        elif blocker == "local":
+            bridge._local_running = True
+        bridge._pump()
+        assert len(verified) == 1
+        assert len(signatures) == (
+            platform == "windows" and blocker != "verification_failure"
+        )
+        if blocker in {"verification_failure", "helper_failure"}:
+            assert not quits and session.recovery and not session.pending_install
+            assert len(handoffs) == (blocker == "helper_failure")
+            assert (
+                session.ready is not None
+                if blocker == "helper_failure"
+                else session.ready is None
+            )
+        else:
+            if blocker != "none":
+                assert not handoffs and not quits and session.pending_install
+                assert "active and queued work" in session.status
+                bridge._runtime.active_job = None
+                bridge._runtime.queued = []
+                bridge._local_running = False
+                bridge._pump()
+            assert len(handoffs) == len(quits) == 1
+            assert handoffs[0][0] == (
+                (plan,) if platform == "mac" else (tmp_path / "verified.exe",)
+            )
+            assert handoffs[0][1]["telemetry_permitted"] is False
+            assert handoffs[0][1]["repair"] is False
+            assert handoffs[0][1]["telemetry_token"]
+            assert session.handoff_started and session.ready is None
+            bridge.downloadUpdate()
+            bridge._pump()
+            assert len(handoffs) == len(quits) == len(starts) == 1
+    finally:
+        bridge._runtime.active_job = None
+        bridge._runtime.queued = []
+        bridge._local_running = False
+        bridge.close()
