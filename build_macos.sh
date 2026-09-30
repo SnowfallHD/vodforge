@@ -51,6 +51,7 @@ fi
     --ignore=tests/test_qt_terminal_item_events.py \
     --ignore=tests/test_qt_scene_port.py \
     --ignore=tests/test_qt_telemetry_coverage.py \
+    --ignore=tests/test_qt_scroll_lifecycle.py \
     --ignore=tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q \
     tests/test_qt_artwork_image.py \
@@ -61,6 +62,7 @@ fi
     tests/test_qt_relink.py \
     tests/test_qt_terminal_item_events.py \
     tests/test_qt_telemetry_coverage.py \
+    tests/test_qt_scroll_lifecycle.py \
     tests/test_qt_interaction_invariants.py
   QT_QUICK_BACKEND=software "$python_bin" -m pytest -q tests/test_qt_scene_port.py
 )
