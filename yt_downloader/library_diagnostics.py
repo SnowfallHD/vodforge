@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from .failure_diagnostics import capture_failure
+from .failure_diagnostics import FailureDiagnostic, capture_failure
 from .product_telemetry import BoundProductOperation
 
 
@@ -18,7 +18,12 @@ class LibraryActionObservation:
         self.attempts = 0
 
     def emit(
-        self, action: str, boundary: str, *, error: BaseException | None = None
+        self,
+        action: str,
+        boundary: str,
+        *,
+        error: BaseException | None = None,
+        failure_detail: FailureDiagnostic | None = None,
     ) -> bool:
         if self.closed:
             return False
@@ -28,6 +33,17 @@ class LibraryActionObservation:
         if self.attempts > 4 or self.bound is None:
             return False
         try:
+            detail = failure_detail or (
+                capture_failure(
+                    error,
+                    stage="history"
+                    if boundary in {"history", "annotation"}
+                    else "dispatch",
+                    inspect_text=False,
+                )
+                if error is not None
+                else None
+            )
             return self.bound.record(
                 action,
                 {
@@ -35,19 +51,7 @@ class LibraryActionObservation:
                     "library_subject": self.subject,
                     "library_boundary": boundary,
                 },
-                **(
-                    {
-                        "failure_detail": capture_failure(
-                            error,
-                            stage="history"
-                            if boundary in {"history", "annotation"}
-                            else "dispatch",
-                            inspect_text=False,
-                        )
-                    }
-                    if error is not None
-                    else {}
-                ),
+                **({"failure_detail": detail} if detail is not None else {}),
             )
         except Exception:  # noqa: BLE001 - optional evidence cannot change admission
             return False

@@ -22,6 +22,7 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
             "folders",
             "all_media",
             "activity",
+            "issues",
             "folder_opened",
             "location_copied",
             "version_selected",
@@ -495,7 +496,7 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "history_phase": frozenset(
         {"read", "parse", "validate", "write", "retire", "unknown"}
     ),
-    "archive_mode": frozenset({"folders", "all", "activity"}),
+    "archive_mode": frozenset({"folders", "all", "activity", "issues"}),
     "watch_mode": frozenset({"playlists", "channels", "collections"}),
     "storage_kind": frozenset({"local", "drive", "network", "external", "unknown"}),
     "location_action": frozenset({"open", "check"}),

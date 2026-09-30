@@ -2577,3 +2577,22 @@ query. Consent uses the native plain CheckBox owner, with pointer and Space-key
 toggling and a null button background. Prior failed CI logs remain under the
 private popup-elevation proof directory. These checks cover representative shared
 popup/input owners, not every platform interleaving.
+
+### Qt telemetry adapter omission learning — 2026-09-29
+
+Shared playback progress tests verified the observer when supplied; feature-schema
+checks verified legal labels. Neither required the Qt adapter to supply that
+observer or serialize actual preview failures. Result: functioning UI behavior
+with missing evidence, despite passing shared-owner tests.
+
+Invariant: each active UI adapter must wire the existing authoritative producer,
+keep original consent and identity through delayed work, and record observed
+settlement rather than a successful command. New `test_qt_telemetry_coverage`
+checks actual durable outbox records across preview success/error/empty output,
+delay, denied/regranted/closed/broken observers, resume success/timeout/provider
+failure and stale generation. Seven representative cases fail with prior runtime.
+The existing Qt diagnostic surface gate now requires navigation, preview and
+resume producers through authenticated local Worker/D1 alongside presentation
+cases. Stored sequence/outcome assertions survive duplicate replay and reject
+private facts. Controlled callbacks are not native decode, exact packaged,
+platform-wide or deployed release proof; retain the full inventory gate.

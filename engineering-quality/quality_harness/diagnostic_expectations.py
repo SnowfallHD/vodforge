@@ -4,6 +4,43 @@ from __future__ import annotations
 
 
 def verify_scenario_events(case: str, events: list[dict]) -> None:
+    if case == "qt_file_navigation":
+        actual = [e for e in events if e.get("feature") == "archive"]
+        assert [e["action"] for e in actual] == [
+            "folders",
+            "folder_opened",
+            "all_media",
+            "issues",
+        ]
+        assert actual[-1]["dimensions"]["archive_mode"] == "issues"
+        return
+    if case == "qt_metadata_failure":
+        actual = [e for e in events if e.get("feature") == "library_action_operation"]
+        assert [e["action"] for e in actual] == ["requested", "admitted", "rejected"]
+        assert len({e["dimensions"]["operation_id"] for e in actual}) == 1
+        assert [e["dimensions"]["operation_step"] for e in actual] == ["1", "2", "3"]
+        assert actual[-1]["failure_detail"]["failure_code"] == "timeout"
+        assert actual[-1]["failure_detail"]["stage"] == "analysis"
+        return
+    if case in {"qt_player_resume", "qt_player_resume_timeout"}:
+        actual = [e for e in events if e.get("feature") == "playback_operation"]
+        actions = [e["action"] for e in actual]
+        assert actions[:4] == ["requested", "ready", "started", "resume_requested"]
+        expected = "resume_failed" if case.endswith("timeout") else "resume_completed"
+        assert actions.count(expected) == actions.count("closed") == 1
+        assert "completed" not in actions
+        assert len({e["dimensions"]["operation_id"] for e in actual}) == 1
+        assert [e["dimensions"]["operation_step"] for e in actual] == [
+            str(i + 1) for i in range(len(actual))
+        ]
+        if case.endswith("timeout"):
+            assert (
+                next(e for e in actual if e["action"] == expected)["dimensions"][
+                    "resume_reason"
+                ]
+                == "seek_timeout"
+            )
+        return
     if case.startswith("qt_"):
         qt_events = [
             event

@@ -6,7 +6,10 @@ import json
 from types import SimpleNamespace
 
 from quality_harness import diagnostic_pipeline, util
-from quality_harness.qt_diagnostic_probes import QT_PRESENTATION_CASES
+from quality_harness.qt_diagnostic_probes import (
+    QT_COVERAGE_CASES,
+    QT_PRESENTATION_CASES,
+)
 
 
 def test_qt_gate_selects_actual_qml_producers(tmp_path, monkeypatch):
@@ -21,7 +24,7 @@ def test_qt_gate_selects_actual_qml_producers(tmp_path, monkeypatch):
             json.dumps(
                 {
                     "passed": True,
-                    "case_count": len(QT_PRESENTATION_CASES),
+                    "case_count": len(QT_PRESENTATION_CASES) + len(QT_COVERAGE_CASES),
                     "stored_events": 21,
                 }
             )
@@ -35,7 +38,7 @@ def test_qt_gate_selects_actual_qml_producers(tmp_path, monkeypatch):
     assert receipt["status"] == "passed"
     assert [
         commands[0][i + 1] for i, value in enumerate(commands[0]) if value == "--case"
-    ] == list(QT_PRESENTATION_CASES)
+    ] == [*QT_PRESENTATION_CASES, *QT_COVERAGE_CASES]
     assert "cold_ready" not in commands[0]
 
 

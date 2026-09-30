@@ -86,3 +86,18 @@ real-outbox/authenticated local readback/replay/query controls cover delayed
 settlement after navigation. See [resize semantics and limits](../../docs/telemetry-features.md#resize-burst-origin-and-query-limits).
 This repairs observation attribution; it does not repair or close the original
 Library resize delay, physical pointer report, or whole-family coverage.
+
+## Qt audit gap closure — 2026-09-29
+
+My Files / All media / Issues engagement, async metadata-preview outcome and
+playback resume/progress now have actual Qt producer wiring. Four new maintained
+local HTTP/Worker/D1 cases assert 24 stored events, correlated success/timeout,
+private-field refusal, replay and consent controls. Source regressions additionally
+cover denied navigation, delayed preview consent/grant/regrant/close, broken
+observer, empty provider output and stale player generation. Seven fail against
+prior runtime. See [semantics and proof](../../docs/telemetry-features.md#qt-file-navigation-metadata-preview-and-resume-coverage--2026-09-29).
+
+This qualifies those bounded source/control fixtures only. It does not promote the
+full discovery, preview, playback or navigation inventory rows to proven; native
+provider decoding, exact enabled Qt package, Windows native parity and deployed
+client journeys remain open. The installed preview has collection compiled off.

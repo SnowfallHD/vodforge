@@ -489,6 +489,7 @@ class Bridge(QObject):
         self._metadata = QtMetadataPreview(
             getattr(self._runtime, "provider_network", ProviderNetworkCoordinator())
         )
+        self._metadata.product_telemetry = self._analytics.telemetry
         self._metadata_preview_record: dict[str, Any] = {}
         self._metadata_preview_info: dict[str, Any] | None = None
         self._metadata_pending_run_id = ""
@@ -524,6 +525,8 @@ class Bridge(QObject):
         self._playback_duration = 0.0
         self._playback_status: PlaybackStatus = "Ready"
         self._playback_recorded = False
+        self._playback_operation = None
+        self._playback_phases: set[str] = set()
         self._playback_output_type = ""
         self._playback_chapters: list[dict[str, Any]] = []
         self._playback_heatmap: list[dict[str, float]] = []
@@ -2973,6 +2976,10 @@ class Bridge(QObject):
         self._detail_versions = []
         self._library_detail_origin = None
         self.historyChanged.emit()
+        if route == "folders":
+            self._record_update_feature(
+                "archive", "folders", {"archive_mode": "folders"}
+            )
 
     @Slot()
     def openLibraryStorage(self) -> None:
@@ -3063,6 +3070,16 @@ class Bridge(QObject):
         self._missing_issue_owner = ""
         self._issue_settings = {}
         self._library_scene_route = "folders"
+        self._record_update_feature(
+            "archive",
+            {
+                "folders": "folders",
+                "all": "all_media",
+                "activity": "activity",
+                "issues": "issues",
+            }[mode],
+            {"archive_mode": mode},
+        )
         if mode == "issues":
             self._queue_availability_scan(
                 [
@@ -3448,6 +3465,9 @@ class Bridge(QObject):
             self._set_status(str(exc))
             return False
         self._missing_retry_run_id = prepared.run_id
+        self._record_update_feature(
+            "missing_media", "accepted", {"archive_mode": "issues"}
+        )
         self._issue_live_phase = "Preparing"
         self._set_status(
             "Recovery queued."
@@ -3534,6 +3554,9 @@ class Bridge(QObject):
             self._missing_plan = plan
             self._missing_fingerprint = record_fingerprint(row)
             self._missing_media = {"owner": owner}
+            self._record_update_feature(
+                "missing_media", "offered", {"archive_mode": "issues"}
+            )
             self._issue_run_id = ""
             self._folder_inspector_key = key
             self._folder_inspector_owner = ""
@@ -3725,6 +3748,9 @@ class Bridge(QObject):
             self._issue_run_id = ""
             self._issue_settings = {}
             self.historyChanged.emit()
+            self._record_update_feature(
+                "archive", "folder_opened", {"archive_mode": "folders"}
+            )
             return True
         if component.kind == "activity":
             if self._folder_browser.mode == "issues":
@@ -3771,6 +3797,9 @@ class Bridge(QObject):
         self._issue_run_id = ""
         self._issue_settings = {}
         self.historyChanged.emit()
+        self._record_update_feature(
+            "archive", "scene_navigated", {"archive_mode": "folders"}
+        )
 
     @Slot(str, result=bool)
     def openLibraryBreadcrumb(self, path: str) -> bool:
@@ -3793,6 +3822,9 @@ class Bridge(QObject):
         self._missing_issue_owner = ""
         self._issue_settings = {}
         self.historyChanged.emit()
+        self._record_update_feature(
+            "archive", "scene_navigated", {"archive_mode": "folders"}
+        )
         return True
 
     @Slot()
@@ -4709,6 +4741,7 @@ class Bridge(QObject):
             return False
         if self._playback_binding is not None:
             self._playback_binding.close()
+            self._observe_playback_phase("closed")
         self._playback_path = path
         self._playback_record = dict(self._runtime.history[index])
         self._previews.load(
@@ -4719,6 +4752,13 @@ class Bridge(QObject):
         self._playback_duration = 0.0
         self._playback_status = "Ready"
         self._playback_recorded = False
+        self._playback_phases = set()
+        self._playback_operation = bind_operation(
+            self._analytics.telemetry,
+            "playback_operation",
+            operation_key=str(uuid.uuid4()),
+        )
+        self._observe_playback_phase("requested")
         self._playback_output_type = str(
             self._runtime.history[index].get("vodforge_output_type") or ""
         )
@@ -4733,6 +4773,9 @@ class Bridge(QObject):
             self._runtime.history[index],
             snapshot=self._playback_snapshot(),
             seek=self._request_playback_seek,
+            observe=lambda action, key=self._playback_operation, **fields: operation(
+                self._analytics.telemetry, "playback_operation", action, key, **fields
+            ),
         )
         self._playback_url = QUrl.fromLocalFile(str(path))
         self._playback_origin_selection = self._selection
@@ -4772,6 +4815,8 @@ class Bridge(QObject):
         if self._playback_binding is not None:
             self._playback_binding.close()
             self._playback_binding = None
+            self._observe_playback_phase("closed")
+            self._playback_operation = None
         self._playback_path = None
         self._playback_record = None
         self._previews.load(None)
@@ -4965,6 +5010,20 @@ class Bridge(QObject):
         self._playback_position = position
         self._playback_duration = duration
         self._playback_status = cast(PlaybackStatus, status)
+        if (
+            duration > 0
+            and status != "Failed"
+            and "failed" not in self._playback_phases
+        ):
+            self._observe_playback_phase("ready")
+        if status == "Playing":
+            self._observe_playback_phase("started")
+        elif status == "Failed":
+            self._observe_playback_phase(
+                "failed", failure_detail=FailureDiagnostic(stage="playback")
+            )
+        elif status == "Ended" and "failed" not in self._playback_phases:
+            self._observe_playback_phase("completed")
         if status == "Playing" and not self._playback_recorded:
             self._playback_recorded = True
             telemetry = self._analytics.telemetry
@@ -4980,6 +5039,20 @@ class Bridge(QObject):
         if self._previews.request(duration):
             self.playbackPreviewsChanged.emit()
         self._watch_queue.present(self, status)
+
+    def _observe_playback_phase(
+        self, action: str, *, failure_detail: FailureDiagnostic | None = None
+    ) -> None:
+        if action in self._playback_phases:
+            return
+        self._playback_phases.add(action)
+        operation(
+            self._analytics.telemetry,
+            "playback_operation",
+            action,
+            self._playback_operation,
+            failure_detail=failure_detail,
+        )
 
     @Slot(float)
     def manualPlaybackSeek(self, position: float) -> None:
@@ -5183,6 +5256,7 @@ class Bridge(QObject):
             self._issue_run_id = retry.run_id
             self._folder_inspector_key = f"run:{retry.run_id}"
             self.historyChanged.emit()
+            self._record_update_feature("guidance", "recovery_selected")
         else:
             self.select("Forge")
         return True
@@ -5670,6 +5744,8 @@ class Bridge(QObject):
         if self._playback_binding is not None:
             self._playback_binding.close()
             self._playback_binding = None
+            self._observe_playback_phase("closed")
+            self._playback_operation = None
         self._local.close()
         self._runtime.close()
         self._analytics.close()
@@ -5704,6 +5780,7 @@ class Bridge(QObject):
         except ValueError:
             self._set_status("Choose an output format first.")
             return False
+        self._metadata.product_telemetry = self._analytics.telemetry
         if not self._metadata.begin(
             value,
             selected_type,

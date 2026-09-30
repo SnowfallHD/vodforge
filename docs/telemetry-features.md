@@ -560,3 +560,58 @@ It does not introduce media identifiers, custom hex values or per-frame events.
 The native theme matrix observes actual production-owner change emission; static
 artwork changes need no additional telemetry action. Consent/wire delivery remain
 separately qualified by the telemetry journey gate.
+
+## Qt file navigation, metadata preview and resume coverage — 2026-09-29
+
+Qt's actual Bridge now records engagement for My Files, All media and Issues &
+Recovery, folder entry and path navigation through the existing `archive` family.
+The additive `issues` action and `archive_mode=issues` require the compatible
+server vocabulary before client publication. No schema or D1 migration is needed.
+Missing-media recovery offered/accepted and issue retry selection reuse existing
+feature actions. These are session engagement observations, not counts of every
+click or visits to distinct private folders; no path, name or source identity is
+sent. Invalid/no-op routes are not counted as successful navigation.
+
+`QtMetadataPreview` binds the existing `library_action_operation` before work,
+records requested/admitted and the worker's completed/rejected outcome, and
+preserves a typed analysis-stage failure before converting the exception into
+local friendly text. The launch boundary identifies the admitted preview work;
+`failure_detail.stage=analysis` identifies where provider analysis failed. Closing
+pending work records cancellation once. Polling, late completion, denied consent,
+revoke/regrant and a broken observer cannot create a second terminal outcome or
+adopt the operation under new consent. URL, title and exception text remain local.
+
+Qt playback now binds an existing `playback_operation` per loaded media lifetime
+and connects the shared `PlaybackProgressBinding` observer. Requested, ready,
+started, failed, completed and closed phases share the resume/progress operation
+identity. Readiness means positive known duration, not independently decoded
+pixels; started means an observed Playing status. A seek command is not successful
+resume: a later current-generation snapshot must reach the saved point. Timeout,
+provider failure, cancellation and durable-progress outcomes remain distinct.
+Retired generations cannot complete the current operation. Qt currently reports a
+generic playback-stage failure, not its native provider error enum or a GPU cause.
+
+Proof: `tests/test_qt_telemetry_coverage.py` exercises real Qt owners and durable
+outbox with controlled provider outcomes, original consent and private sentinels.
+Seven cases fail on the previous implementation. The maintained Qt diagnostic gate
+now includes four additional producers: file navigation, actual async preview
+failure, observed resume success and timeout. Their 24 emitted events passed
+loopback authenticated HTTP, the real Worker, migrated local D1, exact readback,
+replay deduplication, private/unknown-field rejection and consent controls at
+`build/qt-telemetry-gap-proof/local-d1-final/receipt.json`. The player callbacks are
+controlled fixtures; this is not native decoding, packaged Mac/Windows or deployed
+client evidence. The full application inventory remains unproven where named.
+
+For these operation families, query distinct operations and ordered steps rather
+than event totals; engagement remains presence per consenting process session:
+
+```sql
+SELECT feature, action, COUNT(DISTINCT
+  install_id || ':' || json_extract(dimensions, '$.operation_id')) AS operations
+FROM product_events
+WHERE feature IN ('library_action_operation', 'playback_operation')
+GROUP BY feature, action;
+```
+
+Missing steps, capped outboxes and delivery loss are unknown observations, never
+proof the step did not happen. See [readiness and limits](telemetry-readiness.md).

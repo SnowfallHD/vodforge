@@ -30,7 +30,12 @@ from .diagnostic_probes import (
     relink_case,
 )
 from .library_disclosure_probe import DISCLOSURE_CASES, disclosure_case
-from .qt_diagnostic_probes import QT_PRESENTATION_CASES, qt_presentation_case
+from .qt_diagnostic_probes import (
+    QT_COVERAGE_CASES,
+    QT_PRESENTATION_CASES,
+    qt_coverage_case,
+    qt_presentation_case,
+)
 from .telemetry_checks import (
     _read_line,
     assert_feature_vocabulary,
@@ -154,6 +159,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
         + QUEUE_CASES
         + DISCLOSURE_CASES
         + QT_PRESENTATION_CASES
+        + QT_COVERAGE_CASES
     )
     with (destination / "worker.stderr.txt").open("w") as errors:
         process = subprocess.Popen(
@@ -216,6 +222,7 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                 for case in (
                     *PRESENTATION_CASES,
                     *QT_PRESENTATION_CASES,
+                    *QT_COVERAGE_CASES,
                     *LIBRARY_CASES,
                     *OPENING_CASES,
                     *RELINK_CASES,
@@ -232,6 +239,8 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                             if case in DISCLOSURE_CASES
                             else queue_case
                             if case in QUEUE_CASES
+                            else qt_coverage_case
+                            if case in QT_COVERAGE_CASES
                             else qt_presentation_case
                             if case in QT_PRESENTATION_CASES
                             else presentation_case
@@ -252,6 +261,10 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                     feature = (
                         ("player" if case == "player_description" else "library")
                         if case in DISCLOSURE_CASES
+                        else "archive"
+                        if case == "qt_file_navigation"
+                        else "playback_operation"
+                        if case in {"qt_player_resume", "qt_player_resume_timeout"}
                         else "watch_queue_operation"
                         if case in QUEUE_CASES
                         else "presentation_operation"
@@ -592,7 +605,7 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
         str(output_dir),
     ]
     if ui == "qt":
-        for case in QT_PRESENTATION_CASES:
+        for case in (*QT_PRESENTATION_CASES, *QT_COVERAGE_CASES):
             command.extend(("--case", case))
     result = run_command(
         command,
@@ -609,7 +622,7 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
     report = output_dir / "receipt.json"
     data = json.loads(report.read_text()) if report.exists() else {}
     expected_cases = (
-        len(QT_PRESENTATION_CASES)
+        len(QT_PRESENTATION_CASES) + len(QT_COVERAGE_CASES)
         if ui == "qt"
         else len(PRESENTATION_CASES)
         + len(LIBRARY_CASES)
@@ -628,7 +641,7 @@ def diagnostic_surface_contract(repo_root: Path, output_dir: Path, *, ui: str = 
         passed,
         [
             (
-                "Actual Qt Quick image-status producers through loopback HTTP, real Worker, migrated local D1."
+                "Actual Qt Quick presentation, navigation, preview and progress producers through loopback HTTP, real Worker, migrated local D1."
                 if ui == "qt"
                 else "Actual Tk presentation and source admission producers through loopback HTTP, real Worker, migrated local D1."
             ),
