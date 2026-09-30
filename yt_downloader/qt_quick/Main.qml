@@ -2158,10 +2158,18 @@ Window {
                 Text { text: "Forge settings"; color: theme.text; font.pixelSize: 21; font.bold: true; Layout.fillWidth: true }
                 StoneButton {
                     id: proButton
-                    label: "VODForge PRO"
+                    objectName: "settingsProButton"
+                    label: ""
                     accessibilityLabel: "VODForge PRO"
                     Layout.preferredWidth: 150
                     Layout.preferredHeight: 40
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 0
+                        Text { objectName: "settingsProVod"; text: "VOD"; color: theme.accent; font.family: buttonFontFamily; font.pixelSize: buttonMetrics.default.fontPixels }
+                        Text { objectName: "settingsProForge"; text: "Forge"; color: theme.text; font.family: buttonFontFamily; font.pixelSize: buttonMetrics.default.fontPixels }
+                        Text { objectName: "settingsProSuffix"; text: " PRO"; color: theme.accent; font.family: buttonFontFamily; font.pixelSize: buttonMetrics.default.fontPixels }
+                    }
                     onActivated: bridge.openCloudEarlyAccess()
                 }
             }
@@ -2187,7 +2195,7 @@ Window {
                             Layout.preferredWidth: 360
                             Layout.alignment: Qt.AlignTop
                             spacing: 12
-                    Text { text: "SAVE LOCATION"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "SAVE LOCATION"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                         Layout.fillWidth: true
                         StoneField {
@@ -2196,7 +2204,7 @@ Window {
                         }
                         StoneButton { label: "Browse"; Layout.preferredWidth: 95; Layout.preferredHeight: 40; onActivated: outputFolderDialog.open() }
                     }
-                    Text { text: "BATCH AND PLAYLISTS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "BATCH AND PLAYLISTS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                         Layout.fillWidth: true
                         StoneButton { label: "Load URL list"; Layout.preferredWidth: 154; Layout.preferredHeight: 40; onActivated: urlListDialog.open() }
@@ -2212,9 +2220,9 @@ Window {
                             onActivated: bridge.setDownloadOption("single_video_only", !bridge.downloadOptions.single_video_only)
                         }
                     }
-                    Text { text: "YOUTUBE ACCESS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "YOUTUBE ACCESS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     StoneButton { label: "YouTube access: " + bridge.cookieSource; Layout.fillWidth: true; Layout.preferredHeight: 40; onActivated: { accessPopup.returnToSettings = true; settingsPopup.close(); accessPopup.toggleFrom(this) } }
-                    Text { text: "METADATA"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "METADATA"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     Text { text: "Extra tags (comma-separated)"; color: theme.muted; font.pixelSize: 13 }
                     StoneField {
                         Layout.fillWidth: true; Layout.preferredHeight: 42
@@ -2238,7 +2246,7 @@ Window {
                             Layout.preferredWidth: 360
                             Layout.alignment: Qt.AlignTop
                             spacing: 12
-                    Text { visible: window.outputFormat === "MP4"; text: "MP4 VIDEO"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { visible: window.outputFormat === "MP4"; text: "MP4 VIDEO"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                         visible: window.outputFormat === "MP4"
                         Layout.fillWidth: true
@@ -2264,7 +2272,7 @@ Window {
                         backend: bridge
                         colors: theme
                     }
-                    Text { visible: window.outputFormat === "MP4"; text: "MP4 OPTIONS"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { visible: window.outputFormat === "MP4"; text: "MP4 OPTIONS"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     Repeater {
                 model: [
                     { key: "use_nvenc", heading: "ENCODING", label: "Use NVIDIA encoder" },
@@ -2281,7 +2289,7 @@ Window {
                     Text {
                         visible: modelData.heading.length > 0
                         text: modelData.heading
-                        color: theme.muted; font.pixelSize: 12; font.bold: true
+                        color: theme.accent; font.pixelSize: 12; font.bold: true
                         Layout.preferredHeight: visible ? 18 : 0
                     }
                     RowLayout {
@@ -2299,7 +2307,7 @@ Window {
                     }
                 }
                     }
-                    Text { visible: window.outputFormat === "MP3"; text: "MP3 AUDIO"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { visible: window.outputFormat === "MP3"; text: "MP3 AUDIO"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     Repeater {
                         model: [
                             { key: "mp3_quality", title: "Encoding quality", choices: bridge.mp3QualityOptions },
@@ -2342,7 +2350,7 @@ Window {
                     Text {
                         visible: window.outputFormat === "Original audio"
                         text: "ORIGINAL AUDIO"
-                        color: theme.muted; font.pixelSize: 13; font.bold: true
+                        color: theme.accent; font.pixelSize: 13; font.bold: true
                     }
                     Text {
                         visible: window.outputFormat === "Original audio"
@@ -2358,7 +2366,7 @@ Window {
                     }
                         }
                     }
-                    Text { text: "APPEARANCE"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "APPEARANCE"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                         Layout.fillWidth: true
                         Text { text: "Theme"; color: theme.muted; font.pixelSize: 13 }
@@ -2384,7 +2392,7 @@ Window {
                         StoneButton { label: "Choose"; Layout.preferredWidth: 90; Layout.preferredHeight: 40; onActivated: accentColorDialog.open() }
                     }
                     Text { text: "Choose Custom accent to use a #RRGGBB color. Appearance updates immediately."; color: theme.muted; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-                    Text { text: "PRIVACY"; color: theme.muted; font.pixelSize: 13; font.bold: true }
+                    Text { text: "PRIVACY"; color: theme.accent; font.pixelSize: 13; font.bold: true }
                     RowLayout {
                 visible: bridge.analyticsAvailable
                 Layout.fillWidth: true
