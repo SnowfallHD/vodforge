@@ -56,5 +56,6 @@ def output_config_display(job: DownloadJob) -> dict[str, Any]:
         }
     )
 
-    assert display is not None
+    if display is None:
+        raise ValueError("Invalid output configuration display provenance")
     return display

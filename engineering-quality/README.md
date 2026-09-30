@@ -2985,3 +2985,14 @@ combined failure evidence records that boundary. New Qt summary checks join the
 existing separate Qt build/CI/native-source test process. A None channel key is
 normalized only for display typing, retaining Preserve source semantics.
 Production process ownership/cancellation and retry cookie exclusions are unchanged.
+
+### Final updater and summary aggregate contract correction — 2026-09-30
+
+Focused updater state checks missed the repository-wide shared-renderer contract:
+the progress track used a raw Rectangle background. The track now uses StoneField,
+retaining its animated foreground and existing theme. The actual renderer contract
+failed on the prior source and passes with the state checks after correction.
+The new display-only allowlist helper used a production assert; aggregate Bandit
+found that optimized Python removes it. An explicit ValueError retains the invariant
+in optimized execution. Focused provenance/privacy tests and Bandit validate this
+narrow correction. These checks establish source contracts, not native release QA.

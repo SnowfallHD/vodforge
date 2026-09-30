@@ -2552,7 +2552,7 @@ Window {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 5
                 padding: 0
-                background: Rectangle { radius: 2.5; color: theme.border }
+                background: StoneField {}
                 contentItem: Item {
                     clip: true
                     Rectangle {
