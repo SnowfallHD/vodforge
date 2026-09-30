@@ -158,6 +158,10 @@ press's subsequent click. An explicit close must leave the next deliberate
 activation available, even while Qt still reports the pointer button held. The
 existing six-menu click journeys missed this held-press ordering; retain the
 separate held-press regression alongside those representative shared consumers.
+Bind the press to actual window/item bounds: hover can remain stale beneath a
+modal overlay. Clear the consumption flag after that release's click dispatch,
+including when the overlay swallowed the click. Retire the transient input
+observer with its Bridge; never log pointer positions or send them to telemetry.
 
 Use vector SceneIcon glyphs or approved assets with sufficient backing density.
 Do not use emoji for interface symbols. Match stroke weight, tone and size across

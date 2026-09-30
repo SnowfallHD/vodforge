@@ -28,8 +28,12 @@ Popup {
     }
     onAboutToHide: {
         dismissedByTriggerPress = !closingFromTrigger && !!triggerItem &&
-                                  !!triggerItem.hovered && bridge.isPointerPressed()
+                                  bridge.isPointerPressOnItem(triggerItem)
         closingFromTrigger = false
+    }
+    Connections {
+        target: bridge
+        function onPointerGestureEnded() { popup.dismissedByTriggerPress = false }
     }
     Connections {
         target: popup.triggerItem

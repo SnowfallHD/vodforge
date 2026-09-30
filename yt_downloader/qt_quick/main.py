@@ -35,9 +35,9 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QImage
+from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QImage, QWindow
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtQuick import QQuickImageProvider
+from PySide6.QtQuick import QQuickImageProvider, QQuickItem
 from PySide6.QtQuickControls2 import QQuickStyle
 
 from yt_downloader.analytics_consent import ANALYTICS_BENEFITS
@@ -344,6 +344,7 @@ class Materials(QQuickImageProvider):
 
 
 class Bridge(QObject):
+    pointerGestureEnded = Signal()
     statusChanged = Signal()
     outputPathChanged = Signal()
     selectionChanged = Signal()
@@ -480,6 +481,8 @@ class Bridge(QObject):
             )
         self._runtime.resume_queued()
         self._window: Any | None = None
+        self._pointer_press: tuple[QWindow, QPointF] | None = None
+        self._input_application = QGuiApplication.instance()
         self._annotations_writable = True
         self._annotations = LibraryAnnotationsOwner(
             self._runtime.history_path.parent / "library-annotations.json",
@@ -670,6 +673,8 @@ class Bridge(QObject):
         self._cookie_file: Path | None = None
         self._event_log = event_log
         self._closed = False
+        if self._input_application is not None:
+            self._input_application.installEventFilter(self)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pump)
         self._timer.start(50)
@@ -3989,6 +3994,36 @@ class Bridge(QObject):
     def isPointerPressed(self) -> bool:
         return QGuiApplication.mouseButtons() != Qt.MouseButton.NoButton
 
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if isinstance(watched, QWindow):
+            if event.type() == QEvent.Type.MouseButtonPress:
+                self._pointer_press = (watched, QPointF(cast(Any, event).position()))
+            elif event.type() == QEvent.Type.MouseButtonRelease:
+                self._pointer_press = None
+                # Run after this release's MouseArea click handlers. Modal
+                # dismissal can consume the click before the trigger sees it.
+                QTimer.singleShot(0, self._notify_pointer_release)
+        return False
+
+    def _notify_pointer_release(self) -> None:
+        if not self._closed and self._pointer_press is None:
+            self.pointerGestureEnded.emit()
+
+    @Slot(QObject, result=bool)
+    def isPointerPressOnItem(self, item: QObject) -> bool:
+        # Hover can remain stale under a modal overlay. Bind dismissal to the
+        # actual press delivered to this window, without retaining input logs.
+        if (
+            not isinstance(item, QQuickItem)
+            or self._pointer_press is None
+            or not self.isPointerPressed()
+        ):
+            return False
+        window, position = self._pointer_press
+        return bool(
+            item.window() == window and item.contains(item.mapFromScene(position))
+        )
+
     @Slot(str, result=bool)
     def openSupport(self, kind: str) -> bool:
         if not self._support.open(
@@ -5791,6 +5826,9 @@ class Bridge(QObject):
             self.localChanged.emit()
 
     def close(self) -> None:
+        if self._input_application is not None:
+            self._input_application.removeEventFilter(self)
+        self._pointer_press = None
         if self._closed:
             return
         self._closed = True

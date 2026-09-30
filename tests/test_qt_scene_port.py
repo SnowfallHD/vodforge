@@ -5516,7 +5516,7 @@ def test_qt_mp3_cover_clear_uses_shared_controls_in_both_settings_surfaces(
         bridge.close()
 
 
-@pytest.mark.parametrize("width", [1100, 860])
+@pytest.mark.parametrize("width", [1100, 860, 820])
 def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
     tmp_path, monkeypatch, width
 ):
@@ -5537,7 +5537,10 @@ def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
         popup = window.findChild(QObject, "analyticsConsentPopup")
         content = popup.property("contentItem")
         grid = visual_item(content, "analyticsBenefits")
-        assert grid is not None and grid.property("columns") == 4
+        assert grid is not None
+        assert grid.property("columns") == (2 if width == 820 else 4)
+        grid_position = grid.mapToItem(content, QPointF(0, 0))
+        assert abs(grid_position.x() + grid.width() / 2 - content.width() / 2) < 1
         for index, (symbol, label) in enumerate(ANALYTICS_BENEFITS):
             icon = visual_item(content, f"analyticsBenefitIcon_{index}")
             text = visual_item(content, f"analyticsBenefitLabel_{index}")
@@ -5567,7 +5570,7 @@ def test_qt_consent_keeps_four_icon_summaries_and_actions_inside_surface(
             assert item.isVisible()
             position = item.mapToItem(content, QPointF(0, 0))
             assert position.y() + item.height() <= content.height() + 1
-        assert popup.property("height") < 310
+        assert popup.property("height") < (360 if width == 820 else 310)
     finally:
         window.close()
         engine.deleteLater()

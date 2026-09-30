@@ -524,7 +524,7 @@ Window {
             }
             GridLayout {
                 objectName: "analyticsBenefits"
-                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignHCenter
                 columns: analyticsPopup.availableWidth >= 760 ? 4 : 2
                 columnSpacing: 16; rowSpacing: 20
                 Repeater {

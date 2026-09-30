@@ -986,6 +986,48 @@ def test_explicit_popup_close_does_not_consume_the_next_pointer_activation(
         _close(bridge, engine, window)
 
 
+@pytest.mark.parametrize("inside", [False, True])
+def test_popup_dismissal_binds_actual_press_despite_stale_hover(
+    tmp_path, monkeypatch, inside
+):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtQuick import QQuickItem
+
+    class StaleHoverItem(QQuickItem):
+        @Property(bool, constant=True)
+        def hovered(self):
+            return True
+
+    app, bridge, engine, window = _launch(tmp_path, monkeypatch, [])
+    trigger = StaleHoverItem(window.contentItem())
+    trigger.setX(100)
+    trigger.setY(100)
+    trigger.setWidth(40)
+    trigger.setHeight(40)
+    try:
+        popup = window.findChild(QObject, "optionsMenu")
+        popup.setProperty("modal", False)
+        popup.setProperty("closePolicy", 0)
+        popup.setProperty("triggerItem", trigger)
+        popup.open()
+        app.processEvents()
+        position = QPoint(120, 120) if inside else QPoint(2, 2)
+        QTest.mousePress(window, Qt.MouseButton.LeftButton, pos=position)
+        assert bridge.isPointerPressOnItem(trigger) is inside
+        # Model Qt's dismissal while hover still describes the earlier pointer.
+        popup.close()
+        app.processEvents()
+        assert popup.property("dismissedByTriggerPress") is inside
+        QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=position)
+        app.processEvents()
+        assert not popup.property("dismissedByTriggerPress")
+    finally:
+        QTest.mouseRelease(window, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+        trigger.setParentItem(None)
+        trigger.deleteLater()
+        _close(bridge, engine, window)
+
+
 @pytest.mark.parametrize("diagnostics", [False, True])
 def test_support_consent_is_visible_and_form_fits_its_contents(
     tmp_path, monkeypatch, diagnostics
