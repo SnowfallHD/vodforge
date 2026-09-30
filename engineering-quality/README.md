@@ -2388,6 +2388,16 @@ visual acceptance.
 
 ### Cross-platform Qt collection and cleanup recovery (2026-09-25)
 
+The 2026-09-30 expanded component sequence twice crashed Linux Python 3.13
+while CPython collected unreachable PySide wrappers in an archive worker.
+Retaining QGuiApplication alone did not govern cyclic signal/owner disposal.
+The Qt test fixture now disables automatic collection within each Qt case and
+collects on the test GUI thread before and after it, restoring the prior GC
+policy afterward. Product cleanup and outcome assertions are unchanged. Both
+failed CI attempts remain preserved; passing local Mac tests alone cannot
+qualify this Linux correction. This is test-process lifetime hygiene and does
+not claim to diagnose a user-visible scrolling defect or change product GC.
+
 The Qt port made the existing six-job Tests matrix import Qt modules on Linux.
 The Ubuntu image lacked `libEGL.so.1`, so collection stopped before any tests
 ran. The workflow now installs Qt's Linux EGL/OpenGL and XCB runtime libraries

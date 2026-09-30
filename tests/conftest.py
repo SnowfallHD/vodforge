@@ -1,4 +1,29 @@
+import gc
+
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def qt_gui_thread_collection(request):
+    """Collect cyclic Qt wrappers on the test thread, never an archive worker.
+
+    CPython can trigger collection in any allocating thread. Scene tests leave
+    signal/owner cycles that PySide must dispose on the GUI thread; collecting
+    them while the next test's worker starts can crash the native Qt runtime.
+    Product cleanup and all assertions remain exercised normally.
+    """
+    if not request.node.path.name.startswith("test_qt_"):
+        yield
+        return
+    enabled = gc.isenabled()
+    gc.disable()
+    gc.collect()
+    try:
+        yield
+    finally:
+        gc.collect()
+        if enabled:
+            gc.enable()
 
 
 @pytest.fixture
