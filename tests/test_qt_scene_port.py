@@ -2104,8 +2104,11 @@ def test_transport_arrow_and_arc_have_one_connected_silhouette(
                 for x in range(side)
                 for y in range(side)
                 if frame.pixelColor(x, y).lightness() > 180
+                # Linux's fallback font extends the numeral beyond the Mac
+                # glyph bounds. Keep the whole numeral out of this arc test;
+                # the outer arc and both old detached heads stay unmasked.
                 and not (
-                    0.28 * side < x < 0.72 * side and 0.38 * side < y < 0.77 * side
+                    0.25 * side < x < 0.75 * side and 0.38 * side < y < 0.77 * side
                 )
             }
         assert painted.count() and pixels, "Transport icon did not paint and compose"

@@ -652,6 +652,11 @@ The next full scene process captured an unpainted transport Canvas after a fixed
 150ms delay. The visual test now waits for its actual painted signal and composited
 pixels within two seconds, retaining the connected-silhouette and extent assertions.
 The original failed build receipt remains under build/watch-progress-proof.
+Linux CI also captured an 11-pixel numeral edge outside the Mac-sized exclusion
+mask. The central exclusion now covers both platforms' numeral widths while
+leaving the actual outer arc and the prior detached arrowheads exposed. Retain
+prior-source rejection and native whole-icon inspection; this mask is only for
+the arc connectivity assertion, not approval of typography or overall aesthetics.
 
 1. Preserve the concrete reproducer and add a regression for the reported failure.
 2. Identify the invariant that failed, independently of the affected screen or tool.
