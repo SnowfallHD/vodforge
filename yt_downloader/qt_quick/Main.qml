@@ -226,7 +226,12 @@ Window {
                 outputFormat: window.outputFormat
                 displayType: window.forgeDisplayType
                 preview: window.showingForgePreview
-                selectedFacts: bridge.forgeSelectedFacts
+                // Pending choices refresh live; selected-run facts retain their job snapshot.
+                selectedFacts: (bridge.outputFormat, bridge.exportMode, bridge.quality,
+                                bridge.outputPath, bridge.downloadOptions, bridge.nvencAvailable,
+                                bridge.manualValues, bridge.mp3Values, bridge.cookieSource,
+                                bridge.cookieBrowser, bridge.extraTags, bridge.batchSummary,
+                                bridge.forgeSelectedFacts)
             }
         }
     }
@@ -1310,7 +1315,12 @@ Window {
                         outputFormat: window.outputFormat
                         displayType: window.forgeDisplayType
                         preview: window.showingForgePreview
-                        selectedFacts: bridge.forgeSelectedFacts
+                        // Pending choices refresh live; selected-run facts retain their job snapshot.
+                selectedFacts: (bridge.outputFormat, bridge.exportMode, bridge.quality,
+                                bridge.outputPath, bridge.downloadOptions, bridge.nvencAvailable,
+                                bridge.manualValues, bridge.mp3Values, bridge.cookieSource,
+                                bridge.cookieBrowser, bridge.extraTags, bridge.batchSummary,
+                                bridge.forgeSelectedFacts)
                         showHeading: false
                     }
                 }

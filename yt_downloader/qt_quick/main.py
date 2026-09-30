@@ -2854,35 +2854,11 @@ class Bridge(QObject):
             ]
             if len(jobs) == 1:
                 job = jobs[0]
-                rows = [{"label": "Format", "value": job.output_type.value}]
-                if job.output_type == OutputType.ORIGINAL:
-                    rows.append({"label": "Encoding", "value": "Stream copy"})
-                elif job.output_type == OutputType.MP3:
-                    rows.extend(
-                        (
-                            {
-                                "label": "Audio quality",
-                                "value": f"{job.mp3_settings.bitrate_kbps} kbps",
-                            },
-                            {
-                                "label": "Sample rate",
-                                "value": str(
-                                    job.mp3_settings.sample_rate or "Preserve source"
-                                ),
-                            },
-                        )
-                    )
-                else:
-                    rows.extend(
-                        (
-                            {"label": "Quality ceiling", "value": job.quality_label},
-                            {
-                                "label": "Output mode",
-                                "value": export_mode_display_name(job.export_mode),
-                            },
-                        )
-                    )
-                rows.append({"label": "Save to", "value": str(job.output_dir)})
+                from .output_config_facts import chosen_config_facts, job_config
+
+                rows = chosen_config_facts(
+                    job_config(job), nvenc_available=self.nvencAvailable
+                )
                 if kind != "active":
                     rows.append(
                         {
@@ -2890,20 +2866,74 @@ class Bridge(QObject):
                             "value": str(selected.get("status") or "Queued"),
                         }
                     )
-                return {"heading": f"Output: {job.output_type.value}", "rows": rows}
+                return {
+                    "heading": f"Chosen settings: {job.output_type.value} (not measured output)",
+                    "rows": rows,
+                }
         if kind == "completed":
             owner = str(selected.get("owner") or "")
             item = self._saved_item_for_owner(owner)
             if item is not None:
                 _source, output = library_detail_facts(item)
+                from .output_config_facts import (
+                    chosen_config_facts,
+                    job_config,
+                    recorded_config,
+                )
+
+                retained = self._issue_job(str(item.get("vodforge_run_id") or ""))
+                config = (
+                    job_config(retained)
+                    if retained is not None
+                    else recorded_config(item)
+                )
+                chosen = (
+                    chosen_config_facts(
+                        config,
+                        nvenc_available=self.nvencAvailable
+                        if retained is not None
+                        else None,
+                    )
+                    if config is not None
+                    else [
+                        {
+                            "label": "Chosen settings",
+                            "value": "Full configuration not recorded for this saved output.",
+                        }
+                    ]
+                )
                 return {
-                    "heading": "Saved output",
+                    "heading": "Saved output — measured facts",
                     "rows": [
                         {"label": label, "value": value}
                         for label, value, _icon in output
-                    ],
+                    ]
+                    + chosen,
                 }
-        return {"heading": "", "rows": []}
+        if kind == "preview":
+            return {
+                "heading": "Metadata preview — no output configuration applied",
+                "rows": [],
+            }
+        from .output_config_facts import chosen_config_facts
+
+        config = {
+            **self.downloadOptions,
+            "format": self.outputFormat,
+            "mode": self.exportMode,
+            "quality": self.quality,
+            "folder": self.outputPath,
+            "access": self.cookieSource,
+            "browser": self.cookieBrowser,
+            "manual": self.manualValues,
+            "mp3": self.mp3Values,
+            "tags": self._current_extra_tags(),
+            "batch_count": len(self._batch_urls),
+        }
+        return {
+            "heading": "Chosen output settings (not measured output)",
+            "rows": chosen_config_facts(config, nvenc_available=self.nvencAvailable),
+        }
 
     @Slot(str, result=bool)
     def selectRunRecord(self, selection_key: str) -> bool:
