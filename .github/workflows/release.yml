@@ -90,7 +90,7 @@ jobs:
           Compress-Archive -Path .\dist\VODForge -DestinationPath ".\dist\release\VODForge-Windows-Portable-v${{ inputs.version }}.zip" -Force
       - name: Execute Windows updater fault cases
         shell: pwsh
-        run: .\.venv\Scripts\python.exe -m pytest engineering-quality/tests/test_update_handoff_runtime.py -q
+        run: .\.venv\Scripts\python.exe -m pytest engineering-quality/tests/test_update_handoff_runtime.py engineering-quality/tests/test_windows_update_visibility.py engineering-quality/tests/test_windows_update_diagnostics.py -q
       - name: Verify running Windows upgrade before publishing artifacts
         shell: pwsh
         env:
@@ -110,7 +110,18 @@ jobs:
           name: windows-update-evidence
           path: |
             build/update-journeys/**/update-journey.json
+            build/update-journeys/**/failure-diagnostics/**
             dist/release/handoff-*
+          if-no-files-found: warn
+      - name: Preserve failed Windows candidate for diagnosis
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-failed-candidate-diagnostic-only
+          retention-days: 7
+          path: |
+            dist/release/*.exe
+            dist/release/*.zip
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:

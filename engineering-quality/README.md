@@ -2853,3 +2853,23 @@ scheduled child-to-parent polish before measuring that limit; the one scroll
 and full Download-button visibility assertion remain unchanged. The original
 failed build is retained as `build-macos-owner-6c3d49e.log`. This test correction
 does not claim a new product layout fix or native scrolling acceptance.
+
+### A successful installer is not a visible updated application
+
+The signed Windows e5d49d1 upgrade installed and relaunched, but the exact
+process did not expose a main window within the existing 30-second gate. That
+failed receipt remains failed. The earlier gate retained the installer outcome
+and timeout but lost the native process/window state when its CI runner ended;
+runtime smoke and successful installation could not diagnose that boundary.
+The existing upgrade runner now captures read-only root/child identities, owned
+Win32 top-level window visibility and bounds, and bounded tails of the two app
+logs in its isolated QA profile. Unreadable processes remain explicit inspection
+errors. Settings, cookie files, environment and process arguments are excluded.
+
+Failure capture never changes acceptance, retries startup, alters rendering or
+extends the visibility deadline. Failed signed binaries are preserved in a
+separate diagnostic-only CI artifact that the draft release job does not consume.
+Representative tests use an actual owned process before/after exit, inaccessible
+identity, bounded log tails and escaped profile symlinks. Native Windows capture
+and the underlying startup cause still require the next exact CI receipt; this
+instrumentation is not the product fix or packaged updater qualification.

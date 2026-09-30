@@ -85,6 +85,19 @@ try {
     $result.visibility_wait_ms = [int]((Get-Date) - $visibilityStarted).TotalMilliseconds
   }
   $result.error = $_.Exception.Message
+  # Capture the actual root/child processes and native windows before the runner
+  # disappears. Diagnostic success never changes the visibility gate's result.
+  $diagnosticPid = if ($result.new_pid) { $result.new_pid } elseif ($old) { $old.Id } else { $null }
+  if ($diagnosticPid) {
+    try {
+      $env:PYTHONPATH = $SourceRoot + [IO.Path]::PathSeparator + (Join-Path $SourceRoot 'engineering-quality')
+      & $Python -m quality_harness.windows_update_diagnostics --pid $diagnosticPid --run $run
+      if ($LASTEXITCODE -ne 0) { throw 'Failure diagnostics capture failed' }
+      $result.failure_diagnostics = Join-Path $run 'failure-diagnostics\snapshot.json'
+    } catch {
+      $result.failure_diagnostics_error = $_.Exception.Message
+    }
+  }
 } finally {
   $result | ConvertTo-Json -Depth 6 | Set-Content $receiptPath -Encoding UTF8
   if ($new -and !$new.HasExited) { $null = $new.CloseMainWindow() }
