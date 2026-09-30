@@ -24,6 +24,7 @@ from yt_downloader.telemetry_policy import (
     production_telemetry_allowed,
 )
 
+from .diagnostic_fixtures import diagnostic_context
 from .telemetry_release import read_preview_snapshot
 
 
@@ -149,7 +150,7 @@ def main() -> None:
         )
         return
 
-    def operation_fields(feature):
+    def operation_fields(feature, action):
         return (
             {
                 "dimensions": {
@@ -157,6 +158,7 @@ def main() -> None:
                     "build_revision": "unknown",
                     "operation_id": str(uuid.uuid4()),
                     "operation_step": "1",
+                    **diagnostic_context(feature, action),
                 }
             }
             if feature.endswith("_operation")
@@ -165,7 +167,7 @@ def main() -> None:
 
     def record(name, **fields):
         if fields.get("feature"):
-            fields.update(operation_fields(fields["feature"]))
+            fields.update(operation_fields(fields["feature"], fields["action"]))
         assert usage.record(name, **fields)
         assert usage.shutdown(15), "Preview request did not finish"
         assert not (profile / "product-telemetry.json").exists(), (
@@ -337,7 +339,7 @@ def main() -> None:
                 "feature_used",
                 feature=feature,
                 action=action,
-                **operation_fields(feature),
+                **operation_fields(feature, action),
             )
     after = read_preview_snapshot(args.site.resolve(), install)
     assert (

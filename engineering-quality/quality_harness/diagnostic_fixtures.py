@@ -4,8 +4,20 @@ These are fixture values, not producer evidence. The producer pipeline obtains
 its dimensions from the actual native/source owners.
 """
 
+import uuid
+
 
 def diagnostic_context(feature: str, action: str) -> dict[str, str]:
+    if feature == "updater_operation":
+        return {
+            "update_attempt": str(uuid.uuid4()),
+            "update_from": "0.2.2",
+            "update_target": "0.2.3",
+            "update_trigger": "manual",
+            "update_stage": "check",
+        }
+    if feature == "navigation_operation":
+        return {"navigation_feature": "archive", "navigation_action": "issues"}
     if feature == "run_control_operation":
         return {
             "run_control_action": "cancel",
