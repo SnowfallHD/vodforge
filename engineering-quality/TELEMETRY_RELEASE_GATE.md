@@ -400,3 +400,20 @@ release assets silently.
 ### Learning from defects
 
 Follow the mandatory bug-to-invariant workflow in [README.md](README.md#when-and-how-to-strengthen-the-harness) whenever a defect is found. Add the specific regression and assess generalized cross-owner coverage; telemetry serializer tests alone cannot establish lifecycle, durable-effect or native-provider correctness. Use the narrowest relevant gate during development and preserve the final publication evidence requirements.
+
+
+### Qt update and completeness controls — 2026-09-29
+
+The Qt renderer gate runs twelve real-producer cases, including repeated core
+navigation, update offer/explicit Later, typed asynchronous check failure and
+current-generation native playback enum. `telemetry_feature_probe --qt` exercises
+the seven Qt coverage cases through the fixed authenticated preview service and
+scoped D1 readback; it explicitly labels source fixtures and controlled providers,
+never packaged/native proof. The private key stays in the process environment.
+
+Final enabled-package proof must additionally observe actual popup shown vs Later
+vs dismissal, automatic/manual checks, verification failure, blocked admission,
+detached helper and verified relaunch/Repair. Preserve helper attempt UUID
+correlation; permission at check origin and handoff must both allow collection.
+Zero-delay launch scheduling is distinct from HTTP completion latency. Existing
+signed artifact and native outcome gates remain unchanged.

@@ -116,7 +116,7 @@ Window {
                 else if (mediaStatus === MediaPlayer.EndOfMedia) status = "Ended"
                 else if (playbackState === MediaPlayer.PlayingState) status = "Playing"
                 else if (playbackState === MediaPlayer.PausedState) status = "Paused"
-                bridge.observePlayback(position / 1000, duration / 1000, status, generation)
+                bridge.observePlayback(position / 1000, duration / 1000, status, generation, error)
             }
             onPositionChanged: reportProgress()
             onDurationChanged: reportProgress()
@@ -2318,6 +2318,13 @@ Window {
     StonePopup {
         id: updatePopup
         objectName: "updatePopup"
+        property bool explicitDeferral: false
+        onOpened: { explicitDeferral = false; bridge.updateOfferShown() }
+        onClosed: bridge.updateOfferClosed(explicitDeferral)
+        Connections {
+            target: bridge
+            function onUpdateChanged() { if (updatePopup.visible) bridge.updateOfferShown() }
+        }
         x: Math.max(0, (window.width - width) / 2)
         y: Math.max(0, (window.height - height) / 2)
         width: Math.min(480, window.width - 40)
@@ -2382,11 +2389,11 @@ Window {
                 }
                 Item { Layout.fillWidth: true }
                 StoneButton {
-                    label: "Close"
+                    label: bridge.updateAvailable || bridge.updateReady || bridge.updateManualAvailable ? "Later" : "Close"
                     enabled: !bridge.updateBusy
                     Layout.preferredWidth: 90
                     Layout.preferredHeight: 40
-                    onActivated: updatePopup.close()
+                    onActivated: { updatePopup.explicitDeferral = true; updatePopup.close() }
                 }
             }
         }

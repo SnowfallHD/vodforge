@@ -263,8 +263,15 @@ def pipeline(repo: Path, site: Path, destination: Path, *, cases=None):
                         if case in DISCLOSURE_CASES
                         else "archive"
                         if case == "qt_file_navigation"
+                        else "updater_operation"
+                        if case in {"qt_update_choice", "qt_update_failure"}
                         else "playback_operation"
-                        if case in {"qt_player_resume", "qt_player_resume_timeout"}
+                        if case
+                        in {
+                            "qt_player_resume",
+                            "qt_player_resume_timeout",
+                            "qt_player_native_error",
+                        }
                         else "watch_queue_operation"
                         if case in QUEUE_CASES
                         else "presentation_operation"

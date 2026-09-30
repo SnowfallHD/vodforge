@@ -553,11 +553,14 @@ def write_macos_swap_script(
     *,
     repair: bool = False,
     telemetry_permitted: bool = False,
+    telemetry_token: str | None = None,
     qa_relaunch: bool = False,
 ) -> Path:
     """Write the detached, rollback-capable macOS app replacement script."""
     script_path = plan.staging_root / "install-update.sh"
-    receipt_token = uuid.uuid4().hex
+    receipt_token = (
+        uuid.UUID(telemetry_token).hex if telemetry_token else uuid.uuid4().hex
+    )
     # LaunchServices starts an app with the user's login environment. An isolated
     # QA update must instead inherit the validated profile, feed and telemetry
     # environment from this detached helper, without putting the key in argv.
@@ -596,7 +599,7 @@ def write_macos_swap_script(
           if [[ -d "$target_app" ]]; then
             path_digest=$(printf '%s' "$target_app/Contents/MacOS/VODForge" | /usr/bin/shasum -a 256)
             path_digest="${{path_digest%% *}}"
-            printf '%s\n' '{{"status":"failed","stage":"'"$stage"'","executable_path_sha256":"'"$path_digest"'","telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
+            printf '%s\n' '{{"status":"failed","stage":"'"$stage"'","executable_path_sha256":"'"$path_digest"'","repair":{str(repair).lower()},"telemetry_permitted":{str(telemetry_permitted).lower()}}}' > "$telemetry_receipt.tmp"
             /bin/mv "$telemetry_receipt.tmp" "$telemetry_receipt"
             {relaunch}
           fi
@@ -660,6 +663,7 @@ def launch_macos_update(
     parent_pid: int | None = None,
     repair: bool = False,
     telemetry_permitted: bool = False,
+    telemetry_token: str | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
 ) -> None:
@@ -669,6 +673,7 @@ def launch_macos_update(
         plan,
         repair=repair,
         telemetry_permitted=telemetry_permitted,
+        telemetry_token=telemetry_token,
         qa_relaunch=qa_update_feed() is not None,
     )
     process = popen(
@@ -862,6 +867,7 @@ def launch_windows_update(
     parent_pid: int | None = None,
     repair: bool = False,
     telemetry_permitted: bool = False,
+    telemetry_token: str | None = None,
     window_bounds: tuple[int, int, int, int] | None = None,
     popen: Callable[..., subprocess.Popen[Any]] = subprocess.Popen,
 ) -> Path:
@@ -881,7 +887,7 @@ def launch_windows_update(
         raise RuntimeError(
             "The app folder is not writable. Close VODForge and run the installer manually."
         )
-    token = uuid.uuid4().hex
+    token = uuid.UUID(telemetry_token).hex if telemetry_token else uuid.uuid4().hex
     receipt = installer.parent / f"handoff-{token}.json"
     ready = installer.parent / f"handoff-{token}.ready"
     script = windows_update_script(
@@ -966,7 +972,11 @@ def confirmed_update_telemetry_receipt(
                 isinstance(value.get("executable"), str)
                 and Path(value["executable"]).resolve() == executable.resolve()
             )
-            return (match.group(1), False, "failed", stage) if same_target else None
+            return (
+                (match.group(1), value.get("repair") is True, "failed", stage)
+                if same_target
+                else None
+            )
         if value.get("pid") is not None and value["pid"] != os.getpid():
             return None
         with executable.open("rb") as handle:
@@ -1052,15 +1062,22 @@ def record_update_telemetry_receipts(
                 dedupe_key=token + ":" + action,
                 feature="updater",
                 action=action,
-                dimensions={"update_stage": stage},
+                dimensions={
+                    "update_stage": stage,
+                    "update_attempt": str(uuid.UUID(token)),
+                },
             )
-            if repair:
+            if repair and action == "relaunched":
                 accepted = (
                     telemetry.record(
                         "feature_used",
                         dedupe_key=token + ":repair",
                         feature="updater",
                         action="repair_completed",
+                        dimensions={
+                            "update_attempt": str(uuid.UUID(token)),
+                            "update_stage": stage,
+                        },
                     )
                     and accepted
                 )

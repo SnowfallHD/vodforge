@@ -253,3 +253,81 @@ def test_player_resume_is_correlated_and_stale_generation_cannot_complete(
             )
     finally:
         bridge.close()
+
+
+@pytest.mark.parametrize(
+    "native_error,category,reason",
+    [
+        (1, "resource", "unknown"),
+        (2, "format", "unsupported_format"),
+        (3, "network", "network"),
+        (4, "access_denied", "permission_denied"),
+        (99, "unknown", "unknown"),
+    ],
+)
+def test_native_playback_error_is_closed_and_never_serializes_provider_text(
+    tmp_path, monkeypatch, native_error, category, reason
+):
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
+    try:
+        path = tmp_path / "PRIVATE.mp4"
+        path.write_bytes(b"input")
+        record = saved(tmp_path, "PRIVATE", "MP4")
+        record["vodforge_output_path"] = str(path)
+        bridge._runtime.history = [record]
+        assert bridge.openLibraryItem(0)
+        generation = bridge._playback_generation
+        bridge.observePlayback(0, 0, "Failed", generation, native_error)
+        bridge.observePlayback(0, 0, "Failed", generation, native_error)
+        bridge.closePlayback()
+        actual = rows(telemetry, tmp_path, "playback_operation")
+        assert [e["action"] for e in actual] == ["requested", "failed", "closed"]
+        assert actual[1]["dimensions"]["qt_media_error"] == category
+        assert actual[1]["failure_detail"]["reason"] == reason
+        assert "processing_bucket" in actual[1]["dimensions"]
+    finally:
+        bridge.close()
+
+
+def test_repeated_navigation_counts_visits_without_replacing_engagement(
+    tmp_path, monkeypatch
+):
+    bridge, telemetry = bridge_fixture(tmp_path, monkeypatch)
+    try:
+        bridge.navigateLibraryFolders("all")
+        bridge.navigateLibraryFolders("issues")
+        bridge.navigateLibraryFolders("all")
+        actual = rows(telemetry, tmp_path, "navigation_operation")
+        assert [e["dimensions"]["navigation_action"] for e in actual] == [
+            "all_media",
+            "issues",
+            "all_media",
+        ]
+        assert len({e["dimensions"]["operation_id"] for e in actual}) == 3
+    finally:
+        bridge.close()
+
+
+def test_automatic_check_starts_during_active_work_and_retries_only_updater_busy(
+    tmp_path, monkeypatch
+):
+    bridge, _telemetry = bridge_fixture(tmp_path, monkeypatch)
+    scheduled = []
+    monkeypatch.setattr(
+        qt_main.QTimer, "singleShot", lambda delay, callback: scheduled.append(delay)
+    )
+    from types import SimpleNamespace
+
+    runtime = bridge._runtime
+    bridge._runtime = SimpleNamespace(busy=True, active_job=object())
+    calls = []
+    monkeypatch.setattr(bridge._updates, "check", lambda **kw: calls.append(kw) or True)
+    bridge._auto_check_updates()
+    assert calls == [{"automatic": True}]
+    assert scheduled == [6 * 60 * 60 * 1000]
+    bridge._updates.busy = True
+    bridge._auto_check_updates()
+    assert calls == [{"automatic": True}]
+    assert scheduled[-1] == 30 * 1000
+    bridge._runtime = runtime
+    bridge.close()

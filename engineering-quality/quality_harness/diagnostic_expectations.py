@@ -4,6 +4,30 @@ from __future__ import annotations
 
 
 def verify_scenario_events(case: str, events: list[dict]) -> None:
+    if case in {"qt_update_choice", "qt_update_failure"}:
+        actual = [e for e in events if e.get("feature") == "updater_operation"]
+        assert [e["action"] for e in actual] == (
+            ["check_started", "available", "shown", "deferred"]
+            if case.endswith("choice")
+            else ["check_started", "failed"]
+        )
+        assert len({e["dimensions"]["operation_id"] for e in actual}) == 1
+        assert [e["dimensions"]["operation_step"] for e in actual] == [
+            str(i + 1) for i in range(len(actual))
+        ]
+        assert actual[0]["dimensions"]["update_trigger"] == "automatic"
+        if case.endswith("failure"):
+            assert actual[-1]["failure_detail"]["reason"] == "network"
+            assert actual[-1]["failure_detail"]["error_type"] == "TimeoutError"
+        else:
+            assert actual[-1]["dimensions"]["update_target"] == "0.2.3"
+        return
+    if case == "qt_player_native_error":
+        actual = [e for e in events if e.get("feature") == "playback_operation"]
+        assert [e["action"] for e in actual] == ["requested", "failed", "closed"]
+        assert actual[1]["dimensions"]["qt_media_error"] == "format"
+        assert actual[1]["failure_detail"]["reason"] == "unsupported_format"
+        return
     if case == "qt_file_navigation":
         actual = [e for e in events if e.get("feature") == "archive"]
         assert [e["action"] for e in actual] == [
@@ -13,6 +37,13 @@ def verify_scenario_events(case: str, events: list[dict]) -> None:
             "issues",
         ]
         assert actual[-1]["dimensions"]["archive_mode"] == "issues"
+        visits = [e for e in events if e.get("feature") == "navigation_operation"]
+        assert [e["dimensions"]["navigation_action"] for e in visits] == [
+            "folders",
+            "folder_opened",
+            "all_media",
+            "issues",
+        ]
         return
     if case == "qt_metadata_failure":
         actual = [e for e in events if e.get("feature") == "library_action_operation"]

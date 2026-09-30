@@ -101,3 +101,23 @@ This qualifies those bounded source/control fixtures only. It does not promote t
 full discovery, preview, playback or navigation inventory rows to proven; native
 provider decoding, exact enabled Qt package, Windows native parity and deployed
 client journeys remain open. The installed preview has collection compiled off.
+
+
+## Qt update and diagnostic context closure — 2026-09-29
+
+The bounded Qt source gate now comprises twelve maintained cases: the original
+five presentation cases, four earlier wiring cases and three update/native-error
+cases. New producer fixtures retain repeated navigation, actual worker failure
+capture, explicit Later and current-generation native error category. Focused
+owner tests additionally exercise download/verified-ready/install-blocked/handoff,
+failed helper, current/unsupported, original denial, withdrawal/regrant and startup
+while media work is active. They do not claim real installer or decoder execution.
+
+The companion D1 query contract distinguishes explicit deferral from technical
+failure and unknown dismissal/handoff, groups bounded machine facts/callsites and
+counts repeated core visits. Privacy fields, replay and immutable exact readback
+remain required. Additive source/local/deployed proof does not waive the existing
+exact telemetry-enabled Mac/Windows package and native effect requirements.
+Native Qt replay/crash dumps and guaranteed private/device reproduction are
+excluded by user instruction. Whole inventory rows retain their current honest
+qualification status.

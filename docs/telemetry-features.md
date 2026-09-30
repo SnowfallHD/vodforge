@@ -588,8 +588,8 @@ identity. Readiness means positive known duration, not independently decoded
 pixels; started means an observed Playing status. A seek command is not successful
 resume: a later current-generation snapshot must reach the saved point. Timeout,
 provider failure, cancellation and durable-progress outcomes remain distinct.
-Retired generations cannot complete the current operation. Qt currently reports a
-generic playback-stage failure, not its native provider error enum or a GPU cause.
+Retired generations cannot complete the current operation. Qt now carries its
+closed native provider error enum; it does not diagnose a GPU cause.
 
 Proof: `tests/test_qt_telemetry_coverage.py` exercises real Qt owners and durable
 outbox with controlled provider outcomes, original consent and private sentinels.
@@ -615,3 +615,42 @@ GROUP BY feature, action;
 
 Missing steps, capped outboxes and delivery loss are unknown observations, never
 proof the step did not happen. See [readiness and limits](telemetry-readiness.md).
+
+
+## Qt update decisions, repeated navigation and native errors — 2026-09-29
+
+`updater_operation` binds consent and identity before asynchronous work. Ordered
+steps retain `update_attempt` (UUID), bounded `update_from` / `update_target`,
+`update_trigger`, `update_stage`, `update_blocker` and monotonic elapsed bucket.
+The public operation ID is generated independently by ProductTelemetryOwner;
+`update_attempt` correlates the detached helper receipt across processes. Neither
+field carries an executable path or source URL.
+
+`available` means a platform asset was discovered; `shown` requires the actual
+popup. Only the explicit Later button records `deferred`. Escape/closure records
+`dismissed`, whose reason is unknown. Download completion means installer verified
+and ready; `handoff` means the helper accepted work. Only an existing verified
+executable receipt permits `relaunched` or `repair_completed`. Failed helpers keep
+their bounded stage and attempt link; failed Repair never emits completion.
+Checks distinguish current, unsupported platform and typed check/download/handoff
+failures. Original consent applies through helper admission, including regrant.
+
+`navigation_operation/visited` records repeated discrete core routes in the
+existing Bridge: archive folders/all_media/issues/folder_opened, watch
+opened/channel_opened and library opened/selected. Engagement events retain their
+existing session-presence meaning. There is no raw input/URL/path capture.
+
+QMediaPlayer's actual error callback passes a closed enum to the current
+`playback_operation`: resource, format, network, access_denied, unknown. Format and
+access-denied map to supported diagnostic reasons; resource remains unknown,
+rather than asserting a filesystem cause. Error strings stay local. Failure
+observations also retain player origin/surface and an elapsed bucket. Repeated
+callbacks and retired generations cannot manufacture a new terminal outcome.
+
+Source tests cover provider categories, original denial/revocation/regrant,
+blocked and failed helper admission, single shown observations and active-work
+startup. Three new functional regressions fail on the prior runtime. The maintained
+Qt gate adds actual update-choice, update-failure and native-error producers to its
+existing cases. Provider/worker controls are declared fixtures, not native decode
+or real installer execution. The companion's read-only analysis reports are
+verified against stored producer data, with absent observations explicitly unknown.

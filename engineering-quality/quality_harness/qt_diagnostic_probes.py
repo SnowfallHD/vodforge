@@ -130,8 +130,25 @@ def qt_presentation_case(directory: Path, telemetry, case: str):
             if target is not None:
                 original = target.property("source")
                 target.setProperty("source", "file:///PRIVATE-missing-qt-image.png")
-                app.processEvents()
-                probe.sample()
+                # The provider's Image.Error arrives asynchronously. Do not
+                # restore the source before QML has actually observed the fault.
+                deadline = time.monotonic() + 2
+                role = case.removeprefix("qt_").removesuffix("_fault")
+                while time.monotonic() < deadline:
+                    app.processEvents()
+                    probe.sample()
+                    failed = window.property(
+                        "presentationDiagnosticSnapshot"
+                    ).toVariant()
+                    if role in failed.get("missingRoles", []) and failed.get(
+                        "missing", 0
+                    ):
+                        break
+                    time.sleep(0.005)
+                else:
+                    raise AssertionError(
+                        "Qt Image.Error did not reach the actual scene"
+                    )
                 target.setProperty("source", original)
                 app.processEvents()
                 wait_for_painted_artwork()
@@ -166,10 +183,15 @@ QT_COVERAGE_CASES = (
     "qt_metadata_failure",
     "qt_player_resume",
     "qt_player_resume_timeout",
+    "qt_update_choice",
+    "qt_update_failure",
+    "qt_player_native_error",
 )
 
 
-def qt_coverage_case(directory: Path, telemetry, case: str):
+def qt_coverage_case(
+    directory: Path, telemetry, case: str, *, preview_collection=False
+):
     """Qt route/worker/progress owners; provider callbacks are controlled fixtures."""
     from yt_downloader.models import CookieSource, OutputType
     from yt_downloader.playback_backend import PlaybackSnapshot
@@ -205,6 +227,13 @@ def qt_coverage_case(directory: Path, telemetry, case: str):
         bridge._analytics.telemetry = telemetry
         bridge._metadata.product_telemetry = telemetry
         bridge._runtime.history = [record]
+        if preview_collection:
+            os.environ.pop("VODFORGE_DISABLE_TELEMETRY", None)
+            from yt_downloader.telemetry_policy import preview_telemetry_allowed
+
+            assert preview_telemetry_allowed(), (
+                "Explicit isolated preview policy required"
+            )
         try:
             if case == "qt_file_navigation":
                 bridge.navigateLibrary("folders")
@@ -218,6 +247,51 @@ def qt_coverage_case(directory: Path, telemetry, case: str):
                 bridge.navigateLibraryFolders("issues")
                 assert bridge.libraryFolders["mode"] == "issues"
                 outcome = "issues"
+            elif case in {"qt_update_choice", "qt_update_failure"}:
+                from yt_downloader.qt_quick import update_session as updates
+                from yt_downloader.updates import ReleaseInfo
+
+                session = bridge._updates
+                session.telemetry = telemetry
+                release = ReleaseInfo(
+                    "0.2.3",
+                    "v0.2.3",
+                    "VODForge",
+                    "https://github.com/SnowfallHD/vodforge/releases/latest",
+                    "",
+                    (),
+                )
+                with (
+                    patch.object(session, "_start", return_value=True),
+                    patch.object(
+                        updates, "release_asset_for_platform", return_value=object()
+                    ),
+                ):
+                    assert session.check(automatic=True)
+                    if case == "qt_update_failure":
+                        with patch.object(
+                            updates,
+                            "fetch_latest_release",
+                            side_effect=TimeoutError("PRIVATE provider"),
+                        ):
+                            session._check_worker()
+                        assert session.poll() and session.recovery
+                        outcome = "failed"
+                    else:
+                        session.events.put(("checked", release))
+                        assert session.poll() and session.available
+                        bridge.updateOfferShown()
+                        bridge.updateOfferShown()
+                        bridge.updateOfferClosed(True)
+                        outcome = "deferred"
+            elif case == "qt_player_native_error":
+                assert bridge.openLibraryItem(0)
+                generation = bridge._playback_generation
+                bridge.observePlayback(0, 0, "Failed", generation, 2)
+                bridge.observePlayback(0, 0, "Failed", generation, 2)
+                bridge.observePlayback(100, 100, "Ended", generation - 1)
+                bridge.closePlayback()
+                outcome = "format"
             elif case == "qt_metadata_failure":
                 with patch.object(
                     metadata_preview,

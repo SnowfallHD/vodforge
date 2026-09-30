@@ -27,11 +27,81 @@ from yt_downloader.telemetry_policy import (
 from .telemetry_release import read_preview_snapshot
 
 
+def qt_preview(site, root, profile, usage, credentials, consent, emitted):
+    from .diagnostic_expectations import verify_scenario_events
+    from .qt_diagnostic_probes import QT_COVERAGE_CASES, qt_coverage_case
+
+    install = load_or_create_installation_state(
+        profile / "installation.json"
+    ).install_id
+    initial = read_preview_snapshot(site, install)
+    assert initial["events"] == [], "Fresh isolated identity required"
+    cases = []
+    for case in QT_COVERAGE_CASES:
+        before = len(emitted)
+        outcome = qt_coverage_case(
+            root / "fixtures" / case, usage, case, preview_collection=True
+        )
+        assert usage.shutdown(15)
+        assert not (profile / "product-telemetry.json").exists(), (
+            "Undelivered observations"
+        )
+        events = emitted[before:]
+        verify_scenario_events(case, events)
+        cases.append({**outcome, "events": len(events)})
+    snapshot = read_preview_snapshot(site, install)
+    assert len(snapshot["events"]) == len(emitted)
+    for event in emitted:
+        row = next(r for r in snapshot["events"] if r["event_id"] == event["event_id"])
+        for field in ("event_name", "feature", "action", "schema_version"):
+            assert row[field] == event[field]
+        assert json.loads(row["dimensions"]) == event["dimensions"]
+        if event.get("failure_detail"):
+            assert json.loads(row["failure_detail"]) == event["failure_detail"]
+    assert "PRIVATE" not in json.dumps(snapshot)
+    for event in emitted:
+        assert credentials.event(event), "Exact duplicate replay refused"
+    consent.choose(False)
+    for case in QT_COVERAGE_CASES:
+        qt_coverage_case(root / "denied" / case, usage, case, preview_collection=True)
+    assert usage.shutdown(15)
+    after = read_preview_snapshot(site, install)
+    assert (
+        after["events"] == snapshot["events"]
+        and after["installations"] == snapshot["installations"]
+    )
+    (root / "emitted.json").write_text(json.dumps(emitted, indent=2))
+    (root / "snapshot.json").write_text(json.dumps(after, indent=2))
+    (root / "result.json").write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "evidence_tier": "source_qt_producers_preview_d1",
+                "packaged_ui_verified": False,
+                "events_verified": len(emitted),
+                "case_count": len(cases),
+                "cases": cases,
+                "install_id": install,
+                "privacy_denial_unchanged": True,
+            },
+            indent=2,
+        )
+    )
+    print(
+        f"Qt preview producer contract passed: {len(cases)} cases; {len(emitted)} events; no packaged UI claim"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--site", type=Path, required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument(
+        "--qt",
+        action="store_true",
+        help="Actual Qt gap producers; controlled providers, not packaged UI",
+    )
     args = parser.parse_args()
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -72,6 +142,12 @@ def main() -> None:
         d1_recorder=deliver,
         heycatch_recorder=lambda *_args, **_kwargs: False,
     )
+
+    if args.qt:
+        qt_preview(
+            args.site.resolve(), root, profile, usage, credentials, consent, emitted
+        )
+        return
 
     def operation_fields(feature):
         return (

@@ -2596,3 +2596,22 @@ resume producers through authenticated local Worker/D1 alongside presentation
 cases. Stored sequence/outcome assertions survive duplicate replay and reject
 private facts. Controlled callbacks are not native decode, exact packaged,
 platform-wide or deployed release proof; retain the full inventory gate.
+
+
+### Qt update observation learning — 2026-09-29
+
+The old session-presence metric and friendly error copy could not answer update
+choice/cause questions. Extend the existing consent-bound operation owner with
+explicit intent/visible offer/choice/outcome and retain machine facts before copy
+conversion. Never infer refusal from no event or helper success from handoff.
+Representative controls cover active-work startup, failed vs blocked install,
+permission withdrawal/regrant, stale native callbacks and exact stored reports.
+Three focused new cases fail on prior runtime. Existing tests missed these because
+they asserted updater behavior/session engagement rather than the producer's
+ordered observations and native error category.
+
+The first follow-up CI also exposed test-owner isolation: the real Qt telemetry
+file belongs in the fresh Qt process, not the general backend process. Build and
+CI test inventories now match; an old fake playback owner must provide the actual
+new observer contract rather than suppressing assertions. Preserve this failed CI
+receipt and verify the corrected exact commit before claiming CI green.

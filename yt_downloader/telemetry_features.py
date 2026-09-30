@@ -134,6 +134,27 @@ FEATURE_ACTIONS: dict[str, frozenset[str]] = {
 }
 # Per-operation observations are separate from legacy once-per-session usage.
 OPERATION_FEATURES = {
+    "updater_operation": frozenset(
+        {
+            "check_started",
+            "available",
+            "current",
+            "unsupported",
+            "shown",
+            "deferred",
+            "dismissed",
+            "download_started",
+            "download_completed",
+            "install_requested",
+            "blocked",
+            "handoff",
+            "failed",
+            "manual_opened",
+            "manual_failed",
+            "repair_started",
+        }
+    ),
+    "navigation_operation": frozenset({"visited"}),
     "run_control_operation": frozenset({"admitted", "rejected"}),
     "run_recovery_operation": frozenset(
         {"failed", "start_blocked", "restored_without_retry"}
@@ -250,6 +271,9 @@ OPERATION_FEATURES = {
 }
 FEATURE_ACTIONS.update(OPERATION_FEATURES)
 DIMENSION_PATTERNS = {
+    "update_attempt": r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+    "update_from": r"(?:[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(?:-[A-Za-z0-9.-]{1,32})?|unknown)",
+    "update_target": r"(?:[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(?:-[A-Za-z0-9.-]{1,32})?|unknown)",
     "operation_id": r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
     "operation_step": r"(?:[1-9]|[1-5][0-9]|6[0-4])",
     "build_revision": r"(?:[0-9a-f]{40}|unknown)",
@@ -661,6 +685,23 @@ DIMENSION_CHOICES: dict[str, frozenset[str]] = {
     "provider": frozenset({"youtube", "other"}),
     "encoder_preference": frozenset({"cpu", "nvidia"}),
     "architecture": frozenset({"arm64", "x64", "other"}),
+    "navigation_feature": frozenset({"archive", "watch", "library"}),
+    "navigation_action": frozenset(
+        {
+            "folders",
+            "all_media",
+            "issues",
+            "folder_opened",
+            "opened",
+            "channel_opened",
+            "selected",
+        }
+    ),
+    "update_trigger": frozenset({"automatic", "manual", "repair"}),
+    "update_blocker": frozenset({"active_work", "not_ready", "busy", "none"}),
+    "qt_media_error": frozenset(
+        {"none", "resource", "format", "network", "access_denied", "unknown"}
+    ),
     "update_stage": frozenset(
         {
             "check",
@@ -904,6 +945,27 @@ def validate_operation_fields(
             raise ValueError("operation correlation is required")
     elif "operation_id" in dimensions or "operation_step" in dimensions:
         raise ValueError("unexpected operation correlation")
+    if feature == "updater_operation" and (
+        not {
+            "update_attempt",
+            "update_from",
+            "update_target",
+            "update_trigger",
+            "update_stage",
+        }
+        <= dimensions.keys()
+    ):
+        raise ValueError("update correlation and context are required")
+    if feature == "navigation_operation":
+        owner = dimensions.get("navigation_feature")
+        intent = dimensions.get("navigation_action")
+        choices = {
+            "archive": {"folders", "all_media", "issues", "folder_opened"},
+            "watch": {"opened", "channel_opened"},
+            "library": {"opened", "selected"},
+        }
+        if intent not in choices.get(owner, set()):
+            raise ValueError("invalid navigation intent")
     if feature == "run_control_operation":
         if not {
             "run_control_action",

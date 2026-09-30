@@ -527,6 +527,7 @@ class Bridge(QObject):
         self._playback_recorded = False
         self._playback_operation = None
         self._playback_phases: set[str] = set()
+        self._playback_started_at = time.monotonic()
         self._playback_output_type = ""
         self._playback_chapters: list[dict[str, Any]] = []
         self._playback_heatmap: list[dict[str, float]] = []
@@ -1129,17 +1130,20 @@ class Bridge(QObject):
 
     @Slot()
     def checkForUpdates(self) -> None:
+        self._updates.telemetry = self._analytics.telemetry
         if self._updates.check():
             self.updateChanged.emit()
 
     @Slot()
     def downloadUpdate(self) -> None:
+        self._updates.telemetry = self._analytics.telemetry
         if self._updates.download():
             self._record_update_feature("updater", "download_started")
             self.updateChanged.emit()
 
     @Slot()
     def repairUpdate(self) -> None:
+        self._updates.telemetry = self._analytics.telemetry
         if self._updates.download(repair=True):
             self._record_update_feature("guidance", "recovery_selected")
             self._record_update_feature("updater", "repair_started")
@@ -1153,23 +1157,57 @@ class Bridge(QObject):
             return
         try:
             telemetry.record_feature(feature, action, dimensions=dimensions)
+            if (feature, action) in {
+                ("archive", "folders"),
+                ("archive", "all_media"),
+                ("archive", "issues"),
+                ("archive", "folder_opened"),
+                ("watch", "opened"),
+                ("watch", "channel_opened"),
+                ("library", "opened"),
+                ("library", "selected"),
+            }:
+                operation(
+                    telemetry,
+                    "navigation_operation",
+                    "visited",
+                    bind_operation(
+                        telemetry,
+                        "navigation_operation",
+                        operation_key=str(uuid.uuid4()),
+                    ),
+                    {
+                        "navigation_feature": feature,
+                        "navigation_action": action,
+                        **(dimensions or {}),
+                    },
+                )
         except (OSError, ValueError):
             pass
 
     def _auto_check_updates(self) -> None:
-        if (
-            self._updates.busy
-            or self._runtime.busy
-            or self._runtime.active_job is not None
-        ):
-            QTimer.singleShot(10 * 60 * 1000, self._auto_check_updates)
+        if self._updates.busy:
+            QTimer.singleShot(30 * 1000, self._auto_check_updates)
             return
-        self.checkForUpdates()
+        self._updates.telemetry = self._analytics.telemetry
+        if self._updates.check(automatic=True):
+            self.updateChanged.emit()
         QTimer.singleShot(6 * 60 * 60 * 1000, self._auto_check_updates)
 
     @Slot()
+    def updateOfferShown(self) -> None:
+        if self._updates.available or self._updates.manual or self._updates.ready:
+            self._updates.observe("shown")
+
+    @Slot(bool)
+    def updateOfferClosed(self, explicitly_deferred: bool = False) -> None:
+        if self._updates.available or self._updates.manual or self._updates.ready:
+            self._updates.observe("deferred" if explicitly_deferred else "dismissed")
+
+    @Slot()
     def openDownloadPage(self) -> None:
-        QDesktopServices.openUrl(QUrl(RELEASES_PAGE))
+        opened = QDesktopServices.openUrl(QUrl(RELEASES_PAGE))
+        self._updates.observe("manual_opened" if opened else "manual_failed")
 
     @Slot()
     def installUpdate(self) -> None:
@@ -4753,6 +4791,7 @@ class Bridge(QObject):
         self._playback_status = "Ready"
         self._playback_recorded = False
         self._playback_phases = set()
+        self._playback_started_at = time.monotonic()
         self._playback_operation = bind_operation(
             self._analytics.telemetry,
             "playback_operation",
@@ -4994,8 +5033,14 @@ class Bridge(QObject):
 
     @Slot(float, float, str)
     @Slot(float, float, str, int)
+    @Slot(float, float, str, int, int)
     def observePlayback(
-        self, position: float, duration: float, status: str, generation: int = -1
+        self,
+        position: float,
+        duration: float,
+        status: str,
+        generation: int = -1,
+        native_error: int = 0,
     ) -> None:
         if generation >= 0 and generation != self._playback_generation:
             return
@@ -5020,7 +5065,17 @@ class Bridge(QObject):
             self._observe_playback_phase("started")
         elif status == "Failed":
             self._observe_playback_phase(
-                "failed", failure_detail=FailureDiagnostic(stage="playback")
+                "failed",
+                failure_detail=FailureDiagnostic(
+                    stage="playback",
+                    reason={
+                        1: "unknown",
+                        2: "unsupported_format",
+                        3: "network",
+                        4: "permission_denied",
+                    }.get(native_error, "unknown"),
+                ),
+                native_error=native_error,
             )
         elif status == "Ended" and "failed" not in self._playback_phases:
             self._observe_playback_phase("completed")
@@ -5041,7 +5096,11 @@ class Bridge(QObject):
         self._watch_queue.present(self, status)
 
     def _observe_playback_phase(
-        self, action: str, *, failure_detail: FailureDiagnostic | None = None
+        self,
+        action: str,
+        *,
+        failure_detail: FailureDiagnostic | None = None,
+        native_error: int = 0,
     ) -> None:
         if action in self._playback_phases:
             return
@@ -5051,6 +5110,24 @@ class Bridge(QObject):
             "playback_operation",
             action,
             self._playback_operation,
+            {
+                "playback_origin": "library"
+                if self._playback_origin_selection == "Library"
+                else "watch"
+                if self._playback_origin_selection == "Watch"
+                else "unknown",
+                "player_surface": "embedded",
+                "qt_media_error": {
+                    0: "none",
+                    1: "resource",
+                    2: "format",
+                    3: "network",
+                    4: "access_denied",
+                }.get(native_error, "unknown"),
+                "processing_bucket": time_bucket(
+                    max(0, time.monotonic() - self._playback_started_at)
+                ),
+            },
             failure_detail=failure_detail,
         )
 
