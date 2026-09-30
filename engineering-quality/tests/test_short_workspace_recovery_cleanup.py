@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +19,9 @@ def test_workspace_is_short_private_unique_and_receipted(monkeypatch, tmp_path):
     assert first.parent == tmp_path
     assert first != second
     assert first.name.startswith("vfq-")
-    assert first.stat().st_mode & 0o777 == 0o700
+    # Windows stat mode bits do not describe the inherited user-temp ACL.
+    if os.name != "nt":
+        assert first.stat().st_mode & 0o777 == 0o700
     assert len(str(first)) < len(str(report))
     assert json.loads((report / "workspace.json").read_text()) == {
         "run_id": "first",
