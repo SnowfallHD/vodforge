@@ -1348,6 +1348,84 @@ def _launch_and_attest(
     return process, stdout_handle, stderr_handle, launch, environment
 
 
+def _load_resumable_session(path: Path, args: argparse.Namespace) -> dict[str, Any]:
+    """Resume evidence, never adopt a live process or replace an earlier receipt."""
+    from .candidate_artifact import load_and_verify_candidate
+
+    path = path.resolve()
+    session = json.loads(path.read_text(encoding="utf-8"))
+    directory = path.parent
+    if args.output_dir is not None and args.output_dir.resolve() != directory:
+        raise ValueError("Resume output must be the original session directory")
+    if session.get("session_dir") != str(directory):
+        raise ValueError("Resume session directory does not match its receipt")
+    if (
+        session.get("e2e_profile") != args.profile
+        or session.get("telemetry_mode") != args.telemetry
+    ):
+        raise ValueError("Resume must retain the original journey and telemetry mode")
+    if session.get("current_launch") or session.get("driver_ready"):
+        raise ValueError("Resume requires a finalized session")
+    launches = session.get("launches") or []
+    if not launches or any(
+        item.get("verified") is not True
+        or item.get("returncode") != 0
+        or item.get("group_survivors_after_exit")
+        for item in launches
+    ):
+        raise ValueError("Resume requires verified clean exits for every prior launch")
+    paths = session["state_paths"]
+    root = Path(paths["isolation_root"])
+    if root.parent.name != ".runs" or paths != _isolated_state_paths(root):
+        raise ValueError("Resume requires the original isolated state layout")
+    binding = session.get("candidate_binding") or {}
+    if args.candidate is None or binding.get("verified") is not True:
+        raise ValueError("Resume requires a frozen verified candidate")
+    candidate = load_and_verify_candidate(args.candidate.resolve())
+    readback = candidate.get("readback_verification") or {}
+    if (
+        readback.get("verified") is not True
+        or candidate["candidate_id"] != binding.get("candidate_id")
+        or readback.get("archive_sha256") != binding.get("archive_sha256")
+        or readback.get("bundle_tree_sha256") != binding.get("bundle_tree_sha256")
+    ):
+        raise ValueError("Resume candidate differs from the original candidate")
+    artifact = Path(binding["artifact_path"])
+    if not artifact.resolve().is_relative_to(root.resolve() / "candidate-artifact"):
+        raise ValueError("Resume artifact escaped its isolation root")
+    if not _artifact_integrity_receipt(artifact, session["artifact_receipt"])[
+        "verified"
+    ]:
+        raise ValueError("Resume extracted artifact has changed")
+    trace = json.loads((directory / "driver-events.json").read_text(encoding="utf-8"))
+    validation = _validate_driver_trace(
+        trace,
+        profile=args.profile,
+        session_dir=directory,
+        session_nonce=session["session_nonce"],
+        launches=launches,
+    )
+    if not validation["structural_valid"]:
+        raise ValueError("Resume prior evidence has invalid provenance or screenshots")
+    # Preserve the failed/partial wrapper and its exact trace before appending.
+    archive = directory / f"continuation-{len(launches)}"
+    archive.mkdir(exist_ok=False)
+    for name in (
+        "session.json",
+        "e2e-result.json",
+        "driver-events.json",
+        "summary.md",
+        "app.stdout.log",
+        "app.stderr.log",
+    ):
+        source = directory / name
+        if source.is_file():
+            (archive / name).write_bytes(source.read_bytes())
+    session["continuation_receipt"] = str(archive / "e2e-result.json")
+    session["continuation_receipt_sha256"] = sha256_file(archive / "e2e-result.json")
+    return session
+
+
 def run_packaged_e2e_session(
     args: argparse.Namespace, *, repo_root: Path, harness_root: Path
 ) -> int:
@@ -1357,19 +1435,36 @@ def run_packaged_e2e_session(
             file=sys.stderr,
         )
         return 2
+    resumed: dict[str, Any] | None = None
+    resume_path = getattr(args, "resume", None)
+    if resume_path is not None:
+        resumed = _load_resumable_session(resume_path, args)
     timestamp = (
         time.strftime("%Y%m%dT%H%M%S", time.gmtime())
         + f"{time.time_ns() % 1_000_000_000:09d}Z"
     )
     session_dir = (
-        args.output_dir or (harness_root / "reports" / f"{timestamp}-packaged-e2e")
-    ).resolve()
+        Path(resumed["session_dir"])
+        if resumed
+        else (
+            args.output_dir or (harness_root / "reports" / f"{timestamp}-packaged-e2e")
+        ).resolve()
+    )
     session_dir.mkdir(parents=True, exist_ok=True)
-    workspace = harness_root / ".runs" / f"{timestamp}-packaged-e2e"
+    workspace = (
+        Path(resumed["state_paths"]["isolation_root"])
+        if resumed
+        else harness_root / ".runs" / f"{timestamp}-packaged-e2e"
+    )
     workspace.mkdir(parents=True, exist_ok=True)
     candidate_path: Path | None = None
     candidate_binding: dict[str, Any]
-    if args.candidate is not None:
+    if resumed:
+        candidate_path = args.candidate.resolve()
+        artifact = Path(resumed["candidate_binding"]["artifact_path"])
+        candidate_binding = resumed["candidate_binding"].copy()
+        artifact_policy = str(candidate_binding["artifact_policy"])
+    elif args.candidate is not None:
         from .candidate_artifact import materialize_candidate_for_e2e
 
         candidate_path = (
@@ -1422,10 +1517,15 @@ def run_packaged_e2e_session(
             "packaged E2E refused to launch because another VODForge process is "
             f"already running; no process was changed: {preexisting_processes}"
         )
-    fixture_manifest = generate_fixtures(fixtures, deep=False)
+    fixture_manifest = (
+        resumed["fixture_manifest"]
+        if resumed
+        else generate_fixtures(fixtures, deep=False)
+    )
     driver_events_path = session_dir / "driver-events.json"
     control_path = session_dir / "control.json"
-    json_dump(driver_events_path, {"events": [], "screenshots": [], "notes": []})
+    if not resumed:
+        json_dump(driver_events_path, {"events": [], "screenshots": [], "notes": []})
     json_dump(control_path, {"action": "running"})
     env = os.environ.copy()
     env.update(
@@ -1453,12 +1553,12 @@ def run_packaged_e2e_session(
     else:
         env["VODFORGE_DISABLE_TELEMETRY"] = "1"
         env.pop("VODFORGE_QA_PREVIEW_TELEMETRY", None)
-    session_nonce = secrets.token_hex(16)
+    session_nonce = resumed["session_nonce"] if resumed else secrets.token_hex(16)
     started_at = utc_now()
     started = time.monotonic()
     sampler = ResourceSampler(workspace).start()
-    launches: list[dict[str, Any]] = []
-    restart_baseline: dict[str, Any] | None = None
+    launches: list[dict[str, Any]] = list(resumed["launches"]) if resumed else []
+    restart_baseline = _persisted_state_snapshot(home) if resumed else None
     timed_out = False
     with (
         _OwnedLaunchRegistry(sampler) as owned_registry,
@@ -1525,6 +1625,16 @@ def run_packaged_e2e_session(
             "journey": journey,
         }
         session_path = session_dir / "session.json"
+        if resumed:
+            session["continuations"] = [
+                *resumed.get("continuations", []),
+                {
+                    "recorded_at": utc_now(),
+                    "prior_launch_count": len(launches),
+                    "prior_receipt": resumed["continuation_receipt"],
+                    "prior_receipt_sha256": resumed["continuation_receipt_sha256"],
+                },
+            ]
         _write_session(session_path, session)
         print(f"[e2e] session={session_path}", flush=True)
         print("[e2e] driver_ready=false; do not drive the app", flush=True)
@@ -1536,7 +1646,7 @@ def run_packaged_e2e_session(
                 receipt=receipt,
                 state_paths=state_paths,
                 session_nonce=session_nonce,
-                launch_sequence=1,
+                launch_sequence=len(launches) + 1,
                 stdout_path=session_dir / "app.stdout.log",
                 stderr_path=session_dir / "app.stderr.log",
             )

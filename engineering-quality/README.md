@@ -2790,3 +2790,22 @@ legitimate drive-folder label; the folder-only and section assertions remain.
 The invariant is that every retained UI adapter consumes the current projection
 contract without inventing removed sections. Source-native Tk, Qt and static
 checks have separate evidence; none replaces final packaged platform checks.
+
+### Continue an interrupted packaged journey
+
+`packaged-e2e --resume <session.json> --candidate <same frozen receipt>`
+continues a finalized incomplete journey in its existing isolated profile. It
+preserves the original wrapper, trace, logs and session in `continuation-N/`
+before adding newly attested launches. Candidate archive and extracted bundle
+must remain identical; prior launches must have clean exits, and prior trace
+order, screenshots and process provenance must be valid. Profile and telemetry
+mode cannot change. The result retains the explicit continuation boundary; a
+failed original wrapper is never relabeled as passed.
+
+The previous harness covered live restart control, but finalized immediately
+when an app exited without a pending relaunch. That missed an intentional pause
+for a separate updater journey. Continuation guards cover changed candidates,
+non-isolated paths, live sessions, failed exits, surviving processes, changed
+consent mode and invalid prior evidence. This is bounded evidence recovery,
+not permission to adopt unrelated apps or manufacture missing UI actions.
+Set the live control to `relaunch` before quitting for an ordinary restart.

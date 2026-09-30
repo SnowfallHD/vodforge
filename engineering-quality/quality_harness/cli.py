@@ -101,6 +101,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     e2e.add_argument("--telemetry", choices=("off", "preview"), default="off")
     e2e.add_argument("--output-dir", type=Path)
+    e2e.add_argument(
+        "--resume",
+        type=Path,
+        help="Continue a finalized incomplete session with its same frozen candidate and isolated profile",
+    )
     e2e.add_argument("--timeout", type=int, default=600)
     candidate = subparsers.add_parser(
         "candidate", help="Freeze and attest one immutable candidate ZIP"
