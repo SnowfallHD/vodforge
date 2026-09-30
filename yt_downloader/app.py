@@ -2269,6 +2269,21 @@ def legacy_shallow_video_output_dir(output_dir: Path, info: dict[str, Any]) -> P
     return output_dir / channel_folder_name(info) / "path-safe videos" / video_id
 
 
+class OutputPathBudgetError(ValueError):
+    """A new media path cannot fit beneath the selected output root."""
+
+    code = "output_path_too_long"
+    action = "choose_output_folder"
+    action_label = "Choose folder"
+    user_message = (
+        "We can’t save your downloads in this folder because its full name is too long. "
+        "Choose a different folder to continue."
+    )
+
+    def __init__(self) -> None:
+        super().__init__(self.user_message)
+
+
 def _allocate_video_output_target(
     output_dir: Path,
     info: dict[str, Any],
@@ -2290,12 +2305,11 @@ def _allocate_video_output_target(
         else max(1, 95 - len(full_suffix.encode("utf-16-le")) // 2),
         "file": 120,
     }
-    component_minimum = 8 if variant else 16
     minimums = {
-        "channel": component_minimum,
-        "playlist": component_minimum,
-        "title": min(4, limits["title"]),
-        "file": 3 if variant else 23,
+        "channel": 1,
+        "playlist": 1,
+        "title": 1,
+        "file": 1,
     }
     compact_variant = False
     while True:
@@ -2362,10 +2376,7 @@ def _allocate_video_output_target(
         elif variant and not compact_variant:
             compact_variant = True
         else:
-            raise ValueError(
-                "The selected output folder is too deep for a Windows-compatible media path. "
-                "Choose a shorter output folder and try again."
-            )
+            raise OutputPathBudgetError()
 
 
 def compact_video_output_dir(
@@ -2913,14 +2924,20 @@ def _find_staged_media_file(
     return max(candidates, key=lambda path: (path.stat().st_mtime, path.stat().st_size))
 
 
-def video_file_name(info: dict[str, Any], ext: str, *, max_title_len: int = 120) -> str:
+def video_file_name(
+    info: dict[str, Any],
+    ext: str,
+    *,
+    max_title_len: int = 120,
+    collision_suffix: str = "",
+) -> str:
     title = _windows_safe_component(
         info.get("title"),
         "video",
         max_len=max_title_len,
-        max_bytes=255 - len(ext.encode("utf-8")),
+        max_bytes=255 - len((collision_suffix + ext).encode("utf-8")),
     )
-    return f"{title}{ext}"
+    return f"{title}{collision_suffix}{ext}"
 
 
 def resolved_video_output_target(
@@ -2928,6 +2945,43 @@ def resolved_video_output_target(
 ) -> tuple[Path, str]:
     """Allocate one path budget while preserving the canonical hierarchy."""
     return _allocate_video_output_target(output_dir, info, ext)
+
+
+def _video_output_collision_target(
+    output_dir: Path, info: dict[str, Any], ext: str, collision_index: int
+) -> Path:
+    directory, filename = resolved_video_output_target(output_dir, info, ext)
+    if collision_index:
+        suffix = f" ({collision_index})"
+        # Preserve the already allocated video directory so later reuse still
+        # discovers collision outputs in the canonical namespace.
+        fixed_units = len(str(directory / (suffix + ext)).encode("utf-16-le")) // 2
+        title_budget = WINDOWS_SAFE_PATH_LIMIT - fixed_units
+        if title_budget < 1:
+            raise OutputPathBudgetError()
+        filename = video_file_name(
+            info, ext, max_title_len=min(120, title_budget), collision_suffix=suffix
+        )
+    candidate = directory / filename
+    if _path_would_exceed_windows_safe_limit(candidate):
+        raise OutputPathBudgetError()
+    return candidate
+
+
+def preflight_video_output_target(
+    output_dir: Path, info: dict[str, Any], ext: str
+) -> Path:
+    """Check a bounded new-output allocation without creating folders or files."""
+    for collision_index in range(10_000):
+        candidate = _video_output_collision_target(
+            output_dir, info, ext, collision_index
+        )
+        if not os.path.lexists(candidate):
+            return candidate
+    raise RuntimeError(
+        "VODForge could not allocate a distinct output filename after "
+        "10,000 existing conflicts."
+    )
 
 
 def collect_staged_media_files(
@@ -2982,20 +3036,11 @@ def package_downloaded_media_from_staging(
         ext = (
             expected_extension.lower() if expected_extension else staged.suffix.lower()
         )
-        target_dir, target_file_name = resolved_video_output_target(
-            output_dir, video, ext
-        )
-        target = target_dir / target_file_name
-        # Commit relative to a freshly verified directory handle so metadata-
-        # derived path components cannot follow a pre-existing symlink outside
-        # the selected destination. Existing output remains intact on failure.
+        # Commit relative to a freshly verified directory handle; allocation
+        # includes each collision suffix in the same complete-path budget.
         for collision_index in range(10_000):
-            candidate = (
-                target
-                if collision_index == 0
-                else target.with_name(
-                    f"{target.stem} ({collision_index}){target.suffix}"
-                )
+            candidate = _video_output_collision_target(
+                output_dir, video, ext, collision_index
             )
             try:
                 commit_file_beneath(
@@ -3014,7 +3059,7 @@ def package_downloaded_media_from_staging(
                 "VODForge could not allocate a distinct output filename after "
                 "10,000 existing conflicts."
             )
-        remember_video_output_dir(video, target_dir)
+        remember_video_output_dir(video, target.parent)
         packaged.append(target)
     return packaged
 
@@ -6777,6 +6822,15 @@ class DownloadWorkerCore:
                     output_dirs=tuple(all_output_dirs),
                     metadata=existing_reuse.metadata,
                 )
+            job.failure_stage = "validation"
+            extension = (
+                analyzed_item.plan.output_extension
+                if isinstance(analyzed_item.plan, AudioExportPlan)
+                else ".mp4"
+            )
+            preflight_video_output_target(
+                job.output_dir, analyzed_item.display_info, extension
+            )
             DownloadWorkerCore._observe_download_operation(
                 self, job, "stage", stage="staging", dimensions={"reuse_result": "miss"}
             )

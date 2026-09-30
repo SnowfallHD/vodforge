@@ -1971,7 +1971,9 @@ def test_deep_root_still_reuses_a_valid_v015_emergency_output_before_rejecting_n
     found = find_valid_existing_output(output_root, info, OutputType.MP4, "ffprobe")
 
     assert found == (legacy, probe)
-    with pytest.raises(ValueError, match="shorter output folder"):
+    with pytest.raises(
+        app_module.OutputPathBudgetError, match="Choose a different folder"
+    ):
         resolved_video_output_target(output_root, info, ".mp4")
 
 
