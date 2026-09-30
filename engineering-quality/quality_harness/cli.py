@@ -6,7 +6,6 @@ import json
 import os
 import shlex
 import sys
-import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +13,7 @@ from typing import Any
 
 from . import SCHEMA_VERSION
 from .report import comparison, markdown_report, summarize
+from .util import create_quality_workspace as _create_quality_workspace
 from .util import json_dump, machine_snapshot, utc_now
 
 
@@ -500,22 +500,6 @@ def run_release_receipt_gate(args: argparse.Namespace) -> int:
         flush=True,
     )
     return 0 if args.no_fail or receipt["release_eligible"] else 1
-
-
-def _create_quality_workspace(report_dir: Path, run_id: str) -> Path:
-    """Retain one private short workspace and an external receipt for later cleanup."""
-    workspace_parent = Path(
-        os.environ.get("VODFORGE_QUALITY_WORKSPACE_ROOT", tempfile.gettempdir())
-    )
-    if not workspace_parent.is_absolute():
-        raise ValueError("VODFORGE_QUALITY_WORKSPACE_ROOT must be absolute")
-    run_root = Path(tempfile.mkdtemp(prefix="vfq-", dir=workspace_parent)).resolve()
-    report_dir.mkdir(parents=True, exist_ok=True)
-    json_dump(
-        report_dir / "workspace.json",
-        {"run_id": run_id, "run_root": str(run_root), "retained_for_evidence": True},
-    )
-    return run_root
 
 
 def run_profile(

@@ -3016,3 +3016,22 @@ It does not accept a merely configured animation or suppress a frozen phase.
 All sixteen state/size combinations passed the isolated correction probe; retained
 CI failures establish the missed scheduling boundary. Native visible motion and
 exact signed package acceptance remain independent of these source assertions.
+
+### Short QA roots with preserved orphan acceptance — 2026-09-30
+
+Named worktree evidence paths left too little room for the intentional portable
+240-character output budget. A shared private temporary workspace owner now
+serves source profiles and fresh packaged journeys, with workspace.json in the
+external report mapping retained evidence. Production allocation and selected
+roots are unchanged. Final qualification uses VODFORGE_QUALITY_WORKSPACE_ROOT=/tmp
+and VODFORGE_SITE_REPO=/Users/coop/Dev/vodforge-site to select existing local resources;
+it neither copies credentials nor installs site dependencies.
+
+Integration retains the original orphan-launch recovery requirement. The added
+direct-child cleanup tests are supplemental and do not replace it. Initial orphan
+identity inspection is inside the error/cleanup guard; unreadable or changed
+identity refuses signaling and produces explicit failed evidence. The receipt
+separates production reaping from fixture cleanup, records the launched PID even
+on inspection failure, and never lets cleanup count as successful recovery.
+Permission-denial, successful production reaping, and cleanup-only negative controls
+cover the missed boundary. No production process ownership policy is changed.

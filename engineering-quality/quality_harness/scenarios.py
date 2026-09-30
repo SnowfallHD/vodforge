@@ -833,6 +833,84 @@ def _recover_with_owned_child(
     return recovered, error, recovery_reaped_child, trace
 
 
+def _recover_with_orphan_child(
+    store: Any, child_command: list[str], stage: Path, partial: Path
+) -> tuple[list[Any], str | None, bool, list[dict[str, Any]]]:
+    """Keep the original orphan contract; unreadable identity remains blocked."""
+    from yt_downloader.process_lifecycle import process_command, terminate_pid
+    from yt_downloader.run_state import recover_interrupted_run
+
+    launcher = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess,sys; "
+                "p=subprocess.Popen(sys.argv[1:], start_new_session=True, "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, "
+                "stderr=subprocess.DEVNULL); print(p.pid)"
+            ),
+            *child_command,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    pid = int(launcher.stdout.strip())
+    trace: list[dict[str, Any]] = [
+        {"phase": "orphan_launched", "child_pid": pid, "child_argv": child_command}
+    ]
+    recovered: list[Any] = []
+    error = None
+    recovery_reaped_child = False
+    fixture_reaped_child = False
+    try:
+        store.child_started(pid, child_command)
+        trace.append(
+            {
+                "phase": "active_before_restart_recovery",
+                "stage_exists": stage.is_dir(),
+                "partial_size": partial.stat().st_size,
+                "child_pid": pid,
+                "child_command": process_command(pid),
+                "run_state": store.load(),
+            }
+        )
+        recovered = recover_interrupted_run(store)
+        recovery_reaped_child = process_command(pid) is None
+    except Exception as exc:  # noqa: BLE001 - retain actual blocked recovery
+        error = f"{type(exc).__name__}: {exc}"
+    finally:
+        try:
+            command = process_command(pid)
+            if command is not None:
+                if command != " ".join(child_command):
+                    raise RuntimeError(
+                        "Orphan fixture identity changed; cleanup refused"
+                    )
+                terminate_pid(pid)
+            fixture_reaped_child = process_command(pid) is None
+        except Exception as exc:  # noqa: BLE001 - unreadable is never permission to signal
+            cleanup_error = (
+                f"Guarded orphan cleanup blocked: {type(exc).__name__}: {exc}"
+            )
+            error = f"{error}; {cleanup_error}" if error else cleanup_error
+    trace.append(
+        {
+            "phase": "after_restart_recovery",
+            "stage_exists": stage.exists(),
+            "staging_root_exists": stage.parent.exists(),
+            "run_state": store.load(),
+            "child_pid": pid,
+            "recovery_error": error,
+            "recovery_reaped_child": recovery_reaped_child,
+            "owned_fixture_child_reaped": fixture_reaped_child,
+            "child_ownership": "orphan_launcher",
+        }
+    )
+    return recovered, error, recovery_reaped_child, trace
+
+
 def lifecycle_quit_restart_recovery(
     runner: HeadlessPipelineRunner,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -899,7 +977,7 @@ def lifecycle_quit_restart_recovery(
         if tail.is_file()
         else [sys.executable, "-c", "import time; time.sleep(120)", str(partial)]
     )
-    recovered, recovery_error, child_reaped, trace = _recover_with_owned_child(
+    recovered, recovery_error, child_reaped, trace = _recover_with_orphan_child(
         store, child_command, stage, partial
     )
     if recovery_error is not None:
@@ -920,7 +998,7 @@ def lifecycle_quit_restart_recovery(
             "error": recovery_error,
             "evidence": [
                 (
-                    "Production recovery was blocked; direct owned-child fixture cleanup "
+                    "Required orphan recovery was blocked; guarded fixture cleanup "
                     "does not establish recovery success."
                 ),
                 recovery_error,
@@ -1136,8 +1214,8 @@ def lifecycle_quit_restart_recovery(
             "jobs_cancelled": 0,
             "settings_persisted": settings_preserved,
             "settings_private": settings_private,
-            "recovery_child_reaped": child_reaped,
-            "child_ownership": "direct_popen_handle",
+            "orphan_child_reaped": child_reaped,
+            "child_ownership": "orphan_launcher",
             "recorded_stage_cleaned": stage_cleaned,
             "failed_state_durable_until_removal": failed_preserved,
             "queued_runs_preserved_in_order": queue_preserved,

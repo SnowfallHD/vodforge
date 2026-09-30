@@ -8,12 +8,29 @@ import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+def create_quality_workspace(report_dir: Path, run_id: str) -> Path:
+    """Retain one private short workspace and an external receipt for later cleanup."""
+    workspace_parent = Path(
+        os.environ.get("VODFORGE_QUALITY_WORKSPACE_ROOT", tempfile.gettempdir())
+    )
+    if not workspace_parent.is_absolute():
+        raise ValueError("VODFORGE_QUALITY_WORKSPACE_ROOT must be absolute")
+    run_root = Path(tempfile.mkdtemp(prefix="vfq-", dir=workspace_parent)).resolve()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    json_dump(
+        report_dir / "workspace.json",
+        {"run_id": run_id, "run_root": str(run_root), "retained_for_evidence": True},
+    )
+    return run_root
 
 
 def utc_now() -> str:

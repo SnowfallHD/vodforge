@@ -42,7 +42,7 @@ from .fixtures import (
     generate_fixtures,
 )
 from .metrics import ResourceSampler
-from .util import json_dump, run_command, sha256_file, utc_now
+from .util import create_quality_workspace, json_dump, run_command, sha256_file, utc_now
 
 EXPECTED_BUNDLE_IDENTIFIER = "com.snowfallhd.vodforge"
 EXPECTED_TEAM_IDENTIFIER = "76G5W4954G"
@@ -1463,7 +1463,7 @@ def run_packaged_e2e_session(
     workspace = (
         Path(resumed["state_paths"]["isolation_root"])
         if resumed
-        else harness_root / ".runs" / f"{timestamp}-packaged-e2e"
+        else create_quality_workspace(session_dir, f"{timestamp}-packaged-e2e")
     )
     workspace.mkdir(parents=True, exist_ok=True)
     candidate_path: Path | None = None

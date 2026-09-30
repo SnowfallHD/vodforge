@@ -6,12 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from quality_harness import cli, scenarios
+from quality_harness import cli, scenarios, util
 
 
 def test_workspace_is_short_private_unique_and_receipted(monkeypatch, tmp_path):
     monkeypatch.delenv("VODFORGE_QUALITY_WORKSPACE_ROOT", raising=False)
-    monkeypatch.setattr(cli.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(util.tempfile, "gettempdir", lambda: str(tmp_path))
     report = tmp_path / ("named-worktree-" * 8) / "report"
     first = cli._create_quality_workspace(report, "first")
     second = cli._create_quality_workspace(report / "second", "second")
@@ -174,7 +174,7 @@ def test_blocked_recovery_returns_explicit_failed_receipt(monkeypatch, tmp_path)
     ]
     monkeypatch.setattr(
         scenarios,
-        "_recover_with_owned_child",
+        "_recover_with_orphan_child",
         lambda *_args: ([], "ProcessOwnershipError: denied", False, trace),
     )
     result, findings = scenarios.lifecycle_quit_restart_recovery(
@@ -205,3 +205,87 @@ def test_default_workspace_fits_previously_failed_fixture_paths(monkeypatch, tmp
     directory, filename = app.resolved_video_output_target(output, metadata, ".mp4")
     assert len(str(directory / filename).encode("utf-16-le")) // 2 <= 240
     assert not output.exists()
+
+
+def setup_orphan(monkeypatch, tmp_path):
+    from yt_downloader import process_lifecycle, run_state
+
+    monkeypatch.setattr(
+        scenarios.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout="12345\n"),
+    )
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    partial = stage / "part"
+    partial.write_bytes(b"partial")
+    store = SimpleNamespace(child_started=lambda *_args: None, load=dict)
+    return store, stage, partial, process_lifecycle, run_state
+
+
+def test_orphan_identity_denial_remains_blocked_without_signal(monkeypatch, tmp_path):
+    store, stage, partial, lifecycle, state = setup_orphan(monkeypatch, tmp_path)
+
+    def denied(_pid):
+        raise lifecycle.ProcessOwnershipError("identity denied")
+
+    monkeypatch.setattr(lifecycle, "process_command", denied)
+    monkeypatch.setattr(
+        lifecycle,
+        "terminate_pid",
+        lambda *_args: pytest.fail("unreadable PID signaled"),
+    )
+    monkeypatch.setattr(
+        state, "recover_interrupted_run", lambda *_args: pytest.fail("recovery reached")
+    )
+    recovered, error, reaped, trace = scenarios._recover_with_orphan_child(
+        store, ["fixture"], stage, partial
+    )
+    assert recovered == [] and not reaped
+    assert "identity denied" in error and "cleanup blocked" in error
+    assert trace[0]["child_pid"] == 12345
+    assert trace[-1]["child_ownership"] == "orphan_launcher"
+    assert not trace[-1]["owned_fixture_child_reaped"]
+
+
+def test_orphan_production_recovery_must_reap_before_cleanup(monkeypatch, tmp_path):
+    store, stage, partial, lifecycle, state = setup_orphan(monkeypatch, tmp_path)
+    commands = iter(["fixture", None, None, None])
+    monkeypatch.setattr(lifecycle, "process_command", lambda _pid: next(commands))
+    monkeypatch.setattr(
+        lifecycle, "terminate_pid", lambda *_args: pytest.fail("unexpected cleanup")
+    )
+    monkeypatch.setattr(state, "recover_interrupted_run", lambda *_args: ["recovered"])
+    recovered, error, reaped, trace = scenarios._recover_with_orphan_child(
+        store, ["fixture"], stage, partial
+    )
+    assert recovered == ["recovered"] and error is None and reaped
+    assert trace[-1]["recovery_reaped_child"]
+    assert trace[-1]["child_ownership"] == "orphan_launcher"
+
+
+def test_orphan_fixture_cleanup_cannot_turn_failed_recovery_into_pass(
+    monkeypatch, tmp_path
+):
+    store, stage, partial, lifecycle, state = setup_orphan(monkeypatch, tmp_path)
+    alive = True
+
+    def terminate(_pid):
+        nonlocal alive
+        alive = False
+        return True
+
+    def failed(_store):
+        raise RuntimeError("recovery failed")
+
+    monkeypatch.setattr(
+        lifecycle, "process_command", lambda _pid: "fixture" if alive else None
+    )
+    monkeypatch.setattr(lifecycle, "terminate_pid", terminate)
+    monkeypatch.setattr(state, "recover_interrupted_run", failed)
+    _, error, reaped, trace = scenarios._recover_with_orphan_child(
+        store, ["fixture"], stage, partial
+    )
+    assert error == "RuntimeError: recovery failed" and not reaped
+    assert trace[-1]["owned_fixture_child_reaped"]
+    assert not trace[-1]["recovery_reaped_child"]
