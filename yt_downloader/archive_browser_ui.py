@@ -388,17 +388,7 @@ class ArchiveBrowser(ArchiveArtworkMixin, ttk.Frame):
             and self.model.path is None
             and self.model.page == 0
         )
-        folder_count = len(components)
-        media_columns = (
-            max(1, min(5, (width + 16) // 214))
-            if overview
-            else max(1, min(4, (width + 16) // 250))
-        )
-        highlights = (
-            self.model.saved_media[: min(media_columns, PAGE_SIZE - folder_count)]
-            if overview
-            else ()
-        )
+        media_columns = max(1, min(4, (width + 16) // 250))
         selected = self.model.selected_index()
         columns = (
             max(1, min(4, (width + 16) // 250, len(components) or 1))
@@ -417,9 +407,7 @@ class ArchiveBrowser(ArchiveArtworkMixin, ttk.Frame):
             if any(item.kind != "folder" for item in components)
             else folder_height
         )
-        primary_height = height
         self._columns = columns
-        components = (*components, *highlights)
         signature = (
             self._artwork_revision,
             width,
@@ -463,8 +451,6 @@ class ArchiveBrowser(ArchiveArtworkMixin, ttk.Frame):
                 ).measure,
             )
 
-        overview_rows = (folder_count + columns - 1) // columns
-        saved_heading = 40 + overview_rows * (folder_height + gap) + 22
         if overview and components:
             self.canvas.create_text(
                 0,
@@ -474,25 +460,10 @@ class ArchiveBrowser(ArchiveArtworkMixin, ttk.Frame):
                 font=(FONT_UI[0], 16, "bold"),
                 fill=THEME["text"],
             )
-            if highlights:
-                self.canvas.create_text(
-                    0,
-                    saved_heading,
-                    text="Saved videos",
-                    anchor="nw",
-                    font=(FONT_UI[0], 16, "bold"),
-                    fill=THEME["text"],
-                )
         for index, component in enumerate(components):
-            is_highlight = overview and index >= folder_count
-            item_columns = media_columns if is_highlight else columns
-            card_width = (width - gap * (item_columns - 1) - 4) // item_columns
-            height = media_height if is_highlight else primary_height
-            position = index - folder_count if is_highlight else index
-            x = position % item_columns * (card_width + gap)
-            y = (
-                saved_heading + 40 if is_highlight else 40 if overview else 0
-            ) + position // item_columns * (height + gap)
+            card_width = (width - gap * (columns - 1) - 4) // columns
+            x = index % columns * (card_width + gap)
+            y = (40 if overview else 0) + index // columns * (height + gap)
             bounds = (x + 1, y + 1, x + card_width, y + height)
             self._boxes.append((bounds, component))
             active = (
@@ -625,7 +596,7 @@ class ArchiveBrowser(ArchiveArtworkMixin, ttk.Frame):
                 )
                 media_badge(
                     self.canvas,
-                    duration if is_highlight else f"#{ordinal} · {duration}",
+                    f"#{ordinal} · {duration}",
                     right=x + card_width - 14,
                     bottom=y + cover_height - 2,
                     maximum_width=cover_width - 16,

@@ -2715,3 +2715,27 @@ run fields; they were corrected to the existing authenticated ingestion route,
 which remains enforced. Native dumps/replay and deterministic private-source
 reproduction remain outside this change; rendered/source/D1 evidence does not
 qualify a new installed or public-release artifact.
+
+### Release type-contract and retired folder-highlight learning — 2026-09-30
+
+The required FAST/NORMAL type checks found 31 errors in eight recently changed
+Library, Qt and telemetry modules. Most were local variable reuse or untyped
+optional observation handles. Fixes keep optional owners explicit, preserve
+concrete saved manual settings, and enumerate the existing boolean recovery
+settings when replacing a download job. No type-check exclusions were added.
+
+One error exposed an actual retained Tk renderer/model mismatch: the renderer
+still requested the removed `saved_media` property to add recent-export
+highlights at the folder root. My Files now uses only the existing location
+projection there. Existing model and Qt scene tests did not invoke the retained
+Tk root renderer. `test_archive_root_renders_locations_without_stale_media_highlights`
+uses the real native renderer with separate local and drive locations, directly
+calls the render method so callback exceptions cannot be hidden, and verifies
+folder-only cards and the absence of a Saved videos section. The prior renderer
+raises AttributeError in that test; the corrected renderer passes. A preliminary
+assertion excluding the word forest was corrected because forest is also the
+legitimate drive-folder label; the folder-only and section assertions remain.
+
+The invariant is that every retained UI adapter consumes the current projection
+contract without inventing removed sections. Source-native Tk, Qt and static
+checks have separate evidence; none replaces final packaged platform checks.

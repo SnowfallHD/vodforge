@@ -25,7 +25,7 @@ class PlaybackProgressBinding:
         *,
         snapshot: PlaybackSnapshot,
         seek: Callable[[float], PlaybackSnapshot],
-        observe: Callable[..., None] | None = None,
+        observe: Callable[..., object] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._owner, self._record = owner, dict(record)

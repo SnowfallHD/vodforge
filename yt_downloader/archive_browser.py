@@ -430,7 +430,7 @@ class ArchiveBrowserModel:
                     if item.path is not None
                 }
                 physical = []
-                unavailable = []
+                unavailable: list[int] = []
                 for item in ordered:
                     if item.kind == "folder":
                         if item.path is not None and item.path.key in present:
@@ -483,6 +483,7 @@ class ArchiveBrowserModel:
                 # Once there, include real sidecars and child folders as well.
                 in_media_folder = any(
                     (directory := self._directories.get(index)) is not None
+                    and self.path is not None
                     and self.path.relative_to(
                         _media_folder(self.records[index], directory)
                     )

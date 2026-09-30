@@ -1038,7 +1038,7 @@ def validate_operation_fields(
             "watch": {"opened", "channel_opened"},
             "library": {"opened", "selected"},
         }
-        if intent not in choices.get(owner, set()):
+        if owner is None or intent not in choices.get(owner, set()):
             raise ValueError("invalid navigation intent")
     if feature == "run_control_operation":
         if not {

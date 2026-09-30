@@ -438,8 +438,10 @@ def validate_failure_detail(value: dict) -> FailureDiagnostic:
         ("os_error", 0, 65535),
         ("tool_exit_code", -(2**31), 2**32 - 1),
     ):
-        item = value.get(key)
-        if item is not None and (type(item) is not int or not low <= item <= high):
+        numeric_value = value.get(key)
+        if numeric_value is not None and (
+            type(numeric_value) is not int or not low <= numeric_value <= high
+        ):
             raise ValueError("unsupported failure code")
     return FailureDiagnostic(**value)
 

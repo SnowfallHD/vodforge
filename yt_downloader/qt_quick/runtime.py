@@ -340,9 +340,8 @@ class DownloadRuntime:
             preview.pop(key, None)
         # Only a retry admitted from Library Issues stays in that list while it
         # is queued or running. Ordinary Forge downloads never acquire this flag.
-        if getattr(current_job, "preview_info", None) and current_job.preview_info.get(
-            "vodforge_issue_retry"
-        ):
+        current_preview = current_job.preview_info if current_job is not None else None
+        if current_preview and current_preview.get("vodforge_issue_retry"):
             preview["vodforge_issue_retry"] = True
         retry = replace(
             settings_job,

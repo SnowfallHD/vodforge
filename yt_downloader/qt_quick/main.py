@@ -170,7 +170,7 @@ from yt_downloader.playback_backend import PlaybackSnapshot, PlaybackStatus
 from yt_downloader.playback_progress import PlaybackProgressOwner
 from yt_downloader.playback_progress_binding import PlaybackProgressBinding
 from yt_downloader.player_related import player_related_plan
-from yt_downloader.product_telemetry import product_output_kind
+from yt_downloader.product_telemetry import BoundProductOperation, product_output_kind
 from yt_downloader.qt_quick.analytics import QtAnalyticsSession
 from yt_downloader.qt_quick.artwork import QtArtwork
 from yt_downloader.qt_quick.library_files import QtLibraryFiles
@@ -536,7 +536,7 @@ class Bridge(QObject):
         self._playback_duration = 0.0
         self._playback_status: PlaybackStatus = "Ready"
         self._playback_recorded = False
-        self._playback_operation = None
+        self._playback_operation: BoundProductOperation | None = None
         self._playback_phases: set[str] = set()
         self._playback_started_at = time.monotonic()
         self._playback_output_type = ""
@@ -2066,7 +2066,7 @@ class Bridge(QObject):
             and self._folder_browser.path is not None
             and not self._folder_inspector_owner
         ):
-            path = self._folder_browser.path
+            folder_path = self._folder_browser.path
             unavailable = (
                 self._folder_browser.unavailable_indices
                 if not self._folder_listing_pending and not self._folder_listing_error
@@ -2074,8 +2074,8 @@ class Bridge(QObject):
             )
             return {
                 "folder": True,
-                "title": path.name,
-                "location": str(path),
+                "title": folder_path.name,
+                "location": str(folder_path),
                 "count": len(self._folder_browser.components),
                 "unavailableCount": len(unavailable),
                 "unavailableItems": [
@@ -3545,8 +3545,15 @@ class Bridge(QObject):
                     output_dir=output_dir,
                     export_mode=ExportMode(str(config["export_mode"])),
                     quality_label=str(config["quality"]),
-                    manual_settings=manual,
-                    **flags,
+                    manual_settings=manual
+                    if manual is not None
+                    else job.manual_settings,
+                    single_video_only=flags["single_video_only"],
+                    use_nvenc=flags["use_nvenc"],
+                    embed_thumbnail=flags["embed_thumbnail"],
+                    write_thumbnail=flags["write_thumbnail"],
+                    embed_metadata=flags["embed_metadata"],
+                    write_info_json=flags["write_info_json"],
                 )
             else:
                 prepared = self._runtime.prepare_job(
@@ -5546,16 +5553,16 @@ class Bridge(QObject):
             except (InstallationIdentityError, OSError, ValueError):
                 pass
         if self._metadata.poll():
-            record = self._metadata_preview_record
+            metadata_record = self._metadata_preview_record
             pending_run_id = self._metadata_pending_run_id
-            current = record.get("runId") == pending_run_id
+            is_current_preview = metadata_record.get("runId") == pending_run_id
             self._metadata_pending_run_id = ""
             info = self._metadata.info
             if info is not None:
                 items = [dict(item) for item in iter_video_infos(info)]
                 if items:
                     self._library_projection.record_preview(pending_run_id, items)
-                    if current:
+                    if is_current_preview:
                         projected = self._projected_library()
                         self._metadata_preview_info = next(
                             (
@@ -5565,20 +5572,20 @@ class Bridge(QObject):
                             ),
                             None,
                         )
-                if current:
-                    record["phase"] = (
+                if is_current_preview:
+                    metadata_record["phase"] = (
                         "complete" if self._metadata_preview_info else "failed"
                     )
-                    record["status"] = (
+                    metadata_record["status"] = (
                         "Preview complete — no media downloaded"
                         if self._metadata_preview_info
                         else "No usable media in this preview"
                     )
-            elif current:
-                record["phase"] = "failed"
-                record["status"] = self._metadata.message
-            if current:
-                self._set_status(str(record["status"]))
+            elif is_current_preview:
+                metadata_record["phase"] = "failed"
+                metadata_record["status"] = self._metadata.message
+            if is_current_preview:
+                self._set_status(str(metadata_record["status"]))
                 self.forgePreviewChanged.emit()
             self.runDeckChanged.emit()
             self.historyChanged.emit()
@@ -5792,11 +5799,13 @@ class Bridge(QObject):
                     if next_phase != self._issue_live_phase:
                         self._issue_live_phase = next_phase
                         self.historyChanged.emit()
-                phase = library_phase_from_status(self._status)
+                library_phase = library_phase_from_status(self._status)
                 if (
                     active is not None
-                    and phase is not None
-                    and self._library_projection.observe_phase(active.run_id, phase)
+                    and library_phase is not None
+                    and self._library_projection.observe_phase(
+                        active.run_id, library_phase
+                    )
                 ):
                     self.historyChanged.emit()
             elif kind == "log":

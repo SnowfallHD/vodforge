@@ -78,7 +78,7 @@ def collection_picker(
                 continue
             result.append(
                 {
-                    "title": group.name if kind == "channel" else group.title,
+                    "title": _group_title(group),
                     "kind": kind,
                     "owners": owners,
                     "count": len(owners),

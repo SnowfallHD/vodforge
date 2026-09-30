@@ -14,6 +14,7 @@ from yt_downloader.archive_observations import bind_operation, operation
 from yt_downloader.failure_diagnostics import capture_failure
 from yt_downloader.history import application_data_dir
 from yt_downloader.platform_services import is_macos, is_windows
+from yt_downloader.product_telemetry import BoundProductOperation, ProductTelemetryOwner
 from yt_downloader.telemetry_features import time_bucket
 from yt_downloader.updates import (
     MacUpdatePlan,
@@ -36,8 +37,8 @@ class QtUpdateSession:
     """Only thread handoff and current UI intent; updates.py retains authority."""
 
     def __init__(self, current_version: str) -> None:
-        self.telemetry = None
-        self._operation = None
+        self.telemetry: ProductTelemetryOwner | None = None
+        self._operation: BoundProductOperation | None = None
         self._attempt = str(uuid.uuid4())
         self._trigger = "manual"
         self._shown = False

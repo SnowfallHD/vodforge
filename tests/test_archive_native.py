@@ -935,3 +935,26 @@ def legacy_folder_workspace_for_existing_contracts(application):
     """These contracts target the retained folder workspace, not the default scenes."""
     application._library_scene_action("folders", None)
     application.update()
+
+
+def test_archive_root_renders_locations_without_stale_media_highlights(application):
+    app = application
+    rows = [
+        saved("/Users/fictional/Documents/nature/clip.mp4", video="lake"),
+        saved("E:/Nature/forest/clip.mp4", video="forest"),
+    ]
+    browser = app.video_tree
+    browser.set_records(rows, (0, 1))
+    browser.navigate(None, mode="folders")
+    assert browser.model.path is None
+    # Call directly: an exception in a delayed Tk callback must fail this test.
+    browser._render()
+    assert len(browser._boxes) == 2
+    assert all(component.kind == "folder" for _, component in browser._boxes)
+    texts = [
+        browser.canvas.itemcget(item, "text")
+        for item in browser.canvas.find_all()
+        if browser.canvas.type(item) == "text"
+    ]
+    assert "Saved videos" not in texts
+    assert all(component.title in texts for component in browser.model.components)
