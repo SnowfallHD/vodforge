@@ -7,10 +7,9 @@ import time
 from threading import Event
 
 import pytest
-from PySide6.QtGui import QGuiApplication
 
 from tests.test_presentation_diagnostics import real_owner
-from tests.test_qt_scene_port import saved
+from tests.test_qt_scene_port import qt_app, saved
 from yt_downloader.analytics_consent import AnalyticsConsentOwner
 from yt_downloader.app import ProviderNetworkCoordinator
 from yt_downloader.product_telemetry import _load_outbox
@@ -27,7 +26,7 @@ def bridge_fixture(tmp_path, monkeypatch, *, permitted=True):
     monkeypatch.setenv("LOCALAPPDATA", str(app_dir))
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
-    QGuiApplication.instance() or QGuiApplication([])
+    qt_app()
     bridge = qt_main.Bridge(None)
     telemetry = real_owner(tmp_path / "telemetry", permitted=permitted)
     bridge._analytics.telemetry = telemetry
