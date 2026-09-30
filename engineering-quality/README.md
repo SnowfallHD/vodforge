@@ -3017,6 +3017,17 @@ All sixteen state/size combinations passed the isolated correction probe; retain
 CI failures establish the missed scheduling boundary. Native visible motion and
 exact signed package acceptance remain independent of these source assertions.
 
+### Windows isolated updater launch identity — 2026-09-30
+
+QA startup attestations are exclusive files. An updater helper that inherits the
+previous launch nonce can collide with the preserved proof when starting the
+replacement app. The validated isolated QA feed now opts the Windows helper into
+fresh nonce, window-token and launch-ID generation, matching the Mac QA helper.
+Ordinary updates retain their environment and all installer signature, version,
+data-preservation and handoff guards. Never delete an earlier attestation to make
+a relaunch pass. The helper runtime regression checks fresh consistent identity
+and unchanged old proof; final native QA must still observe the new PID and window.
+
 ### Short QA roots with preserved orphan acceptance — 2026-09-30
 
 Named worktree evidence paths left too little room for the intentional portable

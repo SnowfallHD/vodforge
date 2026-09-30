@@ -28,6 +28,7 @@ from yt_downloader.updates import windows_update_script
         "repair_success",
         "repair_download_failure",
         "data_changed",
+        "qa_relaunch_success",
     ],
 )
 def test_windows_helper_runtime(tmp_path, outcome):
@@ -48,6 +49,7 @@ def test_windows_helper_runtime(tmp_path, outcome):
         receipt,
         tmp_path / "ready",
         data_dir=tmp_path / "saved-data",
+        qa_relaunch=outcome == "qa_relaunch_success",
     )
     # Suppress only presentation; execute the production failure and receipt flow.
     script = script.replace(
@@ -100,6 +102,26 @@ function Start-Process {
             "$p=New-Object PSObject -Property",
             "Set-Content -LiteralPath (Join-Path $dataRoot 'download-history.json') -Value 'damaged'; $p=New-Object PSObject -Property",
         )
+    if outcome == "qa_relaunch_success":
+        old_attestation = tmp_path / ("vodforge-e2e-attestation-" + "a" * 32 + ".json")
+        old_attestation.write_bytes(b"preserved original launch proof")
+        identity_path = tmp_path / "qa-relaunch-identity.json"
+        identity_literal = "'" + str(identity_path).replace("'", "''") + "'"
+        prefix = (
+            "$env:VODFORGE_QUALITY_E2E_SESSION_NONCE = '" + "a" * 32 + "'\n"
+            "$env:VODFORGE_QUALITY_E2E_LAUNCH_ID = '" + "b" * 32 + "'\n"
+            "$env:VODFORGE_QUALITY_E2E_WINDOW_TOKEN = 'VFQ-aaaaaaaaaaaa-L1'\n"
+            + prefix.replace(
+                " return $p\n}",
+                " if ($FilePath -notlike '*Setup*') { "
+                "@{nonce=$env:VODFORGE_QUALITY_E2E_SESSION_NONCE;"
+                "launch_id=$env:VODFORGE_QUALITY_E2E_LAUNCH_ID;"
+                "token=$env:VODFORGE_QUALITY_E2E_WINDOW_TOKEN} | "
+                "ConvertTo-Json | Set-Content -LiteralPath "
+                + identity_literal
+                + " }; return $p\n}",
+            )
+        )
     path = tmp_path / "helper-test.ps1"
     path.write_text(prefix + script)
     result = subprocess.run(
@@ -123,7 +145,7 @@ function Start-Process {
     import json
 
     evidence = json.loads(receipt.read_text(encoding="utf-8-sig"))
-    success = outcome in {"success", "repair_success"}
+    success = outcome in {"success", "repair_success", "qa_relaunch_success"}
     assert (result.returncode == 0) == success, (result.stderr, evidence)
     assert evidence["status"] == ("relaunched" if success else "failed")
     assert media.read_bytes() == b"existing media"
@@ -137,9 +159,36 @@ function Start-Process {
         assert saved.read_text() == '{"library": ["preserve me"]}'
     if success:
         assert evidence["data_preserved_before_relaunch"] is True
+    if outcome == "qa_relaunch_success":
+        import re
+
+        identity = json.loads(identity_path.read_text(encoding="utf-8-sig"))
+        assert re.fullmatch(r"[0-9a-f]{32}", identity["nonce"])
+        assert re.fullmatch(r"[0-9a-f]{32}", identity["launch_id"])
+        assert identity["nonce"] != "a" * 32
+        assert identity["launch_id"] != "b" * 32
+        assert identity["token"] == f"VFQ-{identity['nonce'][:12]}-L1"
+        assert old_attestation.read_bytes() == b"preserved original launch proof"
     if not success:
         assert evidence["error"]
         assert "pid" not in evidence
+
+
+def test_windows_qa_relaunch_rotates_only_opted_in_identity(tmp_path):
+    args = (
+        tmp_path / "VODForge-Windows-Setup-v1.2.3.exe",
+        tmp_path / "VODForge.exe",
+        123,
+        tmp_path / "receipt.json",
+        tmp_path / "ready",
+    )
+    ordinary = windows_update_script(*args)
+    assert "VODFORGE_QUALITY_E2E_SESSION_NONCE" not in ordinary
+    qa = windows_update_script(*args, qa_relaunch=True)
+    rotation = qa.index("$env:VODFORGE_QUALITY_E2E_SESSION_NONCE")
+    assert qa.index("$result.data_preserved_before_relaunch") < rotation
+    assert rotation < qa.index("$app = Start-Process")
+    assert "Remove-Item" not in qa[rotation : qa.index("$app = Start-Process")]
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="requires macOS file tools")

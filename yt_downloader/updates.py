@@ -748,8 +748,20 @@ def windows_update_script(
     repair: bool = False,
     telemetry_permitted: bool = False,
     window_bounds: tuple[int, int, int, int] | None = None,
+    qa_relaunch: bool = False,
 ) -> str:
     """Detached handoff: wait for graceful exit, install, then explicitly relaunch."""
+
+    # Exclusive QA startup attestations must remain intact across replacement.
+    # The validated isolated QA feed opts in; ordinary updates retain their env.
+    qa_identity = (
+        "$newNonce = [guid]::NewGuid().ToString('N')\n"
+        "            $env:VODFORGE_QUALITY_E2E_SESSION_NONCE = $newNonce\n"
+        "            $env:VODFORGE_QUALITY_E2E_WINDOW_TOKEN = 'VFQ-' + $newNonce.Substring(0, 12) + '-L1'\n"
+        "            $env:VODFORGE_QUALITY_E2E_LAUNCH_ID = [guid]::NewGuid().ToString('N')"
+        if qa_relaunch
+        else ""
+    )
 
     def literal(value: object) -> str:
         return "'" + str(value).replace("'", "''") + "'"
@@ -832,6 +844,7 @@ def windows_update_script(
             $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
             $stage = 'relaunching'
             $env:VODFORGE_UPDATE_RECEIPT = $receipt
+            {qa_identity}
             $app = Start-Process -FilePath $executable -WorkingDirectory $directory -PassThru
             if ($app.WaitForExit(3000)) {{ throw 'VODForge exited immediately after installation. Open it from the Start menu; see the update log if it fails again.' }}
             $result.status = 'relaunched'
@@ -899,6 +912,7 @@ def launch_windows_update(
         window_bounds=window_bounds,
         repair=repair,
         telemetry_permitted=telemetry_permitted,
+        qa_relaunch=qa_update_feed() is not None,
     )
     script_path = installer.parent / f"handoff-{token}.ps1"
     # A file avoids Windows' 32K command-line ceiling as recovery grows.
