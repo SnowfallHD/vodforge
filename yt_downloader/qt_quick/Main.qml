@@ -171,6 +171,8 @@ Window {
             window.pendingPlaybackGeneration = generation
             window.miniPlayerActive = false
             playerLoader.sourceComponent = null
+            playerScene.clearVideoFrames()
+            miniVideoSurface.clearOutput()
             playerLoader.sourceComponent = mediaPlayerComponent
         }
         function onPlaybackUrlChanged() {
@@ -179,6 +181,8 @@ Window {
             window.pendingPlaybackGeneration = -1
             if (window.mediaPlayer) window.mediaPlayer.stop()
             playerLoader.sourceComponent = null
+            playerScene.clearVideoFrames()
+            miniVideoSurface.clearOutput()
         }
         function onPlaybackSeekRequested(position) {
             if (window.mediaPlayer) mediaPlayer.setPosition(position * 1000)
@@ -1342,6 +1346,7 @@ Window {
             objectName: "miniVideoSurface"
             x: 6; y: 6; width: parent.width - 12; height: 145
             fillMode: VideoOutput.PreserveAspectFit
+            endOfStreamPolicy: VideoOutput.KeepLastFrame
         }
         MouseArea {
             anchors.fill: parent

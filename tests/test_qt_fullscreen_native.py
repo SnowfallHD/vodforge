@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QObject
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPointF
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtTest import QTest
 
@@ -211,6 +211,102 @@ def test_native_replay_back_keeps_watch_hero_progress_current(
     finally:
         presentation.showNormal()
         QTest.qWait(1200)
+        presentation.close()
+        window.close()
+        engine.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge.close()
+
+
+@pytest.mark.parametrize("surface", ["embedded", "mini", "floating"])
+def test_qt_ended_video_retains_frame_and_replays(tmp_path, monkeypatch, surface):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setenv("QT_QPA_PLATFORM", "cocoa")
+    monkeypatch.setenv("VODFORGE_DISABLE_TELEMETRY", "1")
+    app = qt_app()
+    media = saved(tmp_path, "Last frame", "MP4")
+    media["duration"] = 2
+    subprocess.run(
+        [
+            shutil.which("ffmpeg"),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x3399ff:size=320x180:rate=15",
+            "-t",
+            "2",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            media["vodforge_output_path"],
+        ],
+        check=True,
+        timeout=30,
+    )
+    bridge = qt_main.Bridge(None)
+    bridge._runtime.history = [media]
+    bridge._engagement.presented_welcome()
+    engine = qt_main.create_engine(bridge)
+    window = engine.rootObjects()[0]
+    presentation = window.findChild(QObject, "watchPresentationWindow")
+
+    def until(predicate):
+        for _ in range(100):
+            app.processEvents()
+            if predicate():
+                return True
+            QTest.qWait(50)
+        return False
+
+    try:
+        bridge.selectHome("Library")
+        assert bridge.openLibraryItem(0)
+        player = window.property("mediaPlayer")
+        scene = window.findChild(QObject, "watchPlayerScene")
+        assert until(lambda: player.property("position") >= 200)
+        if surface == "mini":
+            scene.closeRequested.emit()
+            output = window.findChild(QObject, "miniVideoSurface")
+            assert window.property("miniPlayerActive")
+        elif surface == "floating":
+            scene.setPresentation("floating")
+            output = window.findChild(QObject, "watchPresentationVideoSurface")
+        else:
+            output = window.findChild(QObject, "watchVideoSurface")
+        target = presentation if surface == "floating" else window
+
+        def blue_frame():
+            image = target.grabWindow()
+            if image.isNull():
+                return False
+            point = output.mapToScene(QPointF(output.width() / 2, output.height() / 2))
+            ratio = image.devicePixelRatio()
+            color = image.pixelColor(round(point.x() * ratio), round(point.y() * ratio))
+            return color.blue() > 180 and color.red() < 80
+
+        assert until(blue_frame), "fixture must render before EndOfMedia"
+        assert until(lambda: player.property("mediaStatus") == QMediaPlayer.EndOfMedia)
+        QTest.qWait(150)
+        assert blue_frame(), (
+            "ended playback must retain its frame instead of a blank surface"
+        )
+        assert bridge._playback_progress.for_record(media).completed
+        if surface == "mini":
+            window.findChild(QObject, "miniPlayerPause").activated.emit()
+        else:
+            scene.togglePlayback()
+        assert until(lambda: 100 <= player.property("position") < 1000)
+        assert until(blue_frame)
+        assert not bridge._playback_progress.for_record(media).completed
+    finally:
         presentation.close()
         window.close()
         engine.deleteLater()

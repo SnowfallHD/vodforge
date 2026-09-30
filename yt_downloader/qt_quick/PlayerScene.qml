@@ -24,6 +24,10 @@ Item {
     signal volumeRequested(real value)
     signal editDetailsRequested(string owner)
 
+    function clearVideoFrames() {
+        videoSurface.clearOutput()
+        presentationVideo.clearOutput()
+    }
     function setPresentation(mode) {
         if (["embedded", "fullscreen", "floating"].indexOf(mode) < 0 ||
                 (mode !== "embedded" && projection.kind !== "video"))
@@ -116,6 +120,7 @@ Item {
             objectName: "watchPresentationVideoSurface"
             anchors.fill: parent
             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
+            endOfStreamPolicy: VideoOutput.KeepLastFrame
             TapHandler { onTapped: scene.togglePlayback() }
         }
         HoverHandler { onPointChanged: presentationOverlay.reveal() }
@@ -249,6 +254,7 @@ Item {
                         VideoOutput {
                             id: videoSurface
                             objectName: "watchVideoSurface"
+                            endOfStreamPolicy: VideoOutput.KeepLastFrame
                             anchors.fill: parent
                             fillMode: scene.videoFill ? VideoOutput.PreserveAspectCrop : VideoOutput.PreserveAspectFit
                         }

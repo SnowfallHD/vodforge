@@ -1,5 +1,27 @@
 # VODForge engineering-quality harness
 
+## Ended video keeps its frame across player surfaces — 2026-09-30
+
+Exact signed package `5ea8c0e` left a blank mini-player after Back and natural
+completion. Its full-frame before receipt is
+`build/watch-progress-proof/package-5ea8c0e-frames/07-mini-return.png` (also
+visible in the two My Files captures). The existing decoder and progress tests
+asserted Ended/completed and replay, but did not inspect the composed frame
+at EndOfMedia. Qt VideoOutput defaults to ClearOutput; all three existing
+surfaces now request KeepLastFrame, with explicit clearing when the playback
+owner is replaced or closed so an old title cannot remain on a new session.
+
+The maintained native test covers embedded, floating, and mini output with a
+real decoded blue MP4, a rendered pre-end frame prerequisite, rendered end
+frame, completed progress and replay to a new incomplete position. This is
+native opt-in coverage, not a software-renderer proxy: Qt Quick's software
+backend did not compose the video, and an offscreen Metal attempt crashed.
+Both failed attempts are retained. The video sink itself becomes invalid at
+EndOfMedia even when the output retains its texture; sink validity therefore
+cannot stand in for composed frame acceptance. Native current and ClearOutput
+negative-control runs are required before accepting this fix. A new package
+must repeat the observed ended-mini journey before installation or release.
+
 ## Issues retry keeps its configuration and durable place — 2026-09-28
 
 The Issues list previously sent a selected stopped run to Forge without
